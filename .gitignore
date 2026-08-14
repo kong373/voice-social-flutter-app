@@ -1,0 +1,41 @@
+# Dart / Flutter
+.dart_tool/
+.packages
+.pub/
+build/
+coverage/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+
+# Generated platform files (M0 uses tool/bootstrap_local.sh)
+android/
+ios/
+linux/
+macos/
+windows/
+web/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+key.properties
+GoogleService-Info.plist
+google-services.json
+
+# CI scratch workspace
+.ci_app/
