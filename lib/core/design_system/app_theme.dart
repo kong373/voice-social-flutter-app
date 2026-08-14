@@ -12,6 +12,7 @@ abstract final class AppColors {
   static const Color divider = Color(0xFF2A2D48);
   static const Color success = Color(0xFF63E6A7);
   static const Color warning = Color(0xFFFFC56E);
+  static const Color error = Color(0xFFFF6B7D);
 }
 
 abstract final class AppTheme {
@@ -23,7 +24,7 @@ abstract final class AppTheme {
       onSecondary: Colors.white,
       surface: AppColors.surface,
       onSurface: AppColors.textPrimary,
-      error: Color(0xFFFF6B7D),
+      error: AppColors.error,
       onError: Colors.white,
     );
 
