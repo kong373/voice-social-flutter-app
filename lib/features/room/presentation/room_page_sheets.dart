@@ -33,12 +33,7 @@ extension _RoomPageSheets on _RoomPageState {
     if (!mounted) {
       return;
     }
-    setState(() => _allowPop = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
-    });
+    _finishLeavingRoom();
   }
 
   Future<void> _showMicRequestSheet() async {
