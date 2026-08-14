@@ -55,6 +55,15 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 2));
     await tester.pump();
+
+    debugPrint(
+      'post-exit home=${find.text('此刻适合你的房间').evaluate().length} '
+      'room=${find.text('实时公屏').evaluate().length} '
+      'dialog=${find.text('离开房间？').evaluate().length} '
+      'progress=${find.text('正在离开房间…').evaluate().length}',
+    );
+    debugDumpApp();
+
     expect(find.text('此刻适合你的房间'), findsOneWidget);
     expect(find.text('深夜温柔陪伴'), findsNothing);
   });
