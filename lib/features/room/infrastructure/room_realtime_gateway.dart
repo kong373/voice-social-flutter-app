@@ -26,7 +26,7 @@ abstract interface class RoomRealtimeGateway {
 
 class MockRoomRealtimeGateway implements RoomRealtimeGateway {
   final StreamController<RoomRealtimeEvent> _controller =
-      StreamController<RoomRealtimeEvent>.broadcast();
+      StreamController<RoomRealtimeEvent>.broadcast(sync: true);
 
   bool _connected = false;
 
@@ -38,18 +38,21 @@ class MockRoomRealtimeGateway implements RoomRealtimeGateway {
     required String roomId,
     required int userId,
     required String accessToken,
-  }) async {
+  }) {
     _connected = true;
+    return Future<void>.value();
   }
 
   @override
-  Future<void> reconnect() async {
+  Future<void> reconnect() {
     _connected = true;
+    return Future<void>.value();
   }
 
   @override
-  Future<void> disconnect() async {
+  Future<void> disconnect() {
     _connected = false;
+    return Future<void>.value();
   }
 
   void emit(RoomRealtimeEvent event) {
