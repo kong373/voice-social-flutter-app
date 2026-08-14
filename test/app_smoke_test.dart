@@ -54,6 +54,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump();
     await tester.pump(const Duration(seconds: 2));
+    await tester.pump();
     expect(find.text('此刻适合你的房间'), findsOneWidget);
     expect(find.text('深夜温柔陪伴'), findsNothing);
   });
