@@ -50,7 +50,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('离开房间？'), findsOneWidget);
     await tester.tap(find.text('确认离开'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('此刻适合你的房间'), findsOneWidget);
   });
 }
