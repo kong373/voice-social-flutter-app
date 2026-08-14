@@ -107,17 +107,19 @@ class _RoomAction extends StatelessWidget {
   const _RoomAction({
     required this.icon,
     required this.label,
+    required this.enabled,
     required this.onTap,
   });
 
   final IconData icon;
   final String label;
+  final bool enabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return InkResponse(
-      onTap: onTap,
+      onTap: enabled ? onTap : null,
       radius: 34,
       child: SizedBox(
         width: 70,
@@ -128,16 +130,27 @@ class _RoomAction extends StatelessWidget {
               width: 46,
               height: 46,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.08),
+                color: Colors.white.withValues(alpha: enabled ? 0.08 : 0.04),
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: Colors.white.withValues(alpha: 0.06),
                 ),
               ),
-              child: Icon(icon, size: 22),
+              child: Icon(
+                icon,
+                size: 22,
+                color: enabled ? null : AppColors.textSecondary,
+              ),
             ),
             const SizedBox(height: 5),
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: enabled
+                        ? AppColors.textPrimary
+                        : AppColors.textSecondary,
+                  ),
+            ),
           ],
         ),
       ),
@@ -197,6 +210,65 @@ class _BlockingProgress extends StatelessWidget {
               const CircularProgressIndicator(),
               const SizedBox(height: 14),
               Text(label),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RemoteExitOverlay extends StatelessWidget {
+  const _RemoteExitOverlay({
+    required this.title,
+    required this.message,
+    required this.onExit,
+  });
+
+  final String title;
+  final String message;
+  final VoidCallback onExit;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black.withValues(alpha: 0.68),
+      child: Center(
+        child: Container(
+          width: 310,
+          margin: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(22),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Icon(
+                Icons.info_outline_rounded,
+                size: 36,
+                color: AppColors.warning,
+              ),
+              const SizedBox(height: 16),
+              Text(title, style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: onExit,
+                  child: const Text('返回首页'),
+                ),
+              ),
             ],
           ),
         ),
