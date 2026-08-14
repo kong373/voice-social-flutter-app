@@ -5,6 +5,9 @@ void main() {
   testWidgets('home to room, gift sheet, and leave flow work', (
     WidgetTester tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     await tester.pumpWidget(const VoiceSocialApp());
     expect(find.text('此刻适合你的房间'), findsOneWidget);
 
