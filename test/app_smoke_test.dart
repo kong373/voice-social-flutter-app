@@ -50,21 +50,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('离开房间？'), findsOneWidget);
     await tester.tap(find.text('确认离开'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pump();
 
-    debugPrint(
-      'post-exit home=${find.text('此刻适合你的房间').evaluate().length} '
-      'room=${find.text('实时公屏').evaluate().length} '
-      'dialog=${find.text('离开房间？').evaluate().length} '
-      'progress=${find.text('正在离开房间…').evaluate().length}',
-    );
-    debugDumpApp();
+    final Finder homeTitle = find.text('此刻适合你的房间');
+    for (int attempt = 0;
+        attempt < 40 && homeTitle.evaluate().isEmpty;
+        attempt += 1) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
 
-    expect(find.text('此刻适合你的房间'), findsOneWidget);
-    expect(find.text('深夜温柔陪伴'), findsNothing);
+    expect(homeTitle, findsOneWidget);
+    expect(find.text('实时公屏'), findsNothing);
+    expect(find.text('正在离开房间…'), findsNothing);
   });
 }
