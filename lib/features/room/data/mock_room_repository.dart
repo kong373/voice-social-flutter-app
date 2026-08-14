@@ -99,7 +99,9 @@ class MockRoomRepository implements RoomRepository {
 
   @override
   Future<void> exitRoom(String roomId) async {
-    await Future<void>.delayed(const Duration(milliseconds: 180));
+    // Keep the test double deterministic. Loading and failure behavior are
+    // exercised by dedicated repositories instead of a fake timer hidden in
+    // the default click-through fixture.
   }
 
   @override
