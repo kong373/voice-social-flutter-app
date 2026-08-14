@@ -36,7 +36,15 @@ extension _RoomPageSheets on _RoomPageState {
     if (shouldLeave != true || !mounted) {
       return;
     }
-    final bool left = await _controller.leaveRoom();
+
+    var transportCleanupTimedOut = false;
+    final bool left = await _controller.leaveRoom().timeout(
+      const Duration(milliseconds: 1500),
+      onTimeout: () {
+        transportCleanupTimedOut = true;
+        return true;
+      },
+    );
     if (!mounted) {
       return;
     }
@@ -47,6 +55,14 @@ extension _RoomPageSheets on _RoomPageState {
         ),
       );
       return;
+    }
+
+    // The server command normally completes before this point. If an RTC or
+    // realtime driver stalls during local cleanup, honor the user's explicit
+    // exit after the bounded wait; RoomController.dispose continues best-effort
+    // transport cleanup without trapping the user in the room UI.
+    if (transportCleanupTimedOut) {
+      _allowPop = true;
     }
     _removeRoomRoute(roomRoute);
   }
