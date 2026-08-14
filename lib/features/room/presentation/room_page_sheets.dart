@@ -5,9 +5,10 @@ extension _RoomPageSheets on _RoomPageState {
     if (_controller.status == RoomSessionStatus.leaving) {
       return;
     }
+    final Route<dynamic>? roomRoute = ModalRoute.of(context);
     if (_controller.status == RoomSessionStatus.failed &&
         _controller.snapshot == null) {
-      _exitWithoutSession();
+      _removeRoomRoute(roomRoute);
       return;
     }
 
@@ -47,7 +48,7 @@ extension _RoomPageSheets on _RoomPageState {
       );
       return;
     }
-    _exitWithoutSession();
+    _removeRoomRoute(roomRoute);
   }
 
   Future<void> _showMicRequestSheet() async {
@@ -282,6 +283,18 @@ extension _RoomPageSheets on _RoomPageState {
         ),
       ),
     );
+  }
+
+  void _removeRoomRoute(Route<dynamic>? roomRoute) {
+    if (!mounted) {
+      return;
+    }
+    if (roomRoute == null) {
+      _exitWithoutSession();
+      return;
+    }
+    _allowPop = true;
+    Navigator.of(context).removeRoute(roomRoute);
   }
 
   static String _roleLabel(RoomRole role) {
