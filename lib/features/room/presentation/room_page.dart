@@ -61,6 +61,18 @@ class _RoomPageState extends State<RoomPage> {
     });
   }
 
+  void _finishLeavingRoom() {
+    if (!mounted) {
+      return;
+    }
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope<Object?>(
