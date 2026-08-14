@@ -18,27 +18,30 @@ class MockRtcAdapter implements RtcAdapter {
   bool get audioEnabled => _audioEnabled;
 
   @override
-  Future<void> join(RtcCredentials credentials) async {
+  Future<void> join(RtcCredentials credentials) {
     _joined = true;
+    return Future<void>.value();
   }
 
   @override
-  Future<void> reconnect(RtcCredentials credentials) async {
+  Future<void> reconnect(RtcCredentials credentials) {
     _joined = true;
+    return Future<void>.value();
   }
 
   @override
-  Future<void> setLocalAudioEnabled(bool enabled) async {
-    if (!_joined) {
-      return;
+  Future<void> setLocalAudioEnabled(bool enabled) {
+    if (_joined) {
+      _audioEnabled = enabled;
     }
-    _audioEnabled = enabled;
+    return Future<void>.value();
   }
 
   @override
-  Future<void> leave() async {
+  Future<void> leave() {
     _audioEnabled = false;
     _joined = false;
+    return Future<void>.value();
   }
 }
 
