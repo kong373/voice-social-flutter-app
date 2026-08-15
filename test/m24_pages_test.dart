@@ -11,6 +11,11 @@ import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
 import 'package:voice_social_app/features/room/pk/presentation/room_pk_pages.dart';
 
 void main() {
+  Future<void> disposeScoped(WidgetTester tester) async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  }
+
   Future<void> pumpScoped(
     WidgetTester tester,
     AppDependencies dependencies,
@@ -18,8 +23,7 @@ void main() {
   ) async {
     // Force disposal of the previous navigator and all page-owned timers
     // before mounting the next fixture.
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
+    await disposeScoped(tester);
     await tester.pumpWidget(
       AppDependencyScope(
         dependencies: dependencies,
@@ -97,6 +101,7 @@ void main() {
     expect(find.text('本房获胜'), findsOneWidget);
     expect(find.text('3680 : 2940'), findsOneWidget);
     expect(find.text('返回房间'), findsOneWidget);
+    await disposeScoped(tester);
   });
 
   testWidgets('CM-002 through CM-004 enforce platform channels and authority', (
@@ -157,6 +162,7 @@ void main() {
     expect(find.text('支付返回与结果'), findsOneWidget);
     expect(find.text('服务端确认中'), findsOneWidget);
     expect(find.text('刷新订单状态'), findsOneWidget);
+    await disposeScoped(tester);
   });
 
   testWidgets('CM-009 and CM-010 expose only ordinary assets', (
@@ -176,6 +182,7 @@ void main() {
     expect(find.text('会员装扮与背包'), findsOneWidget);
     expect(find.text('装扮'), findsOneWidget);
     expect(find.text('背包'), findsOneWidget);
+    await disposeScoped(tester);
   });
 
   testWidgets('MS-001 through MS-006 preserve honest messaging boundaries', (
@@ -230,5 +237,6 @@ void main() {
     );
     expect(find.text('私聊实时通道'), findsOneWidget);
     expect(find.textContaining('不会编造断线期间私聊'), findsOneWidget);
+    await disposeScoped(tester);
   });
 }
