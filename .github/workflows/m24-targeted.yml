@@ -1,0 +1,63 @@
+name: M2.4 targeted diagnostics
+
+on:
+  push:
+    branches:
+      - "feat/m2-room-pk-commerce-messaging-core"
+  pull_request:
+    paths:
+      - "lib/features/room/pk/**"
+      - "lib/features/commerce/catalog/**"
+      - "lib/features/message/**"
+      - "test/room_pk_repository_test.dart"
+      - "test/commerce_catalog_repository_test.dart"
+      - "test/message_repository_test.dart"
+      - "test/m24_pages_test.dart"
+      - ".github/workflows/m24-targeted.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m24-targeted-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+
+jobs:
+  test-file:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Room PK repository
+            file: test/room_pk_repository_test.dart
+          - label: Commerce catalog repository
+            file: test/commerce_catalog_repository_test.dart
+          - label: Message repository
+            file: test/message_repository_test.dart
+          - label: M2.4 widget pages
+            file: test/m24_pages_test.dart
+          - label: Existing app smoke
+            file: test/app_smoke_test.dart
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Run targeted test file
+        run: flutter test "${{ matrix.file }}" --timeout=45s --reporter=expanded
