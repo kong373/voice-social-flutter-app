@@ -93,6 +93,20 @@ class ApiClient {
         authenticated: authenticated,
       );
 
+  Future<ApiResponse> delete(
+    String path, {
+    Map<String, String>? query,
+    Map<String, Object?>? body,
+    bool authenticated = true,
+  }) =>
+      _request(
+        method: 'DELETE',
+        path: path,
+        query: query,
+        body: body,
+        authenticated: authenticated,
+      );
+
   Future<ApiResponse> _request({
     required String method,
     required String path,

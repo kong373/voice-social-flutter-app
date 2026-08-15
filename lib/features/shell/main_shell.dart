@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
-import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/discovery/home_page.dart';
+import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({
@@ -23,17 +23,19 @@ class _MainShellState extends State<MainShell> {
 
   List<Widget> get _pages => <Widget>[
         const HomePage(),
-        const _RootPlaceholder(
+        const _VendorIndependentRootPage(
           title: '发现',
-          description: '浏览好友和关注用户发布的动态，参与真实的社交讨论。',
+          description: '动态发布、详情评论和排行榜将在后续纯业务批次接入。当前不会用假数据冒充线上动态。',
           icon: Icons.explore_rounded,
+          statusLabel: 'DS-004～DS-007 待开发',
         ),
-        const _RootPlaceholder(
+        const _VendorIndependentRootPage(
           title: '消息',
-          description: '查看私聊、好友互动和系统通知。',
+          description: '腾讯 IM 正在申请。会话、私聊和通知业务模型会保留，但在正式 SDK 和服务端协议可用前不伪造消息收发。',
           icon: Icons.chat_bubble_rounded,
+          statusLabel: 'MS-001～MS-006 第三方接入前受限',
         ),
-        _AccountRoot(
+        PersonalCenterPage(
           session: widget.dependencies.sessionManager.session,
           onSignOut: widget.onSignOut,
         ),
@@ -73,143 +75,58 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
-class _AccountRoot extends StatefulWidget {
-  const _AccountRoot({required this.session, required this.onSignOut});
+class _VendorIndependentRootPage extends StatelessWidget {
+  const _VendorIndependentRootPage({
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.statusLabel,
+  });
 
-  final AuthSession? session;
-  final Future<void> Function() onSignOut;
-
-  @override
-  State<_AccountRoot> createState() => _AccountRootState();
-}
-
-class _AccountRootState extends State<_AccountRoot> {
-  bool _signingOut = false;
+  final String title;
+  final String description;
+  final IconData icon;
+  final String statusLabel;
 
   @override
   Widget build(BuildContext context) {
-    final AuthSession? session = widget.session;
     return SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(24),
         children: <Widget>[
-          const CircleAvatar(
-            radius: 34,
-            backgroundColor: AppColors.surfaceHigh,
-            child: Icon(Icons.person_rounded, size: 34),
-          ),
+          Icon(icon, size: 36, color: AppColors.primary),
           const SizedBox(height: 18),
-          Text('我的', style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 8),
+          Text(title, style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 10),
           Text(
-            session == null
-                ? '会话不可用'
-                : '用户 ${session.userId} · ${_maskedMobile(session.mobile)}',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            description,
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: AppColors.textSecondary,
                 ),
           ),
-          const SizedBox(height: 28),
-          const _AccountEntry(
-            icon: Icons.person_outline_rounded,
-            title: '个人资料与关系',
-            description: '查看和编辑个人资料、关注、好友与隐私设置。',
-          ),
-          const _AccountEntry(
-            icon: Icons.account_balance_wallet_outlined,
-            title: '钱包与订单',
-            description: '查看礼物币、充值订单、收益与提现。',
-          ),
-          const _AccountEntry(
-            icon: Icons.security_outlined,
-            title: '账号与安全',
-            description: '管理权限、设备、实名、青少年模式与账号安全。',
-          ),
           const SizedBox(height: 24),
-          OutlinedButton.icon(
-            onPressed: _signingOut ? null : _signOut,
-            icon: _signingOut
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.logout_rounded),
-            label: const Text('退出登录'),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: AppColors.divider),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Icon(Icons.info_outline_rounded, color: AppColors.accent),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    statusLabel,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
-      ),
-    );
-  }
-
-  Future<void> _signOut() async {
-    setState(() => _signingOut = true);
-    await widget.onSignOut();
-    if (mounted) {
-      setState(() => _signingOut = false);
-    }
-  }
-
-  static String _maskedMobile(String mobile) {
-    if (mobile.length != 11) {
-      return mobile.isEmpty ? '未提供手机号' : mobile;
-    }
-    return '${mobile.substring(0, 3)}****${mobile.substring(7)}';
-  }
-}
-
-class _AccountEntry extends StatelessWidget {
-  const _AccountEntry({
-    required this.icon,
-    required this.title,
-    required this.description,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: AppColors.accent),
-      title: Text(title),
-      subtitle: Text(description),
-    );
-  }
-}
-
-class _RootPlaceholder extends StatelessWidget {
-  const _RootPlaceholder({
-    required this.title,
-    required this.description,
-    required this.icon,
-  });
-
-  final String title;
-  final String description;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Icon(icon, size: 34, color: AppColors.primary),
-            const SizedBox(height: 18),
-            Text(title, style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 10),
-            Text(
-              description,
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-            ),
-          ],
-        ),
       ),
     );
   }

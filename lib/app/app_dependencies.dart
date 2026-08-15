@@ -3,11 +3,17 @@ import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/core/storage/key_value_store.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
+import 'package:voice_social_app/features/account/compliance/data/backend_account_compliance_repository.dart';
+import 'package:voice_social_app/features/account/compliance/data/mock_account_compliance_repository.dart';
+import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
 import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/account/data/backend_auth_repository.dart';
 import 'package:voice_social_app/features/account/data/device_identity_provider.dart';
 import 'package:voice_social_app/features/account/data/mock_auth_repository.dart';
 import 'package:voice_social_app/features/account/domain/auth_repository.dart';
+import 'package:voice_social_app/features/commerce/data/backend_commerce_repository.dart';
+import 'package:voice_social_app/features/commerce/data/mock_commerce_repository.dart';
+import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 import 'package:voice_social_app/features/discovery/data/backend_discovery_repository.dart';
 import 'package:voice_social_app/features/discovery/data/mock_discovery_repository.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
@@ -24,13 +30,19 @@ import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_audio_service.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
+import 'package:voice_social_app/features/social/data/backend_social_repository.dart';
+import 'package:voice_social_app/features/social/data/mock_social_repository.dart';
+import 'package:voice_social_app/features/social/domain/social_models.dart';
 
 class AppDependencies {
   AppDependencies._({
     required this.environment,
     required this.sessionManager,
     required this.authController,
+    required this.accountComplianceRepository,
     required this.discoveryRepository,
+    required this.socialRepository,
+    required this.commerceRepository,
     required this.roomRepository,
     required this.roomOperationsRepository,
     required this.roomLifecycleRepository,
@@ -73,6 +85,13 @@ class AppDependencies {
             routes: routes,
           )
         : const MockAuthRepository();
+    final AccountComplianceRepository accountComplianceRepository =
+        environment.isLive
+            ? BackendAccountComplianceRepository(
+                apiClient: apiClient,
+                routes: routes,
+              )
+            : MockAccountComplianceRepository();
     final DiscoveryRepository discoveryRepository = environment.isLive
         ? BackendDiscoveryRepository(
             apiClient: apiClient,
@@ -80,6 +99,17 @@ class AppDependencies {
             routes: routes,
           )
         : MockDiscoveryRepository();
+    final SocialRepository socialRepository = environment.isLive
+        ? BackendSocialRepository(
+            apiClient: apiClient,
+            currentUserIdProvider: () =>
+                sessionManager.session?.userId ?? 0,
+            routes: routes,
+          )
+        : MockSocialRepository();
+    final CommerceRepository commerceRepository = environment.isLive
+        ? BackendCommerceRepository(apiClient: apiClient, routes: routes)
+        : MockCommerceRepository();
     final RoomRepository roomRepository = environment.isLive
         ? BackendRoomRepository(apiClient: apiClient, routes: routes)
         : MockRoomRepository();
@@ -110,7 +140,10 @@ class AppDependencies {
       environment: environment,
       sessionManager: sessionManager,
       authController: authController,
+      accountComplianceRepository: accountComplianceRepository,
       discoveryRepository: discoveryRepository,
+      socialRepository: socialRepository,
+      commerceRepository: commerceRepository,
       roomRepository: roomRepository,
       roomOperationsRepository: roomOperationsRepository,
       roomLifecycleRepository: roomLifecycleRepository,
@@ -123,7 +156,10 @@ class AppDependencies {
   final AppEnvironment environment;
   final AuthSessionManager sessionManager;
   final AuthController authController;
+  final AccountComplianceRepository accountComplianceRepository;
   final DiscoveryRepository discoveryRepository;
+  final SocialRepository socialRepository;
+  final CommerceRepository commerceRepository;
   final RoomRepository roomRepository;
   final RoomOperationsRepository roomOperationsRepository;
   final RoomLifecycleRepository roomLifecycleRepository;

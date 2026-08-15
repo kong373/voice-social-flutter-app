@@ -37,6 +37,43 @@ class BackendRouteCatalog {
     this.ownedRooms = '/app-api/rooms/getRoomSelectByUserId',
     this.roomById = '/app-api/rooms/getRoomById',
     this.updateRoomInformation = '/app-api/rooms/updateRoomInformation',
+    this.personalData = '/app-api/user/getPersonalData',
+    this.youthModeStatus =
+        '/app-api/user/other/getMatchButtonAndYouthMode',
+    this.queryAccountCancellation = '/app-api/user/queryUserLogout',
+    this.deleteAccount = '/app-register-api/userAccount/v1/delete',
+    this.queryAppealInfo = '/app-api/accappeal/queryAppealInfo',
+    this.submitAppeal = '/app-api/accappeal/commitAppeal',
+    this.queryAppealProgress = '/app-api/accappeal/queryAppealProcess',
+    this.versionInformation = '/app-api/appBase/getVersionInformation',
+    this.enableYouthMode = '/app-api/user/openYouthMode',
+    this.disableYouthMode = '/app-api/user/turnOffYouthMode',
+    this.updateUserProfile = '/app-api/user/updateUserByUserId',
+    this.personalHomepage = '/app-api/user/personalHomepage',
+    this.followingList = '/app-api/user/relation/queryUserFollowList',
+    this.followersList = '/app-api/user/relation/queryUserFansList',
+    this.friendsList = '/app-api/user/relation/queryUserPlaymateList',
+    this.setFollowing = '/app-api/user/relation/buildFriendRelation',
+    this.setBlocked = '/app-api/user/relation/blackUserRelation',
+    this.blacklist = '/app-api/user/relation/queryUserBlackList',
+    this.visitorRecords = '/app-api/user/personalHomepage/visitedRecords',
+    this.onlyFollowedCanFollow = '/app-api/user/onlyFollowedCanFollow/set',
+    this.reportUserOrRoom = '/app-api/util/tipOffUserOrRoom',
+    this.customerService = '/app-api/user/getCustomerServiceDetail',
+    this.submitFeedback = '/app-api/suggestion/saveSugggestion',
+    this.ncoinBalance = '/app-economy-api/ncoin',
+    this.paymentOrders = '/app-economy-api/pay/getOrders',
+    this.paymentOrderResult = '/app-economy-api/pay/isOrderSuccess',
+    this.refundCheck = '/app-api/refund/check',
+    this.refundApplication = '/app-api/refund/application',
+    this.refundResult = '/app-api/refund/result',
+    this.refundRepeat = '/app-api/refund/repeat',
+    this.walletOverview = '/app-mini-api/mini/v1/wallet/overview',
+    this.walletAccountDetails =
+        '/app-mini-api/mini/v1/wallet/account-details',
+    this.withdrawalFeeRate = '/app-mini-api/mini/v1/withdrawal/fee-rate',
+    this.withdrawalApply = '/app-mini-api/mini/v1/withdrawal/apply',
+    this.withdrawalRecords = '/app-mini-api/mini/v1/withdrawal/records',
   });
 
   final String sendSmsCode;
@@ -73,4 +110,39 @@ class BackendRouteCatalog {
   final String ownedRooms;
   final String roomById;
   final String updateRoomInformation;
+  final String personalData;
+  final String youthModeStatus;
+  final String queryAccountCancellation;
+  final String deleteAccount;
+  final String queryAppealInfo;
+  final String submitAppeal;
+  final String queryAppealProgress;
+  final String versionInformation;
+  final String enableYouthMode;
+  final String disableYouthMode;
+  final String updateUserProfile;
+  final String personalHomepage;
+  final String followingList;
+  final String followersList;
+  final String friendsList;
+  final String setFollowing;
+  final String setBlocked;
+  final String blacklist;
+  final String visitorRecords;
+  final String onlyFollowedCanFollow;
+  final String reportUserOrRoom;
+  final String customerService;
+  final String submitFeedback;
+  final String ncoinBalance;
+  final String paymentOrders;
+  final String paymentOrderResult;
+  final String refundCheck;
+  final String refundApplication;
+  final String refundResult;
+  final String refundRepeat;
+  final String walletOverview;
+  final String walletAccountDetails;
+  final String withdrawalFeeRate;
+  final String withdrawalApply;
+  final String withdrawalRecords;
 }
