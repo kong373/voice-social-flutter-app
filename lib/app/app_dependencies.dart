@@ -9,9 +9,13 @@ import 'package:voice_social_app/features/account/data/device_identity_provider.
 import 'package:voice_social_app/features/account/data/mock_auth_repository.dart';
 import 'package:voice_social_app/features/account/domain/auth_repository.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
+import 'package:voice_social_app/features/room/data/backend_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_room_repository.dart';
+import 'package:voice_social_app/features/room/data/mock_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/data/mock_room_repository.dart';
+import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
+import 'package:voice_social_app/features/room/infrastructure/room_audio_service.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
@@ -21,8 +25,10 @@ class AppDependencies {
     required this.sessionManager,
     required this.authController,
     required this.roomRepository,
+    required this.roomOperationsRepository,
     required this.rtcAdapter,
     required this.realtimeGateway,
+    required this.roomAudioService,
   });
 
   factory AppDependencies.fromEnvironment() {
@@ -62,13 +68,18 @@ class AppDependencies {
     final RoomRepository roomRepository = environment.isLive
         ? BackendRoomRepository(apiClient: apiClient, routes: routes)
         : MockRoomRepository();
+    final RoomOperationsRepository roomOperationsRepository = environment.isLive
+        ? BackendRoomOperationsRepository(apiClient: apiClient, routes: routes)
+        : MockRoomOperationsRepository();
     final RtcAdapter rtcAdapter =
         environment.isLive ? const UnavailableRtcAdapter() : MockRtcAdapter();
     final RoomRealtimeGateway realtimeGateway = environment.isLive
         ? const UnavailableRoomRealtimeGateway()
         : MockRoomRealtimeGateway();
-    final DeviceIdentityProvider deviceIdentityProvider =
-        DeviceIdentityProvider(
+    final RoomAudioService roomAudioService = environment.isLive
+        ? const UnavailableRoomAudioService()
+        : MockRoomAudioService();
+    final DeviceIdentityProvider deviceIdentityProvider = DeviceIdentityProvider(
       environment: environment,
       sessionManager: sessionManager,
     );
@@ -82,8 +93,10 @@ class AppDependencies {
       sessionManager: sessionManager,
       authController: authController,
       roomRepository: roomRepository,
+      roomOperationsRepository: roomOperationsRepository,
       rtcAdapter: rtcAdapter,
       realtimeGateway: realtimeGateway,
+      roomAudioService: roomAudioService,
     );
   }
 
@@ -91,8 +104,10 @@ class AppDependencies {
   final AuthSessionManager sessionManager;
   final AuthController authController;
   final RoomRepository roomRepository;
+  final RoomOperationsRepository roomOperationsRepository;
   final RtcAdapter rtcAdapter;
   final RoomRealtimeGateway realtimeGateway;
+  final RoomAudioService roomAudioService;
 
   RoomController createRoomController({
     required String roomId,

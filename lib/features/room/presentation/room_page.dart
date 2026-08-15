@@ -3,8 +3,17 @@ import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
+import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
+import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_permission_policy.dart';
 import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
+import 'package:voice_social_app/features/room/presentation/room_audio_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_diagnostics_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_members_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_recovery_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_share_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_topic_page.dart';
 import 'package:voice_social_app/shared/widgets/scoped_placeholder_page.dart';
 
 part 'room_page_sheets.dart';
@@ -78,9 +87,7 @@ class _RoomPageState extends State<RoomPage> {
         if (!mounted) {
           return;
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error)),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
         _controller.clearError();
       });
     }
@@ -106,10 +113,8 @@ class _RoomPageState extends State<RoomPage> {
       },
       child: Scaffold(
         body: switch (_controller.status) {
-          RoomSessionStatus.idle || RoomSessionStatus.joining =>
-            _buildJoiningState(),
-          RoomSessionStatus.failed when _controller.snapshot == null =>
-            _buildJoinFailure(),
+          RoomSessionStatus.idle || RoomSessionStatus.joining => _buildJoiningState(),
+          RoomSessionStatus.failed when _controller.snapshot == null => _buildJoinFailure(),
           _ => _buildRoomContent(),
         },
       ),
@@ -134,10 +139,7 @@ class _RoomPageState extends State<RoomPage> {
               const Spacer(),
               const CircularProgressIndicator(),
               const SizedBox(height: 18),
-              Text(
-                '正在进入房间…',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text('正在进入房间…', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               Text(
                 '正在获取房间状态并建立音频连接',
@@ -167,16 +169,9 @@ class _RoomPageState extends State<RoomPage> {
                   icon: const Icon(Icons.arrow_back_rounded),
                 ),
                 const Spacer(),
-                const Icon(
-                  Icons.wifi_off_rounded,
-                  size: 44,
-                  color: AppColors.warning,
-                ),
+                const Icon(Icons.wifi_off_rounded, size: 44, color: AppColors.warning),
                 const SizedBox(height: 20),
-                Text(
-                  '暂时无法进入房间',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
+                Text('暂时无法进入房间', style: Theme.of(context).textTheme.headlineSmall),
                 const SizedBox(height: 10),
                 Text(
                   _controller.errorMessage ?? '请检查网络后重试。',
@@ -215,8 +210,7 @@ class _RoomPageState extends State<RoomPage> {
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 4,
                         mainAxisSpacing: 16,
                         crossAxisSpacing: 8,
@@ -224,9 +218,7 @@ class _RoomPageState extends State<RoomPage> {
                       ),
                       itemCount: _controller.seats.length,
                       itemBuilder: (BuildContext context, int index) {
-                        return _MicSeatTile(
-                          seat: _controller.seats[index],
-                        );
+                        return _MicSeatTile(seat: _controller.seats[index]);
                       },
                     ),
                     const SizedBox(height: 10),
@@ -283,8 +275,7 @@ class _RoomPageState extends State<RoomPage> {
                 Text(
                   _controller.snapshot?.onlineCount == null
                       ? '房间号 ${_controller.roomCode} · 在线人数更新中'
-                      : '房间号 ${_controller.roomCode} · '
-                          '${_controller.snapshot!.onlineCount} 人在线',
+                      : '房间号 ${_controller.roomCode} · ${_controller.snapshot!.onlineCount} 人在线',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -292,11 +283,7 @@ class _RoomPageState extends State<RoomPage> {
           ),
           IconButton(
             tooltip: '分享房间',
-            onPressed: () => _openScopedPage(
-              pageId: 'RM-009',
-              title: '房间分享',
-              description: '选择分享方式，或复制房间号邀请好友。',
-            ),
+            onPressed: _openSharePage,
             icon: const Icon(Icons.ios_share_rounded),
           ),
           IconButton(
@@ -313,24 +300,28 @@ class _RoomPageState extends State<RoomPage> {
     final String topic = _controller.topic.isEmpty
         ? '房间暂未设置当前话题'
         : _controller.topic;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Row(
-        children: <Widget>[
-          const Icon(
-            Icons.graphic_eq_rounded,
-            size: 18,
-            color: AppColors.accent,
+        onTap: _openTopicPage,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
           ),
-          const SizedBox(width: 8),
-          Expanded(child: Text(topic)),
-        ],
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.graphic_eq_rounded, size: 18, color: AppColors.accent),
+              const SizedBox(width: 8),
+              Expanded(child: Text(topic)),
+              const Icon(Icons.chevron_right_rounded, size: 18),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -351,10 +342,7 @@ class _RoomPageState extends State<RoomPage> {
             children: <Widget>[
               Text('实时公屏', style: Theme.of(context).textTheme.titleMedium),
               const Spacer(),
-              Text(
-                '仅显示进房后的消息',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              Text('仅显示进房后的消息', style: Theme.of(context).textTheme.bodySmall),
             ],
           ),
           const SizedBox(height: 10),
@@ -371,9 +359,7 @@ class _RoomPageState extends State<RoomPage> {
                       TextSpan(
                         text: '${message.sender}  ',
                         style: TextStyle(
-                          color: message.isSystem
-                              ? AppColors.warning
-                              : AppColors.accent,
+                          color: message.isSystem ? AppColors.warning : AppColors.accent,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -430,23 +416,19 @@ class _RoomPageState extends State<RoomPage> {
           children: <Widget>[
             _RoomAction(
               icon: _controller.isOnMic
-                  ? (_controller.micMuted
-                      ? Icons.mic_off_rounded
-                      : Icons.mic_rounded)
+                  ? (_controller.micMuted ? Icons.mic_off_rounded : Icons.mic_rounded)
                   : Icons.keyboard_voice_rounded,
               label: _controller.isOnMic
                   ? (_controller.micMuted ? '开麦' : '闭麦')
                   : '申请上麦',
               enabled: joined,
-              onTap: _controller.isOnMic
-                  ? _toggleMicrophone
-                  : _showMicRequestSheet,
+              onTap: _controller.isOnMic ? _toggleMicrophone : _showMicRequestSheet,
             ),
             _RoomAction(
               icon: Icons.groups_2_rounded,
               label: '成员',
               enabled: joined,
-              onTap: _showMembersSheet,
+              onTap: _openMembersPage,
             ),
             _RoomAction(
               icon: Icons.redeem_rounded,

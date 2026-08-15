@@ -50,17 +50,10 @@ extension _RoomPageSheets on _RoomPageState {
     }
     if (!left) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_controller.errorMessage ?? '离开房间失败，请重试'),
-        ),
+        SnackBar(content: Text(_controller.errorMessage ?? '离开房间失败，请重试')),
       );
       return;
     }
-
-    // The server command normally completes before this point. If an RTC or
-    // realtime driver stalls during local cleanup, honor the user's explicit
-    // exit after the bounded wait; RoomController.dispose continues best-effort
-    // transport cleanup without trapping the user in the room UI.
     if (transportCleanupTimedOut) {
       _allowPop = true;
     }
@@ -68,9 +61,31 @@ extension _RoomPageSheets on _RoomPageState {
   }
 
   Future<void> _showMicRequestSheet() async {
+    final RoomSnapshot? snapshot = _controller.snapshot;
+    if (snapshot == null) {
+      return;
+    }
+    final RoomOperationsRepository operations =
+        AppDependencyScope.of(context).roomOperationsRepository;
     final List<MicSeat> available = _controller.seats
         .where((MicSeat seat) => seat.isAvailable)
         .toList(growable: false);
+    MicAccessRequest? pending;
+    if (operations.micCoordinationMode == MicCoordinationMode.approval) {
+      final List<MicAccessRequest> requests =
+          await operations.fetchMicRequests(snapshot.roomId);
+      for (final MicAccessRequest request in requests) {
+        if (request.member.userId == _controller.currentUserId &&
+            request.status == MicRequestStatus.pending) {
+          pending = request;
+          break;
+        }
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+
     await showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
@@ -83,11 +98,35 @@ extension _RoomPageSheets on _RoomPageState {
             Text('选择麦位', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
             Text(
-              '只可选择当前空闲且未锁定的麦位。',
+              operations.micCoordinationMode == MicCoordinationMode.approval
+                  ? '提交后等待房主或房管处理，麦位变化以服务端权威状态为准。'
+                  : '当前普通房为直接上麦模式，只可选择空闲且未锁定的麦位。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
-            if (available.isEmpty)
+            if (pending != null) ...<Widget>[
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.hourglass_top_rounded),
+                title: Text('已申请 ${pending.seatNumber} 号麦'),
+                subtitle: const Text('等待房主或房管处理'),
+              ),
+              FilledButton.tonal(
+                onPressed: () async {
+                  await operations.cancelMicRequest(requestId: pending!.id);
+                  if (!sheetContext.mounted) {
+                    return;
+                  }
+                  Navigator.of(sheetContext).pop();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('上麦申请已取消')),
+                    );
+                  }
+                },
+                child: const Text('取消申请'),
+              ),
+            ] else if (available.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 18),
                 child: Text('当前没有可申请的麦位'),
@@ -96,88 +135,159 @@ extension _RoomPageSheets on _RoomPageState {
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
-                children: available
-                    .map(
-                      (MicSeat seat) => FilledButton.tonal(
-                        onPressed: _controller.micRequestPending
-                            ? null
-                            : () async {
-                                Navigator.of(sheetContext).pop();
-                                final bool accepted =
-                                    await _controller.requestMic(seat.number);
+                children: <Widget>[
+                  for (final MicSeat seat in available)
+                    FilledButton.tonal(
+                      onPressed: _controller.micRequestPending
+                          ? null
+                          : () async {
+                              Navigator.of(sheetContext).pop();
+                              if (operations.micCoordinationMode ==
+                                  MicCoordinationMode.approval) {
+                                await operations.submitMicRequest(
+                                  roomId: snapshot.roomId,
+                                  userId: _controller.currentUserId,
+                                  seatNumber: seat.number,
+                                );
                                 if (!mounted) {
                                   return;
                                 }
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(
-                                      accepted
-                                          ? '已上 ${seat.number} 号麦'
-                                          : _controller.errorMessage ??
-                                              '麦位状态已变化，请重试',
+                                      '已提交 ${seat.number} 号麦申请，等待处理',
                                     ),
                                   ),
                                 );
-                              },
-                        child: Text('${seat.number} 号麦'),
-                      ),
-                    )
-                    .toList(growable: false),
+                                return;
+                              }
+                              final bool accepted =
+                                  await _controller.requestMic(seat.number);
+                              if (!mounted) {
+                                return;
+                              }
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    accepted
+                                        ? '已上 ${seat.number} 号麦'
+                                        : _controller.errorMessage ??
+                                            '麦位状态已变化，请重试',
+                                  ),
+                                ),
+                              );
+                            },
+                      child: Text('${seat.number} 号麦'),
+                    ),
+                ],
               ),
+            if (operations.micCoordinationMode ==
+                MicCoordinationMode.unavailable) ...<Widget>[
+              const SizedBox(height: 12),
+              Text(
+                '当前房间未配置可用的上麦协议。',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Future<void> _showMembersSheet() async {
-    final List<MicSeat> occupied = _controller.seats
-        .where((MicSeat seat) => seat.isOccupied && seat.userName != null)
-        .toList(growable: false);
-    await showModalBottomSheet<void>(
-      context: context,
-      useSafeArea: true,
-      builder: (BuildContext sheetContext) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Text('在线成员', style: Theme.of(context).textTheme.titleLarge),
-                const Spacer(),
-                Text(
-                  '麦上 ${occupied.length} 人',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (occupied.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 18),
-                child: Text('当前麦上暂无用户'),
-              )
-            else
-              for (final MicSeat seat in occupied)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    child: Text('${seat.number}'),
-                  ),
-                  title: Text(seat.userName!),
-                  subtitle: Text(_roleLabel(seat.userRole)),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => Navigator.of(sheetContext).pop(),
-                ),
-            const SizedBox(height: 8),
-            Text(
-              '可在成员页查看完整听众席；房主和房管可进行成员管理。',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
+  Future<void> _openMembersPage() async {
+    final RoomSnapshot? snapshot = _controller.snapshot;
+    if (snapshot == null) {
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => RoomMembersPage(
+          roomId: snapshot.roomId,
+          currentUserId: _controller.currentUserId,
+          currentRole: snapshot.role,
+          seats: snapshot.seats,
         ),
+      ),
+    );
+  }
+
+  Future<void> _openManagementPage() async {
+    final RoomSnapshot? snapshot = _controller.snapshot;
+    if (snapshot == null || !_controller.allows(RoomCapability.manageMembers)) {
+      return;
+    }
+    final bool? changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (BuildContext context) => RoomManagementPage(
+          roomId: snapshot.roomId,
+          currentUserId: _controller.currentUserId,
+          currentRole: snapshot.role,
+          seats: snapshot.seats,
+        ),
+      ),
+    );
+    if (changed == true && mounted) {
+      await _controller.reconnect();
+    }
+  }
+
+  Future<void> _openTopicPage() async {
+    final RoomSnapshot? snapshot = _controller.snapshot;
+    if (snapshot == null) {
+      return;
+    }
+    final bool? changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (BuildContext context) => RoomTopicPage(
+          roomId: snapshot.roomId,
+          canEdit: _controller.allows(RoomCapability.editRoom),
+        ),
+      ),
+    );
+    if (changed == true && mounted) {
+      await _controller.reconnect();
+    }
+  }
+
+  void _openSharePage() {
+    final RoomSnapshot? snapshot = _controller.snapshot;
+    if (snapshot == null) {
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => RoomSharePage(
+          roomId: snapshot.roomId,
+          roomCode: snapshot.roomCode,
+          roomTitle: snapshot.title,
+        ),
+      ),
+    );
+  }
+
+  void _openAudioPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => RoomAudioPage(
+          isOnMic: _controller.isOnMic,
+        ),
+      ),
+    );
+  }
+
+  void _openRecoveryPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => RoomRecoveryPage(controller: _controller),
+      ),
+    );
+  }
+
+  void _openDiagnosticsPage() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => RoomDiagnosticsPage(controller: _controller),
       ),
     );
   }
@@ -233,6 +343,16 @@ extension _RoomPageSheets on _RoomPageState {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            if (_controller.allows(RoomCapability.manageMembers))
+              ListTile(
+                leading: const Icon(Icons.admin_panel_settings_outlined),
+                title: const Text('房间管理'),
+                subtitle: const Text('成员治理、麦位管理和上麦申请'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _openManagementPage();
+                },
+              ),
             if (_controller.isOnMic)
               ListTile(
                 leading: const Icon(Icons.keyboard_voice_outlined),
@@ -244,9 +364,7 @@ extension _RoomPageSheets on _RoomPageState {
                     return;
                   }
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(left ? '已离开麦位' : '下麦失败，请重试'),
-                    ),
+                    SnackBar(content: Text(left ? '已离开麦位' : '下麦失败，请重试')),
                   );
                 },
               ),
@@ -255,32 +373,23 @@ extension _RoomPageSheets on _RoomPageState {
               title: const Text('音频与麦克风'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _openScopedPage(
-                  pageId: 'RM-010',
-                  title: '音频与麦克风',
-                  description: '管理扬声器、听筒、蓝牙、耳机与麦克风。',
-                );
+                _openAudioPage();
               },
             ),
-            if (_controller.realtimeDegraded)
-              ListTile(
-                leading: const Icon(Icons.refresh_rounded),
-                title: const Text('重新连接房间'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _controller.reconnect();
-                },
-              ),
+            ListTile(
+              leading: const Icon(Icons.sync_rounded),
+              title: const Text('弱网重连与会话恢复'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                _openRecoveryPage();
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.monitor_heart_rounded),
               title: const Text('房间质量诊断'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _openScopedPage(
-                  pageId: 'RM-012',
-                  title: '房间质量诊断',
-                  description: '检查网络、延迟、丢包与音频设备状态。',
-                );
+                _openDiagnosticsPage();
               },
             ),
             ListTile(
@@ -311,15 +420,5 @@ extension _RoomPageSheets on _RoomPageState {
     }
     _allowPop = true;
     Navigator.of(context).removeRoute(roomRoute);
-  }
-
-  static String _roleLabel(RoomRole role) {
-    return switch (role) {
-      RoomRole.owner => '房主',
-      RoomRole.moderator => '房管',
-      RoomRole.platformModerator => '平台管理',
-      RoomRole.speaker => '麦上用户',
-      RoomRole.guest || RoomRole.listener => '房间成员',
-    };
   }
 }
