@@ -136,7 +136,7 @@ jobs:
   emulator:
     name: Sequential AVD-A full then AVD-B critical
     needs: quality
-    if: ${{ always() }}
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 300
 
