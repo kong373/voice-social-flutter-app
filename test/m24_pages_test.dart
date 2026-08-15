@@ -45,16 +45,16 @@ void main() {
     expect(find.text('发送 PK 邀请'), findsOneWidget);
     expect(find.textContaining('不会加入随机匹配'), findsOneWidget);
 
-    const RoomPkBattle completed = RoomPkBattle(
+    final RoomPkBattle completed = RoomPkBattle(
       id: 'battle-widget',
       currentRoomId: 'room-880217',
-      sender: RoomPkSide(
+      sender: const RoomPkSide(
         roomId: 'room-880217',
         roomCode: '880217',
         roomName: '深夜温柔陪伴',
         score: 3680,
       ),
-      receiver: RoomPkSide(
+      receiver: const RoomPkSide(
         roomId: 'room-660318',
         roomCode: '660318',
         roomName: '下班后的松弛时刻',
@@ -69,7 +69,7 @@ void main() {
     await pumpScoped(
       tester,
       dependencies,
-      const RoomPkBattlePage(
+      RoomPkBattlePage(
         roomId: 'room-880217',
         initialBattle: completed,
       ),
