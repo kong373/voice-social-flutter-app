@@ -30,6 +30,13 @@ class BackendRouteCatalog {
     this.unlockMic = '/app-api/micBase/unlockMike',
     this.roomTopic = '/app-api/rooms/getRoomTopics',
     this.updateRoomTopic = '/app-api/rooms/setRoomTopics',
+    this.homeRecommendedRooms = '/app-api/rooms/v1/getRecommendRooms',
+    this.globalSearch = '/app-api/es/getSearchESResult',
+    this.favoriteRooms = '/app-api/user/favorite/getFvoriteRooms',
+    this.starRoom = '/app-api/user/favorite/starRoom',
+    this.ownedRooms = '/app-api/rooms/getRoomSelectByUserId',
+    this.roomById = '/app-api/rooms/getRoomById',
+    this.updateRoomInformation = '/app-api/rooms/updateRoomInformation',
   });
 
   final String sendSmsCode;
@@ -59,4 +66,11 @@ class BackendRouteCatalog {
   final String unlockMic;
   final String roomTopic;
   final String updateRoomTopic;
+  final String homeRecommendedRooms;
+  final String globalSearch;
+  final String favoriteRooms;
+  final String starRoom;
+  final String ownedRooms;
+  final String roomById;
+  final String updateRoomInformation;
 }

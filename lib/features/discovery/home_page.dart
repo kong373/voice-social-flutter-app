@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
-import 'package:voice_social_app/features/discovery/home_room.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
+import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
+import 'package:voice_social_app/features/discovery/presentation/global_search_page.dart';
+import 'package:voice_social_app/features/discovery/presentation/saved_rooms_page.dart';
+import 'package:voice_social_app/features/room/domain/room_models.dart';
+import 'package:voice_social_app/features/room/presentation/create_room_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
-import 'package:voice_social_app/shared/widgets/scoped_placeholder_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -12,46 +18,66 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  DiscoveryRepository? _repositoryInstance;
+  DiscoveryRepository get _repository => _repositoryInstance!;
+  final List<DiscoveryRoom> _rooms = <DiscoveryRoom>[];
   int _rotation = 0;
+  bool _loading = true;
+  String? _error;
 
-  static const List<HomeRoom> _rooms = <HomeRoom>[
-    HomeRoom(
-      id: '880217',
-      title: '深夜温柔陪伴',
-      topic: '最近让你觉得被治愈的一件小事',
-      listeners: 36,
-      occupiedSeats: 3,
-      friendReason: '你关注的晚星正在房间里',
-      isSpeaking: true,
-    ),
-    HomeRoom(
-      id: '660318',
-      title: '下班后的松弛时刻',
-      topic: '聊聊今天最想放下的一件事',
-      listeners: 24,
-      occupiedSeats: 5,
-      friendReason: '与你常听的陪伴主题相似',
-      isSpeaking: true,
-    ),
-    HomeRoom(
-      id: '520906',
-      title: '安静音乐电台',
-      topic: '轻音乐与自由聊天，让夜晚慢下来',
-      listeners: 18,
-      occupiedSeats: 2,
-      friendReason: '2 位好友正在收听',
-      isSpeaking: false,
-    ),
-  ];
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_repositoryInstance != null) {
+      return;
+    }
+    _repositoryInstance = AppDependencyScope.of(context).discoveryRepository;
+    _load();
+  }
 
-  List<HomeRoom> get _rotatedRooms => <HomeRoom>[
-        for (int index = 0; index < _rooms.length; index += 1)
-          _rooms[(index + _rotation) % _rooms.length],
-      ];
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final List<DiscoveryRoom> rooms = await _repository.fetchHomeRooms();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _rooms
+          ..clear()
+          ..addAll(rooms);
+        _rotation = 0;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _error = error is ApiException
+            ? error.message
+            : '房间推荐暂时无法加载，请稍后重试';
+      });
+    }
+  }
+
+  List<DiscoveryRoom> get _rotatedRooms {
+    if (_rooms.isEmpty) {
+      return <DiscoveryRoom>[];
+    }
+    return <DiscoveryRoom>[
+      for (int index = 0; index < _rooms.length; index += 1)
+        _rooms[(index + _rotation) % _rooms.length],
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
-    final List<HomeRoom> rooms = _rotatedRooms;
+    final List<DiscoveryRoom> rooms = _rotatedRooms;
     return DecoratedBox(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -66,64 +92,100 @@ class _HomePageState extends State<HomePage> {
       ),
       child: SafeArea(
         bottom: false,
-        child: CustomScrollView(
-          slivers: <Widget>[
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
-              sliver: SliverToBoxAdapter(child: _buildHeader(context)),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
-              sliver: SliverToBoxAdapter(
-                child: Text(
-                  '此刻适合你的房间',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
+        child: RefreshIndicator(
+          onRefresh: _load,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: <Widget>[
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+                sliver: SliverToBoxAdapter(child: _buildHeader(context)),
               ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
-              sliver: SliverToBoxAdapter(
-                child: _HeroRoomCard(
-                  room: rooms.first,
-                  onEnter: () => _enterRoom(rooms.first),
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(18, 24, 18, 10),
-              sliver: SliverToBoxAdapter(
-                child: Row(
-                  children: <Widget>[
-                    Text(
-                      '正在发生',
-                      style: Theme.of(context).textTheme.titleLarge,
+              if (_loading)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (_error != null)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _HomeState(
+                    icon: Icons.cloud_off_rounded,
+                    title: '房间推荐加载失败',
+                    description: _error!,
+                    actionLabel: '重新加载',
+                    onAction: _load,
+                  ),
+                )
+              else if (rooms.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _HomeState(
+                    icon: Icons.meeting_room_outlined,
+                    title: '暂时没有可推荐房间',
+                    description: '可以创建自己的房间，或稍后下拉刷新。',
+                    actionLabel: '创建房间',
+                    onAction: _openCreateRoom,
+                  ),
+                )
+              else ...<Widget>[
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: Text(
+                      '此刻适合你的房间',
+                      style: Theme.of(context).textTheme.headlineSmall,
                     ),
-                    const Spacer(),
-                    TextButton.icon(
-                      onPressed: () => setState(
-                        () => _rotation = (_rotation + 1) % _rooms.length,
-                      ),
-                      icon: const Icon(Icons.refresh_rounded, size: 18),
-                      label: const Text('换一批'),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: _HeroRoomCard(
+                      room: rooms.first,
+                      onEnter: () => _enterRoom(rooms.first),
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-              sliver: SliverList.separated(
-                itemCount: rooms.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
-                itemBuilder: (BuildContext context, int index) =>
-                    _LiveRoomCard(
-                  room: rooms[index],
-                  onTap: () => _enterRoom(rooms[index]),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(18, 24, 18, 10),
+                  sliver: SliverToBoxAdapter(
+                    child: Row(
+                      children: <Widget>[
+                        Text(
+                          '正在发生',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const Spacer(),
+                        TextButton.icon(
+                          onPressed: rooms.length <= 1
+                              ? null
+                              : () => setState(
+                                    () => _rotation =
+                                        (_rotation + 1) % rooms.length,
+                                  ),
+                          icon: const Icon(Icons.refresh_rounded, size: 18),
+                          label: const Text('换一批'),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ],
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
+                  sliver: SliverList.separated(
+                    itemCount: rooms.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (BuildContext context, int index) =>
+                        _LiveRoomCard(
+                      room: rooms[index],
+                      onTap: () => _enterRoom(rooms[index]),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -137,11 +199,7 @@ class _HomePageState extends State<HomePage> {
             Expanded(
               child: InkWell(
                 borderRadius: BorderRadius.circular(18),
-                onTap: () => _openScopedPage(
-                  pageId: 'DS-002',
-                  title: '全局搜索',
-                  description: '搜索房间、用户或房间号，并查看匹配结果。',
-                ),
+                onTap: _openSearch,
                 child: const IgnorePointer(
                   child: TextField(
                     decoration: InputDecoration(
@@ -155,11 +213,7 @@ class _HomePageState extends State<HomePage> {
             const SizedBox(width: 10),
             IconButton.filledTonal(
               tooltip: '创建房间',
-              onPressed: () => _openScopedPage(
-                pageId: 'RM-001',
-                title: '创建房间',
-                description: '创建普通固定 8 麦房间，配置标题、主题、权限和公告。',
-              ),
+              onPressed: _openCreateRoom,
               icon: const Icon(Icons.add_rounded),
             ),
           ],
@@ -170,11 +224,7 @@ class _HomePageState extends State<HomePage> {
             _HeaderShortcut(
               icon: Icons.bookmark_outline_rounded,
               label: '收藏与我的房间',
-              onTap: () => _openScopedPage(
-                pageId: 'DS-008',
-                title: '收藏与我的房间',
-                description: '查看收藏、创建、管理和最近进入的有效房间。',
-              ),
+              onTap: _openSavedRooms,
             ),
             const Spacer(),
             Text(
@@ -187,28 +237,37 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _enterRoom(HomeRoom room) {
-    Navigator.of(context).push(
+  void _openSearch() {
+    Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomPage(
-          roomId: room.id,
-          title: room.title,
-        ),
+        builder: (BuildContext context) => const GlobalSearchPage(),
       ),
     );
   }
 
-  void _openScopedPage({
-    required String pageId,
-    required String title,
-    required String description,
-  }) {
-    Navigator.of(context).push(
+  void _openCreateRoom() {
+    Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => ScopedPlaceholderPage(
-          pageId: pageId,
-          title: title,
-          description: description,
+        builder: (BuildContext context) => const CreateRoomPage(),
+      ),
+    );
+  }
+
+  void _openSavedRooms() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const SavedRoomsPage(),
+      ),
+    );
+  }
+
+  void _enterRoom(DiscoveryRoom room) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => RoomPage(
+          roomId: room.id,
+          title: room.title,
+          entrySource: RoomEntrySource.home,
         ),
       ),
     );
@@ -249,7 +308,7 @@ class _HeaderShortcut extends StatelessWidget {
 class _HeroRoomCard extends StatelessWidget {
   const _HeroRoomCard({required this.room, required this.onEnter});
 
-  final HomeRoom room;
+  final DiscoveryRoom room;
   final VoidCallback onEnter;
 
   @override
@@ -286,24 +345,30 @@ class _HeroRoomCard extends StatelessWidget {
                   color: AppColors.success.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(999),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     Icon(
-                      Icons.graphic_eq_rounded,
+                      room.isSpeaking
+                          ? Icons.graphic_eq_rounded
+                          : Icons.headphones_rounded,
                       size: 16,
                       color: AppColors.success,
                     ),
-                    SizedBox(width: 5),
+                    const SizedBox(width: 5),
                     Text(
-                      '正在热聊',
-                      style: TextStyle(color: AppColors.success),
+                      room.isSpeaking ? '正在热聊' : '正在收听',
+                      style: const TextStyle(color: AppColors.success),
                     ),
                   ],
                 ),
               ),
               const Spacer(),
-              Text('${room.listeners} 人在线'),
+              if (room.isLocked) ...<Widget>[
+                const Icon(Icons.lock_outline_rounded, size: 17),
+                const SizedBox(width: 6),
+              ],
+              Text('${room.onlineCount} 人在线'),
             ],
           ),
           const SizedBox(height: 18),
@@ -328,7 +393,7 @@ class _HeroRoomCard extends StatelessWidget {
               const SizedBox(width: 7),
               Expanded(
                 child: Text(
-                  room.friendReason,
+                  room.relationReason ?? '根据当前活跃度推荐',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -344,7 +409,7 @@ class _HeroRoomCard extends StatelessWidget {
 class _LiveRoomCard extends StatelessWidget {
   const _LiveRoomCard({required this.room, required this.onTap});
 
-  final HomeRoom room;
+  final DiscoveryRoom room;
   final VoidCallback onTap;
 
   @override
@@ -382,9 +447,17 @@ class _LiveRoomCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      room.title,
-                      style: Theme.of(context).textTheme.titleMedium,
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            room.title,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        if (room.isLocked)
+                          const Icon(Icons.lock_outline_rounded, size: 16),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -395,7 +468,7 @@ class _LiveRoomCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 7),
                     Text(
-                      '${room.occupiedSeats}/8 麦 · ${room.listeners} 人在线 · ${room.friendReason}',
+                      '${room.occupiedSeats}/8 麦 · ${room.onlineCount} 人在线 · ${room.relationReason ?? '实时推荐'}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall,
@@ -419,6 +492,11 @@ class _SeatSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final int safeOccupied = occupiedSeats < 0
+        ? 0
+        : occupiedSeats > 8
+            ? 8
+            : occupiedSeats;
     return Row(
       children: <Widget>[
         for (int index = 0; index < 8; index += 1)
@@ -429,29 +507,70 @@ class _SeatSummary extends StatelessWidget {
               height: 24,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: index < occupiedSeats
+                color: index < safeOccupied
                     ? AppColors.primary.withValues(alpha: 0.28)
                     : Colors.white.withValues(alpha: 0.07),
                 border: Border.all(
-                  color: index < occupiedSeats
+                  color: index < safeOccupied
                       ? AppColors.primary
                       : Colors.white.withValues(alpha: 0.12),
                 ),
               ),
               child: Icon(
-                index < occupiedSeats
+                index < safeOccupied
                     ? Icons.person_rounded
                     : Icons.add_rounded,
                 size: 13,
-                color: index < occupiedSeats
+                color: index < safeOccupied
                     ? AppColors.textPrimary
                     : AppColors.textSecondary,
               ),
             ),
           ),
         const Spacer(),
-        Text('$occupiedSeats/8 麦'),
+        Text('$safeOccupied/8 麦'),
       ],
+    );
+  }
+}
+
+class _HomeState extends StatelessWidget {
+  const _HomeState({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 48, color: AppColors.textSecondary),
+            const SizedBox(height: 18),
+            Text(title, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text(
+              description,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 20),
+            FilledButton.tonal(onPressed: onAction, child: Text(actionLabel)),
+          ],
+        ),
+      ),
     );
   }
 }
