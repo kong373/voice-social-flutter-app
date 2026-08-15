@@ -145,19 +145,26 @@ void main() {
     expect(find.text('Apple IAP'), findsOneWidget);
     expect(find.text('微信支付'), findsNothing);
 
-    RechargeOrder order = await dependencies.commerceCatalogRepository
-        .createRechargeOrder(
-      account: '13800138000',
-      product: product,
-      channel: PaymentChannelType.wechat,
-      platform: ClientStorePlatform.android,
-      youthModeEnabled: false,
-    );
-    order = await dependencies.commerceCatalogRepository.invokePayment(order);
+    final RechargeOrder? order =
+        await tester.runAsync<RechargeOrder>(() async {
+      RechargeOrder value = await dependencies.commerceCatalogRepository
+          .createRechargeOrder(
+        account: '13800138000',
+        product: product,
+        channel: PaymentChannelType.wechat,
+        platform: ClientStorePlatform.android,
+        youthModeEnabled: false,
+      );
+      value =
+          await dependencies.commerceCatalogRepository.invokePayment(value);
+      return value;
+    });
+    expect(order, isNotNull);
+
     await pumpScoped(
       tester,
       dependencies,
-      PaymentResultPage(order: order),
+      PaymentResultPage(order: order!),
     );
     expect(find.text('支付返回与结果'), findsOneWidget);
     expect(find.text('服务端确认中'), findsOneWidget);
@@ -197,13 +204,19 @@ void main() {
     expect(find.byTooltip('系统与互动通知'), findsOneWidget);
     expect(find.byTooltip('通知权限与消息恢复'), findsOneWidget);
 
-    final ConversationSummary conversation =
-        (await dependencies.messageRepository.fetchConversations())
-            .firstWhere((ConversationSummary item) => item.available);
+    final ConversationSummary? conversation =
+        await tester.runAsync<ConversationSummary>(() async {
+      final List<ConversationSummary> conversations =
+          await dependencies.messageRepository.fetchConversations();
+      return conversations
+          .firstWhere((ConversationSummary item) => item.available);
+    });
+    expect(conversation, isNotNull);
+
     await pumpScoped(
       tester,
       dependencies,
-      PrivateChatPage(conversation: conversation),
+      PrivateChatPage(conversation: conversation!),
     );
     expect(find.text('今晚房间的话题很温柔。'), findsOneWidget);
     expect(find.byTooltip('发送消息'), findsOneWidget);
