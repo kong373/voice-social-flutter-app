@@ -98,6 +98,7 @@ void main() {
         ),
       ),
     );
+    await tester.pump(const Duration(milliseconds: 180));
     await tester.pumpAndSettle();
 
     expect(find.text('房间链接无效'), findsOneWidget);
