@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -13,6 +15,10 @@ import 'package:voice_social_app/debug/qa_console/qa_fixtures.dart';
 const String qaAvdId = String.fromEnvironment(
   'QA_AVD_ID',
   defaultValue: 'AVD-A',
+);
+
+const bool qaUseFrameworkScreenshots = bool.fromEnvironment(
+  'QA_FRAMEWORK_SCREENSHOTS',
 );
 
 Future<AppDependencies> pumpQaPage(
@@ -144,6 +150,43 @@ Future<void> captureQaScreenshot(
   IntegrationTestWidgetsFlutterBinding binding,
   String name,
 ) async {
+  final String safeName = name.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
+
+  // On API 24 the integration_test Android plugin can wait indefinitely for
+  // FlutterImageView.acquireLatestImageViewFrame(). Capture the Flutter layer
+  // directly for flow evidence on that compatibility AVD. ADB snapshots still
+  // retain the system bars, keyboard, permission dialogs, and other overlays.
+  if (qaUseFrameworkScreenshots) {
+    await tester.pump();
+    final RenderView renderView = tester.binding.renderViews.single;
+    final OffsetLayer layer = renderView.debugLayer! as OffsetLayer;
+    // RenderView's root TransformLayer already applies devicePixelRatio. Its
+    // image bounds therefore need to be physical pixels; logical paintBounds
+    // would crop a DPR>1 device to the upper-left portion of the frame.
+    final Size physicalSize = renderView.configuration.toPhysicalSize(
+      renderView.size,
+    );
+    final ui.Image image = await layer.toImage(
+      Offset.zero & physicalSize,
+      pixelRatio: 1,
+    );
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    if (byteData == null) {
+      throw StateError('Could not encode framework screenshot $safeName');
+    }
+    binding.reportData ??= <String, dynamic>{};
+    binding.reportData!['screenshots'] ??= <dynamic>[];
+    (binding.reportData!['screenshots']! as List<dynamic>)
+        .add(<String, dynamic>{
+          'screenshotName': safeName,
+          'bytes': byteData.buffer
+              .asUint8List(byteData.offsetInBytes, byteData.lengthInBytes)
+              .toList(),
+        });
+    return;
+  }
+
   // Local Linux widget execution validates every business assertion but has
   // no Android screenshot platform channel. Real evidence is still mandatory
   // because Android runs take the branch below in flutter drive.
@@ -161,9 +204,7 @@ Future<void> captureQaScreenshot(
   // Android needs a rendered frame after swapping FlutterSurfaceView for
   // FlutterImageView, otherwise the captured frame can be blank or stale.
   await tester.pump();
-  await binding.takeScreenshot(
-    name.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_'),
-  );
+  await binding.takeScreenshot(safeName);
 }
 
 const List<String> qaRetiredFeatureTokens = <String>[

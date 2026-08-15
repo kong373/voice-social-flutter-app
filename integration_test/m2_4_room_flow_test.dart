@@ -563,7 +563,12 @@ void main() {
         find.widgetWithText(TextFormField, '公告内容'),
         updatedContent,
       );
-      await tester.tap(find.text('保存公告'));
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      final Finder saveAnnouncement = find.text('保存公告');
+      await tester.ensureVisible(saveAnnouncement);
+      await tester.pumpAndSettle();
+      await tester.tap(saveAnnouncement);
       await pumpUntilVisible(tester, find.text('实时公屏'));
       await tester.pumpAndSettle();
 

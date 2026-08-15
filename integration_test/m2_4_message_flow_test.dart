@@ -11,6 +11,8 @@ import 'package:voice_social_app/features/social/presentation/social_pages.dart'
 
 import 'm2_4_test_support.dart';
 
+const bool _qaCriticalOnly = bool.fromEnvironment('QA_CRITICAL_ONLY');
+
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -143,6 +145,7 @@ void main() {
         'FLOW-010-social-relations-$qaAvdId',
       );
     },
+    skip: _qaCriticalOnly,
   );
 
   testWidgets(

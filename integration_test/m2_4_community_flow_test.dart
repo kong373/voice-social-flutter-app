@@ -7,6 +7,8 @@ import 'package:voice_social_app/features/discovery/dynamic/presentation/dynamic
 
 import 'm2_4_test_support.dart';
 
+const bool _qaCriticalOnly = bool.fromEnvironment('QA_CRITICAL_ONLY');
+
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -31,7 +33,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(PublishDynamicPage), findsOneWidget);
       expect(find.text('发布动态'), findsWidgets);
-      expect(find.text('图片对象存储尚未接入，本阶段只发布真实文字内容，不生成占位图片。'), findsOneWidget);
+      final Finder imageStorageBoundary = find.text(
+        '图片对象存储尚未接入，本阶段只发布真实文字内容，不生成占位图片。',
+      );
+      await tester.scrollUntilVisible(
+        imageStorageBoundary,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(imageStorageBoundary, findsOneWidget);
 
       // PublishDynamicPage has one form-owned body editor; its two optional
       // metadata editors are plain TextFields. Assert the visible hint as a
@@ -149,6 +159,7 @@ void main() {
       expect(_postCard(postContent), findsNothing);
       expect(find.byType(DynamicDetailPage), findsNothing);
     },
+    skip: _qaCriticalOnly,
   );
 
   testWidgets(

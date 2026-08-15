@@ -935,12 +935,22 @@ run_baseline_black_box() {
 
 qa_dart_defines() {
   local qa_console_enabled="${1:-false}"
+  local critical_only="false"
+  local framework_screenshots="false"
+  if [[ "$QA_SCOPE_VALUE" == "critical" ]]; then
+    critical_only="true"
+  fi
+  if (( API_LEVEL < 26 )); then
+    framework_screenshots="true"
+  fi
   printf '%s\n' \
     "--dart-define=BACKEND_MODE=mock" \
     "--dart-define=ENABLE_QA_CONSOLE=$qa_console_enabled" \
     "--dart-define=GIT_COMMIT=$GIT_SHA_VALUE" \
     "--dart-define=PACKAGE_VERSION=$PACKAGE_VERSION_VALUE" \
     "--dart-define=QA_AVD_ID=$AVD_ID" \
+    "--dart-define=QA_CRITICAL_ONLY=$critical_only" \
+    "--dart-define=QA_FRAMEWORK_SCREENSHOTS=$framework_screenshots" \
     "--dart-define=QA_NETWORK_SCENARIO=offline"
 }
 
@@ -1081,6 +1091,41 @@ run_qa_launch_smoke() {
   capture_snapshot "qa-console-${AVD_ID}"
   stop_screen_recording
 
+  local ui_dump="$DUMP_DIR/qa-console-${AVD_ID}-ui.xml"
+  if [[ -s "$ui_dump" ]] && \
+      grep -Eq "System UI (isn't|is not) responding|系统界面.*无响应" "$ui_dump"; then
+    local anr_ui_dump="$DUMP_DIR/qa-console-systemui-anr-${AVD_ID}-ui.xml"
+    local anr_screenshot="$SCREENSHOT_DIR/qa-console-systemui-anr-${AVD_ID}.png"
+    cp "$ui_dump" "$anr_ui_dump"
+    if [[ -f "$SCREENSHOT_DIR/qa-console-${AVD_ID}.png" ]]; then
+      cp "$SCREENSHOT_DIR/qa-console-${AVD_ID}.png" "$anr_screenshot"
+    fi
+    record_defect \
+      "P2" "environment" "Android System UI ANR dialog obscured the QA launch" \
+      "Dismiss the system dialog, wait for System UI to stabilize, and relaunch the same QA APK." \
+      "$anr_ui_dump"
+
+    # AOSP's ANR dialog is non-cancelable, so KEYCODE_BACK cannot reliably
+    # dismiss it. Select the stable aerr_wait control from its captured bounds
+    # instead of hard-coding coordinates for one emulator density.
+    local wait_node=""
+    wait_node="$(
+      grep -oE \
+        'resource-id="android:id/aerr_wait"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' \
+        "$anr_ui_dump" | head -n 1 || true
+    )"
+    if [[ "$wait_node" =~ bounds=\"\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]\" ]]; then
+      local wait_x=$(( (BASH_REMATCH[1] + BASH_REMATCH[3]) / 2 ))
+      local wait_y=$(( (BASH_REMATCH[2] + BASH_REMATCH[4]) / 2 ))
+      adb_device shell input tap "$wait_x" "$wait_y" >/dev/null 2>&1 || true
+    fi
+    sleep 6
+    adb_device shell am force-stop "$QA_PACKAGE" >/dev/null 2>&1 || true
+    launch_apk "$QA_APK" "$QA_PACKAGE" "$launch_log" || true
+    sleep 4
+    capture_snapshot "qa-console-${AVD_ID}"
+  fi
+
   if [[ -n "$activity" ]]; then
     adb_device shell am force-stop "$QA_PACKAGE" >/dev/null 2>&1 || true
     adb_device shell am start -W -n "${QA_PACKAGE}/${activity}" \
@@ -1099,9 +1144,17 @@ run_qa_launch_smoke() {
     printf 'initial_meminfo_end\n'
   } >>"$PERFORMANCE_FILE" 2>&1
 
-  cold_ms="$(awk -F: '/TotalTime/ {gsub(/[[:space:]]/, "", $2); value=$2} END {print value}' \
+  cold_ms="$(awk -F: '
+    /TotalTime/ {gsub(/[[:space:]]/, "", $2); total=$2}
+    /WaitTime/ {gsub(/[[:space:]]/, "", $2); wait=$2}
+    END {print total != "" ? total : wait}
+  ' \
     "$cold_log" 2>/dev/null || true)"
-  warm_ms="$(awk -F: '/TotalTime/ {gsub(/[[:space:]]/, "", $2); value=$2} END {print value}' \
+  warm_ms="$(awk -F: '
+    /TotalTime/ {gsub(/[[:space:]]/, "", $2); total=$2}
+    /WaitTime/ {gsub(/[[:space:]]/, "", $2); wait=$2}
+    END {print total != "" ? total : wait}
+  ' \
     "$warm_log" 2>/dev/null || true)"
   if [[ "$cold_ms" =~ ^[0-9]+$ && "$warm_ms" =~ ^[0-9]+$ && \
         "$cold_ms" -le 5000 && "$warm_ms" -le 2500 ]]; then
@@ -1123,7 +1176,6 @@ run_qa_launch_smoke() {
       "Outliers require investigation and runner context."
   fi
 
-  local ui_dump="$DUMP_DIR/qa-console-${AVD_ID}-ui.xml"
   verify_qa_console_metrics "$ui_dump"
   if [[ -f "$ui_dump" ]] && grep -q 'M2.4 QA Console' "$ui_dump"; then
     record_case \
@@ -1158,8 +1210,30 @@ run_release_qa_gate() {
   local release_package ui_dump
   mapfile -t defines < <(qa_dart_defines true)
 
+  # A preceding debug build registers the dev-only integration_test plugin.
+  # Regenerate the Android registrant for release so the dev plugin is not
+  # referenced from the release Java classpath.
+  if ! run_logged "$LOG_DIR/release-qa-gate-clean.log" flutter clean; then
+    record_defect \
+      "P0" "qa-security" "Release QA gate cleanup failed" \
+      "Run flutter clean before the release-only QA gate build." \
+      "$LOG_DIR/release-qa-gate-clean.log"
+    return 0
+  fi
+  if ! run_logged "$LOG_DIR/release-qa-gate-pub-get.log" \
+      flutter pub get --enforce-lockfile; then
+    record_defect \
+      "P0" "qa-security" "Release QA gate dependency restore failed" \
+      "Restore the locked dependency graph after flutter clean." \
+      "$LOG_DIR/release-qa-gate-pub-get.log"
+    return 0
+  fi
+
+  # Do not pass --no-pub here. Flutter's release build must regenerate the
+  # platform registrant in release mode so the dev-only integration_test
+  # plugin is removed from the Java source before javac runs.
   if ! run_logged "$build_log" flutter build apk \
-      --release --no-pub "${defines[@]}"; then
+      --release "${defines[@]}"; then
     record_defect \
       "P0" "qa-security" "Release QA-console gate APK failed to build" \
       "Build release with ENABLE_QA_CONSOLE=true to prove kDebugMode keeps it unreachable." \
@@ -1235,6 +1309,7 @@ run_integration_file() {
   local log_file
   local status
   local -a defines=()
+  local -a lifecycle_args=()
   test_name="$(basename "$test_file" .dart)"
   test_id="M24-INT-${test_name#m2_4_}"
   log_file="$LOG_DIR/${test_name}.log"
@@ -1246,20 +1321,25 @@ run_integration_file() {
 
   if [[ "$test_name" == "m2_4_offline_emulator_test" ]]; then
     start_screen_recording "${test_name}-${AVD_ID}"
+    lifecycle_args+=(--keep-app-running)
   fi
 
   set +e
+  # Let timeout own a separate process group and write directly to the log.
+  # Using --foreground with a `| tee` pipeline can leave Gradle/Dart children
+  # holding the pipe open after the Flutter parent is terminated.
   QA_SCREENSHOT_DIR="$SCREENSHOT_DIR" \
-    timeout --foreground --signal=TERM --kill-after=30s "$timeout_value" \
+    timeout --signal=TERM --kill-after=30s "$timeout_value" \
     flutter drive \
       --driver=test_driver/integration_test.dart \
       --target="$test_file" \
       --device-id="$DEVICE_ID" \
       --debug \
       --no-pub \
+      "${lifecycle_args[@]}" \
       "${defines[@]}" \
-      2>&1 | tee "$log_file"
-  status=${PIPESTATUS[0]}
+      >"$log_file" 2>&1
+  status=$?
   set -e
 
   if [[ "$test_name" == "m2_4_offline_emulator_test" ]]; then
@@ -1316,8 +1396,14 @@ run_session_restore_smoke() {
     INTEGRATION_DEFECTS[session_restore]="$LAST_DEFECT_ID"
     return 0
   fi
-  sleep 5
-  capture_snapshot "FLOW-003-session-restore-${AVD_ID}"
+  local attempt
+  for attempt in {1..10}; do
+    sleep 2
+    capture_snapshot "FLOW-003-session-restore-${AVD_ID}"
+    if [[ -s "$ui_dump" ]] && grep -q '此刻适合你的房间' "$ui_dump"; then
+      break
+    fi
+  done
   if [[ -s "$ui_dump" ]] && grep -q '此刻适合你的房间' "$ui_dump" && \
       ! grep -q 'M2.4 QA Console' "$ui_dump"; then
     INTEGRATION_RESULTS[session_restore]="PASS"
@@ -2065,8 +2151,11 @@ main() {
   run_baseline_black_box
   build_qa_apk
   run_qa_launch_smoke
-  run_release_qa_gate
   run_integration_suite
+  # The release gate regenerates Android plugin tooling without dev-only
+  # integration_test. Run it only after every flutter drive/page shard so the
+  # release registrant cannot contaminate the debug integration environment.
+  run_release_qa_gate
   record_flow_inventory
   run_monkey
   run_offline_soak
