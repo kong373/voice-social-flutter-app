@@ -11,6 +11,9 @@ import 'package:voice_social_app/features/account/data/backend_auth_repository.d
 import 'package:voice_social_app/features/account/data/device_identity_provider.dart';
 import 'package:voice_social_app/features/account/data/mock_auth_repository.dart';
 import 'package:voice_social_app/features/account/domain/auth_repository.dart';
+import 'package:voice_social_app/features/commerce/catalog/data/backend_commerce_catalog_repository.dart';
+import 'package:voice_social_app/features/commerce/catalog/data/mock_commerce_catalog_repository.dart';
+import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_repository.dart';
 import 'package:voice_social_app/features/commerce/data/backend_commerce_repository.dart';
 import 'package:voice_social_app/features/commerce/data/mock_commerce_repository.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
@@ -23,6 +26,9 @@ import 'package:voice_social_app/features/discovery/domain/discovery_repository.
 import 'package:voice_social_app/features/discovery/dynamic/data/backend_dynamic_repository.dart';
 import 'package:voice_social_app/features/discovery/dynamic/data/mock_dynamic_repository.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_repository.dart';
+import 'package:voice_social_app/features/message/data/backend_message_repository.dart';
+import 'package:voice_social_app/features/message/data/mock_message_repository.dart';
+import 'package:voice_social_app/features/message/domain/message_repository.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/data/backend_room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_room_operations_repository.dart';
@@ -36,6 +42,9 @@ import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_audio_service.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
+import 'package:voice_social_app/features/room/pk/data/backend_room_pk_repository.dart';
+import 'package:voice_social_app/features/room/pk/data/mock_room_pk_repository.dart';
+import 'package:voice_social_app/features/room/pk/domain/room_pk_repository.dart';
 import 'package:voice_social_app/features/social/data/backend_social_repository.dart';
 import 'package:voice_social_app/features/social/data/mock_social_repository.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
@@ -51,9 +60,12 @@ class AppDependencies {
     required this.socialRepository,
     required this.communityRepository,
     required this.commerceRepository,
+    required this.commerceCatalogRepository,
+    required this.messageRepository,
     required this.roomRepository,
     required this.roomOperationsRepository,
     required this.roomLifecycleRepository,
+    required this.roomPkRepository,
     required this.rtcAdapter,
     required this.realtimeGateway,
     required this.roomAudioService,
@@ -129,6 +141,21 @@ class AppDependencies {
     final CommerceRepository commerceRepository = environment.isLive
         ? BackendCommerceRepository(apiClient: apiClient, routes: routes)
         : MockCommerceRepository();
+    final CommerceCatalogRepository commerceCatalogRepository =
+        environment.isLive
+            ? BackendCommerceCatalogRepository(
+                apiClient: apiClient,
+                routes: routes,
+              )
+            : MockCommerceCatalogRepository();
+    final MessageRepository messageRepository = environment.isLive
+        ? BackendMessageRepository(
+            apiClient: apiClient,
+            routes: routes,
+            currentUserIdProvider: () =>
+                sessionManager.session?.userId ?? 0,
+          )
+        : MockMessageRepository();
     final RoomRepository roomRepository = environment.isLive
         ? BackendRoomRepository(apiClient: apiClient, routes: routes)
         : MockRoomRepository();
@@ -138,6 +165,9 @@ class AppDependencies {
     final RoomLifecycleRepository roomLifecycleRepository = environment.isLive
         ? BackendRoomLifecycleRepository(apiClient: apiClient, routes: routes)
         : MockRoomLifecycleRepository();
+    final RoomPkRepository roomPkRepository = environment.isLive
+        ? BackendRoomPkRepository(apiClient: apiClient, routes: routes)
+        : MockRoomPkRepository();
     final RtcAdapter rtcAdapter =
         environment.isLive ? const UnavailableRtcAdapter() : MockRtcAdapter();
     final RoomRealtimeGateway realtimeGateway = environment.isLive
@@ -165,9 +195,12 @@ class AppDependencies {
       socialRepository: socialRepository,
       communityRepository: communityRepository,
       commerceRepository: commerceRepository,
+      commerceCatalogRepository: commerceCatalogRepository,
+      messageRepository: messageRepository,
       roomRepository: roomRepository,
       roomOperationsRepository: roomOperationsRepository,
       roomLifecycleRepository: roomLifecycleRepository,
+      roomPkRepository: roomPkRepository,
       rtcAdapter: rtcAdapter,
       realtimeGateway: realtimeGateway,
       roomAudioService: roomAudioService,
@@ -183,9 +216,12 @@ class AppDependencies {
   final SocialRepository socialRepository;
   final CommunityRepository communityRepository;
   final CommerceRepository commerceRepository;
+  final CommerceCatalogRepository commerceCatalogRepository;
+  final MessageRepository messageRepository;
   final RoomRepository roomRepository;
   final RoomOperationsRepository roomOperationsRepository;
   final RoomLifecycleRepository roomLifecycleRepository;
+  final RoomPkRepository roomPkRepository;
   final RtcAdapter rtcAdapter;
   final RoomRealtimeGateway realtimeGateway;
   final RoomAudioService roomAudioService;

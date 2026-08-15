@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 
+export 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
+export 'package:voice_social_app/features/room/pk/presentation/room_pk_pages.dart';
+
 class ScopedPlaceholderPage extends StatelessWidget {
   const ScopedPlaceholderPage({
     required this.pageId,

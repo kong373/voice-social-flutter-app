@@ -12,15 +12,32 @@ extension _RoomPageSheets on _RoomPageState {
       return;
     }
 
+    RoomPkBattle? activePk;
+    final RoomSnapshot? snapshot = _controller.snapshot;
+    if (snapshot != null) {
+      try {
+        activePk = await AppDependencyScope.of(context)
+            .roomPkRepository
+            .fetchActiveBattle(roomId: snapshot.roomId);
+      } catch (_) {
+        // Leaving the room must remain possible even if the optional PK status
+        // check is temporarily unavailable.
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+
+    final String content = activePk?.isActive == true
+        ? '当前房间正在 PK。离开可能被服务端视为主动结束或认输；如果你在麦上，也会同时下麦并结束本次房间会话。'
+        : _controller.isOnMic
+            ? '离开后将同时下麦，并结束本次房间会话。'
+            : '确认结束本次收听并返回首页？';
     final bool? shouldLeave = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         title: const Text('离开房间？'),
-        content: Text(
-          _controller.isOnMic
-              ? '离开后将同时下麦，并结束本次房间会话。'
-              : '确认结束本次收听并返回首页？',
-        ),
+        content: Text(content),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -292,6 +309,21 @@ extension _RoomPageSheets on _RoomPageState {
     );
   }
 
+  void _openPkPage() {
+    final RoomSnapshot? snapshot = _controller.snapshot;
+    if (snapshot == null || !_controller.allows(RoomCapability.startPk)) {
+      return;
+    }
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => RoomPkPreparationPage(
+          roomId: snapshot.roomId,
+          roomTitle: snapshot.title,
+        ),
+      ),
+    );
+  }
+
   Future<void> _showGiftSheet() async {
     final List<GiftTarget> targets = _controller.seats
         .where(
@@ -308,6 +340,8 @@ extension _RoomPageSheets on _RoomPageState {
           ),
         )
         .toList(growable: false);
+    final String account =
+        AppDependencyScope.of(context).sessionManager.session?.mobile ?? '';
 
     final bool? sent = await showModalBottomSheet<bool>(
       context: context,
@@ -316,6 +350,7 @@ extension _RoomPageSheets on _RoomPageState {
       backgroundColor: AppColors.surface,
       builder: (BuildContext context) => GiftSheet(
         balance: _controller.giftBalance,
+        account: account,
         targets: targets,
         onSend: (GiftSendRequest request) => _controller.sendGift(
           giftId: request.gift.id,
@@ -324,6 +359,10 @@ extension _RoomPageSheets on _RoomPageState {
           targetName: request.target.name,
           quantity: request.quantity,
         ),
+        onRechargeReturn: () async {
+          await _controller.reconnect();
+          return _controller.giftBalance;
+        },
       ),
     );
     if (!mounted || sent != true) {
@@ -351,6 +390,16 @@ extension _RoomPageSheets on _RoomPageState {
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   _openManagementPage();
+                },
+              ),
+            if (_controller.allows(RoomCapability.startPk))
+              ListTile(
+                leading: const Icon(Icons.sports_kabaddi_rounded),
+                title: const Text('房间 PK'),
+                subtitle: const Text('邀请、准备、对战比分和服务端结算'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _openPkPage();
                 },
               ),
             if (_controller.isOnMic)

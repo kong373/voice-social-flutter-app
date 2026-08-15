@@ -73,6 +73,24 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
                   onTap: () => _open(const WalletPage()),
                 ),
                 _CommerceEntry(
+                  icon: Icons.add_card_rounded,
+                  title: '充值商品目录',
+                  subtitle: '选择充值档位、平台支付方式并查询服务端结果',
+                  onTap: () => _open(const RechargeCatalogPage()),
+                ),
+                _CommerceEntry(
+                  icon: Icons.redeem_outlined,
+                  title: '礼物目录与赠送面板',
+                  subtitle: '浏览普通礼物和背包；实际赠送仍在语音房内完成',
+                  onTap: () => _open(const GiftCatalogPage()),
+                ),
+                _CommerceEntry(
+                  icon: Icons.workspace_premium_outlined,
+                  title: '会员装扮与背包',
+                  subtitle: '会员、装扮购买与穿戴、背包资产',
+                  onTap: () => _open(const MembershipBackpackPage()),
+                ),
+                _CommerceEntry(
                   icon: Icons.shopping_bag_outlined,
                   title: '充值订单',
                   subtitle: '查询订单并以服务端结果为准进行补单核验',
@@ -98,7 +116,7 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
                 ),
                 const SizedBox(height: 18),
                 const _CommerceInfoBanner(
-                  text: '微信支付、支付宝和 Apple IAP 尚在申请。本阶段不调起第三方支付，也不会伪造支付成功；订单查询、退款、收益和提现业务可独立开发。',
+                  text: '微信支付、支付宝和 Apple IAP 尚在申请。Android 只保留微信与支付宝，iOS 只保留 Apple IAP；支付结果不由客户端自行判定。',
                 ),
               ],
             ),
