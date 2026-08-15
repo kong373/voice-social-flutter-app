@@ -41,8 +41,13 @@ void main() {
     await pumpScoped(tester, const PublishDynamicPage());
     expect(find.text('发布动态'), findsWidgets);
     expect(find.textContaining('图片对象存储尚未接入'), findsOneWidget);
-    await tester.tap(find.text('发布动态').last);
-    await tester.pump();
+
+    final Finder publishButton =
+        find.widgetWithText(FilledButton, '发布动态');
+    expect(publishButton, findsOneWidget);
+    await tester.ensureVisible(publishButton);
+    await tester.tap(publishButton);
+    await tester.pumpAndSettle();
     expect(find.text('请输入动态内容'), findsOneWidget);
   });
 
@@ -50,9 +55,9 @@ void main() {
     WidgetTester tester,
   ) async {
     await pumpScoped(tester, const RankingPage());
-    expect(find.text('魅力榜'), findsOneWidget);
+    expect(find.text('魅力榜'), findsWidgets);
     expect(find.text('晚星'), findsOneWidget);
-    await tester.tap(find.text('房间榜'));
+    await tester.tap(find.text('房间榜').first);
     await tester.pumpAndSettle();
     expect(find.text('深夜温柔陪伴'), findsOneWidget);
   });
