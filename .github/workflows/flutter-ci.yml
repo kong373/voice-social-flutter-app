@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          flutter test --coverage 2>&1 | tee test.log
+          flutter test --coverage --concurrency=1 --timeout=60s --reporter=expanded 2>&1 | tee test.log
 
       - name: Upload test diagnostics
         if: always()
