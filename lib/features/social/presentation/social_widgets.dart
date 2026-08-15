@@ -19,11 +19,21 @@ class _ProfileHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(profile.user.name, style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                profile.user.name,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 4),
-              Text('用户号 ${profile.account}', style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                '用户号 ${profile.account}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
               const SizedBox(height: 5),
-              Text(profile.user.signature.isEmpty ? '还没有填写个性签名' : profile.user.signature),
+              Text(
+                profile.user.signature.isEmpty
+                    ? '还没有填写个性签名'
+                    : profile.user.signature,
+              ),
             ],
           ),
         ),
@@ -77,22 +87,26 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Text(title, style: Theme.of(context).textTheme.titleMedium),
-          ),
-          const SizedBox(height: 4),
-          ...children,
-        ],
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(20),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                title,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            const SizedBox(height: 4),
+            ...children,
+          ],
+        ),
       ),
     );
   }
