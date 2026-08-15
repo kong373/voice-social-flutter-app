@@ -196,17 +196,28 @@ class _MessageCenterPageState extends State<MessageCenterPage>
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                trailing: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: <Widget>[
-                                    Text(
-                                      _formatMessageTime(conversation.updatedAt),
-                                      style: Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                    const SizedBox(height: 5),
-                                    _UnreadBadge(count: conversation.unreadCount),
-                                  ],
+                                trailing: SizedBox(
+                                  width: 54,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: <Widget>[
+                                      Text(
+                                        _formatMessageTime(
+                                          conversation.updatedAt,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style:
+                                            Theme.of(context).textTheme.bodySmall,
+                                      ),
+                                      const SizedBox(height: 5),
+                                      _UnreadBadge(
+                                        count: conversation.unreadCount,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                                 onTap: () => _openConversation(conversation),
                               ),
