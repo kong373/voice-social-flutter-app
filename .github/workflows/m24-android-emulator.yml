@@ -21,7 +21,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: m24-android-emulator-${{ github.event.pull_request.head.ref || github.ref_name }}
+  # v2 isolates corrected runs from legacy runs whose always() job ignored cancellation.
+  group: m24-android-emulator-v2-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 env:
