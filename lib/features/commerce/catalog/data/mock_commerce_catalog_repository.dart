@@ -5,58 +5,61 @@ import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catal
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_repository.dart';
 
 class MockCommerceCatalogRepository implements CommerceCatalogRepository {
-  MockCommerceCatalogRepository()
-      : _decorations = <DecorationItem>[
-          const DecorationItem(
-            id: 'decor-frame-starlight',
-            name: '星光头像框',
-            kind: DecorationKind.avatarFrame,
-            priceGiftCoins: 520,
-            owned: true,
-            equipped: true,
-          ),
-          const DecorationItem(
-            id: 'decor-entrance-night',
-            name: '夜色进场装扮',
-            kind: DecorationKind.entrance,
-            priceGiftCoins: 880,
-            owned: false,
-            equipped: false,
-          ),
-          const DecorationItem(
-            id: 'decor-wave-soft',
-            name: '温柔声波',
-            kind: DecorationKind.voiceWave,
-            priceGiftCoins: 360,
-            owned: true,
-            equipped: false,
-          ),
-        ],
-        _backpack = <BackpackGiftItem>[
-          BackpackGiftItem(
-            id: 'pack-rose',
-            gift: const GiftCatalogItem(
-              id: 101,
-              name: '玫瑰',
-              price: 10,
-              category: GiftCatalogCategory.companionship,
-            ),
-            quantity: 12,
-            expiresAt: DateTime.now().add(const Duration(days: 20)),
-          ),
-          BackpackGiftItem(
-            id: 'pack-star',
-            gift: const GiftCatalogItem(
-              id: 102,
-              name: '星光',
-              price: 66,
-              category: GiftCatalogCategory.popular,
-            ),
-            quantity: 3,
-          ),
-        ];
+  MockCommerceCatalogRepository({
+    void Function(RechargeOrder order)? onRechargeOrderChanged,
+  }) : _onRechargeOrderChanged = onRechargeOrderChanged,
+       _decorations = <DecorationItem>[
+         const DecorationItem(
+           id: 'decor-frame-starlight',
+           name: '星光头像框',
+           kind: DecorationKind.avatarFrame,
+           priceGiftCoins: 520,
+           owned: true,
+           equipped: true,
+         ),
+         const DecorationItem(
+           id: 'decor-entrance-night',
+           name: '夜色进场装扮',
+           kind: DecorationKind.entrance,
+           priceGiftCoins: 880,
+           owned: false,
+           equipped: false,
+         ),
+         const DecorationItem(
+           id: 'decor-wave-soft',
+           name: '温柔声波',
+           kind: DecorationKind.voiceWave,
+           priceGiftCoins: 360,
+           owned: true,
+           equipped: false,
+         ),
+       ],
+       _backpack = <BackpackGiftItem>[
+         BackpackGiftItem(
+           id: 'pack-rose',
+           gift: const GiftCatalogItem(
+             id: 101,
+             name: '玫瑰',
+             price: 10,
+             category: GiftCatalogCategory.companionship,
+           ),
+           quantity: 12,
+           expiresAt: DateTime.now().add(const Duration(days: 20)),
+         ),
+         BackpackGiftItem(
+           id: 'pack-star',
+           gift: const GiftCatalogItem(
+             id: 102,
+             name: '星光',
+             price: 66,
+             category: GiftCatalogCategory.popular,
+           ),
+           quantity: 3,
+         ),
+       ];
 
   final List<RechargeOrder> _orders = <RechargeOrder>[];
+  final void Function(RechargeOrder order)? _onRechargeOrderChanged;
   final List<DecorationItem> _decorations;
   final List<BackpackGiftItem> _backpack;
   final Map<String, int> _orderQueries = <String, int>{};
@@ -114,14 +117,27 @@ class MockCommerceCatalogRepository implements CommerceCatalogRepository {
   @override
   bool get supportsPaymentChannelInvocation => true;
 
+  void seedRechargeOrderForQa(RechargeOrder order) {
+    final int index = _orders.indexWhere(
+      (RechargeOrder item) => item.orderNo == order.orderNo,
+    );
+    if (index < 0) {
+      _orders.insert(0, order);
+    } else {
+      _orders[index] = order;
+    }
+    _orderQueries[order.orderNo] = 0;
+    _onRechargeOrderChanged?.call(order);
+  }
+
   @override
   List<PaymentChannelType> availableChannels(ClientStorePlatform platform) =>
       platform == ClientStorePlatform.ios
-          ? const <PaymentChannelType>[PaymentChannelType.appleIap]
-          : const <PaymentChannelType>[
-              PaymentChannelType.wechat,
-              PaymentChannelType.alipay,
-            ];
+      ? const <PaymentChannelType>[PaymentChannelType.appleIap]
+      : const <PaymentChannelType>[
+          PaymentChannelType.wechat,
+          PaymentChannelType.alipay,
+        ];
 
   @override
   Future<List<RechargeProduct>> fetchRechargeProducts({
@@ -161,9 +177,7 @@ class MockCommerceCatalogRepository implements CommerceCatalogRepository {
     await _delay();
     return RechargeEligibility(
       allowed: !youthModeEnabled,
-      message: youthModeEnabled
-          ? '青少年模式已开启，暂不能创建新的充值订单'
-          : '当前账号可以创建充值订单',
+      message: youthModeEnabled ? '青少年模式已开启，暂不能创建新的充值订单' : '当前账号可以创建充值订单',
     );
   }
 
@@ -208,6 +222,7 @@ class MockCommerceCatalogRepository implements CommerceCatalogRepository {
     );
     _orders.add(order);
     _orderQueries[order.orderNo] = 0;
+    _onRechargeOrderChanged?.call(order);
     return order;
   }
 
@@ -226,6 +241,7 @@ class MockCommerceCatalogRepository implements CommerceCatalogRepository {
       message: '支付返回后正在等待服务端确认',
     );
     _orders[index] = updated;
+    _onRechargeOrderChanged?.call(updated);
     return updated;
   }
 
@@ -244,6 +260,7 @@ class MockCommerceCatalogRepository implements CommerceCatalogRepository {
         );
         _orders[index] = succeeded;
         _giftCoinBalance += current.product.totalGiftCoins;
+        _onRechargeOrderChanged?.call(succeeded);
         return succeeded;
       }
     }
@@ -300,7 +317,8 @@ class MockCommerceCatalogRepository implements CommerceCatalogRepository {
     }
     _giftCoinBalance -= plan.priceGiftCoins;
     _membershipActive = true;
-    final DateTime base = _membershipExpiresAt != null &&
+    final DateTime base =
+        _membershipExpiresAt != null &&
             _membershipExpiresAt!.isAfter(DateTime.now())
         ? _membershipExpiresAt!
         : DateTime.now();

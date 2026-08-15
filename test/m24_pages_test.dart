@@ -52,14 +52,11 @@ void main() {
     await pumpScoped(
       tester,
       dependencies,
-      const RoomPkPreparationPage(
-        roomId: 'room-880217',
-        roomTitle: '深夜温柔陪伴',
-      ),
+      const RoomPkPreparationPage(roomId: '880217', roomTitle: '深夜温柔陪伴'),
     );
     expect(find.text('PK 邀请与准备'), findsOneWidget);
     expect(find.text('选择对手'), findsOneWidget);
-    expect(find.textContaining('不会加入随机匹配'), findsOneWidget);
+    expect(find.textContaining('其他未确认玩法均不提供'), findsOneWidget);
     final Finder sendButton = find.text('发送 PK 邀请');
     await tester.scrollUntilVisible(
       sendButton,
@@ -70,15 +67,15 @@ void main() {
 
     final RoomPkBattle completed = RoomPkBattle(
       id: 'battle-widget',
-      currentRoomId: 'room-880217',
+      currentRoomId: '880217',
       sender: const RoomPkSide(
-        roomId: 'room-880217',
+        roomId: '880217',
         roomCode: '880217',
         roomName: '深夜温柔陪伴',
         score: 3680,
       ),
       receiver: const RoomPkSide(
-        roomId: 'room-660318',
+        roomId: '660318',
         roomCode: '660318',
         roomName: '下班后的松弛时刻',
         score: 2940,
@@ -92,10 +89,7 @@ void main() {
     await pumpScoped(
       tester,
       dependencies,
-      RoomPkBattlePage(
-        roomId: 'room-880217',
-        initialBattle: completed,
-      ),
+      RoomPkBattlePage(roomId: '880217', initialBattle: completed),
     );
     expect(find.text('PK 对战与结算'), findsOneWidget);
     expect(find.text('本房获胜'), findsOneWidget);
@@ -145,27 +139,21 @@ void main() {
     expect(find.text('Apple IAP'), findsOneWidget);
     expect(find.text('微信支付'), findsNothing);
 
-    final RechargeOrder? order =
-        await tester.runAsync<RechargeOrder>(() async {
+    final RechargeOrder? order = await tester.runAsync<RechargeOrder>(() async {
       RechargeOrder value = await dependencies.commerceCatalogRepository
           .createRechargeOrder(
-        account: '13800138000',
-        product: product,
-        channel: PaymentChannelType.wechat,
-        platform: ClientStorePlatform.android,
-        youthModeEnabled: false,
-      );
-      value =
-          await dependencies.commerceCatalogRepository.invokePayment(value);
+            account: '13800138000',
+            product: product,
+            channel: PaymentChannelType.wechat,
+            platform: ClientStorePlatform.android,
+            youthModeEnabled: false,
+          );
+      value = await dependencies.commerceCatalogRepository.invokePayment(value);
       return value;
     });
     expect(order, isNotNull);
 
-    await pumpScoped(
-      tester,
-      dependencies,
-      PaymentResultPage(order: order!),
-    );
+    await pumpScoped(tester, dependencies, PaymentResultPage(order: order!));
     expect(find.text('支付返回与结果'), findsOneWidget);
     expect(find.text('服务端确认中'), findsOneWidget);
     expect(find.text('刷新订单状态'), findsOneWidget);
@@ -204,13 +192,15 @@ void main() {
     expect(find.byTooltip('系统与互动通知'), findsOneWidget);
     expect(find.byTooltip('通知权限与消息恢复'), findsOneWidget);
 
-    final ConversationSummary? conversation =
-        await tester.runAsync<ConversationSummary>(() async {
-      final List<ConversationSummary> conversations =
-          await dependencies.messageRepository.fetchConversations();
-      return conversations
-          .firstWhere((ConversationSummary item) => item.available);
-    });
+    final ConversationSummary? conversation = await tester
+        .runAsync<ConversationSummary>(() async {
+          final List<ConversationSummary> conversations = await dependencies
+              .messageRepository
+              .fetchConversations();
+          return conversations.firstWhere(
+            (ConversationSummary item) => item.available,
+          );
+        });
     expect(conversation, isNotNull);
 
     await pumpScoped(
@@ -227,9 +217,7 @@ void main() {
     await pumpScoped(
       tester,
       dependencies,
-      const NotificationDetailPage(
-        notificationId: 'notification-room-1',
-      ),
+      const NotificationDetailPage(notificationId: 'notification-room-1'),
     );
     expect(find.text('收藏房间正在进行'), findsOneWidget);
     expect(find.text('查看相关内容'), findsOneWidget);
@@ -237,9 +225,7 @@ void main() {
     await pumpScoped(
       tester,
       dependencies,
-      const NotificationTargetUnavailablePage(
-        reason: '动态已删除或不可见',
-      ),
+      const NotificationTargetUnavailablePage(reason: '动态已删除或不可见'),
     );
     expect(find.text('动态已删除或不可见'), findsOneWidget);
 

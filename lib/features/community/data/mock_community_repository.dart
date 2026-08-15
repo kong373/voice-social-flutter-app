@@ -6,89 +6,89 @@ import 'package:voice_social_app/features/community/domain/community_repository.
 
 class MockCommunityRepository implements CommunityRepository {
   MockCommunityRepository()
-      : _guilds = <String, GuildSummary>{
-          'guild-1': const GuildSummary(
-            id: 'guild-1',
-            code: 'G10086',
-            name: '晚风陪伴社',
-            description: '认真聊天、彼此尊重，不用热闹证明关系。',
-            memberCount: 128,
-            ownerUserId: 20001,
-            ownerName: '晚星',
-            role: GuildRole.manager,
-            joined: true,
-            hasNewApplications: true,
-            rooms: <GuildRoom>[
-              GuildRoom(roomId: '880217', name: '深夜温柔陪伴', onlineUsers: 36),
-              GuildRoom(roomId: '520906', name: '安静音乐电台', onlineUsers: 18),
-            ],
-          ),
-          'guild-2': const GuildSummary(
-            id: 'guild-2',
-            code: 'G20018',
-            name: '松弛生活局',
-            description: '下班后慢一点，分享普通但真实的生活。',
-            memberCount: 86,
-            ownerUserId: 20003,
-            ownerName: '阿岚',
-          ),
-          'guild-3': const GuildSummary(
-            id: 'guild-3',
-            code: 'G31007',
-            name: '城市夜谈',
-            description: '从一座城市出发，聊工作、情绪与成长。',
-            memberCount: 74,
-            ownerUserId: 20006,
-            ownerName: '十一',
-          ),
-        },
-        _members = <GuildMember>[
-          const GuildMember(
-            recordId: 'member-1',
-            userId: 20001,
-            nickname: '晚星',
-            role: GuildRole.owner,
-            isSigned: true,
-            roomId: '880217',
-          ),
-          const GuildMember(
-            recordId: 'member-2',
-            userId: 10001,
-            nickname: '我',
-            role: GuildRole.manager,
-            isSigned: true,
-          ),
-          const GuildMember(
-            recordId: 'member-3',
-            userId: 20002,
-            nickname: '南风',
-            role: GuildRole.member,
-            isMuted: false,
-            roomId: '520906',
-          ),
-          const GuildMember(
-            recordId: 'member-4',
-            userId: 20004,
-            nickname: '小满',
-            role: GuildRole.member,
-          ),
-        ],
-        _applications = <GuildApplication>[
-          const GuildApplication(
-            id: 'application-1',
-            userId: 20007,
-            nickname: '青禾',
-            appliedAt: '今天 10:24',
-            message: '希望加入一个认真聊天的公会。',
-          ),
-          const GuildApplication(
-            id: 'application-2',
-            userId: 20008,
-            nickname: '弥生',
-            appliedAt: '昨天 22:16',
-            message: '经常参加陪伴主题房。',
-          ),
-        ];
+    : _guilds = <String, GuildSummary>{
+        'guild-1': const GuildSummary(
+          id: 'guild-1',
+          code: 'G10086',
+          name: '晚风陪伴社',
+          description: '认真聊天、彼此尊重，不用热闹证明关系。',
+          memberCount: 128,
+          ownerUserId: 20001,
+          ownerName: '晚星',
+          role: GuildRole.manager,
+          joined: true,
+          hasNewApplications: true,
+          rooms: <GuildRoom>[
+            GuildRoom(roomId: '880217', name: '深夜温柔陪伴', onlineUsers: 36),
+            GuildRoom(roomId: '520906', name: '安静音乐电台', onlineUsers: 18),
+          ],
+        ),
+        'guild-2': const GuildSummary(
+          id: 'guild-2',
+          code: 'G20018',
+          name: '松弛生活局',
+          description: '下班后慢一点，分享普通但真实的生活。',
+          memberCount: 86,
+          ownerUserId: 20003,
+          ownerName: '阿岚',
+        ),
+        'guild-3': const GuildSummary(
+          id: 'guild-3',
+          code: 'G31007',
+          name: '城市夜谈',
+          description: '从一座城市出发，聊工作、情绪与成长。',
+          memberCount: 74,
+          ownerUserId: 20006,
+          ownerName: '十一',
+        ),
+      },
+      _members = <GuildMember>[
+        const GuildMember(
+          recordId: 'member-1',
+          userId: 20001,
+          nickname: '晚星',
+          role: GuildRole.owner,
+          isSigned: true,
+          roomId: '880217',
+        ),
+        const GuildMember(
+          recordId: 'member-2',
+          userId: 10001,
+          nickname: '我',
+          role: GuildRole.manager,
+          isSigned: true,
+        ),
+        const GuildMember(
+          recordId: 'member-3',
+          userId: 20002,
+          nickname: '南风',
+          role: GuildRole.member,
+          isMuted: false,
+          roomId: '520906',
+        ),
+        const GuildMember(
+          recordId: 'member-4',
+          userId: 20004,
+          nickname: '小满',
+          role: GuildRole.member,
+        ),
+      ],
+      _applications = <GuildApplication>[
+        const GuildApplication(
+          id: 'application-1',
+          userId: 20007,
+          nickname: '青禾',
+          appliedAt: '今天 10:24',
+          message: '希望加入一个认真聊天的公会。',
+        ),
+        const GuildApplication(
+          id: 'application-2',
+          userId: 20008,
+          nickname: '弥生',
+          appliedAt: '昨天 22:16',
+          message: '经常参加陪伴主题房。',
+        ),
+      ];
 
   final Map<String, GuildSummary> _guilds;
   final List<GuildMember> _members;
@@ -109,22 +109,48 @@ class MockCommunityRepository implements CommunityRepository {
       nickname: '白露',
       createdAt: '今天 09:10',
     ),
+    const CpInvitation(
+      invitationId: 'cp-invite-2',
+      userId: 20012,
+      nickname: '星遥',
+      createdAt: '今天 08:42',
+    ),
   ];
+  final Set<int> _outgoingCpTargetIds = <int>{};
+  int _outgoingCpSequence = 1;
   final Map<int, GuardianFanSnapshot> _guardian = <int, GuardianFanSnapshot>{
     20001: const GuardianFanSnapshot(
       anchorUserId: 20001,
       anchorName: '晚星',
       guardianLevels: <GuardianLevel>[
         GuardianLevel(id: 'guard-7', name: '七日守护', price: 660, durationDays: 7),
-        GuardianLevel(id: 'guard-30', name: '月度守护', price: 1880, durationDays: 30),
+        GuardianLevel(
+          id: 'guard-30',
+          name: '月度守护',
+          price: 1880,
+          durationDays: 30,
+        ),
       ],
       fansTeamName: '星光团',
       fansLevel: 3,
       intimacy: 1280,
       joinedFansTeam: true,
       tasks: <FansTask>[
-        FansTask(id: 'fan-task-1', title: '今日进入主播房间', progress: 1, target: 1, reward: '亲密值 +10', claimed: true),
-        FansTask(id: 'fan-task-2', title: '完成一次有效互动', progress: 0, target: 1, reward: '亲密值 +20'),
+        FansTask(
+          id: 'fan-task-1',
+          title: '今日进入主播房间',
+          progress: 1,
+          target: 1,
+          reward: '亲密值 +10',
+          claimed: true,
+        ),
+        FansTask(
+          id: 'fan-task-2',
+          title: '完成一次有效互动',
+          progress: 0,
+          target: 1,
+          reward: '亲密值 +20',
+        ),
       ],
     ),
   };
@@ -197,9 +223,11 @@ class MockCommunityRepository implements CommunityRepository {
       return _guilds.values.toList(growable: false);
     }
     return _guilds.values
-        .where((GuildSummary guild) =>
-            guild.name.toLowerCase().contains(query) ||
-            guild.code.toLowerCase().contains(query))
+        .where(
+          (GuildSummary guild) =>
+              guild.name.toLowerCase().contains(query) ||
+              guild.code.toLowerCase().contains(query),
+        )
         .toList(growable: false);
   }
 
@@ -283,8 +311,10 @@ class MockCommunityRepository implements CommunityRepository {
       );
     }
     return _applications
-        .where((GuildApplication item) =>
-            item.status == GuildApplicationStatus.pending)
+        .where(
+          (GuildApplication item) =>
+              item.status == GuildApplicationStatus.pending,
+        )
         .toList(growable: false);
   }
 
@@ -316,11 +346,13 @@ class MockCommunityRepository implements CommunityRepository {
           : GuildApplicationStatus.rejected,
     );
     if (accepted) {
-      _members.add(GuildMember(
-        recordId: 'member-${request.id}',
-        userId: request.userId,
-        nickname: request.nickname,
-      ));
+      _members.add(
+        GuildMember(
+          recordId: 'member-${request.id}',
+          userId: request.userId,
+          nickname: request.nickname,
+        ),
+      );
     }
   }
 
@@ -400,13 +432,18 @@ class MockCommunityRepository implements CommunityRepository {
     if (targetUserId <= 0 || targetUserId == 10001) {
       return const CpEligibility(allowed: false, message: '请输入有效的其他用户 ID');
     }
-    if (_cpRelations.any((CpRelation relation) => relation.userId == targetUserId)) {
+    if (_cpRelations.any(
+      (CpRelation relation) => relation.userId == targetUserId,
+    )) {
       return const CpEligibility(allowed: false, message: '已经与该用户建立 CP 关系');
     }
-    return const CpEligibility(
-      allowed: true,
-      message: '符合邀请条件，对方接受后关系才生效。',
-    );
+    if (_outgoingCpTargetIds.contains(targetUserId)) {
+      return const CpEligibility(
+        allowed: false,
+        message: '已向该用户发送 CP 邀请，请等待对方确认',
+      );
+    }
+    return const CpEligibility(allowed: true, message: '符合邀请条件，对方接受后关系才生效。');
   }
 
   @override
@@ -419,7 +456,8 @@ class MockCommunityRepository implements CommunityRepository {
       );
     }
     await _delay();
-    return 'cp-outgoing-${DateTime.now().millisecondsSinceEpoch}';
+    _outgoingCpTargetIds.add(targetUserId);
+    return 'cp-outgoing-${_outgoingCpSequence++}';
   }
 
   @override
@@ -439,13 +477,15 @@ class MockCommunityRepository implements CommunityRepository {
     }
     final CpInvitation invitation = _cpInvitations.removeAt(index);
     if (accepted) {
-      _cpRelations.add(CpRelation(
-        relationId: 'cp-${invitation.invitationId}',
-        userId: invitation.userId,
-        nickname: invitation.nickname,
-        days: 1,
-        boundAt: '今天',
-      ));
+      _cpRelations.add(
+        CpRelation(
+          relationId: 'cp-${invitation.invitationId}',
+          userId: invitation.userId,
+          nickname: invitation.nickname,
+          days: 1,
+          boundAt: '今天',
+        ),
+      );
     }
   }
 
@@ -458,8 +498,18 @@ class MockCommunityRepository implements CommunityRepository {
         anchorUserId: anchorUserId,
         anchorName: '用户 $anchorUserId',
         guardianLevels: const <GuardianLevel>[
-          GuardianLevel(id: 'guard-7', name: '七日守护', price: 660, durationDays: 7),
-          GuardianLevel(id: 'guard-30', name: '月度守护', price: 1880, durationDays: 30),
+          GuardianLevel(
+            id: 'guard-7',
+            name: '七日守护',
+            price: 660,
+            durationDays: 7,
+          ),
+          GuardianLevel(
+            id: 'guard-30',
+            name: '月度守护',
+            price: 1880,
+            durationDays: 30,
+          ),
         ],
         fansTeamName: '陪伴粉团',
       ),
@@ -540,7 +590,9 @@ class MockCommunityRepository implements CommunityRepository {
   @override
   Future<TaskCenterSnapshot> claimTask(String taskId) async {
     await _delay();
-    final int index = _taskCenter.tasks.indexWhere((TaskItem item) => item.id == taskId);
+    final int index = _taskCenter.tasks.indexWhere(
+      (TaskItem item) => item.id == taskId,
+    );
     if (index < 0 || _taskCenter.tasks[index].state != TaskState.claimable) {
       throw const ApiException(
         kind: ApiFailureKind.business,
@@ -563,11 +615,7 @@ class MockCommunityRepository implements CommunityRepository {
         summary: '围绕“这一周最想放下的事”进行真实聊天。',
         period: '8 月 15 日 20:00～23:00',
         status: ThemeActivityStatus.active,
-        rules: <String>[
-          '活动房仍为固定 8 麦普通语音房',
-          '只保留普通礼物，不包含退役玩法',
-          '有效房间入口直接进入语音房',
-        ],
+        rules: <String>['活动房仍为固定 8 麦普通语音房', '只保留普通礼物，不包含退役玩法', '有效房间入口直接进入语音房'],
         routeTarget: '880217',
       ),
       ThemeActivity(
@@ -576,7 +624,7 @@ class MockCommunityRepository implements CommunityRepository {
         summary: '连续七天分享一条真实生活动态。',
         period: '8 月 18 日～8 月 24 日',
         status: ThemeActivityStatus.upcoming,
-        rules: <String>['动态内容需由用户主动发布', '不使用随机匹配或附近的人'],
+        rules: <String>['动态内容需由用户主动发布', '不提供基于位置或偶遇的推荐'],
       ),
     ];
   }

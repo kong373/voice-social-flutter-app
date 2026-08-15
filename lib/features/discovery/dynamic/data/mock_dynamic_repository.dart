@@ -6,60 +6,60 @@ import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_repos
 
 class MockDynamicRepository implements DynamicRepository {
   MockDynamicRepository()
-      : _posts = <DynamicPost>[
-          const DynamicPost(
-            id: 'dynamic-1001',
-            author: DynamicAuthor(userId: 20001, nickname: '晚星'),
-            content: '下班后终于松下来。今晚想听听大家最近遇到的温柔小事。',
-            location: '武汉',
-            tags: <String>['陪伴'],
-            topics: <String>['下班后的松弛时刻'],
-            likeCount: 28,
-            commentCount: 3,
-            isLiked: true,
-            unlockChat: true,
-            createdAt: '8 分钟前',
+    : _posts = <DynamicPost>[
+        const DynamicPost(
+          id: 'dynamic-1001',
+          author: DynamicAuthor(userId: 20001, nickname: '晚星'),
+          content: '下班后终于松下来。今晚想听听大家最近遇到的温柔小事。',
+          location: '武汉',
+          tags: <String>['陪伴'],
+          topics: <String>['下班后的松弛时刻'],
+          likeCount: 28,
+          commentCount: 3,
+          isLiked: true,
+          unlockChat: true,
+          createdAt: '8 分钟前',
+        ),
+        const DynamicPost(
+          id: 'dynamic-1002',
+          author: DynamicAuthor(userId: 20002, nickname: '南风'),
+          content: '整理了一份适合深夜听的轻音乐歌单，只在普通音乐主题房里一起安静聊天。',
+          tags: <String>['音乐'],
+          topics: <String>['深夜歌单'],
+          likeCount: 16,
+          commentCount: 1,
+          createdAt: '36 分钟前',
+        ),
+        const DynamicPost(
+          id: 'dynamic-1003',
+          author: DynamicAuthor(userId: 20003, nickname: '阿岚'),
+          content: '今天最开心的事情，是把拖了很久的计划真正开始做了。你今天完成了什么？',
+          location: '杭州',
+          tags: <String>['聊天'],
+          topics: <String>['今天完成的一件事'],
+          likeCount: 41,
+          commentCount: 5,
+          createdAt: '1 小时前',
+        ),
+      ],
+      _comments = <String, List<DynamicComment>>{
+        'dynamic-1001': <DynamicComment>[
+          const DynamicComment(
+            id: 'comment-1',
+            dynamicId: 'dynamic-1001',
+            author: DynamicAuthor(userId: 20004, nickname: '小满'),
+            content: '今天同事帮我留了一杯热水，虽然很小，但很暖。',
+            createdAt: '5 分钟前',
           ),
-          const DynamicPost(
-            id: 'dynamic-1002',
-            author: DynamicAuthor(userId: 20002, nickname: '南风'),
-            content: '整理了一份适合深夜听的轻音乐歌单，不点歌，只在普通音乐主题房里一起安静聊天。',
-            tags: <String>['音乐'],
-            topics: <String>['深夜歌单'],
-            likeCount: 16,
-            commentCount: 1,
-            createdAt: '36 分钟前',
-          ),
-          const DynamicPost(
-            id: 'dynamic-1003',
-            author: DynamicAuthor(userId: 20003, nickname: '阿岚'),
-            content: '今天最开心的事情，是把拖了很久的计划真正开始做了。你今天完成了什么？',
-            location: '杭州',
-            tags: <String>['聊天'],
-            topics: <String>['今天完成的一件事'],
-            likeCount: 41,
-            commentCount: 5,
-            createdAt: '1 小时前',
+          const DynamicComment(
+            id: 'comment-2',
+            dynamicId: 'dynamic-1001',
+            author: DynamicAuthor(userId: 20005, nickname: '鹿屿'),
+            content: '回家路上看到晚霞，感觉一天没有白过。',
+            createdAt: '3 分钟前',
           ),
         ],
-        _comments = <String, List<DynamicComment>>{
-          'dynamic-1001': <DynamicComment>[
-            const DynamicComment(
-              id: 'comment-1',
-              dynamicId: 'dynamic-1001',
-              author: DynamicAuthor(userId: 20004, nickname: '小满'),
-              content: '今天同事帮我留了一杯热水，虽然很小，但很暖。',
-              createdAt: '5 分钟前',
-            ),
-            const DynamicComment(
-              id: 'comment-2',
-              dynamicId: 'dynamic-1001',
-              author: DynamicAuthor(userId: 20005, nickname: '鹿屿'),
-              content: '回家路上看到晚霞，感觉一天没有白过。',
-              createdAt: '3 分钟前',
-            ),
-          ],
-        };
+      };
 
   final List<DynamicPost> _posts;
   final Map<String, List<DynamicComment>> _comments;
@@ -79,9 +79,10 @@ class MockDynamicRepository implements DynamicRepository {
     final List<DynamicPost> filtered = category == DynamicCategory.all
         ? List<DynamicPost>.of(_posts)
         : _posts
-            .where((DynamicPost post) =>
-                post.tags.contains(category.backendTag))
-            .toList(growable: false);
+              .where(
+                (DynamicPost post) => post.tags.contains(category.backendTag),
+              )
+              .toList(growable: false);
     final int start = ((page - 1) * pageSize).clamp(0, filtered.length).toInt();
     final int end = (start + pageSize).clamp(0, filtered.length).toInt();
     return PagedResult<DynamicPost>(
@@ -105,8 +106,9 @@ class MockDynamicRepository implements DynamicRepository {
   }) async {
     await _delay();
     _requirePost(dynamicId);
-    final List<DynamicComment> values =
-        List<DynamicComment>.of(_comments[dynamicId] ?? const <DynamicComment>[]);
+    final List<DynamicComment> values = List<DynamicComment>.of(
+      _comments[dynamicId] ?? const <DynamicComment>[],
+    );
     final int start = ((page - 1) * pageSize).clamp(0, values.length).toInt();
     final int end = (start + pageSize).clamp(0, values.length).toInt();
     return PagedResult<DynamicComment>(
@@ -119,7 +121,9 @@ class MockDynamicRepository implements DynamicRepository {
   @override
   Future<DynamicPost> toggleLike(String dynamicId) async {
     await _delay();
-    final int index = _posts.indexWhere((DynamicPost post) => post.id == dynamicId);
+    final int index = _posts.indexWhere(
+      (DynamicPost post) => post.id == dynamicId,
+    );
     if (index < 0) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
@@ -130,7 +134,9 @@ class MockDynamicRepository implements DynamicRepository {
     final bool liked = !current.isLiked;
     final DynamicPost updated = current.copyWith(
       isLiked: liked,
-      likeCount: (current.likeCount + (liked ? 1 : -1)).clamp(0, 1 << 31).toInt(),
+      likeCount: (current.likeCount + (liked ? 1 : -1))
+          .clamp(0, 1 << 31)
+          .toInt(),
     );
     _posts[index] = updated;
     return updated;
@@ -151,8 +157,9 @@ class MockDynamicRepository implements DynamicRepository {
         message: '评论内容需为 1～200 个字',
       );
     }
-    final int postIndex =
-        _posts.indexWhere((DynamicPost post) => post.id == dynamicId);
+    final int postIndex = _posts.indexWhere(
+      (DynamicPost post) => post.id == dynamicId,
+    );
     if (postIndex < 0) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
@@ -179,7 +186,9 @@ class MockDynamicRepository implements DynamicRepository {
       replyToNickname: replyName,
       replyToCommentId: replyToCommentId,
     );
-    _comments.putIfAbsent(dynamicId, () => <DynamicComment>[]).insert(0, comment);
+    _comments
+        .putIfAbsent(dynamicId, () => <DynamicComment>[])
+        .insert(0, comment);
     _posts[postIndex] = _posts[postIndex].copyWith(
       commentCount: _posts[postIndex].commentCount + 1,
     );

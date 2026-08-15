@@ -58,9 +58,7 @@ class _HomePageState extends State<HomePage> {
       }
       setState(() {
         _loading = false;
-        _error = error is ApiException
-            ? error.message
-            : '房间推荐暂时无法加载，请稍后重试';
+        _error = error is ApiException ? error.message : '房间推荐暂时无法加载，请稍后重试';
       });
     }
   }
@@ -161,9 +159,9 @@ class _HomePageState extends State<HomePage> {
                           onPressed: rooms.length <= 1
                               ? null
                               : () => setState(
-                                    () => _rotation =
-                                        (_rotation + 1) % rooms.length,
-                                  ),
+                                  () => _rotation =
+                                      (_rotation + 1) % rooms.length,
+                                ),
                           icon: const Icon(Icons.refresh_rounded, size: 18),
                           label: const Text('换一批'),
                         ),
@@ -178,9 +176,9 @@ class _HomePageState extends State<HomePage> {
                     separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (BuildContext context, int index) =>
                         _LiveRoomCard(
-                      room: rooms[index],
-                      onTap: () => _enterRoom(rooms[index]),
-                    ),
+                          room: rooms[index],
+                          onTap: () => _enterRoom(rooms[index]),
+                        ),
                   ),
                 ),
               ],
@@ -226,10 +224,15 @@ class _HomePageState extends State<HomePage> {
               label: '收藏与我的房间',
               onTap: _openSavedRooms,
             ),
-            const Spacer(),
-            Text(
-              '按实时活跃度与关系推荐',
-              style: Theme.of(context).textTheme.bodySmall,
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '按实时活跃度与关系推荐',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ),
           ],
         ),
@@ -376,9 +379,9 @@ class _HeroRoomCard extends StatelessWidget {
           const SizedBox(height: 7),
           Text(
             room.topic,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
           ),
           const SizedBox(height: 16),
           _SeatSummary(occupiedSeats: room.occupiedSeats),
@@ -495,39 +498,43 @@ class _SeatSummary extends StatelessWidget {
     final int safeOccupied = occupiedSeats < 0
         ? 0
         : occupiedSeats > 8
-            ? 8
-            : occupiedSeats;
+        ? 8
+        : occupiedSeats;
     return Row(
       children: <Widget>[
-        for (int index = 0; index < 8; index += 1)
-          Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: index < safeOccupied
-                    ? AppColors.primary.withValues(alpha: 0.28)
-                    : Colors.white.withValues(alpha: 0.07),
-                border: Border.all(
-                  color: index < safeOccupied
-                      ? AppColors.primary
-                      : Colors.white.withValues(alpha: 0.12),
+        Expanded(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: <Widget>[
+              for (int index = 0; index < 8; index += 1)
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: index < safeOccupied
+                        ? AppColors.primary.withValues(alpha: 0.28)
+                        : Colors.white.withValues(alpha: 0.07),
+                    border: Border.all(
+                      color: index < safeOccupied
+                          ? AppColors.primary
+                          : Colors.white.withValues(alpha: 0.12),
+                    ),
+                  ),
+                  child: Icon(
+                    index < safeOccupied
+                        ? Icons.person_rounded
+                        : Icons.add_rounded,
+                    size: 12,
+                    color: index < safeOccupied
+                        ? AppColors.textPrimary
+                        : AppColors.textSecondary,
+                  ),
                 ),
-              ),
-              child: Icon(
-                index < safeOccupied
-                    ? Icons.person_rounded
-                    : Icons.add_rounded,
-                size: 13,
-                color: index < safeOccupied
-                    ? AppColors.textPrimary
-                    : AppColors.textSecondary,
-              ),
-            ),
+            ],
           ),
-        const Spacer(),
+        ),
+        const SizedBox(width: 10),
         Text('$safeOccupied/8 麦'),
       ],
     );

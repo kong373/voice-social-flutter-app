@@ -6,40 +6,40 @@ import 'package:voice_social_app/features/room/pk/domain/room_pk_repository.dart
 
 class MockRoomPkRepository implements RoomPkRepository {
   MockRoomPkRepository()
-      : _incoming = RoomPkInvitation(
-          id: 'pk-incoming-1',
-          direction: RoomPkInvitationDirection.incoming,
-          currentRoomId: 'room-880217',
-          opponent: const RoomPkOpponent(
-            roomId: 'room-660318',
-            roomCode: '660318',
-            roomName: '下班后的松弛时刻',
-            onlineUsers: 24,
-          ),
-          punishmentTheme: '输的一方分享今天最想放下的事',
-          durationMinutes: 5,
-          status: RoomPkInvitationStatus.pending,
-          createdAt: DateTime.now(),
-          expiresAt: DateTime.now().add(const Duration(minutes: 1)),
-        );
+    : _incoming = RoomPkInvitation(
+        id: 'pk-incoming-1',
+        direction: RoomPkInvitationDirection.incoming,
+        currentRoomId: '880217',
+        opponent: const RoomPkOpponent(
+          roomId: '660318',
+          roomCode: '660318',
+          roomName: '下班后的松弛时刻',
+          onlineUsers: 24,
+        ),
+        punishmentTheme: '输的一方分享今天最想放下的事',
+        durationMinutes: 5,
+        status: RoomPkInvitationStatus.pending,
+        createdAt: DateTime.now(),
+        expiresAt: DateTime.now().add(const Duration(minutes: 1)),
+      );
 
   final List<RoomPkOpponent> _opponents = const <RoomPkOpponent>[
     RoomPkOpponent(
-      roomId: 'room-660318',
+      roomId: '660318',
       roomCode: '660318',
       roomName: '下班后的松弛时刻',
       label: '陪伴',
       onlineUsers: 24,
     ),
     RoomPkOpponent(
-      roomId: 'room-520906',
+      roomId: '520906',
       roomCode: '520906',
       roomName: '安静音乐电台',
       label: '音乐',
       onlineUsers: 18,
     ),
     RoomPkOpponent(
-      roomId: 'room-731105',
+      roomId: '731105',
       roomCode: '731105',
       roomName: '城市夜谈',
       label: '聊天',
@@ -59,6 +59,11 @@ class MockRoomPkRepository implements RoomPkRepository {
 
   @override
   bool get supportsSurrender => true;
+
+  void seedBattleForQa(RoomPkBattle battle) {
+    _battle = battle;
+    _battleRefreshes = 0;
+  }
 
   @override
   Future<List<RoomPkOpponent>> fetchHotOpponents({
@@ -81,10 +86,12 @@ class MockRoomPkRepository implements RoomPkRepository {
       return fetchHotOpponents(roomId: roomId);
     }
     return _opponents
-        .where((RoomPkOpponent item) =>
-            item.roomId != roomId &&
-            (item.roomCode.toLowerCase().contains(query) ||
-                item.roomName.toLowerCase().contains(query)))
+        .where(
+          (RoomPkOpponent item) =>
+              item.roomId != roomId &&
+              (item.roomCode.toLowerCase().contains(query) ||
+                  item.roomName.toLowerCase().contains(query)),
+        )
         .toList(growable: false);
   }
 
@@ -163,8 +170,8 @@ class MockRoomPkRepository implements RoomPkRepository {
     RoomPkInvitation invitation,
   ) async {
     await _delay();
-    final RoomPkInvitation? current = invitation.direction ==
-            RoomPkInvitationDirection.outgoing
+    final RoomPkInvitation? current =
+        invitation.direction == RoomPkInvitationDirection.outgoing
         ? _outgoing
         : _incoming;
     if (current == null || current.id != invitation.id) {
@@ -177,8 +184,9 @@ class MockRoomPkRepository implements RoomPkRepository {
       return current;
     }
     if (current.expiresAt?.isBefore(DateTime.now()) ?? false) {
-      final RoomPkInvitation expired =
-          current.copyWith(status: RoomPkInvitationStatus.expired);
+      final RoomPkInvitation expired = current.copyWith(
+        status: RoomPkInvitationStatus.expired,
+      );
       if (current.direction == RoomPkInvitationDirection.outgoing) {
         _outgoing = expired;
       } else {
@@ -189,8 +197,9 @@ class MockRoomPkRepository implements RoomPkRepository {
     if (current.direction == RoomPkInvitationDirection.outgoing) {
       _outgoingRefreshes += 1;
       if (_outgoingRefreshes >= 2) {
-        final RoomPkInvitation accepted =
-            current.copyWith(status: RoomPkInvitationStatus.accepted);
+        final RoomPkInvitation accepted = current.copyWith(
+          status: RoomPkInvitationStatus.accepted,
+        );
         _outgoing = accepted;
         _battle = _battleForInvitation(accepted);
         return accepted;
@@ -260,8 +269,9 @@ class MockRoomPkRepository implements RoomPkRepository {
       return current;
     }
     _battleRefreshes += 1;
-    final int remaining =
-        (current.remainingSeconds - 60).clamp(0, 24 * 60 * 60).toInt();
+    final int remaining = (current.remainingSeconds - 60)
+        .clamp(0, 24 * 60 * 60)
+        .toInt();
     final RoomPkSide sender = current.sender.copyWith(
       score: current.sender.score + 120 + _battleRefreshes * 15,
     );
@@ -278,15 +288,17 @@ class MockRoomPkRepository implements RoomPkRepository {
       );
       return _battle!;
     }
-    final int currentScore =
-        sender.roomId == roomId ? sender.score : receiver.score;
-    final int opponentScore =
-        sender.roomId == roomId ? receiver.score : sender.score;
+    final int currentScore = sender.roomId == roomId
+        ? sender.score
+        : receiver.score;
+    final int opponentScore = sender.roomId == roomId
+        ? receiver.score
+        : sender.score;
     final RoomPkResult result = currentScore == opponentScore
         ? RoomPkResult.draw
         : currentScore > opponentScore
-            ? RoomPkResult.win
-            : RoomPkResult.lose;
+        ? RoomPkResult.win
+        : RoomPkResult.lose;
     _battle = current.copyWith(
       sender: sender,
       receiver: receiver,

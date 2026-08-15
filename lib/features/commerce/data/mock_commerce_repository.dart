@@ -1,52 +1,53 @@
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 
 class MockCommerceRepository implements CommerceRepository {
   MockCommerceRepository()
-      : _orders = <PaymentOrder>[
-          PaymentOrder(
-            orderNo: 'MOCK202608150001',
-            amount: 30,
-            giftCoinAmount: 300,
-            channelName: '微信支付',
-            createdAt: DateTime.now().subtract(const Duration(days: 2)),
-            status: PaymentOrderStatus.succeeded,
-          ),
-          PaymentOrder(
-            orderNo: 'MOCK202608150002',
-            amount: 68,
-            giftCoinAmount: 700,
-            channelName: '支付宝',
-            createdAt: DateTime.now().subtract(const Duration(hours: 3)),
-            status: PaymentOrderStatus.confirming,
-          ),
-        ],
-        _refunds = <String, RefundApplication>{
-          'refund-1': RefundApplication(
-            id: 'refund-1',
-            account: '13800138000',
-            amount: 30,
-            status: RefundStatus.reviewing,
-            statusText: '审核中',
-            rejectedReason: '',
-            createdAt: DateTime.now().subtract(const Duration(days: 1)),
-          ),
-        },
-        _withdrawals = <WithdrawalRecord>[
-          WithdrawalRecord(
-            id: 'withdraw-1',
-            withdrawalNo: 'WD202608120001',
-            amount: 200,
-            fee: 2,
-            receivedAmount: 198,
-            status: WithdrawalStatus.succeeded,
-            statusText: '已到账',
-            createdAt: DateTime.now().subtract(const Duration(days: 3)),
-            rejectedReason: '',
-            bankName: '招商银行',
-            maskedCard: '**** 8812',
-          ),
-        ];
+    : _orders = <PaymentOrder>[
+        PaymentOrder(
+          orderNo: 'MOCK202608150001',
+          amount: 30,
+          giftCoinAmount: 300,
+          channelName: '微信支付',
+          createdAt: DateTime.now().subtract(const Duration(days: 2)),
+          status: PaymentOrderStatus.succeeded,
+        ),
+        PaymentOrder(
+          orderNo: 'MOCK202608150002',
+          amount: 68,
+          giftCoinAmount: 700,
+          channelName: '支付宝',
+          createdAt: DateTime.now().subtract(const Duration(hours: 3)),
+          status: PaymentOrderStatus.confirming,
+        ),
+      ],
+      _refunds = <String, RefundApplication>{
+        'refund-1': RefundApplication(
+          id: 'refund-1',
+          account: '13800138000',
+          amount: 30,
+          status: RefundStatus.reviewing,
+          statusText: '审核中',
+          rejectedReason: '',
+          createdAt: DateTime.now().subtract(const Duration(days: 1)),
+        ),
+      },
+      _withdrawals = <WithdrawalRecord>[
+        WithdrawalRecord(
+          id: 'withdraw-1',
+          withdrawalNo: 'WD202608120001',
+          amount: 200,
+          fee: 2,
+          receivedAmount: 198,
+          status: WithdrawalStatus.succeeded,
+          statusText: '已到账',
+          createdAt: DateTime.now().subtract(const Duration(days: 3)),
+          rejectedReason: '',
+          bankName: '招商银行',
+          maskedCard: '**** 8812',
+        ),
+      ];
 
   final List<PaymentOrder> _orders;
   final Map<String, RefundApplication> _refunds;
@@ -115,24 +116,60 @@ class MockCommerceRepository implements CommerceRepository {
   @override
   RefundScope get refundScope => RefundScope.accountLegacy;
 
+  void seedPaymentOrderForQa(PaymentOrder order) {
+    final int index = _orders.indexWhere(
+      (PaymentOrder item) => item.orderNo == order.orderNo,
+    );
+    if (index < 0) {
+      _orders.insert(0, order);
+    } else {
+      _orders[index] = order;
+    }
+  }
+
+  void syncRechargeOrder(RechargeOrder order) {
+    seedPaymentOrderForQa(
+      PaymentOrder(
+        orderNo: order.orderNo,
+        amount: order.product.priceCny,
+        giftCoinAmount: order.product.totalGiftCoins,
+        channelName: order.channel.label,
+        createdAt: order.createdAt,
+        status: switch (order.state) {
+          RechargeOrderState.created ||
+          RechargeOrderState.invoking => PaymentOrderStatus.pending,
+          RechargeOrderState.confirming => PaymentOrderStatus.confirming,
+          RechargeOrderState.succeeded => PaymentOrderStatus.succeeded,
+          RechargeOrderState.canceled => PaymentOrderStatus.canceled,
+          RechargeOrderState.failed ||
+          RechargeOrderState.unavailable => PaymentOrderStatus.failed,
+        },
+      ),
+    );
+  }
+
+  void seedRefundApplicationForQa(RefundApplication application) {
+    _refunds[application.id] = application;
+  }
+
   @override
   Future<WalletSummary> fetchWalletSummary() async => WalletSummary(
-        giftCoinBalance: 1680,
-        cashBalance: _cashBalance,
-        frozenBalance: _frozenBalance,
-        totalEarnings: 5688.80,
-        yesterdayEarnings: 88,
-        totalWithdrawn: 4200.30,
-        realNameVerified: true,
-        bankCard: const BankCardSummary(
-          id: 'card-1',
-          bankName: '招商银行',
-          maskedNumber: '6225 **** **** 8812',
-          holderName: '晚星',
-        ),
-        agentEarnings: 500,
-        superAgentEarnings: 300,
-      );
+    giftCoinBalance: 1680,
+    cashBalance: _cashBalance,
+    frozenBalance: _frozenBalance,
+    totalEarnings: 5688.80,
+    yesterdayEarnings: 88,
+    totalWithdrawn: 4200.30,
+    realNameVerified: true,
+    bankCard: const BankCardSummary(
+      id: 'card-1',
+      bankName: '招商银行',
+      maskedNumber: '6225 **** **** 8812',
+      holderName: '晚星',
+    ),
+    agentEarnings: 500,
+    superAgentEarnings: 300,
+  );
 
   @override
   Future<CommercePage<LedgerEntry>> fetchLedger({
@@ -150,8 +187,7 @@ class MockCommerceRepository implements CommerceRepository {
   Future<CommercePage<PaymentOrder>> fetchOrders({
     required int page,
     required int pageSize,
-  }) async =>
-      _page(_orders, page: page, pageSize: pageSize);
+  }) async => _page(_orders, page: page, pageSize: pageSize);
 
   @override
   Future<PaymentOrder> queryOrderStatus(PaymentOrder order) async {
@@ -186,9 +222,7 @@ class MockCommerceRepository implements CommerceRepository {
     return RefundEligibility(
       allowed: active == null,
       existingApplicationId: active?.id,
-      message: active == null
-          ? '当前账号可以提交账户退款申请。'
-          : '已有退款申请正在处理，请勿重复提交。',
+      message: active == null ? '当前账号可以提交账户退款申请。' : '已有退款申请正在处理，请勿重复提交。',
     );
   }
 
@@ -203,8 +237,9 @@ class MockCommerceRepository implements CommerceRepository {
         message: '请完整填写账号、姓名、金额和退款原因',
       );
     }
-    final RefundEligibility eligibility =
-        await checkRefundEligibility(request.account);
+    final RefundEligibility eligibility = await checkRefundEligibility(
+      request.account,
+    );
     if (!eligibility.allowed) {
       throw ApiException(
         kind: ApiFailureKind.conflict,
@@ -239,8 +274,9 @@ class MockCommerceRepository implements CommerceRepository {
 
   @override
   Future<RefundApplication> resubmitRefund(String applicationId) async {
-    final RefundApplication application =
-        await fetchRefundResult(applicationId);
+    final RefundApplication application = await fetchRefundResult(
+      applicationId,
+    );
     if (application.status != RefundStatus.rejected) {
       throw const ApiException(
         kind: ApiFailureKind.business,
@@ -257,7 +293,9 @@ class MockCommerceRepository implements CommerceRepository {
   }
 
   @override
-  Future<List<RefundApplication>> fetchRefundApplications(String account) async =>
+  Future<List<RefundApplication>> fetchRefundApplications(
+    String account,
+  ) async =>
       _refunds.values
           .where((RefundApplication item) => item.account == account)
           .toList(growable: false)
@@ -267,12 +305,11 @@ class MockCommerceRepository implements CommerceRepository {
         );
 
   @override
-  Future<WithdrawalQuote> fetchWithdrawalQuote() async =>
-      const WithdrawalQuote(
-        feeRate: 0.01,
-        feeRateText: '1%',
-        minimumAmount: 100,
-      );
+  Future<WithdrawalQuote> fetchWithdrawalQuote() async => const WithdrawalQuote(
+    feeRate: 0.01,
+    feeRateText: '1%',
+    minimumAmount: 100,
+  );
 
   @override
   Future<WithdrawalRecord> applyWithdrawal({required double amount}) async {
@@ -325,8 +362,8 @@ class MockCommerceRepository implements CommerceRepository {
     final List<WithdrawalRecord> source = status == null
         ? _withdrawals
         : _withdrawals
-            .where((WithdrawalRecord item) => item.status == status)
-            .toList(growable: false);
+              .where((WithdrawalRecord item) => item.status == status)
+              .toList(growable: false);
     return _page(source, page: page, pageSize: pageSize);
   }
 
