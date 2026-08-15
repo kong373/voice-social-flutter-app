@@ -37,14 +37,28 @@ jobs:
         include:
           - label: Room PK repository
             file: test/room_pk_repository_test.dart
+            test_name: ""
           - label: Commerce catalog repository
             file: test/commerce_catalog_repository_test.dart
+            test_name: ""
           - label: Message repository
             file: test/message_repository_test.dart
-          - label: M2.4 widget pages
+            test_name: ""
+          - label: M2.4 PK widget pages
             file: test/m24_pages_test.dart
+            test_name: RM-013 and RM-014 expose ordinary room PK states
+          - label: M2.4 recharge widget pages
+            file: test/m24_pages_test.dart
+            test_name: CM-002 through CM-004 enforce platform channels and authority
+          - label: M2.4 catalog widget pages
+            file: test/m24_pages_test.dart
+            test_name: CM-009 and CM-010 expose only ordinary assets
+          - label: M2.4 message widget pages
+            file: test/m24_pages_test.dart
+            test_name: MS-001 through MS-006 preserve honest messaging boundaries
           - label: Existing app smoke
             file: test/app_smoke_test.dart
+            test_name: ""
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,4 +74,15 @@ jobs:
         run: flutter pub get
 
       - name: Run targeted test file
-        run: flutter test "${{ matrix.file }}" --timeout=45s --reporter=expanded
+        shell: bash
+        run: |
+          if [[ -n "${{ matrix.test_name }}" ]]; then
+            flutter test "${{ matrix.file }}" \
+              --plain-name "${{ matrix.test_name }}" \
+              --timeout=45s \
+              --reporter=expanded
+          else
+            flutter test "${{ matrix.file }}" \
+              --timeout=45s \
+              --reporter=expanded
+          fi
