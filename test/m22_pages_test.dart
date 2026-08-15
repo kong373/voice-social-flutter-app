@@ -83,7 +83,22 @@ void main() {
     expect(find.text('充值订单'), findsOneWidget);
     expect(find.text('退款申请'), findsOneWidget);
     expect(find.text('主播收益'), findsOneWidget);
-    expect(find.text('结算与提现'), findsOneWidget);
-    expect(find.textContaining('微信支付、支付宝和 Apple IAP'), findsOneWidget);
+
+    final Finder withdrawalEntry = find.text('结算与提现');
+    await tester.scrollUntilVisible(
+      withdrawalEntry,
+      240,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(withdrawalEntry, findsOneWidget);
+
+    final Finder paymentBoundary =
+        find.textContaining('微信支付、支付宝和 Apple IAP');
+    await tester.scrollUntilVisible(
+      paymentBoundary,
+      240,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(paymentBoundary, findsOneWidget);
   });
 }
