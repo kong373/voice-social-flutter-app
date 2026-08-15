@@ -211,6 +211,23 @@ require_command() {
   fi
 }
 
+configure_android_tool_path() {
+  local sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+  local tool_dir
+  if [[ -z "$sdk_root" ]]; then
+    return
+  fi
+  for tool_dir in \
+    "$sdk_root/emulator" \
+    "$sdk_root/platform-tools" \
+    "$sdk_root/cmdline-tools/latest/bin"; do
+    if [[ -d "$tool_dir" ]]; then
+      PATH="$tool_dir:$PATH"
+    fi
+  done
+  export PATH
+}
+
 adb_device() {
   adb -s "$DEVICE_ID" "$@"
 }
@@ -2026,6 +2043,7 @@ main() {
     exit 69
   fi
 
+  configure_android_tool_path
   require_command adb
   require_command dart
   require_command emulator
