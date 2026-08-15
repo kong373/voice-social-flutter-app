@@ -16,10 +16,18 @@ void main() {
     AppDependencies dependencies,
     Widget page,
   ) async {
+    // Force disposal of the previous navigator and all page-owned timers
+    // before mounting the next fixture.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
     await tester.pumpWidget(
       AppDependencyScope(
         dependencies: dependencies,
-        child: MaterialApp(theme: AppTheme.dark(), home: page),
+        child: MaterialApp(
+          key: UniqueKey(),
+          theme: AppTheme.dark(),
+          home: page,
+        ),
       ),
     );
     // Use bounded frames instead of pumpAndSettle. Some production pages own
