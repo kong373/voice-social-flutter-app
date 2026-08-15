@@ -21,9 +21,9 @@ permissions:
   contents: read
 
 concurrency:
-  # v3 isolates corrected runs from the v2 API24 runner process that stopped
-  # responding to GitHub cancellation. Later v3 commits still cancel normally.
-  group: m24-android-emulator-v3-${{ github.event.pull_request.head.ref || github.ref_name }}
+  # v4 isolates the bounded API24 runner from the monolithic v3 process that
+  # stopped responding to GitHub cancellation. Later v4 commits still cancel.
+  group: m24-android-emulator-v4-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 env:
@@ -324,6 +324,11 @@ jobs:
           always() &&
           steps.prepare.outcome == 'success' &&
           steps.kvm.outcome == 'success'
+        # Keep the evidence upload reachable even if the API-24 emulator or a
+        # host child process stops responding. The inner timeout first gives
+        # the Bash EXIT trap time to write a partial, explicitly failed
+        # summary; the step timeout is the final Actions-side safety net.
+        timeout-minutes: 105
         uses: ReactiveCircus/android-emulator-runner@v2
         env:
           QA_API_LEVEL: "24"
@@ -368,7 +373,9 @@ jobs:
             -camera-back none
             -camera-front none
           working-directory: .ci_app
-          script: bash tool/qa/run_m24_emulator_ci.sh
+          script: >-
+            timeout --signal=TERM --kill-after=180s 80m
+            bash tool/qa/run_m24_emulator_ci.sh
 
       - name: Upload AVD-B evidence
         if: always()

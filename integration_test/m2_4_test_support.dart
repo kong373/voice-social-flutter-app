@@ -175,15 +175,23 @@ Future<void> captureQaScreenshot(
     if (byteData == null) {
       throw StateError('Could not encode framework screenshot $safeName');
     }
-    binding.reportData ??= <String, dynamic>{};
-    binding.reportData!['screenshots'] ??= <dynamic>[];
-    (binding.reportData!['screenshots']! as List<dynamic>)
-        .add(<String, dynamic>{
-          'screenshotName': safeName,
-          'bytes': byteData.buffer
-              .asUint8List(byteData.offsetInBytes, byteData.lengthInBytes)
-              .toList(),
-        });
+    // Do not put API-24 PNG bytes in reportData. integrationDriver transports
+    // reportData as JSON over the VM service, so a flow with many physical-size
+    // screenshots can spend tens of minutes serializing integer arrays (and
+    // yields no host evidence if the driver is then killed). Write each PNG to
+    // the debuggable app's cache instead. The CI runner pulls this directory
+    // with `run-as` after every independently bounded flutter-drive target.
+    final Directory screenshotDirectory = Directory(
+      '${Directory.systemTemp.path}/m24-framework-screenshots',
+    );
+    await screenshotDirectory.create(recursive: true);
+    await File('${screenshotDirectory.path}/$safeName.png').writeAsBytes(
+      byteData.buffer.asUint8List(
+        byteData.offsetInBytes,
+        byteData.lengthInBytes,
+      ),
+      flush: true,
+    );
     return;
   }
 

@@ -229,9 +229,14 @@ void main() {
       expect(find.text('账号安全提醒'), findsOneWidget);
       await tester.tap(find.text('账号安全提醒'));
       await pumpUntilVisible(tester, find.byType(NotificationDetailPage));
+      const String systemSummary = '你的账号在新设备上完成登录。';
+      const String systemDetails =
+          '设备：Android 测试设备\n时间：今天 09:20\n如非本人操作，请前往账号与安全检查登录设备。';
+      await pumpUntilVisible(tester, find.text(systemSummary));
+      await pumpUntilVisible(tester, find.text(systemDetails));
       expect(find.text('通知详情'), findsOneWidget);
-      expect(find.text('你的账号在新设备上完成登录。'), findsOneWidget);
-      expect(find.textContaining('Android 测试设备'), findsOneWidget);
+      expect(find.text(systemSummary), findsOneWidget);
+      expect(find.text(systemDetails), findsOneWidget);
       final AppNotification readNotification = await dependencies
           .messageRepository
           .fetchNotification('notification-system-1');
@@ -249,7 +254,12 @@ void main() {
       await pumpUntilVisible(tester, find.text('动态收到一条评论'));
       await tester.tap(find.text('动态收到一条评论'));
       await pumpUntilVisible(tester, find.byType(NotificationDetailPage));
-      expect(find.text('目标动态已被作者删除。'), findsOneWidget);
+      const String unavailableSummary = '目标动态已被作者删除。';
+      const String unavailableDetails = '该通知保留，但目标内容已经不可用。';
+      await pumpUntilVisible(tester, find.text(unavailableSummary));
+      await pumpUntilVisible(tester, find.text(unavailableDetails));
+      expect(find.text(unavailableSummary), findsOneWidget);
+      expect(find.text(unavailableDetails), findsOneWidget);
       await tester.tap(find.text('查看不可用原因'));
       await pumpUntilVisible(
         tester,

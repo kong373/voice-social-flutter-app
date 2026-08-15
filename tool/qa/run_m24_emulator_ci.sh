@@ -36,6 +36,7 @@ readonly DUMP_DIR="$ARTIFACT_ROOT/dumps"
 readonly PERF_DIR="$ARTIFACT_ROOT/performance"
 readonly APK_DIR="$ARTIFACT_ROOT/apk"
 readonly TEST_RESULT_DIR="$ARTIFACT_ROOT/test-results"
+readonly RUNNER_PROGRESS_FILE="$ARTIFACT_ROOT/runner-progress.log"
 
 readonly ENVIRONMENT_FILE="$ARTIFACT_ROOT/environment.txt"
 readonly BUILD_INFO_FILE="$ARTIFACT_ROOT/build_info.txt"
@@ -65,6 +66,10 @@ BASELINE_APK=""
 BASELINE_PACKAGE=""
 QA_APK=""
 QA_PACKAGE=""
+MOCK_DEBUG_APK=""
+MOCK_DEBUG_PACKAGE=""
+MOCK_DEBUG_SHA256=""
+MOCK_DEBUG_TEMP_DIR=""
 APK_ANALYZER=""
 AAPT_TOOL=""
 PAGE_COVERAGE_STATUS="NOT_RUN"
@@ -95,7 +100,8 @@ touch \
   "$BUILD_INFO_FILE" \
   "$APK_SHA_FILE" \
   "$LOGCAT_FILE" \
-  "$PERFORMANCE_FILE"
+  "$PERFORMANCE_FILE" \
+  "$RUNNER_PROGRESS_FILE"
 
 csv_row() {
   local output_file="$1"
@@ -230,6 +236,59 @@ configure_android_tool_path() {
 
 adb_device() {
   adb -s "$DEVICE_ID" "$@"
+}
+
+adb_device_bounded() {
+  local duration="$1"
+  shift
+  timeout --signal=TERM --kill-after=5s "$duration" \
+    adb -s "$DEVICE_ID" "$@"
+}
+
+progress_event() {
+  local event="$1"
+  local detail="${2:-}"
+  printf '%s event=%s avd=%s detail=%s\n' \
+    "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$event" "$AVD_ID" "$detail" | \
+    tee -a "$RUNNER_PROGRESS_FILE"
+}
+
+stop_host_process_bounded() {
+  local pid="$1"
+  local initial_signal="${2:-TERM}"
+  local attempt
+  [[ -n "$pid" ]] || return 0
+  if ! kill -0 "$pid" 2>/dev/null; then
+    wait "$pid" 2>/dev/null || true
+    return 0
+  fi
+  kill -s "$initial_signal" "$pid" 2>/dev/null || true
+  for attempt in {1..20}; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      wait "$pid" 2>/dev/null || true
+      return 0
+    fi
+    if [[ "$(ps -o stat= -p "$pid" 2>/dev/null)" == Z* ]]; then
+      wait "$pid" 2>/dev/null || true
+      return 0
+    fi
+    sleep 0.25
+  done
+  kill -KILL "$pid" 2>/dev/null || true
+  for attempt in {1..20}; do
+    if ! kill -0 "$pid" 2>/dev/null || \
+        [[ "$(ps -o stat= -p "$pid" 2>/dev/null)" == Z* ]]; then
+      wait "$pid" 2>/dev/null || true
+      return 0
+    fi
+    sleep 0.25
+  done
+  # A kernel-uninterruptible process must not prevent the EXIT trap and the
+  # following always() artifact step from running.
+  printf '%s unreaped_host_pid=%s signal=%s\n' \
+    "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$pid" "$initial_signal" \
+    >>"$RUNNER_PROGRESS_FILE"
+  return 0
 }
 
 run_logged() {
@@ -632,28 +691,44 @@ start_logcat() {
 
 stop_logcat() {
   if [[ -n "$LOGCAT_PID" ]] && kill -0 "$LOGCAT_PID" 2>/dev/null; then
-    kill -TERM "$LOGCAT_PID" 2>/dev/null || true
-    wait "$LOGCAT_PID" 2>/dev/null || true
+    stop_host_process_bounded "$LOGCAT_PID" TERM
   fi
   LOGCAT_PID=""
 }
 
 capture_snapshot() {
   local label
+  local snapshot_log
   label="$(safe_label "$1")"
   [[ -n "$DEVICE_ID" ]] || return 0
+  snapshot_log="$LOG_DIR/${label}-snapshot.log"
+  : >"$snapshot_log"
 
-  adb_device exec-out screencap -p >"$SCREENSHOT_DIR/${label}.png" 2>/dev/null || true
-  adb_device shell dumpsys activity activities >"$DUMP_DIR/${label}-activity.txt" 2>&1 || true
-  adb_device shell dumpsys window displays >"$DUMP_DIR/${label}-window.txt" 2>&1 || true
-  adb_device shell dumpsys connectivity >"$DUMP_DIR/${label}-connectivity.txt" 2>&1 || true
-  adb_device shell dumpsys meminfo "${QA_PACKAGE:-${BASELINE_PACKAGE:-}}" \
-    >"$DUMP_DIR/${label}-meminfo.txt" 2>&1 || true
-  adb_device shell uiautomator dump "/sdcard/${label}.xml" \
-    >"$LOG_DIR/${label}-uiautomator.log" 2>&1 || true
-  adb_device pull "/sdcard/${label}.xml" "$DUMP_DIR/${label}-ui.xml" \
-    >>"$LOG_DIR/${label}-uiautomator.log" 2>&1 || true
-  adb_device shell rm -f "/sdcard/${label}.xml" >/dev/null 2>&1 || true
+  adb_device_bounded 20s exec-out screencap -p \
+    >"$SCREENSHOT_DIR/${label}.png" 2>>"$snapshot_log" || \
+    printf 'screencap=TIMEOUT_OR_FAILURE\n' >>"$snapshot_log"
+  adb_device_bounded 20s shell dumpsys activity activities \
+    >"$DUMP_DIR/${label}-activity.txt" 2>>"$snapshot_log" || \
+    printf 'activity_dump=TIMEOUT_OR_FAILURE\n' >>"$snapshot_log"
+  adb_device_bounded 20s shell dumpsys window displays \
+    >"$DUMP_DIR/${label}-window.txt" 2>>"$snapshot_log" || \
+    printf 'window_dump=TIMEOUT_OR_FAILURE\n' >>"$snapshot_log"
+  adb_device_bounded 20s shell dumpsys connectivity \
+    >"$DUMP_DIR/${label}-connectivity.txt" 2>>"$snapshot_log" || \
+    printf 'connectivity_dump=TIMEOUT_OR_FAILURE\n' >>"$snapshot_log"
+  adb_device_bounded 20s shell dumpsys meminfo \
+    "${QA_PACKAGE:-${BASELINE_PACKAGE:-}}" \
+    >"$DUMP_DIR/${label}-meminfo.txt" 2>>"$snapshot_log" || \
+    printf 'meminfo_dump=TIMEOUT_OR_FAILURE\n' >>"$snapshot_log"
+  adb_device_bounded 20s shell uiautomator dump "/sdcard/${label}.xml" \
+    >"$LOG_DIR/${label}-uiautomator.log" 2>>"$snapshot_log" || \
+    printf 'uiautomator_dump=TIMEOUT_OR_FAILURE\n' >>"$snapshot_log"
+  adb_device_bounded 20s pull "/sdcard/${label}.xml" \
+    "$DUMP_DIR/${label}-ui.xml" \
+    >>"$LOG_DIR/${label}-uiautomator.log" 2>>"$snapshot_log" || \
+    printf 'uiautomator_pull=TIMEOUT_OR_FAILURE\n' >>"$snapshot_log"
+  adb_device_bounded 10s shell rm -f "/sdcard/${label}.xml" \
+    >/dev/null 2>>"$snapshot_log" || true
 }
 
 start_screen_recording() {
@@ -677,19 +752,21 @@ stop_screen_recording() {
   fi
 
   if [[ -n "$DEVICE_ID" ]]; then
-    adb_device shell pkill -2 screenrecord >/dev/null 2>&1 || \
-      adb_device shell killall -2 screenrecord >/dev/null 2>&1 || true
+    adb_device_bounded 10s shell pkill -2 screenrecord >/dev/null 2>&1 || \
+      adb_device_bounded 10s shell killall -2 screenrecord \
+        >/dev/null 2>&1 || true
   fi
   if [[ -n "$SCREENRECORD_PID" ]] && kill -0 "$SCREENRECORD_PID" 2>/dev/null; then
     kill -INT "$SCREENRECORD_PID" 2>/dev/null || true
   fi
   if [[ -n "$SCREENRECORD_PID" ]]; then
-    wait "$SCREENRECORD_PID" 2>/dev/null || true
+    stop_host_process_bounded "$SCREENRECORD_PID" INT
   fi
   if [[ -n "$DEVICE_ID" ]]; then
-    adb_device pull "$SCREENRECORD_REMOTE" "$SCREENRECORD_LOCAL" \
+    adb_device_bounded 30s pull "$SCREENRECORD_REMOTE" "$SCREENRECORD_LOCAL" \
       >"$LOG_DIR/$(basename "$SCREENRECORD_LOCAL").pull.log" 2>&1 || true
-    adb_device shell rm -f "$SCREENRECORD_REMOTE" >/dev/null 2>&1 || true
+    adb_device_bounded 10s shell rm -f "$SCREENRECORD_REMOTE" \
+      >/dev/null 2>&1 || true
   fi
   SCREENRECORD_PID=""
   SCREENRECORD_REMOTE=""
@@ -751,14 +828,16 @@ enable_offline_mode() {
 
 restore_network_mode() {
   [[ -n "$DEVICE_ID" ]] || return 0
-  adb_device shell cmd connectivity airplane-mode disable >/dev/null 2>&1 || {
-    adb_device shell settings put global airplane_mode_on 0 >/dev/null 2>&1 || true
-    adb_device shell am broadcast \
+  adb_device_bounded 10s shell cmd connectivity airplane-mode disable \
+    >/dev/null 2>&1 || {
+    adb_device_bounded 10s shell settings put global airplane_mode_on 0 \
+      >/dev/null 2>&1 || true
+    adb_device_bounded 10s shell am broadcast \
       -a android.intent.action.AIRPLANE_MODE \
       --ez state false >/dev/null 2>&1 || true
   }
-  adb_device shell svc wifi enable >/dev/null 2>&1 || true
-  adb_device shell svc data enable >/dev/null 2>&1 || true
+  adb_device_bounded 10s shell svc wifi enable >/dev/null 2>&1 || true
+  adb_device_bounded 10s shell svc data enable >/dev/null 2>&1 || true
 }
 
 find_baseline_apk() {
@@ -956,7 +1035,9 @@ qa_dart_defines() {
 
 build_qa_apk() {
   local -a defines=()
+  local -a mock_main_defines=()
   local build_log="$LOG_DIR/qa-apk-build.log"
+  local mock_main_build_log="$LOG_DIR/session-restore-mock-apk-build.log"
   mapfile -t defines < <(qa_dart_defines true)
 
   if ! run_logged "$build_log" flutter build apk \
@@ -993,6 +1074,53 @@ build_qa_apk() {
       "P0" "build" "Could not read QA APK applicationId" \
       "Run apkanalyzer on the generated QA APK." "$BUILD_INFO_FILE"
     exit 67
+  fi
+
+  # Keep a same-signature, console-disabled main APK outside the evidence tree.
+  # flutter drive replaces the installed application with an integration
+  # target; FLOW-003 must relaunch the ordinary app without clearing the secure
+  # storage established by FLOW-001. This temporary APK is deliberately not a
+  # long-lived artifact.
+  mapfile -t mock_main_defines < <(qa_dart_defines false)
+  if run_logged "$mock_main_build_log" flutter build apk \
+      --debug \
+      --no-pub \
+      "${mock_main_defines[@]}" && \
+      [[ -f "$PROJECT_ROOT/build/app/outputs/flutter-apk/app-debug.apk" ]]; then
+    local temp_parent="${RUNNER_TEMP:-/tmp}"
+    [[ -d "$temp_parent" ]] || temp_parent="/tmp"
+    MOCK_DEBUG_TEMP_DIR="$(
+      mktemp -d "$temp_parent/m24-session-restore-${AVD_ID}.XXXXXX"
+    )"
+    MOCK_DEBUG_APK="$MOCK_DEBUG_TEMP_DIR/app-debug.apk"
+    cp "$PROJECT_ROOT/build/app/outputs/flutter-apk/app-debug.apk" \
+      "$MOCK_DEBUG_APK"
+    MOCK_DEBUG_PACKAGE="$(apk_manifest_value application-id "$MOCK_DEBUG_APK")"
+    MOCK_DEBUG_SHA256="$(sha256sum "$MOCK_DEBUG_APK" | awk '{print $1}')"
+    printf 'session_restore_mock_debug=%s\n' "$MOCK_DEBUG_SHA256" \
+      >>"$APK_SHA_FILE"
+    {
+      printf 'purpose=FLOW-003 ordinary mock main reinstall\n'
+      printf 'qa_console_enabled=false\n'
+      printf 'application_id=%s\n' "$MOCK_DEBUG_PACKAGE"
+      printf 'launchable_activity=%s\n' \
+        "$(apk_launchable_activity "$MOCK_DEBUG_APK")"
+      printf 'sha256=%s\n' "$MOCK_DEBUG_SHA256"
+      printf 'temporary_apk=%s\n' "$MOCK_DEBUG_APK"
+      printf 'retained_artifact=false\n'
+    } >>"$mock_main_build_log"
+    if [[ -z "$MOCK_DEBUG_PACKAGE" || \
+          "$MOCK_DEBUG_PACKAGE" != "$QA_PACKAGE" ]]; then
+      printf 'package_validation=FAIL expected=%s actual=%s\n' \
+        "$QA_PACKAGE" "${MOCK_DEBUG_PACKAGE:-missing}" \
+        >>"$mock_main_build_log"
+      MOCK_DEBUG_PACKAGE=""
+    else
+      printf 'package_validation=PASS\n' >>"$mock_main_build_log"
+    fi
+  else
+    printf 'temporary_mock_main=BUILD_FAILED_OR_MISSING\n' \
+      >>"$mock_main_build_log"
   fi
 
   record_case \
@@ -1092,22 +1220,28 @@ run_qa_launch_smoke() {
   stop_screen_recording
 
   local ui_dump="$DUMP_DIR/qa-console-${AVD_ID}-ui.xml"
+  local system_component_anr_pattern="(System UI|Pixel Launcher) (isn't|is not|isn’t) responding|系统界面.*无响应|Pixel Launcher.*无响应|Pixel 启动器.*无响应"
   if [[ -s "$ui_dump" ]] && \
-      grep -Eq "System UI (isn't|is not) responding|系统界面.*无响应" "$ui_dump"; then
+      grep -Eq "$system_component_anr_pattern" "$ui_dump"; then
     local anr_ui_dump="$DUMP_DIR/qa-console-systemui-anr-${AVD_ID}-ui.xml"
     local anr_screenshot="$SCREENSHOT_DIR/qa-console-systemui-anr-${AVD_ID}.png"
+    local anr_match_log="$LOG_DIR/qa-console-system-component-anr-${AVD_ID}.log"
     cp "$ui_dump" "$anr_ui_dump"
     if [[ -f "$SCREENSHOT_DIR/qa-console-${AVD_ID}.png" ]]; then
       cp "$SCREENSHOT_DIR/qa-console-${AVD_ID}.png" "$anr_screenshot"
     fi
+    grep -Eo "$system_component_anr_pattern" "$anr_ui_dump" \
+      >"$anr_match_log" 2>&1 || true
     record_defect \
-      "P2" "environment" "Android System UI ANR dialog obscured the QA launch" \
-      "Dismiss the system dialog, wait for System UI to stabilize, and relaunch the same QA APK." \
+      "P2" "environment" "Android system component ANR dialog obscured the QA launch" \
+      "Dismiss the System UI or Pixel Launcher dialog, wait for the system component to stabilize, and relaunch the same QA APK." \
       "$anr_ui_dump"
 
-    # AOSP's ANR dialog is non-cancelable, so KEYCODE_BACK cannot reliably
-    # dismiss it. Select the stable aerr_wait control from its captured bounds
-    # instead of hard-coding coordinates for one emulator density.
+    # AOSP's ANR dialog for the explicitly allow-listed System UI and Pixel
+    # Launcher components is non-cancelable, so KEYCODE_BACK cannot reliably
+    # dismiss it. App ANRs are intentionally not matched or dismissed here.
+    # Select the stable aerr_wait control from its captured bounds instead of
+    # hard-coding coordinates for one emulator density.
     local wait_node=""
     wait_node="$(
       grep -oE \
@@ -1301,6 +1435,115 @@ run_release_qa_gate() {
   adb_device uninstall "$release_package" >>"$install_log" 2>&1 || true
 }
 
+pull_framework_screenshots() {
+  local test_name="$1"
+  (( API_LEVEL < 26 )) || return 0
+  [[ -n "$QA_PACKAGE" ]] || return 0
+  local remote_directory="cache/m24-framework-screenshots"
+  local pull_log="$LOG_DIR/${test_name}-framework-screenshot-pull.log"
+  local listing=""
+  local remote_name destination partial magic
+  local pulled=0
+  : >"$pull_log"
+
+  set +e
+  listing="$(
+    adb_device_bounded 20s shell run-as "$QA_PACKAGE" \
+      ls -1 "$remote_directory" 2>>"$pull_log"
+  )"
+  local list_status=$?
+  set -e
+  printf 'list_exit=%s\n' "$list_status" >>"$pull_log"
+  if (( list_status != 0 )); then
+    progress_event screenshot_pull \
+      "test=$test_name status=list_failed exit=$list_status"
+    adb_device_bounded 20s shell run-as "$QA_PACKAGE" \
+      rm -rf "$remote_directory" >>"$pull_log" 2>&1 || true
+    return 0
+  fi
+
+  while IFS= read -r remote_name; do
+    remote_name="${remote_name//$'\r'/}"
+    [[ "$remote_name" =~ ^[A-Za-z0-9_.-]+\.png$ ]] || {
+      printf 'ignored_remote_name=%q\n' "$remote_name" >>"$pull_log"
+      continue
+    }
+    destination="$SCREENSHOT_DIR/$remote_name"
+    partial="$destination.partial"
+    if adb_device_bounded 30s exec-out run-as "$QA_PACKAGE" \
+        cat "$remote_directory/$remote_name" >"$partial" 2>>"$pull_log" && \
+        [[ -s "$partial" ]]; then
+      magic="$(od -An -tx1 -N8 "$partial" | tr -d '[:space:]')"
+      if [[ "$magic" == "89504e470d0a1a0a" ]]; then
+        mv -f -- "$partial" "$destination"
+        ((pulled += 1))
+        printf 'pulled=%s sha256=%s\n' \
+          "$remote_name" "$(sha256sum "$destination" | awk '{print $1}')" \
+          >>"$pull_log"
+      else
+        rm -f -- "$partial"
+        printf 'invalid_png=%s magic=%s\n' "$remote_name" "$magic" \
+          >>"$pull_log"
+      fi
+    else
+      rm -f -- "$partial"
+      printf 'pull_failed=%s\n' "$remote_name" >>"$pull_log"
+    fi
+  done <<<"$listing"
+  adb_device_bounded 20s shell run-as "$QA_PACKAGE" \
+    rm -rf "$remote_directory" >>"$pull_log" 2>&1 || true
+  printf 'pulled_count=%s\n' "$pulled" >>"$pull_log"
+  progress_event screenshot_pull "test=$test_name count=$pulled"
+}
+
+recover_after_integration() {
+  local test_name="$1"
+  local recovery_log="$LOG_DIR/${test_name}-post-drive-recovery.log"
+  local attempt state="" boot_completed=""
+  progress_event target_cleanup "test=$test_name phase=start"
+  {
+    printf 'timestamp=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    printf 'host_processes_begin\n'
+    pgrep -af 'flutter_tools|flutter drive|dart.*test|GradleDaemon' || true
+    printf 'host_processes_end\n'
+    printf 'listening_ports_begin\n'
+    ss -ltnp 2>/dev/null || true
+    printf 'listening_ports_end\n'
+  } >"$recovery_log" 2>&1
+
+  # timeout owns the flutter-drive process group. Remove the device-side app
+  # and VM-service forwarding state before the next target so one timed-out
+  # target cannot poison all later critical flows.
+  if [[ -n "$QA_PACKAGE" ]]; then
+    adb_device_bounded 20s shell am force-stop "$QA_PACKAGE" \
+      >>"$recovery_log" 2>&1 || true
+  fi
+  adb_device_bounded 20s forward --remove-all >>"$recovery_log" 2>&1 || true
+  adb_device_bounded 20s reverse --remove-all >>"$recovery_log" 2>&1 || true
+
+  for attempt in {1..3}; do
+    state="$(adb_device_bounded 15s get-state 2>>"$recovery_log" || true)"
+    boot_completed="$(
+      adb_device_bounded 15s shell getprop sys.boot_completed \
+        2>>"$recovery_log" | tr -d '\r' || true
+    )"
+    printf 'attempt=%s state=%s boot_completed=%s\n' \
+      "$attempt" "$state" "$boot_completed" >>"$recovery_log"
+    if [[ "$state" == "device" && "$boot_completed" == "1" ]]; then
+      progress_event target_cleanup "test=$test_name status=healthy"
+      return 0
+    fi
+    sleep 2
+  done
+
+  record_defect \
+    "P0" "runner" "Emulator was unhealthy after $test_name" \
+    "Inspect the bounded flutter-drive and post-drive recovery logs." \
+    "$recovery_log"
+  progress_event target_cleanup "test=$test_name status=unhealthy"
+  return 1
+}
+
 run_integration_file() {
   local test_file="$1"
   local timeout_value="$2"
@@ -1308,6 +1551,8 @@ run_integration_file() {
   local test_id
   local log_file
   local status
+  local drive_guard_pid
+  local log_stream_pid
   local -a defines=()
   local -a lifecycle_args=()
   test_name="$(basename "$test_file" .dart)"
@@ -1321,9 +1566,18 @@ run_integration_file() {
 
   if [[ "$test_name" == "m2_4_offline_emulator_test" ]]; then
     start_screen_recording "${test_name}-${AVD_ID}"
+  fi
+  if [[ "$test_name" == "m2_4_offline_emulator_test" ]] || \
+      (( API_LEVEL < 26 )); then
+    # API24 flow screenshots are written into the debuggable package cache and
+    # pulled immediately after drive exits. Flutter drive normally uninstalls
+    # the package during stop(), which would erase that cache before the host
+    # can collect it, so keep the package only for this bounded pull/cleanup.
     lifecycle_args+=(--keep-app-running)
   fi
 
+  : >"$log_file"
+  progress_event target_start "test=$test_name timeout=$timeout_value"
   set +e
   # Let timeout own a separate process group and write directly to the log.
   # Using --foreground with a `| tee` pipeline can leave Gradle/Dart children
@@ -1338,9 +1592,20 @@ run_integration_file() {
       --no-pub \
       "${lifecycle_args[@]}" \
       "${defines[@]}" \
-      >"$log_file" 2>&1
+      >"$log_file" 2>&1 &
+  drive_guard_pid=$!
+  tail --pid="$drive_guard_pid" --sleep-interval=1 -n +1 -F "$log_file" &
+  log_stream_pid=$!
+  wait "$drive_guard_pid"
   status=$?
+  stop_host_process_bounded "$log_stream_pid" TERM
   set -e
+  progress_event target_end "test=$test_name exit=$status"
+
+  # API 24 writes Flutter-layer PNGs into the debuggable package cache to
+  # avoid transporting large byte arrays through integrationDriver JSON.
+  # Pull even after a timeout so completed flow steps remain auditable.
+  pull_framework_screenshots "$test_name"
 
   if [[ "$test_name" == "m2_4_offline_emulator_test" ]]; then
     stop_screen_recording
@@ -1374,6 +1639,8 @@ run_integration_file() {
       PAGE_COVERAGE_STATUS="FAIL"
     fi
   fi
+
+  recover_after_integration "$test_name"
 }
 
 run_session_restore_smoke() {
@@ -1384,13 +1651,52 @@ run_session_restore_smoke() {
     return 0
   }
   local launch_log="$LOG_DIR/session-restore-launch.log"
+  local install_log="$LOG_DIR/session-restore-mock-apk-install.log"
   local ui_dump="$DUMP_DIR/FLOW-003-session-restore-${AVD_ID}-ui.xml"
-  adb_device shell am force-stop "$QA_PACKAGE" >>"$launch_log" 2>&1 || true
-  if ! launch_apk "$QA_APK" "$QA_PACKAGE" "$launch_log"; then
+  if [[ -z "$MOCK_DEBUG_APK" || ! -f "$MOCK_DEBUG_APK" || \
+        -z "$MOCK_DEBUG_PACKAGE" || \
+        "$MOCK_DEBUG_PACKAGE" != "$QA_PACKAGE" ]]; then
+    record_defect \
+      "P1" "lifecycle" "Ordinary mock debug APK is unavailable for session restore" \
+      "Build and retain the console-disabled mock main APK before flutter drive." \
+      "$LOG_DIR/session-restore-mock-apk-build.log" "AC-001" "FLOW-003"
+    INTEGRATION_RESULTS[session_restore]="FAIL"
+    INTEGRATION_DEFECTS[session_restore]="$LAST_DEFECT_ID"
+    return 0
+  fi
+
+  # Replace the integration target in place. `adb install -r` is intentional:
+  # uninstalling would erase the secure-storage session FLOW-001 just created,
+  # while a signature mismatch must fail rather than silently clear data.
+  if ! run_logged "$install_log" adb_device install -r "$MOCK_DEBUG_APK"; then
+    {
+      printf 'sha256=%s\n' "$MOCK_DEBUG_SHA256"
+      printf 'application_id=%s\n' "$MOCK_DEBUG_PACKAGE"
+      printf 'preserve_data=true\n'
+    } >>"$install_log"
+    capture_snapshot "FLOW-003-session-restore-install-failure-${AVD_ID}"
+    record_defect \
+      "P1" "lifecycle" "Ordinary mock main APK could not replace the integration target" \
+      "Use the same debug signing identity and adb install -r so secure storage is preserved." \
+      "$install_log" "AC-001" "FLOW-003"
+    INTEGRATION_RESULTS[session_restore]="FAIL"
+    INTEGRATION_DEFECTS[session_restore]="$LAST_DEFECT_ID"
+    return 0
+  fi
+  {
+    printf 'sha256=%s\n' "$MOCK_DEBUG_SHA256"
+    printf 'application_id=%s\n' "$MOCK_DEBUG_PACKAGE"
+    printf 'preserve_data=true\n'
+    printf 'install_result=PASS\n'
+  } >>"$install_log"
+
+  adb_device shell am force-stop "$MOCK_DEBUG_PACKAGE" \
+    >>"$launch_log" 2>&1 || true
+  if ! launch_apk "$MOCK_DEBUG_APK" "$MOCK_DEBUG_PACKAGE" "$launch_log"; then
     capture_snapshot "FLOW-003-session-restore-launch-failure-${AVD_ID}"
     record_defect \
       "P1" "lifecycle" "Authenticated mock session did not relaunch" \
-      "After FLOW-001, force-stop and relaunch the installed console-disabled integration build." \
+      "After FLOW-001, install -r and relaunch the ordinary console-disabled mock main." \
       "$launch_log" "AC-001" "FLOW-003"
     INTEGRATION_RESULTS[session_restore]="FAIL"
     INTEGRATION_DEFECTS[session_restore]="$LAST_DEFECT_ID"
@@ -1413,7 +1719,7 @@ run_session_restore_smoke() {
       "Force-stop/relaunch restores the authenticated mock home" \
       "Home restored and QA Console remained absent" "PASS" "" "" \
       "$SCREENSHOT_DIR/FLOW-003-session-restore-${AVD_ID}.png" "" "$launch_log" \
-      "Runs immediately after the offline authentication integration target."
+      "Runs after same-signature install -r replaces the integration target with the ordinary mock main."
   else
     record_defect \
       "P1" "lifecycle" "Force-stop/relaunch did not restore the mock home" \
@@ -1545,11 +1851,11 @@ run_integration_suite() {
     )
   elif [[ "$QA_SCOPE_VALUE" == "critical" ]]; then
     tests=(
-      "integration_test/m2_4_offline_emulator_test.dart:20m"
-      "integration_test/m2_4_room_flow_test.dart:25m"
-      "integration_test/m2_4_commerce_flow_test.dart:20m"
-      "integration_test/m2_4_message_flow_test.dart:20m"
-      "integration_test/m2_4_community_flow_test.dart:20m"
+      "integration_test/m2_4_offline_emulator_test.dart:12m"
+      "integration_test/m2_4_room_flow_test.dart:15m"
+      "integration_test/m2_4_commerce_flow_test.dart:12m"
+      "integration_test/m2_4_message_flow_test.dart:10m"
+      "integration_test/m2_4_community_flow_test.dart:12m"
     )
   else
     record_defect \
@@ -1575,7 +1881,12 @@ run_integration_suite() {
       INTEGRATION_DEFECTS["$missing_name"]="$LAST_DEFECT_ID"
       continue
     fi
-    run_integration_file "$test_file" "$timeout_value"
+    if ! run_integration_file "$test_file" "$timeout_value"; then
+      # The remaining flows are not executed on an unhealthy emulator. They
+      # are later emitted as explicit FAIL/NOT_TESTED records by the critical
+      # flow inventory; this is never promoted to a pass.
+      break
+    fi
     if [[ "$test_file" == "integration_test/m2_4_offline_emulator_test.dart" ]]; then
       run_session_restore_smoke
     fi
@@ -2052,6 +2363,17 @@ finalize() {
   trap - EXIT
   set +e
 
+  # Materialize an honest partial verdict before any best-effort ADB evidence
+  # collection. If the emulator is kernel-stuck and the outer watchdog later
+  # escalates to KILL, the always() upload still has a summary and progress log.
+  if (( original_status != 0 && FAIL_COUNT == 0 )); then
+    record_defect \
+      "P0" "runner" "QA runner exited unexpectedly with status $original_status" \
+      "Inspect workflow and runner logs." "$ARTIFACT_ROOT"
+  fi
+  write_summary
+  progress_event runner_finalize "original_status=$original_status phase=start"
+
   stop_screen_recording
   if [[ -n "$DEVICE_ID" ]]; then
     capture_snapshot "final-${AVD_ID}"
@@ -2065,17 +2387,21 @@ finalize() {
   fi
   restore_network_mode
 
-  if (( original_status != 0 && FAIL_COUNT == 0 )); then
-    record_defect \
-      "P0" "runner" "QA runner exited unexpectedly with status $original_status" \
-      "Inspect workflow and runner logs." "$ARTIFACT_ROOT"
+  if [[ -n "$MOCK_DEBUG_APK" && -f "$MOCK_DEBUG_APK" ]]; then
+    rm -f -- "$MOCK_DEBUG_APK"
   fi
+  if [[ -n "$MOCK_DEBUG_TEMP_DIR" && -d "$MOCK_DEBUG_TEMP_DIR" ]]; then
+    rmdir -- "$MOCK_DEBUG_TEMP_DIR" 2>/dev/null || true
+  fi
+
   write_summary
   redact_text_artifacts
 
   if (( FAIL_COUNT > 0 && final_status == 0 )); then
     final_status=1
   fi
+  progress_event runner_finalize \
+    "original_status=$original_status final_status=$final_status phase=complete"
   exit "$final_status"
 }
 
@@ -2135,9 +2461,12 @@ main() {
   require_command emulator
   require_command flutter
   require_command java
+  require_command od
   require_command sha256sum
   require_command timeout
   require_command unzip
+
+  progress_event runner_start "api=$API_LEVEL scope=$QA_SCOPE_VALUE"
 
   write_environment
   verify_tested_source
@@ -2148,17 +2477,24 @@ main() {
   write_avd_matrix
   start_logcat
   enable_offline_mode
+  progress_event phase_start baseline
   run_baseline_black_box
+  progress_event phase_start qa_build
   build_qa_apk
+  progress_event phase_start qa_smoke
   run_qa_launch_smoke
+  progress_event phase_start integration_suite
   run_integration_suite
   # The release gate regenerates Android plugin tooling without dev-only
   # integration_test. Run it only after every flutter drive/page shard so the
   # release registrant cannot contaminate the debug integration environment.
   run_release_qa_gate
+  progress_event phase_start flow_inventory
   record_flow_inventory
+  progress_event phase_start monkey
   run_monkey
   run_offline_soak
+  progress_event runner_complete "failures=$FAIL_COUNT"
 }
 
 main "$@"
