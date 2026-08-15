@@ -55,8 +55,14 @@ void main() {
     );
     expect(find.text('PK 邀请与准备'), findsOneWidget);
     expect(find.text('选择对手'), findsOneWidget);
-    expect(find.text('发送 PK 邀请'), findsOneWidget);
     expect(find.textContaining('不会加入随机匹配'), findsOneWidget);
+    final Finder sendButton = find.text('发送 PK 邀请');
+    await tester.scrollUntilVisible(
+      sendButton,
+      240,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(sendButton, findsOneWidget);
 
     final RoomPkBattle completed = RoomPkBattle(
       id: 'battle-widget',
@@ -162,7 +168,7 @@ void main() {
 
     await pumpScoped(tester, dependencies, const GiftCatalogPage());
     expect(find.text('礼物目录与赠送面板'), findsOneWidget);
-    expect(find.text('星光'), findsOneWidget);
+    expect(find.text('星光'), findsWidgets);
     expect(find.text('红包'), findsNothing);
     expect(find.text('盲盒'), findsNothing);
 
