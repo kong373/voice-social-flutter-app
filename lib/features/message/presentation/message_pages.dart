@@ -7,6 +7,7 @@ import 'package:voice_social_app/features/discovery/dynamic/presentation/dynamic
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/domain/message_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_deep_link_page.dart';
+import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 part 'message_center_page.dart';
