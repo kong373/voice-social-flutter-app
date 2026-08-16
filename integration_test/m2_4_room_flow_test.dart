@@ -609,9 +609,18 @@ void main() {
       await tester.tap(find.text('房间 PK'));
       await pumpUntilVisible(tester, find.text('PK 邀请与准备'));
 
-      final Finder opponent = find.widgetWithText(ListTile, '下班后的松弛时刻');
+      final Finder opponentName = find.text('下班后的松弛时刻');
+      await tester.scrollUntilVisible(
+        opponentName,
+        220,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.pumpAndSettle();
+      final Finder opponent = find.ancestor(
+        of: opponentName,
+        matching: find.byType(ListTile),
+      );
       expect(opponent, findsOneWidget);
-      await tester.ensureVisible(opponent);
       await tester.tap(opponent);
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
