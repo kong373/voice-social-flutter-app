@@ -58,11 +58,10 @@ jobs:
         run: |
           set -Eeuo pipefail
           set -o pipefail
-          base_sha="${EVENT_BASE_SHA:-}"
-          if [[ -z "$base_sha" || "$base_sha" =~ ^0+$ ]] || \
-              ! git cat-file -e "${base_sha}^{commit}" 2>/dev/null; then
-            base_sha="$QA_BASE_COMMIT"
-          fi
+          # Check the complete candidate delta, not only the latest push.
+          # A workflow-only follow-up must not hide unformatted Dart files
+          # introduced by the immediately preceding candidate commit.
+          base_sha="$QA_BASE_COMMIT"
           if ! git cat-file -e "${base_sha}^{commit}" 2>/dev/null; then
             base_sha="$(git rev-parse HEAD^)"
           fi
