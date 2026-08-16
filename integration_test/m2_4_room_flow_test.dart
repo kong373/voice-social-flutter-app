@@ -861,7 +861,5 @@ Finder _managementMemberTile(String name) =>
 Finder _managementSeatCard(int seatNumber) =>
     find.ancestor(of: find.text('$seatNumber 号麦'), matching: find.byType(Card));
 
-Finder _roomAction(String label) => find.ancestor(
-  of: find.text(label),
-  matching: find.byType(InkResponse),
-);
+Finder _roomAction(String label) =>
+    find.ancestor(of: find.text(label), matching: find.byType(InkResponse));
