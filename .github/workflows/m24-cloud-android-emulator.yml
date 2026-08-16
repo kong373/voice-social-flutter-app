@@ -125,11 +125,28 @@ jobs:
           retention-days: 14
 
   emulator:
-    name: Sequential AVD-A full then AVD-B full
+    name: ${{ matrix.id }} API ${{ matrix.api }} ${{ matrix.viewport }} full
     needs: quality
-    if: ${{ always() && !cancelled() }}
+    if: ${{ needs.quality.result == 'success' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 300
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - id: AVD-A
+            api: 36
+            profile: pixel_7_pro
+            avd_name: m24-AVD-A-api-36
+            viewport: 390x844
+            baseline_required: "true"
+          - id: AVD-B
+            api: 35
+            profile: pixel_2
+            avd_name: m24-AVD-B-api-35
+            viewport: 360x800
+            baseline_required: "false"
 
     steps:
       - name: Checkout
@@ -192,6 +209,7 @@ jobs:
           )
 
       - name: Download immutable baseline APK artifact
+        if: ${{ matrix.id == 'AVD-A' }}
         id: baseline
         continue-on-error: true
         uses: actions/download-artifact@v4
@@ -236,36 +254,36 @@ jobs:
             ls -l /dev/kvm >>"$evidence_dir/kvm.txt"
           done
 
-      - name: Run AVD-A API 36 full acceptance and baseline black box
+      - name: Run ${{ matrix.id }} full acceptance
         if: >-
           always() &&
           steps.prepare.outcome == 'success' &&
           steps.kvm.outcome == 'success'
         uses: ReactiveCircus/android-emulator-runner@v2
         env:
-          QA_API_LEVEL: "36"
-          QA_ARTIFACT_ROOT: ${{ github.workspace }}/.ci_app/artifacts/qa/m2.4-emulator/AVD-A
-          QA_AVD_ID: AVD-A
+          QA_API_LEVEL: "${{ matrix.api }}"
+          QA_ARTIFACT_ROOT: ${{ github.workspace }}/.ci_app/artifacts/qa/m2.4-emulator/${{ matrix.id }}
+          QA_AVD_ID: ${{ matrix.id }}
           QA_BACKEND_MODE: ${{ env.QA_BACKEND_MODE }}
           QA_BASELINE_ARTIFACT_DIR: ${{ github.workspace }}/.ci_app/baseline_artifact
           QA_BASELINE_ARTIFACT_NAME: ${{ env.QA_BASELINE_ARTIFACT_NAME }}
-          QA_BASELINE_REQUIRED: "true"
+          QA_BASELINE_REQUIRED: "${{ matrix.baseline_required }}"
           QA_BASELINE_RUN_ID: ${{ env.QA_BASELINE_RUN_ID }}
           QA_EXPECTED_BASELINE_SHA256: ${{ env.QA_EXPECTED_BASELINE_SHA256 }}
           QA_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           QA_MONKEY_EVENTS: "1000"
           QA_OFFLINE_SOAK_SECONDS: "1800"
-          QA_PROFILE: pixel_7_pro
+          QA_PROFILE: ${{ matrix.profile }}
           QA_QUALITY_RESULT: ${{ needs.quality.result }}
           QA_RUN_ATTEMPT: ${{ github.run_attempt }}
           QA_RUN_ID: ${{ github.run_id }}
           QA_SCOPE: full
         with:
-          api-level: 36
+          api-level: ${{ matrix.api }}
           target: google_apis
           arch: x86_64
-          profile: pixel_7_pro
-          avd-name: m24-AVD-A-api-36
+          profile: ${{ matrix.profile }}
+          avd-name: ${{ matrix.avd_name }}
           cores: 2
           ram-size: 4096M
           heap-size: 512M
@@ -285,19 +303,19 @@ jobs:
             -camera-back none
             -camera-front none
           working-directory: .ci_app
-          script: bash tool/qa/run_m24_emulator_ci.sh
+          script: timeout --signal=TERM --kill-after=180s 140m bash tool/qa/run_m24_emulator_ci.sh
 
-      - name: Upload AVD-A evidence
+      - name: Upload ${{ matrix.id }} evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: m24-AVD-A-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .ci_app/artifacts/qa/m2.4-emulator/AVD-A/
+          name: m24-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci_app/artifacts/qa/m2.4-emulator/${{ matrix.id }}/
           if-no-files-found: warn
           retention-days: 30
 
       - name: Upload reproducible AVD-A QA APK separately
-        if: always()
+        if: ${{ always() && matrix.id == 'AVD-A' }}
         uses: actions/upload-artifact@v4
         with:
           name: m24-qa-apk-${{ github.run_id }}-${{ github.run_attempt }}
@@ -309,10 +327,7 @@ jobs:
           retention-days: 14
 
       - name: Run AVD-B API 35 full acceptance
-        if: >-
-          always() &&
-          steps.prepare.outcome == 'success' &&
-          steps.kvm.outcome == 'success'
+        if: ${{ false }}
         # Keep evidence upload reachable if the second full run or a host child
         # process stops responding. API 35 avoids the observed API 24 boot hang.
         timeout-minutes: 150
@@ -365,7 +380,7 @@ jobs:
             bash tool/qa/run_m24_emulator_ci.sh
 
       - name: Upload AVD-B evidence
-        if: always()
+        if: ${{ false }}
         uses: actions/upload-artifact@v4
         with:
           name: m24-AVD-B-${{ github.run_id }}-${{ github.run_attempt }}
@@ -374,7 +389,7 @@ jobs:
           retention-days: 30
 
       - name: Assemble the two-AVD verdict
-        if: always()
+        if: ${{ false }}
         shell: bash
         env:
           QUALITY_RESULT: ${{ needs.quality.result }}
@@ -417,10 +432,77 @@ jobs:
           } >"$output"
 
       - name: Upload aggregate verdict
-        if: always()
+        if: ${{ false }}
         uses: actions/upload-artifact@v4
         with:
           name: m24-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
           path: .ci_app/artifacts/qa/m2.4-emulator/summary.txt
           if-no-files-found: warn
+          retention-days: 30
+
+  aggregate:
+    name: Strict two-AVD verdict
+    needs: [quality, emulator]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download AVD-A evidence
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: m24-AVD-A-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/AVD-A
+
+      - name: Download AVD-B evidence
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: m24-AVD-B-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/AVD-B
+
+      - name: Assemble strict verdict
+        shell: bash
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          EMULATOR_RESULT: ${{ needs.emulator.result }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          a_result=MISSING
+          b_result=MISSING
+          if [[ -f evidence/AVD-A/summary.txt ]]; then
+            a_result="$(sed -n 's/^conclusion=//p' evidence/AVD-A/summary.txt | head -n 1)"
+          fi
+          if [[ -f evidence/AVD-B/summary.txt ]]; then
+            b_result="$(sed -n 's/^conclusion=//p' evidence/AVD-B/summary.txt | head -n 1)"
+          fi
+
+          verdict=ANDROID_EMULATOR_PASS
+          if [[ "$QUALITY_RESULT" != "success" || \
+                "$EMULATOR_RESULT" != "success" || \
+                "$a_result" != "ANDROID_EMULATOR_PASS" || \
+                "$b_result" != "ANDROID_EMULATOR_PASS" ]]; then
+            verdict=ANDROID_EMULATOR_FAIL
+          fi
+          {
+            printf 'M2.4 Cloud Android Emulator aggregate\n'
+            printf 'tested_git_sha=%s\n' "${{ github.sha }}"
+            printf 'quality=%s\n' "$QUALITY_RESULT"
+            printf 'emulator_matrix=%s\n' "$EMULATOR_RESULT"
+            printf 'avd_a=%s\n' "$a_result"
+            printf 'avd_b=%s\n' "$b_result"
+            printf 'conclusion=%s\n' "$verdict"
+            printf 'real_device=REAL_DEVICE_PENDING\n'
+            printf 'ios=IOS_PENDING\n'
+            printf 'vendor_status=VENDOR_BLOCKED\n'
+          } | tee evidence/summary.txt
+          [[ "$verdict" == "ANDROID_EMULATOR_PASS" ]]
+
+      - name: Upload aggregate verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m24-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/summary.txt
+          if-no-files-found: error
           retention-days: 30
