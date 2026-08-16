@@ -575,10 +575,10 @@ configure_exact_viewport() {
       EXPECTED_DPR="3.00"
       ;;
     AVD-B)
-      if [[ "$API_LEVEL" != "24" || "$AVD_PROFILE" != "pixel_2" || \
-            "$QA_SCOPE_VALUE" != "critical" ]]; then
+      if [[ "$API_LEVEL" != "35" || "$AVD_PROFILE" != "pixel_2" || \
+            "$QA_SCOPE_VALUE" != "full" ]]; then
         record_defect \
-          "P0" "viewport" "AVD-B must be API 24, pixel_2, critical scope" \
+          "P0" "viewport" "AVD-B must be API 35, pixel_2, full scope" \
           "Use the approved AVD-B workflow inputs." "$ENVIRONMENT_FILE"
         exit 64
       fi
