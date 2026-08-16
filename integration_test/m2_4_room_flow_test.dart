@@ -609,7 +609,10 @@ void main() {
       await tester.tap(find.text('房间 PK'));
       await pumpUntilVisible(tester, find.text('PK 邀请与准备'));
 
-      final Finder opponentName = find.text('下班后的松弛时刻');
+      final Finder opponentName = find.descendant(
+        of: find.byType(ListTile),
+        matching: find.text('下班后的松弛时刻'),
+      );
       await tester.scrollUntilVisible(
         opponentName,
         220,
