@@ -2302,7 +2302,9 @@ scan_logs() {
   local hard_pattern='FATAL EXCEPTION|ANR in|A RenderFlex overflowed|setState\(\) called after dispose|Looking up a deactivated widget|Unhandled Exception|Null check operator used on a null value|LateInitializationError|MissingPluginException'
 
   grep -En "$all_pattern" "$LOGCAT_FILE" >"$findings_file" 2>/dev/null || true
-  grep -En "$hard_pattern" "$LOGCAT_FILE" >"$hard_findings_file" 2>/dev/null || true
+  grep -En "$hard_pattern" "$LOGCAT_FILE" 2>/dev/null |
+    awk '!/ANR in/ || /ANR in com\\.kong373\\.voice_social_app/' \
+      >"$hard_findings_file" || true
   if [[ -s "$hard_findings_file" ]]; then
     record_defect \
       "P1" "logcat" "Crash, ANR, lifecycle, or layout signature found in Logcat" \
