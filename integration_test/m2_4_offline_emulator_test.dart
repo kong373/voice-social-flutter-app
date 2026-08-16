@@ -300,6 +300,10 @@ Future<void> _scrollToAndTap(
   Finder finder, {
   double scrollDelta = 180,
 }) async {
+  FocusManager.instance.primaryFocus?.unfocus();
+  await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+  await tester.pumpAndSettle();
+  await tester.pump(const Duration(seconds: 1));
   await _scrollToFinder(tester, finder, scrollDelta: scrollDelta);
   await tester.tap(finder.first);
   await tester.pumpAndSettle();

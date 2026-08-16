@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:voice_social_app/debug/qa_console/qa_fixtures.dart';
@@ -58,7 +59,7 @@ void main() {
             'FLOW-004-room-entry-fixed-eight-seats-$qaAvdId',
           );
           expect(find.text('礼物'), findsOneWidget);
-          await tester.tap(_roomAction('礼物'));
+          await _tapRoomAction(tester, '礼物');
           await tester.pumpAndSettle();
           expect(find.text('送礼物'), findsOneWidget);
           expect(find.text('普通礼物'), findsOneWidget);
@@ -267,9 +268,7 @@ void main() {
       await tester.tap(find.byType(BackButton).last);
       await pumpUntilVisible(tester, find.text('实时公屏'));
 
-      final Finder giftAction = _roomAction('礼物');
-      expect(giftAction, findsOneWidget);
-      await tester.tap(giftAction);
+      await _tapRoomAction(tester, '礼物');
       await pumpUntilVisible(tester, find.text('送礼物'));
       await tester.pumpAndSettle();
       expect(find.text('实时公屏'), findsOneWidget);
@@ -317,7 +316,7 @@ void main() {
       await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
 
-      await tester.tap(_roomAction('礼物'));
+      await _tapRoomAction(tester, '礼物');
       await pumpUntilVisible(tester, find.text('送礼物'));
       await tester.pumpAndSettle();
       expect(find.text('余额 1100'), findsOneWidget);
@@ -863,3 +862,14 @@ Finder _managementSeatCard(int seatNumber) =>
 
 Finder _roomAction(String label) =>
     find.ancestor(of: find.text(label), matching: find.byType(InkResponse));
+
+Future<void> _tapRoomAction(WidgetTester tester, String label) async {
+  await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+  await tester.pumpAndSettle();
+  await tester.pump(const Duration(seconds: 1));
+
+  final Finder action = _roomAction(label);
+  expect(action, findsOneWidget);
+  final Rect bounds = tester.getRect(action);
+  await tester.tapAt(Offset(bounds.center.dx, bounds.top + 24));
+}
