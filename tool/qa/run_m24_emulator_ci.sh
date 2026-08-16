@@ -1190,9 +1190,14 @@ exercise_qa_console_system_input() {
   local interaction_log="$LOG_DIR/qa-console-system-input.log"
   local input_node reset_node filtered_ui expanded_ui page_ui returned_ui
   local input_x input_y reset_x reset_y card_x card_y open_x open_y
+  local physical_height scroll_bottom scroll_top
   local card_node open_node
   local bounds_re='bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]"'
   local passed=1
+
+  physical_height="${EXPECTED_PHYSICAL_SIZE#*x}"
+  scroll_bottom=$(( physical_height * 85 / 100 ))
+  scroll_top=$(( physical_height * 35 / 100 ))
 
   input_node="$(
     grep -oE \
@@ -1266,7 +1271,8 @@ exercise_qa_console_system_input() {
           "$expanded_ui" | head -n 1 || true
       )"
       if [[ -z "$open_node" ]]; then
-        adb_device shell input swipe "$input_x" 2100 "$input_x" 1050 500 \
+        adb_device shell input swipe \
+          "$input_x" "$scroll_bottom" "$input_x" "$scroll_top" 500 \
           >>"$interaction_log" 2>&1 || passed=0
         sleep 1
         capture_snapshot "qa-console-system-expanded-${AVD_ID}"
@@ -1311,10 +1317,12 @@ exercise_qa_console_system_input() {
       passed=0
     fi
 
-    adb_device shell input swipe "$input_x" 2100 "$input_x" 900 500 \
+    adb_device shell input swipe \
+      "$input_x" "$scroll_bottom" "$input_x" "$scroll_top" 500 \
       >>"$interaction_log" 2>&1 || passed=0
     sleep 1
-    adb_device shell input swipe "$input_x" 900 "$input_x" 2100 500 \
+    adb_device shell input swipe \
+      "$input_x" "$scroll_top" "$input_x" "$scroll_bottom" 500 \
       >>"$interaction_log" 2>&1 || passed=0
     sleep 1
     adb_device shell input tap "$reset_x" "$reset_y" >>"$interaction_log" 2>&1 || passed=0

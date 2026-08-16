@@ -58,7 +58,7 @@ void main() {
             'FLOW-004-room-entry-fixed-eight-seats-$qaAvdId',
           );
           expect(find.text('礼物'), findsOneWidget);
-          await tester.tap(find.text('礼物'));
+          await tester.tap(_roomAction('礼物'));
           await tester.pumpAndSettle();
           expect(find.text('送礼物'), findsOneWidget);
           expect(find.text('普通礼物'), findsOneWidget);
@@ -267,7 +267,9 @@ void main() {
       await tester.tap(find.byType(BackButton).last);
       await pumpUntilVisible(tester, find.text('实时公屏'));
 
-      await tester.tap(find.text('礼物'));
+      final Finder giftAction = _roomAction('礼物');
+      expect(giftAction, findsOneWidget);
+      await tester.tap(giftAction);
       await pumpUntilVisible(tester, find.text('送礼物'));
       await tester.pumpAndSettle();
       expect(find.text('实时公屏'), findsOneWidget);
@@ -315,7 +317,7 @@ void main() {
       await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('礼物'));
+      await tester.tap(_roomAction('礼物'));
       await pumpUntilVisible(tester, find.text('送礼物'));
       await tester.pumpAndSettle();
       expect(find.text('余额 1100'), findsOneWidget);
@@ -858,3 +860,8 @@ Finder _managementMemberTile(String name) =>
 
 Finder _managementSeatCard(int seatNumber) =>
     find.ancestor(of: find.text('$seatNumber 号麦'), matching: find.byType(Card));
+
+Finder _roomAction(String label) => find.ancestor(
+  of: find.text(label),
+  matching: find.byType(InkResponse),
+);

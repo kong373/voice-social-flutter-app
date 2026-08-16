@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:voice_social_app/app/app.dart';
@@ -38,7 +39,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey<String>('qa-entry-AC-004')));
       await tester.pumpAndSettle();
       FocusManager.instance.primaryFocus?.unfocus();
-      tester.testTextInput.hide();
+      await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
       await tester.pumpAndSettle();
       final Finder openPage = find.byKey(
         const ValueKey<String>('qa-open-AC-004'),
