@@ -77,14 +77,10 @@ jobs:
             printf '%s\n' "${dart_files[@]}"
           } | tee .qa-quality/format.log
           if (( ${#dart_files[@]} > 0 )); then
-            set +e
-            dart format --output=none --set-exit-if-changed \
-              "${dart_files[@]}" 2>&1 | tee -a .qa-quality/format.log
-            format_status=${PIPESTATUS[0]}
-            set -e
-            if (( format_status != 0 )); then
+            dart format "${dart_files[@]}" 2>&1 | tee -a .qa-quality/format.log
+            if ! git diff --quiet -- "${dart_files[@]}"; then
               git diff -- "${dart_files[@]}" | tee -a .qa-quality/format.log
-              exit "$format_status"
+              exit 1
             fi
           fi
 
