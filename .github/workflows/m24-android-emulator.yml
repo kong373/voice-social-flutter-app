@@ -1,20 +1,7 @@
-name: M2.4 Android emulator QA
+name: M2.4 Android emulator QA (legacy manual)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - "qa/m2.4-mac-android-emulator-validation"
-  pull_request:
-    paths:
-      - ".github/workflows/m24-android-emulator.yml"
-      - "integration_test/**"
-      - "lib/**"
-      - "pubspec.lock"
-      - "pubspec.yaml"
-      - "test/**"
-      - "test_driver/**"
-      - "tool/qa/**"
 
 permissions:
   actions: read
