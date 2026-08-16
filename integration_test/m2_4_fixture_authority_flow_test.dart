@@ -77,9 +77,7 @@ void main() {
       await _pumpAuthorityPage(
         tester,
         dependencies,
-        RefundResultPage(
-          application: qaRefundApplication(dependencies),
-        ),
+        RefundResultPage(application: qaRefundApplication(dependencies)),
       );
       await tester.tap(find.byTooltip('刷新'));
       await tester.pumpAndSettle();

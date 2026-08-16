@@ -194,29 +194,27 @@ Future<void> _pumpEntry(
   expect(tester.takeException(), isNull, reason: entry.id);
 }
 
-Finder _enabledActions() => find
-    .byWidgetPredicate((Widget widget) {
-      if (widget is ButtonStyleButton) {
-        return widget.enabled;
-      }
-      if (widget is IconButton) {
-        return widget.onPressed != null;
-      }
-      if (widget is FloatingActionButton) {
-        return widget.onPressed != null;
-      }
-      if (widget is ListTile) {
-        return widget.enabled && widget.onTap != null;
-      }
-      if (widget is RawChip) {
-        return widget.isEnabled;
-      }
-      if (widget is DropdownButton<Object?>) {
-        return widget.onChanged != null;
-      }
-      return false;
-    })
-    .hitTestable();
+Finder _enabledActions() => find.byWidgetPredicate((Widget widget) {
+  if (widget is ButtonStyleButton) {
+    return widget.enabled;
+  }
+  if (widget is IconButton) {
+    return widget.onPressed != null;
+  }
+  if (widget is FloatingActionButton) {
+    return widget.onPressed != null;
+  }
+  if (widget is ListTile) {
+    return widget.enabled && widget.onTap != null;
+  }
+  if (widget is RawChip) {
+    return widget.isEnabled;
+  }
+  if (widget is DropdownButton<Object?>) {
+    return widget.onChanged != null;
+  }
+  return false;
+}).hitTestable();
 
 Finder _enabledTextFields() => find
     .byWidgetPredicate(

@@ -164,10 +164,7 @@ void main() {
         );
         await tester.pumpAndSettle();
       }
-      expect(
-        sentPublicMessage,
-        findsOneWidget,
-      );
+      expect(sentPublicMessage, findsOneWidget);
       expect(tester.widget<TextField>(composer).controller?.text, isEmpty);
       await captureQaScreenshot(
         tester,

@@ -35,18 +35,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('1 / 69'), findsOneWidget);
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('qa-entry-AC-004')),
-      );
+      await tester.tap(find.byKey(const ValueKey<String>('qa-entry-AC-004')));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
         find.byKey(const ValueKey<String>('qa-open-AC-004')),
         260,
         scrollable: find.byType(Scrollable).first,
       );
-      await tester.tap(
-        find.byKey(const ValueKey<String>('qa-open-AC-004')),
-      );
+      await tester.tap(find.byKey(const ValueKey<String>('qa-open-AC-004')));
       await tester.pumpAndSettle();
       expect(find.byType(ThirdPartyAuthorizationPage), findsOneWidget);
       expect(
