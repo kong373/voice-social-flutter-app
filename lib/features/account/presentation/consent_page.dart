@@ -12,8 +12,7 @@ class ConsentPage extends StatelessWidget {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 30, 24, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: ListView(
             children: <Widget>[
               Container(
                 width: 54,
@@ -56,7 +55,7 @@ class ConsentPage extends StatelessWidget {
                 title: '账号与设备信息',
                 description: '用于登录安全、异常会话识别和账号保护。',
               ),
-              const Spacer(),
+              const SizedBox(height: 28),
               Wrap(
                 spacing: 4,
                 children: <Widget>[

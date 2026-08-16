@@ -73,6 +73,21 @@ void main() {
             binding,
             '${entry.id}-normal-$qaAvdId-$viewport-${textScale.toStringAsFixed(1)}x',
           );
+          if (textScale == 1) {
+            final _PageInteractionResult interaction =
+                await _exercisePageInteractions(tester, entry, scenario);
+            // The host evidence script parses this exact marker. It is emitted
+            // only after every initially visible button at the top, middle,
+            // and bottom positions has received a real WidgetTester tap on
+            // the Android emulator, and every enabled field has accepted text.
+            // ignore: avoid_print
+            print(
+              'QA_PAGE_INTERACTION_PASS page=${entry.id} '
+              'buttons=${interaction.buttonsClicked} '
+              'keyboard=${interaction.textFieldsEntered} '
+              'scroll=${interaction.scrolled ? 'PASS' : 'NOT_APPLICABLE'}',
+            );
+          }
         }
       }
       await tester.pumpWidget(const SizedBox.shrink());
@@ -80,6 +95,156 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 25)),
   );
+}
+
+class _PageInteractionResult {
+  const _PageInteractionResult({
+    required this.buttonsClicked,
+    required this.textFieldsEntered,
+    required this.scrolled,
+  });
+
+  final int buttonsClicked;
+  final int textFieldsEntered;
+  final bool scrolled;
+}
+
+Future<_PageInteractionResult> _exercisePageInteractions(
+  WidgetTester tester,
+  QaPageEntry entry,
+  QaScenario scenario,
+) async {
+  int buttonsClicked = 0;
+  int textFieldsEntered = 0;
+  bool scrolled = false;
+  const List<int> scrollPasses = <int>[0, 3, 12];
+
+  for (final int scrollPass in scrollPasses) {
+    await _pumpEntry(tester, entry, scenario);
+    scrolled = await _scrollPage(tester, scrollPass) || scrolled;
+    final int actionCount = _enabledActions().evaluate().length;
+
+    for (int actionIndex = 0; actionIndex < actionCount; actionIndex += 1) {
+      await _pumpEntry(tester, entry, scenario);
+      await _scrollPage(tester, scrollPass);
+      final Finder actions = _enabledActions();
+      if (actionIndex >= actions.evaluate().length) {
+        continue;
+      }
+      await tester.tap(actions.at(actionIndex), warnIfMissed: false);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: '${entry.id} action $actionIndex after $scrollPass scrolls',
+      );
+      buttonsClicked += 1;
+    }
+
+    await _pumpEntry(tester, entry, scenario);
+    await _scrollPage(tester, scrollPass);
+    final int fieldCount = _enabledTextFields().evaluate().length;
+    for (int fieldIndex = 0; fieldIndex < fieldCount; fieldIndex += 1) {
+      await _pumpEntry(tester, entry, scenario);
+      await _scrollPage(tester, scrollPass);
+      final Finder fields = _enabledTextFields();
+      if (fieldIndex >= fields.evaluate().length) {
+        continue;
+      }
+      final Finder field = fields.at(fieldIndex);
+      await tester.tap(field, warnIfMissed: false);
+      await tester.enterText(field, 'M24');
+      await tester.pump();
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: '${entry.id} text field $fieldIndex after $scrollPass scrolls',
+      );
+      textFieldsEntered += 1;
+    }
+  }
+
+  return _PageInteractionResult(
+    buttonsClicked: buttonsClicked,
+    textFieldsEntered: textFieldsEntered,
+    scrolled: scrolled,
+  );
+}
+
+Future<void> _pumpEntry(
+  WidgetTester tester,
+  QaPageEntry entry,
+  QaScenario scenario,
+) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.pump();
+  final AppDependencies dependencies = await createQaDependencies();
+  await tester.pumpWidget(
+    AppDependencyScope(
+      dependencies: dependencies,
+      child: MaterialApp(
+        theme: AppTheme.dark(),
+        home: entry.builder(dependencies, scenario),
+      ),
+    ),
+  );
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+  expect(tester.takeException(), isNull, reason: entry.id);
+}
+
+Finder _enabledActions() => find
+    .byWidgetPredicate((Widget widget) {
+      if (widget is ButtonStyleButton) {
+        return widget.enabled;
+      }
+      if (widget is IconButton) {
+        return widget.onPressed != null;
+      }
+      if (widget is FloatingActionButton) {
+        return widget.onPressed != null;
+      }
+      if (widget is ListTile) {
+        return widget.enabled && widget.onTap != null;
+      }
+      if (widget is RawChip) {
+        return widget.isEnabled;
+      }
+      if (widget is DropdownButton<Object?>) {
+        return widget.onChanged != null;
+      }
+      return false;
+    })
+    .hitTestable();
+
+Finder _enabledTextFields() => find
+    .byWidgetPredicate(
+      (Widget widget) =>
+          widget is TextField && widget.enabled != false && !widget.readOnly,
+    )
+    .hitTestable();
+
+Future<bool> _scrollPage(WidgetTester tester, int passes) async {
+  final Finder verticalScrollable = find
+      .byWidgetPredicate(
+        (Widget widget) =>
+            widget is Scrollable &&
+            (widget.axisDirection == AxisDirection.down ||
+                widget.axisDirection == AxisDirection.up),
+      )
+      .hitTestable();
+  if (verticalScrollable.evaluate().isEmpty) {
+    return false;
+  }
+  final Finder target = verticalScrollable.first;
+  final ScrollableState state = tester.state<ScrollableState>(target);
+  final bool canScroll = state.position.maxScrollExtent > 0;
+  for (int pass = 0; pass < passes && canScroll; pass += 1) {
+    await tester.drag(target, const Offset(0, -360), warnIfMissed: false);
+    await tester.pump(const Duration(milliseconds: 80));
+  }
+  return canScroll;
 }
 
 List<QaPageEntry> _selectedPageEntries() {

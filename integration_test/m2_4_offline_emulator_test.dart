@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:voice_social_app/app/app.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
+import 'package:voice_social_app/features/account/presentation/third_party_authorization_page.dart';
 
 import 'm2_4_test_support.dart';
 
@@ -103,6 +104,19 @@ void main() {
       await _scrollToAndTap(tester, find.text('账号与安全'));
       await pumpUntilVisible(tester, find.text('账号状态正常'));
 
+      // AC-004 must remain reachable from the ordinary account-security hub;
+      // the QA catalog entry alone is not sufficient regression evidence.
+      await _scrollToAndTap(tester, find.text('第三方账号绑定与分享授权'));
+      await pumpUntilVisible(tester, find.text('第三方账号绑定与分享授权'));
+      expect(find.byType(ThirdPartyAuthorizationPage), findsOneWidget);
+      expect(find.text('VENDOR_BLOCKED'), findsWidgets);
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'P1-M24-EMU-001-ordinary-AC-004-$qaAvdId',
+      );
+      await _pageBackTo(tester, find.text('账号与安全'));
+
       // Permission center: preserve honest platform-boundary copy while the
       // mock adapter exercises a not-determined -> granted transition.
       await _scrollToAndTap(tester, find.text('系统权限中心'));
@@ -144,6 +158,7 @@ void main() {
       );
       _dismissKeyboard();
       await _scrollToAndTap(tester, find.text('提交申诉'));
+      await pumpUntilVisible(tester, find.text('申诉审核中'));
       expect(find.text('申诉审核中'), findsOneWidget);
       expect(find.text('平台审核中'), findsOneWidget);
       await _pageBackTo(tester, find.text('账号与安全'));

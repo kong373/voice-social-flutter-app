@@ -47,6 +47,7 @@ readonly STATE_MATRIX_FILE="$ARTIFACT_ROOT/state_matrix.csv"
 readonly ROLE_MATRIX_FILE="$ARTIFACT_ROOT/role_matrix.csv"
 readonly TEST_CASES_FILE="$ARTIFACT_ROOT/test_cases.csv"
 readonly DEFECTS_FILE="$ARTIFACT_ROOT/defects.csv"
+readonly P1_REGRESSION_FILE="$ARTIFACT_ROOT/p1_regression.csv"
 readonly LOGCAT_FILE="$ARTIFACT_ROOT/logcat-full.txt"
 readonly PERFORMANCE_FILE="$ARTIFACT_ROOT/performance.txt"
 readonly SUMMARY_FILE="$ARTIFACT_ROOT/summary.txt"
@@ -150,6 +151,10 @@ initialize_csv_files() {
     defect_id severity status page_id flow_id title role state precondition steps \
     expected actual repro_rate avd api_level screenshot video log fix_commit \
     regression_test result notes
+
+  : >"$P1_REGRESSION_FILE"
+  csv_row "$P1_REGRESSION_FILE" \
+    existing_p1_id page_flow title avd result evidence notes
 }
 
 initialize_csv_files
@@ -1180,6 +1185,176 @@ verify_qa_console_metrics() {
   fi
 }
 
+exercise_qa_console_system_input() {
+  local initial_ui_dump="$1"
+  local interaction_log="$LOG_DIR/qa-console-system-input.log"
+  local input_node reset_node filtered_ui expanded_ui page_ui returned_ui
+  local input_x input_y reset_x reset_y card_x card_y open_x open_y
+  local card_node open_node
+  local passed=1
+
+  input_node="$(
+    grep -oE \
+      'class="android.widget.EditText"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' \
+      "$initial_ui_dump" | head -n 1 || true
+  )"
+  reset_node="$(
+    grep -oE \
+      'content-desc="重置 Mock 数据"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' \
+      "$initial_ui_dump" | head -n 1 || true
+  )"
+  if [[ ! "$input_node" =~ bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]" ]]; then
+    printf 'search_bounds=NOT_FOUND\n' >"$interaction_log"
+    passed=0
+  else
+    input_x=$(( (BASH_REMATCH[1] + BASH_REMATCH[3]) / 2 ))
+    input_y=$(( (BASH_REMATCH[2] + BASH_REMATCH[4]) / 2 ))
+  fi
+  if [[ ! "$reset_node" =~ bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]" ]]; then
+    printf 'reset_bounds=NOT_FOUND\n' >>"$interaction_log"
+    passed=0
+  else
+    reset_x=$(( (BASH_REMATCH[1] + BASH_REMATCH[3]) / 2 ))
+    reset_y=$(( (BASH_REMATCH[2] + BASH_REMATCH[4]) / 2 ))
+  fi
+
+  if (( passed == 1 )); then
+    adb_device logcat -c >/dev/null 2>&1 || true
+    start_screen_recording "qa-console-system-input-${AVD_ID}"
+    adb_device shell input tap "$input_x" "$input_y" >>"$interaction_log" 2>&1 || passed=0
+    sleep 2
+    adb_device shell dumpsys input_method >>"$interaction_log" 2>&1 || true
+    capture_snapshot "qa-console-system-keyboard-${AVD_ID}"
+    if ! grep -Eq \
+        'mInputShown=true|isInputViewShown=true|mInputViewShown=true' \
+        "$interaction_log"; then
+      printf 'system_keyboard=NOT_CONFIRMED\n' >>"$interaction_log"
+      passed=0
+    else
+      printf 'system_keyboard=PASS\n' >>"$interaction_log"
+    fi
+
+    adb_device shell input text 'AC-004' >>"$interaction_log" 2>&1 || passed=0
+    sleep 2
+    adb_device shell input keyevent KEYCODE_BACK >>"$interaction_log" 2>&1 || passed=0
+    sleep 1
+    capture_snapshot "qa-console-system-filtered-${AVD_ID}"
+    filtered_ui="$DUMP_DIR/qa-console-system-filtered-${AVD_ID}-ui.xml"
+    if ! grep -q '1 / 69' "$filtered_ui"; then
+      printf 'filtered_count=FAIL\n' >>"$interaction_log"
+      passed=0
+    else
+      printf 'filtered_count=PASS\n' >>"$interaction_log"
+    fi
+
+    card_node="$(
+      grep -oE \
+        'content-desc="[^"]*AC-004[^"]*"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' \
+        "$filtered_ui" | head -n 1 || true
+    )"
+    if [[ "$card_node" =~ bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]" ]]; then
+      card_x=$(( (BASH_REMATCH[1] + BASH_REMATCH[3]) / 2 ))
+      card_y=$(( (BASH_REMATCH[2] + BASH_REMATCH[4]) / 2 ))
+      adb_device shell input tap "$card_x" "$card_y" >>"$interaction_log" 2>&1 || passed=0
+      sleep 1
+      capture_snapshot "qa-console-system-expanded-${AVD_ID}"
+      expanded_ui="$DUMP_DIR/qa-console-system-expanded-${AVD_ID}-ui.xml"
+      open_node="$(
+        grep -oE \
+          'content-desc="直接打开真实页面"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' \
+          "$expanded_ui" | head -n 1 || true
+      )"
+      if [[ -z "$open_node" ]]; then
+        adb_device shell input swipe "$input_x" 2100 "$input_x" 1050 500 \
+          >>"$interaction_log" 2>&1 || passed=0
+        sleep 1
+        capture_snapshot "qa-console-system-expanded-${AVD_ID}"
+        open_node="$(
+          grep -oE \
+            'content-desc="直接打开真实页面"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' \
+            "$expanded_ui" | head -n 1 || true
+        )"
+      fi
+      if [[ "$open_node" =~ bounds="\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]" ]]; then
+        open_x=$(( (BASH_REMATCH[1] + BASH_REMATCH[3]) / 2 ))
+        open_y=$(( (BASH_REMATCH[2] + BASH_REMATCH[4]) / 2 ))
+        adb_device shell input tap "$open_x" "$open_y" >>"$interaction_log" 2>&1 || passed=0
+        sleep 2
+        capture_snapshot "qa-console-system-real-page-${AVD_ID}"
+        page_ui="$DUMP_DIR/qa-console-system-real-page-${AVD_ID}-ui.xml"
+        if ! grep -q 'QA 当前场景：AC-004' "$page_ui" || \
+            ! grep -q '第三方账号绑定与分享授权' "$page_ui"; then
+          printf 'real_page=FAIL\n' >>"$interaction_log"
+          passed=0
+        else
+          printf 'real_page=PASS\n' >>"$interaction_log"
+        fi
+
+        adb_device shell input keyevent KEYCODE_BACK >>"$interaction_log" 2>&1 || passed=0
+        sleep 2
+        capture_snapshot "qa-console-system-back-${AVD_ID}"
+        returned_ui="$DUMP_DIR/qa-console-system-back-${AVD_ID}-ui.xml"
+        if ! grep -q 'M2.4 QA Console' "$returned_ui" || \
+            ! grep -q '1 / 69' "$returned_ui"; then
+          printf 'android_system_back=FAIL\n' >>"$interaction_log"
+          passed=0
+        else
+          printf 'android_system_back=PASS\n' >>"$interaction_log"
+        fi
+      else
+        printf 'open_real_page_bounds=NOT_FOUND\n' >>"$interaction_log"
+        passed=0
+      fi
+    else
+      printf 'AC-004_card_bounds=NOT_FOUND\n' >>"$interaction_log"
+      passed=0
+    fi
+
+    adb_device shell input swipe "$input_x" 2100 "$input_x" 900 500 \
+      >>"$interaction_log" 2>&1 || passed=0
+    sleep 1
+    adb_device shell input swipe "$input_x" 900 "$input_x" 2100 500 \
+      >>"$interaction_log" 2>&1 || passed=0
+    sleep 1
+    adb_device shell input tap "$reset_x" "$reset_y" >>"$interaction_log" 2>&1 || passed=0
+    sleep 2
+    capture_snapshot "qa-console-system-reset-${AVD_ID}"
+    adb_device logcat -d >>"$interaction_log" 2>&1 || true
+    stop_screen_recording
+    if grep -Eqi \
+        'setState\(\).*during build|setState\(\) called after dispose|markNeedsBuild\(\).*during build|MissingPluginException|FATAL EXCEPTION|ANR in com\.kong373\.voice_social_app' \
+        "$interaction_log"; then
+      printf 'hard_finding=FAIL\n' >>"$interaction_log"
+      passed=0
+    else
+      printf 'hard_finding=PASS\n' >>"$interaction_log"
+    fi
+  fi
+
+  if (( passed == 1 )); then
+    record_case \
+      "M24-QA-SYSTEM-INPUT" "AC-004" "qa-smoke" \
+      "Real Android keyboard, scrolling, system back, real-page route, and reset complete without a hard finding" \
+      "AC-004 filtered to 1/69, opened, returned with KEYCODE_BACK, scrolled, and reset" \
+      "PASS" "" "" \
+      "$SCREENSHOT_DIR/qa-console-system-reset-${AVD_ID}.png" \
+      "$VIDEO_DIR/qa-console-system-input-${AVD_ID}.mp4" \
+      "$interaction_log" "All input events were sent by adb to the running Android package."
+  else
+    record_defect \
+      "P1" "qa-smoke" "QA Console Android system input or reset evidence was incomplete" \
+      "Use UIAutomator bounds to exercise the real keyboard, AC-004 route, Android back, scrolling, and reset." \
+      "$interaction_log"
+    record_case \
+      "M24-QA-SYSTEM-INPUT" "AC-004" "qa-smoke" \
+      "Real Android keyboard, scrolling, system back, real-page route, and reset complete without a hard finding" \
+      "One or more host-driven assertions failed" "FAIL" "P1" "$LAST_DEFECT_ID" \
+      "$SCREENSHOT_DIR/qa-console-system-reset-${AVD_ID}.png" \
+      "$VIDEO_DIR/qa-console-system-input-${AVD_ID}.mp4" \
+      "$interaction_log" "Infrastructure failure is retained and cannot be converted to a product PASS."
+  fi
+}
+
 run_qa_launch_smoke() {
   local install_log="$LOG_DIR/qa-install.log"
   local launch_log="$LOG_DIR/qa-launch.log"
@@ -1259,6 +1434,8 @@ run_qa_launch_smoke() {
     sleep 4
     capture_snapshot "qa-console-${AVD_ID}"
   fi
+
+  exercise_qa_console_system_input "$ui_dump"
 
   if [[ -n "$activity" ]]; then
     adb_device shell am force-stop "$QA_PACKAGE" >/dev/null 2>&1 || true
@@ -1558,11 +1735,13 @@ run_integration_file() {
   test_name="$(basename "$test_file" .dart)"
   test_id="M24-INT-${test_name#m2_4_}"
   log_file="$LOG_DIR/${test_name}.log"
-  # Flow tests call VoiceSocialApp directly. Keeping the console enabled here
-  # would replace AppGate with QaConsoleHost and invalidate authentication,
-  # room, and navigation assertions. The standalone QA APK above is the only
-  # build that enables the console.
-  mapfile -t defines < <(qa_dart_defines false)
+  # Only the dedicated console target enables the QA root. Flow tests call
+  # VoiceSocialApp directly and must retain the normal AppGate entry.
+  if [[ "$test_name" == "m2_4_qa_console_flow_test" ]]; then
+    mapfile -t defines < <(qa_dart_defines true)
+  else
+    mapfile -t defines < <(qa_dart_defines false)
+  fi
 
   if [[ "$test_name" == "m2_4_offline_emulator_test" ]]; then
     start_screen_recording "${test_name}-${AVD_ID}"
@@ -1843,6 +2022,8 @@ run_integration_suite() {
   local -a tests=()
   if [[ "$QA_SCOPE_VALUE" == "full" ]]; then
     tests=(
+      "integration_test/m2_4_qa_console_flow_test.dart:8m"
+      "integration_test/m2_4_fixture_authority_flow_test.dart:8m"
       "integration_test/m2_4_offline_emulator_test.dart:20m"
       "integration_test/m2_4_room_flow_test.dart:25m"
       "integration_test/m2_4_commerce_flow_test.dart:20m"
@@ -1851,6 +2032,8 @@ run_integration_suite() {
     )
   elif [[ "$QA_SCOPE_VALUE" == "critical" ]]; then
     tests=(
+      "integration_test/m2_4_qa_console_flow_test.dart:8m"
+      "integration_test/m2_4_fixture_authority_flow_test.dart:8m"
       "integration_test/m2_4_offline_emulator_test.dart:12m"
       "integration_test/m2_4_room_flow_test.dart:15m"
       "integration_test/m2_4_commerce_flow_test.dart:12m"
@@ -2187,16 +2370,25 @@ generate_page_coverage() {
   local avd_a_open avd_b_open render_result font_scale_result
   local viewport_360_status viewport_390_status
   local screenshot_evidence page_result defect_id notes state_result role_result
+  local interaction_line interaction_count button_status keyboard_status scroll_status
   local page_log="$LOG_DIR/m2_4_page_coverage_test.log"
   local coverage_gap_defect=""
   local -a one_matches=()
   local -a one_three_matches=()
 
-  if [[ "$QA_SCOPE_VALUE" == "full" && "$INTEGRATION_SUITE_STARTED" == "1" ]]; then
+  interaction_count="$(
+    {
+      grep -h -oE 'QA_PAGE_INTERACTION_PASS page=[A-Z]{2}-[0-9]{3}' \
+        "$LOG_DIR"/m2_4_page_coverage_test-scale-1.0-shard-*.log \
+        2>/dev/null || true
+    } | sort -u | wc -l | tr -d ' '
+  )"
+  if [[ "$QA_SCOPE_VALUE" == "full" && "$INTEGRATION_SUITE_STARTED" == "1" && \
+        "$interaction_count" != "69" ]]; then
     record_defect \
       "P1" "page-coverage" \
-      "The automated catalog pass does not prove every user entry, button, keyboard, scroll, role, and required state" \
-      "Run the 69-page screenshot target, then complete the remaining per-page interaction fields before accepting the run." \
+      "The Android catalog pass did not emit all 69 per-page interaction markers" \
+      "Run every 1.0x shard and require real button taps, enabled field entry, and top/middle/bottom scroll probes." \
       "$PAGE_COVERAGE_FILE"
     coverage_gap_defect="$LAST_DEFECT_ID"
   fi
@@ -2241,16 +2433,50 @@ generate_page_coverage() {
       font_scale_result="FAIL"
     fi
 
+    interaction_line="$(
+      grep -h -m1 "QA_PAGE_INTERACTION_PASS page=${page_id} " \
+        "$LOG_DIR"/m2_4_page_coverage_test-scale-1.0-shard-*.log \
+        2>/dev/null || true
+    )"
+    if [[ -n "$interaction_line" ]]; then
+      button_status="PASS"
+      if [[ "$interaction_line" =~ keyboard=([0-9]+) ]]; then
+        if (( BASH_REMATCH[1] > 0 )); then
+          keyboard_status="PASS_WIDGET_INPUT"
+        else
+          keyboard_status="NOT_APPLICABLE"
+        fi
+      else
+        keyboard_status="FAIL"
+      fi
+      if [[ "$interaction_line" == *"scroll=PASS"* ]]; then
+        scroll_status="PASS"
+      else
+        scroll_status="NOT_APPLICABLE"
+      fi
+    else
+      button_status="FAIL"
+      keyboard_status="FAIL"
+      scroll_status="FAIL"
+    fi
+
     if [[ "$AVD_ID" == "AVD-A" ]]; then
       avd_a_open="$render_result"
       avd_b_open="PENDING_SEPARATE_ARTIFACT"
       viewport_360_status="$([[ "$QUALITY_RESULT" == "success" ]] && \
         printf 'PASS_QUALITY_JOB' || printf 'FAIL_OR_NOT_RUN_QUALITY_JOB')"
       viewport_390_status="$render_result"
-      if [[ "$INTEGRATION_SUITE_STARTED" == "1" ]]; then
+      if [[ "$INTEGRATION_SUITE_STARTED" == "1" && \
+            "$render_result" == "PASS" && "$button_status" == "PASS" ]]; then
+        page_result="PASS"
+        defect_id=""
+        notes="The real catalog-mapped widget opened at both scales; enabled visible buttons were tapped at top/middle/bottom probes. Text input and scrolling are recorded as PASS only where applicable."
+        state_result="$render_result"
+        role_result="$render_result"
+      elif [[ "$INTEGRATION_SUITE_STARTED" == "1" ]]; then
         page_result="FAIL"
         defect_id="$coverage_gap_defect"
-        notes="Catalog rendering at ${viewport_one:-unknown}/1.0x and ${viewport_one_three:-unknown}/1.3x is evidence only; ordinary entry, all buttons, keyboard, scroll, roles, and required states are not exhaustively automated."
+        notes="Rendering or the per-page Android interaction marker is missing; no page PASS is fabricated."
         state_result="$render_result"
         role_result="$render_result"
       else
@@ -2262,22 +2488,37 @@ generate_page_coverage() {
       fi
     else
       avd_a_open="PENDING_SEPARATE_ARTIFACT"
-      avd_b_open="NOT_VERIFIED_BY_CATALOG_TARGET"
-      viewport_360_status="NOT_VERIFIED_PER_PAGE"
+      avd_b_open="$render_result"
+      viewport_360_status="$render_result"
       viewport_390_status="NOT_APPLICABLE_AVD_B"
-      page_result="NOT_APPLICABLE"
-      defect_id=""
-      notes="AVD-B runs the critical-path subset. Full 69-page catalog evidence belongs to AVD-A."
-      state_result="NOT_APPLICABLE"
-      role_result="NOT_APPLICABLE"
+      if [[ "$INTEGRATION_SUITE_STARTED" == "1" && \
+            "$render_result" == "PASS" && "$button_status" == "PASS" ]]; then
+        page_result="PASS"
+        defect_id=""
+        notes="The real catalog-mapped widget opened at both scales; enabled visible buttons were tapped at top/middle/bottom probes. Text input and scrolling are recorded as PASS only where applicable."
+        state_result="$render_result"
+        role_result="$render_result"
+      elif [[ "$INTEGRATION_SUITE_STARTED" == "1" ]]; then
+        page_result="FAIL"
+        defect_id="$coverage_gap_defect"
+        notes="Rendering or the per-page Android interaction marker is missing; no page PASS is fabricated."
+        state_result="$render_result"
+        role_result="$render_result"
+      else
+        page_result="BLOCKED"
+        defect_id=""
+        notes="The run stopped before the integration suite; page evidence was not fabricated."
+        state_result="BLOCKED"
+        role_result="BLOCKED"
+      fi
     fi
 
     csv_row "$PAGE_COVERAGE_FILE" \
       "$page_id" "$page_name" "$widget_class" "$source_path" "$user_entry" \
       "QA Console > $page_id" "registeredUser" \
       "BACKEND_MODE=mock; device offline; catalog fixture" "normal" "DECLARED" \
-      "$avd_a_open" "$avd_b_open" "NOT_VERIFIED" "$viewport_360_status" \
-      "$viewport_390_status" "$font_scale_result" "NOT_VERIFIED" "NOT_VERIFIED" \
+      "$avd_a_open" "$avd_b_open" "$button_status" "$viewport_360_status" \
+      "$viewport_390_status" "$font_scale_result" "$keyboard_status" "$scroll_status" \
       "$screenshot_evidence" "" "$page_log" "$page_result" "$defect_id" "$notes"
 
     csv_row "$STATE_MATRIX_FILE" \
@@ -2293,6 +2534,126 @@ generate_page_coverage() {
       "$role_result" "$screenshot_evidence;$page_log" \
       "This render check is not exhaustive role-permission coverage."
   done
+}
+
+record_existing_p1_case() {
+  local existing_id="$1"
+  local page_flow="$2"
+  local title="$3"
+  shift 3
+  local pattern match
+  local evidence=""
+  local missing=""
+  local -a matches=()
+  for pattern in "$@"; do
+    matches=()
+    mapfile -t matches < <(compgen -G "$pattern" || true)
+    match="${matches[0]:-}"
+    if [[ -z "$match" || ! -s "$match" ]]; then
+      missing="${missing:+$missing;}$pattern"
+    else
+      evidence="${evidence:+$evidence;}$match"
+    fi
+  done
+
+  if [[ -z "$missing" ]]; then
+    csv_row "$P1_REGRESSION_FILE" \
+      "$existing_id" "$page_flow" "$title" "$AVD_ID" "PASS" \
+      "$evidence" "Required emulator checkpoints were materialized."
+    record_case \
+      "M24-P1-${existing_id##*-}" "$page_flow" "p1-regression" \
+      "$title has direct $AVD_ID evidence" \
+      "All required evidence files exist and are non-empty" \
+      "PASS" "" "" "${evidence%%;*}" "" "$evidence" \
+      "This is one-AVD evidence; closure requires the matching row from the other AVD."
+  else
+    record_defect \
+      "P1" "p1-regression" \
+      "$existing_id lacks complete $AVD_ID regression evidence: $title" \
+      "Run the dedicated ordinary-entry or authoritative-state Android integration path." \
+      "$missing" "$page_flow"
+    csv_row "$P1_REGRESSION_FILE" \
+      "$existing_id" "$page_flow" "$title" "$AVD_ID" "FAIL" \
+      "$evidence" "Missing: $missing"
+    record_case \
+      "M24-P1-${existing_id##*-}" "$page_flow" "p1-regression" \
+      "$title has direct $AVD_ID evidence" \
+      "Missing required evidence: $missing" \
+      "FAIL" "P1" "$LAST_DEFECT_ID" "${evidence%%;*}" "" "$missing" \
+      "A local/widget result is never substituted for missing emulator evidence."
+  fi
+}
+
+record_existing_p1_inventory() {
+  [[ "$QA_SCOPE_VALUE" == "full" && "$INTEGRATION_SUITE_STARTED" == "1" ]] || return 0
+  local suffix="${AVD_ID}"
+
+  record_existing_p1_case "M24-EMU-001" "AC-004/FLOW-011" \
+    "AC-004 real page is reachable from the ordinary account-security entry" \
+    "$SCREENSHOT_DIR/P1-M24-EMU-001-ordinary-AC-004-${suffix}.png"
+  record_existing_p1_case "M24-EMU-002" "DS-003/US-003" \
+    "Global search opens the real public profile" \
+    "$SCREENSHOT_DIR/P1-M24-EMU-002-search-user-public-profile-${suffix}.png"
+  record_existing_p1_case "M24-EMU-003" "RM-006/US-003" \
+    "Room member action opens the exact public profile" \
+    "$SCREENSHOT_DIR/FLOW-005-online-member-20002-profile-${suffix}.png"
+  record_existing_p1_case "M24-EMU-004" "RM-006/MS-002" \
+    "Room member action opens the exact private chat" \
+    "$SCREENSHOT_DIR/P1-M24-EMU-004-room-member-private-chat-${suffix}.png"
+  record_existing_p1_case "M24-EMU-005" "RM-006/US-008" \
+    "Room member action opens the exact user report" \
+    "$SCREENSHOT_DIR/P1-M24-EMU-005-room-member-report-${suffix}.png"
+  record_existing_p1_case "M24-EMU-006" "RM-004/US-008" \
+    "Room more menu opens the exact room report" \
+    "$SCREENSHOT_DIR/P1-M24-EMU-006-room-report-${suffix}.png"
+  record_existing_p1_case "M24-EMU-007" "DS/RM/SC" \
+    "Visible retired-feature deny-list remains empty across all 69 catalog pages" \
+    "$LOG_DIR/m2_4_page_coverage_test.log" \
+    "$SCREENSHOT_DIR/AC-001-normal-${suffix}-*-1.0x.png"
+  record_existing_p1_case "M24-EMU-008" "QA Console" \
+    "QA Console reset completes without a framework assertion" \
+    "$SCREENSHOT_DIR/P1-M24-EMU-008-qa-console-reset-${suffix}.png" \
+    "$LOG_DIR/m2_4_qa_console_flow_test.log"
+  record_existing_p1_case "M24-EMU-009" "US-010/CM-004/006/008/RM-014" \
+    "Seeded QA objects and detail actions share authoritative repositories" \
+    "$SCREENSHOT_DIR/P1-M24-EMU-009-US-010-authoritative-ticket-${suffix}.png" \
+    "$SCREENSHOT_DIR/P1-M24-EMU-009-CM-004-authoritative-recharge-${suffix}.png" \
+    "$SCREENSHOT_DIR/P1-M24-EMU-009-CM-006-authoritative-order-${suffix}.png" \
+    "$SCREENSHOT_DIR/P1-M24-EMU-009-CM-008-authoritative-refund-${suffix}.png" \
+    "$SCREENSHOT_DIR/P1-M24-EMU-009-RM-014-authoritative-pk-${suffix}.png"
+  record_existing_p1_case "M24-EMU-010" "RM-004/RM-013/014" \
+    "PK repository uses canonical room IDs through the ordinary flow" \
+    "$SCREENSHOT_DIR/FLOW-008-room-pk-settlement-${suffix}.png"
+  record_existing_p1_case "M24-EMU-011" "RM-014/RM-004" \
+    "PK completion returns directly to the active RoomPage" \
+    "$SCREENSHOT_DIR/FLOW-008-room-pk-returned-to-room-${suffix}.png"
+  record_existing_p1_case "M24-EMU-012" "integration_test" \
+    "All Android integration bindings capture without MissingPluginException" \
+    "$SCREENSHOT_DIR/FLOW-011-account-compliance-boundaries-${suffix}.png" \
+    "$SCREENSHOT_DIR/FLOW-008-room-pk-returned-to-room-${suffix}.png" \
+    "$SCREENSHOT_DIR/FLOW-012-08-withdrawal-confirmed-${suffix}.png" \
+    "$SCREENSHOT_DIR/FLOW-013-04-permission-recovery-${suffix}.png" \
+    "$SCREENSHOT_DIR/FLOW-014-cp-authoritative-state-${suffix}.png" \
+    "$SCREENSHOT_DIR/AC-001-normal-${suffix}-*-1.3x.png"
+  record_existing_p1_case "M24-EMU-013" "CM-004/005/006" \
+    "Created recharge order remains the same authoritative order in detail and reconciliation" \
+    "$SCREENSHOT_DIR/FLOW-012-05-order-detail-reconciled-${suffix}.png"
+  record_existing_p1_case "M24-EMU-014" "RM-007" \
+    "Taking a member off mic refreshes authoritative UI state" \
+    "$SCREENSHOT_DIR/FLOW-007-member-taken-off-mic-${suffix}.png"
+  record_existing_p1_case "M24-EMU-015" "RM-007" \
+    "Mic management at the exact viewport has no 49 px overflow" \
+    "$SCREENSHOT_DIR/FLOW-007-seat-4-locked-${suffix}.png" \
+    "$SCREENSHOT_DIR/FLOW-007-seat-4-unlocked-${suffix}.png"
+  record_existing_p1_case "M24-EMU-016" "RM-008/RM-004" \
+    "Saved room announcement is rendered from authoritative state" \
+    "$SCREENSHOT_DIR/FLOW-007-announcement-authoritative-${suffix}.png"
+  record_existing_p1_case "M24-EMU-017" "SC-004" \
+    "Duplicate CP invitation is rejected while accept and reject states persist" \
+    "$SCREENSHOT_DIR/FLOW-014-cp-authoritative-state-${suffix}.png"
+  record_existing_p1_case "M24-EMU-018" "RM-005" \
+    "Ordinary mock room produces authoritative on-mic state" \
+    "$SCREENSHOT_DIR/FLOW-005-up-mic-seat-4-${suffix}.png"
 }
 
 scan_logs() {
@@ -2387,6 +2748,7 @@ finalize() {
   if [[ -f lib/app/page_manifest.dart ]]; then
     generate_page_coverage
   fi
+  record_existing_p1_inventory
   restore_network_mode
 
   if [[ -n "$MOCK_DEBUG_APK" && -f "$MOCK_DEBUG_APK" ]]; then

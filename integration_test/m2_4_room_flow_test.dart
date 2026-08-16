@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:voice_social_app/debug/qa_console/qa_fixtures.dart';
+import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
+import 'package:voice_social_app/features/social/domain/social_models.dart';
+import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 import 'm2_4_test_support.dart';
 
@@ -145,10 +148,24 @@ void main() {
       final Finder composer = find.widgetWithText(TextField, '说点什么…');
       expect(composer, findsOneWidget);
       await tester.enterText(composer, publicMessage);
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('发送'));
       await tester.pumpAndSettle();
+      final Finder sentPublicMessage = find.textContaining(
+        publicMessage,
+        findRichText: true,
+      );
+      if (sentPublicMessage.evaluate().isEmpty) {
+        await tester.scrollUntilVisible(
+          sentPublicMessage,
+          220,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+      }
       expect(
-        find.textContaining(publicMessage, findRichText: true),
+        sentPublicMessage,
         findsOneWidget,
       );
       expect(tester.widget<TextField>(composer).controller?.text, isEmpty);
@@ -186,6 +203,62 @@ void main() {
       await tester.tap(find.byType(BackButton).last);
       await pumpUntilVisible(tester, find.text('在线成员与听众席'));
       await tester.pumpAndSettle();
+
+      await tester.tap(exactMember);
+      await tester.pumpAndSettle();
+      expect(find.text('发起私聊'), findsOneWidget);
+      await tester.tap(find.text('发起私聊'));
+      await pumpUntilVisible(tester, find.byType(PrivateChatPage));
+      final PrivateChatPage memberChat = tester.widget<PrivateChatPage>(
+        find.byType(PrivateChatPage),
+      );
+      expect(memberChat.conversation.targetUserId, 20002);
+      expect(memberChat.conversation.title, '南风');
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'P1-M24-EMU-004-room-member-private-chat-$qaAvdId',
+      );
+      await tester.tap(find.byType(BackButton).last);
+      await pumpUntilVisible(tester, find.text('在线成员与听众席'));
+
+      await tester.tap(exactMember);
+      await tester.pumpAndSettle();
+      expect(find.text('举报用户'), findsOneWidget);
+      await tester.tap(find.text('举报用户'));
+      await pumpUntilVisible(tester, find.byType(ReportPage));
+      final ReportPage memberReport = tester.widget<ReportPage>(
+        find.byType(ReportPage),
+      );
+      expect(memberReport.targetType, ReportTargetType.user);
+      expect(memberReport.targetId, '20002');
+      expect(memberReport.targetName, '南风');
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'P1-M24-EMU-005-room-member-report-$qaAvdId',
+      );
+      await tester.tap(find.byType(BackButton).last);
+      await pumpUntilVisible(tester, find.text('在线成员与听众席'));
+
+      await tester.tap(find.byType(BackButton).last);
+      await pumpUntilVisible(tester, find.text('实时公屏'));
+
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      expect(find.text('举报房间'), findsOneWidget);
+      await tester.tap(find.text('举报房间'));
+      await pumpUntilVisible(tester, find.byType(ReportPage));
+      final ReportPage roomReport = tester.widget<ReportPage>(
+        find.byType(ReportPage),
+      );
+      expect(roomReport.targetType, ReportTargetType.room);
+      expect(roomReport.targetId, '880217');
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'P1-M24-EMU-006-room-report-$qaAvdId',
+      );
       await tester.tap(find.byType(BackButton).last);
       await pumpUntilVisible(tester, find.text('实时公屏'));
 
@@ -266,6 +339,32 @@ void main() {
       );
     },
     timeout: const Timeout(Duration(minutes: 8)),
+  );
+
+  testWidgets(
+    'global search user result opens the real public profile',
+    (WidgetTester tester) async {
+      await launchAndAuthenticate(tester);
+      await _openGlobalSearch(tester);
+      await tester.enterText(find.byType(TextField).first, '南风');
+      await tester.pump();
+      await tester.tap(find.text('搜索'));
+      await pumpUntilVisible(tester, find.text('“南风”的搜索结果'));
+
+      final Finder userResult = find.widgetWithText(ListTile, '南风');
+      expect(userResult, findsOneWidget);
+      await tester.ensureVisible(userResult);
+      await tester.tap(userResult);
+      await pumpUntilVisible(tester, find.text('个人主页'));
+      expect(find.text('南风'), findsOneWidget);
+      expect(find.text('下班后只聊轻松的事。'), findsOneWidget);
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'P1-M24-EMU-002-search-user-public-profile-$qaAvdId',
+      );
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 
   testWidgets(
