@@ -175,7 +175,12 @@ void main() {
       await tester.tap(find.text('成员'));
       await pumpUntilVisible(tester, find.text('在线成员与听众席'));
       await tester.pumpAndSettle();
-      final Finder exactMember = find.widgetWithText(ListTile, '南风');
+      final Finder exactMember = find.ancestor(
+        of: find.text('南风'),
+        matching: find.byWidgetPredicate(
+          (Widget widget) => widget is ListTile && widget.onTap != null,
+        ),
+      );
       expect(exactMember, findsOneWidget);
       expect(
         find.descendant(
@@ -218,7 +223,9 @@ void main() {
       );
       await tester.tap(find.byType(BackButton).last);
       await pumpUntilVisible(tester, find.text('在线成员与听众席'));
+      await tester.pumpAndSettle();
 
+      await tester.ensureVisible(exactMember);
       await tester.tap(exactMember);
       await tester.pumpAndSettle();
       expect(find.text('举报用户'), findsOneWidget);
@@ -237,6 +244,7 @@ void main() {
       );
       await tester.tap(find.byType(BackButton).last);
       await pumpUntilVisible(tester, find.text('在线成员与听众席'));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.byType(BackButton).last);
       await pumpUntilVisible(tester, find.text('实时公屏'));
@@ -349,11 +357,17 @@ void main() {
       await pumpUntilVisible(tester, find.text('“南风”的搜索结果'));
 
       final Finder userResult = find.widgetWithText(ListTile, '南风');
+      await pumpUntilVisible(tester, userResult);
       expect(userResult, findsOneWidget);
       await tester.ensureVisible(userResult);
       await tester.tap(userResult);
       await pumpUntilVisible(tester, find.text('个人主页'));
-      expect(find.text('南风'), findsOneWidget);
+      expect(find.byType(PublicProfilePage), findsOneWidget);
+      expect(
+        tester.widget<PublicProfilePage>(find.byType(PublicProfilePage)).userId,
+        20002,
+      );
+      expect(find.text('南风'), findsWidgets);
       expect(find.text('下班后只聊轻松的事。'), findsOneWidget);
       await captureQaScreenshot(
         tester,

@@ -37,12 +37,15 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey<String>('qa-entry-AC-004')));
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.byKey(const ValueKey<String>('qa-open-AC-004')),
-        260,
-        scrollable: find.byType(Scrollable).first,
+      FocusManager.instance.primaryFocus?.unfocus();
+      tester.testTextInput.hide();
+      await tester.pumpAndSettle();
+      final Finder openPage = find.byKey(
+        const ValueKey<String>('qa-open-AC-004'),
       );
-      await tester.tap(find.byKey(const ValueKey<String>('qa-open-AC-004')));
+      await tester.ensureVisible(openPage);
+      await tester.pumpAndSettle();
+      await tester.tap(openPage);
       await tester.pumpAndSettle();
       expect(find.byType(ThirdPartyAuthorizationPage), findsOneWidget);
       expect(
