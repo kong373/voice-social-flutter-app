@@ -1,0 +1,120 @@
+name: Flutter CI
+
+on:
+  push:
+    branches:
+      - main
+      - "feat/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flutter-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+
+jobs:
+  quality:
+    name: Format, analyze, and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Format sources for analysis
+        run: dart format lib test
+
+      - name: Analyze
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter analyze 2>&1 | tee analyze.log
+
+      - name: Upload analysis diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-analyze-log
+          path: analyze.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Run tests
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test --coverage 2>&1 | tee test.log
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-test-log
+          path: test.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  android-debug:
+    name: Build Android debug APK
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Generate isolated Android runner
+        run: >-
+          flutter create
+          --platforms=android
+          --org=com.kong373
+          --project-name=voice_social_app
+          --no-pub
+          .ci_app
+
+      - name: Copy application sources
+        run: |
+          rm -rf .ci_app/lib .ci_app/test
+          cp -R lib .ci_app/lib
+          cp -R test .ci_app/test
+          cp pubspec.yaml analysis_options.yaml .ci_app/
+
+      - name: Build debug APK
+        working-directory: .ci_app
+        run: |
+          flutter pub get
+          flutter build apk --debug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-social-app-debug
+          path: .ci_app/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
