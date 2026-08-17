@@ -178,9 +178,16 @@ void main() {
         description: 'enabled private message field',
       );
       await tester.enterText(messageField, sentText);
-      await tester.tap(find.byTooltip('发送消息'));
+      FocusManager.instance.primaryFocus?.unfocus();
+      await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
       await tester.pumpAndSettle();
-      expect(find.text(sentText), findsOneWidget);
+      await tester.pump(const Duration(seconds: 1));
+      final Finder sendMessage = find.byTooltip('发送消息');
+      expect(sendMessage, findsOneWidget);
+      await tester.ensureVisible(sendMessage);
+      await tester.tap(sendMessage);
+      await tester.pumpAndSettle();
+      await pumpUntilVisible(tester, find.text(sentText));
       final List<ConversationSummary> conversationsAfterSend =
           await dependencies.messageRepository.fetchConversations();
       final ConversationSummary sentConversation = conversationsAfterSend
