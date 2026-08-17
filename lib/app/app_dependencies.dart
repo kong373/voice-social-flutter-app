@@ -14,9 +14,15 @@ import 'package:voice_social_app/features/account/domain/auth_repository.dart';
 import 'package:voice_social_app/features/commerce/data/backend_commerce_repository.dart';
 import 'package:voice_social_app/features/commerce/data/mock_commerce_repository.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
+import 'package:voice_social_app/features/community/data/backend_community_repository.dart';
+import 'package:voice_social_app/features/community/data/mock_community_repository.dart';
+import 'package:voice_social_app/features/community/domain/community_repository.dart';
 import 'package:voice_social_app/features/discovery/data/backend_discovery_repository.dart';
 import 'package:voice_social_app/features/discovery/data/mock_discovery_repository.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
+import 'package:voice_social_app/features/discovery/dynamic/data/backend_dynamic_repository.dart';
+import 'package:voice_social_app/features/discovery/dynamic/data/mock_dynamic_repository.dart';
+import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_repository.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/data/backend_room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_room_operations_repository.dart';
@@ -41,7 +47,9 @@ class AppDependencies {
     required this.authController,
     required this.accountComplianceRepository,
     required this.discoveryRepository,
+    required this.dynamicRepository,
     required this.socialRepository,
+    required this.communityRepository,
     required this.commerceRepository,
     required this.roomRepository,
     required this.roomOperationsRepository,
@@ -99,6 +107,14 @@ class AppDependencies {
             routes: routes,
           )
         : MockDiscoveryRepository();
+    final DynamicRepository dynamicRepository = environment.isLive
+        ? BackendDynamicRepository(
+            apiClient: apiClient,
+            routes: routes,
+            currentUserIdProvider: () =>
+                sessionManager.session?.userId ?? 0,
+          )
+        : MockDynamicRepository();
     final SocialRepository socialRepository = environment.isLive
         ? BackendSocialRepository(
             apiClient: apiClient,
@@ -107,6 +123,9 @@ class AppDependencies {
             routes: routes,
           )
         : MockSocialRepository();
+    final CommunityRepository communityRepository = environment.isLive
+        ? BackendCommunityRepository(apiClient: apiClient, routes: routes)
+        : MockCommunityRepository();
     final CommerceRepository commerceRepository = environment.isLive
         ? BackendCommerceRepository(apiClient: apiClient, routes: routes)
         : MockCommerceRepository();
@@ -142,7 +161,9 @@ class AppDependencies {
       authController: authController,
       accountComplianceRepository: accountComplianceRepository,
       discoveryRepository: discoveryRepository,
+      dynamicRepository: dynamicRepository,
       socialRepository: socialRepository,
+      communityRepository: communityRepository,
       commerceRepository: commerceRepository,
       roomRepository: roomRepository,
       roomOperationsRepository: roomOperationsRepository,
@@ -158,7 +179,9 @@ class AppDependencies {
   final AuthController authController;
   final AccountComplianceRepository accountComplianceRepository;
   final DiscoveryRepository discoveryRepository;
+  final DynamicRepository dynamicRepository;
   final SocialRepository socialRepository;
+  final CommunityRepository communityRepository;
   final CommerceRepository commerceRepository;
   final RoomRepository roomRepository;
   final RoomOperationsRepository roomOperationsRepository;

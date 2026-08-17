@@ -74,6 +74,54 @@ class BackendRouteCatalog {
     this.withdrawalFeeRate = '/app-mini-api/mini/v1/withdrawal/fee-rate',
     this.withdrawalApply = '/app-mini-api/mini/v1/withdrawal/apply',
     this.withdrawalRecords = '/app-mini-api/mini/v1/withdrawal/records',
+    this.dynamicPublish = '/app-mini-api/mini/v1/dynamic/publish',
+    this.dynamicList = '/app-mini-api/mini/v1/dynamic/list',
+    this.dynamicMyList = '/app-mini-api/mini/v1/dynamic/list/my',
+    this.dynamicUserList = '/app-mini-api/mini/v1/dynamic/list/user',
+    this.dynamicDelete = '/app-mini-api/mini/v1/dynamic/delete',
+    this.dynamicLike = '/app-mini-api/mini/v1/dynamic/like',
+    this.dynamicComment = '/app-mini-api/mini/v1/dynamic/comment',
+    this.dynamicComments = '/app-mini-api/mini/v1/dynamic/comment/list',
+    this.charmRanking = '/app-api/rankinglist/charmrank',
+    this.wealthRanking = '/app-api/rankinglist/wealthrank',
+    this.contributionRanking = '/app-api/rankinglist/contribuitonrank',
+    this.roomRanking = '/app-api/dfrank/queryRoomDfRank',
+    this.recommendedGuilds = '/app-api/guild/getRecommendGuildPage',
+    this.searchGuilds = '/app-api/guild/searchGuild',
+    this.guildHomepage = '/app-api/guild/getGuildHomepageDetails',
+    this.guildMembers = '/app-api/guild/getGuildMembers',
+    this.guildApplications = '/app-api/guild/getMembershipApplications',
+    this.guildSign = '/app-api/guild/sign',
+    this.applyGuildMembership = '/app-api/guildManagement/applyForMembership',
+    this.quitGuild = '/app-api/guildManagement/quitGuild',
+    this.resolveGuildApplication =
+        '/app-api/guildManagement/approvalMembershipApplication',
+    this.guildMemberMute = '/app-api/guildManagement/memberBanOrUnseal',
+    this.removeGuildMember = '/app-api/guildManagement/kickOutMember',
+    this.cpRelations = '/app-mini-api/mini/v1/cp/my-list',
+    this.cpPendingInvitations =
+        '/app-mini-api/mini/v1/cp/pending-requests',
+    this.cpRequest = '/app-mini-api/mini/v1/cp/request',
+    this.cpAccept = '/app-mini-api/mini/v1/cp/accept',
+    this.cpReject = '/app-mini-api/mini/v1/cp/reject',
+    this.cpEligibility =
+        '/app-mini-api/mini/v1/cp/check-invitation-eligibility',
+    this.guardianLevels = '/app-api/room/radio/v1/queryGuardianLevels',
+    this.guardianInfo = '/app-api/room/radio/v1/queryOenGuardianInfo',
+    this.currentGuardianLevel =
+        '/app-api/room/radio/v1/queryCurrentGuardianLevel',
+    this.becomeGuardian = '/app-api/room/radio/v1/becomeGuard',
+    this.joinFansTeam = '/app-api/room/radio/v1/joinFansTeam',
+    this.fansTeamPage = '/app-api/room/radio/v1/queryFansTeamPage',
+    this.fansTeamBaseInfo =
+        '/app-api/room/radio/v1/queryFansTeamBaseInfo',
+    this.fansTeamTasks = '/app-api/room/radio/v1/queryFansTeamTaskPage',
+    this.fansTeamRelation = '/app-api/room/radio/v1/queryFansTeamRelation',
+    this.taskRecords = '/app-api/taskSystem/queryTaskRecords',
+    this.claimTaskReward = '/app-api/taskSystem/receiveTaskReward',
+    this.signRewards = '/app-api/taskSystem/querySignReward',
+    this.completeSignIn = '/app-api/taskSystem/completeDailySignIn',
+    this.todaySignStatus = '/app-api/taskSystem/queryTodaySignStatus',
   });
 
   final String sendSmsCode;
@@ -145,4 +193,47 @@ class BackendRouteCatalog {
   final String withdrawalFeeRate;
   final String withdrawalApply;
   final String withdrawalRecords;
+  final String dynamicPublish;
+  final String dynamicList;
+  final String dynamicMyList;
+  final String dynamicUserList;
+  final String dynamicDelete;
+  final String dynamicLike;
+  final String dynamicComment;
+  final String dynamicComments;
+  final String charmRanking;
+  final String wealthRanking;
+  final String contributionRanking;
+  final String roomRanking;
+  final String recommendedGuilds;
+  final String searchGuilds;
+  final String guildHomepage;
+  final String guildMembers;
+  final String guildApplications;
+  final String guildSign;
+  final String applyGuildMembership;
+  final String quitGuild;
+  final String resolveGuildApplication;
+  final String guildMemberMute;
+  final String removeGuildMember;
+  final String cpRelations;
+  final String cpPendingInvitations;
+  final String cpRequest;
+  final String cpAccept;
+  final String cpReject;
+  final String cpEligibility;
+  final String guardianLevels;
+  final String guardianInfo;
+  final String currentGuardianLevel;
+  final String becomeGuardian;
+  final String joinFansTeam;
+  final String fansTeamPage;
+  final String fansTeamBaseInfo;
+  final String fansTeamTasks;
+  final String fansTeamRelation;
+  final String taskRecords;
+  final String claimTaskReward;
+  final String signRewards;
+  final String completeSignIn;
+  final String todaySignStatus;
 }

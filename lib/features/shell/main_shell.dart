@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/features/discovery/dynamic/presentation/dynamic_pages.dart';
 import 'package:voice_social_app/features/discovery/home_page.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
@@ -23,12 +24,7 @@ class _MainShellState extends State<MainShell> {
 
   List<Widget> get _pages => <Widget>[
         const HomePage(),
-        const _VendorIndependentRootPage(
-          title: '发现',
-          description: '动态发布、详情评论和排行榜将在后续纯业务批次接入。当前不会用假数据冒充线上动态。',
-          icon: Icons.explore_rounded,
-          statusLabel: 'DS-004～DS-007 待开发',
-        ),
+        const DiscoveryFeedPage(),
         const _VendorIndependentRootPage(
           title: '消息',
           description: '腾讯 IM 正在申请。会话、私聊和通知业务模型会保留，但在正式 SDK 和服务端协议可用前不伪造消息收发。',
@@ -105,25 +101,24 @@ class _VendorIndependentRootPage extends StatelessWidget {
                 ),
           ),
           const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: AppColors.divider),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const Icon(Icons.info_outline_rounded, color: AppColors.accent),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    statusLabel,
-                    style: Theme.of(context).textTheme.bodyMedium,
+          Material(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Icon(Icons.info_outline_rounded, color: AppColors.accent),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      statusLabel,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
