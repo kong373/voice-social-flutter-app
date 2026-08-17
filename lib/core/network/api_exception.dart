@@ -5,6 +5,7 @@ enum ApiFailureKind {
   unauthorized,
   forbidden,
   validation,
+  conflict,
   business,
   server,
   protocol,
