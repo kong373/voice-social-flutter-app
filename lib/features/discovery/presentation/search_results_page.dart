@@ -6,7 +6,7 @@ import 'package:voice_social_app/features/discovery/domain/discovery_models.dart
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
-import 'package:voice_social_app/shared/widgets/scoped_placeholder_page.dart';
+import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 class SearchResultsPage extends StatefulWidget {
   const SearchResultsPage({
@@ -77,9 +77,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('“${widget.keyword}”的搜索结果'),
-      ),
+      appBar: AppBar(title: Text('“${widget.keyword}”的搜索结果')),
       body: Column(
         children: <Widget>[
           SingleChildScrollView(
@@ -127,7 +125,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
         onAction: _load,
       );
     }
-    final DiscoverySearchResult result = _result ??
+    final DiscoverySearchResult result =
+        _result ??
         const DiscoverySearchResult(
           rooms: <DiscoveryRoom>[],
           users: <DiscoveryUser>[],
@@ -200,11 +199,8 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   void _openProfile(DiscoveryUser user) {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => ScopedPlaceholderPage(
-          pageId: 'US-003',
-          title: user.name,
-          description: user.bio ?? '查看该用户的公开资料、关系状态与可见动态。',
-        ),
+        builder: (BuildContext context) =>
+            PublicProfilePage(userId: user.userId),
       ),
     );
   }

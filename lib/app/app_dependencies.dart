@@ -37,6 +37,7 @@ import 'package:voice_social_app/features/room/data/mock_room_lifecycle_reposito
 import 'package:voice_social_app/features/room/data/mock_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/data/mock_room_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
+import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_audio_service.dart';
@@ -77,9 +78,7 @@ class AppDependencies {
     return _build(environment: environment, store: store);
   }
 
-  factory AppDependencies.mock({
-    Map<String, String>? initialStorage,
-  }) {
+  factory AppDependencies.mock({Map<String, String>? initialStorage}) {
     return _build(
       environment: AppEnvironment.mock(),
       store: MemoryKeyValueStore(initialStorage),
@@ -107,11 +106,11 @@ class AppDependencies {
         : const MockAuthRepository();
     final AccountComplianceRepository accountComplianceRepository =
         environment.isLive
-            ? BackendAccountComplianceRepository(
-                apiClient: apiClient,
-                routes: routes,
-              )
-            : MockAccountComplianceRepository();
+        ? BackendAccountComplianceRepository(
+            apiClient: apiClient,
+            routes: routes,
+          )
+        : MockAccountComplianceRepository();
     final DiscoveryRepository discoveryRepository = environment.isLive
         ? BackendDiscoveryRepository(
             apiClient: apiClient,
@@ -123,37 +122,43 @@ class AppDependencies {
         ? BackendDynamicRepository(
             apiClient: apiClient,
             routes: routes,
-            currentUserIdProvider: () =>
-                sessionManager.session?.userId ?? 0,
+            currentUserIdProvider: () => sessionManager.session?.userId ?? 0,
           )
         : MockDynamicRepository();
     final SocialRepository socialRepository = environment.isLive
         ? BackendSocialRepository(
             apiClient: apiClient,
-            currentUserIdProvider: () =>
-                sessionManager.session?.userId ?? 0,
+            currentUserIdProvider: () => sessionManager.session?.userId ?? 0,
             routes: routes,
           )
         : MockSocialRepository();
     final CommunityRepository communityRepository = environment.isLive
         ? BackendCommunityRepository(apiClient: apiClient, routes: routes)
         : MockCommunityRepository();
-    final CommerceRepository commerceRepository = environment.isLive
-        ? BackendCommerceRepository(apiClient: apiClient, routes: routes)
-        : MockCommerceRepository();
-    final CommerceCatalogRepository commerceCatalogRepository =
-        environment.isLive
-            ? BackendCommerceCatalogRepository(
-                apiClient: apiClient,
-                routes: routes,
-              )
-            : MockCommerceCatalogRepository();
+    late final CommerceRepository commerceRepository;
+    late final CommerceCatalogRepository commerceCatalogRepository;
+    if (environment.isLive) {
+      commerceRepository = BackendCommerceRepository(
+        apiClient: apiClient,
+        routes: routes,
+      );
+      commerceCatalogRepository = BackendCommerceCatalogRepository(
+        apiClient: apiClient,
+        routes: routes,
+      );
+    } else {
+      final MockCommerceRepository mockCommerceRepository =
+          MockCommerceRepository();
+      commerceRepository = mockCommerceRepository;
+      commerceCatalogRepository = MockCommerceCatalogRepository(
+        onRechargeOrderChanged: mockCommerceRepository.syncRechargeOrder,
+      );
+    }
     final MessageRepository messageRepository = environment.isLive
         ? BackendMessageRepository(
             apiClient: apiClient,
             routes: routes,
-            currentUserIdProvider: () =>
-                sessionManager.session?.userId ?? 0,
+            currentUserIdProvider: () => sessionManager.session?.userId ?? 0,
           )
         : MockMessageRepository();
     final RoomRepository roomRepository = environment.isLive
@@ -161,25 +166,29 @@ class AppDependencies {
         : MockRoomRepository();
     final RoomOperationsRepository roomOperationsRepository = environment.isLive
         ? BackendRoomOperationsRepository(apiClient: apiClient, routes: routes)
-        : MockRoomOperationsRepository();
+        : MockRoomOperationsRepository(
+            micCoordinationMode: MicCoordinationMode.direct,
+          );
     final RoomLifecycleRepository roomLifecycleRepository = environment.isLive
         ? BackendRoomLifecycleRepository(apiClient: apiClient, routes: routes)
         : MockRoomLifecycleRepository();
     final RoomPkRepository roomPkRepository = environment.isLive
         ? BackendRoomPkRepository(apiClient: apiClient, routes: routes)
         : MockRoomPkRepository();
-    final RtcAdapter rtcAdapter =
-        environment.isLive ? const UnavailableRtcAdapter() : MockRtcAdapter();
+    final RtcAdapter rtcAdapter = environment.isLive
+        ? const UnavailableRtcAdapter()
+        : MockRtcAdapter();
     final RoomRealtimeGateway realtimeGateway = environment.isLive
         ? const UnavailableRoomRealtimeGateway()
         : MockRoomRealtimeGateway();
     final RoomAudioService roomAudioService = environment.isLive
         ? const UnavailableRoomAudioService()
         : MockRoomAudioService();
-    final DeviceIdentityProvider deviceIdentityProvider = DeviceIdentityProvider(
-      environment: environment,
-      sessionManager: sessionManager,
-    );
+    final DeviceIdentityProvider deviceIdentityProvider =
+        DeviceIdentityProvider(
+          environment: environment,
+          sessionManager: sessionManager,
+        );
     final AuthController authController = AuthController(
       repository: authRepository,
       sessionManager: sessionManager,

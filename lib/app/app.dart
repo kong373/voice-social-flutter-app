@@ -3,6 +3,8 @@ import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/app/app_gate.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/debug/qa_console/qa_console_host.dart';
+import 'package:voice_social_app/debug/qa_console/qa_gate.dart';
 
 class VoiceSocialApp extends StatelessWidget {
   const VoiceSocialApp({required this.dependencies, super.key});
@@ -17,7 +19,9 @@ class VoiceSocialApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         title: 'Voice Social App',
         theme: AppTheme.dark(),
-        home: AppGate(dependencies: dependencies),
+        home: qaConsoleEnabled
+            ? const QaConsoleHost()
+            : AppGate(dependencies: dependencies),
       ),
     );
   }

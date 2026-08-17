@@ -6,6 +6,7 @@ build/
 coverage/
 .flutter-plugins
 .flutter-plugins-dependencies
+.flutter
 .metadata
 
 # Generated platform files (M0 uses tool/bootstrap_local.sh)
@@ -39,3 +40,9 @@ google-services.json
 
 # CI scratch workspace
 .ci_app/
+
+# M2.4 emulator QA evidence (uploaded by CI, never committed)
+artifacts/qa/m2.4-emulator/
+*.apk
+*.mp4
+*.webm

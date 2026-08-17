@@ -18,14 +18,14 @@ class RoomPkPreparationPage extends StatefulWidget {
   final String roomTitle;
 
   @override
-  State<RoomPkPreparationPage> createState() =>
-      _RoomPkPreparationPageState();
+  State<RoomPkPreparationPage> createState() => _RoomPkPreparationPageState();
 }
 
 class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
   final TextEditingController _searchController = TextEditingController();
-  final TextEditingController _punishmentController =
-      TextEditingController(text: '输的一方分享今天最想放下的事');
+  final TextEditingController _punishmentController = TextEditingController(
+    text: '输的一方分享今天最想放下的事',
+  );
   final List<RoomPkOpponent> _opponents = <RoomPkOpponent>[];
   final List<RoomPkRecord> _history = <RoomPkRecord>[];
   RoomPkOpponent? _selectedOpponent;
@@ -83,8 +83,7 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
         if (_selectedOpponent != null) {
           final String selectedRoomId = _selectedOpponent!.roomId;
           _selectedOpponent = _opponents
-              .where((RoomPkOpponent item) =>
-                  item.roomId == selectedRoomId)
+              .where((RoomPkOpponent item) => item.roomId == selectedRoomId)
               .firstOrNull;
         }
         _loading = false;
@@ -105,8 +104,7 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
     }
     setState(() => _searching = true);
     try {
-      final List<RoomPkOpponent> values =
-          await _repository.searchOpponents(
+      final List<RoomPkOpponent> values = await _repository.searchOpponents(
         roomId: widget.roomId,
         keyword: _searchController.text,
       );
@@ -173,15 +171,17 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
     }
     setState(() => _busy = true);
     try {
-      final RoomPkInvitation updated =
-          await _repository.refreshInvitation(outgoing);
+      final RoomPkInvitation updated = await _repository.refreshInvitation(
+        outgoing,
+      );
       if (!mounted) {
         return;
       }
       setState(() => _outgoing = updated);
       if (updated.status == RoomPkInvitationStatus.accepted) {
-        final RoomPkBattle? battle =
-            await _repository.fetchActiveBattle(roomId: widget.roomId);
+        final RoomPkBattle? battle = await _repository.fetchActiveBattle(
+          roomId: widget.roomId,
+        );
         if (battle == null) {
           _showMessage('对方已接受，正在等待服务端建立对局');
           return;
@@ -210,8 +210,9 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
     setState(() => _busy = true);
     try {
       if (accepted) {
-        final RoomPkBattle battle =
-            await _repository.acceptInvitation(incoming);
+        final RoomPkBattle battle = await _repository.acceptInvitation(
+          incoming,
+        );
         if (!mounted) {
           return;
         }
@@ -245,23 +246,26 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
   }
 
   Future<void> _openBattle(RoomPkBattle battle) async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomPkBattlePage(
-          roomId: widget.roomId,
-          initialBattle: battle,
-        ),
+    final bool? returnToRoom = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (BuildContext context) =>
+            RoomPkBattlePage(roomId: widget.roomId, initialBattle: battle),
       ),
     );
-    if (mounted) {
-      await _load();
+    if (!mounted) {
+      return;
     }
+    if (returnToRoom == true) {
+      Navigator.of(context).pop();
+      return;
+    }
+    await _load();
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -271,167 +275,157 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? _PkError(message: _error!, onRetry: _load)
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+          ? _PkError(message: _error!, onRetry: _load)
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+                children: <Widget>[
+                  const _PkInfoCard(
+                    icon: Icons.info_outline_rounded,
+                    text: '只保留普通房间 PK：邀请、接受或拒绝、计时比分和结算。其他未确认玩法均不提供。',
+                  ),
+                  if (!_repository.supportsRealtimeInvitations) ...<Widget>[
+                    const SizedBox(height: 10),
+                    const _PkInfoCard(
+                      icon: Icons.sync_rounded,
+                      text: '实时邀请通道尚未接入，当前通过手动刷新服务端状态确认是否开战。',
+                    ),
+                  ],
+                  if (_activeBattle != null) ...<Widget>[
+                    const SizedBox(height: 16),
+                    _ActiveBattleCard(
+                      battle: _activeBattle!,
+                      onOpen: () => _openBattle(_activeBattle!),
+                    ),
+                  ],
+                  if (_incoming != null &&
+                      _incoming!.status ==
+                          RoomPkInvitationStatus.pending) ...<Widget>[
+                    const SizedBox(height: 20),
+                    Text(
+                      '收到的邀请',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 10),
+                    _IncomingInvitationCard(
+                      invitation: _incoming!,
+                      busy: _busy,
+                      onAccept: () => _resolveIncoming(true),
+                      onReject: () => _resolveIncoming(false),
+                    ),
+                  ],
+                  const SizedBox(height: 22),
+                  Text('选择对手', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 10),
+                  Row(
                     children: <Widget>[
-                      const _PkInfoCard(
-                        icon: Icons.info_outline_rounded,
-                        text: '只保留普通房间 PK：邀请、接受或拒绝、计时比分和结算。不会加入随机匹配、技能、嘲讽或小游戏。',
-                      ),
-                      if (!_repository.supportsRealtimeInvitations) ...<Widget>[
-                        const SizedBox(height: 10),
-                        const _PkInfoCard(
-                          icon: Icons.sync_rounded,
-                          text: '实时邀请通道尚未接入，当前通过手动刷新服务端状态确认是否开战。',
-                        ),
-                      ],
-                      if (_activeBattle != null) ...<Widget>[
-                        const SizedBox(height: 16),
-                        _ActiveBattleCard(
-                          battle: _activeBattle!,
-                          onOpen: () => _openBattle(_activeBattle!),
-                        ),
-                      ],
-                      if (_incoming != null &&
-                          _incoming!.status ==
-                              RoomPkInvitationStatus.pending) ...<Widget>[
-                        const SizedBox(height: 20),
-                        Text(
-                          '收到的邀请',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 10),
-                        _IncomingInvitationCard(
-                          invitation: _incoming!,
-                          busy: _busy,
-                          onAccept: () => _resolveIncoming(true),
-                          onReject: () => _resolveIncoming(false),
-                        ),
-                      ],
-                      const SizedBox(height: 22),
-                      Text(
-                        '选择对手',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              textInputAction: TextInputAction.search,
-                              onSubmitted: (_) => _search(),
-                              decoration: const InputDecoration(
-                                hintText: '输入房间号或房间名称',
-                                prefixIcon: Icon(Icons.search_rounded),
-                              ),
-                            ),
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: (_) => _search(),
+                          decoration: const InputDecoration(
+                            hintText: '输入房间号或房间名称',
+                            prefixIcon: Icon(Icons.search_rounded),
                           ),
-                          const SizedBox(width: 8),
-                          IconButton.filledTonal(
-                            tooltip: '搜索房间',
-                            onPressed: _searching ? null : _search,
-                            icon: _searching
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.arrow_forward_rounded),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      if (_opponents.isEmpty)
-                        const _PkInfoCard(
-                          icon: Icons.search_off_rounded,
-                          text: '当前没有可邀请的房间，可稍后刷新或换一个房间号搜索。',
-                        )
-                      else
-                        for (final RoomPkOpponent opponent in _opponents)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: _OpponentTile(
-                              opponent: opponent,
-                              selected: _selectedOpponent?.roomId ==
-                                  opponent.roomId,
-                              onSelect: opponent.isInPk
-                                  ? null
-                                  : () => setState(
-                                        () => _selectedOpponent = opponent,
-                                      ),
-                            ),
-                          ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: _punishmentController,
-                        maxLength: 20,
-                        decoration: const InputDecoration(
-                          labelText: '惩罚主题',
-                          hintText: '双方都能理解、可正常完成的轻量惩罚',
-                          prefixIcon: Icon(Icons.flag_outlined),
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      Text(
-                        'PK 时长',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      SegmentedButton<int>(
-                        showSelectedIcon: false,
-                        segments: const <ButtonSegment<int>>[
-                          ButtonSegment<int>(value: 5, label: Text('5 分钟')),
-                          ButtonSegment<int>(value: 10, label: Text('10 分钟')),
-                          ButtonSegment<int>(value: 15, label: Text('15 分钟')),
-                        ],
-                        selected: <int>{_durationMinutes},
-                        onSelectionChanged: _busy
-                            ? null
-                            : (Set<int> values) => setState(
-                                  () => _durationMinutes = values.first,
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        tooltip: '搜索房间',
+                        onPressed: _searching ? null : _search,
+                        icon: _searching
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
                                 ),
+                              )
+                            : const Icon(Icons.arrow_forward_rounded),
                       ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: _busy || _activeBattle?.isActive == true
-                              ? null
-                              : _sendInvitation,
-                          icon: const Icon(Icons.sports_kabaddi_rounded),
-                          label: Text(_busy ? '提交中…' : '发送 PK 邀请'),
-                        ),
-                      ),
-                      if (_outgoing != null) ...<Widget>[
-                        const SizedBox(height: 12),
-                        _OutgoingInvitationCard(
-                          invitation: _outgoing!,
-                          busy: _busy,
-                          onRefresh: _refreshOutgoing,
-                        ),
-                      ],
-                      const SizedBox(height: 24),
-                      Text(
-                        '最近对战',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 10),
-                      if (_history.isEmpty)
-                        const _PkInfoCard(
-                          icon: Icons.history_rounded,
-                          text: '当前没有可展示的 PK 记录。',
-                        )
-                      else
-                        for (final RoomPkRecord record in _history)
-                          _PkRecordTile(record: record),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  if (_opponents.isEmpty)
+                    const _PkInfoCard(
+                      icon: Icons.search_off_rounded,
+                      text: '当前没有可邀请的房间，可稍后刷新或换一个房间号搜索。',
+                    )
+                  else
+                    for (final RoomPkOpponent opponent in _opponents)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _OpponentTile(
+                          opponent: opponent,
+                          selected:
+                              _selectedOpponent?.roomId == opponent.roomId,
+                          onSelect: opponent.isInPk
+                              ? null
+                              : () => setState(
+                                  () => _selectedOpponent = opponent,
+                                ),
+                        ),
+                      ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _punishmentController,
+                    maxLength: 20,
+                    decoration: const InputDecoration(
+                      labelText: '惩罚主题',
+                      hintText: '双方都能理解、可正常完成的轻量惩罚',
+                      prefixIcon: Icon(Icons.flag_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text('PK 时长', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  SegmentedButton<int>(
+                    showSelectedIcon: false,
+                    segments: const <ButtonSegment<int>>[
+                      ButtonSegment<int>(value: 5, label: Text('5 分钟')),
+                      ButtonSegment<int>(value: 10, label: Text('10 分钟')),
+                      ButtonSegment<int>(value: 15, label: Text('15 分钟')),
+                    ],
+                    selected: <int>{_durationMinutes},
+                    onSelectionChanged: _busy
+                        ? null
+                        : (Set<int> values) =>
+                              setState(() => _durationMinutes = values.first),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _busy || _activeBattle?.isActive == true
+                          ? null
+                          : _sendInvitation,
+                      icon: const Icon(Icons.sports_kabaddi_rounded),
+                      label: Text(_busy ? '提交中…' : '发送 PK 邀请'),
+                    ),
+                  ),
+                  if (_outgoing != null) ...<Widget>[
+                    const SizedBox(height: 12),
+                    _OutgoingInvitationCard(
+                      invitation: _outgoing!,
+                      busy: _busy,
+                      onRefresh: _refreshOutgoing,
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  Text('最近对战', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 10),
+                  if (_history.isEmpty)
+                    const _PkInfoCard(
+                      icon: Icons.history_rounded,
+                      text: '当前没有可展示的 PK 记录。',
+                    )
+                  else
+                    for (final RoomPkRecord record in _history)
+                      _PkRecordTile(record: record),
+                ],
+              ),
+            ),
     );
   }
 }
@@ -522,9 +516,9 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
 
   Future<void> _surrender() async {
     if (!_repository.supportsSurrender) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('当前服务端未确认普通房 PK 主动认输接口')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('当前服务端未确认普通房 PK 主动认输接口')));
       return;
     }
     final bool? confirmed = await showDialog<bool>(
@@ -558,9 +552,9 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     }
   }
@@ -610,8 +604,7 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
             child: LinearProgressIndicator(
               minHeight: 12,
               value: currentRatio.clamp(0, 1),
-              backgroundColor:
-                  AppColors.secondary.withValues(alpha: 0.28),
+              backgroundColor: AppColors.secondary.withValues(alpha: 0.28),
             ),
           ),
           const SizedBox(height: 14),
@@ -639,9 +632,7 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
             OutlinedButton.icon(
               onPressed: _surrender,
               icon: const Icon(Icons.flag_rounded),
-              label: Text(
-                _repository.supportsSurrender ? '主动认输' : '认输接口未接入',
-              ),
+              label: Text(_repository.supportsSurrender ? '主动认输' : '认输接口未接入'),
             ),
             const SizedBox(height: 8),
             Text(
@@ -652,7 +643,7 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
           ],
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(context).pop(true),
             child: const Text('返回房间'),
           ),
         ],
@@ -794,8 +785,8 @@ class _OutgoingInvitationCard extends StatelessWidget {
             ),
             IconButton(
               tooltip: '刷新邀请状态',
-              onPressed: busy ||
-                      invitation.status != RoomPkInvitationStatus.pending
+              onPressed:
+                  busy || invitation.status != RoomPkInvitationStatus.pending
                   ? null
                   : onRefresh,
               icon: const Icon(Icons.refresh_rounded),
@@ -904,8 +895,8 @@ class _PkSideCard extends StatelessWidget {
         Text(
           '${side.score}',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                color: mine ? AppColors.accent : AppColors.secondary,
-              ),
+            color: mine ? AppColors.accent : AppColors.secondary,
+          ),
         ),
       ],
     );
@@ -931,10 +922,7 @@ class _SupporterSection extends StatelessWidget {
             Text(title, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 10),
             if (side.supporters.isEmpty)
-              Text(
-                '当前暂无有效贡献数据',
-                style: Theme.of(context).textTheme.bodySmall,
-              )
+              Text('当前暂无有效贡献数据', style: Theme.of(context).textTheme.bodySmall)
             else
               for (int index = 0; index < side.supporters.length; index += 1)
                 ListTile(
@@ -1111,12 +1099,12 @@ String _initial(String source) {
 }
 
 String _invitationStatusText(RoomPkInvitationStatus status) => switch (status) {
-      RoomPkInvitationStatus.pending => '等待对方确认',
-      RoomPkInvitationStatus.accepted => '对方已接受',
-      RoomPkInvitationStatus.rejected => '对方已拒绝',
-      RoomPkInvitationStatus.expired => '邀请已过期',
-      RoomPkInvitationStatus.canceled => '邀请已取消',
-    };
+  RoomPkInvitationStatus.pending => '等待对方确认',
+  RoomPkInvitationStatus.accepted => '对方已接受',
+  RoomPkInvitationStatus.rejected => '对方已拒绝',
+  RoomPkInvitationStatus.expired => '邀请已过期',
+  RoomPkInvitationStatus.canceled => '邀请已取消',
+};
 
 String _formatDuration(int seconds) {
   final int safe = seconds.clamp(0, 24 * 60 * 60).toInt();

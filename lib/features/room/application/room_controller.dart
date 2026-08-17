@@ -18,12 +18,12 @@ class RoomController extends ChangeNotifier {
     required RtcAdapter rtcAdapter,
     required RoomRealtimeGateway realtimeGateway,
     RoomPermissionPolicy permissionPolicy = const RoomPermissionPolicy(),
-  })  : _currentUserId = currentUserId,
-        _accessToken = accessToken,
-        _repository = repository,
-        _rtcAdapter = rtcAdapter,
-        _realtimeGateway = realtimeGateway,
-        _permissionPolicy = permissionPolicy;
+  }) : _currentUserId = currentUserId,
+       _accessToken = accessToken,
+       _repository = repository,
+       _rtcAdapter = rtcAdapter,
+       _realtimeGateway = realtimeGateway,
+       _permissionPolicy = permissionPolicy;
 
   final String roomId;
   final String title;
@@ -53,9 +53,8 @@ class RoomController extends ChangeNotifier {
   String get displayTitle => _snapshot?.title ?? title;
   String get roomCode => _snapshot?.roomCode ?? roomId;
   String get topic => _snapshot?.topic ?? '';
-  List<MicSeat> get seats => List<MicSeat>.unmodifiable(
-        _snapshot?.seats ?? _emptySeats,
-      );
+  List<MicSeat> get seats =>
+      List<MicSeat>.unmodifiable(_snapshot?.seats ?? _emptySeats);
   List<RoomMessage> get messages => List<RoomMessage>.unmodifiable(_messages);
   RoomRole get role => _snapshot?.role ?? RoomRole.listener;
   int? get giftBalance => _snapshot?.giftBalance;
@@ -67,9 +66,18 @@ class RoomController extends ChangeNotifier {
       !_mutedInRoom && allows(RoomCapability.sendPublicMessage);
   String? get errorMessage => _errorMessage;
 
+  void applyAuthoritativeTopic(String topic) {
+    final RoomSnapshot? snapshot = _snapshot;
+    if (snapshot == null || snapshot.topic == topic) {
+      return;
+    }
+    _snapshot = snapshot.copyWith(topic: topic);
+    _notify();
+  }
+
   bool get isOnMic => seats.any(
-        (MicSeat seat) => seat.userId == _currentUserId && seat.isOccupied,
-      );
+    (MicSeat seat) => seat.userId == _currentUserId && seat.isOccupied,
+  );
 
   bool get micMuted {
     final MicSeat? seat = _ownSeat();
@@ -207,8 +215,7 @@ class RoomController extends ChangeNotifier {
         currentUserId: _currentUserId,
       );
       if (!refreshed.seats.any(
-        (MicSeat item) =>
-            item.userId == _currentUserId && item.isOccupied,
+        (MicSeat item) => item.userId == _currentUserId && item.isOccupied,
       )) {
         throw const ApiException(
           kind: ApiFailureKind.business,
@@ -247,11 +254,7 @@ class RoomController extends ChangeNotifier {
         currentUserId: _currentUserId,
       );
       _messages.add(
-        const RoomMessage(
-          sender: '系统',
-          content: '你已离开麦位。',
-          isSystem: true,
-        ),
+        const RoomMessage(sender: '系统', content: '你已离开麦位。', isSystem: true),
       );
       _notify();
       return true;
@@ -483,9 +486,7 @@ class RoomController extends ChangeNotifier {
         if (content.isNotEmpty) {
           _messages.add(
             RoomMessage(
-              senderId: int.tryParse(
-                event.payload['userId']?.toString() ?? '',
-              ),
+              senderId: int.tryParse(event.payload['userId']?.toString() ?? ''),
               sender: event.payload['nickname']?.toString() ?? '房间成员',
               content: content,
             ),
@@ -497,8 +498,7 @@ class RoomController extends ChangeNotifier {
         _messages.add(
           RoomMessage(
             sender: '系统',
-            content:
-                event.payload['displayText']?.toString() ?? '房间收到一份礼物',
+            content: event.payload['displayText']?.toString() ?? '房间收到一份礼物',
             isSystem: true,
           ),
         );
@@ -530,11 +530,7 @@ class RoomController extends ChangeNotifier {
       case RoomRealtimeEventCodes.unmutedInRoom:
         _mutedInRoom = false;
         _messages.add(
-          const RoomMessage(
-            sender: '系统',
-            content: '房间禁言已解除。',
-            isSystem: true,
-          ),
+          const RoomMessage(sender: '系统', content: '房间禁言已解除。', isSystem: true),
         );
         _notify();
         return;

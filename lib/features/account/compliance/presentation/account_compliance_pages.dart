@@ -5,6 +5,7 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
 import 'package:voice_social_app/features/account/compliance/presentation/account_status_pages.dart';
 import 'package:voice_social_app/features/account/compliance/presentation/system_permission_pages.dart';
+import 'package:voice_social_app/features/account/presentation/third_party_authorization_page.dart';
 
 export 'account_status_pages.dart';
 export 'system_permission_pages.dart';
@@ -77,8 +78,8 @@ class _AccountComplianceHubPageState extends State<AccountComplianceHubPage> {
       appBar: AppBar(title: const Text('账号与安全')),
       body: snapshot == null
           ? _error == null
-              ? const Center(child: CircularProgressIndicator())
-              : _HubError(message: _error!, onRetry: _load)
+                ? const Center(child: CircularProgressIndicator())
+                : _HubError(message: _error!, onRetry: _load)
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
@@ -87,34 +88,46 @@ class _AccountComplianceHubPageState extends State<AccountComplianceHubPage> {
                   _AccountSummary(snapshot: snapshot),
                   const SizedBox(height: 14),
                   _Entry(
+                    icon: Icons.link_rounded,
+                    title: '第三方账号绑定与分享授权',
+                    subtitle: '供应商 SDK 未接入时明确保持不可用',
+                    onTap: () => _open(const ThirdPartyAuthorizationPage()),
+                  ),
+                  _Entry(
                     icon: Icons.tune_rounded,
                     title: '系统权限中心',
                     subtitle: '麦克风、通知和照片权限',
-                    onTap: () => _open(SystemPermissionCenterPage(
-                      account: widget.account,
-                      currentVersion: widget.currentVersion,
-                      platformType: widget.platformType,
-                    )),
+                    onTap: () => _open(
+                      SystemPermissionCenterPage(
+                        account: widget.account,
+                        currentVersion: widget.currentVersion,
+                        platformType: widget.platformType,
+                      ),
+                    ),
                   ),
                   _Entry(
                     icon: Icons.badge_outlined,
                     title: '实名认证',
                     subtitle: _verificationLabel(snapshot.verificationState),
-                    onTap: () => _open(RealNamePage(
-                      account: widget.account,
-                      currentVersion: widget.currentVersion,
-                      platformType: widget.platformType,
-                    )),
+                    onTap: () => _open(
+                      RealNamePage(
+                        account: widget.account,
+                        currentVersion: widget.currentVersion,
+                        platformType: widget.platformType,
+                      ),
+                    ),
                   ),
                   _Entry(
                     icon: Icons.devices_other_rounded,
                     title: '登录设备与会话',
                     subtitle: '${snapshot.sessions.length} 个已知会话',
-                    onTap: () => _open(DeviceSessionsPage(
-                      account: widget.account,
-                      currentVersion: widget.currentVersion,
-                      platformType: widget.platformType,
-                    )),
+                    onTap: () => _open(
+                      DeviceSessionsPage(
+                        account: widget.account,
+                        currentVersion: widget.currentVersion,
+                        platformType: widget.platformType,
+                      ),
+                    ),
                   ),
                   _Entry(
                     icon: Icons.gpp_maybe_outlined,
@@ -122,29 +135,32 @@ class _AccountComplianceHubPageState extends State<AccountComplianceHubPage> {
                     subtitle: snapshot.restriction.isRestricted
                         ? snapshot.restriction.reason
                         : '当前账号没有已知限制',
-                    onTap: () => _open(AccountRestrictionPage(
-                      account: widget.account,
-                      currentVersion: widget.currentVersion,
-                      platformType: widget.platformType,
-                    )),
+                    onTap: () => _open(
+                      AccountRestrictionPage(
+                        account: widget.account,
+                        currentVersion: widget.currentVersion,
+                        platformType: widget.platformType,
+                      ),
+                    ),
                   ),
                   _Entry(
                     icon: Icons.fact_check_outlined,
                     title: '处罚申诉',
                     subtitle: '查询原因、提交说明并查看处理进度',
-                    onTap: () => _open(
-                      AccountAppealPage(account: widget.account),
-                    ),
+                    onTap: () =>
+                        _open(AccountAppealPage(account: widget.account)),
                   ),
                   _Entry(
                     icon: Icons.person_remove_alt_1_outlined,
                     title: '账号注销',
                     subtitle: snapshot.cancellation.message,
-                    onTap: () => _open(AccountCancellationPage(
-                      account: widget.account,
-                      currentVersion: widget.currentVersion,
-                      platformType: widget.platformType,
-                    )),
+                    onTap: () => _open(
+                      AccountCancellationPage(
+                        account: widget.account,
+                        currentVersion: widget.currentVersion,
+                        platformType: widget.platformType,
+                      ),
+                    ),
                   ),
                   _Entry(
                     icon: Icons.system_update_alt_rounded,
@@ -152,20 +168,24 @@ class _AccountComplianceHubPageState extends State<AccountComplianceHubPage> {
                     subtitle: snapshot.versionInfo.hasUpdate
                         ? '发现 ${snapshot.versionInfo.versionName}'
                         : '当前已是最新版本',
-                    onTap: () => _open(VersionUpgradePage(
-                      currentVersion: widget.currentVersion,
-                      platformType: widget.platformType,
-                    )),
+                    onTap: () => _open(
+                      VersionUpgradePage(
+                        currentVersion: widget.currentVersion,
+                        platformType: widget.platformType,
+                      ),
+                    ),
                   ),
                   _Entry(
                     icon: Icons.child_care_rounded,
                     title: '青少年模式',
                     subtitle: snapshot.youthModeEnabled ? '已开启' : '未开启',
-                    onTap: () => _open(YouthModePage(
-                      account: widget.account,
-                      currentVersion: widget.currentVersion,
-                      platformType: widget.platformType,
-                    )),
+                    onTap: () => _open(
+                      YouthModePage(
+                        account: widget.account,
+                        currentVersion: widget.currentVersion,
+                        platformType: widget.platformType,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -200,16 +220,18 @@ class _AccountSummary extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Text(snapshot.nickname,
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  snapshot.nickname,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const SizedBox(height: 4),
-                Text(snapshot.account,
-                    style: Theme.of(context).textTheme.bodySmall),
+                Text(
+                  snapshot.account,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
                 const SizedBox(height: 6),
                 Text(
-                  snapshot.restriction.isRestricted
-                      ? '账号存在限制'
-                      : '账号状态正常',
+                  snapshot.restriction.isRestricted ? '账号存在限制' : '账号状态正常',
                   style: TextStyle(
                     color: snapshot.restriction.isRestricted
                         ? AppColors.warning
@@ -273,12 +295,12 @@ class _HubError extends StatelessWidget {
 }
 
 String _verificationLabel(VerificationState state) => switch (state) {
-      VerificationState.unverified => '未认证',
-      VerificationState.pending => '审核中',
-      VerificationState.verified => '已认证',
-      VerificationState.rejected => '认证未通过',
-      VerificationState.unavailable => '认证服务不可用',
-    };
+  VerificationState.unverified => '未认证',
+  VerificationState.pending => '审核中',
+  VerificationState.verified => '已认证',
+  VerificationState.rejected => '认证未通过',
+  VerificationState.unavailable => '认证服务不可用',
+};
 
 String _messageFor(Object error) =>
     error is ApiException ? error.message : '操作失败，请稍后重试';
