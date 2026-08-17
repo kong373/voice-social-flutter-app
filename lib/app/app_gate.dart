@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/network/live_backend_readiness.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
 import 'package:voice_social_app/features/account/presentation/consent_page.dart';
 import 'package:voice_social_app/features/account/presentation/login_page.dart';
@@ -18,12 +19,16 @@ class AppGate extends StatefulWidget {
 
 class _AppGateState extends State<AppGate> {
   late final AuthController _controller;
+  late final LiveBackendReadinessService _liveReadinessService;
 
   @override
   void initState() {
     super.initState();
     _controller = widget.dependencies.authController
       ..addListener(_handleAuthChanged);
+    _liveReadinessService = LiveBackendReadinessService(
+      environment: widget.dependencies.environment,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _controller.initialize();
     });
@@ -48,7 +53,11 @@ class _AppGateState extends State<AppGate> {
       AuthFlowStage.consentRequired => ConsentPage(
         onAccept: _controller.acceptConsent,
       ),
-      AuthFlowStage.signedOut => LoginPage(controller: _controller),
+      AuthFlowStage.signedOut => LoginPage(
+        controller: _controller,
+        showLiveReadiness: widget.dependencies.environment.isLive,
+        liveReadinessService: _liveReadinessService,
+      ),
       AuthFlowStage.registrationRequired => RegistrationPage(
         controller: _controller,
       ),

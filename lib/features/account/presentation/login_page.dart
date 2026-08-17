@@ -3,12 +3,21 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/network/live_backend_readiness.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
+import 'package:voice_social_app/features/account/presentation/live_backend_readiness_page.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({required this.controller, super.key});
+  const LoginPage({
+    required this.controller,
+    this.liveReadinessService,
+    this.showLiveReadiness = false,
+    super.key,
+  });
 
   final AuthController controller;
+  final LiveBackendReadinessService? liveReadinessService;
+  final bool showLiveReadiness;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -45,8 +54,8 @@ class _LoginPageState extends State<LoginPage> {
             Text(
               '登录后可以进入语音房、申请上麦、发送消息和建立社交关系。',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                color: AppColors.textSecondary,
-              ),
+                    color: AppColors.textSecondary,
+                  ),
             ),
             const SizedBox(height: 34),
             Form(
@@ -84,10 +93,10 @@ class _LoginPageState extends State<LoginPage> {
                     decoration: InputDecoration(
                       labelText: '短信验证码',
                       suffixIcon: TextButton(
-                        onPressed: controller.sendingCode ||
-                                _secondsRemaining > 0
-                            ? null
-                            : _sendCode,
+                        onPressed:
+                            controller.sendingCode || _secondsRemaining > 0
+                                ? null
+                                : _sendCode,
                         child: Text(
                           _secondsRemaining > 0
                               ? '${_secondsRemaining}s'
@@ -128,6 +137,23 @@ class _LoginPageState extends State<LoginPage> {
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall,
             ),
+            if (widget.showLiveReadiness &&
+                widget.liveReadinessService != null) ...<Widget>[
+              const SizedBox(height: 12),
+              TextButton.icon(
+                key: const Key('live-backend-readiness-entry'),
+                onPressed: () => Navigator.of(context).push<void>(
+                  MaterialPageRoute<void>(
+                    builder: (BuildContext context) =>
+                        LiveBackendReadinessPage(
+                      service: widget.liveReadinessService!,
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.cloud_sync_outlined),
+                label: const Text('开发环境联调诊断'),
+              ),
+            ],
           ],
         ),
       ),

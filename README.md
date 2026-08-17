@@ -4,30 +4,25 @@ Clean-room Flutter client for the authorized reconstruction of a Chinese voice-s
 
 The product denominator is frozen at **69 Page IDs**. Product scope, authorized backend behavior, authorized APK evidence, and the new Flutter design system are kept separate so legacy or retired capabilities cannot leak into the new app.
 
-## Current checkpoint — M1 authentication and room contracts
+## Current checkpoint — M3 authorized development integration
 
-The executable flow now covers:
+M0 through M2.4 are merged into `main`. The mock-backed product baseline includes all 69 Page IDs, fixed root navigation, the fixed eight-seat room, discovery, account/social, messages, commerce, community, room PK, and the Android dual-emulator QA harness.
+
+M3.1 adds a side-effect-free live-readiness layer before any real SMS, login, room, wallet, RTC, IM, or payment call is attempted:
 
 ```text
-AC-001 session restoration
-→ AC-002 agreement and privacy consent
-→ AC-003 SMS login / registration branch
-→ DS-001 room discovery
-→ RM-004 room entry through a repository contract
-→ fixed 8-seat adapter
-→ RTC and realtime gateway ports
-→ mic request / mute / leave mic
-→ realtime public screen
-→ in-room ordinary gift Bottom Sheet
-→ reconnect warning and recovery
-→ confirmed room exit
+runtime configuration validation
+→ redacted environment summary
+→ DNS / TCP / TLS / HTTP gateway probe
+→ explicit readiness result
+→ only then allow the authentication integration phase
 ```
 
-The default debug build runs in **mock mode** and persists the local login session with secure storage. Live mode uses redacted runtime configuration and the authorized backend contract, but real RTC and realtime SDK drivers are intentionally blocked until their approved provider configuration is supplied.
+The default debug build remains **mock mode**. Live mode requires authorized non-production configuration and fails closed when values are missing or unsafe.
 
 ## Scope boundaries
 
-This public repository contains no APK, decompiled proprietary source, backend source archive, production host, credential, signing asset, or copied brand material.
+This public repository contains no APK source package, decompiled proprietary source, backend source archive, production host, credential, signing asset, or copied brand material.
 
 The following capabilities remain excluded even when legacy evidence exists:
 
@@ -47,27 +42,32 @@ flutter run
 
 The default mock login accepts any valid mainland China mobile number with a six-digit code. `13900000000` exercises the registration-required branch.
 
-### Live contract mode
+### Live readiness mode
 
-Never commit runtime values. Inject them locally or through the CI secret store:
+Never commit runtime values. Inject development values locally or through a protected CI environment:
 
 ```bash
 flutter run \
   --dart-define=BACKEND_MODE=live \
-  --dart-define=API_BASE_URL=https://your-authorized-gateway.example \
+  --dart-define=APP_ENV=development \
+  --dart-define=API_BASE_URL=https://your-authorized-dev-gateway.example/ \
   --dart-define=CLIENT_TYPE=Android \
-  --dart-define=CLIENT_INNER_VERSION=1 \
+  --dart-define=CLIENT_INNER_VERSION=6 \
   --dart-define=OAUTH_CLIENT_ID=... \
-  --dart-define=OAUTH_CLIENT_SECRET=...
+  --dart-define=OAUTH_CLIENT_SECRET=... \
+  --dart-define=API_TIMEOUT_SECONDS=15 \
+  --dart-define=LIVE_PROBE_PATH=/
 ```
 
-Live room entry remains intentionally unavailable until approved RTC and realtime adapters replace the blocking implementations.
+On the live login page, `开发环境联调诊断` performs only a side-effect-free gateway transport probe. It does not request an SMS code or attempt authentication.
+
+The manual workflow `.github/workflows/m3-live-contract-preflight.yml` reads values only from the protected GitHub `development` environment and uploads a redacted readiness artifact.
 
 ## Quality checks
 
 ```bash
 flutter pub get
-dart format --output=none --set-exit-if-changed lib test
+dart format --output=none --set-exit-if-changed lib test tool
 flutter analyze
 flutter test
 ```
@@ -78,6 +78,6 @@ GitHub Actions also generates an isolated Android runner, builds a debug APK, an
 
 - [Architecture](docs/architecture.md)
 - [M1 backend contract](docs/contracts/m1_backend_contract.md)
-- [M1 acceptance gate](docs/m1-acceptance.md)
+- [M3.1 live readiness](docs/m3-live-backend-readiness.md)
 - [Delivery roadmap](docs/roadmap.md)
 - [Security rules](docs/security.md)
