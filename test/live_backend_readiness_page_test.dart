@@ -35,8 +35,24 @@ void main() {
     expect(find.text('开发环境联调诊断'), findsOneWidget);
     expect(find.text('网关可达'), findsOneWidget);
     expect(find.text('https://dev.example.com'), findsOneWidget);
-    expect(find.textContaining('不等于短信、登录、首页'), findsOneWidget);
-    expect(find.textContaining('VENDOR_BLOCKED'), findsOneWidget);
+
+    final Finder businessBoundary =
+        find.textContaining('不等于短信、登录、首页');
+    await tester.scrollUntilVisible(
+      businessBoundary,
+      240,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(businessBoundary, findsOneWidget);
+
+    final Finder vendorBoundary = find.textContaining('VENDOR_BLOCKED');
+    await tester.scrollUntilVisible(
+      vendorBoundary,
+      160,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(vendorBoundary, findsOneWidget);
+
     expect(find.textContaining('secret-value'), findsNothing);
     expect(find.textContaining('client-id-value'), findsNothing);
     expect(find.textContaining('/private/gateway/'), findsNothing);
