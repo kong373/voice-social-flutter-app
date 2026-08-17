@@ -6,9 +6,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:voice_social_app/app/app.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
+import 'package:voice_social_app/app/app_gate.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/debug/qa_console/qa_fixtures.dart';
 
@@ -19,6 +19,15 @@ const String qaAvdId = String.fromEnvironment(
 
 const bool qaUseFrameworkScreenshots = bool.fromEnvironment(
   'QA_FRAMEWORK_SCREENSHOTS',
+);
+
+const bool qaHostScreenshotHandshake = bool.fromEnvironment(
+  'QA_HOST_SCREENSHOT_HANDSHAKE',
+);
+
+const String qaAndroidDataDirectory = String.fromEnvironment(
+  'QA_ANDROID_DATA_DIR',
+  defaultValue: '/data/user/0/com.kong373.voice_social_app',
 );
 
 Future<AppDependencies> pumpQaPage(
@@ -62,7 +71,20 @@ Future<AppDependencies> launchAndAuthenticate(WidgetTester tester) async {
   // same persistent secure session store as a normal app launch. This lets a
   // later force-stop/relaunch prove real session restoration (FLOW-003).
   final AppDependencies dependencies = AppDependencies.fromEnvironment();
-  await tester.pumpWidget(VoiceSocialApp(dependencies: dependencies));
+  // The candidate APK must expose the QA console, but ordinary flow tests
+  // still enter through the real consent/login/session gate. Mount AppGate
+  // explicitly so ENABLE_QA_CONSOLE=true does not replace the business root
+  // under test with QaConsoleHost.
+  await tester.pumpWidget(
+    AppDependencyScope(
+      dependencies: dependencies,
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.dark(),
+        home: AppGate(dependencies: dependencies),
+      ),
+    ),
+  );
   await tester.pumpAndSettle();
 
   if (find.text('同意并继续').evaluate().isNotEmpty) {
@@ -78,15 +100,121 @@ Future<AppDependencies> launchAndAuthenticate(WidgetTester tester) async {
       find.widgetWithText(TextFormField, '短信验证码'),
       '123456',
     );
-    FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pumpAndSettle();
+    await dismissQaImeAndWait(tester);
     await tester.ensureVisible(find.text('登录 / 注册'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('登录 / 注册'));
-    await tester.pumpAndSettle();
+    final Finder loginAction = find.text('登录 / 注册').hitTestable();
+    expect(loginAction, findsOneWidget);
+    await tester.tap(loginAction);
+    await pumpQaUntil(
+      tester,
+      () => find.text('此刻适合你的房间').evaluate().isNotEmpty,
+      description: 'authenticated home page to appear',
+    );
   }
   expect(find.text('此刻适合你的房间'), findsOneWidget);
   return dependencies;
+}
+
+Future<void> showQaImeAndWait(WidgetTester tester, Finder input) async {
+  await tester.tap(input);
+  await tester.pump();
+  await tester.showKeyboard(input);
+  await SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+  await _waitForQaImeInsets(tester, visible: true);
+  expect(_qaEditableHasFocus(tester), isTrue);
+}
+
+Future<void> dismissQaImeAndWait(WidgetTester tester) async {
+  FocusManager.instance.primaryFocus?.unfocus();
+  await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+  await _waitForQaImeInsets(tester, visible: false);
+  expect(_qaEditableHasFocus(tester), isFalse);
+}
+
+Future<void> _waitForQaImeInsets(
+  WidgetTester tester, {
+  required bool visible,
+}) async {
+  const int requiredStableSamples = 3;
+  double? previousBottom;
+  int stableSamples = 0;
+  double lastBottom = -1;
+
+  for (int attempt = 0; attempt < 100; attempt += 1) {
+    await tester.pump();
+    final double devicePixelRatio = tester.view.devicePixelRatio;
+    lastBottom = tester.view.viewInsets.bottom / devicePixelRatio;
+    final bool editableHasFocus = _qaEditableHasFocus(tester);
+    final bool matches = visible
+        ? lastBottom > 0 && editableHasFocus
+        : lastBottom == 0 && !editableHasFocus;
+    final bool unchanged =
+        previousBottom != null && (lastBottom - previousBottom).abs() < 0.5;
+    stableSamples = matches && unchanged ? stableSamples + 1 : 0;
+    if (stableSamples >= requiredStableSamples) {
+      return;
+    }
+    previousBottom = lastBottom;
+    // IME animation is driven by the Android platform clock, not the fake
+    // widget-test clock. Poll a real condition while allowing platform frames
+    // to arrive; the delay is not used as a success criterion.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+
+  throw TestFailure(
+    'Android IME did not become ${visible ? 'visible' : 'hidden'} with '
+    'stable viewInsets.bottom; last logical inset was $lastBottom.',
+  );
+}
+
+bool _qaEditableHasFocus(WidgetTester tester) => tester
+    .widgetList<EditableText>(find.byType(EditableText))
+    .any((EditableText editable) => editable.focusNode.hasFocus);
+
+Future<void> pumpQaUntil(
+  WidgetTester tester,
+  bool Function() condition, {
+  required String description,
+}) async {
+  for (int attempt = 0; attempt < 100; attempt += 1) {
+    await tester.pump();
+    if (condition()) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+  throw TestFailure('Timed out waiting for $description.');
+}
+
+Future<void> announceQaEvidence(WidgetTester tester, String marker) async {
+  await tester.pump();
+  File? acknowledgment;
+  if (Platform.isAndroid && qaHostScreenshotHandshake) {
+    final Directory acknowledgmentDirectory = Directory(
+      '$qaAndroidDataDirectory/cache/flow013-evidence-acks',
+    );
+    await acknowledgmentDirectory.create(recursive: true);
+    final String safeMarker = marker.replaceAll(
+      RegExp(r'[^A-Za-z0-9_.-]+'),
+      '-',
+    );
+    acknowledgment = File('${acknowledgmentDirectory.path}/$safeMarker');
+    if (await acknowledgment.exists()) {
+      await acknowledgment.delete();
+    }
+  }
+  debugPrint('FLOW013_EVIDENCE::$marker');
+  if (acknowledgment == null) {
+    return;
+  }
+  for (int attempt = 0; attempt < 200; attempt += 1) {
+    if (await acknowledgment.exists()) {
+      await acknowledgment.delete();
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+  throw TestFailure('Host did not acknowledge ADB screenshot for $marker.');
 }
 
 final Map<String, String> _qaLinuxSecureValues = <String, String>{};

@@ -12,6 +12,10 @@ import 'package:voice_social_app/features/social/presentation/social_pages.dart'
 import 'm2_4_test_support.dart';
 
 const bool _qaCriticalOnly = bool.fromEnvironment('QA_CRITICAL_ONLY');
+const int _qaFlow013Iterations = int.fromEnvironment(
+  'QA_FLOW013_ITERATIONS',
+  defaultValue: 1,
+);
 
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
@@ -171,41 +175,117 @@ void main() {
         findsOneWidget,
       );
 
-      const String sentText = 'FLOW-013 Android 模拟器私聊消息';
       final Finder messageField = find.byWidgetPredicate(
         (Widget widget) =>
             widget is TextField && widget.decoration?.hintText == '输入消息…',
         description: 'enabled private message field',
       );
-      await tester.enterText(messageField, sentText);
-      FocusManager.instance.primaryFocus?.unfocus();
-      await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
-      await tester.pumpAndSettle();
-      await tester.pump(const Duration(seconds: 1));
-      final Finder sendMessage = find.byTooltip('发送消息');
-      expect(sendMessage, findsOneWidget);
-      await tester.ensureVisible(sendMessage);
-      await tester.tap(sendMessage);
-      await tester.pumpAndSettle();
-      await pumpUntilVisible(tester, find.text(sentText));
-      final List<ConversationSummary> conversationsAfterSend =
-          await dependencies.messageRepository.fetchConversations();
-      final ConversationSummary sentConversation = conversationsAfterSend
-          .singleWhere(
-            (ConversationSummary item) => item.targetUserId == 20001,
-          );
-      expect(sentConversation.lastMessage, sentText);
-      expect(sentConversation.unreadCount, 0);
-      final List<ChatMessage> persistedMessages = await dependencies
-          .messageRepository
-          .fetchPrivateMessages(sentConversation);
-      expect(
-        persistedMessages.where(
-          (ChatMessage message) =>
-              message.isMine && message.content == sentText,
-        ),
-        hasLength(1),
-      );
+      expect(_qaFlow013Iterations, inInclusiveRange(1, 10));
+      String lastSentText = '';
+      for (
+        int iteration = 1;
+        iteration <= _qaFlow013Iterations;
+        iteration += 1
+      ) {
+        final String iterationLabel = iteration.toString().padLeft(2, '0');
+        final String sentText =
+            'FLOW013-$qaAvdId-$iterationLabel-'
+            '${DateTime.now().millisecondsSinceEpoch}';
+        lastSentText = sentText;
+
+        await showQaImeAndWait(tester, messageField);
+        await announceQaEvidence(
+          tester,
+          '$qaAvdId::$iterationLabel::keyboard-shown',
+        );
+        await tester.enterText(messageField, sentText);
+        expect(
+          tester.widget<TextField>(messageField).controller?.text,
+          sentText,
+        );
+
+        await dismissQaImeAndWait(tester);
+        await announceQaEvidence(
+          tester,
+          '$qaAvdId::$iterationLabel::keyboard-hidden',
+        );
+
+        final Finder sendMessage = find.byWidgetPredicate(
+          (Widget widget) => widget is IconButton && widget.tooltip == '发送消息',
+          description: 'enabled private-message IconButton',
+        );
+        expect(sendMessage, findsOneWidget);
+        await tester.ensureVisible(sendMessage);
+        await tester.pump();
+        final Finder hitTestableSend = sendMessage.hitTestable();
+        expect(hitTestableSend, findsOneWidget);
+        expect(tester.widget<IconButton>(sendMessage).onPressed, isNotNull);
+        final Rect sendRect = tester.getRect(sendMessage);
+        final Size logicalViewSize =
+            tester.view.physicalSize / tester.view.devicePixelRatio;
+        expect(sendRect.left, greaterThanOrEqualTo(0));
+        expect(sendRect.top, greaterThanOrEqualTo(0));
+        expect(sendRect.right, lessThanOrEqualTo(logicalViewSize.width));
+        expect(sendRect.bottom, lessThanOrEqualTo(logicalViewSize.height));
+        await announceQaEvidence(
+          tester,
+          '$qaAvdId::$iterationLabel::before-send',
+        );
+
+        await tester.tap(hitTestableSend);
+        await pumpQaUntil(
+          tester,
+          () => find.text(sentText).evaluate().isNotEmpty,
+          description: '$sentText to appear in the active conversation',
+        );
+
+        final List<ConversationSummary> conversationsAfterSend =
+            await dependencies.messageRepository.fetchConversations();
+        final ConversationSummary sentConversation = conversationsAfterSend
+            .singleWhere(
+              (ConversationSummary item) => item.targetUserId == 20001,
+            );
+        expect(sentConversation.lastMessage, sentText);
+        expect(sentConversation.unreadCount, 0);
+        final List<ChatMessage> persistedMessages = await dependencies
+            .messageRepository
+            .fetchPrivateMessages(sentConversation);
+        expect(
+          persistedMessages.where(
+            (ChatMessage message) =>
+                message.isMine && message.content == sentText,
+          ),
+          hasLength(1),
+        );
+        final ConversationSummary otherConversation = conversationsAfterSend
+            .singleWhere(
+              (ConversationSummary item) => item.targetUserId == 20002,
+            );
+        final List<ChatMessage> otherMessages = await dependencies
+            .messageRepository
+            .fetchPrivateMessages(otherConversation);
+        expect(
+          otherMessages.where(
+            (ChatMessage message) => message.content == sentText,
+          ),
+          isEmpty,
+        );
+        await announceQaEvidence(
+          tester,
+          '$qaAvdId::$iterationLabel::message-visible',
+        );
+
+        await _popPage(tester, find.byType(PrivateChatPage));
+        expect(find.byType(MessageCenterPage), findsOneWidget);
+        expect(find.text(sentText), findsOneWidget);
+        await tester.tap(find.text('晚星'));
+        await pumpUntilVisible(tester, find.byType(PrivateChatPage));
+        await pumpQaUntil(
+          tester,
+          () => find.text(sentText).evaluate().isNotEmpty,
+          description: '$sentText to remain after reopening the conversation',
+        );
+      }
       await captureQaScreenshot(
         tester,
         binding,
@@ -214,7 +294,7 @@ void main() {
 
       await _popPage(tester, find.byType(PrivateChatPage));
       expect(find.byType(MessageCenterPage), findsOneWidget);
-      expect(find.text(sentText), findsOneWidget);
+      expect(find.text(lastSentText), findsOneWidget);
 
       // An unavailable conversation must route to an explicit recovery page,
       // never a blank chat or a fabricated send surface.
