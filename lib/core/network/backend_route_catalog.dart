@@ -18,6 +18,18 @@ class BackendRouteCatalog {
     this.userLeaveMic = '/app-api/micUserBase/leaveMic',
     this.closeMic = '/app-api/micBase/closedMike',
     this.openMic = '/app-api/micBase/openMike',
+    this.roomOnlineMembers = '/app-api/rooms/getRoomOnlinePersonnel',
+    this.roomOffMicMembers = '/app-api/rooms/getRoomMicDownOnlinePersonnel',
+    this.roomManagers = '/app-api/roomUsers/getRoomManagers',
+    this.roomMutedUsers = '/app-api/roomUsers/getRoomMuteds',
+    this.setRoomUserMuted = '/app-api/roomUsers/setMuted',
+    this.setRoomUserRole = '/app-api/roomUsers/setRole',
+    this.kickRoomUser = '/app-api/room/com/kickout',
+    this.takeUserOffMic = '/app-api/micUserBase/hugUserDownMic',
+    this.lockMic = '/app-api/micBase/lockMike',
+    this.unlockMic = '/app-api/micBase/unlockMike',
+    this.roomTopic = '/app-api/rooms/getRoomTopics',
+    this.updateRoomTopic = '/app-api/rooms/setRoomTopics',
   });
 
   final String sendSmsCode;
@@ -35,4 +47,16 @@ class BackendRouteCatalog {
   final String userLeaveMic;
   final String closeMic;
   final String openMic;
+  final String roomOnlineMembers;
+  final String roomOffMicMembers;
+  final String roomManagers;
+  final String roomMutedUsers;
+  final String setRoomUserMuted;
+  final String setRoomUserRole;
+  final String kickRoomUser;
+  final String takeUserOffMic;
+  final String lockMic;
+  final String unlockMic;
+  final String roomTopic;
+  final String updateRoomTopic;
 }

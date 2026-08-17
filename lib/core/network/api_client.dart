@@ -65,6 +65,20 @@ class ApiClient {
         authenticated: authenticated,
       );
 
+  Future<ApiResponse> patch(
+    String path, {
+    Map<String, String>? query,
+    Map<String, Object?>? body,
+    bool authenticated = true,
+  }) =>
+      _request(
+        method: 'PATCH',
+        path: path,
+        query: query,
+        body: body,
+        authenticated: authenticated,
+      );
+
   Future<ApiResponse> post(
     String path, {
     Map<String, String>? query,
