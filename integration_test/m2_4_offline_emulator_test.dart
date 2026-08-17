@@ -5,8 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:voice_social_app/app/app.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
+import 'package:voice_social_app/app/app_dependency_scope.dart';
+import 'package:voice_social_app/app/app_gate.dart';
+import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/features/account/presentation/third_party_authorization_page.dart';
 
 import 'm2_4_test_support.dart';
@@ -57,12 +59,26 @@ void main() {
       }
       await secureStorage.deleteAll();
       final AppDependencies dependencies = AppDependencies.fromEnvironment();
-      await tester.pumpWidget(VoiceSocialApp(dependencies: dependencies));
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.dark(),
+            home: AppGate(dependencies: dependencies),
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
-      expect(find.text('同意并继续'), findsOneWidget);
-      await tester.tap(find.text('同意并继续'));
-      await tester.pumpAndSettle();
+      // FLOW-001 runs first in the same installed app and legitimately
+      // persists privacy consent. FLOW-002 resets only authentication so it
+      // can exercise the unregistered-account branch without pretending the
+      // user must accept the same agreement twice.
+      if (find.text('同意并继续').evaluate().isNotEmpty) {
+        await tester.tap(find.text('同意并继续'));
+        await tester.pumpAndSettle();
+      }
 
       expect(find.text('手机号登录'), findsOneWidget);
       await tester.enterText(
