@@ -3,76 +3,76 @@ import 'package:voice_social_app/features/social/domain/social_models.dart';
 
 class MockSocialRepository implements SocialRepository {
   MockSocialRepository()
-      : _users = <int, SocialUser>{
-          10001: const SocialUser(
-            userId: 10001,
-            name: '晚星',
-            signature: '愿每一次相遇都轻松一点。',
-            avatarUrl: '',
-            isFollowing: false,
-            isFollower: false,
-            isFriend: false,
-            isBlocked: false,
-            isOnline: true,
-          ),
-          20001: const SocialUser(
-            userId: 20001,
-            name: '鹿屿',
-            signature: '深夜陪伴房主，慢慢聊。',
-            avatarUrl: '',
-            isFollowing: true,
-            isFollower: true,
-            isFriend: true,
-            isBlocked: false,
-            isOnline: true,
-            roomId: '880217',
-          ),
-          20002: const SocialUser(
-            userId: 20002,
-            name: '南风',
-            signature: '下班后只聊轻松的事。',
-            avatarUrl: '',
-            isFollowing: true,
-            isFollower: false,
-            isFriend: false,
-            isBlocked: false,
-            isOnline: false,
-          ),
-          20003: const SocialUser(
-            userId: 20003,
-            name: '阿岚',
-            signature: '最近在学习更认真地倾听。',
-            avatarUrl: '',
-            isFollowing: false,
-            isFollower: true,
-            isFriend: false,
-            isBlocked: false,
-            isOnline: true,
-            roomId: '660318',
-          ),
-          20004: const SocialUser(
-            userId: 20004,
-            name: '松子',
-            signature: '音乐、电台和日常碎片。',
-            avatarUrl: '',
-            isFollowing: false,
-            isFollower: false,
-            isFriend: false,
-            isBlocked: false,
-            isOnline: true,
-          ),
-          20005: const SocialUser(
-            userId: 20005,
-            name: '已屏蔽用户',
-            signature: '',
-            avatarUrl: '',
-            isFollowing: false,
-            isFollower: false,
-            isFriend: false,
-            isBlocked: true,
-            isOnline: false,
-          ),
-        };
+    : _users = <int, SocialUser>{
+        10001: const SocialUser(
+          userId: 10001,
+          name: '晚星',
+          signature: '愿每一次相遇都轻松一点。',
+          avatarUrl: '',
+          isFollowing: false,
+          isFollower: false,
+          isFriend: false,
+          isBlocked: false,
+          isOnline: true,
+        ),
+        20001: const SocialUser(
+          userId: 20001,
+          name: '鹿屿',
+          signature: '深夜陪伴房主，慢慢聊。',
+          avatarUrl: '',
+          isFollowing: true,
+          isFollower: true,
+          isFriend: true,
+          isBlocked: false,
+          isOnline: true,
+          roomId: '880217',
+        ),
+        20002: const SocialUser(
+          userId: 20002,
+          name: '南风',
+          signature: '下班后只聊轻松的事。',
+          avatarUrl: '',
+          isFollowing: true,
+          isFollower: false,
+          isFriend: false,
+          isBlocked: false,
+          isOnline: false,
+        ),
+        20003: const SocialUser(
+          userId: 20003,
+          name: '阿岚',
+          signature: '最近在学习更认真地倾听。',
+          avatarUrl: '',
+          isFollowing: false,
+          isFollower: true,
+          isFriend: false,
+          isBlocked: false,
+          isOnline: true,
+          roomId: '660318',
+        ),
+        20004: const SocialUser(
+          userId: 20004,
+          name: '松子',
+          signature: '音乐、电台和日常碎片。',
+          avatarUrl: '',
+          isFollowing: false,
+          isFollower: false,
+          isFriend: false,
+          isBlocked: false,
+          isOnline: true,
+        ),
+        20005: const SocialUser(
+          userId: 20005,
+          name: '已屏蔽用户',
+          signature: '',
+          avatarUrl: '',
+          isFollowing: false,
+          isFollower: false,
+          isFriend: false,
+          isBlocked: true,
+          isOnline: false,
+        ),
+      };
 
   final Map<int, SocialUser> _users;
   final List<FriendRequest> _requests = <FriendRequest>[];
@@ -88,6 +88,10 @@ class MockSocialRepository implements SocialRepository {
 
   @override
   bool get supportsTicketProgress => true;
+
+  void seedSupportTicketForQa(SupportTicket ticket) {
+    _tickets[ticket.id] = ticket;
+  }
 
   void _ensureSeededRequests() {
     if (_requests.isNotEmpty) {
@@ -114,9 +118,15 @@ class MockSocialRepository implements SocialRepository {
       birthday: '2000-06-18',
       city: '武汉',
       coverUrl: '',
-      followingCount: _users.values.where((SocialUser item) => item.isFollowing).length,
-      followerCount: _users.values.where((SocialUser item) => item.isFollower).length,
-      friendCount: _users.values.where((SocialUser item) => item.isFriend).length,
+      followingCount: _users.values
+          .where((SocialUser item) => item.isFollowing)
+          .length,
+      followerCount: _users.values
+          .where((SocialUser item) => item.isFollower)
+          .length,
+      friendCount: _users.values
+          .where((SocialUser item) => item.isFriend)
+          .length,
       postCount: 12,
       level: 8,
     );
@@ -188,16 +198,18 @@ class MockSocialRepository implements SocialRepository {
     required int page,
     required int pageSize,
   }) async {
-    final List<SocialUser> all = _users.values.where((SocialUser user) {
-      if (user.userId == 10001 || user.isBlocked) {
-        return false;
-      }
-      return switch (type) {
-        SocialRelationList.following => user.isFollowing,
-        SocialRelationList.followers => user.isFollower,
-        SocialRelationList.friends => user.isFriend,
-      };
-    }).toList(growable: false);
+    final List<SocialUser> all = _users.values
+        .where((SocialUser user) {
+          if (user.userId == 10001 || user.isBlocked) {
+            return false;
+          }
+          return switch (type) {
+            SocialRelationList.following => user.isFollowing,
+            SocialRelationList.followers => user.isFollower,
+            SocialRelationList.friends => user.isFriend,
+          };
+        })
+        .toList(growable: false);
     return _page(all, page: page, pageSize: pageSize);
   }
 
@@ -307,10 +319,7 @@ class MockSocialRepository implements SocialRepository {
   }
 
   @override
-  Future<void> setBlocked({
-    required int userId,
-    required bool blocked,
-  }) async {
+  Future<void> setBlocked({required int userId, required bool blocked}) async {
     final SocialUser user = _requireUser(userId);
     if (userId == 10001) {
       throw const ApiException(
@@ -350,11 +359,11 @@ class MockSocialRepository implements SocialRepository {
 
   @override
   Future<SupportChannel> fetchCustomerService() async => const SupportChannel(
-        id: 'customer-service',
-        name: '平台客服',
-        description: '当前可提交意见反馈；即时客服会话将在腾讯 IM 接入后开放。',
-        liveConversationAvailable: false,
-      );
+    id: 'customer-service',
+    name: '平台客服',
+    description: '当前可提交意见反馈；即时客服会话将在腾讯 IM 接入后开放。',
+    liveConversationAvailable: false,
+  );
 
   @override
   Future<SupportTicket> submitFeedback({

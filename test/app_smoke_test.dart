@@ -35,7 +35,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('深夜温柔陪伴'), findsOneWidget);
-    expect(find.text('实时公屏'), findsOneWidget);
+    final Finder publicScreen = find.text('实时公屏');
+    await tester.scrollUntilVisible(
+      publicScreen,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(publicScreen, findsOneWidget);
     expect(find.text('仅显示进房后的消息'), findsOneWidget);
 
     await tester.tap(find.text('礼物'));

@@ -5,11 +5,7 @@ import 'package:voice_social_app/features/room/domain/room_operations_models.dar
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 
 class RoomTopicPage extends StatefulWidget {
-  const RoomTopicPage({
-    required this.roomId,
-    required this.canEdit,
-    super.key,
-  });
+  const RoomTopicPage({required this.roomId, required this.canEdit, super.key});
 
   final String roomId;
   final bool canEdit;
@@ -34,7 +30,9 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
     if (_repositoryInstance != null) {
       return;
     }
-    _repositoryInstance = AppDependencyScope.of(context).roomOperationsRepository;
+    _repositoryInstance = AppDependencyScope.of(
+      context,
+    ).roomOperationsRepository;
     _load();
   }
 
@@ -84,7 +82,9 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
     );
     try {
       await _repository.updateTopic(roomId: widget.roomId, topic: requested);
-      final RoomTopic authoritative = await _repository.fetchTopic(widget.roomId);
+      final RoomTopic authoritative = await _repository.fetchTopic(
+        widget.roomId,
+      );
       if (authoritative.title != requested.title ||
           authoritative.content != requested.content) {
         throw const ApiException(
@@ -95,7 +95,7 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
       if (!mounted) {
         return;
       }
-      Navigator.of(context).pop(true);
+      Navigator.of(context).pop(authoritative);
     } catch (error) {
       if (!mounted) {
         return;
@@ -114,73 +114,71 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null && _titleController.text.isEmpty
-              ? _TopicError(message: _error!, onRetry: _load)
-              : Form(
-                  key: _formKey,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-                    children: <Widget>[
-                      TextFormField(
-                        controller: _titleController,
-                        enabled: widget.canEdit && !_submitting,
-                        maxLength: 64,
-                        decoration: const InputDecoration(labelText: '公告标题'),
-                        validator: (String? value) {
-                          if ((value ?? '').trim().isEmpty) {
-                            return '请输入公告标题';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _contentController,
-                        enabled: widget.canEdit && !_submitting,
-                        maxLength: 500,
-                        minLines: 6,
-                        maxLines: 12,
-                        decoration: const InputDecoration(
-                          labelText: '公告内容',
-                          alignLabelWithHint: true,
-                        ),
-                        validator: (String? value) {
-                          if ((value ?? '').trim().isEmpty) {
-                            return '请输入公告内容';
-                          }
-                          return null;
-                        },
-                      ),
-                      if (_error != null) ...<Widget>[
-                        const SizedBox(height: 12),
-                        Text(
-                          _error!,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 20),
-                      if (widget.canEdit)
-                        FilledButton.icon(
-                          onPressed: _submitting ? null : _save,
-                          icon: _submitting
-                              ? const SizedBox.square(
-                                  dimension: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.save_outlined),
-                          label: Text(_submitting ? '正在保存' : '保存公告'),
-                        )
-                      else
-                        Text(
-                          '只有房主可以修改公告。',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                    ],
+          ? _TopicError(message: _error!, onRetry: _load)
+          : Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+                children: <Widget>[
+                  TextFormField(
+                    controller: _titleController,
+                    enabled: widget.canEdit && !_submitting,
+                    maxLength: 64,
+                    decoration: const InputDecoration(labelText: '公告标题'),
+                    validator: (String? value) {
+                      if ((value ?? '').trim().isEmpty) {
+                        return '请输入公告标题';
+                      }
+                      return null;
+                    },
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _contentController,
+                    enabled: widget.canEdit && !_submitting,
+                    maxLength: 500,
+                    minLines: 6,
+                    maxLines: 12,
+                    decoration: const InputDecoration(
+                      labelText: '公告内容',
+                      alignLabelWithHint: true,
+                    ),
+                    validator: (String? value) {
+                      if ((value ?? '').trim().isEmpty) {
+                        return '请输入公告内容';
+                      }
+                      return null;
+                    },
+                  ),
+                  if (_error != null) ...<Widget>[
+                    const SizedBox(height: 12),
+                    Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  if (widget.canEdit)
+                    FilledButton.icon(
+                      onPressed: _submitting ? null : _save,
+                      icon: _submitting
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save_outlined),
+                      label: Text(_submitting ? '正在保存' : '保存公告'),
+                    )
+                  else
+                    Text(
+                      '只有房主可以修改公告。',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
     );
   }
 
@@ -207,10 +205,7 @@ class _TopicError extends StatelessWidget {
             const SizedBox(height: 16),
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 18),
-            FilledButton.tonal(
-              onPressed: onRetry,
-              child: const Text('重新加载'),
-            ),
+            FilledButton.tonal(onPressed: onRetry, child: const Text('重新加载')),
           ],
         ),
       ),

@@ -6,6 +6,8 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_permission_policy.dart';
+import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
+import 'package:voice_social_app/features/room/pk/presentation/room_pk_pages.dart';
 import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
 import 'package:voice_social_app/features/room/presentation/room_audio_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_diagnostics_page.dart';
@@ -14,7 +16,8 @@ import 'package:voice_social_app/features/room/presentation/room_members_page.da
 import 'package:voice_social_app/features/room/presentation/room_recovery_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_share_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_topic_page.dart';
-import 'package:voice_social_app/shared/widgets/scoped_placeholder_page.dart';
+import 'package:voice_social_app/features/social/domain/social_models.dart';
+import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 part 'room_page_sheets.dart';
 part 'room_widgets.dart';
@@ -87,7 +90,9 @@ class _RoomPageState extends State<RoomPage> {
         if (!mounted) {
           return;
         }
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error)));
         _controller.clearError();
       });
     }
@@ -113,8 +118,10 @@ class _RoomPageState extends State<RoomPage> {
       },
       child: Scaffold(
         body: switch (_controller.status) {
-          RoomSessionStatus.idle || RoomSessionStatus.joining => _buildJoiningState(),
-          RoomSessionStatus.failed when _controller.snapshot == null => _buildJoinFailure(),
+          RoomSessionStatus.idle ||
+          RoomSessionStatus.joining => _buildJoiningState(),
+          RoomSessionStatus.failed when _controller.snapshot == null =>
+            _buildJoinFailure(),
           _ => _buildRoomContent(),
         },
       ),
@@ -169,15 +176,22 @@ class _RoomPageState extends State<RoomPage> {
                   icon: const Icon(Icons.arrow_back_rounded),
                 ),
                 const Spacer(),
-                const Icon(Icons.wifi_off_rounded, size: 44, color: AppColors.warning),
+                const Icon(
+                  Icons.wifi_off_rounded,
+                  size: 44,
+                  color: AppColors.warning,
+                ),
                 const SizedBox(height: 20),
-                Text('暂时无法进入房间', style: Theme.of(context).textTheme.headlineSmall),
+                Text(
+                  '暂时无法进入房间',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
                 const SizedBox(height: 10),
                 Text(
                   _controller.errorMessage ?? '请检查网络后重试。',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
+                    color: AppColors.textSecondary,
+                  ),
                 ),
                 const SizedBox(height: 24),
                 FilledButton.icon(
@@ -210,12 +224,13 @@ class _RoomPageState extends State<RoomPage> {
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 4,
-                        mainAxisSpacing: 16,
-                        crossAxisSpacing: 8,
-                        childAspectRatio: 0.76,
-                      ),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 4,
+                            mainAxisSpacing: 16,
+                            crossAxisSpacing: 8,
+                            mainAxisExtent: 106,
+                          ),
                       itemCount: _controller.seats.length,
                       itemBuilder: (BuildContext context, int index) {
                         return _MicSeatTile(seat: _controller.seats[index]);
@@ -315,7 +330,11 @@ class _RoomPageState extends State<RoomPage> {
           ),
           child: Row(
             children: <Widget>[
-              const Icon(Icons.graphic_eq_rounded, size: 18, color: AppColors.accent),
+              const Icon(
+                Icons.graphic_eq_rounded,
+                size: 18,
+                color: AppColors.accent,
+              ),
               const SizedBox(width: 8),
               Expanded(child: Text(topic)),
               const Icon(Icons.chevron_right_rounded, size: 18),
@@ -359,7 +378,9 @@ class _RoomPageState extends State<RoomPage> {
                       TextSpan(
                         text: '${message.sender}  ',
                         style: TextStyle(
-                          color: message.isSystem ? AppColors.warning : AppColors.accent,
+                          color: message.isSystem
+                              ? AppColors.warning
+                              : AppColors.accent,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -376,7 +397,8 @@ class _RoomPageState extends State<RoomPage> {
   }
 
   Widget _buildComposer() {
-    final bool enabled = _controller.status == RoomSessionStatus.joined &&
+    final bool enabled =
+        _controller.status == RoomSessionStatus.joined &&
         _controller.canSendPublicMessage;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
@@ -416,13 +438,17 @@ class _RoomPageState extends State<RoomPage> {
           children: <Widget>[
             _RoomAction(
               icon: _controller.isOnMic
-                  ? (_controller.micMuted ? Icons.mic_off_rounded : Icons.mic_rounded)
+                  ? (_controller.micMuted
+                        ? Icons.mic_off_rounded
+                        : Icons.mic_rounded)
                   : Icons.keyboard_voice_rounded,
               label: _controller.isOnMic
                   ? (_controller.micMuted ? '开麦' : '闭麦')
                   : '申请上麦',
               enabled: joined,
-              onTap: _controller.isOnMic ? _toggleMicrophone : _showMicRequestSheet,
+              onTap: _controller.isOnMic
+                  ? _toggleMicrophone
+                  : _showMicRequestSheet,
             ),
             _RoomAction(
               icon: Icons.groups_2_rounded,
@@ -461,9 +487,9 @@ class _RoomPageState extends State<RoomPage> {
     if (!mounted || updated) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('麦克风状态更新失败，请重试')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('麦克风状态更新失败，请重试')));
   }
 
   void _exitWithoutSession() {
@@ -478,17 +504,13 @@ class _RoomPageState extends State<RoomPage> {
     });
   }
 
-  void _openScopedPage({
-    required String pageId,
-    required String title,
-    required String description,
-  }) {
-    Navigator.of(context).push(
+  void _openRoomReportPage() {
+    Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => ScopedPlaceholderPage(
-          pageId: pageId,
-          title: title,
-          description: description,
+        builder: (BuildContext context) => ReportPage(
+          targetType: ReportTargetType.room,
+          targetId: widget.roomId,
+          targetName: widget.title,
         ),
       ),
     );

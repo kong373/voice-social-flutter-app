@@ -55,7 +55,9 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     if (_repositoryInstance != null) {
       return;
     }
-    _repositoryInstance = AppDependencyScope.of(context).roomOperationsRepository;
+    _repositoryInstance = AppDependencyScope.of(
+      context,
+    ).roomOperationsRepository;
     _load();
   }
 
@@ -80,28 +82,48 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       final List<RoomMember> managers = results[2] as List<RoomMember>;
       final List<MicAccessRequest> requests =
           results[3] as List<MicAccessRequest>;
-      final Set<int> mutedIds =
-          muted.map((RoomMember member) => member.userId).toSet();
+      final Set<int> mutedIds = muted
+          .map((RoomMember member) => member.userId)
+          .toSet();
       final Map<int, RoomRole> roles = <int, RoomRole>{
         for (final RoomMember manager in managers) manager.userId: manager.role,
       };
-      final Map<int, MicSeat> seatsByUser = <int, MicSeat>{
-        for (final MicSeat seat in _seats)
-          if (seat.userId != null) seat.userId!: seat,
+      final Map<int, RoomMember> onMicBySeat = <int, RoomMember>{
+        for (final RoomMember member in page.items)
+          if (member.isOnMic && member.seatNumber != null)
+            member.seatNumber!: member,
       };
+      final List<MicSeat> reconciledSeats = <MicSeat>[
+        for (final MicSeat seat in _seats)
+          if (onMicBySeat[seat.number] case final RoomMember member)
+            seat.copyWith(
+              state: member.isMuted
+                  ? MicSeatState.occupiedMuted
+                  : MicSeatState.occupied,
+              userId: member.userId,
+              userName: member.name,
+              userRole: roles[member.userId] ?? member.role,
+            )
+          else if (seat.isOccupied)
+            seat.copyWith(
+              state: MicSeatState.available,
+              clearUserId: true,
+              clearUserName: true,
+              clearAvatarUrl: true,
+              isSpeaking: false,
+              userRole: RoomRole.listener,
+            )
+          else
+            seat,
+      ];
       final List<RoomMember> members = <RoomMember>[
         for (final RoomMember member in page.items)
           member.copyWith(
-            role: roles[member.userId] ??
-                seatsByUser[member.userId]?.userRole ??
-                member.role,
-            presence: seatsByUser.containsKey(member.userId)
-                ? RoomMemberPresence.onMic
-                : RoomMemberPresence.listener,
-            seatNumber: seatsByUser[member.userId]?.number,
-            isMuted: mutedIds.contains(member.userId) ||
-                seatsByUser[member.userId]?.state ==
-                    MicSeatState.occupiedMuted,
+            role: roles[member.userId] ?? member.role,
+            presence: member.presence,
+            seatNumber: member.seatNumber,
+            clearSeatNumber: !member.isOnMic,
+            isMuted: mutedIds.contains(member.userId),
           ),
       ];
       members.sort((RoomMember left, RoomMember right) {
@@ -131,6 +153,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
                   request.status == MicRequestStatus.pending,
             ),
           );
+        _seats = reconciledSeats;
         _loading = false;
       });
     } catch (error) {
@@ -224,10 +247,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
               const SizedBox(height: 16),
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 18),
-              FilledButton.tonal(
-                onPressed: _load,
-                child: const Text('重新加载'),
-              ),
+              FilledButton.tonal(onPressed: _load, child: const Text('重新加载')),
             ],
           ),
         ),
@@ -295,13 +315,14 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
         crossAxisCount: 2,
         mainAxisSpacing: 12,
         crossAxisSpacing: 12,
-        childAspectRatio: 1.35,
+        mainAxisExtent: 184,
       ),
       itemCount: _seats.length,
       itemBuilder: (BuildContext context, int index) {
         final MicSeat seat = _seats[index];
         final bool locked = seat.state == MicSeatState.locked;
-        final bool muted = seat.state == MicSeatState.mutedAvailable ||
+        final bool muted =
+            seat.state == MicSeatState.mutedAvailable ||
             seat.state == MicSeatState.occupiedMuted;
         return Card(
           child: Padding(
@@ -412,8 +433,9 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
               contentPadding: EdgeInsets.zero,
               leading: CircleAvatar(child: Text(_initial(member.name))),
               title: Text(member.name),
-              subtitle:
-                  Text(member.isOnMic ? '${member.seatNumber} 号麦' : '听众席'),
+              subtitle: Text(
+                member.isOnMic ? '${member.seatNumber} 号麦' : '听众席',
+              ),
             ),
             const Divider(),
             ListTile(
@@ -483,8 +505,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
         userId: member.userId,
         muted: muted,
       ),
-      successMessage:
-          muted ? '已禁言 ${member.name}' : '已解除 ${member.name} 的禁言',
+      successMessage: muted ? '已禁言 ${member.name}' : '已解除 ${member.name} 的禁言',
     );
   }
 
@@ -521,10 +542,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     }
     await _runMemberOperation(
       member,
-      () => _repository.kickUser(
-        roomId: widget.roomId,
-        userId: member.userId,
-      ),
+      () => _repository.kickUser(roomId: widget.roomId, userId: member.userId),
       successMessage: '已将 ${member.name} 移出房间',
     );
   }
@@ -560,8 +578,9 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
   }
 
   Future<void> _inviteToMic(RoomMember member) async {
-    final List<MicSeat> available =
-        _seats.where((MicSeat seat) => seat.isAvailable).toList(growable: false);
+    final List<MicSeat> available = _seats
+        .where((MicSeat seat) => seat.isAvailable)
+        .toList(growable: false);
     if (available.isEmpty) {
       _showMessage('当前没有可邀请的空麦位');
       return;
@@ -580,10 +599,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
-            Text(
-              '对方接受后才会上麦。',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            Text('对方接受后才会上麦。', style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 16),
             Wrap(
               spacing: 8,
@@ -692,11 +708,11 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
               item.copyWith(
                 state: item.isOccupied
                     ? (muted
-                        ? MicSeatState.occupiedMuted
-                        : MicSeatState.occupied)
+                          ? MicSeatState.occupiedMuted
+                          : MicSeatState.occupied)
                     : (muted
-                        ? MicSeatState.mutedAvailable
-                        : MicSeatState.available),
+                          ? MicSeatState.mutedAvailable
+                          : MicSeatState.available),
               )
             else
               item,
@@ -715,10 +731,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     }
   }
 
-  Future<void> _resolveRequest(
-    MicAccessRequest request,
-    bool accepted,
-  ) async {
+  Future<void> _resolveRequest(MicAccessRequest request, bool accepted) async {
     try {
       await _repository.resolveMicRequest(
         requestId: request.id,
@@ -763,7 +776,9 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   static String _messageFor(Object error) {

@@ -1,0 +1,510 @@
+name: M2.4 Cloud Android Emulator acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "qa/m2.4-mac-android-emulator-validation"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  # One branch-scoped run owns both AVDs; a newer candidate cancels stale evidence.
+  group: m24-cloud-android-emulator-v1-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+  JAVA_VERSION: "17"
+  QA_BACKEND_MODE: "mock"
+  QA_BASE_COMMIT: "543e8dfd506c8bacbf810d975e4e041e853966c4"
+  QA_BASELINE_RUN_ID: "31873662636"
+  QA_BASELINE_ARTIFACT_NAME: "voice-social-app-debug"
+  QA_EXPECTED_BASELINE_SHA256: "6e1f7d70a22b1b754b60df9555dffb80d839c5c82aaa6c3628d7104ff77631b3"
+
+jobs:
+  quality:
+    name: Static, unit, widget, and exact-viewport tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Verify locked dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p .qa-quality
+          test -f pubspec.lock
+          flutter pub get --enforce-lockfile 2>&1 | tee .qa-quality/pub-get.log
+
+      - name: Check formatting
+        shell: bash
+        env:
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+        run: |
+          set -Eeuo pipefail
+          set -o pipefail
+          # Check the complete candidate delta, not only the latest push.
+          # A workflow-only follow-up must not hide unformatted Dart files
+          # introduced by the immediately preceding candidate commit.
+          base_sha="$QA_BASE_COMMIT"
+          if ! git cat-file -e "${base_sha}^{commit}" 2>/dev/null; then
+            base_sha="$(git rev-parse HEAD^)"
+          fi
+
+          mapfile -d '' dart_files < <(
+            git diff --name-only -z --diff-filter=ACMR \
+              "$base_sha" HEAD -- '*.dart'
+          )
+          {
+            printf 'format_base=%s\n' "$base_sha"
+            printf 'format_head=%s\n' "$(git rev-parse HEAD)"
+            printf 'changed_dart_files=%s\n' "${#dart_files[@]}"
+            printf '%s\n' "${dart_files[@]}"
+          } | tee .qa-quality/format.log
+          if (( ${#dart_files[@]} > 0 )); then
+            dart format "${dart_files[@]}" 2>&1 | tee -a .qa-quality/format.log
+            if ! git diff --quiet -- "${dart_files[@]}"; then
+              git diff -- "${dart_files[@]}" | tee -a .qa-quality/format.log
+              exit 1
+            fi
+          fi
+
+      - name: Analyze
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set -o pipefail
+          flutter analyze 2>&1 | tee .qa-quality/analyze.log
+
+      - name: Run all Dart and widget tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set -o pipefail
+          flutter test \
+            --coverage \
+            --concurrency=1 \
+            --timeout=60s \
+            --reporter=expanded \
+            2>&1 | tee .qa-quality/flutter-test.log
+
+      - name: Prove the debug QA root is reachable only when enabled
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set -o pipefail
+          flutter test \
+            --dart-define=BACKEND_MODE=mock \
+            --dart-define=ENABLE_QA_CONSOLE=true \
+            --reporter=expanded \
+            test/qa_console_app_test.dart \
+            2>&1 | tee .qa-quality/qa-console-enabled-test.log
+
+      - name: Upload quality diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m24-quality-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .qa-quality/
+            coverage/
+          if-no-files-found: warn
+          retention-days: 14
+
+  emulator:
+    name: ${{ matrix.id }} API ${{ matrix.api }} ${{ matrix.viewport }} full
+    needs: quality
+    if: ${{ needs.quality.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - id: AVD-A
+            api: 36
+            profile: pixel_7_pro
+            avd_name: m24-AVD-A-api-36
+            viewport: 390x844
+            baseline_required: "true"
+          - id: AVD-B
+            api: 35
+            profile: pixel_2
+            avd_name: m24-AVD-B-api-35
+            viewport: 360x800
+            baseline_required: "false"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Enforce mock-only inputs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$QA_BACKEND_MODE" = "mock"
+          test -z "${API_BASE_URL:-}"
+          test -z "${OAUTH_CLIENT_ID:-}"
+          test -z "${OAUTH_CLIENT_SECRET:-}"
+          test -z "${ROOM_REALTIME_ENDPOINT:-}"
+
+      - name: Generate isolated Android host
+        id: prepare
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test ! -e .ci_app
+          flutter create \
+            --platforms=android \
+            --org=com.kong373 \
+            --project-name=voice_social_app \
+            --no-pub \
+            .ci_app
+
+          rsync -a \
+            --exclude=.dart_tool \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=.ci_app \
+            --exclude=artifacts \
+            --exclude=build \
+            ./ .ci_app/
+
+          mkdir -p \
+            .ci_app/artifacts/qa/m2.4-emulator/AVD-A \
+            .ci_app/artifacts/qa/m2.4-emulator/AVD-B
+          (
+            cd .ci_app
+            flutter pub get --enforce-lockfile
+          )
+
+      - name: Download immutable baseline APK artifact
+        if: ${{ matrix.id == 'AVD-A' }}
+        id: baseline
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.QA_BASELINE_ARTIFACT_NAME }}
+          path: .ci_app/baseline_artifact
+          repository: ${{ github.repository }}
+          run-id: ${{ env.QA_BASELINE_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Require KVM hardware acceleration
+        id: kvm
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for evidence_dir in \
+            .ci_app/artifacts/qa/m2.4-emulator/AVD-A \
+            .ci_app/artifacts/qa/m2.4-emulator/AVD-B; do
+            mkdir -p "$evidence_dir"
+            {
+              date -u +'%Y-%m-%dT%H:%M:%SZ'
+              uname -a
+              if [[ -e /dev/kvm ]]; then
+                ls -l /dev/kvm
+              else
+                echo '/dev/kvm is absent; refusing software-emulated QA.'
+              fi
+            } >"$evidence_dir/kvm.txt" 2>&1
+          done
+
+          test -c /dev/kvm
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo chmod 0666 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+          for evidence_dir in \
+            .ci_app/artifacts/qa/m2.4-emulator/AVD-A \
+            .ci_app/artifacts/qa/m2.4-emulator/AVD-B; do
+            ls -l /dev/kvm >>"$evidence_dir/kvm.txt"
+          done
+
+      - name: Run ${{ matrix.id }} full acceptance
+        if: >-
+          always() &&
+          steps.prepare.outcome == 'success' &&
+          steps.kvm.outcome == 'success'
+        uses: ReactiveCircus/android-emulator-runner@v2
+        env:
+          QA_API_LEVEL: "${{ matrix.api }}"
+          QA_ARTIFACT_ROOT: ${{ github.workspace }}/.ci_app/artifacts/qa/m2.4-emulator/${{ matrix.id }}
+          QA_AVD_ID: ${{ matrix.id }}
+          QA_BACKEND_MODE: ${{ env.QA_BACKEND_MODE }}
+          QA_BASELINE_ARTIFACT_DIR: ${{ github.workspace }}/.ci_app/baseline_artifact
+          QA_BASELINE_ARTIFACT_NAME: ${{ env.QA_BASELINE_ARTIFACT_NAME }}
+          QA_BASELINE_REQUIRED: "${{ matrix.baseline_required }}"
+          QA_BASELINE_RUN_ID: ${{ env.QA_BASELINE_RUN_ID }}
+          QA_EXPECTED_BASELINE_SHA256: ${{ env.QA_EXPECTED_BASELINE_SHA256 }}
+          QA_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          QA_MONKEY_EVENTS: "1000"
+          QA_OFFLINE_SOAK_SECONDS: "1800"
+          QA_PROFILE: ${{ matrix.profile }}
+          QA_QUALITY_RESULT: ${{ needs.quality.result }}
+          QA_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QA_RUN_ID: ${{ github.run_id }}
+          QA_SCOPE: full
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          avd-name: ${{ matrix.avd_name }}
+          cores: 2
+          ram-size: 4096M
+          heap-size: 512M
+          disk-size: 6144M
+          force-avd-creation: true
+          emulator-boot-timeout: 600
+          disable-linux-hw-accel: false
+          disable-animations: false
+          emulator-options: >-
+            -no-window
+            -gpu swiftshader_indirect
+            -noaudio
+            -no-boot-anim
+            -no-snapshot
+            -wipe-data
+            -no-metrics
+            -camera-back none
+            -camera-front none
+          working-directory: .ci_app
+          script: timeout --signal=TERM --kill-after=180s 140m bash tool/qa/run_m24_emulator_ci.sh
+
+      - name: Upload ${{ matrix.id }} evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m24-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci_app/artifacts/qa/m2.4-emulator/${{ matrix.id }}/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload reproducible AVD-A QA APK separately
+        if: ${{ always() && matrix.id == 'AVD-A' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: m24-qa-apk-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .ci_app/artifacts/qa/m2.4-emulator/AVD-A/apk/*.apk
+            .ci_app/artifacts/qa/m2.4-emulator/AVD-A/apk_sha256.txt
+            .ci_app/artifacts/qa/m2.4-emulator/AVD-A/build_info.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Run AVD-B API 35 full acceptance
+        if: ${{ false }}
+        # Keep evidence upload reachable if the second full run or a host child
+        # process stops responding. API 35 avoids the observed API 24 boot hang.
+        timeout-minutes: 150
+        uses: ReactiveCircus/android-emulator-runner@v2
+        env:
+          QA_API_LEVEL: "35"
+          QA_ARTIFACT_ROOT: ${{ github.workspace }}/.ci_app/artifacts/qa/m2.4-emulator/AVD-B
+          QA_AVD_ID: AVD-B
+          QA_BACKEND_MODE: ${{ env.QA_BACKEND_MODE }}
+          QA_BASELINE_ARTIFACT_DIR: ${{ github.workspace }}/.ci_app/baseline_artifact
+          QA_BASELINE_ARTIFACT_NAME: ${{ env.QA_BASELINE_ARTIFACT_NAME }}
+          QA_BASELINE_REQUIRED: "false"
+          QA_BASELINE_RUN_ID: ${{ env.QA_BASELINE_RUN_ID }}
+          QA_EXPECTED_BASELINE_SHA256: ${{ env.QA_EXPECTED_BASELINE_SHA256 }}
+          QA_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          QA_MONKEY_EVENTS: "1000"
+          QA_OFFLINE_SOAK_SECONDS: "1800"
+          QA_PROFILE: pixel_2
+          QA_QUALITY_RESULT: ${{ needs.quality.result }}
+          QA_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QA_RUN_ID: ${{ github.run_id }}
+          QA_SCOPE: full
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          avd-name: m24-AVD-B-api-35
+          cores: 2
+          ram-size: 4096M
+          heap-size: 512M
+          disk-size: 6144M
+          force-avd-creation: true
+          emulator-boot-timeout: 600
+          disable-linux-hw-accel: false
+          disable-animations: false
+          emulator-options: >-
+            -no-window
+            -gpu swiftshader_indirect
+            -noaudio
+            -no-boot-anim
+            -no-snapshot
+            -wipe-data
+            -no-metrics
+            -camera-back none
+            -camera-front none
+          working-directory: .ci_app
+          script: >-
+            timeout --signal=TERM --kill-after=180s 130m
+            bash tool/qa/run_m24_emulator_ci.sh
+
+      - name: Upload AVD-B evidence
+        if: ${{ false }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: m24-AVD-B-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci_app/artifacts/qa/m2.4-emulator/AVD-B/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Assemble the two-AVD verdict
+        if: ${{ false }}
+        shell: bash
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+        run: |
+          set -Eeuo pipefail
+          root=.ci_app/artifacts/qa/m2.4-emulator
+          output="$root/summary.txt"
+          a_summary="$root/AVD-A/summary.txt"
+          b_summary="$root/AVD-B/summary.txt"
+          a_result=MISSING
+          b_result=MISSING
+          if [[ -f "$a_summary" ]]; then
+            a_result="$(sed -n 's/^conclusion=//p' "$a_summary" | head -n 1)"
+          fi
+          if [[ -f "$b_summary" ]]; then
+            b_result="$(sed -n 's/^conclusion=//p' "$b_summary" | head -n 1)"
+          fi
+
+          verdict=ANDROID_EMULATOR_PASS
+          if [[ "$QUALITY_RESULT" == "failure" || \
+                "$a_result" == "ANDROID_EMULATOR_FAIL" || \
+                "$b_result" == "ANDROID_EMULATOR_FAIL" ]]; then
+            verdict=ANDROID_EMULATOR_FAIL
+          elif [[ "$QUALITY_RESULT" != "success" || \
+                  "$a_result" != "ANDROID_EMULATOR_PASS" || \
+                  "$b_result" != "ANDROID_EMULATOR_PASS" ]]; then
+            verdict=BLOCKED
+          fi
+          {
+            printf 'M2.4 Android Emulator aggregate\n'
+            printf 'conclusion=%s\n' "$verdict"
+            printf 'quality=%s\n' "$QUALITY_RESULT"
+            printf 'avd_a=%s\n' "$a_result"
+            printf 'avd_b=%s\n' "$b_result"
+            printf 'real_device=REAL_DEVICE_PENDING\n'
+            printf 'ios=IOS_PENDING\n'
+            printf 'vendor_status=VENDOR_BLOCKED\n'
+            printf 'run_url=https://github.com/%s/actions/runs/%s\n' \
+              "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+          } >"$output"
+
+      - name: Upload aggregate verdict
+        if: ${{ false }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: m24-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci_app/artifacts/qa/m2.4-emulator/summary.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+  aggregate:
+    name: Strict two-AVD verdict
+    needs: [quality, emulator]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download AVD-A evidence
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: m24-AVD-A-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/AVD-A
+
+      - name: Download AVD-B evidence
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: m24-AVD-B-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/AVD-B
+
+      - name: Assemble strict verdict
+        shell: bash
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          EMULATOR_RESULT: ${{ needs.emulator.result }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p evidence
+          a_result=MISSING
+          b_result=MISSING
+          if [[ -f evidence/AVD-A/summary.txt ]]; then
+            a_result="$(sed -n 's/^conclusion=//p' evidence/AVD-A/summary.txt | head -n 1)"
+          fi
+          if [[ -f evidence/AVD-B/summary.txt ]]; then
+            b_result="$(sed -n 's/^conclusion=//p' evidence/AVD-B/summary.txt | head -n 1)"
+          fi
+
+          verdict=ANDROID_EMULATOR_PASS
+          if [[ "$QUALITY_RESULT" != "success" || \
+                "$EMULATOR_RESULT" != "success" || \
+                "$a_result" != "ANDROID_EMULATOR_PASS" || \
+                "$b_result" != "ANDROID_EMULATOR_PASS" ]]; then
+            verdict=ANDROID_EMULATOR_FAIL
+          fi
+          {
+            printf 'M2.4 Cloud Android Emulator aggregate\n'
+            printf 'tested_git_sha=%s\n' "${{ github.sha }}"
+            printf 'quality=%s\n' "$QUALITY_RESULT"
+            printf 'emulator_matrix=%s\n' "$EMULATOR_RESULT"
+            printf 'avd_a=%s\n' "$a_result"
+            printf 'avd_b=%s\n' "$b_result"
+            printf 'conclusion=%s\n' "$verdict"
+            printf 'real_device=REAL_DEVICE_PENDING\n'
+            printf 'ios=IOS_PENDING\n'
+            printf 'vendor_status=VENDOR_BLOCKED\n'
+          } | tee evidence/summary.txt
+          [[ "$verdict" == "ANDROID_EMULATOR_PASS" ]]
+
+      - name: Upload aggregate verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m24-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/summary.txt
+          if-no-files-found: error
+          retention-days: 30

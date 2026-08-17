@@ -1,0 +1,88 @@
+name: M2.4 targeted diagnostics
+
+on:
+  push:
+    branches:
+      - "feat/m2-room-pk-commerce-messaging-core"
+  pull_request:
+    paths:
+      - "lib/features/room/pk/**"
+      - "lib/features/commerce/catalog/**"
+      - "lib/features/message/**"
+      - "test/room_pk_repository_test.dart"
+      - "test/commerce_catalog_repository_test.dart"
+      - "test/message_repository_test.dart"
+      - "test/m24_pages_test.dart"
+      - ".github/workflows/m24-targeted.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m24-targeted-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+
+jobs:
+  test-file:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Room PK repository
+            file: test/room_pk_repository_test.dart
+            test_name: ""
+          - label: Commerce catalog repository
+            file: test/commerce_catalog_repository_test.dart
+            test_name: ""
+          - label: Message repository
+            file: test/message_repository_test.dart
+            test_name: ""
+          - label: M2.4 PK widget pages
+            file: test/m24_pages_test.dart
+            test_name: RM-013 and RM-014 expose ordinary room PK states
+          - label: M2.4 recharge widget pages
+            file: test/m24_pages_test.dart
+            test_name: CM-002 through CM-004 enforce platform channels and authority
+          - label: M2.4 catalog widget pages
+            file: test/m24_pages_test.dart
+            test_name: CM-009 and CM-010 expose only ordinary assets
+          - label: M2.4 message widget pages
+            file: test/m24_pages_test.dart
+            test_name: MS-001 through MS-006 preserve honest messaging boundaries
+          - label: Existing app smoke
+            file: test/app_smoke_test.dart
+            test_name: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Run targeted test file
+        shell: bash
+        run: |
+          if [[ -n "${{ matrix.test_name }}" ]]; then
+            flutter test "${{ matrix.file }}" \
+              --plain-name "${{ matrix.test_name }}" \
+              --timeout=45s \
+              --reporter=expanded
+          else
+            flutter test "${{ matrix.file }}" \
+              --timeout=45s \
+              --reporter=expanded
+          fi

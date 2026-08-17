@@ -122,6 +122,36 @@ class BackendRouteCatalog {
     this.signRewards = '/app-api/taskSystem/querySignReward',
     this.completeSignIn = '/app-api/taskSystem/completeDailySignIn',
     this.todaySignStatus = '/app-api/taskSystem/queryTodaySignStatus',
+    this.roomPkInvite = '/app-api/activityPk/inviteRoomPk',
+    this.roomPkAccept = '/app-api/activityPk/acceptRoomPkInvitation',
+    this.roomPkReject = '/app-api/activityPk/rejectRoomPkInvitation',
+    this.roomPkProgress = '/app-api/activityPk/getRoomPkProgress',
+    this.roomPkHistory = '/app-api/activityPk/getRoomFightRecord',
+    this.roomPkHotRooms = '/app-api/activityPk/getRoomPkHotRoomList',
+    this.roomPkSearch = '/app-api/activityPk/searchRoomPk',
+    this.rechargePrecheck = '/app-economy-api/pay/check',
+    this.createWechatRechargeOrder =
+        '/app-economy-api/pay/v1/wechat/order',
+    this.createAlipayRechargeOrder = '/app-economy-api/pay/ali/order',
+    this.createAppleRechargeOrder = '/app-economy-api/pay/apple/order',
+    this.rechargeOrderStatus = '/app-economy-api/pay/isOrderSuccess',
+    this.normalGiftCatalog = '/app-mini-api/mini/v1/gift/list',
+    this.userBackpackGifts = '/app-api/user/userPackGift',
+    this.vipInformation = '/app-api/vip/queryVipInfo',
+    this.purchaseVipWithGiftCoins = '/app-economy-api/pay/ncoin/pay/vip',
+    this.userDecorations = '/app-api/user/userDecorations/getList',
+    this.equipUserDecoration = '/app-api/user/userDecorations/putOn',
+    this.mallIndex = '/app-api/mall/index',
+    this.purchaseMallGoods = '/app-api/mall/userBuyOrGiveGoods',
+    this.privateChatHistory = '/app-api/user/imMessage/queryChat',
+    this.chatUserStatus = '/app-api/user/imMessage/queryUserStatus',
+    this.chatUserInfo = '/app-api/user/imMessage/getUserInfoInChat',
+    this.dynamicNotifications = '/app-api/dynamic/queryUserDynamicNotify',
+    this.clearDynamicNotifications = '/app-api/dynamic/emptyUserDynamicNotify',
+    this.dynamicNotificationBadge =
+        '/app-api/dynamic/queryDynamicNotifyRedHot',
+    this.pushNotificationDetail = '/app-api/nolg/getPushMsg',
+    this.messagePermission = '/app-mini-api/mini/v1/message/permission',
   });
 
   final String sendSmsCode;
@@ -236,4 +266,32 @@ class BackendRouteCatalog {
   final String signRewards;
   final String completeSignIn;
   final String todaySignStatus;
+  final String roomPkInvite;
+  final String roomPkAccept;
+  final String roomPkReject;
+  final String roomPkProgress;
+  final String roomPkHistory;
+  final String roomPkHotRooms;
+  final String roomPkSearch;
+  final String rechargePrecheck;
+  final String createWechatRechargeOrder;
+  final String createAlipayRechargeOrder;
+  final String createAppleRechargeOrder;
+  final String rechargeOrderStatus;
+  final String normalGiftCatalog;
+  final String userBackpackGifts;
+  final String vipInformation;
+  final String purchaseVipWithGiftCoins;
+  final String userDecorations;
+  final String equipUserDecoration;
+  final String mallIndex;
+  final String purchaseMallGoods;
+  final String privateChatHistory;
+  final String chatUserStatus;
+  final String chatUserInfo;
+  final String dynamicNotifications;
+  final String clearDynamicNotifications;
+  final String dynamicNotificationBadge;
+  final String pushNotificationDetail;
+  final String messagePermission;
 }

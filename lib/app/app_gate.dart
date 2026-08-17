@@ -44,24 +44,24 @@ class _AppGateState extends State<AppGate> {
   @override
   Widget build(BuildContext context) {
     return switch (_controller.stage) {
-      AuthFlowStage.initializing => const _SessionRestorePage(),
+      AuthFlowStage.initializing => const SessionRestorePage(),
       AuthFlowStage.consentRequired => ConsentPage(
-          onAccept: _controller.acceptConsent,
-        ),
+        onAccept: _controller.acceptConsent,
+      ),
       AuthFlowStage.signedOut => LoginPage(controller: _controller),
       AuthFlowStage.registrationRequired => RegistrationPage(
-          controller: _controller,
-        ),
+        controller: _controller,
+      ),
       AuthFlowStage.signedIn => MainShell(
-          dependencies: widget.dependencies,
-          onSignOut: _controller.signOut,
-        ),
+        dependencies: widget.dependencies,
+        onSignOut: _controller.signOut,
+      ),
     };
   }
 }
 
-class _SessionRestorePage extends StatelessWidget {
-  const _SessionRestorePage();
+class SessionRestorePage extends StatelessWidget {
+  const SessionRestorePage({super.key});
 
   @override
   Widget build(BuildContext context) {

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/features/message/domain/message_models.dart';
+import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
-import 'package:voice_social_app/shared/widgets/scoped_placeholder_page.dart';
+import 'package:voice_social_app/features/social/domain/social_models.dart';
+import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 enum _MemberFilter { all, onMic, listeners }
 
@@ -38,7 +41,8 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
   int _page = 1;
   bool _hasMore = false;
 
-  bool get _canManage => widget.currentRole == RoomRole.owner ||
+  bool get _canManage =>
+      widget.currentRole == RoomRole.owner ||
       widget.currentRole == RoomRole.moderator ||
       widget.currentRole == RoomRole.platformModerator;
 
@@ -48,7 +52,9 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
     if (_repositoryInstance != null) {
       return;
     }
-    _repositoryInstance = AppDependencyScope.of(context).roomOperationsRepository;
+    _repositoryInstance = AppDependencyScope.of(
+      context,
+    ).roomOperationsRepository;
     _load(reset: true);
   }
 
@@ -121,8 +127,9 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
   }
 
   void _appendUnique(List<RoomMember> additions) {
-    final Set<int> existing =
-        _members.map((RoomMember item) => item.userId).toSet();
+    final Set<int> existing = _members
+        .map((RoomMember item) => item.userId)
+        .toSet();
     for (final RoomMember member in additions) {
       if (existing.add(member.userId)) {
         _members.add(member);
@@ -133,12 +140,14 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
   List<RoomMember> get _visibleMembers {
     return switch (_filter) {
       _MemberFilter.all => _members,
-      _MemberFilter.onMic => _members
-          .where((RoomMember member) => member.isOnMic)
-          .toList(growable: false),
-      _MemberFilter.listeners => _members
-          .where((RoomMember member) => !member.isOnMic)
-          .toList(growable: false),
+      _MemberFilter.onMic =>
+        _members
+            .where((RoomMember member) => member.isOnMic)
+            .toList(growable: false),
+      _MemberFilter.listeners =>
+        _members
+            .where((RoomMember member) => !member.isOnMic)
+            .toList(growable: false),
     };
   }
 
@@ -165,7 +174,9 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
   }
 
   Widget _buildFilters() {
-    final int onMic = _members.where((RoomMember member) => member.isOnMic).length;
+    final int onMic = _members
+        .where((RoomMember member) => member.isOnMic)
+        .length;
     final int listeners = _members.length - onMic;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -185,7 +196,8 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
           ChoiceChip(
             label: Text('听众 $listeners'),
             selected: _filter == _MemberFilter.listeners,
-            onSelected: (_) => setState(() => _filter = _MemberFilter.listeners),
+            onSelected: (_) =>
+                setState(() => _filter = _MemberFilter.listeners),
           ),
         ],
       ),
@@ -270,7 +282,7 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
               title: const Text('查看主页'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _openScopedPage('US-003', '他人公开主页');
+                _openMemberPage(PublicProfilePage(userId: member.userId));
               },
             ),
             ListTile(
@@ -278,7 +290,19 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
               title: const Text('发起私聊'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _openScopedPage('MS-002', '私聊会话');
+                _openMemberPage(
+                  PrivateChatPage(
+                    conversation: ConversationSummary(
+                      id: 'conversation-${member.userId}',
+                      kind: ConversationKind.privateChat,
+                      title: member.name,
+                      lastMessage: '',
+                      updatedAt: DateTime.now(),
+                      unreadCount: 0,
+                      targetUserId: member.userId,
+                    ),
+                  ),
+                );
               },
             ),
             ListTile(
@@ -286,7 +310,13 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
               title: const Text('举报用户'),
               onTap: () {
                 Navigator.of(sheetContext).pop();
-                _openScopedPage('US-008', '举报用户');
+                _openMemberPage(
+                  ReportPage(
+                    targetType: ReportTargetType.user,
+                    targetId: '${member.userId}',
+                    targetName: member.name,
+                  ),
+                );
               },
             ),
             if (_canManage && member.userId != widget.currentUserId)
@@ -317,15 +347,9 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
     );
   }
 
-  void _openScopedPage(String pageId, String title) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => ScopedPlaceholderPage(
-          pageId: pageId,
-          title: title,
-          description: '该社交能力将在对应 Page ID 批次中接入真实数据与交互。',
-        ),
-      ),
+  void _openMemberPage(Widget page) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (BuildContext context) => page),
     );
   }
 
@@ -383,8 +407,9 @@ class _MemberTile extends StatelessWidget {
         ],
       ),
       subtitle: Text(_RoomMembersPageState._memberSubtitle(member)),
-      trailing:
-          Icon(canManage ? Icons.tune_rounded : Icons.chevron_right_rounded),
+      trailing: Icon(
+        canManage ? Icons.tune_rounded : Icons.chevron_right_rounded,
+      ),
       onTap: onTap,
     );
   }
@@ -397,8 +422,9 @@ class _MemberAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String initial =
-        member.name.isEmpty ? '房' : member.name.substring(0, 1);
+    final String initial = member.name.isEmpty
+        ? '房'
+        : member.name.substring(0, 1);
     return CircleAvatar(
       backgroundColor: AppColors.surfaceHigh,
       foregroundColor: AppColors.textPrimary,

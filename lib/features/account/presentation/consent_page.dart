@@ -12,8 +12,7 @@ class ConsentPage extends StatelessWidget {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 30, 24, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: ListView(
             children: <Widget>[
               Container(
                 width: 54,
@@ -28,10 +27,7 @@ class ConsentPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 28),
-              Text(
-                '欢迎使用',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
+              Text('欢迎使用', style: Theme.of(context).textTheme.headlineMedium),
               const SizedBox(height: 12),
               Text(
                 '在开始使用前，请阅读并同意用户协议与隐私政策。我们会在提供账号、语音房、消息和支付等功能所必需的范围内处理信息。',
@@ -56,7 +52,7 @@ class ConsentPage extends StatelessWidget {
                 title: '账号与设备信息',
                 description: '用于登录安全、异常会话识别和账号保护。',
               ),
-              const Spacer(),
+              const SizedBox(height: 28),
               Wrap(
                 spacing: 4,
                 children: <Widget>[
@@ -120,9 +116,7 @@ class ConsentPage extends StatelessWidget {
             children: <Widget>[
               Text(title, style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 14),
-              const Text(
-                '当前为研发阶段的协议入口。正式版本将加载经法务审核并按版本留档的完整文本。',
-              ),
+              const Text('当前为研发阶段的协议入口。正式版本将加载经法务审核并按版本留档的完整文本。'),
               const SizedBox(height: 20),
               Align(
                 alignment: Alignment.centerRight,
@@ -163,10 +157,7 @@ class _ConsentPoint extends StatelessWidget {
               children: <Widget>[
                 Text(title, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                Text(description, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),

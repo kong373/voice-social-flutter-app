@@ -4,12 +4,14 @@ import 'package:voice_social_app/features/room/domain/room_operations_models.dar
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 
 class MockRoomOperationsRepository implements RoomOperationsRepository {
-  MockRoomOperationsRepository();
+  MockRoomOperationsRepository({
+    this.micCoordinationMode = MicCoordinationMode.approval,
+  });
 
-  RoomTopic _topic = const RoomTopic(
-    title: '今晚话题',
-    content: '最近让你觉得被治愈的一件小事',
-  );
+  @override
+  final MicCoordinationMode micCoordinationMode;
+
+  RoomTopic _topic = const RoomTopic(title: '今晚话题', content: '最近让你觉得被治愈的一件小事');
 
   final List<RoomMember> _members = <RoomMember>[
     const RoomMember(
@@ -71,9 +73,6 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
   final List<MicAccessRequest> _requests = <MicAccessRequest>[];
 
   @override
-  MicCoordinationMode get micCoordinationMode => MicCoordinationMode.approval;
-
-  @override
   Future<RoomMemberPage> fetchOnlineMembers({
     required String roomId,
     required int page,
@@ -83,13 +82,15 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
     final int safeStart = start < 0
         ? 0
         : start > _members.length
-            ? _members.length
-            : start;
+        ? _members.length
+        : start;
     final int proposedEnd = safeStart + pageSize;
     final int end = proposedEnd > _members.length
         ? _members.length
         : proposedEnd;
-    final int pages = _members.isEmpty ? 1 : (_members.length / pageSize).ceil();
+    final int pages = _members.isEmpty
+        ? 1
+        : (_members.length / pageSize).ceil();
     return RoomMemberPage(
       items: List<RoomMember>.unmodifiable(_members.sublist(safeStart, end)),
       page: page,
@@ -102,8 +103,7 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
   Future<List<RoomMember>> fetchOffMicListeners(String roomId) async =>
       List<RoomMember>.unmodifiable(
         _members.where(
-          (RoomMember member) =>
-              member.presence == RoomMemberPresence.listener,
+          (RoomMember member) => member.presence == RoomMemberPresence.listener,
         ),
       );
 
@@ -136,7 +136,10 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
     required int userId,
     required bool muted,
   }) async {
-    _replaceMember(userId, (RoomMember member) => member.copyWith(isMuted: muted));
+    _replaceMember(
+      userId,
+      (RoomMember member) => member.copyWith(isMuted: muted),
+    );
   }
 
   @override
@@ -154,10 +157,7 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
   }
 
   @override
-  Future<void> kickUser({
-    required String roomId,
-    required int userId,
-  }) async {
+  Future<void> kickUser({required String roomId, required int userId}) async {
     _members.removeWhere((RoomMember member) => member.userId == userId);
   }
 

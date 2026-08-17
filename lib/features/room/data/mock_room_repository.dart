@@ -6,6 +6,11 @@ class MockRoomRepository implements RoomRepository {
   MockRoomRepository();
 
   RoomSnapshot? _snapshot;
+  RoomRole _entryRole = RoomRole.listener;
+
+  void seedEntryRoleForQa(RoomRole role) {
+    _entryRole = role;
+  }
 
   @override
   Future<RoomSnapshot> enterRoom({
@@ -21,7 +26,7 @@ class MockRoomRepository implements RoomRepository {
       title: '深夜温柔陪伴',
       topic: '今晚话题：最近让你觉得被治愈的一件小事',
       ownerId: 20001,
-      role: RoomRole.listener,
+      role: _entryRole,
       seats: <MicSeat>[
         const MicSeat(
           number: 1,
@@ -51,11 +56,7 @@ class MockRoomRepository implements RoomRepository {
           backendIndex: 4,
           state: MicSeatState.available,
         ),
-        const MicSeat(
-          number: 5,
-          backendIndex: 5,
-          state: MicSeatState.locked,
-        ),
+        const MicSeat(number: 5, backendIndex: 5, state: MicSeatState.locked),
         const MicSeat(
           number: 6,
           backendIndex: 6,
@@ -161,9 +162,7 @@ class MockRoomRepository implements RoomRepository {
     }
     final List<MicSeat> seats = List<MicSeat>.of(snapshot.seats)
       ..[index] = snapshot.seats[index].copyWith(
-        state: muted
-            ? MicSeatState.occupiedMuted
-            : MicSeatState.occupied,
+        state: muted ? MicSeatState.occupiedMuted : MicSeatState.occupied,
       );
     _snapshot = snapshot.copyWith(seats: seats);
   }
@@ -188,8 +187,8 @@ class MockRoomRepository implements RoomRepository {
     final int total = giftId == 101
         ? 10 * quantity
         : giftId == 102
-            ? 66 * quantity
-            : 188 * quantity;
+        ? 66 * quantity
+        : 188 * quantity;
     final int balance = snapshot.giftBalance ?? 0;
     if (total > balance) {
       throw const ApiException(
