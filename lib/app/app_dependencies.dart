@@ -8,11 +8,17 @@ import 'package:voice_social_app/features/account/data/backend_auth_repository.d
 import 'package:voice_social_app/features/account/data/device_identity_provider.dart';
 import 'package:voice_social_app/features/account/data/mock_auth_repository.dart';
 import 'package:voice_social_app/features/account/domain/auth_repository.dart';
+import 'package:voice_social_app/features/discovery/data/backend_discovery_repository.dart';
+import 'package:voice_social_app/features/discovery/data/mock_discovery_repository.dart';
+import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
+import 'package:voice_social_app/features/room/data/backend_room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_room_repository.dart';
+import 'package:voice_social_app/features/room/data/mock_room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/data/mock_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/data/mock_room_repository.dart';
+import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_audio_service.dart';
@@ -24,8 +30,10 @@ class AppDependencies {
     required this.environment,
     required this.sessionManager,
     required this.authController,
+    required this.discoveryRepository,
     required this.roomRepository,
     required this.roomOperationsRepository,
+    required this.roomLifecycleRepository,
     required this.rtcAdapter,
     required this.realtimeGateway,
     required this.roomAudioService,
@@ -65,12 +73,22 @@ class AppDependencies {
             routes: routes,
           )
         : const MockAuthRepository();
+    final DiscoveryRepository discoveryRepository = environment.isLive
+        ? BackendDiscoveryRepository(
+            apiClient: apiClient,
+            clientType: environment.clientType,
+            routes: routes,
+          )
+        : MockDiscoveryRepository();
     final RoomRepository roomRepository = environment.isLive
         ? BackendRoomRepository(apiClient: apiClient, routes: routes)
         : MockRoomRepository();
     final RoomOperationsRepository roomOperationsRepository = environment.isLive
         ? BackendRoomOperationsRepository(apiClient: apiClient, routes: routes)
         : MockRoomOperationsRepository();
+    final RoomLifecycleRepository roomLifecycleRepository = environment.isLive
+        ? BackendRoomLifecycleRepository(apiClient: apiClient, routes: routes)
+        : MockRoomLifecycleRepository();
     final RtcAdapter rtcAdapter =
         environment.isLive ? const UnavailableRtcAdapter() : MockRtcAdapter();
     final RoomRealtimeGateway realtimeGateway = environment.isLive
@@ -92,8 +110,10 @@ class AppDependencies {
       environment: environment,
       sessionManager: sessionManager,
       authController: authController,
+      discoveryRepository: discoveryRepository,
       roomRepository: roomRepository,
       roomOperationsRepository: roomOperationsRepository,
+      roomLifecycleRepository: roomLifecycleRepository,
       rtcAdapter: rtcAdapter,
       realtimeGateway: realtimeGateway,
       roomAudioService: roomAudioService,
@@ -103,8 +123,10 @@ class AppDependencies {
   final AppEnvironment environment;
   final AuthSessionManager sessionManager;
   final AuthController authController;
+  final DiscoveryRepository discoveryRepository;
   final RoomRepository roomRepository;
   final RoomOperationsRepository roomOperationsRepository;
+  final RoomLifecycleRepository roomLifecycleRepository;
   final RtcAdapter rtcAdapter;
   final RoomRealtimeGateway realtimeGateway;
   final RoomAudioService roomAudioService;
