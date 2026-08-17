@@ -140,7 +140,7 @@ class _HomePageState extends State<HomePage> {
                 onTap: () => _openScopedPage(
                   pageId: 'DS-002',
                   title: '全局搜索',
-                  description: '搜索房间、用户或房间号。',
+                  description: '搜索房间、用户或房间号，并查看匹配结果。',
                 ),
                 child: const IgnorePointer(
                   child: TextField(
@@ -173,7 +173,7 @@ class _HomePageState extends State<HomePage> {
               onTap: () => _openScopedPage(
                 pageId: 'DS-008',
                 title: '收藏与我的房间',
-                description: '查看收藏、创建、管理和最近进入的房间。',
+                description: '查看收藏、创建、管理和最近进入的有效房间。',
               ),
             ),
             const Spacer(),
@@ -278,7 +278,10 @@ class _HeroRoomCard extends StatelessWidget {
           Row(
             children: <Widget>[
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.success.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(999),
@@ -309,8 +312,8 @@ class _HeroRoomCard extends StatelessWidget {
           Text(
             room.topic,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: AppColors.textSecondary,
-            ),
+                  color: AppColors.textSecondary,
+                ),
           ),
           const SizedBox(height: 16),
           _SeatSummary(occupiedSeats: room.occupiedSeats),

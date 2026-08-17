@@ -4,9 +4,11 @@ enum RoomRole {
   speaker,
   moderator,
   owner,
+  platformModerator,
 }
 
 enum RoomSessionStatus {
+  idle,
   joining,
   joined,
   reconnecting,
@@ -25,34 +27,93 @@ enum MicSeatState {
   occupiedMuted,
 }
 
+enum RtcSolution { agora, zego, unknown }
+
+enum RoomEntrySource {
+  home(0),
+  follow(1),
+  search(2),
+  loginRestore(3),
+  share(4),
+  campaign(5),
+  guild(6),
+  registrationRecommendation(7),
+  groupMembers(8),
+  friends(9),
+  discoveryPost(10),
+  leaderboard(11),
+  guildRoomList(12),
+  hotRanking(13),
+  giftContext(14),
+  publicProfile(15),
+  message(19);
+
+  const RoomEntrySource(this.backendCode);
+
+  final int backendCode;
+}
+
+class RtcCredentials {
+  const RtcCredentials({
+    required this.solution,
+    required this.token,
+    required this.channelId,
+    required this.userId,
+  });
+
+  final RtcSolution solution;
+  final String token;
+  final String channelId;
+  final int userId;
+}
+
 class MicSeat {
   const MicSeat({
     required this.number,
+    required this.backendIndex,
     required this.state,
+    this.userId,
     this.userName,
+    this.avatarUrl,
     this.isSpeaking = false,
+    this.userRole = RoomRole.listener,
   });
 
   final int number;
+  final int backendIndex;
   final MicSeatState state;
+  final int? userId;
   final String? userName;
+  final String? avatarUrl;
   final bool isSpeaking;
+  final RoomRole userRole;
 
-  bool get isAvailable =>
-      state == MicSeatState.available ||
-      state == MicSeatState.mutedAvailable;
+  bool get isAvailable => state == MicSeatState.available;
+
+  bool get isOccupied =>
+      state == MicSeatState.occupied || state == MicSeatState.occupiedMuted;
 
   MicSeat copyWith({
+    int? backendIndex,
     MicSeatState? state,
+    int? userId,
+    bool clearUserId = false,
     String? userName,
     bool clearUserName = false,
+    String? avatarUrl,
+    bool clearAvatarUrl = false,
     bool? isSpeaking,
+    RoomRole? userRole,
   }) {
     return MicSeat(
       number: number,
+      backendIndex: backendIndex ?? this.backendIndex,
       state: state ?? this.state,
+      userId: clearUserId ? null : userId ?? this.userId,
       userName: clearUserName ? null : userName ?? this.userName,
+      avatarUrl: clearAvatarUrl ? null : avatarUrl ?? this.avatarUrl,
       isSpeaking: isSpeaking ?? this.isSpeaking,
+      userRole: userRole ?? this.userRole,
     );
   }
 }
@@ -61,10 +122,97 @@ class RoomMessage {
   const RoomMessage({
     required this.sender,
     required this.content,
+    this.senderId,
     this.isSystem = false,
+    this.createdAt,
   });
 
+  final int? senderId;
   final String sender;
   final String content;
   final bool isSystem;
+  final DateTime? createdAt;
+}
+
+class RoomSnapshot {
+  const RoomSnapshot({
+    required this.roomId,
+    required this.roomCode,
+    required this.title,
+    required this.topic,
+    required this.ownerId,
+    required this.role,
+    required this.seats,
+    required this.rtc,
+    required this.publicScreenEnabled,
+    required this.pictureMessagesAllowed,
+    required this.autoLockMic,
+    required this.giftCatalogAvailable,
+    required this.giftBalance,
+    this.onlineCount,
+    this.coverUrl,
+    this.backgroundUrl,
+  });
+
+  final String roomId;
+  final String roomCode;
+  final String title;
+  final String topic;
+  final int ownerId;
+  final RoomRole role;
+  final List<MicSeat> seats;
+  final RtcCredentials rtc;
+  final bool publicScreenEnabled;
+  final bool pictureMessagesAllowed;
+  final bool autoLockMic;
+  final bool giftCatalogAvailable;
+  final int? giftBalance;
+  final int? onlineCount;
+  final String? coverUrl;
+  final String? backgroundUrl;
+
+  RoomSnapshot copyWith({
+    String? title,
+    String? topic,
+    RoomRole? role,
+    List<MicSeat>? seats,
+    RtcCredentials? rtc,
+    bool? publicScreenEnabled,
+    bool? pictureMessagesAllowed,
+    bool? autoLockMic,
+    bool? giftCatalogAvailable,
+    int? giftBalance,
+    int? onlineCount,
+  }) {
+    return RoomSnapshot(
+      roomId: roomId,
+      roomCode: roomCode,
+      title: title ?? this.title,
+      topic: topic ?? this.topic,
+      ownerId: ownerId,
+      role: role ?? this.role,
+      seats: seats ?? this.seats,
+      rtc: rtc ?? this.rtc,
+      publicScreenEnabled: publicScreenEnabled ?? this.publicScreenEnabled,
+      pictureMessagesAllowed:
+          pictureMessagesAllowed ?? this.pictureMessagesAllowed,
+      autoLockMic: autoLockMic ?? this.autoLockMic,
+      giftCatalogAvailable:
+          giftCatalogAvailable ?? this.giftCatalogAvailable,
+      giftBalance: giftBalance ?? this.giftBalance,
+      onlineCount: onlineCount ?? this.onlineCount,
+      coverUrl: coverUrl ?? this.coverUrl,
+      backgroundUrl: backgroundUrl ?? this.backgroundUrl,
+    );
+  }
+}
+
+class GiftReceipt {
+  const GiftReceipt({
+    required this.success,
+    required this.remainingBalance,
+  });
+
+  final bool success;
+  final int? remainingBalance;
 }

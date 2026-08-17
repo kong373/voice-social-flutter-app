@@ -5,13 +5,20 @@ extension _RoomPageSheets on _RoomPageState {
     if (_controller.status == RoomSessionStatus.leaving) {
       return;
     }
+    final Route<dynamic>? roomRoute = ModalRoute.of(context);
+    if (_controller.status == RoomSessionStatus.failed &&
+        _controller.snapshot == null) {
+      _removeRoomRoute(roomRoute);
+      return;
+    }
+
     final bool? shouldLeave = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         title: const Text('离开房间？'),
         content: Text(
           _controller.isOnMic
-              ? '离开后将同时下麦，本次房间上下文不会保留。'
+              ? '离开后将同时下麦，并结束本次房间会话。'
               : '确认结束本次收听并返回首页？',
         ),
         actions: <Widget>[
@@ -29,11 +36,35 @@ extension _RoomPageSheets on _RoomPageState {
     if (shouldLeave != true || !mounted) {
       return;
     }
-    await _controller.leaveRoom();
+
+    var transportCleanupTimedOut = false;
+    final bool left = await _controller.leaveRoom().timeout(
+      const Duration(milliseconds: 1500),
+      onTimeout: () {
+        transportCleanupTimedOut = true;
+        return true;
+      },
+    );
     if (!mounted) {
       return;
     }
-    _finishLeavingRoom();
+    if (!left) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_controller.errorMessage ?? '离开房间失败，请重试'),
+        ),
+      );
+      return;
+    }
+
+    // The server command normally completes before this point. If an RTC or
+    // realtime driver stalls during local cleanup, honor the user's explicit
+    // exit after the bounded wait; RoomController.dispose continues best-effort
+    // transport cleanup without trapping the user in the room UI.
+    if (transportCleanupTimedOut) {
+      _allowPop = true;
+    }
+    _removeRoomRoute(roomRoute);
   }
 
   Future<void> _showMicRequestSheet() async {
@@ -52,40 +83,47 @@ extension _RoomPageSheets on _RoomPageState {
             Text('选择麦位', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
             Text(
-              '选择空闲麦位并提交申请。',
+              '只可选择当前空闲且未锁定的麦位。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: available
-                  .map(
-                    (MicSeat seat) => FilledButton.tonal(
-                      onPressed: _controller.micRequestPending
-                          ? null
-                          : () async {
-                              Navigator.of(sheetContext).pop();
-                              final bool accepted =
-                                  await _controller.requestMic(seat.number);
-                              if (!mounted) {
-                                return;
-                              }
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    accepted
-                                        ? '已上 ${seat.number} 号麦'
-                                        : '麦位状态已变化，请重试',
+            if (available.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Text('当前没有可申请的麦位'),
+              )
+            else
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: available
+                    .map(
+                      (MicSeat seat) => FilledButton.tonal(
+                        onPressed: _controller.micRequestPending
+                            ? null
+                            : () async {
+                                Navigator.of(sheetContext).pop();
+                                final bool accepted =
+                                    await _controller.requestMic(seat.number);
+                                if (!mounted) {
+                                  return;
+                                }
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      accepted
+                                          ? '已上 ${seat.number} 号麦'
+                                          : _controller.errorMessage ??
+                                              '麦位状态已变化，请重试',
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
-                      child: Text('${seat.number} 号麦'),
-                    ),
-                  )
-                  .toList(growable: false),
-            ),
+                                );
+                              },
+                        child: Text('${seat.number} 号麦'),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
           ],
         ),
       ),
@@ -93,6 +131,9 @@ extension _RoomPageSheets on _RoomPageState {
   }
 
   Future<void> _showMembersSheet() async {
+    final List<MicSeat> occupied = _controller.seats
+        .where((MicSeat seat) => seat.isOccupied && seat.userName != null)
+        .toList(growable: false);
     await showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
@@ -102,22 +143,39 @@ extension _RoomPageSheets on _RoomPageState {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text('在线成员', style: Theme.of(context).textTheme.titleLarge),
+            Row(
+              children: <Widget>[
+                Text('在线成员', style: Theme.of(context).textTheme.titleLarge),
+                const Spacer(),
+                Text(
+                  '麦上 ${occupied.length} 人',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
-            for (final String member in <String>[
-              '鹿屿 · 房主',
-              '南风 · 麦上',
-              '晚星 · 麦上',
-              '白桃 · 听众',
-              '小满 · 听众',
-            ])
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const CircleAvatar(child: Icon(Icons.person_rounded)),
-                title: Text(member),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () => Navigator.of(sheetContext).pop(),
-              ),
+            if (occupied.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 18),
+                child: Text('当前麦上暂无用户'),
+              )
+            else
+              for (final MicSeat seat in occupied)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    child: Text('${seat.number}'),
+                  ),
+                  title: Text(seat.userName!),
+                  subtitle: Text(_roleLabel(seat.userRole)),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(sheetContext).pop(),
+                ),
+            const SizedBox(height: 8),
+            Text(
+              '可在成员页查看完整听众席；房主和房管可进行成员管理。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ],
         ),
       ),
@@ -125,6 +183,22 @@ extension _RoomPageSheets on _RoomPageState {
   }
 
   Future<void> _showGiftSheet() async {
+    final List<GiftTarget> targets = _controller.seats
+        .where(
+          (MicSeat seat) =>
+              seat.isOccupied &&
+              seat.userId != null &&
+              seat.userId != _controller.currentUserId &&
+              seat.userName != null,
+        )
+        .map(
+          (MicSeat seat) => GiftTarget(
+            userId: seat.userId!,
+            name: seat.userName!,
+          ),
+        )
+        .toList(growable: false);
+
     final bool? sent = await showModalBottomSheet<bool>(
       context: context,
       useSafeArea: true,
@@ -132,23 +206,21 @@ extension _RoomPageSheets on _RoomPageState {
       backgroundColor: AppColors.surface,
       builder: (BuildContext context) => GiftSheet(
         balance: _controller.giftBalance,
-        targets: _controller.seats
-            .where((MicSeat seat) => seat.userName != null)
-            .map((MicSeat seat) => seat.userName!)
-            .toList(growable: false),
+        targets: targets,
         onSend: (GiftSendRequest request) => _controller.sendGift(
+          giftId: request.gift.id,
           giftName: request.gift.name,
-          targetName: request.target,
-          unitPrice: request.gift.price,
+          receiverUserId: request.target.userId,
+          targetName: request.target.name,
           quantity: request.quantity,
         ),
       ),
     );
-    if (!mounted || sent == null) {
+    if (!mounted || sent != true) {
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(sent ? '礼物已送出' : '赠送失败，请重试')),
+      const SnackBar(content: Text('礼物已送出')),
     );
   }
 
@@ -161,6 +233,23 @@ extension _RoomPageSheets on _RoomPageState {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            if (_controller.isOnMic)
+              ListTile(
+                leading: const Icon(Icons.keyboard_voice_outlined),
+                title: const Text('主动下麦'),
+                onTap: () async {
+                  Navigator.of(sheetContext).pop();
+                  final bool left = await _controller.leaveMic();
+                  if (!mounted) {
+                    return;
+                  }
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(left ? '已离开麦位' : '下麦失败，请重试'),
+                    ),
+                  );
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.volume_up_rounded),
               title: const Text('音频与麦克风'),
@@ -173,14 +262,15 @@ extension _RoomPageSheets on _RoomPageState {
                 );
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.network_check_rounded),
-              title: const Text('模拟弱网恢复'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _controller.simulateReconnect();
-              },
-            ),
+            if (_controller.realtimeDegraded)
+              ListTile(
+                leading: const Icon(Icons.refresh_rounded),
+                title: const Text('重新连接房间'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _controller.reconnect();
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.monitor_heart_rounded),
               title: const Text('房间质量诊断'),
@@ -209,5 +299,27 @@ extension _RoomPageSheets on _RoomPageState {
         ),
       ),
     );
+  }
+
+  void _removeRoomRoute(Route<dynamic>? roomRoute) {
+    if (!mounted) {
+      return;
+    }
+    if (roomRoute == null) {
+      _exitWithoutSession();
+      return;
+    }
+    _allowPop = true;
+    Navigator.of(context).removeRoute(roomRoute);
+  }
+
+  static String _roleLabel(RoomRole role) {
+    return switch (role) {
+      RoomRole.owner => '房主',
+      RoomRole.moderator => '房管',
+      RoomRole.platformModerator => '平台管理',
+      RoomRole.speaker => '麦上用户',
+      RoomRole.guest || RoomRole.listener => '房间成员',
+    };
   }
 }
