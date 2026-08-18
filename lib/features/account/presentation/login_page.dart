@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/network/live_backend_readiness.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
+import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/account/presentation/live_backend_readiness_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -41,6 +42,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final AuthController controller = widget.controller;
+    final String? developmentCode = controller.developmentSmsCode;
     return Scaffold(
       body: SafeArea(
         child: ListView(
@@ -52,7 +54,7 @@ class _LoginPageState extends State<LoginPage> {
             ),
             const SizedBox(height: 10),
             Text(
-              '登录后可以进入语音房、申请上麦、发送消息和建立社交关系。',
+              '完成身份验证后可浏览首页、搜索、房间快照、钱包与订单。实时语音、即时消息和支付渠道将在厂商适配器接入后开放。',
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: AppColors.textSecondary,
                   ),
@@ -114,6 +116,10 @@ class _LoginPageState extends State<LoginPage> {
                 ],
               ),
             ),
+            if (developmentCode != null) ...<Widget>[
+              const SizedBox(height: 12),
+              _DevelopmentCodeNotice(code: developmentCode),
+            ],
             if (controller.errorMessage != null) ...<Widget>[
               const SizedBox(height: 16),
               _ErrorNotice(message: controller.errorMessage!),
@@ -173,10 +179,28 @@ class _LoginPageState extends State<LoginPage> {
     if (!mounted || !sent) {
       return;
     }
+    final SmsChallenge? challenge = widget.controller.lastSmsChallenge;
+    final String? developmentCode = challenge?.developmentCode;
+    if (developmentCode != null) {
+      _codeController.text = developmentCode;
+      _codeController.selection = TextSelection.collapsed(
+        offset: developmentCode.length,
+      );
+    }
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('验证码已发送')),
+      SnackBar(
+        content: Text(
+          developmentCode == null
+              ? '验证码挑战已创建，请查收短信'
+              : '开发环境验证码已安全回读并填入',
+        ),
+      ),
     );
-    setState(() => _secondsRemaining = 60);
+    _startCountdown(challenge?.retryAfter ?? 60);
+  }
+
+  void _startCountdown(int seconds) {
+    setState(() => _secondsRemaining = seconds < 1 ? 1 : seconds);
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (Timer timer) {
       if (!mounted) {
@@ -200,6 +224,35 @@ class _LoginPageState extends State<LoginPage> {
     await widget.controller.signInWithSms(
       phone: _phoneController.text,
       smsCode: _codeController.text,
+    );
+  }
+}
+
+class _DevelopmentCodeNotice extends StatelessWidget {
+  const _DevelopmentCodeNotice({required this.code});
+
+  final String code;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppColors.warning.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(Icons.science_outlined, color: AppColors.warning),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('仅开发环境可见：验证码 $code'),
+          ),
+        ],
+      ),
     );
   }
 }
