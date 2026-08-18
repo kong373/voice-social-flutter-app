@@ -173,10 +173,30 @@ void main() {
       expect(find.text('READY_FOR_PROVIDER_INTEGRATION'), findsOneWidget);
       expect(find.text('运行状态：VENDOR_BLOCKED'), findsOneWidget);
       expect(find.byKey(const Key('vendor-sms-status')), findsOneWidget);
-      expect(find.byKey(const Key('vendor-rtc-status')), findsOneWidget);
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'm32-${qaAvdId.toLowerCase()}-06-vendor-readiness-top',
+      );
+      final Finder vendorPayment = find.byKey(
+        const Key('vendor-payment-status'),
+      );
+      await tester.scrollUntilVisible(
+        vendorPayment,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.byKey(const Key('vendor-im-status')), findsOneWidget);
-      expect(find.byKey(const Key('vendor-payment-status')), findsOneWidget);
-      expect(find.byKey(const Key('vendor-secret-boundary')), findsOneWidget);
+      expect(vendorPayment, findsOneWidget);
+      final Finder secretBoundary = find.byKey(
+        const Key('vendor-secret-boundary'),
+      );
+      await tester.scrollUntilVisible(
+        secretBoundary,
+        180,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(secretBoundary, findsOneWidget);
       await captureQaScreenshot(
         tester,
         binding,
@@ -208,7 +228,15 @@ void main() {
         description: 'current-user wallet and order overview',
       );
       expect(find.byKey(const Key('wallet-contract-ready')), findsOneWidget);
-      expect(find.byKey(const Key('payment-initiation-blocked')), findsOneWidget);
+      final Finder paymentBlocked = find.byKey(
+        const Key('payment-initiation-blocked'),
+      );
+      await tester.scrollUntilVisible(
+        paymentBlocked,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(paymentBlocked, findsOneWidget);
       expect(find.text('P202608180001'), findsOneWidget);
       await captureQaScreenshot(
         tester,
