@@ -15,7 +15,7 @@ jobs:
     name: Read-only development gateway preflight
     runs-on: [self-hosted, macOS, ARM64, m3-dev]
     environment: development
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       TESTED_GIT_SHA: f323b9abc1e0f77a1972b34e9190563681168b97
       M3_API_BASE_URL: ${{ secrets.M3_API_BASE_URL }}
@@ -27,6 +27,8 @@ jobs:
       M3_API_TIMEOUT_SECONDS: "15"
       M3_PROBE_PATH: /health
       M3_ALLOW_INSECURE_HTTP: "true"
+      CI: "true"
+      FLUTTER_SUPPRESS_ANALYTICS: "true"
 
     steps:
       - name: Prepare isolated evidence directory
@@ -56,12 +58,73 @@ jobs:
           printf 'runner_os=%s\nrunner_arch=%s\nrunner_label=m3-dev\n' \
             "$RUNNER_OS" "$RUNNER_ARCH" > "$EVIDENCE_DIR/runner-redacted.txt"
 
-      - name: Install pinned Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.44.7"
-          channel: stable
-          cache: true
+      - name: Resolve pinned local Flutter 3.44.7
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          candidates=()
+          if command -v flutter >/dev/null 2>&1; then
+            candidates+=("$(command -v flutter)")
+          fi
+          candidates+=(
+            "$HOME/fvm/versions/3.44.7/bin/flutter"
+            "$HOME/.fvm/versions/3.44.7/bin/flutter"
+            "$HOME/.local/share/fvm/versions/3.44.7/bin/flutter"
+            "$HOME/Documents/ny/voice-social-flutter-app/.fvm/flutter_sdk/bin/flutter"
+            "$HOME/Documents/ny/voice-social-flutter-app/.fvm/versions/3.44.7/bin/flutter"
+            "/opt/homebrew/bin/flutter"
+            "/usr/local/bin/flutter"
+          )
+
+          flutter_bin=''
+          for candidate in "${candidates[@]}"; do
+            if [[ ! -x "$candidate" ]]; then
+              continue
+            fi
+            version="$("$candidate" --version --machine 2>/dev/null | jq -r '.frameworkVersion // empty' || true)"
+            if [[ "$version" == '3.44.7' ]]; then
+              flutter_bin="$candidate"
+              break
+            fi
+          done
+
+          if [[ -z "$flutter_bin" ]]; then
+            while IFS= read -r candidate; do
+              if [[ ! -x "$candidate" ]]; then
+                continue
+              fi
+              version="$("$candidate" --version --machine 2>/dev/null | jq -r '.frameworkVersion // empty' || true)"
+              if [[ "$version" == '3.44.7' ]]; then
+                flutter_bin="$candidate"
+                break
+              fi
+            done < <(
+              find \
+                "$HOME/fvm" \
+                "$HOME/.fvm" \
+                "$HOME/.local/share/fvm" \
+                "$HOME/Documents/ny" \
+                -maxdepth 8 \
+                -path '*/3.44.7/bin/flutter' \
+                -print 2>/dev/null | sort -u
+            )
+          fi
+
+          if [[ -z "$flutter_bin" ]]; then
+            echo 'Flutter 3.44.7 is not installed in an approved local path on the self-hosted runner.' >&2
+            exit 1
+          fi
+
+          flutter_root="$(cd "$(dirname "$flutter_bin")/.." && pwd)"
+          test -x "$flutter_root/bin/flutter"
+          test -x "$flutter_root/bin/dart"
+          test "$("$flutter_root/bin/flutter" --version --machine | jq -r '.frameworkVersion')" = '3.44.7'
+
+          printf 'FLUTTER_ROOT=%s\n' "$flutter_root" >> "$GITHUB_ENV"
+          printf '%s/bin\n' "$flutter_root" >> "$GITHUB_PATH"
+          printf 'flutter_version=3.44.7\nflutter_source=preinstalled-local-sdk\n' \
+            > "$EVIDENCE_DIR/flutter-runtime.txt"
 
       - name: Verify local backend health
         shell: bash

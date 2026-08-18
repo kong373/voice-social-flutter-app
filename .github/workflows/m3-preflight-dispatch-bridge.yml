@@ -24,7 +24,7 @@ jobs:
       github.event.workflow_run.head_branch == 'main' &&
       contains(github.event.workflow_run.head_commit.message, '[dispatch-m3-self-hosted-preflight]')
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       GH_TOKEN: ${{ github.token }}
       TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -70,8 +70,16 @@ jobs:
             exit 1
           fi
 
+          run_url="https://github.com/$GITHUB_REPOSITORY/actions/runs/$run_id"
           printf 'run_id=%s\n' "$run_id" >> "$GITHUB_OUTPUT"
-          printf 'run_url=https://github.com/%s/actions/runs/%s\n' "$GITHUB_REPOSITORY" "$run_id" >> "$GITHUB_OUTPUT"
+          printf 'run_url=%s\n' "$run_url" >> "$GITHUB_OUTPUT"
+
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f state=pending \
+            -f context=m3/self-hosted-preflight \
+            -f description="Mac self-hosted preflight running (run $run_id)" \
+            -f target_url="$run_url"
 
       - name: Wait for self-hosted preflight
         shell: bash
