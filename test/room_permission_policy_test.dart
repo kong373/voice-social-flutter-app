@@ -88,20 +88,19 @@ void main() {
     );
   });
 
-  test('snapshot-only room denies every write even for the owner', () {
+  test('snapshot-only room denies every interactive capability', () {
     final RoomSnapshot room = snapshot(
       RoomRole.owner,
       transportMode: RoomTransportMode.snapshotOnly,
     );
     for (final RoomCapability capability in RoomCapability.values) {
-      final bool allowed = policy.allows(
-        snapshot: room,
-        capability: capability,
-        isOnMic: true,
-      );
       expect(
-        allowed,
-        capability == RoomCapability.viewMembers,
+        policy.allows(
+          snapshot: room,
+          capability: capability,
+          isOnMic: true,
+        ),
+        isFalse,
         reason: '$capability must remain fail-closed in snapshot-only mode',
       );
     }
