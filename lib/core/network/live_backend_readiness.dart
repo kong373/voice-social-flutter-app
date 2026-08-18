@@ -8,6 +8,7 @@ enum LiveBackendReadinessStatus {
   mockMode,
   configurationInvalid,
   gatewayReachable,
+  gatewayRejected,
   networkUnavailable,
   tlsRejected,
   timedOut,
@@ -19,6 +20,7 @@ extension LiveBackendReadinessStatusLabel on LiveBackendReadinessStatus {
         LiveBackendReadinessStatus.mockMode => 'Mock 模式',
         LiveBackendReadinessStatus.configurationInvalid => '配置无效',
         LiveBackendReadinessStatus.gatewayReachable => '网关可达',
+        LiveBackendReadinessStatus.gatewayRejected => '网关状态异常',
         LiveBackendReadinessStatus.networkUnavailable => '网络不可达',
         LiveBackendReadinessStatus.tlsRejected => 'TLS 校验失败',
         LiveBackendReadinessStatus.timedOut => '连接超时',
@@ -61,6 +63,7 @@ class HttpGatewayProbe implements GatewayProbe {
       final HttpClientRequest request =
           await client.getUrl(target).timeout(environment.apiTimeout);
       request.followRedirects = false;
+      request.maxRedirects = 0;
       request.headers
         ..set(HttpHeaders.acceptHeader, 'application/json')
         ..set('Client-Type', environment.clientType)
@@ -70,9 +73,18 @@ class HttpGatewayProbe implements GatewayProbe {
           await request.close().timeout(environment.apiTimeout);
       await response.drain<void>().timeout(environment.apiTimeout);
       stopwatch.stop();
+      if (response.statusCode != HttpStatus.ok) {
+        return GatewayProbeResult(
+          status: LiveBackendReadinessStatus.gatewayRejected,
+          message: '健康检查返回 HTTP ${response.statusCode}，暂不允许发起登录。',
+          checkedAt: DateTime.now().toUtc(),
+          latency: stopwatch.elapsed,
+          httpStatus: response.statusCode,
+        );
+      }
       return GatewayProbeResult(
         status: LiveBackendReadinessStatus.gatewayReachable,
-        message: '网关已返回 HTTP ${response.statusCode}，传输链路可达。',
+        message: '网关健康检查通过。',
         checkedAt: DateTime.now().toUtc(),
         latency: stopwatch.elapsed,
         httpStatus: response.statusCode,
@@ -158,6 +170,7 @@ class LiveBackendReadinessSnapshot {
 
   bool get canAttemptAuthentication =>
       status == LiveBackendReadinessStatus.gatewayReachable &&
+      httpStatus == HttpStatus.ok &&
       publicClientConfigured;
 
   Map<String, Object?> toRedactedJson() => <String, Object?>{
@@ -236,8 +249,7 @@ class LiveBackendReadinessService {
       probePath: environment.liveProbePath,
       publicClientConfigured:
           summary['oauthClientIdConfigured'] as bool? ?? false,
-      developmentOutboxConfigured:
-          summary['developmentOutboxConfigured'] as bool? ?? false,
+      developmentOutboxConfigured: false,
       realtimeEndpointConfigured:
           summary['realtimeEndpointConfigured'] as bool? ?? false,
       latency: latency,
