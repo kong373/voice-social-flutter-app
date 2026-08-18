@@ -21,8 +21,11 @@ class RoomPermissionPolicy {
     required RoomCapability capability,
     required bool isOnMic,
   }) {
+    // The M3.2A room is an authoritative HTTP snapshot only. Every action
+    // that would require room membership, an online-member service, RTC, IM,
+    // gifts or moderation remains disabled until its real service is wired.
     if (snapshot.isSnapshotOnly) {
-      return capability == RoomCapability.viewMembers;
+      return false;
     }
 
     final RoomRole role = snapshot.role;
