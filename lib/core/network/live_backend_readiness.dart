@@ -58,17 +58,16 @@ class HttpGatewayProbe implements GatewayProbe {
     final HttpClient client = HttpClient()
       ..connectionTimeout = environment.apiTimeout;
     try {
-      final HttpClientRequest request = await client
-          .getUrl(target)
-          .timeout(environment.apiTimeout);
+      final HttpClientRequest request =
+          await client.getUrl(target).timeout(environment.apiTimeout);
       request.followRedirects = false;
       request.headers
         ..set(HttpHeaders.acceptHeader, 'application/json')
         ..set('Client-Type', environment.clientType)
-        ..set('Client-Inner-Version', environment.clientInnerVersion);
-      final HttpClientResponse response = await request
-          .close()
-          .timeout(environment.apiTimeout);
+        ..set('Client-Inner-Version', environment.clientInnerVersion)
+        ..set('Client-Id', environment.oauthClientId);
+      final HttpClientResponse response =
+          await request.close().timeout(environment.apiTimeout);
       await response.drain<void>().timeout(environment.apiTimeout);
       stopwatch.stop();
       return GatewayProbeResult(
@@ -132,8 +131,8 @@ class LiveBackendReadinessSnapshot {
     required this.deploymentEnvironment,
     required this.apiOrigin,
     required this.probePath,
-    required this.oauthClientIdConfigured,
-    required this.oauthClientSecretConfigured,
+    required this.publicClientConfigured,
+    required this.developmentOutboxConfigured,
     required this.realtimeEndpointConfigured,
     this.latency,
     this.httpStatus,
@@ -145,14 +144,21 @@ class LiveBackendReadinessSnapshot {
   final DeploymentEnvironment deploymentEnvironment;
   final String apiOrigin;
   final String probePath;
-  final bool oauthClientIdConfigured;
-  final bool oauthClientSecretConfigured;
+  final bool publicClientConfigured;
+  final bool developmentOutboxConfigured;
   final bool realtimeEndpointConfigured;
   final Duration? latency;
   final int? httpStatus;
 
+  @Deprecated('Use publicClientConfigured.')
+  bool get oauthClientIdConfigured => publicClientConfigured;
+
+  @Deprecated('Mobile public clients never carry a secret.')
+  bool get oauthClientSecretConfigured => false;
+
   bool get canAttemptAuthentication =>
-      status == LiveBackendReadinessStatus.gatewayReachable;
+      status == LiveBackendReadinessStatus.gatewayReachable &&
+      publicClientConfigured;
 
   Map<String, Object?> toRedactedJson() => <String, Object?>{
         'status': status.name,
@@ -162,8 +168,9 @@ class LiveBackendReadinessSnapshot {
         'deploymentEnvironment': deploymentEnvironment.name,
         'apiOrigin': apiOrigin,
         'probePath': probePath,
-        'oauthClientIdConfigured': oauthClientIdConfigured,
-        'oauthClientSecretConfigured': oauthClientSecretConfigured,
+        'publicClientConfigured': publicClientConfigured,
+        'mobileClientSecretPresent': false,
+        'developmentOutboxConfigured': developmentOutboxConfigured,
         'realtimeEndpointConfigured': realtimeEndpointConfigured,
         'latencyMs': latency?.inMilliseconds,
         'httpStatus': httpStatus,
@@ -227,10 +234,10 @@ class LiveBackendReadinessService {
       deploymentEnvironment: environment.deploymentEnvironment,
       apiOrigin: environment.redactedApiOrigin,
       probePath: environment.liveProbePath,
-      oauthClientIdConfigured:
+      publicClientConfigured:
           summary['oauthClientIdConfigured'] as bool? ?? false,
-      oauthClientSecretConfigured:
-          summary['oauthClientSecretConfigured'] as bool? ?? false,
+      developmentOutboxConfigured:
+          summary['developmentOutboxConfigured'] as bool? ?? false,
       realtimeEndpointConfigured:
           summary['realtimeEndpointConfigured'] as bool? ?? false,
       latency: latency,
