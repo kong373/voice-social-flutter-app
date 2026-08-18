@@ -32,21 +32,60 @@ class AuthSessionManager {
     _session = restored;
     if (await _store.read(_sessionKey) == null) {
       await _store.write(_sessionKey, restored.encode());
-      await _store.delete(_legacySessionKey);
+      try {
+        await _store.delete(_legacySessionKey);
+      } catch (_) {
+        // The v2 value is authoritative. A later cleanup can remove the legacy
+        // duplicate without risking loss of the successfully migrated session.
+      }
     }
     return restored;
   }
 
   Future<void> save(AuthSession session) async {
-    _session = session;
+    // Do not expose the new in-memory credentials until secure persistence has
+    // succeeded. This prevents a process from using a rotated refresh token
+    // that would be lost on the next cold start.
     await _store.write(_sessionKey, session.encode());
-    await _store.delete(_legacySessionKey);
+    _session = session;
+    try {
+      await _store.delete(_legacySessionKey);
+    } catch (_) {
+      // The current key is present and restore always prefers it.
+    }
   }
 
   Future<void> clear() async {
+    // An empty overwrite is itself a safe tombstone if a platform delete call
+    // fails. Only report success when each credential key was either overwritten
+    // or deleted, so an old refresh token cannot silently reappear on relaunch.
+    await _eraseCredentialKey(_sessionKey);
+    await _eraseCredentialKey(_legacySessionKey);
     _session = null;
-    await _store.delete(_sessionKey);
-    await _store.delete(_legacySessionKey);
+  }
+
+  Future<void> _eraseCredentialKey(String key) async {
+    Object? writeError;
+    Object? deleteError;
+    bool erased = false;
+    try {
+      await _store.write(key, '');
+      erased = true;
+    } catch (error) {
+      writeError = error;
+    }
+    try {
+      await _store.delete(key);
+      erased = true;
+    } catch (error) {
+      deleteError = error;
+    }
+    if (!erased) {
+      throw StateError(
+        'Unable to erase secure credential key $key: '
+        'write=$writeError delete=$deleteError',
+      );
+    }
   }
 
   Future<bool> hasAcceptedConsent() async =>
