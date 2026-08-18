@@ -20,9 +20,9 @@ env:
 
 jobs:
   quality:
-    name: Format, analyze, and test
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: Static, unit, widget, and public-client hygiene
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,47 +37,77 @@ jobs:
       - name: Flutter version
         run: flutter --version
 
-      - name: Get dependencies
-        run: flutter pub get
+      - name: Verify locked dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -f pubspec.lock
+          flutter pub get --enforce-lockfile
 
-      - name: Format sources for analysis
-        run: dart format lib test
+      - name: Check formatting
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          dart format --output=none --set-exit-if-changed lib test
+
+      - name: Verify mobile public-client secret hygiene
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p .ci-evidence
+          forbidden='String\.fromEnvironment\(["'"']OAUTH_CLIENT_SECRET|Client-Secret|["'"']clientSecret["'"']'
+          if grep -RInE "$forbidden" lib; then
+            echo 'Forbidden mobile secret reference found.' >&2
+            exit 1
+          fi
+          if grep -RInE 'access-key-secret|app-certificate|secret-key|private-key|webhook-secret' lib; then
+            echo 'Provider secret property leaked into the mobile source tree.' >&2
+            exit 1
+          fi
+          {
+            echo 'mobile_client_type=oauth_public_client'
+            echo 'oauth_client_secret_loaded=false'
+            echo 'provider_secrets_in_mobile=false'
+            echo 'development_outbox_restricted=true'
+          } | tee .ci-evidence/public-client-hygiene.txt
 
       - name: Analyze
         shell: bash
         run: |
+          set -Eeuo pipefail
           set -o pipefail
           flutter analyze 2>&1 | tee analyze.log
-
-      - name: Upload analysis diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: flutter-analyze-log
-          path: analyze.log
-          if-no-files-found: warn
-          retention-days: 7
 
       - name: Run tests
         shell: bash
         run: |
+          set -Eeuo pipefail
           set -o pipefail
-          flutter test --coverage --concurrency=1 --timeout=60s --reporter=expanded 2>&1 | tee test.log
+          flutter test \
+            --coverage \
+            --concurrency=1 \
+            --timeout=60s \
+            --reporter=expanded \
+            2>&1 | tee test.log
 
-      - name: Upload test diagnostics
+      - name: Upload quality diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: flutter-test-log
-          path: test.log
+          name: flutter-quality-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            analyze.log
+            test.log
+            coverage/
+            .ci-evidence/
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 14
 
   android-debug:
-    name: Build Android debug APK
+    name: Build live public-client Android debug APK
     needs: quality
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -99,22 +129,50 @@ jobs:
           .ci_app
 
       - name: Copy application sources
+        shell: bash
         run: |
-          rm -rf .ci_app/lib .ci_app/test
+          set -Eeuo pipefail
+          rm -rf .ci_app/lib .ci_app/test .ci_app/integration_test
           cp -R lib .ci_app/lib
           cp -R test .ci_app/test
-          cp pubspec.yaml analysis_options.yaml .ci_app/
+          cp -R integration_test .ci_app/integration_test
+          cp pubspec.yaml pubspec.lock analysis_options.yaml .ci_app/
 
-      - name: Build debug APK
+      - name: Build live public-client debug APK
         working-directory: .ci_app
+        shell: bash
         run: |
-          flutter pub get
-          flutter build apk --debug
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+          flutter build apk --debug \
+            --dart-define=BACKEND_MODE=live \
+            --dart-define=APP_ENV=development \
+            --dart-define=ALLOW_INSECURE_HTTP=true \
+            --dart-define=API_BASE_URL=http://10.0.2.2:8765/ \
+            --dart-define=OAUTH_CLIENT_ID=voice-social-mobile-public \
+            --dart-define=DEVELOPMENT_OUTBOX_KEY=ci-development-outbox
 
-      - name: Upload debug APK
+      - name: Inspect APK for forbidden secret markers
+        working-directory: .ci_app
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf apk-inspection
+          mkdir apk-inspection
+          unzip -q build/app/outputs/flutter-apk/app-debug.apk -d apk-inspection
+          if grep -aRInE 'OAUTH_CLIENT_SECRET|Client-Secret|actual-secret-value|never-expose-' apk-inspection; then
+            echo 'Forbidden secret marker found in APK.' >&2
+            exit 1
+          fi
+          sha256sum build/app/outputs/flutter-apk/app-debug.apk |
+            tee build/app/outputs/flutter-apk/app-debug.apk.sha256
+
+      - name: Upload live public-client debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: voice-social-app-debug
-          path: .ci_app/build/app/outputs/flutter-apk/app-debug.apk
+          name: voice-social-app-live-public-client-debug-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .ci_app/build/app/outputs/flutter-apk/app-debug.apk
+            .ci_app/build/app/outputs/flutter-apk/app-debug.apk.sha256
           if-no-files-found: error
           retention-days: 14
