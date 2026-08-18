@@ -7,6 +7,7 @@ void main() {
     DeploymentEnvironment deployment = DeploymentEnvironment.development,
     bool allowInsecureHttp = false,
     String liveProbePath = '/',
+    String developmentOutboxKey = '',
   }) {
     return AppEnvironment(
       backendMode: BackendMode.live,
@@ -14,27 +15,31 @@ void main() {
       clientType: 'Android',
       clientInnerVersion: '6',
       oauthClientId: 'client-id-value',
-      oauthClientSecret: 'secret-value',
       realtimeEndpoint: '',
+      developmentOutboxKey: developmentOutboxKey,
       deploymentEnvironment: deployment,
       allowInsecureHttp: allowInsecureHttp,
       liveProbePath: liveProbePath,
     );
   }
 
-  test('redacted summary never exposes OAuth values or gateway path', () {
+  test('redacted summary never exposes client id or gateway path', () {
     final AppEnvironment environment = liveEnvironment();
     final String summary = environment.redactedSummary.toString();
 
     expect(environment.redactedApiOrigin, 'https://dev.example.com:8443');
     expect(summary, isNot(contains('client-id-value')));
-    expect(summary, isNot(contains('secret-value')));
     expect(summary, isNot(contains('/gateway/')));
     expect(environment.redactedSummary['oauthClientIdConfigured'], isTrue);
     expect(
       environment.redactedSummary['oauthClientSecretConfigured'],
-      isTrue,
+      isFalse,
     );
+  });
+
+  test('mobile public client never loads an OAuth secret', () {
+    final AppEnvironment environment = liveEnvironment();
+    expect(environment.oauthClientSecret, isEmpty);
   });
 
   test('development HTTP requires an explicit insecure override', () {
@@ -77,6 +82,23 @@ void main() {
     );
   });
 
+  test('development outbox key is forbidden in staging and production', () {
+    final AppEnvironment environment = liveEnvironment(
+      deployment: DeploymentEnvironment.staging,
+      developmentOutboxKey: 'development-only-key',
+    );
+    expect(
+      environment.validateLiveConfiguration,
+      throwsA(
+        isA<StateError>().having(
+          (StateError error) => error.toString(),
+          'message',
+          contains('DEVELOPMENT_OUTBOX_KEY'),
+        ),
+      ),
+    );
+  });
+
   test('probe path must be absolute and timeout must be bounded', () {
     final AppEnvironment invalidPath = liveEnvironment(
       liveProbePath: 'health',
@@ -98,7 +120,6 @@ void main() {
       clientType: 'Android',
       clientInnerVersion: '6',
       oauthClientId: 'client',
-      oauthClientSecret: 'secret',
       realtimeEndpoint: '',
       deploymentEnvironment: DeploymentEnvironment.development,
       apiTimeout: const Duration(seconds: 2),
