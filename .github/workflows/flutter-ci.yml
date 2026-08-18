@@ -20,15 +20,15 @@ env:
 
 jobs:
   quality:
-    name: Static, unit, widget, and public-client hygiene
+    name: Static, unit, widget, integration-source, and public-client hygiene
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
@@ -44,40 +44,54 @@ jobs:
           test -f pubspec.lock
           flutter pub get --enforce-lockfile
 
-      - name: Normalize sources for analysis
+      - name: Check formatting without mutating the checkout
         shell: bash
         run: |
           set -Eeuo pipefail
-          dart format lib test
+          dart format \
+            --output=none \
+            --set-exit-if-changed \
+            lib test integration_test
 
       - name: Verify mobile public-client secret hygiene
         shell: bash
         run: |
           set -Eeuo pipefail
           mkdir -p ci-evidence
-          if grep -RInF 'OAUTH_CLIENT_SECRET' lib; then
+          if grep -RInF 'OAUTH_CLIENT_SECRET' lib integration_test; then
             echo 'OAUTH_CLIENT_SECRET must not be read by the mobile app.' >&2
             exit 1
           fi
-          if grep -RInF 'Client-Secret' lib; then
+          if grep -RInF 'Client-Secret' lib integration_test; then
             echo 'Client-Secret must not be sent by the mobile app.' >&2
             exit 1
           fi
-          if grep -RInF "'clientSecret'" lib || \
-             grep -RInF '"clientSecret"' lib; then
+          if grep -RInF "'clientSecret'" lib integration_test || \
+             grep -RInF '"clientSecret"' lib integration_test; then
             echo 'A clientSecret payload field exists in mobile source.' >&2
             exit 1
           fi
-          if grep -RInE 'access-key-secret|app-certificate|secret-key|private-key|webhook-secret' lib; then
+          if grep -RInE 'access-key-secret|app-certificate|secret-key|private-key|webhook-secret' lib integration_test; then
             echo 'Provider secret property leaked into the mobile source tree.' >&2
+            exit 1
+          fi
+          if grep -RInE 'DEVELOPMENT_OUTBOX_KEY|X-Development-Outbox-Key|ci-development-outbox' lib integration_test; then
+            echo 'A confidential development outbox credential leaked into mobile source.' >&2
             exit 1
           fi
           {
             echo 'mobile_client_type=oauth_public_client'
             echo 'oauth_client_secret_loaded=false'
             echo 'provider_secrets_in_mobile=false'
-            echo 'development_outbox_restricted=true'
+            echo 'confidential_development_outbox_loaded=false'
           } | tee ci-evidence/public-client-hygiene.txt
+
+      - name: Validate QA tooling syntax
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile tool/qa/m32_contract_server.py
+          bash -n tool/qa/run_m32_vendor_avd.sh
 
       - name: Analyze
         shell: bash
@@ -100,7 +114,7 @@ jobs:
 
       - name: Upload quality diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: flutter-quality-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -118,10 +132,10 @@ jobs:
     timeout-minutes: 35
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
@@ -157,8 +171,7 @@ jobs:
             --dart-define=APP_ENV=development \
             --dart-define=ALLOW_INSECURE_HTTP=true \
             --dart-define=API_BASE_URL=http://10.0.2.2:8765/ \
-            --dart-define=OAUTH_CLIENT_ID=voice-social-mobile-public \
-            --dart-define=DEVELOPMENT_OUTBOX_KEY=ci-development-outbox
+            --dart-define=OAUTH_CLIENT_ID=voice-social-mobile-public
 
       - name: Inspect APK for forbidden secret markers
         working-directory: .ci_app
@@ -168,7 +181,7 @@ jobs:
           rm -rf apk-inspection
           mkdir apk-inspection
           unzip -q build/app/outputs/flutter-apk/app-debug.apk -d apk-inspection
-          if grep -aRInE 'OAUTH_CLIENT_SECRET|Client-Secret|actual-secret-value|never-expose-' apk-inspection; then
+          if grep -aRInE 'OAUTH_CLIENT_SECRET|Client-Secret|DEVELOPMENT_OUTBOX_KEY|X-Development-Outbox-Key|ci-development-outbox|actual-secret-value|never-expose-' apk-inspection; then
             echo 'Forbidden secret marker found in APK.' >&2
             exit 1
           fi
@@ -176,7 +189,7 @@ jobs:
             tee build/app/outputs/flutter-apk/app-debug.apk.sha256
 
       - name: Upload live public-client debug APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: voice-social-app-live-public-client-debug-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
