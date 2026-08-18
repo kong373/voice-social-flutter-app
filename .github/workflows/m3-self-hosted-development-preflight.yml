@@ -1,0 +1,111 @@
+name: M3 self-hosted development preflight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m3-self-hosted-development-preflight
+  cancel-in-progress: false
+
+jobs:
+  development-preflight:
+    name: Read-only development gateway preflight
+    runs-on: [self-hosted, macOS, ARM64, m3-dev]
+    environment: development
+    timeout-minutes: 15
+    env:
+      TESTED_GIT_SHA: f323b9abc1e0f77a1972b34e9190563681168b97
+      M3_API_BASE_URL: ${{ secrets.M3_API_BASE_URL }}
+      M3_OAUTH_CLIENT_ID: ${{ secrets.M3_OAUTH_CLIENT_ID }}
+      M3_OAUTH_CLIENT_SECRET: ${{ secrets.M3_OAUTH_CLIENT_SECRET }}
+      M3_CLIENT_TYPE: Android
+      M3_CLIENT_INNER_VERSION: "1"
+      M3_APP_ENV: development
+      M3_API_TIMEOUT_SECONDS: "15"
+      M3_PROBE_PATH: /health
+      M3_ALLOW_INSECURE_HTTP: "true"
+
+    steps:
+      - name: Prepare isolated evidence directory
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          evidence_dir="$RUNNER_TEMP/m3-preflight-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rm -rf "$evidence_dir"
+          mkdir -m 700 "$evidence_dir"
+          echo "EVIDENCE_DIR=$evidence_dir" >> "$GITHUB_ENV"
+
+      - name: Checkout reviewed candidate
+        uses: actions/checkout@v4
+        with:
+          ref: f323b9abc1e0f77a1972b34e9190563681168b97
+          persist-credentials: false
+
+      - name: Verify immutable checkout and runner constraints
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$TESTED_GIT_SHA"
+          test "$RUNNER_OS" = "macOS"
+          test "$RUNNER_ARCH" = "ARM64"
+          test "${{ runner.environment }}" = "self-hosted"
+          printf 'tested_git_sha=%s\n' "$TESTED_GIT_SHA" > "$EVIDENCE_DIR/tested-git-sha.txt"
+          printf 'runner_os=%s\nrunner_arch=%s\nrunner_label=m3-dev\n' \
+            "$RUNNER_OS" "$RUNNER_ARCH" > "$EVIDENCE_DIR/runner-redacted.txt"
+
+      - name: Install pinned Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.7"
+          channel: stable
+          cache: true
+
+      - name: Verify local backend health
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          http_status="$(curl --silent --show-error \
+            --output "$EVIDENCE_DIR/backend-health.json" \
+            --write-out '%{http_code}' \
+            --max-time 10 \
+            "$M3_API_BASE_URL/health")"
+          test "$http_status" = "200"
+          jq -e '.code == 200 and .data.status == "UP" and .data.environment == "development"' \
+            "$EVIDENCE_DIR/backend-health.json" >/dev/null
+          printf 'backend_http_status=%s\n' "$http_status" > "$EVIDENCE_DIR/backend-status.txt"
+
+      - name: Resolve locked Flutter dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+
+      - name: Run side-effect-free redacted preflight
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          dart run tool/m3_live_preflight.dart > "$EVIDENCE_DIR/flutter-preflight-redacted.json"
+          jq -e '.status == "gatewayReachable" and .httpStatus == 200 and .canAttemptAuthentication == true' \
+            "$EVIDENCE_DIR/flutter-preflight-redacted.json" >/dev/null
+          jq '{status, httpStatus, latencyMs, canAttemptAuthentication}' \
+            "$EVIDENCE_DIR/flutter-preflight-redacted.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload redacted evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: m3-self-hosted-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Clean runner temporary evidence
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ -n "${EVIDENCE_DIR:-}" && "$EVIDENCE_DIR" == "$RUNNER_TEMP"/m3-preflight-* ]]; then
+            rm -rf "$EVIDENCE_DIR"
+          fi
