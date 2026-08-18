@@ -27,6 +27,11 @@ void main() {
     await controller.acceptConsent();
     expect(controller.stage, AuthFlowStage.signedOut);
 
+    final bool sent = await controller.sendSmsCode('13800138000');
+    expect(sent, isTrue);
+    expect(controller.lastSmsChallenge?.challengeId, isNotEmpty);
+    expect(controller.developmentSmsCode, '123456');
+
     final bool signedIn = await controller.signInWithSms(
       phone: '13800138000',
       smsCode: '123456',
@@ -34,6 +39,7 @@ void main() {
     expect(signedIn, isTrue);
     expect(controller.stage, AuthFlowStage.signedIn);
     expect(controller.session?.userId, 10001);
+    expect(controller.session?.refreshToken, isNotEmpty);
 
     final AuthSession? restored = await sessionManager.restore();
     expect(restored?.mobile, '13800138000');
@@ -41,6 +47,39 @@ void main() {
     await controller.signOut();
     expect(controller.stage, AuthFlowStage.signedOut);
     expect(sessionManager.session, isNull);
+  });
+
+  test('expired access token is refreshed during startup', () async {
+    final AuthSessionManager sessionManager =
+        AuthSessionManager(MemoryKeyValueStore());
+    await sessionManager.acceptConsent();
+    await sessionManager.save(
+      AuthSession(
+        accessToken: 'expired-access',
+        tokenType: 'Bearer',
+        expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
+        refreshToken: 'valid-refresh',
+        refreshExpiresAt: DateTime.now().add(const Duration(days: 1)),
+        deviceId: 'device-1',
+        userId: 10001,
+        mobile: '13800138000',
+        roles: 'USER',
+      ),
+    );
+    final AuthController controller = AuthController(
+      repository: const MockAuthRepository(),
+      sessionManager: sessionManager,
+      deviceIdentityProvider: DeviceIdentityProvider(
+        environment: AppEnvironment.mock(),
+        sessionManager: sessionManager,
+      ),
+    );
+    addTearDown(controller.dispose);
+
+    await controller.initialize();
+
+    expect(controller.stage, AuthFlowStage.signedIn);
+    expect(controller.session?.accessToken, 'mock-access-token');
   });
 
   test('unregistered phone enters profile completion and registers', () async {
