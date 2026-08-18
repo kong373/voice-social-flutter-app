@@ -61,6 +61,49 @@ class LiveReadOnlyOverview {
   final List<LivePaymentOrder> orders;
 }
 
+class VendorCapabilityReadiness {
+  const VendorCapabilityReadiness({
+    required this.capability,
+    required this.boundaryStatus,
+    required this.runtimeStatus,
+    required this.provider,
+    required this.missingConfiguration,
+    required this.serverOnlySecretProperties,
+    required this.adapterContract,
+    required this.securityBoundary,
+  });
+
+  final String capability;
+  final String boundaryStatus;
+  final String runtimeStatus;
+  final String provider;
+  final List<String> missingConfiguration;
+  final List<String> serverOnlySecretProperties;
+  final String adapterContract;
+  final String securityBoundary;
+
+  bool get boundaryReady => boundaryStatus == 'READY';
+  bool get runtimeReady => runtimeStatus == 'READY';
+}
+
+class VendorReadinessOverview {
+  const VendorReadinessOverview({
+    required this.contractVersion,
+    required this.integrationStatus,
+    required this.runtimeStatus,
+    required this.allBoundariesReady,
+    required this.allRuntimeAdaptersReady,
+    required this.capabilities,
+  });
+
+  final String contractVersion;
+  final String integrationStatus;
+  final String runtimeStatus;
+  final bool allBoundariesReady;
+  final bool allRuntimeAdaptersReady;
+  final Map<String, VendorCapabilityReadiness> capabilities;
+}
+
 /// Narrow repository for the M3.2A live shell.
 ///
 /// It intentionally contains no mutation method. SMS/RTC/IM/payment provider
@@ -73,6 +116,8 @@ class LiveReadOnlyRepository {
   static const String _giftCoinPath = '/app-economy-api/ncoin';
   static const String _walletPath = '/app-mini-api/mini/v1/wallet/overview';
   static const String _ordersPath = '/app-economy-api/pay/getOrders';
+  static const String _vendorReadinessPath =
+      '/app-register-api/vendor/v1/readiness';
 
   final ApiClient _apiClient;
 
@@ -152,11 +197,56 @@ class LiveReadOnlyRepository {
     ];
   }
 
+  Future<VendorReadinessOverview> fetchVendorReadiness() async {
+    final ApiResponse response = await _apiClient.get(_vendorReadinessPath);
+    final Map<String, Object?> data = _map(response.data);
+    final Map<String, Object?> rawCapabilities = _map(data['capabilities']);
+    final Map<String, VendorCapabilityReadiness> capabilities =
+        <String, VendorCapabilityReadiness>{};
+    for (final MapEntry<String, Object?> entry in rawCapabilities.entries) {
+      final Map<String, Object?> raw = _map(entry.value);
+      capabilities[entry.key] = VendorCapabilityReadiness(
+        capability: _string(raw['capability'], fallback: entry.key),
+        boundaryStatus: _string(raw['boundaryStatus'], fallback: 'UNKNOWN'),
+        runtimeStatus: _string(raw['runtimeStatus'], fallback: 'UNKNOWN'),
+        provider: _string(raw['provider'], fallback: 'UNCONFIGURED'),
+        missingConfiguration: _strings(raw['missingConfiguration']),
+        serverOnlySecretProperties: _strings(
+          raw['serverOnlySecretProperties'],
+        ),
+        adapterContract: _string(raw['adapterContract']),
+        securityBoundary: _string(raw['securityBoundary']),
+      );
+    }
+    final String contractVersion = _string(data['contractVersion']);
+    if (contractVersion.isEmpty || capabilities.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '厂商接入准备响应字段不完整',
+      );
+    }
+    return VendorReadinessOverview(
+      contractVersion: contractVersion,
+      integrationStatus: _string(data['integrationStatus']),
+      runtimeStatus: _string(data['runtimeStatus']),
+      allBoundariesReady: data['allBoundariesReady'] == true,
+      allRuntimeAdaptersReady: data['allRuntimeAdaptersReady'] == true,
+      capabilities: Map<String, VendorCapabilityReadiness>.unmodifiable(
+        capabilities,
+      ),
+    );
+  }
+
   static Map<String, Object?> _map(Object? value) =>
       value is Map<String, Object?> ? value : <String, Object?>{};
 
   static List<Object?> _list(Object? value) =>
       value is List<Object?> ? value : <Object?>[];
+
+  static List<String> _strings(Object? value) => <String>[
+        for (final Object? item in _list(value))
+          if (_string(item).isNotEmpty) _string(item),
+      ];
 
   static int? _int(Object? value) {
     if (value is int) {
