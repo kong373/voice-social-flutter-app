@@ -1,0 +1,149 @@
+name: M3 one-shot self-hosted preflight dispatch bridge
+
+on:
+  workflow_run:
+    workflows:
+      - Flutter CI
+    types:
+      - completed
+
+permissions:
+  actions: write
+  contents: read
+  statuses: write
+
+concurrency:
+  group: m3-one-shot-preflight-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch-and-verify:
+    name: Dispatch and verify reviewed self-hosted preflight
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      contains(github.event.workflow_run.head_commit.message, '[dispatch-m3-self-hosted-preflight]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+      TARGET_WORKFLOW: m3-self-hosted-development-preflight.yml
+
+    steps:
+      - name: Mark preflight pending
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f state=pending \
+            -f context=m3/self-hosted-preflight \
+            -f description='Waiting for reviewed Mac self-hosted preflight' \
+            -f target_url="https://github.com/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW"
+
+      - name: Dispatch reviewed workflow on main
+        id: dispatch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          started_epoch="$(date -u +%s)"
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW/dispatches" \
+            -f ref=main
+
+          run_id=''
+          for _ in $(seq 1 90); do
+            run_id="$(
+              gh api \
+                "repos/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW/runs?event=workflow_dispatch&branch=main&per_page=20" \
+                --jq ".workflow_runs | map(select((.created_at | fromdateiso8601) >= ($started_epoch - 10))) | sort_by(.created_at) | reverse | .[0].id // empty"
+            )"
+            if [[ -n "$run_id" ]]; then
+              break
+            fi
+            sleep 2
+          done
+
+          if [[ -z "$run_id" ]]; then
+            echo 'Unable to locate the dispatched self-hosted run.' >&2
+            exit 1
+          fi
+
+          printf 'run_id=%s\n' "$run_id" >> "$GITHUB_OUTPUT"
+          printf 'run_url=https://github.com/%s/actions/runs/%s\n' "$GITHUB_REPOSITORY" "$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for self-hosted preflight
+        shell: bash
+        env:
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          gh run watch "$RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status
+
+      - name: Verify run conclusion and immutable business SHA
+        shell: bash
+        env:
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.conclusion')"
+          head_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.head_sha')"
+          test "$conclusion" = success
+          test "$head_sha" = "$TARGET_SHA"
+
+          evidence_dir="$RUNNER_TEMP/m3-self-hosted-evidence-$RUN_ID"
+          mkdir -p "$evidence_dir"
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --dir "$evidence_dir"
+
+          preflight_json="$(find "$evidence_dir" -type f -name 'flutter-preflight-redacted.json' -print -quit)"
+          tested_sha_file="$(find "$evidence_dir" -type f -name 'tested-git-sha.txt' -print -quit)"
+          test -n "$preflight_json"
+          test -n "$tested_sha_file"
+
+          jq -e '
+            .status == "gatewayReachable" and
+            .httpStatus == 200 and
+            .canAttemptAuthentication == true
+          ' "$preflight_json" >/dev/null
+          grep -Fxq 'tested_git_sha=f323b9abc1e0f77a1972b34e9190563681168b97' "$tested_sha_file"
+
+          if find "$evidence_dir" -type f \( -name '.env*' -o -name '*.pem' -o -name '*.key' \) -print -quit | grep -q .; then
+            echo 'Sensitive file type found in preflight artifact.' >&2
+            exit 1
+          fi
+
+      - name: Mark preflight successful
+        if: success()
+        shell: bash
+        env:
+          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f state=success \
+            -f context=m3/self-hosted-preflight \
+            -f description="M3 gateway preflight passed (run $RUN_ID)" \
+            -f target_url="$RUN_URL"
+
+      - name: Mark preflight failed
+        if: failure()
+        shell: bash
+        env:
+          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          target_url="${RUN_URL:-https://github.com/$GITHUB_REPOSITORY/actions/workflows/$TARGET_WORKFLOW}"
+          description='M3 self-hosted preflight failed'
+          if [[ -n "${RUN_ID:-}" ]]; then
+            description="M3 self-hosted preflight failed (run $RUN_ID)"
+          fi
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f state=failure \
+            -f context=m3/self-hosted-preflight \
+            -f description="$description" \
+            -f target_url="$target_url"
