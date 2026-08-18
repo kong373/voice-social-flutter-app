@@ -19,6 +19,7 @@ class ApiResponse {
 }
 
 typedef AuthorizationProvider = String? Function();
+typedef RequestHeadersProvider = Map<String, String> Function();
 
 class ApiClient {
   ApiClient({
@@ -26,34 +27,40 @@ class ApiClient {
     required this.clientType,
     required this.clientInnerVersion,
     required AuthorizationProvider authorizationProvider,
+    RequestHeadersProvider? requestHeadersProvider,
     HttpClient? httpClient,
     this.timeout = const Duration(seconds: 15),
   })  : _baseUri = baseUri,
         _authorizationProvider = authorizationProvider,
+        _requestHeadersProvider = requestHeadersProvider,
         _httpClient = httpClient ?? HttpClient();
 
   final Uri _baseUri;
   final String clientType;
   final String clientInnerVersion;
   final AuthorizationProvider _authorizationProvider;
+  final RequestHeadersProvider? _requestHeadersProvider;
   final HttpClient _httpClient;
   final Duration timeout;
 
   Future<ApiResponse> get(
     String path, {
     Map<String, String>? query,
+    Map<String, String>? headers,
     bool authenticated = true,
   }) =>
       _request(
         method: 'GET',
         path: path,
         query: query,
+        headers: headers,
         authenticated: authenticated,
       );
 
   Future<ApiResponse> put(
     String path, {
     Map<String, String>? query,
+    Map<String, String>? headers,
     Map<String, Object?>? body,
     bool authenticated = true,
   }) =>
@@ -61,6 +68,7 @@ class ApiClient {
         method: 'PUT',
         path: path,
         query: query,
+        headers: headers,
         body: body,
         authenticated: authenticated,
       );
@@ -68,6 +76,7 @@ class ApiClient {
   Future<ApiResponse> patch(
     String path, {
     Map<String, String>? query,
+    Map<String, String>? headers,
     Map<String, Object?>? body,
     bool authenticated = true,
   }) =>
@@ -75,6 +84,7 @@ class ApiClient {
         method: 'PATCH',
         path: path,
         query: query,
+        headers: headers,
         body: body,
         authenticated: authenticated,
       );
@@ -82,6 +92,7 @@ class ApiClient {
   Future<ApiResponse> post(
     String path, {
     Map<String, String>? query,
+    Map<String, String>? headers,
     Map<String, Object?>? body,
     bool authenticated = true,
   }) =>
@@ -89,6 +100,7 @@ class ApiClient {
         method: 'POST',
         path: path,
         query: query,
+        headers: headers,
         body: body,
         authenticated: authenticated,
       );
@@ -96,6 +108,7 @@ class ApiClient {
   Future<ApiResponse> delete(
     String path, {
     Map<String, String>? query,
+    Map<String, String>? headers,
     Map<String, Object?>? body,
     bool authenticated = true,
   }) =>
@@ -103,6 +116,7 @@ class ApiClient {
         method: 'DELETE',
         path: path,
         query: query,
+        headers: headers,
         body: body,
         authenticated: authenticated,
       );
@@ -112,6 +126,7 @@ class ApiClient {
     required String path,
     required bool authenticated,
     Map<String, String>? query,
+    Map<String, String>? headers,
     Map<String, Object?>? body,
   }) async {
     if (!_baseUri.hasScheme || _baseUri.host.isEmpty) {
@@ -132,6 +147,9 @@ class ApiClient {
         ..set(HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8')
         ..set('Client-Type', clientType)
         ..set('Client-Inner-Version', clientInnerVersion);
+
+      _applyHeaders(request, _requestHeadersProvider?.call());
+      _applyHeaders(request, headers);
 
       if (authenticated) {
         final String? authorization = _authorizationProvider();
@@ -208,6 +226,22 @@ class ApiClient {
         message: '网络请求失败',
         cause: error,
       );
+    }
+  }
+
+  static void _applyHeaders(
+    HttpClientRequest request,
+    Map<String, String>? headers,
+  ) {
+    if (headers == null || headers.isEmpty) {
+      return;
+    }
+    for (final MapEntry<String, String> entry in headers.entries) {
+      final String name = entry.key.trim();
+      final String value = entry.value.trim();
+      if (name.isNotEmpty && value.isNotEmpty) {
+        request.headers.set(name, value);
+      }
     }
   }
 
