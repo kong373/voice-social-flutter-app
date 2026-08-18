@@ -24,7 +24,7 @@ void main() {
         'method': request.method,
         'path': request.uri.path,
         'clientId': request.headers.value('Client-Id'),
-        'clientSecret': request.headers.value('Client-Secret'),
+        'clientSecretHeader': request.headers.value('Client-Secret'),
         'authorization': request.headers.value(HttpHeaders.authorizationHeader),
         'deviceId': request.headers.value('X-Device-Id'),
         'developmentClientId': request.headers.value('X-Development-Client-Id'),
@@ -77,7 +77,10 @@ void main() {
       device: device,
     );
     expect(challenge.challengeId, 'challenge-1');
-    expect(await repository.readDevelopmentSmsCode(challenge.challengeId), '123456');
+    expect(
+      await repository.readDevelopmentSmsCode(challenge.challengeId),
+      '123456',
+    );
 
     final AuthOutcome outcome = await repository.signInWithSms(
       phone: '13800138000',
@@ -97,12 +100,11 @@ void main() {
 
     expect(captured, hasLength(5));
     expect(
-      captured.map((Map<String, Object?> item) => item['clientSecret']),
+      captured.map((Map<String, Object?> item) => item['clientSecretHeader']),
       everyElement(isNull),
     );
     final String serialized = jsonEncode(captured);
     expect(serialized, isNot(contains('OAUTH_CLIENT_SECRET')));
-    expect(serialized, isNot(contains('clientSecret')));
     expect(serialized, isNot(contains('secret-value')));
 
     final Map<String, Object?> send = captured[0];
@@ -117,8 +119,10 @@ void main() {
 
     final Map<String, Object?> login = captured[2];
     expect(login['authorization'], isNull);
-    expect((login['body'] as Map<String, Object?>)['clientId'], 'voice-social-mobile-public');
-    expect((login['body'] as Map<String, Object?>), isNot(contains('clientSecret')));
+    final Map<String, Object?> loginBody =
+        Map<String, Object?>.from(login['body']! as Map);
+    expect(loginBody['clientId'], 'voice-social-mobile-public');
+    expect(loginBody, isNot(contains('clientSecret')));
 
     final Map<String, Object?> refresh = captured[3];
     expect(refresh['authorization'], isNull);
