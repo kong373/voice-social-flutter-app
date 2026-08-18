@@ -21,10 +21,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 PUBLIC_CLIENT_ID = "voice-social-mobile-public"
-DEVELOPMENT_OUTBOX_KEY = "ci-development-outbox"
 
 SEND_SMS = "/app-register-api/util/v1/sendSmsCode"
-SMS_OUTBOX = "/internal/development/sms-outbox/challenge-1"
 LOGIN = "/app-register-api/userAccount/v1/loginByMobileAndSmsCode"
 REGISTER = "/app-register-api/userAccount/v1/registerByMobile"
 REFRESH = "/app-register-api/userAccount/v1/refreshSession"
@@ -41,7 +39,6 @@ SUMMARY = "/__qa__/summary"
 
 REQUIRED_ENDPOINTS = {
     SEND_SMS,
-    SMS_OUTBOX,
     LOGIN,
     HOME,
     SEARCH,
@@ -54,7 +51,7 @@ REQUIRED_ENDPOINTS = {
     LOGOUT,
 }
 
-PUBLIC_ENDPOINTS = {"/", SEND_SMS, SMS_OUTBOX, LOGIN, REGISTER, REFRESH, SUMMARY}
+PUBLIC_ENDPOINTS = {"/", SEND_SMS, LOGIN, REGISTER, REFRESH, SUMMARY}
 
 
 @dataclass
@@ -91,9 +88,9 @@ class ServerState:
                 "clientId": headers.get("client-id"),
                 "authorizationPresent": bool(headers.get("authorization")),
                 "deviceIdPresent": bool(headers.get("x-device-id")),
-                "developmentOutboxHeadersPresent": bool(
+                "confidentialOutboxHeadersPresent": bool(
                     headers.get("x-development-client-id")
-                    and headers.get("x-development-outbox-key")
+                    or headers.get("x-development-outbox-key")
                 ),
                 "bodyKeys": sorted(body.keys()) if isinstance(body, dict) else [],
                 "violation": violation,
@@ -110,10 +107,11 @@ class ServerState:
     def _snapshot_locked(self) -> dict[str, Any]:
         missing = sorted(REQUIRED_ENDPOINTS - self.observed)
         return {
-            "contractVersion": "m3.2-avd-contract-v1",
+            "contractVersion": "m3.2-avd-contract-v2",
             "providerCallsMade": False,
             "publicClientId": PUBLIC_CLIENT_ID,
             "oauthClientSecretObserved": False,
+            "confidentialOutboxCredentialObserved": False,
             "requestCount": self.request_count,
             "observedEndpoints": sorted(self.observed),
             "requiredEndpoints": sorted(REQUIRED_ENDPOINTS),
@@ -131,7 +129,7 @@ class ServerState:
 
 
 class ContractHandler(BaseHTTPRequestHandler):
-    server_version = "VoiceSocialM32Contract/1.0"
+    server_version = "VoiceSocialM32Contract/2.0"
     protocol_version = "HTTP/1.1"
 
     @property
@@ -139,7 +137,6 @@ class ContractHandler(BaseHTTPRequestHandler):
         return self.server.state  # type: ignore[attr-defined]
 
     def log_message(self, fmt: str, *args: Any) -> None:
-        # Structured evidence is written by ServerState.record().
         return
 
     def do_GET(self) -> None:  # noqa: N802
@@ -211,6 +208,8 @@ class ContractHandler(BaseHTTPRequestHandler):
         length = int(raw_length) if raw_length and raw_length.isdigit() else 0
         if length <= 0:
             return None
+        if length > 1024 * 1024:
+            raise ValueError("REQUEST_BODY_TOO_LARGE")
         raw = self.rfile.read(length)
         if not raw.strip():
             return None
@@ -231,6 +230,8 @@ class ContractHandler(BaseHTTPRequestHandler):
             "oauth_client_secret",
             "client-secret",
             "clientsecret",
+            "development_outbox_key",
+            "x-development-outbox-key",
             "access-key-secret",
             "app-certificate",
             "secret-key",
@@ -240,15 +241,9 @@ class ContractHandler(BaseHTTPRequestHandler):
         if any(token in lowered_headers or token in lowered_body for token in forbidden_tokens):
             return "MOBILE_SECRET_BOUNDARY_VIOLATION"
 
-        if path not in {"/", SUMMARY, SMS_OUTBOX}:
+        if path not in {"/", SUMMARY}:
             if headers.get("client-id") != PUBLIC_CLIENT_ID:
                 return "PUBLIC_CLIENT_ID_REQUIRED"
-
-        if path == SMS_OUTBOX:
-            if headers.get("x-development-client-id") != PUBLIC_CLIENT_ID:
-                return "DEVELOPMENT_CLIENT_ID_REQUIRED"
-            if headers.get("x-development-outbox-key") != DEVELOPMENT_OUTBOX_KEY:
-                return "DEVELOPMENT_OUTBOX_KEY_REQUIRED"
 
         authorization = headers.get("authorization", "")
         if path not in PUBLIC_ENDPOINTS and authorization not in {
@@ -256,7 +251,7 @@ class ContractHandler(BaseHTTPRequestHandler):
             "Bearer access-2",
         }:
             return "BEARER_TOKEN_REQUIRED"
-        if path in {SEND_SMS, SMS_OUTBOX, LOGIN, REGISTER, REFRESH} and authorization:
+        if path in {SEND_SMS, LOGIN, REGISTER, REFRESH} and authorization:
             return "PUBLIC_AUTH_ENDPOINT_MUST_NOT_SEND_BEARER"
         return None
 
@@ -271,20 +266,13 @@ class ContractHandler(BaseHTTPRequestHandler):
                 raise ValueError("SEND_SMS_REQUIRES_PUT")
             if query.get("mobileNumber", [""])[0] != "13800138000":
                 raise ValueError("UNEXPECTED_MOBILE_NUMBER")
-            if self.headers.get("X-Device-Id") != "m32-avd-install-id":
-                # The actual install ID is generated per install. Presence is the
-                # contract; the value must not be treated as a provider secret.
-                if not self.headers.get("X-Device-Id"):
-                    raise ValueError("DEVICE_ID_REQUIRED")
-            return {"challengeId": "challenge-1", "expiresIn": 300, "retryAfter": 1}
-        if path == SMS_OUTBOX:
+            if not self.headers.get("X-Device-Id"):
+                raise ValueError("DEVICE_ID_REQUIRED")
             return {
                 "challengeId": "challenge-1",
-                "phone": "138****8000",
-                "purpose": "1",
-                "code": "123456",
-                "expiresAt": "2026-08-18T23:59:59Z",
-                "createdAt": "2026-08-18T12:00:00Z",
+                "expiresIn": 300,
+                "retryAfter": 1,
+                "developmentCode": "123456",
             }
         if path == LOGIN:
             self._require_body_values(
@@ -308,7 +296,7 @@ class ContractHandler(BaseHTTPRequestHandler):
                         "roomIdStr": "880217",
                         "roomCode": "880217",
                         "roomName": "深夜陪伴电台",
-                        "description": "真实接口只读快照",
+                        "description": "轻松陪伴，分享今天发生的小确幸",
                         "liveCount": 27,
                         "heatValue": 88,
                         "micUserHeadImgs": ["a", "b", "c"],
@@ -319,13 +307,13 @@ class ContractHandler(BaseHTTPRequestHandler):
                     {
                         "roomIdStr": "990018",
                         "roomCode": "990018",
-                        "roomName": "厂商接入讨论室",
-                        "description": "RTC 与 IM 接入前保持关闭",
+                        "roomName": "新朋友友好房",
+                        "description": "先听听也很好，随时欢迎加入聊天",
                         "liveCount": 12,
                         "heatValue": 0,
                         "micUserHeadImgs": ["a"],
                         "userId": 20002,
-                        "nickName": "架构师",
+                        "nickName": "小屿",
                         "isLockRoom": 0,
                     },
                 ],
@@ -339,7 +327,7 @@ class ContractHandler(BaseHTTPRequestHandler):
                         "roomIdStr": "880217",
                         "roomCode": "880217",
                         "roomName": "深夜陪伴电台",
-                        "description": f"搜索命中：{keyword}",
+                        "description": f"与“{keyword}”相关的语音房",
                         "liveCount": 27,
                         "heatValue": 88,
                         "micUserHeadImgs": ["a", "b", "c"],
@@ -368,18 +356,21 @@ class ContractHandler(BaseHTTPRequestHandler):
                 "roomIdStr": "880217",
                 "roomCode": "880217",
                 "roomName": "深夜陪伴电台",
-                "topicContent": "HTTP_SNAPSHOT_ONLY：未加入 RTC，未连接 IM",
+                "topicContent": "轻松陪伴，分享今天发生的小确幸",
                 "ownerId": 20001,
                 "onlineNum": 27,
+                "realtimeMode": "HTTP_SNAPSHOT_ONLY",
+                "rtcStatus": "VENDOR_BLOCKED",
+                "imStatus": "VENDOR_BLOCKED",
                 "seats": [
-                    {"index": 0, "status": 1, "userId": 20001, "userName": "南风"},
-                    {"index": 1, "status": 1, "userId": 20002, "userName": "听众甲"},
-                    {"index": 2, "status": 0},
+                    {"index": 1, "status": 1, "userId": 20001, "userName": "南风"},
+                    {"index": 2, "status": 1, "userId": 20002, "userName": "听众甲"},
                     {"index": 3, "status": 0},
                     {"index": 4, "status": 0},
                     {"index": 5, "status": 0},
                     {"index": 6, "status": 0},
                     {"index": 7, "status": 0},
+                    {"index": 8, "status": 0},
                 ],
             }
         if path == CURRENT_USER:
@@ -387,8 +378,8 @@ class ContractHandler(BaseHTTPRequestHandler):
                 "userId": 10001,
                 "loginName": "account-10001",
                 "nickName": "开发验收用户",
-                "mobile": "13800138000",
-                "roles": "USER",
+                "mobile": "138****8000",
+                "roles": "ROLE_USER",
                 "status": "ACTIVE",
             }
         if path == NCOIN:
@@ -402,8 +393,8 @@ class ContractHandler(BaseHTTPRequestHandler):
                         "orderNo": "P202608180001",
                         "amount": 6,
                         "ncoin": 600,
-                        "payType": "WECHAT",
-                        "status": "PAID",
+                        "payType": "微信支付",
+                        "status": "SUCCEEDED",
                         "createDate": "2026-08-18T12:00:00Z",
                     }
                 ],
@@ -430,8 +421,8 @@ class ContractHandler(BaseHTTPRequestHandler):
             "refresh_token": refresh_token,
             "refresh_expires_in": 2592000,
             "userId": 10001,
-            "mobile": "13800138000",
-            "roles": "USER",
+            "mobile": "138****8000",
+            "roles": "ROLE_USER",
             "roomId": None,
         }
 
@@ -445,12 +436,14 @@ class ContractHandler(BaseHTTPRequestHandler):
                 "app.vendor.sms.sign-name",
                 "app.vendor.sms.login-template-id",
                 "app.vendor.sms.adapter-enabled=true",
+                "app.vendor.sms.adapter-bean",
             ],
             "RTC": [
                 "app.vendor.rtc.provider",
                 "app.vendor.rtc.app-id",
                 "app.vendor.rtc.app-certificate",
                 "app.vendor.rtc.adapter-enabled=true",
+                "app.vendor.rtc.adapter-bean",
             ],
             "IM": [
                 "app.vendor.im.provider",
@@ -458,6 +451,7 @@ class ContractHandler(BaseHTTPRequestHandler):
                 "app.vendor.im.admin-user",
                 "app.vendor.im.secret-key",
                 "app.vendor.im.adapter-enabled=true",
+                "app.vendor.im.adapter-bean",
             ],
             "PAYMENT": [
                 "app.vendor.payment.provider",
@@ -465,6 +459,23 @@ class ContractHandler(BaseHTTPRequestHandler):
                 "app.vendor.payment.private-key",
                 "app.vendor.payment.webhook-secret",
                 "app.vendor.payment.adapter-enabled=true",
+                "app.vendor.payment.adapter-bean",
+            ],
+            "PUSH": [
+                "app.vendor.push.provider",
+                "app.vendor.push.app-id",
+                "app.vendor.push.server-key",
+                "app.vendor.push.adapter-enabled=true",
+                "app.vendor.push.adapter-bean",
+            ],
+            "OBJECT_STORAGE": [
+                "app.vendor.object-storage.provider",
+                "app.vendor.object-storage.bucket",
+                "app.vendor.object-storage.region",
+                "app.vendor.object-storage.access-key-id",
+                "app.vendor.object-storage.access-key-secret",
+                "app.vendor.object-storage.adapter-enabled=true",
+                "app.vendor.object-storage.adapter-bean",
             ],
         }
         contracts = {
@@ -472,9 +483,11 @@ class ContractHandler(BaseHTTPRequestHandler):
             "RTC": "VendorPorts.RtcTokenPort",
             "IM": "VendorPorts.ImCredentialPort",
             "PAYMENT": "VendorPorts.PaymentGatewayPort",
+            "PUSH": "VendorPorts.PushNotificationPort",
+            "OBJECT_STORAGE": "VendorPorts.ObjectStoragePort",
         }
         return {
-            "contractVersion": "vendor-boundary-v1",
+            "contractVersion": "vendor-boundary-v2",
             "integrationStatus": "READY_FOR_PROVIDER_INTEGRATION",
             "runtimeStatus": "VENDOR_BLOCKED",
             "allBoundariesReady": True,
@@ -493,6 +506,7 @@ class ContractHandler(BaseHTTPRequestHandler):
                                 "secret",
                                 "certificate",
                                 "private-key",
+                                "server-key",
                             )
                         )
                     ],
