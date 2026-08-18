@@ -30,6 +30,8 @@ class AuthSession {
   bool get isAccessExpired => !expiresAt.isAfter(DateTime.now());
   bool get isRefreshExpired => !refreshExpiresAt.isAfter(DateTime.now());
   bool get canRefresh => refreshToken.isNotEmpty && !isRefreshExpired;
+  bool get shouldRefreshAccess =>
+      !expiresAt.isAfter(DateTime.now().add(const Duration(seconds: 30)));
 
   /// Backward-compatible alias for code that only reasons about access tokens.
   bool get isExpired => isAccessExpired;
