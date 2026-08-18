@@ -15,7 +15,7 @@ jobs:
     name: Read-only development gateway preflight
     runs-on: [self-hosted, macOS, ARM64, m3-dev]
     environment: development
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       TESTED_GIT_SHA: f323b9abc1e0f77a1972b34e9190563681168b97
       M3_API_BASE_URL: ${{ secrets.M3_API_BASE_URL }}
