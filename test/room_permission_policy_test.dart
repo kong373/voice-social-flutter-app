@@ -8,6 +8,7 @@ void main() {
   RoomSnapshot snapshot(
     RoomRole role, {
     bool giftCatalogAvailable = true,
+    RoomTransportMode transportMode = RoomTransportMode.interactive,
   }) =>
       RoomSnapshot(
         roomId: '1',
@@ -23,6 +24,7 @@ void main() {
           channelId: '1',
           userId: 2,
         ),
+        transportMode: transportMode,
         publicScreenEnabled: true,
         pictureMessagesAllowed: false,
         autoLockMic: false,
@@ -84,5 +86,24 @@ void main() {
       ),
       isTrue,
     );
+  });
+
+  test('snapshot-only room denies every write even for the owner', () {
+    final RoomSnapshot room = snapshot(
+      RoomRole.owner,
+      transportMode: RoomTransportMode.snapshotOnly,
+    );
+    for (final RoomCapability capability in RoomCapability.values) {
+      final bool allowed = policy.allows(
+        snapshot: room,
+        capability: capability,
+        isOnMic: true,
+      );
+      expect(
+        allowed,
+        capability == RoomCapability.viewMembers,
+        reason: '$capability must remain fail-closed in snapshot-only mode',
+      );
+    }
   });
 }
