@@ -6,8 +6,6 @@ abstract interface class AuthRepository {
     required ClientDevice device,
   });
 
-  Future<String?> readDevelopmentSmsCode(String challengeId);
-
   Future<AuthOutcome> signInWithSms({
     required String phone,
     required String smsCode,
