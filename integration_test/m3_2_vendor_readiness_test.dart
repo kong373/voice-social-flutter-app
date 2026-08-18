@@ -65,21 +65,18 @@ void main() {
       await tester.tap(find.text('获取验证码').hitTestable());
       await _waitFor(
         tester,
-        () {
-          final Iterable<TextFormField> fields =
-              tester.widgetList<TextFormField>(codeField);
-          return fields.isNotEmpty &&
-              fields.first.controller?.text == '123456';
-        },
-        description: 'development SMS outbox autofill',
+        () => find.textContaining('验证码已发送').evaluate().isNotEmpty,
+        description: 'SMS challenge accepted',
       );
-      expect(find.textContaining('仅开发环境可见：验证码 123456'), findsOneWidget);
+      // The trusted contract runner knows the deterministic test code. The
+      // app itself never receives or embeds development-outbox credentials.
+      await tester.enterText(codeField, '123456');
       await captureQaScreenshot(
         tester,
         binding,
         'm32-${qaAvdId.toLowerCase()}-02-public-client-login',
       );
-      await announceQaEvidence(tester, 'M32_SMS_OUTBOX_READY');
+      await announceQaEvidence(tester, 'M32_SMS_CHALLENGE_READY');
 
       await tester.ensureVisible(find.text('登录 / 注册'));
       await tester.tap(find.text('登录 / 注册').hitTestable());
@@ -267,6 +264,7 @@ void main() {
         'logicalViewport': '${_expectedWidth.toInt()}x${_expectedHeight.toInt()}',
         'devicePixelRatio': _expectedDpr,
         'publicClientSecretPresent': false,
+        'developmentOutboxSecretPresent': false,
         'providerCallsMade': false,
         'vendorIntegrationStatus': 'READY_FOR_PROVIDER_INTEGRATION',
         'vendorRuntimeStatus': 'VENDOR_BLOCKED',
