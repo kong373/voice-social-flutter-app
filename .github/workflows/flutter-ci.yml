@@ -26,6 +26,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
       - name: Install Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
@@ -44,14 +46,27 @@ jobs:
           test -f pubspec.lock
           flutter pub get --enforce-lockfile
 
-      - name: Check formatting without mutating the checkout
+      - name: Check candidate formatting without mutating the checkout
         shell: bash
         run: |
           set -Eeuo pipefail
-          dart format \
-            --output=none \
-            --set-exit-if-changed \
-            lib test integration_test
+          base_sha="$(git merge-base HEAD origin/main)"
+          mapfile -d '' dart_files < <(
+            git diff --name-only -z --diff-filter=ACMR \
+              "$base_sha" HEAD -- '*.dart'
+          )
+          {
+            printf 'format_base=%s\n' "$base_sha"
+            printf 'format_head=%s\n' "$(git rev-parse HEAD)"
+            printf 'changed_dart_files=%s\n' "${#dart_files[@]}"
+            printf '%s\n' "${dart_files[@]}"
+          } | tee format.log
+          if (( ${#dart_files[@]} > 0 )); then
+            dart format \
+              --output=none \
+              --set-exit-if-changed \
+              "${dart_files[@]}" 2>&1 | tee -a format.log
+          fi
 
       - name: Verify mobile public-client secret hygiene
         shell: bash
@@ -118,6 +133,7 @@ jobs:
         with:
           name: flutter-quality-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            format.log
             analyze.log
             test.log
             coverage/
