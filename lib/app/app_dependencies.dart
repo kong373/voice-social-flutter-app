@@ -95,6 +95,11 @@ class AppDependencies {
       clientType: environment.clientType,
       clientInnerVersion: environment.clientInnerVersion,
       authorizationProvider: () => sessionManager.authorizationHeader,
+      requestHeadersProvider: () => <String, String>{
+        if (environment.oauthClientId.trim().isNotEmpty)
+          'Client-Id': environment.oauthClientId,
+      },
+      timeout: environment.apiTimeout,
     );
     const BackendRouteCatalog routes = BackendRouteCatalog();
     final AuthRepository authRepository = environment.isLive
@@ -176,7 +181,7 @@ class AppDependencies {
         ? BackendRoomPkRepository(apiClient: apiClient, routes: routes)
         : MockRoomPkRepository();
     final RtcAdapter rtcAdapter = environment.isLive
-        ? const UnavailableRtcAdapter()
+        ? const SnapshotOnlyRtcAdapter()
         : MockRtcAdapter();
     final RoomRealtimeGateway realtimeGateway = environment.isLive
         ? const UnavailableRoomRealtimeGateway()
@@ -184,11 +189,10 @@ class AppDependencies {
     final RoomAudioService roomAudioService = environment.isLive
         ? const UnavailableRoomAudioService()
         : MockRoomAudioService();
-    final DeviceIdentityProvider deviceIdentityProvider =
-        DeviceIdentityProvider(
-          environment: environment,
-          sessionManager: sessionManager,
-        );
+    final DeviceIdentityProvider deviceIdentityProvider = DeviceIdentityProvider(
+      environment: environment,
+      sessionManager: sessionManager,
+    );
     final AuthController authController = AuthController(
       repository: authRepository,
       sessionManager: sessionManager,
