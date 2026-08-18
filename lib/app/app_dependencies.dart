@@ -202,6 +202,7 @@ class AppDependencies {
       sessionManager: sessionManager,
       deviceIdentityProvider: deviceIdentityProvider,
     );
+    apiClient.setUnauthorizedRecovery(authController.refreshSession);
     return AppDependencies._(
       environment: environment,
       sessionManager: sessionManager,
