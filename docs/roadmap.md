@@ -1,71 +1,50 @@
 # Delivery Roadmap
 
-## M0 — Foundation — complete
+## Completed baseline — M0 to M2.4
 
-- Flutter package and CI.
-- Frozen 69-page manifest.
-- Dark premium design baseline.
-- Four-root navigation.
-- Executable home-to-room slice.
-- Fixed eight-seat room model.
-- In-room gift sheet and leave flow.
+Merged into `main`:
 
-## M1 — Real room loop — in progress
+- Flutter foundation and fixed 69 Page IDs.
+- Account, compliance, discovery, social, room, message, commerce, community, and PK business layers.
+- Fixed eight-seat room model and in-room ordinary-gift Bottom Sheet.
+- Mock-backed offline flows, role/state fixtures, and fail-closed provider boundaries.
+- Android dual-emulator acceptance for the 69-page mock baseline.
 
-### Current checkpoint
+## M3 — Authorized development integration — current
 
-- AC-001 session restoration.
-- AC-002 agreement and privacy consent.
-- AC-003 SMS login and registration branch.
-- Secure session persistence.
-- Redacted HTTP client and backend route catalog.
-- Room entry, room-info, reconnect, exit, mic, public-screen, and ordinary-gift repository contracts.
-- Fixed eight-seat legacy adapter, including special backend seat zero.
-- Room role/capability policy.
-- RTC and realtime transport ports.
-- Realtime event allowlist.
-- Executable mock flow and CI regression tests.
+### M3.1 Development gateway readiness
 
-### Remaining M1 work
+- Redacted runtime profiles and configuration validation.
+- HTTPS and timeout policy.
+- Side-effect-free gateway reachability probe.
+- Manual protected-environment CI preflight.
+- No SMS, login, payment, RTC, or IM side effects.
 
-- Approved Agora/Zego Flutter RTC driver and token renewal.
-- Approved Netty/MQTT/IM realtime driver and heartbeat protocol.
-- Real development gateway and non-production credentials.
-- RM-005 approval/invite workflow with room-owner account pairing.
-- RM-006 full listener pagination/state.
-- RM-007 owner/moderator actions and audit feedback.
-- RM-008 announcement editing.
-- RM-009 native share targets.
-- RM-010 actual audio route controls.
-- RM-011 background, interruption, multi-device, and token-expiry recovery.
-- RM-012 measured network and audio diagnostics.
-- Server-backed gift catalog and wallet balance.
-- DS-002 and DS-003 real search endpoints.
+### M3.2 Authentication and read-only contracts
 
-## M2 — Room creation, messaging, and PK
+- Non-production SMS and login account.
+- Secure live session persistence and expiry recovery.
+- Home recommendation, search, user profile, and room validation reads.
+- HTTP room snapshot and exit behavior without RTC publication.
+- Wallet, order, earnings, and withdrawal read-only verification.
 
-- RM-001, RM-002, RM-013, RM-014.
-- MS-001 to MS-006.
-- notification-to-room routing and unavailable recovery.
+### M3.3 Room transport integration
 
-## M3 — Account, profile, and social graph
+- Approved RTC driver, token renewal, join/leave, publication, and audio route.
+- Approved room realtime/IM transport, heartbeat, reconnect, and event allowlist.
+- Multi-device and token-expiry recovery.
 
-- Remaining AC pages.
-- US-001 to US-010.
-- DS-004 to DS-008.
+## M4 — Provider and commercial integration
 
-## M4 — Commerce
+- Tencent IM private messaging and notification sync.
+- Android WeChat Pay and Alipay.
+- iOS Apple IAP.
+- Object storage, push, native permission, and share adapters.
+- Server-authoritative reconciliation, refund, earnings, and withdrawal verification.
 
-- CM-001 to CM-012.
-- Android WeChat Pay and Alipay adapters.
-- iOS Apple IAP adapter.
-- order, reconciliation, refund, earning, and withdrawal states.
-- youth mode blocks only new recharge orders.
+## M5 — Release readiness
 
-## M5 — Community and release readiness
-
-- SC-001 to SC-007.
-- four viewport checks.
-- real 1.3× text-scale layouts.
-- accessibility and role regression.
-- Android/iOS release pipelines.
+- Android physical-device matrix.
+- iOS Simulator and iPhone matrix.
+- Release signing, app-store bundles, privacy manifests, and compliance evidence.
+- Performance, accessibility, security, rollback, and operations rehearsal.

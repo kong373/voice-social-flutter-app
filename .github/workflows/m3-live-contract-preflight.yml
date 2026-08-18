@@ -1,0 +1,59 @@
+name: M3 development gateway preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe_path:
+        description: Side-effect-free gateway path used only for transport reachability
+        required: false
+        default: /
+
+permissions:
+  contents: read
+
+jobs:
+  gateway-preflight:
+    name: Validate redacted configuration and gateway reachability
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: development
+    env:
+      M3_API_BASE_URL: ${{ secrets.M3_API_BASE_URL }}
+      M3_OAUTH_CLIENT_ID: ${{ secrets.M3_OAUTH_CLIENT_ID }}
+      M3_OAUTH_CLIENT_SECRET: ${{ secrets.M3_OAUTH_CLIENT_SECRET }}
+      M3_CLIENT_TYPE: Android
+      M3_CLIENT_INNER_VERSION: "1"
+      M3_APP_ENV: development
+      M3_API_TIMEOUT_SECONDS: "15"
+      M3_PROBE_PATH: ${{ inputs.probe_path }}
+      M3_ALLOW_INSECURE_HTTP: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.7"
+          channel: stable
+          cache: true
+
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Run side-effect-free gateway preflight
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p artifacts/m3-preflight
+          dart run tool/m3_live_preflight.dart \
+            2>&1 | tee artifacts/m3-preflight/readiness.json
+
+      - name: Upload redacted readiness evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m3-live-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/m3-preflight/
+          retention-days: 14
+          if-no-files-found: error

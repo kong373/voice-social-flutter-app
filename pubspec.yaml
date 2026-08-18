@@ -1,7 +1,7 @@
 name: voice_social_app
 description: Clean-room Flutter client for a Chinese voice social product.
 publish_to: "none"
-version: 0.5.0+5
+version: 0.6.0+6
 
 environment:
   sdk: ">=3.12.0 <4.0.0"
