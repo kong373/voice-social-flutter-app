@@ -1,4 +1,5 @@
 name: M3 one-shot self-hosted preflight dispatch bridge
+# A main workflow title containing the reviewed marker authorizes one bounded preflight run.
 
 on:
   workflow_run:
