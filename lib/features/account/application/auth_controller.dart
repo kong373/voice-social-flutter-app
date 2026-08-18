@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
@@ -10,6 +12,7 @@ enum AuthFlowStage {
   consentRequired,
   signedOut,
   registrationRequired,
+  recoveryRequired,
   signedIn,
 }
 
@@ -33,6 +36,7 @@ class AuthController extends ChangeNotifier {
   String? _pendingPhone;
   String? _pendingSmsCode;
   SmsChallenge? _lastSmsChallenge;
+  Future<bool>? _refreshInFlight;
 
   AuthFlowStage get stage => _stage;
   bool get busy => _busy;
@@ -57,16 +61,20 @@ class AuthController extends ChangeNotifier {
       final AuthSession? restored = await _sessionManager.restore();
       if (restored == null) {
         _stage = AuthFlowStage.signedOut;
-      } else if (restored.isAccessExpired) {
-        final AuthSession refreshed = await _repository.refreshSession(restored);
-        await _sessionManager.save(refreshed);
-        _stage = AuthFlowStage.signedIn;
+      } else if (restored.shouldRefreshAccess) {
+        await refreshSession();
       } else {
         _stage = AuthFlowStage.signedIn;
       }
-    } catch (_) {
+    } on FormatException {
       await _sessionManager.clear();
-      _errorMessage = '登录状态已失效，请重新登录';
+      _errorMessage = '本地登录信息损坏，请重新登录';
+      _stage = AuthFlowStage.signedOut;
+    } catch (error) {
+      // A secure-storage failure makes the local session state unverifiable.
+      // It is safer to clear it than to continue with unknown credentials.
+      await _sessionManager.clear();
+      _errorMessage = _messageFor(error, fallback: '登录状态无法恢复，请重新登录');
       _stage = AuthFlowStage.signedOut;
     }
     notifyListeners();
@@ -88,21 +96,10 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
     try {
       final ClientDevice device = await _deviceIdentityProvider.load();
-      SmsChallenge challenge = await _repository.sendSmsCode(
+      _lastSmsChallenge = await _repository.sendSmsCode(
         phone: phone.trim(),
         device: device,
       );
-      try {
-        final String? developmentCode =
-            await _repository.readDevelopmentSmsCode(challenge.challengeId);
-        if (developmentCode != null) {
-          challenge = challenge.copyWith(developmentCode: developmentCode);
-        }
-      } catch (_) {
-        // Delivery remains authoritative. Development outbox retrieval is an
-        // optional diagnostic aid and must never replace the SMS challenge.
-      }
-      _lastSmsChallenge = challenge;
       return true;
     } catch (error) {
       _setError(error);
@@ -189,11 +186,32 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<bool> refreshSession() async {
+  /// Rotates the refresh token once for every concurrent wave of 401s.
+  Future<bool> refreshSession() {
+    final Future<bool>? active = _refreshInFlight;
+    if (active != null) {
+      return active;
+    }
+    final Future<bool> future = _performRefresh();
+    _refreshInFlight = future;
+    unawaited(future.whenComplete(() {
+      if (identical(_refreshInFlight, future)) {
+        _refreshInFlight = null;
+      }
+    }));
+    return future;
+  }
+
+  Future<bool> _performRefresh() async {
     final AuthSession? current = _sessionManager.session;
-    if (_busy || current == null || !current.canRefresh) {
+    if (current == null || !current.canRefresh) {
+      await _sessionManager.clear();
+      _stage = AuthFlowStage.signedOut;
+      _errorMessage = '刷新会话已失效，请重新登录';
+      notifyListeners();
       return false;
     }
+
     _busy = true;
     _errorMessage = null;
     notifyListeners();
@@ -203,14 +221,32 @@ class AuthController extends ChangeNotifier {
       _stage = AuthFlowStage.signedIn;
       return true;
     } catch (error) {
-      await _sessionManager.clear();
-      _stage = AuthFlowStage.signedOut;
+      if (_isCredentialFailure(error)) {
+        await _sessionManager.clear();
+        _stage = AuthFlowStage.signedOut;
+      } else {
+        // Preserve a still-valid refresh token through transient network/server
+        // failures. The user can retry instead of being forced to request a new
+        // SMS code merely because the backend was temporarily unreachable.
+        _stage = current.isAccessExpired
+            ? AuthFlowStage.recoveryRequired
+            : AuthFlowStage.signedIn;
+      }
       _setError(error);
       return false;
     } finally {
       _busy = false;
       notifyListeners();
     }
+  }
+
+  Future<bool> retrySessionRecovery() => refreshSession();
+
+  Future<void> discardSessionAndSignOut() async {
+    await _sessionManager.clear();
+    _stage = AuthFlowStage.signedOut;
+    _errorMessage = null;
+    notifyListeners();
   }
 
   void cancelRegistration() {
@@ -236,7 +272,7 @@ class AuthController extends ChangeNotifier {
           await _repository.logout(current);
         } catch (_) {
           // Local credential deletion is mandatory even when the server cannot
-          // be reached. Rotating refresh tokens limit the residual exposure.
+          // be reached. Server-side refresh tokens remain bounded and rotated.
         }
       }
       await _sessionManager.clear();
@@ -261,7 +297,14 @@ class AuthController extends ChangeNotifier {
   }
 
   void _setError(Object error) {
-    _errorMessage =
-        error is ApiException ? error.message : '操作失败，请稍后重试';
+    _errorMessage = _messageFor(error, fallback: '操作失败，请稍后重试');
   }
+
+  static bool _isCredentialFailure(Object error) =>
+      error is ApiException &&
+      (error.isAuthenticationFailure ||
+          error.kind == ApiFailureKind.forbidden);
+
+  static String _messageFor(Object error, {required String fallback}) =>
+      error is ApiException ? error.message : fallback;
 }
