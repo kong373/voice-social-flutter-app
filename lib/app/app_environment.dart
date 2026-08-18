@@ -13,16 +13,14 @@ extension DeploymentEnvironmentLabel on DeploymentEnvironment {
   bool get requiresSecureTransport =>
       this == DeploymentEnvironment.staging ||
       this == DeploymentEnvironment.production;
-
-  bool get allowsDevelopmentTools =>
-      this == DeploymentEnvironment.local ||
-      this == DeploymentEnvironment.development;
 }
 
 /// Runtime configuration for the Flutter client.
 ///
 /// The mobile application is an OAuth public client. It carries only a public
-/// client identifier; vendor and OAuth secrets stay on the backend.
+/// client identifier; vendor and OAuth secrets stay on the backend. Local
+/// development SMS codes may be included in the profile-gated first-party
+/// challenge response, never fetched with a confidential client credential.
 class AppEnvironment {
   const AppEnvironment({
     required this.backendMode,
@@ -31,7 +29,6 @@ class AppEnvironment {
     required this.clientInnerVersion,
     required this.oauthClientId,
     required this.realtimeEndpoint,
-    this.developmentOutboxKey = '',
     this.deploymentEnvironment = DeploymentEnvironment.local,
     this.apiTimeout = const Duration(seconds: 15),
     this.liveProbePath = '/',
@@ -67,9 +64,6 @@ class AppEnvironment {
       ),
       oauthClientId: const String.fromEnvironment('OAUTH_CLIENT_ID'),
       realtimeEndpoint: const String.fromEnvironment('ROOM_REALTIME_ENDPOINT'),
-      developmentOutboxKey: const String.fromEnvironment(
-        'DEVELOPMENT_OUTBOX_KEY',
-      ),
       deploymentEnvironment: _parseDeploymentEnvironment(deploymentValue),
       apiTimeout: Duration(seconds: timeoutSeconds),
       liveProbePath: const String.fromEnvironment(
@@ -95,7 +89,6 @@ class AppEnvironment {
   final String clientInnerVersion;
   final String oauthClientId;
   final String realtimeEndpoint;
-  final String developmentOutboxKey;
   final DeploymentEnvironment deploymentEnvironment;
   final Duration apiTimeout;
   final String liveProbePath;
@@ -105,12 +98,12 @@ class AppEnvironment {
   @Deprecated('Mobile clients are public clients and never carry a secret.')
   String get oauthClientSecret => '';
 
-  bool get isLive => backendMode == BackendMode.live;
+  /// Compatibility getter retained for old diagnostics. Confidential outbox
+  /// credentials are never loaded by the mobile application.
+  @Deprecated('Development codes come from a profile-gated challenge response.')
+  bool get canReadDevelopmentSmsOutbox => false;
 
-  bool get canReadDevelopmentSmsOutbox =>
-      isLive &&
-      deploymentEnvironment.allowsDevelopmentTools &&
-      developmentOutboxKey.trim().isNotEmpty;
+  bool get isLive => backendMode == BackendMode.live;
 
   Uri? get apiBaseUri {
     final String normalized = apiBaseUrl.trim();
@@ -135,10 +128,8 @@ class AppEnvironment {
         'apiTimeoutSeconds': apiTimeout.inSeconds,
         'liveProbePath': liveProbePath,
         'oauthClientIdConfigured': oauthClientId.trim().isNotEmpty,
-        // Kept for compatibility with old diagnostic screens. It must remain
-        // false because a mobile public client never embeds an OAuth secret.
         'oauthClientSecretConfigured': false,
-        'developmentOutboxConfigured': canReadDevelopmentSmsOutbox,
+        'developmentOutboxConfigured': false,
         'realtimeEndpointConfigured': realtimeEndpoint.trim().isNotEmpty,
         'allowInsecureHttp': allowInsecureHttp,
       };
@@ -152,9 +143,6 @@ class AppEnvironment {
       if (clientType.trim().isEmpty) '缺少 CLIENT_TYPE',
       if (clientInnerVersion.trim().isEmpty) '缺少 CLIENT_INNER_VERSION',
       if (oauthClientId.trim().isEmpty) '缺少 OAUTH_CLIENT_ID',
-      if (deploymentEnvironment.requiresSecureTransport &&
-          developmentOutboxKey.trim().isNotEmpty)
-        '预发布和生产包不得配置 DEVELOPMENT_OUTBOX_KEY',
     ];
 
     final Uri? uri = apiBaseUri;
