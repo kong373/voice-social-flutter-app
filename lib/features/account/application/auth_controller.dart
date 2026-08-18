@@ -32,6 +32,7 @@ class AuthController extends ChangeNotifier {
   String? _errorMessage;
   String? _pendingPhone;
   String? _pendingSmsCode;
+  SmsChallenge? _lastSmsChallenge;
 
   AuthFlowStage get stage => _stage;
   bool get busy => _busy;
@@ -39,9 +40,12 @@ class AuthController extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   AuthSession? get session => _sessionManager.session;
   String get pendingPhone => _pendingPhone ?? '';
+  SmsChallenge? get lastSmsChallenge => _lastSmsChallenge;
+  String? get developmentSmsCode => _lastSmsChallenge?.developmentCode;
 
   Future<void> initialize() async {
     _stage = AuthFlowStage.initializing;
+    _errorMessage = null;
     notifyListeners();
     try {
       final bool accepted = await _sessionManager.hasAcceptedConsent();
@@ -51,11 +55,18 @@ class AuthController extends ChangeNotifier {
         return;
       }
       final AuthSession? restored = await _sessionManager.restore();
-      _stage = restored == null
-          ? AuthFlowStage.signedOut
-          : AuthFlowStage.signedIn;
-    } catch (error) {
-      _errorMessage = '无法恢复登录状态，请重新登录';
+      if (restored == null) {
+        _stage = AuthFlowStage.signedOut;
+      } else if (restored.isAccessExpired) {
+        final AuthSession refreshed = await _repository.refreshSession(restored);
+        await _sessionManager.save(refreshed);
+        _stage = AuthFlowStage.signedIn;
+      } else {
+        _stage = AuthFlowStage.signedIn;
+      }
+    } catch (_) {
+      await _sessionManager.clear();
+      _errorMessage = '登录状态已失效，请重新登录';
       _stage = AuthFlowStage.signedOut;
     }
     notifyListeners();
@@ -73,9 +84,25 @@ class AuthController extends ChangeNotifier {
     }
     _sendingCode = true;
     _errorMessage = null;
+    _lastSmsChallenge = null;
     notifyListeners();
     try {
-      await _repository.sendSmsCode(phone.trim());
+      final ClientDevice device = await _deviceIdentityProvider.load();
+      SmsChallenge challenge = await _repository.sendSmsCode(
+        phone: phone.trim(),
+        device: device,
+      );
+      try {
+        final String? developmentCode =
+            await _repository.readDevelopmentSmsCode(challenge.challengeId);
+        if (developmentCode != null) {
+          challenge = challenge.copyWith(developmentCode: developmentCode);
+        }
+      } catch (_) {
+        // Delivery remains authoritative. Development outbox retrieval is an
+        // optional diagnostic aid and must never replace the SMS challenge.
+      }
+      _lastSmsChallenge = challenge;
       return true;
     } catch (error) {
       _setError(error);
@@ -109,14 +136,15 @@ class AuthController extends ChangeNotifier {
         _stage = AuthFlowStage.registrationRequired;
         return true;
       }
-      final AuthSession? session = outcome.session;
-      if (session == null) {
+      final AuthSession? authenticatedSession = outcome.session;
+      if (authenticatedSession == null) {
         throw const ApiException(
           kind: ApiFailureKind.protocol,
           message: '登录成功但未返回会话',
         );
       }
-      await _sessionManager.save(session);
+      await _sessionManager.save(authenticatedSession);
+      _clearPendingChallenge();
       _stage = AuthFlowStage.signedIn;
       return true;
     } catch (error) {
@@ -139,15 +167,17 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
     try {
       final ClientDevice device = await _deviceIdentityProvider.load();
-      final AuthSession session = await _repository.registerWithSms(
+      final AuthSession authenticatedSession =
+          await _repository.registerWithSms(
         phone: phone,
         smsCode: smsCode,
         device: device,
         profile: profile,
       );
-      await _sessionManager.save(session);
+      await _sessionManager.save(authenticatedSession);
       _pendingPhone = null;
       _pendingSmsCode = null;
+      _clearPendingChallenge();
       _stage = AuthFlowStage.signedIn;
       return true;
     } catch (error) {
@@ -159,9 +189,34 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  Future<bool> refreshSession() async {
+    final AuthSession? current = _sessionManager.session;
+    if (_busy || current == null || !current.canRefresh) {
+      return false;
+    }
+    _busy = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      final AuthSession refreshed = await _repository.refreshSession(current);
+      await _sessionManager.save(refreshed);
+      _stage = AuthFlowStage.signedIn;
+      return true;
+    } catch (error) {
+      await _sessionManager.clear();
+      _stage = AuthFlowStage.signedOut;
+      _setError(error);
+      return false;
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
   void cancelRegistration() {
     _pendingPhone = null;
     _pendingSmsCode = null;
+    _clearPendingChallenge();
     _stage = AuthFlowStage.signedOut;
     _errorMessage = null;
     notifyListeners();
@@ -172,11 +227,21 @@ class AuthController extends ChangeNotifier {
       return;
     }
     _busy = true;
+    _errorMessage = null;
     notifyListeners();
+    final AuthSession? current = _sessionManager.session;
     try {
+      if (current != null) {
+        try {
+          await _repository.logout(current);
+        } catch (_) {
+          // Local credential deletion is mandatory even when the server cannot
+          // be reached. Rotating refresh tokens limit the residual exposure.
+        }
+      }
       await _sessionManager.clear();
+      _clearPendingChallenge();
       _stage = AuthFlowStage.signedOut;
-      _errorMessage = null;
     } finally {
       _busy = false;
       notifyListeners();
@@ -191,9 +256,12 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _clearPendingChallenge() {
+    _lastSmsChallenge = null;
+  }
+
   void _setError(Object error) {
-    _errorMessage = error is ApiException
-        ? error.message
-        : '操作失败，请稍后重试';
+    _errorMessage =
+        error is ApiException ? error.message : '操作失败，请稍后重试';
   }
 }
