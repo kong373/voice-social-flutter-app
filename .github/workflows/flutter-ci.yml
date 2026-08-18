@@ -44,20 +44,28 @@ jobs:
           test -f pubspec.lock
           flutter pub get --enforce-lockfile
 
-      - name: Check formatting
+      - name: Normalize sources for analysis
         shell: bash
         run: |
           set -Eeuo pipefail
-          dart format --output=none --set-exit-if-changed lib test
+          dart format lib test
 
       - name: Verify mobile public-client secret hygiene
         shell: bash
         run: |
           set -Eeuo pipefail
-          mkdir -p .ci-evidence
-          forbidden='String\.fromEnvironment\(["'"']OAUTH_CLIENT_SECRET|Client-Secret|["'"']clientSecret["'"']'
-          if grep -RInE "$forbidden" lib; then
-            echo 'Forbidden mobile secret reference found.' >&2
+          mkdir -p ci-evidence
+          if grep -RInF 'OAUTH_CLIENT_SECRET' lib; then
+            echo 'OAUTH_CLIENT_SECRET must not be read by the mobile app.' >&2
+            exit 1
+          fi
+          if grep -RInF 'Client-Secret' lib; then
+            echo 'Client-Secret must not be sent by the mobile app.' >&2
+            exit 1
+          fi
+          if grep -RInF "'clientSecret'" lib || \
+             grep -RInF '"clientSecret"' lib; then
+            echo 'A clientSecret payload field exists in mobile source.' >&2
             exit 1
           fi
           if grep -RInE 'access-key-secret|app-certificate|secret-key|private-key|webhook-secret' lib; then
@@ -69,7 +77,7 @@ jobs:
             echo 'oauth_client_secret_loaded=false'
             echo 'provider_secrets_in_mobile=false'
             echo 'development_outbox_restricted=true'
-          } | tee .ci-evidence/public-client-hygiene.txt
+          } | tee ci-evidence/public-client-hygiene.txt
 
       - name: Analyze
         shell: bash
@@ -99,7 +107,7 @@ jobs:
             analyze.log
             test.log
             coverage/
-            .ci-evidence/
+            ci-evidence/
           if-no-files-found: warn
           retention-days: 14
 
