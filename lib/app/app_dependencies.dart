@@ -46,6 +46,7 @@ import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 import 'package:voice_social_app/features/room/pk/data/backend_room_pk_repository.dart';
 import 'package:voice_social_app/features/room/pk/data/mock_room_pk_repository.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_repository.dart';
+import 'package:voice_social_app/features/shell/live_read_only_repository.dart';
 import 'package:voice_social_app/features/social/data/backend_social_repository.dart';
 import 'package:voice_social_app/features/social/data/mock_social_repository.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
@@ -55,6 +56,7 @@ class AppDependencies {
     required this.environment,
     required this.sessionManager,
     required this.authController,
+    required this.liveReadOnlyRepository,
     required this.accountComplianceRepository,
     required this.discoveryRepository,
     required this.dynamicRepository,
@@ -101,6 +103,8 @@ class AppDependencies {
       },
       timeout: environment.apiTimeout,
     );
+    final LiveReadOnlyRepository liveReadOnlyRepository =
+        LiveReadOnlyRepository(apiClient);
     const BackendRouteCatalog routes = BackendRouteCatalog();
     final AuthRepository authRepository = environment.isLive
         ? BackendAuthRepository(
@@ -111,11 +115,11 @@ class AppDependencies {
         : const MockAuthRepository();
     final AccountComplianceRepository accountComplianceRepository =
         environment.isLive
-        ? BackendAccountComplianceRepository(
-            apiClient: apiClient,
-            routes: routes,
-          )
-        : MockAccountComplianceRepository();
+            ? BackendAccountComplianceRepository(
+                apiClient: apiClient,
+                routes: routes,
+              )
+            : MockAccountComplianceRepository();
     final DiscoveryRepository discoveryRepository = environment.isLive
         ? BackendDiscoveryRepository(
             apiClient: apiClient,
@@ -202,6 +206,7 @@ class AppDependencies {
       environment: environment,
       sessionManager: sessionManager,
       authController: authController,
+      liveReadOnlyRepository: liveReadOnlyRepository,
       accountComplianceRepository: accountComplianceRepository,
       discoveryRepository: discoveryRepository,
       dynamicRepository: dynamicRepository,
@@ -223,6 +228,7 @@ class AppDependencies {
   final AppEnvironment environment;
   final AuthSessionManager sessionManager;
   final AuthController authController;
+  final LiveReadOnlyRepository liveReadOnlyRepository;
   final AccountComplianceRepository accountComplianceRepository;
   final DiscoveryRepository discoveryRepository;
   final DynamicRepository dynamicRepository;
