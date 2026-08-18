@@ -29,8 +29,7 @@ class _LiveBackendReadinessPageState
       return;
     }
     setState(() => _busy = true);
-    final LiveBackendReadinessSnapshot snapshot =
-        await widget.service.check();
+    final LiveBackendReadinessSnapshot snapshot = await widget.service.check();
     if (!mounted) {
       return;
     }
@@ -67,7 +66,7 @@ class _LiveBackendReadinessPageState
         children: <Widget>[
           const _NoticeCard(
             icon: Icons.security_rounded,
-            text: '本页只探测配置、DNS、TLS 和 HTTP 网关可达性，不发送短信、不登录、不调用支付，也不会显示任何密钥。',
+            text: '本页只探测配置、DNS、TLS 和 HTTP 网关可达性，不调用正式短信、RTC、IM 或支付，也不会显示任何密钥。',
           ),
           const SizedBox(height: 16),
           Text('运行配置', style: Theme.of(context).textTheme.titleLarge),
@@ -99,11 +98,20 @@ class _LiveBackendReadinessPageState
                 environment['liveProbePath'].toString(),
               ),
               MapEntry<String, String>(
-                '认证参数',
-                environment['oauthClientIdConfigured'] == true &&
-                        environment['oauthClientSecretConfigured'] == true
+                '公开 Client ID',
+                environment['oauthClientIdConfigured'] == true
                     ? '已配置（值已隐藏）'
-                    : '未完整配置',
+                    : '未配置',
+              ),
+              const MapEntry<String, String>(
+                '移动端 Client Secret',
+                '未携带（正确）',
+              ),
+              MapEntry<String, String>(
+                '开发验证码回读',
+                environment['developmentOutboxConfigured'] == true
+                    ? '已配置（仅本地/开发）'
+                    : '未启用',
               ),
             ],
           ),
@@ -140,12 +148,12 @@ class _LiveBackendReadinessPageState
           const SizedBox(height: 20),
           const _NoticeCard(
             icon: Icons.info_outline_rounded,
-            text: '“网关可达”只代表网络传输链路已收到 HTTP 响应，不等于短信、登录、首页、房间、钱包或第三方能力已经联调通过。',
+            text: '“网关可达”只代表网络传输链路已收到 HTTP 响应，不等于业务接口或第三方能力已经联调通过。',
           ),
           const SizedBox(height: 10),
           const _NoticeCard(
             icon: Icons.extension_off_outlined,
-            text: 'RTC、腾讯 IM、微信支付、支付宝、Apple IAP、推送和对象存储仍保持 VENDOR_BLOCKED。',
+            text: '正式短信、RTC、腾讯 IM、微信支付、支付宝、Apple IAP、推送和对象存储在厂商配置完成前保持 VENDOR_BLOCKED。',
           ),
         ],
       ),
@@ -172,7 +180,7 @@ class _DetailsCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   SizedBox(
-                    width: 84,
+                    width: 112,
                     child: Text(
                       entries[index].key,
                       style: Theme.of(context).textTheme.bodySmall,
@@ -181,8 +189,7 @@ class _DetailsCard extends StatelessWidget {
                   Expanded(child: Text(entries[index].value)),
                 ],
               ),
-              if (index != entries.length - 1)
-                const Divider(height: 22),
+              if (index != entries.length - 1) const Divider(height: 22),
             ],
           ],
         ),
