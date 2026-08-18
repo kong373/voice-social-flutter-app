@@ -21,6 +21,10 @@ class RoomPermissionPolicy {
     required RoomCapability capability,
     required bool isOnMic,
   }) {
+    if (snapshot.isSnapshotOnly) {
+      return capability == RoomCapability.viewMembers;
+    }
+
     final RoomRole role = snapshot.role;
     final bool signedIn = role != RoomRole.guest;
     final bool canManage = role == RoomRole.owner ||
