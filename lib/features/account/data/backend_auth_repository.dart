@@ -19,8 +19,6 @@ class BackendAuthRepository implements AuthRepository {
       '/app-register-api/userAccount/v1/refreshSession';
   static const String _logoutPath =
       '/app-register-api/userAccount/v1/logout';
-  static const String _developmentOutboxPrefix =
-      '/internal/development/sms-outbox';
 
   final ApiClient _apiClient;
   final AppEnvironment _environment;
@@ -48,6 +46,7 @@ class BackendAuthRepository implements AuthRepository {
     final String challengeId = _string(data['challengeId']);
     final int expiresIn = _asInt(data['expiresIn']) ?? 0;
     final int retryAfter = _asInt(data['retryAfter']) ?? 60;
+    final String developmentCode = _string(data['developmentCode']);
     if (challengeId.isEmpty || expiresIn <= 0) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -58,25 +57,11 @@ class BackendAuthRepository implements AuthRepository {
       challengeId: challengeId,
       expiresAt: DateTime.now().add(Duration(seconds: expiresIn)),
       retryAfter: retryAfter < 1 ? 1 : retryAfter,
+      developmentCode:
+          RegExp(r'^\d{6}$').hasMatch(developmentCode)
+              ? developmentCode
+              : null,
     );
-  }
-
-  @override
-  Future<String?> readDevelopmentSmsCode(String challengeId) async {
-    if (!_environment.canReadDevelopmentSmsOutbox) {
-      return null;
-    }
-    final ApiResponse response = await _apiClient.get(
-      '$_developmentOutboxPrefix/${Uri.encodeComponent(challengeId)}',
-      headers: <String, String>{
-        'X-Development-Client-Id': _environment.oauthClientId,
-        'X-Development-Outbox-Key': _environment.developmentOutboxKey,
-      },
-      authenticated: false,
-    );
-    final Map<String, Object?> data = _asMap(response.data);
-    final String code = _string(data['code']);
-    return RegExp(r'^\d{6}$').hasMatch(code) ? code : null;
   }
 
   @override
@@ -146,6 +131,7 @@ class BackendAuthRepository implements AuthRepository {
       throw const ApiException(
         kind: ApiFailureKind.unauthorized,
         code: 401,
+        httpStatus: 401,
         message: '刷新会话已失效，请重新登录',
       );
     }
