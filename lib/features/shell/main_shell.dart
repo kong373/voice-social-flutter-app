@@ -26,7 +26,7 @@ class _MainShellState extends State<MainShell> {
   List<Widget> get _pages {
     if (widget.dependencies.environment.isLive) {
       return <Widget>[
-        const HomePage(),
+        LiveProductHomePage(dependencies: widget.dependencies),
         const LiveDiscoveryHoldingPage(),
         const LiveMessageHoldingPage(),
         LiveReadOnlyAccountPage(
