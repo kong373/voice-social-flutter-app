@@ -27,9 +27,6 @@ class MockAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<String?> readDevelopmentSmsCode(String challengeId) async => '123456';
-
-  @override
   Future<AuthOutcome> signInWithSms({
     required String phone,
     required String smsCode,
@@ -74,6 +71,7 @@ class MockAuthRepository implements AuthRepository {
       throw const ApiException(
         kind: ApiFailureKind.unauthorized,
         code: 401,
+        httpStatus: 401,
         message: '刷新会话已失效',
       );
     }
