@@ -13,8 +13,16 @@ extension DeploymentEnvironmentLabel on DeploymentEnvironment {
   bool get requiresSecureTransport =>
       this == DeploymentEnvironment.staging ||
       this == DeploymentEnvironment.production;
+
+  bool get allowsDevelopmentTools =>
+      this == DeploymentEnvironment.local ||
+      this == DeploymentEnvironment.development;
 }
 
+/// Runtime configuration for the Flutter client.
+///
+/// The mobile application is an OAuth public client. It carries only a public
+/// client identifier; vendor and OAuth secrets stay on the backend.
 class AppEnvironment {
   const AppEnvironment({
     required this.backendMode,
@@ -22,12 +30,14 @@ class AppEnvironment {
     required this.clientType,
     required this.clientInnerVersion,
     required this.oauthClientId,
-    required this.oauthClientSecret,
     required this.realtimeEndpoint,
+    this.developmentOutboxKey = '',
     this.deploymentEnvironment = DeploymentEnvironment.local,
     this.apiTimeout = const Duration(seconds: 15),
     this.liveProbePath = '/',
     this.allowInsecureHttp = false,
+    @Deprecated('Mobile clients are public clients and never carry a secret.')
+    String oauthClientSecret = '',
   });
 
   factory AppEnvironment.fromDefines() {
@@ -56,8 +66,10 @@ class AppEnvironment {
         defaultValue: '1',
       ),
       oauthClientId: const String.fromEnvironment('OAUTH_CLIENT_ID'),
-      oauthClientSecret: const String.fromEnvironment('OAUTH_CLIENT_SECRET'),
       realtimeEndpoint: const String.fromEnvironment('ROOM_REALTIME_ENDPOINT'),
+      developmentOutboxKey: const String.fromEnvironment(
+        'DEVELOPMENT_OUTBOX_KEY',
+      ),
       deploymentEnvironment: _parseDeploymentEnvironment(deploymentValue),
       apiTimeout: Duration(seconds: timeoutSeconds),
       liveProbePath: const String.fromEnvironment(
@@ -74,7 +86,6 @@ class AppEnvironment {
         clientType: 'Android',
         clientInnerVersion: '1',
         oauthClientId: 'mock-client',
-        oauthClientSecret: 'mock-secret',
         realtimeEndpoint: '',
       );
 
@@ -83,14 +94,23 @@ class AppEnvironment {
   final String clientType;
   final String clientInnerVersion;
   final String oauthClientId;
-  final String oauthClientSecret;
   final String realtimeEndpoint;
+  final String developmentOutboxKey;
   final DeploymentEnvironment deploymentEnvironment;
   final Duration apiTimeout;
   final String liveProbePath;
   final bool allowInsecureHttp;
 
+  /// Compatibility getter for older callers. The value is deliberately empty.
+  @Deprecated('Mobile clients are public clients and never carry a secret.')
+  String get oauthClientSecret => '';
+
   bool get isLive => backendMode == BackendMode.live;
+
+  bool get canReadDevelopmentSmsOutbox =>
+      isLive &&
+      deploymentEnvironment.allowsDevelopmentTools &&
+      developmentOutboxKey.trim().isNotEmpty;
 
   Uri? get apiBaseUri {
     final String normalized = apiBaseUrl.trim();
@@ -115,7 +135,10 @@ class AppEnvironment {
         'apiTimeoutSeconds': apiTimeout.inSeconds,
         'liveProbePath': liveProbePath,
         'oauthClientIdConfigured': oauthClientId.trim().isNotEmpty,
-        'oauthClientSecretConfigured': oauthClientSecret.trim().isNotEmpty,
+        // Kept for compatibility with old diagnostic screens. It must remain
+        // false because a mobile public client never embeds an OAuth secret.
+        'oauthClientSecretConfigured': false,
+        'developmentOutboxConfigured': canReadDevelopmentSmsOutbox,
         'realtimeEndpointConfigured': realtimeEndpoint.trim().isNotEmpty,
         'allowInsecureHttp': allowInsecureHttp,
       };
@@ -129,7 +152,9 @@ class AppEnvironment {
       if (clientType.trim().isEmpty) '缺少 CLIENT_TYPE',
       if (clientInnerVersion.trim().isEmpty) '缺少 CLIENT_INNER_VERSION',
       if (oauthClientId.trim().isEmpty) '缺少 OAUTH_CLIENT_ID',
-      if (oauthClientSecret.trim().isEmpty) '缺少 OAUTH_CLIENT_SECRET',
+      if (deploymentEnvironment.requiresSecureTransport &&
+          developmentOutboxKey.trim().isNotEmpty)
+        '预发布和生产包不得配置 DEVELOPMENT_OUTBOX_KEY',
     ];
 
     final Uri? uri = apiBaseUri;
