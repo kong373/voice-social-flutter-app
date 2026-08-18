@@ -15,8 +15,8 @@ void main() {
       clientType: 'Android',
       clientInnerVersion: '6',
       oauthClientId: 'client-id-value',
-      oauthClientSecret: 'secret-value',
       realtimeEndpoint: '',
+      developmentOutboxKey: 'development-outbox-key',
       deploymentEnvironment: DeploymentEnvironment.development,
     );
     final LiveBackendReadinessService service = LiveBackendReadinessService(
@@ -33,11 +33,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('开发环境联调诊断'), findsOneWidget);
-    expect(find.text('网关可达'), findsOneWidget);
     expect(find.text('https://dev.example.com'), findsOneWidget);
+    expect(find.text('未携带（正确）'), findsOneWidget);
+
+    final Finder probeResult = find.text('网关可达');
+    await tester.scrollUntilVisible(
+      probeResult,
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(probeResult, findsOneWidget);
 
     final Finder businessBoundary =
-        find.textContaining('不等于短信、登录、首页');
+        find.textContaining('只代表网络传输链路已收到 HTTP 响应');
     await tester.scrollUntilVisible(
       businessBoundary,
       240,
@@ -53,7 +61,7 @@ void main() {
     );
     expect(vendorBoundary, findsOneWidget);
 
-    expect(find.textContaining('secret-value'), findsNothing);
+    expect(find.textContaining('development-outbox-key'), findsNothing);
     expect(find.textContaining('client-id-value'), findsNothing);
     expect(find.textContaining('/private/gateway/'), findsNothing);
   });
