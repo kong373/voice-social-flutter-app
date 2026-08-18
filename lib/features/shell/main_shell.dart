@@ -4,6 +4,7 @@ import 'package:voice_social_app/features/discovery/dynamic/presentation/dynamic
 import 'package:voice_social_app/features/discovery/home_page.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/shell/live_read_only_pages.dart';
+import 'package:voice_social_app/features/shell/live_vendor_boundary_page.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 class MainShell extends StatefulWidget {
@@ -27,7 +28,7 @@ class _MainShellState extends State<MainShell> {
     if (widget.dependencies.environment.isLive) {
       return <Widget>[
         LiveReadOnlyHomePage(dependencies: widget.dependencies),
-        LiveVendorReadinessPage(dependencies: widget.dependencies),
+        LiveVendorBoundaryPage(dependencies: widget.dependencies),
         const LiveBlockedMessagePage(),
         LiveReadOnlyAccountPage(
           dependencies: widget.dependencies,
