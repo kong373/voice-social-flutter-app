@@ -188,7 +188,7 @@ class AppDependencies {
         ? const SnapshotOnlyRtcAdapter()
         : MockRtcAdapter();
     final RoomRealtimeGateway realtimeGateway = environment.isLive
-        ? const UnavailableRoomRealtimeGateway()
+        ? const SnapshotOnlyRoomRealtimeGateway()
         : MockRoomRealtimeGateway();
     final RoomAudioService roomAudioService = environment.isLive
         ? const UnavailableRoomAudioService()
