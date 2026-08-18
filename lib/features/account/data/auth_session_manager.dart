@@ -4,7 +4,8 @@ import 'package:voice_social_app/features/account/domain/auth_models.dart';
 class AuthSessionManager {
   AuthSessionManager(this._store);
 
-  static const String _sessionKey = 'auth.session.v1';
+  static const String _sessionKey = 'auth.session.v2';
+  static const String _legacySessionKey = 'auth.session.v1';
   static const String _consentKey = 'compliance.consent.v1';
   static const String _installIdKey = 'device.install-id.v1';
 
@@ -16,28 +17,36 @@ class AuthSessionManager {
   String? get authorizationHeader => _session?.authorizationHeader;
 
   Future<AuthSession?> restore() async {
-    final String? encoded = await _store.read(_sessionKey);
+    String? encoded = await _store.read(_sessionKey);
+    encoded ??= await _store.read(_legacySessionKey);
     if (encoded == null || encoded.isEmpty) {
       _session = null;
       return null;
     }
     final AuthSession? restored = AuthSession.decode(encoded);
-    if (restored == null || restored.isExpired) {
+    if (restored == null ||
+        (restored.isAccessExpired && !restored.canRefresh)) {
       await clear();
       return null;
     }
     _session = restored;
+    if (await _store.read(_sessionKey) == null) {
+      await _store.write(_sessionKey, restored.encode());
+      await _store.delete(_legacySessionKey);
+    }
     return restored;
   }
 
   Future<void> save(AuthSession session) async {
     _session = session;
     await _store.write(_sessionKey, session.encode());
+    await _store.delete(_legacySessionKey);
   }
 
   Future<void> clear() async {
     _session = null;
     await _store.delete(_sessionKey);
+    await _store.delete(_legacySessionKey);
   }
 
   Future<bool> hasAcceptedConsent() async =>
