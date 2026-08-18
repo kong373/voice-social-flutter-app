@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -8,18 +6,22 @@ import 'package:voice_social_app/main.dart' as app;
 
 import 'm2_4_test_support.dart';
 
-const double _expectedWidth = double.fromEnvironment(
+const String _expectedWidthValue = String.fromEnvironment(
   'QA_EXPECTED_VIEWPORT_WIDTH',
-  defaultValue: 390,
+  defaultValue: '390',
 );
-const double _expectedHeight = double.fromEnvironment(
+const String _expectedHeightValue = String.fromEnvironment(
   'QA_EXPECTED_VIEWPORT_HEIGHT',
-  defaultValue: 844,
+  defaultValue: '844',
 );
-const double _expectedDpr = double.fromEnvironment(
+const String _expectedDprValue = String.fromEnvironment(
   'QA_EXPECTED_DPR',
-  defaultValue: 3,
+  defaultValue: '3',
 );
+
+final double _expectedWidth = double.parse(_expectedWidthValue);
+final double _expectedHeight = double.parse(_expectedHeightValue);
+final double _expectedDpr = double.parse(_expectedDprValue);
 
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
