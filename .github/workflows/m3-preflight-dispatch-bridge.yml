@@ -22,7 +22,7 @@ jobs:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'main' &&
-      contains(github.event.workflow_run.head_commit.message, '[dispatch-m3-self-hosted-preflight]')
+      contains(github.event.workflow_run.display_title, '[dispatch-m3-self-hosted-preflight]')
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
