@@ -29,6 +29,8 @@ enum MicSeatState {
 
 enum RtcSolution { agora, zego, unknown }
 
+enum RoomTransportMode { interactive, snapshotOnly }
+
 enum RoomEntrySource {
   home(0),
   follow(1),
@@ -149,6 +151,7 @@ class RoomSnapshot {
     required this.autoLockMic,
     required this.giftCatalogAvailable,
     required this.giftBalance,
+    this.transportMode = RoomTransportMode.interactive,
     this.onlineCount,
     this.coverUrl,
     this.backgroundUrl,
@@ -162,6 +165,7 @@ class RoomSnapshot {
   final RoomRole role;
   final List<MicSeat> seats;
   final RtcCredentials rtc;
+  final RoomTransportMode transportMode;
   final bool publicScreenEnabled;
   final bool pictureMessagesAllowed;
   final bool autoLockMic;
@@ -171,12 +175,15 @@ class RoomSnapshot {
   final String? coverUrl;
   final String? backgroundUrl;
 
+  bool get isSnapshotOnly => transportMode == RoomTransportMode.snapshotOnly;
+
   RoomSnapshot copyWith({
     String? title,
     String? topic,
     RoomRole? role,
     List<MicSeat>? seats,
     RtcCredentials? rtc,
+    RoomTransportMode? transportMode,
     bool? publicScreenEnabled,
     bool? pictureMessagesAllowed,
     bool? autoLockMic,
@@ -193,6 +200,7 @@ class RoomSnapshot {
       role: role ?? this.role,
       seats: seats ?? this.seats,
       rtc: rtc ?? this.rtc,
+      transportMode: transportMode ?? this.transportMode,
       publicScreenEnabled: publicScreenEnabled ?? this.publicScreenEnabled,
       pictureMessagesAllowed:
           pictureMessagesAllowed ?? this.pictureMessagesAllowed,
