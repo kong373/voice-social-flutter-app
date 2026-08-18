@@ -24,7 +24,7 @@ jobs:
       github.event.workflow_run.head_branch == 'main' &&
       contains(github.event.workflow_run.display_title, '[dispatch-m3-self-hosted-preflight]')
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 50
     env:
       GH_TOKEN: ${{ github.token }}
       TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
