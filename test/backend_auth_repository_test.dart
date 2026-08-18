@@ -28,7 +28,9 @@ void main() {
         'authorization': request.headers.value(HttpHeaders.authorizationHeader),
         'deviceId': request.headers.value('X-Device-Id'),
         'developmentClientId': request.headers.value('X-Development-Client-Id'),
-        'developmentOutboxKey': request.headers.value('X-Development-Outbox-Key'),
+        'developmentOutboxKey': request.headers.value(
+          'X-Development-Outbox-Key',
+        ),
         'body': decodedBody,
       });
       request.response.headers.contentType = ContentType.json;
@@ -92,7 +94,9 @@ void main() {
     expect(activeSession?.refreshToken, 'refresh-1');
     expect(activeSession?.clientId, 'voice-social-mobile-public');
 
-    final AuthSession refreshed = await repository.refreshSession(activeSession!);
+    final AuthSession refreshed = await repository.refreshSession(
+      activeSession!,
+    );
     expect(refreshed.accessToken, 'access-2');
     expect(refreshed.refreshToken, 'refresh-2');
     activeSession = refreshed;
@@ -100,7 +104,9 @@ void main() {
 
     expect(captured, hasLength(5));
     expect(
-      captured.map((Map<String, Object?> item) => item['clientSecretHeader']),
+      captured.map(
+        (Map<String, Object?> item) => item['clientSecretHeader'],
+      ),
       everyElement(isNull),
     );
     final String serialized = jsonEncode(captured);
@@ -119,8 +125,9 @@ void main() {
 
     final Map<String, Object?> login = captured[2];
     expect(login['authorization'], isNull);
-    final Map<String, Object?> loginBody =
-        Map<String, Object?>.from(login['body']! as Map);
+    final Map<String, Object?> loginBody = Map<String, Object?>.from(
+      login['body']! as Map,
+    );
     expect(loginBody['clientId'], 'voice-social-mobile-public');
     expect(loginBody, isNot(contains('clientSecret')));
 
@@ -133,7 +140,7 @@ void main() {
   });
 }
 
-Object _authResponseFor(String path) => switch (path) {
+Object? _authResponseFor(String path) => switch (path) {
       '/app-register-api/util/v1/sendSmsCode' => <String, Object?>{
           'challengeId': 'challenge-1',
           'expiresIn': 300,
