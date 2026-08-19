@@ -1,0 +1,102 @@
+name: M3.3 one-shot repository compatibility correction
+
+on:
+  push:
+    branches:
+      - feat/m3-3-video-runtime-ui
+    paths:
+      - '.github/workflows/m33-video-runtime-compatibility-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  correct:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/m3-3-video-runtime-ui
+          fetch-depth: 0
+      - name: Refresh branch after previous writers
+        run: |
+          sleep 90
+          git fetch origin feat/m3-3-video-runtime-ui
+          git reset --hard origin/feat/m3-3-video-runtime-ui
+      - name: Remove optional capability getters from core rendering paths
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('lib/features/shell/video_runtime_pages.dart')
+          text = p.read_text()
+          text = text.replace(
+              '''                  IconButton.filledTonal(
+                    tooltip: '发布动态',
+                    onPressed: dependencies.dynamicRepository.supportsImagePublishing
+                        ? () => ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('发布入口将在素材服务接入后开放')),
+                            )
+                        : null,
+                    icon: const Icon(Icons.add_rounded),
+                  ),''',
+              '''                  IconButton.filledTonal(
+                    tooltip: '发布动态',
+                    onPressed: null,
+                    icon: const Icon(Icons.add_rounded),
+                  ),''',
+          )
+          text = text.replace(
+              '''    if (dependencies.environment.isLive &&
+        !dependencies.messageRepository.supportsConversationList) {''',
+              '''    if (dependencies.environment.isLive) {''',
+          )
+          p.write_text(text)
+
+          p = Path('lib/features/shell/main_shell.dart')
+          text = p.read_text()
+          text = text.replace(
+              '''    if (result == VideoRoomExit.ended ||
+        controller.status == RoomSessionStatus.left ||
+        controller.status == RoomSessionStatus.closed ||
+        controller.status == RoomSessionStatus.kicked) {''',
+              '''    if (result == VideoRoomExit.ended ||
+        controller.status == RoomSessionStatus.closed ||
+        controller.status == RoomSessionStatus.kicked) {''',
+          )
+          p.write_text(text)
+          PY
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.7
+          channel: stable
+          cache: true
+      - name: Format and validate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+          dart format \
+            lib/features/shell/video_runtime_pages.dart \
+            lib/features/shell/main_shell.dart
+          flutter analyze
+          flutter test test/video_runtime_ui_test.dart --reporter=expanded --timeout=120s
+      - name: Commit compatibility correction
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f .github/workflows/m33-video-runtime-compatibility-fix.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix(ui): harden video-runtime repository compatibility'
+          for attempt in 1 2 3; do
+            if git push origin HEAD:feat/m3-3-video-runtime-ui; then
+              exit 0
+            fi
+            git pull --rebase origin feat/m3-3-video-runtime-ui
+          done
+          exit 1
