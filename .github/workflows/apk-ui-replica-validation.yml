@@ -1,0 +1,353 @@
+name: APK UI replica strict validation
+
+on:
+  push:
+    branches:
+      - feat/apk-ui-replica
+    paths:
+      - tool/ui/RUN_APK_UI_VALIDATION
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: apk-ui-replica-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+
+jobs:
+  quality:
+    name: Format, analyze, tests, invariants, and APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Verify locked dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+
+      - name: Strict candidate formatting
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git fetch origin feat/m3-2a-live-auth-readonly --depth=1
+          base_sha="$(git merge-base HEAD origin/feat/m3-2a-live-auth-readonly)"
+          mapfile -d '' dart_files < <(
+            git diff --name-only -z --diff-filter=ACMR \
+              "$base_sha" HEAD -- '*.dart'
+          )
+          test "${#dart_files[@]}" -gt 0
+          dart format --output=none --set-exit-if-changed "${dart_files[@]}"
+          printf 'tested_git_sha=%s\n' "$GITHUB_SHA" | tee quality-summary.txt
+          printf 'changed_dart_files=%s\n' "${#dart_files[@]}" | tee -a quality-summary.txt
+
+      - name: Validate scripts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile tool/ui/apply_apk_ui_replica.py
+          python3 -m py_compile tool/ui/apply_apk_ui_phase2.py
+          python3 -m py_compile tool/ui/apply_apk_ui_acceptance_test.py
+          python3 -m py_compile tool/qa/m32_contract_server.py
+          python3 -m py_compile tool/qa/m32_review_contract_server.py
+          bash -n tool/qa/run_m32_vendor_avd.sh
+
+      - name: Analyze
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter analyze 2>&1 | tee analyze.log
+
+      - name: Run all Dart and widget tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter test \
+            --coverage \
+            --concurrency=1 \
+            --timeout=90s \
+            --reporter=expanded \
+            2>&1 | tee tests.log
+
+      - name: Verify page and product invariants
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY' | tee invariants.log
+          from pathlib import Path
+          import re
+
+          page_ids = set()
+          for path in Path('lib').rglob('*.dart'):
+              text = path.read_text(encoding='utf-8', errors='ignore')
+              page_ids.update(re.findall(r'\b(?:AC|DS|US|RM|MS|CM|SC)-\d{3}\b', text))
+          if len(page_ids) != 69:
+              raise SystemExit(f'PAGE_ID_COUNT={len(page_ids)} expected=69')
+
+          root_labels = ['首页', '发现', '消息', '我的']
+          shell = Path('lib/features/shell/main_shell.dart').read_text(encoding='utf-8')
+          for label in root_labels:
+              if f"label: '{label}'" not in shell:
+                  raise SystemExit(f'MISSING_ROOT_NAV={label}')
+
+          forbidden = [
+              'red packet', 'blind box', 'magic ball', 'dango', 'love letter',
+              '红包', '盲盒', '魔法球', '团子', '情书', 'KTV', '点歌', '合唱',
+              '随机遇见', '附近的人',
+          ]
+          hits = []
+          for path in Path('lib').rglob('*.dart'):
+              text = path.read_text(encoding='utf-8', errors='ignore')
+              for token in forbidden:
+                  if token.lower() in text.lower():
+                      hits.append(f'{path}:{token}')
+          if hits:
+              raise SystemExit('FORBIDDEN_FEATURE_HITS=' + ','.join(hits[:20]))
+
+          room = Path('lib/features/room/presentation/room_page.dart').read_text(encoding='utf-8')
+          if 'crossAxisCount: 4' not in room:
+              raise SystemExit('ROOM_GRID_NOT_4_COLUMNS')
+          print('PAGE_ID_COUNT=69')
+          print('ROOT_NAV=首页/发现/消息/我的')
+          print('FORBIDDEN_FEATURE_HITS=0')
+          print('ROOM_SEATS=8_FIXED')
+          PY
+
+      - name: Build live Android debug APK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter build apk --debug \
+            --dart-define=BACKEND_MODE=live \
+            --dart-define=APP_ENV=development \
+            --dart-define=ALLOW_INSECURE_HTTP=true \
+            --dart-define=API_BASE_URL=http://10.0.2.2:8765/ \
+            --dart-define=OAUTH_CLIENT_ID=voice-social-mobile-public
+          sha256sum build/app/outputs/flutter-apk/app-debug.apk \
+            | tee app-debug.apk.sha256
+
+      - name: Scan APK and source for credentials
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf apk-inspection
+          mkdir apk-inspection
+          unzip -q build/app/outputs/flutter-apk/app-debug.apk -d apk-inspection
+          forbidden='OAUTH_CLIENT_SECRET|Client-Secret|DEVELOPMENT_OUTBOX_KEY|X-Development-Outbox-Key|access-key-secret|app-certificate|secret-key|private-key|webhook-secret|actual-secret-value|never-expose-'
+          if grep -aRInE "$forbidden" apk-inspection lib integration_test; then
+            echo 'Forbidden credential marker found.' >&2
+            exit 1
+          fi
+          rm -rf apk-inspection
+          echo 'credential_markers=0' | tee credential-scan.txt
+
+      - name: Upload quality and APK evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: apk-ui-quality-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            quality-summary.txt
+            analyze.log
+            tests.log
+            invariants.log
+            credential-scan.txt
+            app-debug.apk.sha256
+            coverage/
+            build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  avd:
+    name: ${{ matrix.id }} API ${{ matrix.api }} exact visual acceptance
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: AVD-A
+            api: 36
+            profile: pixel_7_pro
+          - id: AVD-B
+            api: 35
+            profile: pixel_2
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Verify locked dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+
+      - name: Enable KVM
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ -e /dev/kvm ]]; then
+            sudo chmod 666 /dev/kvm
+          fi
+
+      - name: Run exact AVD flow
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: default
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          cores: 2
+          ram-size: 4096M
+          heap-size: 512M
+          disk-size: 8192M
+          emulator-options: >-
+            -no-window
+            -gpu swiftshader_indirect
+            -noaudio
+            -no-boot-anim
+            -camera-back none
+            -camera-front none
+          disable-animations: true
+          script: >-
+            QA_ARTIFACT_ROOT="$GITHUB_WORKSPACE/avd-evidence/${{ matrix.id }}"
+            QA_AVD_ID="${{ matrix.id }}"
+            QA_API_LEVEL="${{ matrix.api }}"
+            QA_PROFILE="${{ matrix.profile }}"
+            QA_RUN_ID="$GITHUB_RUN_ID"
+            QA_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT"
+            QA_GIT_SHA="$GITHUB_SHA"
+            bash tool/qa/run_m32_vendor_avd.sh
+
+      - name: Verify AVD evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          root="avd-evidence/${{ matrix.id }}"
+          grep -Fxq 'conclusion=PASS' "$root/summary.txt"
+          grep -Fxq "git_sha=$GITHUB_SHA" "$root/summary.txt"
+          grep -Fxq 'provider_calls_made=false' "$root/summary.txt"
+          grep -Fxq 'mobile_client_secret_present=false' "$root/summary.txt"
+          test "$(find "$root/screenshots" -type f -name '*.png' | wc -l | tr -d ' ')" -ge 10
+          python3 - "$root/page_coverage.csv" "$root/test_cases.csv" <<'PY'
+          import csv
+          import sys
+          for filename in sys.argv[1:]:
+              with open(filename, encoding='utf-8') as handle:
+                  rows = list(csv.DictReader(handle))
+              if not rows:
+                  raise SystemExit(f'{filename}: no evidence rows')
+              failures = [row for row in rows if row.get('result') != 'PASS']
+              if failures:
+                  raise SystemExit(f'{filename}: non-PASS rows: {failures[:3]}')
+          PY
+
+      - name: Scan Logcat hard errors
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          log="avd-evidence/${{ matrix.id }}/logs/logcat.txt"
+          if grep -aEin \
+            'FATAL EXCEPTION|AndroidRuntime.*FATAL|ANR in com\.kong373\.voice_social_app|MissingPluginException|RenderFlex overflowed|Unhandled Exception' \
+            "$log"; then
+            echo 'App hard error found in Logcat.' >&2
+            exit 1
+          fi
+          echo 'app_hard_errors=0' > "avd-evidence/${{ matrix.id }}/logs/hard-error-scan.txt"
+
+      - name: Upload AVD evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: apk-ui-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: avd-evidence/${{ matrix.id }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  aggregate:
+    name: Strict two-AVD visual verdict
+    needs:
+      - quality
+      - avd
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Download all evidence
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded-evidence
+
+      - name: Assemble strict verdict
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "${{ needs.quality.result }}" = success
+          test "${{ needs.avd.result }}" = success
+          mapfile -t summaries < <(find downloaded-evidence -type f -name summary.txt | sort)
+          test "${#summaries[@]}" -eq 2
+          for summary in "${summaries[@]}"; do
+            grep -Fxq 'conclusion=PASS' "$summary"
+            grep -Fxq "git_sha=$GITHUB_SHA" "$summary"
+            grep -Fxq 'provider_calls_made=false' "$summary"
+            grep -Fxq 'vendor_runtime_status=VENDOR_BLOCKED' "$summary"
+          done
+          screenshots="$(find downloaded-evidence -type f -name '*.png' | wc -l | tr -d ' ')"
+          test "$screenshots" -ge 20
+          cat > aggregate-verdict.txt <<EOF
+          tested_git_sha=$GITHUB_SHA
+          quality=${{ needs.quality.result }}
+          avd_matrix=${{ needs.avd.result }}
+          avd_a=PASS
+          avd_b=PASS
+          screenshot_count=$screenshots
+          page_id_count=69
+          forbidden_feature_hits=0
+          provider_calls_made=false
+          vendor_runtime_status=VENDOR_BLOCKED
+          conclusion=APK_UI_REPLICA_PASS
+          EOF
+          cat aggregate-verdict.txt
+
+      - name: Upload aggregate verdict
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: apk-ui-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: aggregate-verdict.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Comment successful verdict on Draft PR
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          gh pr comment 16 \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "APK UI replica validation passed on commit \`$GITHUB_SHA\`. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. Both exact AVDs passed; provider calls remained disabled."
