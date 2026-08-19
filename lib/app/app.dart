@@ -31,11 +31,8 @@ class VoiceSocialApp extends StatelessWidget {
         home: qaConsoleEnabled
             ? const QaConsoleHost()
             : videoRuntimeDemoEnabled
-                ? MainShell(
-                    dependencies: dependencies,
-                    onSignOut: () async {},
-                  )
-                : AppGate(dependencies: dependencies),
+            ? MainShell(dependencies: dependencies, onSignOut: () async {})
+            : AppGate(dependencies: dependencies),
       ),
     );
   }

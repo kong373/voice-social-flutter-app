@@ -52,8 +52,10 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
       });
     }
     try {
-      final List<DiscoveryRoom> rooms =
-          await widget.dependencies.discoveryRepository.fetchHomeRooms();
+      final List<DiscoveryRoom> rooms = await widget
+          .dependencies
+          .discoveryRepository
+          .fetchHomeRooms();
       if (!mounted) {
         return;
       }
@@ -146,21 +148,21 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
                   sliver: SliverGrid(
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.78,
-                    ),
-                    delegate: SliverChildBuilderDelegate(
-                      (BuildContext context, int index) {
-                        final DiscoveryRoom room = _rooms[index];
-                        return _RoomPoster(
-                          room: room,
-                          onTap: () => widget.onOpenRoom(room),
-                        );
-                      },
-                      childCount: _rooms.length,
-                    ),
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 0.78,
+                        ),
+                    delegate: SliverChildBuilderDelegate((
+                      BuildContext context,
+                      int index,
+                    ) {
+                      final DiscoveryRoom room = _rooms[index];
+                      return _RoomPoster(
+                        room: room,
+                        onTap: () => widget.onOpenRoom(room),
+                      );
+                    }, childCount: _rooms.length),
                   ),
                 ),
             ],
@@ -284,7 +286,10 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
                     child: const Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Icon(Icons.person_search_rounded, color: SocialColors.primary),
+                        Icon(
+                          Icons.person_search_rounded,
+                          color: SocialColors.primary,
+                        ),
                         Spacer(),
                         Text(
                           '找人找房',
@@ -314,7 +319,10 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Icon(Icons.favorite_rounded, color: SocialColors.secondary),
+                        Icon(
+                          Icons.favorite_rounded,
+                          color: SocialColors.secondary,
+                        ),
                         Spacer(),
                         Text(
                           '关系动态',
@@ -356,10 +364,7 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
               '晚星刚刚加入「深夜陪伴」 · 3 位朋友正在收听',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: SocialColors.textSecondary,
-                fontSize: 12,
-              ),
+              style: TextStyle(color: SocialColors.textSecondary, fontSize: 12),
             ),
           ),
           Icon(Icons.chevron_right_rounded, color: SocialColors.textTertiary),
@@ -387,80 +392,82 @@ class _RoomPoster extends StatelessWidget {
         children: <Widget>[
           Expanded(
             child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(22),
+              ),
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints constraints) =>
                     OriginalRoomArtwork(
-                  seed: room.id,
-                  height: constraints.maxHeight,
-                  borderRadius: BorderRadius.zero,
-                  child: Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Row(
+                      seed: room.id,
+                      height: constraints.maxHeight,
+                      borderRadius: BorderRadius.zero,
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.28),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  if (room.isSpeaking)
-                                    const RuntimeWaveform(width: 24)
-                                  else
-                                    const Icon(
-                                      Icons.headphones_rounded,
-                                      size: 14,
-                                      color: Colors.white,
-                                    ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    '${room.onlineCount}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                            Row(
+                              children: <Widget>[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 5,
                                   ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.28),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: <Widget>[
+                                      if (room.isSpeaking)
+                                        const RuntimeWaveform(width: 24)
+                                      else
+                                        const Icon(
+                                          Icons.headphones_rounded,
+                                          size: 14,
+                                          color: Colors.white,
+                                        ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        '${room.onlineCount}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const Spacer(),
+                                if (room.isLocked)
+                                  const Icon(
+                                    Icons.lock_rounded,
+                                    color: Colors.white,
+                                    size: 16,
+                                  ),
+                              ],
+                            ),
+                            const Spacer(),
+                            Text(
+                              room.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                                height: 1.18,
+                                shadows: <Shadow>[
+                                  Shadow(color: Colors.black45, blurRadius: 8),
                                 ],
                               ),
                             ),
-                            const Spacer(),
-                            if (room.isLocked)
-                              const Icon(
-                                Icons.lock_rounded,
-                                color: Colors.white,
-                                size: 16,
-                              ),
                           ],
                         ),
-                        const Spacer(),
-                        Text(
-                          room.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
-                            height: 1.18,
-                            shadows: <Shadow>[
-                              Shadow(color: Colors.black45, blurRadius: 8),
-                            ],
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
               ),
             ),
           ),
@@ -521,10 +528,11 @@ class VideoRuntimeDiscoveryPage extends StatelessWidget {
                   const Spacer(),
                   IconButton.filledTonal(
                     tooltip: '发布动态',
-                    onPressed: dependencies.dynamicRepository.supportsImagePublishing
+                    onPressed:
+                        dependencies.dynamicRepository.supportsImagePublishing
                         ? () => ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('发布入口将在素材服务接入后开放')),
-                            )
+                            const SnackBar(content: Text('发布入口将在素材服务接入后开放')),
+                          )
                         : null,
                     icon: const Icon(Icons.add_rounded),
                   ),

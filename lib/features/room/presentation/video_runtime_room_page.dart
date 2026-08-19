@@ -78,7 +78,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         if (!mounted) {
           return;
         }
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error)));
         _controller.clearError();
       });
     }
@@ -107,8 +109,8 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         child: Scaffold(
           resizeToAvoidBottomInset: false,
           body: switch (_controller.status) {
-            RoomSessionStatus.idle || RoomSessionStatus.joining =>
-              _joiningState(),
+            RoomSessionStatus.idle ||
+            RoomSessionStatus.joining => _joiningState(),
             RoomSessionStatus.failed when _controller.snapshot == null =>
               _failureState(),
             _ => _roomContent(),
@@ -159,13 +161,21 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
               children: <Widget>[
                 IconButton(
                   tooltip: '返回',
-                  onPressed: () => Navigator.of(context).pop(VideoRoomExit.ended),
+                  onPressed: () =>
+                      Navigator.of(context).pop(VideoRoomExit.ended),
                   icon: const Icon(Icons.arrow_back_rounded),
                 ),
                 const Spacer(),
-                const Icon(Icons.wifi_off_rounded, size: 46, color: RoomColors.warning),
+                const Icon(
+                  Icons.wifi_off_rounded,
+                  size: 46,
+                  color: RoomColors.warning,
+                ),
                 const SizedBox(height: 18),
-                Text('暂时无法进入房间', style: Theme.of(context).textTheme.headlineSmall),
+                Text(
+                  '暂时无法进入房间',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
                 const SizedBox(height: 10),
                 Text(_controller.errorMessage ?? '请检查网络后重试。'),
                 const SizedBox(height: 22),
@@ -207,11 +217,11 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                           physics: const NeverScrollableScrollPhysics(),
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 4,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 8,
-                            childAspectRatio: 0.72,
-                          ),
+                                crossAxisCount: 4,
+                                mainAxisSpacing: 12,
+                                crossAxisSpacing: 8,
+                                childAspectRatio: 0.72,
+                              ),
                           itemCount: _controller.seats.length,
                           itemBuilder: (BuildContext context, int index) =>
                               _VideoMicSeat(seat: _controller.seats[index]),
@@ -280,9 +290,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
             ),
           ),
           TextButton(
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('已关注房主')),
-            ),
+            onPressed: () => ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('已关注房主'))),
             child: const Text('关注'),
           ),
           IconButton(
@@ -296,8 +306,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Widget _announcement() {
-    final String topic =
-        _controller.topic.isEmpty ? '欢迎来到房间，请友善交流' : _controller.topic;
+    final String topic = _controller.topic.isEmpty
+        ? '欢迎来到房间，请友善交流'
+        : _controller.topic;
     return InkWell(
       onTap: _openTopic,
       borderRadius: BorderRadius.circular(999),
@@ -310,7 +321,11 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         ),
         child: Row(
           children: <Widget>[
-            const Icon(Icons.campaign_outlined, size: 16, color: RoomColors.gold),
+            const Icon(
+              Icons.campaign_outlined,
+              size: 16,
+              color: RoomColors.gold,
+            ),
             const SizedBox(width: 7),
             Expanded(
               child: Text(
@@ -350,7 +365,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
               alignment: Alignment.centerLeft,
               child: Container(
                 constraints: const BoxConstraints(maxWidth: 330),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 7,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(13),
@@ -361,7 +379,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                       TextSpan(
                         text: '${message.sender}  ',
                         style: TextStyle(
-                          color: message.isSystem ? RoomColors.gold : RoomColors.accent,
+                          color: message.isSystem
+                              ? RoomColors.gold
+                              : RoomColors.accent,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -393,7 +413,11 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         color: const Color(0xEEFFFFFF),
         borderRadius: BorderRadius.circular(22),
         boxShadow: const <BoxShadow>[
-          BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 6)),
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 16,
+            offset: Offset(0, 6),
+          ),
         ],
       ),
       child: Row(
@@ -414,7 +438,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 9,
+                ),
               ),
             ),
           ),
@@ -443,7 +470,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           children: <Widget>[
             _RoomAction(
               icon: _controller.isOnMic
-                  ? (_controller.micMuted ? Icons.mic_off_rounded : Icons.mic_rounded)
+                  ? (_controller.micMuted
+                        ? Icons.mic_off_rounded
+                        : Icons.mic_rounded)
                   : Icons.keyboard_voice_rounded,
               label: _controller.isOnMic
                   ? (_controller.micMuted ? '开麦' : '闭麦')
@@ -548,17 +577,12 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
               seat.userId != _controller.currentUserId,
         )
         .map(
-          (MicSeat seat) => GiftTarget(
-            userId: seat.userId!,
-            name: seat.userName!,
-          ),
+          (MicSeat seat) =>
+              GiftTarget(userId: seat.userId!, name: seat.userName!),
         )
         .toList(growable: false);
-    final String account = AppDependencyScope.of(context)
-            .sessionManager
-            .session
-            ?.mobile ??
-        '';
+    final String account =
+        AppDependencyScope.of(context).sessionManager.session?.mobile ?? '';
     final bool? sent = await showModalBottomSheet<bool>(
       context: context,
       useSafeArea: true,
@@ -571,20 +595,20 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           account: account,
           targets: targets,
           balance: _controller.giftBalance,
-          onSend: (
-            String giftId,
-            String giftName,
-            int receiverUserId,
-            String targetName,
-            int quantity,
-          ) =>
-              _controller.sendGift(
-            giftId: giftId,
-            giftName: giftName,
-            receiverUserId: receiverUserId,
-            targetName: targetName,
-            quantity: quantity,
-          ),
+          onSend:
+              (
+                String giftId,
+                String giftName,
+                int receiverUserId,
+                String targetName,
+                int quantity,
+              ) => _controller.sendGift(
+                giftId: giftId,
+                giftName: giftName,
+                receiverUserId: receiverUserId,
+                targetName: targetName,
+                quantity: quantity,
+              ),
           onRechargeReturn: () async {
             await _controller.reconnect();
             return _controller.giftBalance;
@@ -633,9 +657,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
               _openReport();
             case 'copy':
               Clipboard.setData(ClipboardData(text: _controller.roomCode));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('房间号已复制')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('房间号已复制')));
             case 'minimize':
               _minimize();
             case 'leaveMic':
@@ -702,7 +726,8 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   void _openAudio() {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomAudioPage(isOnMic: _controller.isOnMic),
+        builder: (BuildContext context) =>
+            RoomAudioPage(isOnMic: _controller.isOnMic),
       ),
     );
   }
@@ -710,7 +735,8 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   void _openRecovery() {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomRecoveryPage(controller: _controller),
+        builder: (BuildContext context) =>
+            RoomRecoveryPage(controller: _controller),
       ),
     );
   }
@@ -718,7 +744,8 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   void _openDiagnostics() {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomDiagnosticsPage(controller: _controller),
+        builder: (BuildContext context) =>
+            RoomDiagnosticsPage(controller: _controller),
       ),
     );
   }
@@ -771,7 +798,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                 },
               ),
             ListTile(
-              leading: const Icon(Icons.logout_rounded, color: RoomColors.error),
+              leading: const Icon(
+                Icons.logout_rounded,
+                color: RoomColors.error,
+              ),
               title: const Text('离开房间'),
               subtitle: Text(_controller.isOnMic ? '将同时下麦并结束房间会话' : '结束本次收听'),
               onTap: () {
@@ -802,9 +832,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
       builder: (BuildContext dialogContext) => AlertDialog(
         title: const Text('离开房间？'),
         content: Text(
-          _controller.isOnMic
-              ? '离开后将同时下麦，并结束本次房间会话。'
-              : '确认结束本次收听？',
+          _controller.isOnMic ? '离开后将同时下麦，并结束本次房间会话。' : '确认结束本次收听？',
         ),
         actions: <Widget>[
           TextButton(
@@ -834,9 +862,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     }
     if (!left && _controller.status != RoomSessionStatus.left) {
       setState(() => _ending = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('离开房间失败，请重试')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('离开房间失败，请重试')));
       return;
     }
     Navigator.of(context).pop(VideoRoomExit.ended);
@@ -909,10 +937,10 @@ class _VideoMicSeat extends StatelessWidget {
     final Color ring = speaking
         ? RoomColors.success
         : occupied
-            ? RoomColors.primary
-            : seat.state == MicSeatState.locked
-                ? RoomColors.gold
-                : Colors.white.withValues(alpha: 0.22);
+        ? RoomColors.primary
+        : seat.state == MicSeatState.locked
+        ? RoomColors.gold
+        : Colors.white.withValues(alpha: 0.22);
     return Semantics(
       label: '${seat.number} 号麦，${seat.userName ?? _stateLabel(seat.state)}',
       child: Column(
@@ -927,7 +955,10 @@ class _VideoMicSeat extends StatelessWidget {
                   ? LinearGradient(
                       colors: seat.number.isEven
                           ? const <Color>[RoomColors.primary, RoomColors.accent]
-                          : const <Color>[RoomColors.secondary, RoomColors.primary],
+                          : const <Color>[
+                              RoomColors.secondary,
+                              RoomColors.primary,
+                            ],
                     )
                   : null,
               color: occupied ? null : Colors.white.withValues(alpha: 0.055),
@@ -949,8 +980,8 @@ class _VideoMicSeat extends StatelessWidget {
                   occupied
                       ? Icons.person_rounded
                       : seat.state == MicSeatState.locked
-                          ? Icons.lock_rounded
-                          : Icons.add_rounded,
+                      ? Icons.lock_rounded
+                      : Icons.add_rounded,
                   color: occupied ? Colors.white : RoomColors.textSecondary,
                   size: occupied ? 29 : 22,
                 ),
@@ -966,7 +997,10 @@ class _VideoMicSeat extends StatelessWidget {
                             ? RoomColors.error
                             : const Color(0xFF292A4E),
                         shape: BoxShape.circle,
-                        border: Border.all(color: RoomColors.background, width: 2),
+                        border: Border.all(
+                          color: RoomColors.background,
+                          width: 2,
+                        ),
                       ),
                       child: Icon(
                         seat.state == MicSeatState.occupiedMuted
@@ -1007,12 +1041,12 @@ class _VideoMicSeat extends StatelessWidget {
   }
 
   static String _stateLabel(MicSeatState state) => switch (state) {
-        MicSeatState.available => '空闲',
-        MicSeatState.locked => '已锁定',
-        MicSeatState.mutedAvailable => '空麦闭麦',
-        MicSeatState.occupied => '麦上',
-        MicSeatState.occupiedMuted => '已静音',
-      };
+    MicSeatState.available => '空闲',
+    MicSeatState.locked => '已锁定',
+    MicSeatState.mutedAvailable => '空麦闭麦',
+    MicSeatState.occupied => '麦上',
+    MicSeatState.occupiedMuted => '已静音',
+  };
 }
 
 class _RoomAction extends StatelessWidget {
@@ -1094,7 +1128,11 @@ class _GiftCelebrationOverlay extends StatelessWidget {
           borderRadius: BorderRadius.circular(26),
           border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
           boxShadow: const <BoxShadow>[
-            BoxShadow(color: Color(0x887A5BEB), blurRadius: 34, spreadRadius: 4),
+            BoxShadow(
+              color: Color(0x887A5BEB),
+              blurRadius: 34,
+              spreadRadius: 4,
+            ),
           ],
         ),
         child: const Row(
@@ -1109,7 +1147,11 @@ class _GiftCelebrationOverlay extends StatelessWidget {
                     colors: <Color>[Color(0xFFFFE58A), Color(0xFFFF8EBC)],
                   ),
                 ),
-                child: Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 30),
+                child: Icon(
+                  Icons.auto_awesome_rounded,
+                  color: Colors.white,
+                  size: 30,
+                ),
               ),
             ),
             SizedBox(width: 13),
@@ -1193,7 +1235,8 @@ class _RoomToolsSheetState extends State<_RoomToolsSheet> {
               ButtonSegment<int>(value: 1, label: Text('工具')),
             ],
             selected: <int>{_tab},
-            onSelectionChanged: (Set<int> values) => setState(() => _tab = values.first),
+            onSelectionChanged: (Set<int> values) =>
+                setState(() => _tab = values.first),
           ),
           const SizedBox(height: 18),
           GridView.builder(

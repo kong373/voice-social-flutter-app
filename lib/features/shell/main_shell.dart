@@ -29,20 +29,19 @@ class _MainShellState extends State<MainShell> {
   bool _roomRouteOpen = false;
 
   List<Widget> get _pages => <Widget>[
-        VideoRuntimeHomePage(
-          dependencies: widget.dependencies,
-          onOpenRoom: _openRoom,
-        ),
-        VideoRuntimeDiscoveryPage(dependencies: widget.dependencies),
-        VideoRuntimeMessagesPage(dependencies: widget.dependencies),
-        VideoRuntimeAccountPage(
-          dependencies: widget.dependencies,
-          onSignOut: widget.onSignOut,
-        ),
-      ];
+    VideoRuntimeHomePage(
+      dependencies: widget.dependencies,
+      onOpenRoom: _openRoom,
+    ),
+    VideoRuntimeDiscoveryPage(dependencies: widget.dependencies),
+    VideoRuntimeMessagesPage(dependencies: widget.dependencies),
+    VideoRuntimeAccountPage(
+      dependencies: widget.dependencies,
+      onSignOut: widget.onSignOut,
+    ),
+  ];
 
-  static const List<BottomNavigationBarItem> _items =
-      <BottomNavigationBarItem>[
+  static const List<BottomNavigationBarItem> _items = <BottomNavigationBarItem>[
     BottomNavigationBarItem(
       icon: Icon(Icons.home_outlined),
       activeIcon: Icon(Icons.home_rounded),
@@ -95,16 +94,20 @@ class _MainShellState extends State<MainShell> {
       return;
     }
     _roomRouteOpen = true;
-    final VideoRoomExit? result = await Navigator.of(context).push<VideoRoomExit>(
-      PageRouteBuilder<VideoRoomExit>(
-        transitionDuration: const Duration(milliseconds: 260),
-        reverseTransitionDuration: const Duration(milliseconds: 220),
-        pageBuilder: (_, Animation<double> animation, __) => FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-          child: VideoRuntimeRoomPage(controller: controller),
-        ),
-      ),
-    );
+    final VideoRoomExit? result = await Navigator.of(context)
+        .push<VideoRoomExit>(
+          PageRouteBuilder<VideoRoomExit>(
+            transitionDuration: const Duration(milliseconds: 260),
+            reverseTransitionDuration: const Duration(milliseconds: 220),
+            pageBuilder: (_, Animation<double> animation, __) => FadeTransition(
+              opacity: CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              ),
+              child: VideoRuntimeRoomPage(controller: controller),
+            ),
+          ),
+        );
     _roomRouteOpen = false;
     if (!mounted) {
       return;

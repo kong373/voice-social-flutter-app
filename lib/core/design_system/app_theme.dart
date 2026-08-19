@@ -152,7 +152,10 @@ abstract final class AppTheme {
         hintStyle: const TextStyle(color: SocialColors.textTertiary),
         prefixIconColor: SocialColors.textSecondary,
         suffixIconColor: SocialColors.textSecondary,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide.none,
@@ -171,7 +174,9 @@ abstract final class AppTheme {
           minimumSize: const Size(44, 48),
           foregroundColor: Colors.white,
           backgroundColor: SocialColors.primary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
@@ -180,7 +185,9 @@ abstract final class AppTheme {
           minimumSize: const Size(44, 46),
           foregroundColor: SocialColors.textPrimary,
           side: const BorderSide(color: SocialColors.divider),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
@@ -205,8 +212,14 @@ abstract final class AppTheme {
         backgroundColor: Color(0xFAFFFFFF),
         selectedItemColor: SocialColors.primary,
         unselectedItemColor: SocialColors.textTertiary,
-        selectedLabelStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
-        unselectedLabelStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+        selectedLabelStyle: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+        unselectedLabelStyle: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
         type: BottomNavigationBarType.fixed,
         elevation: 0,
       ),
@@ -310,7 +323,10 @@ abstract final class AppTheme {
         filled: true,
         fillColor: Colors.white.withValues(alpha: 0.09),
         hintStyle: const TextStyle(color: RoomColors.textSecondary),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 15,
+          vertical: 13,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide.none,
@@ -329,7 +345,9 @@ abstract final class AppTheme {
           minimumSize: const Size(44, 48),
           foregroundColor: Colors.white,
           backgroundColor: RoomColors.primary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
@@ -337,7 +355,9 @@ abstract final class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: RoomColors.textPrimary,
           side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
         ),
       ),
       textButtonTheme: TextButtonThemeData(

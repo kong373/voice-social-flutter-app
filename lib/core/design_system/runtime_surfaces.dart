@@ -230,10 +230,7 @@ class OriginalRoomArtwork extends StatelessWidget {
       child: SizedBox(
         height: height,
         width: double.infinity,
-        child: CustomPaint(
-          painter: _OriginalRoomPainter(seed),
-          child: child,
-        ),
+        child: CustomPaint(painter: _OriginalRoomPainter(seed), child: child),
       ),
     );
   }
@@ -241,7 +238,7 @@ class OriginalRoomArtwork extends StatelessWidget {
 
 class _OriginalRoomPainter extends CustomPainter {
   _OriginalRoomPainter(String seed)
-      : value = seed.codeUnits.fold<int>(19, (int a, int b) => a * 37 + b);
+    : value = seed.codeUnits.fold<int>(19, (int a, int b) => a * 37 + b);
 
   final int value;
 
@@ -312,7 +309,10 @@ class RuntimeAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final int value = seed.codeUnits.fold<int>(13, (int a, int b) => a * 31 + b);
+    final int value = seed.codeUnits.fold<int>(
+      13,
+      (int a, int b) => a * 31 + b,
+    );
     const List<Color> palette = <Color>[
       SocialColors.primary,
       SocialColors.secondary,

@@ -11,12 +11,15 @@ void main() {
   test('video runtime uses separate light lobby and immersive room themes', () {
     expect(AppTheme.social().brightness, Brightness.light);
     expect(AppTheme.room().brightness, Brightness.dark);
-    expect(AppTheme.social().bottomNavigationBarTheme.type,
-        BottomNavigationBarType.fixed);
+    expect(
+      AppTheme.social().bottomNavigationBarTheme.type,
+      BottomNavigationBarType.fixed,
+    );
   });
 
-  testWidgets('home enters room, opens gift sheet and minimizes the session',
-      (WidgetTester tester) async {
+  testWidgets('home enters room, opens gift sheet and minimizes the session', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
@@ -28,10 +31,7 @@ void main() {
         dependencies: dependencies,
         child: MaterialApp(
           theme: AppTheme.social(),
-          home: MainShell(
-            dependencies: dependencies,
-            onSignOut: () async {},
-          ),
+          home: MainShell(dependencies: dependencies, onSignOut: () async {}),
         ),
       ),
     );
@@ -72,8 +72,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('light lobby remains stable at 360x800 and 1.3 text scale',
-      (WidgetTester tester) async {
+  testWidgets('light lobby remains stable at 360x800 and 1.3 text scale', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(864, 1920);
     tester.view.devicePixelRatio = 2.4;
     addTearDown(tester.view.resetPhysicalSize);
@@ -87,10 +88,7 @@ void main() {
           dependencies: dependencies,
           child: MaterialApp(
             theme: AppTheme.social(),
-            home: MainShell(
-              dependencies: dependencies,
-              onSignOut: () async {},
-            ),
+            home: MainShell(dependencies: dependencies, onSignOut: () async {}),
           ),
         ),
       ),
