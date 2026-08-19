@@ -1,0 +1,75 @@
+name: M3.3 one-shot video-runtime candidate autofix
+
+on:
+  push:
+    branches:
+      - feat/m3-3-video-runtime-ui
+    paths:
+      - 'lib/core/design_system/app_theme.dart'
+      - 'lib/core/design_system/runtime_surfaces.dart'
+      - 'lib/app/app.dart'
+      - 'lib/features/shell/main_shell.dart'
+      - 'lib/features/shell/video_runtime_pages.dart'
+      - 'lib/features/room/presentation/video_runtime_room_page.dart'
+      - 'test/video_runtime_ui_test.dart'
+      - 'integration_test/m3_3_video_runtime_ui_test.dart'
+      - '.github/workflows/m33-video-runtime-ui.yml'
+      - '.github/workflows/m33-video-runtime-autofix.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: m33-video-runtime-autofix
+  cancel-in-progress: false
+
+jobs:
+  format-and-clean:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/m3-3-video-runtime-ui
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.7
+          channel: stable
+          cache: true
+      - name: Format only the video-runtime candidate and remove obsolete workflow
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f .github/workflows/m33-video-runtime-ui.yml
+          dart format \
+            lib/core/design_system/app_theme.dart \
+            lib/core/design_system/runtime_surfaces.dart \
+            lib/app/app.dart \
+            lib/features/shell/main_shell.dart \
+            lib/features/shell/video_runtime_pages.dart \
+            lib/features/room/presentation/video_runtime_room_page.dart \
+            test/video_runtime_ui_test.dart \
+            integration_test/m3_3_video_runtime_ui_test.dart
+      - name: Commit candidate-only formatting and cleanup
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            .github/workflows/m33-video-runtime-ui.yml \
+            lib/core/design_system/app_theme.dart \
+            lib/core/design_system/runtime_surfaces.dart \
+            lib/app/app.dart \
+            lib/features/shell/main_shell.dart \
+            lib/features/shell/video_runtime_pages.dart \
+            lib/features/room/presentation/video_runtime_room_page.dart \
+            test/video_runtime_ui_test.dart \
+            integration_test/m3_3_video_runtime_ui_test.dart
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'style(ui): format video-runtime candidate'
+          git push origin HEAD:feat/m3-3-video-runtime-ui
