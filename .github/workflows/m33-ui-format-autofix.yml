@@ -1,0 +1,58 @@
+name: M3.3 UI candidate formatter
+
+on:
+  push:
+    branches:
+      - feat/m3-3-apk-ui-replica
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: m33-ui-format-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout UI branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: feat/m3-3-apk-ui-replica
+          fetch-depth: 0
+
+      - name: Install Flutter 3.44.7
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: 3.44.7
+          channel: stable
+          cache: true
+
+      - name: Format candidate Dart sources
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mapfile -d '' dart_files < <(
+            find lib test integration_test tool \
+              -type f -name '*.dart' -print0 | sort -z
+          )
+          test "${#dart_files[@]}" -gt 0
+          dart format "${dart_files[@]}"
+
+      - name: Commit formatting only
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- '*.dart'
+          if git diff --cached --quiet; then
+            echo 'No formatter changes required.'
+            exit 0
+          fi
+          git commit -m 'style(ui): format M3.3 APK replica candidate'
+          git push origin HEAD:feat/m3-3-apk-ui-replica
