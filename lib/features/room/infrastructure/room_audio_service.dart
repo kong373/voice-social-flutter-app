@@ -56,18 +56,18 @@ class UnavailableRoomAudioService implements RoomAudioService {
   const UnavailableRoomAudioService();
 
   RoomAudioSnapshot _unavailable() => RoomAudioSnapshot(
-        configured: false,
-        route: RoomAudioRoute.speaker,
-        availableRoutes: const <RoomAudioRoute>{RoomAudioRoute.speaker},
-        microphonePermissionGranted: false,
-        microphoneEnabled: false,
-        rtcConnected: false,
-        realtimeConnected: false,
-        grade: RoomConnectionGrade.unknown,
-        latencyMs: null,
-        packetLossPercent: null,
-        updatedAt: DateTime.now(),
-      );
+    configured: false,
+    route: RoomAudioRoute.speaker,
+    availableRoutes: const <RoomAudioRoute>{RoomAudioRoute.speaker},
+    microphonePermissionGranted: false,
+    microphoneEnabled: false,
+    rtcConnected: false,
+    realtimeConnected: false,
+    grade: RoomConnectionGrade.unknown,
+    latencyMs: null,
+    packetLossPercent: null,
+    updatedAt: DateTime.now(),
+  );
 
   @override
   Future<RoomAudioSnapshot> inspect() async => _unavailable();

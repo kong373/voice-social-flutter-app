@@ -40,7 +40,9 @@ class _EditRoomPageState extends State<EditRoomPage> {
     if (_repositoryInstance != null) {
       return;
     }
-    _repositoryInstance = AppDependencyScope.of(context).roomLifecycleRepository;
+    _repositoryInstance = AppDependencyScope.of(
+      context,
+    ).roomLifecycleRepository;
     _load();
   }
 
@@ -101,8 +103,8 @@ class _EditRoomPageState extends State<EditRoomPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _room == null
-              ? _buildFailure()
-              : _buildForm(),
+          ? _buildFailure()
+          : _buildForm(),
     );
   }
 
@@ -115,10 +117,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
           children: <Widget>[
             const Icon(Icons.meeting_room_outlined, size: 48),
             const SizedBox(height: 18),
-            Text(
-              _error ?? '房间信息不可用',
-              textAlign: TextAlign.center,
-            ),
+            Text(_error ?? '房间信息不可用', textAlign: TextAlign.center),
             const SizedBox(height: 20),
             FilledButton.tonal(onPressed: _load, child: const Text('重新加载')),
           ],
@@ -204,8 +203,8 @@ class _EditRoomPageState extends State<EditRoomPage> {
                 Text(
                   '关闭房间',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: const Color(0xFFFF7A8D),
-                      ),
+                    color: const Color(0xFFFF7A8D),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -292,9 +291,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         title: const Text('确认关闭房间？'),
-        content: Text(
-          '将关闭“${room.title}”，当前成员会结束本次房间会话。此操作不会被当作普通离房。',
-        ),
+        content: Text('将关闭“${room.title}”，当前成员会结束本次房间会话。此操作不会被当作普通离房。'),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),

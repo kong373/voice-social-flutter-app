@@ -36,7 +36,9 @@ class _RoomDeepLinkPageState extends State<RoomDeepLinkPage> {
     if (_repositoryInstance != null) {
       return;
     }
-    _repositoryInstance = AppDependencyScope.of(context).roomLifecycleRepository;
+    _repositoryInstance = AppDependencyScope.of(
+      context,
+    ).roomLifecycleRepository;
     _resolve();
   }
 
@@ -53,8 +55,9 @@ class _RoomDeepLinkPageState extends State<RoomDeepLinkPage> {
       _resolution = null;
     });
     try {
-      final RoomLinkResolution resolution =
-          await _repository.resolveRoomLink(_controller.text);
+      final RoomLinkResolution resolution = await _repository.resolveRoomLink(
+        _controller.text,
+      );
       if (!mounted) {
         return;
       }
@@ -81,9 +84,7 @@ class _RoomDeepLinkPageState extends State<RoomDeepLinkPage> {
       }
       setState(() {
         _resolving = false;
-        _error = error is ApiException
-            ? error.message
-            : '房间链接校验失败，请检查网络后重试';
+        _error = error is ApiException ? error.message : '房间链接校验失败，请检查网络后重试';
       });
     }
   }
@@ -118,9 +119,9 @@ class _RoomDeepLinkPageState extends State<RoomDeepLinkPage> {
             const SizedBox(height: 10),
             Text(
               _error ?? resolution?.message ?? '请确认房间号后重试。',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
             ),
             const SizedBox(height: 28),
             TextField(
@@ -151,9 +152,7 @@ class _RoomDeepLinkPageState extends State<RoomDeepLinkPage> {
                 color: AppColors.surfaceHigh,
                 borderRadius: BorderRadius.circular(18),
               ),
-              child: const Text(
-                '有效链接会直接进入房间；只有链接无效、房间关闭或不可用时才显示当前恢复界面。',
-              ),
+              child: const Text('有效链接会直接进入房间；只有链接无效、房间关闭或不可用时才显示当前恢复界面。'),
             ),
           ],
         ),

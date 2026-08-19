@@ -47,8 +47,7 @@ class _MainShellState extends State<MainShell> {
     ];
   }
 
-  static const List<BottomNavigationBarItem> _items =
-      <BottomNavigationBarItem>[
+  static const List<BottomNavigationBarItem> _items = <BottomNavigationBarItem>[
     BottomNavigationBarItem(
       icon: Icon(Icons.home_outlined),
       activeIcon: _ActiveNavigationIcon(icon: Icons.home_rounded),

@@ -4,13 +4,12 @@ import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_repository.dart';
 
-class BackendCommerceCatalogRepository
-    implements CommerceCatalogRepository {
+class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   BackendCommerceCatalogRepository({
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
-  })  : _apiClient = apiClient,
-        _routes = routes;
+  }) : _apiClient = apiClient,
+       _routes = routes;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
@@ -24,11 +23,11 @@ class BackendCommerceCatalogRepository
   @override
   List<PaymentChannelType> availableChannels(ClientStorePlatform platform) =>
       platform == ClientStorePlatform.ios
-          ? const <PaymentChannelType>[PaymentChannelType.appleIap]
-          : const <PaymentChannelType>[
-              PaymentChannelType.wechat,
-              PaymentChannelType.alipay,
-            ];
+      ? const <PaymentChannelType>[PaymentChannelType.appleIap]
+      : const <PaymentChannelType>[
+          PaymentChannelType.wechat,
+          PaymentChannelType.alipay,
+        ];
 
   @override
   Future<List<RechargeProduct>> fetchRechargeProducts({
@@ -51,10 +50,7 @@ class BackendCommerceCatalogRepository
       );
     }
     await _apiClient.post(_routes.rechargePrecheck);
-    return const RechargeEligibility(
-      allowed: true,
-      message: '当前账号可以创建充值订单',
-    );
+    return const RechargeEligibility(allowed: true, message: '当前账号可以创建充值订单');
   }
 
   @override
@@ -144,14 +140,15 @@ class BackendCommerceCatalogRepository
     final bool success = _asBool(
       data['success'] ?? data['isSuccess'] ?? data['paid'],
     );
-    final RechargeOrderState state = success ||
+    final RechargeOrderState state =
+        success ||
             const <String>{'success', 'succeeded', 'paid', '2'}.contains(status)
         ? RechargeOrderState.succeeded
         : const <String>{'failed', 'failure', '3'}.contains(status)
-            ? RechargeOrderState.failed
-            : const <String>{'canceled', 'cancelled', '4'}.contains(status)
-                ? RechargeOrderState.canceled
-                : RechargeOrderState.confirming;
+        ? RechargeOrderState.failed
+        : const <String>{'canceled', 'cancelled', '4'}.contains(status)
+        ? RechargeOrderState.canceled
+        : RechargeOrderState.confirming;
     return order.copyWith(
       state: state,
       message: state == RechargeOrderState.succeeded
@@ -162,7 +159,9 @@ class BackendCommerceCatalogRepository
 
   @override
   Future<List<GiftCatalogItem>> fetchGiftCatalog() async {
-    final ApiResponse response = await _apiClient.get(_routes.normalGiftCatalog);
+    final ApiResponse response = await _apiClient.get(
+      _routes.normalGiftCatalog,
+    );
     return _extractList(response.data)
         .where((Map<String, Object?> item) => !_isRetiredGift(item))
         .map(_giftFromMap)
@@ -179,25 +178,26 @@ class BackendCommerceCatalogRepository
     return _extractList(response.data)
         .where((Map<String, Object?> item) => !_isRetiredGift(item))
         .map(_backpackFromMap)
-        .where((BackpackGiftItem item) =>
-            item.gift.id > 0 && item.quantity > 0)
+        .where((BackpackGiftItem item) => item.gift.id > 0 && item.quantity > 0)
         .toList(growable: false);
   }
 
   @override
   Future<MembershipSnapshot> fetchMembershipSnapshot() async {
     final List<Object?> results = await Future.wait<Object?>(<Future<Object?>>[
-      _apiClient.post(_routes.vipInformation).then(
-            (ApiResponse value) => value.data,
-          ),
-      _apiClient.post(
-        _routes.userDecorations,
-        body: <String, Object?>{'pageNum': 1, 'pageSize': 100},
-      ).then((ApiResponse value) => value.data),
+      _apiClient
+          .post(_routes.vipInformation)
+          .then((ApiResponse value) => value.data),
+      _apiClient
+          .post(
+            _routes.userDecorations,
+            body: <String, Object?>{'pageNum': 1, 'pageSize': 100},
+          )
+          .then((ApiResponse value) => value.data),
       fetchBackpackGifts(),
-      _apiClient.get(_routes.ncoinBalance).then(
-            (ApiResponse value) => value.data,
-          ),
+      _apiClient
+          .get(_routes.ncoinBalance)
+          .then((ApiResponse value) => value.data),
     ]);
     final Map<String, Object?> vip = _asMap(results[0]);
     final List<DecorationItem> decorations = _extractList(results[1])
@@ -207,17 +207,16 @@ class BackendCommerceCatalogRepository
     final List<BackpackGiftItem> backpack =
         results[2] as List<BackpackGiftItem>;
     final int balance = _balanceFrom(results[3]);
-    final List<MembershipPlan> plans = _asMapList(
-      vip['plans'] ?? vip['vipList'] ?? vip['products'],
-    ).map(_membershipPlanFromMap).where(
-      (MembershipPlan plan) => plan.id.isNotEmpty,
-    ).toList(growable: false);
+    final List<MembershipPlan> plans =
+        _asMapList(vip['plans'] ?? vip['vipList'] ?? vip['products'])
+            .map(_membershipPlanFromMap)
+            .where((MembershipPlan plan) => plan.id.isNotEmpty)
+            .toList(growable: false);
     final DateTime? expiresAt = _optionalDateTime(
       vip['expireTime'] ?? vip['expiresAt'] ?? vip['vipEndTime'],
     );
-    final bool active = _asBool(
-          vip['isVip'] ?? vip['active'] ?? vip['vipStatus'],
-        ) ||
+    final bool active =
+        _asBool(vip['isVip'] ?? vip['active'] ?? vip['vipStatus']) ||
         (expiresAt?.isAfter(DateTime.now()) ?? false);
     return MembershipSnapshot(
       giftCoinBalance: balance,
@@ -258,10 +257,7 @@ class BackendCommerceCatalogRepository
     }
     await _apiClient.post(
       _routes.purchaseMallGoods,
-      body: <String, Object?>{
-        'goodsId': _numericId(decorationId),
-        'buyNum': 1,
-      },
+      body: <String, Object?>{'goodsId': _numericId(decorationId), 'buyNum': 1},
     );
     final MembershipSnapshot snapshot = await fetchMembershipSnapshot();
     for (final DecorationItem item in snapshot.decorations) {
@@ -310,12 +306,13 @@ class BackendCommerceCatalogRepository
       category: rawCategory.contains('庆')
           ? GiftCatalogCategory.celebration
           : rawCategory.contains('陪')
-              ? GiftCatalogCategory.companionship
-              : GiftCatalogCategory.popular,
+          ? GiftCatalogCategory.companionship
+          : GiftCatalogCategory.popular,
       assetUrl: _optionalString(
         item['iconUrl'] ?? item['giftImgUrl'] ?? item['picUrl'],
       ),
-      enabled: !_asBool(item['disabled']) &&
+      enabled:
+          !_asBool(item['disabled']) &&
           (_asInt(item['status'] ?? item['isShow']) ?? 1) != 0,
     );
   }
@@ -328,10 +325,9 @@ class BackendCommerceCatalogRepository
     return BackpackGiftItem(
       id: _string(item['id'] ?? item['packGiftId']),
       gift: gift,
-      quantity: _asInt(item['quantity'] ?? item['number'] ?? item['giftNum']) ?? 0,
-      expiresAt: _optionalDateTime(
-        item['expireTime'] ?? item['expiresAt'],
-      ),
+      quantity:
+          _asInt(item['quantity'] ?? item['number'] ?? item['giftNum']) ?? 0,
+      expiresAt: _optionalDateTime(item['expireTime'] ?? item['expiresAt']),
     );
   }
 
@@ -339,10 +335,7 @@ class BackendCommerceCatalogRepository
     final int type = _asInt(item['type'] ?? item['decorationType']) ?? 0;
     return DecorationItem(
       id: _string(item['id'] ?? item['decorationId']),
-      name: _string(
-        item['name'] ?? item['decorationName'],
-        fallback: '装扮',
-      ),
+      name: _string(item['name'] ?? item['decorationName'], fallback: '装扮'),
       kind: switch (type) {
         1 => DecorationKind.avatarFrame,
         2 => DecorationKind.entrance,
@@ -350,21 +343,16 @@ class BackendCommerceCatalogRepository
         4 => DecorationKind.voiceWave,
         _ => DecorationKind.profileCard,
       },
-      priceGiftCoins: _asInt(
-            item['price'] ?? item['ncoin'] ?? item['diamond'],
-          ) ??
-          0,
-      owned: !_asBool(item['notOwned']) &&
+      priceGiftCoins:
+          _asInt(item['price'] ?? item['ncoin'] ?? item['diamond']) ?? 0,
+      owned:
+          !_asBool(item['notOwned']) &&
           (_asBool(item['owned']) || item['userDecorationId'] != null),
-      equipped: _asBool(
-        item['isPutOn'] ?? item['equipped'] ?? item['putOn'],
-      ),
+      equipped: _asBool(item['isPutOn'] ?? item['equipped'] ?? item['putOn']),
       assetUrl: _optionalString(
         item['iconUrl'] ?? item['picUrl'] ?? item['resourceUrl'],
       ),
-      expiresAt: _optionalDateTime(
-        item['expireTime'] ?? item['expiresAt'],
-      ),
+      expiresAt: _optionalDateTime(item['expireTime'] ?? item['expiresAt']),
     );
   }
 
@@ -372,10 +360,8 @@ class BackendCommerceCatalogRepository
     return MembershipPlan(
       id: _string(item['id'] ?? item['vipId']),
       name: _string(item['name'] ?? item['vipName'], fallback: '会员'),
-      priceGiftCoins: _asInt(
-            item['price'] ?? item['ncoin'] ?? item['diamond'],
-          ) ??
-          0,
+      priceGiftCoins:
+          _asInt(item['price'] ?? item['ncoin'] ?? item['diamond']) ?? 0,
       durationDays: _asInt(item['days'] ?? item['durationDays']) ?? 0,
       benefits: _split(item['benefits'] ?? item['privileges']),
     );
@@ -415,15 +401,14 @@ class BackendCommerceCatalogRepository
       return value.toInt();
     }
     final Map<String, Object?> map = _asMap(value);
-    return _asInt(
-          map['balance'] ?? map['ncoin'] ?? map['availableBalance'],
-        ) ??
+    return _asInt(map['balance'] ?? map['ncoin'] ?? map['availableBalance']) ??
         0;
   }
 
   static List<Map<String, Object?>> _extractList(Object? value) {
     final Map<String, Object?> map = _asMap(value);
-    final Object? source = map['records'] ??
+    final Object? source =
+        map['records'] ??
         map['list'] ??
         map['rows'] ??
         map['items'] ??
@@ -443,10 +428,12 @@ class BackendCommerceCatalogRepository
     final String text = value?.toString().trim() ?? '';
     return text.isEmpty ? fallback : text;
   }
+
   static String? _optionalString(Object? value) {
     final String text = value?.toString().trim() ?? '';
     return text.isEmpty ? null : text;
   }
+
   static int? _asInt(Object? value) =>
       value is int ? value : int.tryParse(value?.toString() ?? '');
   static bool _asBool(Object? value) =>

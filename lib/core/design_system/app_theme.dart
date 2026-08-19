@@ -28,11 +28,7 @@ abstract final class AppColors {
   static const LinearGradient pageGradient = LinearGradient(
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
-    colors: <Color>[
-      Color(0xFF121143),
-      Color(0xFF080D25),
-      background,
-    ],
+    colors: <Color>[Color(0xFF121143), Color(0xFF080D25), background],
     stops: <double>[0, 0.38, 1],
   );
 }
@@ -187,16 +183,17 @@ abstract final class AppTheme {
         labelStyle: const TextStyle(color: AppColors.textSecondary),
         prefixIconColor: AppColors.textSecondary,
         suffixIconColor: AppColors.textSecondary,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 15,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(17),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(17),
-          borderSide: BorderSide(
-            color: Colors.white.withValues(alpha: 0.07),
-          ),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.07)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(17),
@@ -271,9 +268,7 @@ abstract final class AppTheme {
           fontSize: 12,
           fontWeight: FontWeight.w700,
         ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(999),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
@@ -374,9 +369,7 @@ abstract final class AppTheme {
     );
 
     return base.copyWith(
-      extensions: const <ThemeExtension<dynamic>>[
-        ReplicaThemeData(),
-      ],
+      extensions: const <ThemeExtension<dynamic>>[ReplicaThemeData()],
     );
   }
 }

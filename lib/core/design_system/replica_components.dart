@@ -36,26 +36,17 @@ class ReplicaAppBackdrop extends StatelessWidget {
           const Positioned(
             top: -160,
             left: -130,
-            child: _GlowOrb(
-              size: 360,
-              color: Color(0x4D7E64FF),
-            ),
+            child: _GlowOrb(size: 360, color: Color(0x4D7E64FF)),
           ),
           const Positioned(
             top: 120,
             right: -180,
-            child: _GlowOrb(
-              size: 380,
-              color: Color(0x3358D8FF),
-            ),
+            child: _GlowOrb(size: 380, color: Color(0x3358D8FF)),
           ),
           const Positioned(
             bottom: -220,
             left: 40,
-            child: _GlowOrb(
-              size: 420,
-              color: Color(0x29FF6EAF),
-            ),
+            child: _GlowOrb(size: 420, color: Color(0x29FF6EAF)),
           ),
           child,
         ],
@@ -132,11 +123,7 @@ class ReplicaPanel extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       borderRadius: borderRadius,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: borderRadius,
-        child: body,
-      ),
+      child: InkWell(onTap: onTap, borderRadius: borderRadius, child: body),
     );
   }
 }
@@ -165,10 +152,7 @@ class ReplicaSectionTitle extends StatelessWidget {
               Text(title, style: Theme.of(context).textTheme.titleLarge),
               if (subtitle != null) ...<Widget>[
                 const SizedBox(height: 4),
-                Text(
-                  subtitle!,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                Text(subtitle!, style: Theme.of(context).textTheme.bodySmall),
               ],
             ],
           ),
@@ -228,9 +212,9 @@ class ReplicaPill extends StatelessWidget {
           Text(
             label,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: foreground,
-                  fontWeight: FontWeight.w700,
-                ),
+              color: foreground,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -292,9 +276,9 @@ class ReplicaIconTile extends StatelessWidget {
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.textPrimary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppColors.textPrimary),
             ),
           ],
         ),
@@ -319,7 +303,10 @@ class ReplicaRoomArtwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final int value = seed.codeUnits.fold<int>(17, (int a, int b) => a * 31 + b);
+    final int value = seed.codeUnits.fold<int>(
+      17,
+      (int a, int b) => a * 31 + b,
+    );
     final List<List<Color>> palettes = <List<Color>>[
       const <Color>[Color(0xFF31245D), Color(0xFF111A40), Color(0xFF071020)],
       const <Color>[Color(0xFF183D5C), Color(0xFF17204B), Color(0xFF080E26)],
@@ -369,14 +356,15 @@ class _RoomArtworkPainter extends CustomPainter {
     }
 
     final Paint moon = Paint()
-      ..shader = const RadialGradient(
-        colors: <Color>[Color(0xFFF5EEFF), Color(0xFF9C7CFF)],
-      ).createShader(
-        Rect.fromCircle(
-          center: Offset(size.width * 0.78, size.height * 0.22),
-          radius: size.shortestSide * 0.14,
-        ),
-      );
+      ..shader =
+          const RadialGradient(
+            colors: <Color>[Color(0xFFF5EEFF), Color(0xFF9C7CFF)],
+          ).createShader(
+            Rect.fromCircle(
+              center: Offset(size.width * 0.78, size.height * 0.22),
+              radius: size.shortestSide * 0.14,
+            ),
+          );
     canvas.drawCircle(
       Offset(size.width * 0.78, size.height * 0.22),
       size.shortestSide * 0.085,
@@ -388,19 +376,13 @@ class _RoomArtworkPainter extends CustomPainter {
       ..lineTo(0, size.height * 0.72);
     double x = 0;
     while (x <= size.width) {
-      mountain.lineTo(
-        x,
-        size.height * (0.58 + random.nextDouble() * 0.2),
-      );
+      mountain.lineTo(x, size.height * (0.58 + random.nextDouble() * 0.2));
       x += size.width / 8;
     }
     mountain
       ..lineTo(size.width, size.height)
       ..close();
-    canvas.drawPath(
-      mountain,
-      Paint()..color = const Color(0xD9070A1C),
-    );
+    canvas.drawPath(mountain, Paint()..color = const Color(0xD9070A1C));
 
     final Paint reflection = Paint()..strokeCap = StrokeCap.round;
     for (int index = 0; index < 18; index += 1) {
@@ -437,7 +419,10 @@ class ReplicaAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final int value = seed.codeUnits.fold<int>(11, (int a, int b) => a * 37 + b);
+    final int value = seed.codeUnits.fold<int>(
+      11,
+      (int a, int b) => a * 37 + b,
+    );
     final List<Color> colors = <Color>[
       AppColors.primary,
       AppColors.secondary,
@@ -511,7 +496,15 @@ class _WaveformPainter extends CustomPainter {
           .withValues(alpha: active ? 0.88 : 0.42)
       ..strokeWidth = 2
       ..strokeCap = StrokeCap.round;
-    const List<double> levels = <double>[0.32, 0.62, 0.9, 0.48, 0.76, 0.36, 0.68];
+    const List<double> levels = <double>[
+      0.32,
+      0.62,
+      0.9,
+      0.48,
+      0.76,
+      0.36,
+      0.68,
+    ];
     final double step = size.width / levels.length;
     for (int index = 0; index < levels.length; index += 1) {
       final double barHeight = size.height * (active ? levels[index] : 0.28);

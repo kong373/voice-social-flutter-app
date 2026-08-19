@@ -17,8 +17,9 @@ void main() {
     expect(theme.extensions[ReplicaThemeData], isNotNull);
   });
 
-  testWidgets('home renders the APK-inspired room discovery hierarchy',
-      (WidgetTester tester) async {
+  testWidgets('home renders the APK-inspired room discovery hierarchy', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
@@ -30,9 +31,8 @@ void main() {
         dependencies: dependencies,
         child: MaterialApp(
           theme: AppTheme.dark(),
-          builder: (BuildContext context, Widget? child) => ReplicaAppBackdrop(
-            child: child ?? const SizedBox.shrink(),
-          ),
+          builder: (BuildContext context, Widget? child) =>
+              ReplicaAppBackdrop(child: child ?? const SizedBox.shrink()),
           home: const Scaffold(body: HomePage()),
         ),
       ),
@@ -49,8 +49,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('room artwork and panels remain stable on compact viewport',
-      (WidgetTester tester) async {
+  testWidgets('room artwork and panels remain stable on compact viewport', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(864, 1920);
     tester.view.devicePixelRatio = 2.4;
     addTearDown(tester.view.resetPhysicalSize);

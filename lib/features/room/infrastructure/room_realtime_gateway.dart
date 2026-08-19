@@ -1,10 +1,7 @@
 import 'dart:async';
 
 class RoomRealtimeEvent {
-  const RoomRealtimeEvent({
-    required this.code,
-    required this.payload,
-  });
+  const RoomRealtimeEvent({required this.code, required this.payload});
 
   final int code;
   final Map<String, Object?> payload;

@@ -72,9 +72,9 @@ class _GiftSheetState extends State<GiftSheet> {
 
   Future<void> _loadCatalog() async {
     try {
-      final List<GiftCatalogItem> values = await AppDependencyScope.of(context)
-          .commerceCatalogRepository
-          .fetchGiftCatalog();
+      final List<GiftCatalogItem> values = await AppDependencyScope.of(
+        context,
+      ).commerceCatalogRepository.fetchGiftCatalog();
       if (!mounted) {
         return;
       }
@@ -104,9 +104,10 @@ class _GiftSheetState extends State<GiftSheet> {
   Widget build(BuildContext context) {
     final GiftCatalogItem? gift = _selectedGift;
     final int total = gift == null ? 0 : gift.price * _quantity;
-    final List<GiftCatalogItem> visible = (_catalog ?? const <GiftCatalogItem>[])
-        .where((GiftCatalogItem item) => item.category == _category)
-        .toList(growable: false);
+    final List<GiftCatalogItem> visible =
+        (_catalog ?? const <GiftCatalogItem>[])
+            .where((GiftCatalogItem item) => item.category == _category)
+            .toList(growable: false);
     return SafeArea(
       top: false,
       child: Padding(
@@ -169,7 +170,7 @@ class _GiftSheetState extends State<GiftSheet> {
                   onChanged: _submitting
                       ? null
                       : (GiftTarget? value) =>
-                          setState(() => _selectedTarget = value),
+                            setState(() => _selectedTarget = value),
                 ),
               const SizedBox(height: 16),
               Text('普通礼物', style: Theme.of(context).textTheme.titleMedium),
@@ -218,12 +219,15 @@ class _GiftSheetState extends State<GiftSheet> {
                     onSelectionChanged: _submitting
                         ? null
                         : (Set<GiftCatalogCategory> values) => setState(() {
-                              _category = values.first;
-                              _selectedGift = (_catalog ?? const <GiftCatalogItem>[])
-                                  .where((GiftCatalogItem item) =>
-                                      item.category == values.first)
-                                  .firstOrNull;
-                            }),
+                            _category = values.first;
+                            _selectedGift =
+                                (_catalog ?? const <GiftCatalogItem>[])
+                                    .where(
+                                      (GiftCatalogItem item) =>
+                                          item.category == values.first,
+                                    )
+                                    .firstOrNull;
+                          }),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -243,17 +247,16 @@ class _GiftSheetState extends State<GiftSheet> {
                               borderRadius: BorderRadius.circular(18),
                               onTap: _submitting
                                   ? null
-                                  : () => setState(
-                                        () => _selectedGift = item,
-                                      ),
+                                  : () => setState(() => _selectedGift = item),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 160),
                                 width: 88,
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
                                   color: selected
-                                      ? AppColors.primary
-                                          .withValues(alpha: 0.18)
+                                      ? AppColors.primary.withValues(
+                                          alpha: 0.18,
+                                        )
                                       : AppColors.surfaceHigh,
                                   borderRadius: BorderRadius.circular(18),
                                   border: Border.all(
@@ -274,9 +277,9 @@ class _GiftSheetState extends State<GiftSheet> {
                                     ),
                                     Text(
                                       '${item.price}',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                     ),
                                   ],
                                 ),
@@ -305,7 +308,8 @@ class _GiftSheetState extends State<GiftSheet> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: _submitting ||
+                  onPressed:
+                      _submitting ||
                           _selectedTarget == null ||
                           _selectedGift == null
                       ? null
@@ -378,16 +382,15 @@ class _GiftSheetState extends State<GiftSheet> {
         final int? current = _balance;
         if (current != null) {
           setState(
-            () => _balance =
-                (current - total).clamp(0, 1 << 31).toInt(),
+            () => _balance = (current - total).clamp(0, 1 << 31).toInt(),
           );
         }
         Navigator.of(context).pop(true);
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('赠送失败，请检查余额或网络后重试')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('赠送失败，请检查余额或网络后重试')));
     } finally {
       if (mounted) {
         setState(() => _submitting = false);
@@ -396,10 +399,10 @@ class _GiftSheetState extends State<GiftSheet> {
   }
 
   static IconData _giftIcon(GiftCatalogCategory category) => switch (category) {
-        GiftCatalogCategory.popular => Icons.auto_awesome_rounded,
-        GiftCatalogCategory.companionship => Icons.favorite_outline_rounded,
-        GiftCatalogCategory.celebration => Icons.celebration_outlined,
-      };
+    GiftCatalogCategory.popular => Icons.auto_awesome_rounded,
+    GiftCatalogCategory.companionship => Icons.favorite_outline_rounded,
+    GiftCatalogCategory.celebration => Icons.celebration_outlined,
+  };
 }
 
 extension _FirstOrNullGift<T> on Iterable<T> {

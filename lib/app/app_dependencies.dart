@@ -115,11 +115,11 @@ class AppDependencies {
         : const MockAuthRepository();
     final AccountComplianceRepository accountComplianceRepository =
         environment.isLive
-            ? BackendAccountComplianceRepository(
-                apiClient: apiClient,
-                routes: routes,
-              )
-            : MockAccountComplianceRepository();
+        ? BackendAccountComplianceRepository(
+            apiClient: apiClient,
+            routes: routes,
+          )
+        : MockAccountComplianceRepository();
     final DiscoveryRepository discoveryRepository = environment.isLive
         ? BackendDiscoveryRepository(
             apiClient: apiClient,
@@ -193,10 +193,11 @@ class AppDependencies {
     final RoomAudioService roomAudioService = environment.isLive
         ? const UnavailableRoomAudioService()
         : MockRoomAudioService();
-    final DeviceIdentityProvider deviceIdentityProvider = DeviceIdentityProvider(
-      environment: environment,
-      sessionManager: sessionManager,
-    );
+    final DeviceIdentityProvider deviceIdentityProvider =
+        DeviceIdentityProvider(
+          environment: environment,
+          sessionManager: sessionManager,
+        );
     final AuthController authController = AuthController(
       repository: authRepository,
       sessionManager: sessionManager,

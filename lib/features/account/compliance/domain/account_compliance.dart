@@ -211,8 +211,5 @@ abstract interface class AccountComplianceRepository {
     required int platformType,
   });
 
-  Future<bool> setYouthMode({
-    required bool enabled,
-    required String pin,
-  });
+  Future<bool> setYouthMode({required bool enabled, required String pin});
 }

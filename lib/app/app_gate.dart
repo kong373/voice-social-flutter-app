@@ -148,8 +148,8 @@ class SessionRecoveryPage extends StatelessWidget {
                   Text(
                     message ?? '网络或服务暂时不可用，你的本地会话仍被安全保留。',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
+                      color: AppColors.textSecondary,
+                    ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 24),

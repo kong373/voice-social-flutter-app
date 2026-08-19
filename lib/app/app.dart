@@ -20,9 +20,8 @@ class VoiceSocialApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         title: 'Voice Social App',
         theme: AppTheme.dark(),
-        builder: (BuildContext context, Widget? child) => ReplicaAppBackdrop(
-          child: child ?? const SizedBox.shrink(),
-        ),
+        builder: (BuildContext context, Widget? child) =>
+            ReplicaAppBackdrop(child: child ?? const SizedBox.shrink()),
         home: qaConsoleEnabled
             ? const QaConsoleHost()
             : AppGate(dependencies: dependencies),
@@ -41,9 +40,8 @@ class BootstrapFailureApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
-      builder: (BuildContext context, Widget? child) => ReplicaAppBackdrop(
-        child: child ?? const SizedBox.shrink(),
-      ),
+      builder: (BuildContext context, Widget? child) =>
+          ReplicaAppBackdrop(child: child ?? const SizedBox.shrink()),
       home: Scaffold(
         body: SafeArea(
           child: Padding(

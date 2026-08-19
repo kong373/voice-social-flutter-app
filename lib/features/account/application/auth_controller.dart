@@ -21,9 +21,9 @@ class AuthController extends ChangeNotifier {
     required AuthRepository repository,
     required AuthSessionManager sessionManager,
     required DeviceIdentityProvider deviceIdentityProvider,
-  })  : _repository = repository,
-        _sessionManager = sessionManager,
-        _deviceIdentityProvider = deviceIdentityProvider;
+  }) : _repository = repository,
+       _sessionManager = sessionManager,
+       _deviceIdentityProvider = deviceIdentityProvider;
 
   final AuthRepository _repository;
   final AuthSessionManager _sessionManager;
@@ -164,13 +164,13 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
     try {
       final ClientDevice device = await _deviceIdentityProvider.load();
-      final AuthSession authenticatedSession =
-          await _repository.registerWithSms(
-        phone: phone,
-        smsCode: smsCode,
-        device: device,
-        profile: profile,
-      );
+      final AuthSession authenticatedSession = await _repository
+          .registerWithSms(
+            phone: phone,
+            smsCode: smsCode,
+            device: device,
+            profile: profile,
+          );
       await _sessionManager.save(authenticatedSession);
       _pendingPhone = null;
       _pendingSmsCode = null;
@@ -194,11 +194,13 @@ class AuthController extends ChangeNotifier {
     }
     final Future<bool> future = _performRefresh();
     _refreshInFlight = future;
-    unawaited(future.whenComplete(() {
-      if (identical(_refreshInFlight, future)) {
-        _refreshInFlight = null;
-      }
-    }));
+    unawaited(
+      future.whenComplete(() {
+        if (identical(_refreshInFlight, future)) {
+          _refreshInFlight = null;
+        }
+      }),
+    );
     return future;
   }
 
@@ -302,8 +304,7 @@ class AuthController extends ChangeNotifier {
 
   static bool _isCredentialFailure(Object error) =>
       error is ApiException &&
-      (error.isAuthenticationFailure ||
-          error.kind == ApiFailureKind.forbidden);
+      (error.isAuthenticationFailure || error.kind == ApiFailureKind.forbidden);
 
   static String _messageFor(Object error, {required String fallback}) =>
       error is ApiException ? error.message : fallback;

@@ -3,25 +3,32 @@ import 'package:voice_social_app/features/discovery/dynamic/data/mock_dynamic_re
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_models.dart';
 
 void main() {
-  test('dynamic likes and comments remain scoped to the selected post', () async {
-    final MockDynamicRepository repository = MockDynamicRepository();
-    final PagedResult<DynamicPost> feed = await repository.fetchFeed();
-    final DynamicPost first = feed.items.first;
-    final DynamicPost second = feed.items[1];
+  test(
+    'dynamic likes and comments remain scoped to the selected post',
+    () async {
+      final MockDynamicRepository repository = MockDynamicRepository();
+      final PagedResult<DynamicPost> feed = await repository.fetchFeed();
+      final DynamicPost first = feed.items.first;
+      final DynamicPost second = feed.items[1];
 
-    final DynamicPost liked = await repository.toggleLike(first.id);
-    expect(liked.isLiked, isNot(first.isLiked));
-    expect((await repository.fetchPost(second.id)).likeCount, second.likeCount);
+      final DynamicPost liked = await repository.toggleLike(first.id);
+      expect(liked.isLiked, isNot(first.isLiked));
+      expect(
+        (await repository.fetchPost(second.id)).likeCount,
+        second.likeCount,
+      );
 
-    await repository.addComment(
-      dynamicId: first.id,
-      content: '这条回应只属于第一条动态',
-    );
-    expect((await repository.fetchPost(first.id)).commentCount,
-        first.commentCount + 1);
-    expect((await repository.fetchPost(second.id)).commentCount,
-        second.commentCount);
-  });
+      await repository.addComment(dynamicId: first.id, content: '这条回应只属于第一条动态');
+      expect(
+        (await repository.fetchPost(first.id)).commentCount,
+        first.commentCount + 1,
+      );
+      expect(
+        (await repository.fetchPost(second.id)).commentCount,
+        second.commentCount,
+      );
+    },
+  );
 
   test('text publishing and ranking work without vendor SDKs', () async {
     final MockDynamicRepository repository = MockDynamicRepository();

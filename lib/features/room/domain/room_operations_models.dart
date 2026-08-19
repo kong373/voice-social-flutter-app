@@ -30,7 +30,8 @@ class RoomMember {
   final int charmLevel;
 
   bool get isOnMic => presence == RoomMemberPresence.onMic;
-  bool get isManager => role == RoomRole.owner ||
+  bool get isManager =>
+      role == RoomRole.owner ||
       role == RoomRole.moderator ||
       role == RoomRole.platformModerator;
 
@@ -72,10 +73,7 @@ class RoomMemberPage {
 }
 
 class RoomTopic {
-  const RoomTopic({
-    required this.title,
-    required this.content,
-  });
+  const RoomTopic({required this.title, required this.content});
 
   final String title;
   final String content;

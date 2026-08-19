@@ -147,9 +147,8 @@ class _HomePageState extends State<HomePage> {
                       onTap: rooms.length <= 1
                           ? null
                           : () => setState(
-                                () => _rotation =
-                                    (_rotation + 1) % rooms.length,
-                              ),
+                              () => _rotation = (_rotation + 1) % rooms.length,
+                            ),
                     ),
                   ),
                 ),
@@ -179,10 +178,10 @@ class _HomePageState extends State<HomePage> {
                   separatorBuilder: (_, __) => const SizedBox(height: 12),
                   itemBuilder: (BuildContext context, int index) =>
                       _LiveRoomCard(
-                    room: rooms[index],
-                    index: index,
-                    onTap: () => _enterRoom(rooms[index]),
-                  ),
+                        room: rooms[index],
+                        index: index,
+                        onTap: () => _enterRoom(rooms[index]),
+                      ),
                 ),
               ),
             ],
@@ -408,10 +407,10 @@ class _HeroRoomCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          shadows: const <Shadow>[
-                            Shadow(color: Colors.black, blurRadius: 10),
-                          ],
-                        ),
+                      shadows: const <Shadow>[
+                        Shadow(color: Colors.black, blurRadius: 10),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 5),
                   Text(
@@ -419,11 +418,11 @@ class _HeroRoomCard extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.white.withValues(alpha: 0.88),
-                          shadows: const <Shadow>[
-                            Shadow(color: Colors.black, blurRadius: 8),
-                          ],
-                        ),
+                      color: Colors.white.withValues(alpha: 0.88),
+                      shadows: const <Shadow>[
+                        Shadow(color: Colors.black, blurRadius: 8),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -446,10 +445,7 @@ class _HeroRoomCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: onEnter,
-                      child: const Text('进入'),
-                    ),
+                    FilledButton(onPressed: onEnter, child: const Text('进入')),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -527,7 +523,11 @@ class _LiveRoomCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: <Widget>[
-                    _AvatarStack(seed: room.id, count: room.occupiedSeats, small: true),
+                    _AvatarStack(
+                      seed: room.id,
+                      count: room.occupiedSeats,
+                      small: true,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -543,7 +543,10 @@ class _LiveRoomCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 6),
-          const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary),
+          const Icon(
+            Icons.chevron_right_rounded,
+            color: AppColors.textSecondary,
+          ),
         ],
       ),
     );

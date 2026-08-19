@@ -23,8 +23,9 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
 
   Future<void> _load() async {
     try {
-      final WalletSummary wallet =
-          await AppDependencyScope.of(context).commerceRepository.fetchWalletSummary();
+      final WalletSummary wallet = await AppDependencyScope.of(
+        context,
+      ).commerceRepository.fetchWalletSummary();
       if (mounted) {
         setState(() {
           _wallet = wallet;
@@ -59,8 +60,8 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
       ),
       body: _wallet == null
           ? _error == null
-              ? const Center(child: CircularProgressIndicator())
-              : _CommerceErrorState(message: _error!, onRetry: _load)
+                ? const Center(child: CircularProgressIndicator())
+                : _CommerceErrorState(message: _error!, onRetry: _load)
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: <Widget>[
@@ -116,7 +117,8 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
                 ),
                 const SizedBox(height: 18),
                 const _CommerceInfoBanner(
-                  text: '微信支付、支付宝和 Apple IAP 尚在申请。Android 只保留微信与支付宝，iOS 只保留 Apple IAP；支付结果不由客户端自行判定。',
+                  text:
+                      '微信支付、支付宝和 Apple IAP 尚在申请。Android 只保留微信与支付宝，iOS 只保留 Apple IAP；支付结果不由客户端自行判定。',
                 ),
               ],
             ),
@@ -157,11 +159,7 @@ class _WalletPageState extends State<WalletPage> {
     try {
       final List<Object> results = await Future.wait<Object>(<Future<Object>>[
         _repository.fetchWalletSummary(),
-        _repository.fetchLedger(
-          direction: _direction,
-          page: 1,
-          pageSize: 50,
-        ),
+        _repository.fetchLedger(direction: _direction, page: 1, pageSize: 50),
       ]);
       final WalletSummary wallet = results[0] as WalletSummary;
       final CommercePage<LedgerEntry> page =

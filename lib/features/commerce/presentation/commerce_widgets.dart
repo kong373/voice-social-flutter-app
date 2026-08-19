@@ -22,7 +22,9 @@ class _WalletSummaryCard extends StatelessWidget {
           Text('礼物币余额', style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 4),
           Text(
-            wallet.giftCoinBalance == null ? '读取中' : '${wallet.giftCoinBalance}',
+            wallet.giftCoinBalance == null
+                ? '读取中'
+                : '${wallet.giftCoinBalance}',
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 16),
@@ -30,9 +32,18 @@ class _WalletSummaryCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: <Widget>[
-              _SummaryMetric(label: '可提现', value: '¥${wallet.cashBalance.toStringAsFixed(2)}'),
-              _SummaryMetric(label: '冻结', value: '¥${wallet.frozenBalance.toStringAsFixed(2)}'),
-              _SummaryMetric(label: '累计收益', value: '¥${wallet.totalEarnings.toStringAsFixed(2)}'),
+              _SummaryMetric(
+                label: '可提现',
+                value: '¥${wallet.cashBalance.toStringAsFixed(2)}',
+              ),
+              _SummaryMetric(
+                label: '冻结',
+                value: '¥${wallet.frozenBalance.toStringAsFixed(2)}',
+              ),
+              _SummaryMetric(
+                label: '累计收益',
+                value: '¥${wallet.totalEarnings.toStringAsFixed(2)}',
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -243,20 +254,21 @@ class _CommerceErrorState extends StatelessWidget {
 }
 
 String _orderStatusLabel(PaymentOrderStatus status) => switch (status) {
-      PaymentOrderStatus.pending => '待支付',
-      PaymentOrderStatus.confirming => '服务端确认中',
-      PaymentOrderStatus.succeeded => '支付成功',
-      PaymentOrderStatus.failed => '支付失败',
-      PaymentOrderStatus.canceled => '已取消',
-      PaymentOrderStatus.unknown => '状态待核验',
-    };
+  PaymentOrderStatus.pending => '待支付',
+  PaymentOrderStatus.confirming => '服务端确认中',
+  PaymentOrderStatus.succeeded => '支付成功',
+  PaymentOrderStatus.failed => '支付失败',
+  PaymentOrderStatus.canceled => '已取消',
+  PaymentOrderStatus.unknown => '状态待核验',
+};
 
 IconData _refundIcon(RefundStatus status) => switch (status) {
-      RefundStatus.approved => Icons.check_circle_rounded,
-      RefundStatus.rejected => Icons.cancel_rounded,
-      RefundStatus.reviewing || RefundStatus.resubmitted => Icons.hourglass_top_rounded,
-      RefundStatus.unavailable => Icons.block_rounded,
-    };
+  RefundStatus.approved => Icons.check_circle_rounded,
+  RefundStatus.rejected => Icons.cancel_rounded,
+  RefundStatus.reviewing ||
+  RefundStatus.resubmitted => Icons.hourglass_top_rounded,
+  RefundStatus.unavailable => Icons.block_rounded,
+};
 
 String _formatDateTime(DateTime value) {
   final DateTime local = value.toLocal();

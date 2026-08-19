@@ -17,10 +17,7 @@ abstract interface class RoomOperationsRepository {
 
   Future<RoomTopic> fetchTopic(String roomId);
 
-  Future<void> updateTopic({
-    required String roomId,
-    required RoomTopic topic,
-  });
+  Future<void> updateTopic({required String roomId, required RoomTopic topic});
 
   Future<void> setUserMuted({
     required String roomId,
@@ -34,10 +31,7 @@ abstract interface class RoomOperationsRepository {
     required bool manager,
   });
 
-  Future<void> kickUser({
-    required String roomId,
-    required int userId,
-  });
+  Future<void> kickUser({required String roomId, required int userId});
 
   Future<void> takeUserOffMic({
     required int backendMicIndex,
@@ -62,9 +56,7 @@ abstract interface class RoomOperationsRepository {
     required int seatNumber,
   });
 
-  Future<void> cancelMicRequest({
-    required String requestId,
-  });
+  Future<void> cancelMicRequest({required String requestId});
 
   Future<void> resolveMicRequest({
     required String requestId,

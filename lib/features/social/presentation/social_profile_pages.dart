@@ -73,13 +73,12 @@ class _PersonalCenterPageState extends State<PersonalCenterPage> {
       );
     }
     final SocialProfile profile = _profile!;
-    final AppDependencyScope scope =
-        context.dependOnInheritedWidgetOfExactType<AppDependencyScope>()!;
+    final AppDependencyScope scope = context
+        .dependOnInheritedWidgetOfExactType<AppDependencyScope>()!;
     final int currentVersion =
         int.tryParse(scope.dependencies.environment.clientInnerVersion) ?? 1;
-    final int platformType = scope.dependencies.environment.clientType
-            .toLowerCase()
-            .contains('ios')
+    final int platformType =
+        scope.dependencies.environment.clientType.toLowerCase().contains('ios')
         ? 2
         : 1;
     return SafeArea(
@@ -161,11 +160,13 @@ class _PersonalCenterPageState extends State<PersonalCenterPage> {
                   icon: Icons.security_outlined,
                   title: '账号与安全',
                   subtitle: '权限、实名、设备、申诉、注销与青少年模式',
-                  onTap: () => _open(AccountComplianceHubPage(
-                    account: widget.session?.mobile ?? profile.account,
-                    currentVersion: currentVersion,
-                    platformType: platformType,
-                  )),
+                  onTap: () => _open(
+                    AccountComplianceHubPage(
+                      account: widget.session?.mobile ?? profile.account,
+                      currentVersion: currentVersion,
+                      platformType: platformType,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -208,10 +209,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.initialProfile.user.name);
-    _signatureController =
-        TextEditingController(text: widget.initialProfile.user.signature);
-    _birthdayController = TextEditingController(text: widget.initialProfile.birthday);
+    _nameController = TextEditingController(
+      text: widget.initialProfile.user.name,
+    );
+    _signatureController = TextEditingController(
+      text: widget.initialProfile.user.signature,
+    );
+    _birthdayController = TextEditingController(
+      text: widget.initialProfile.birthday,
+    );
     _cityController = TextEditingController(text: widget.initialProfile.city);
     _sex = widget.initialProfile.sex == 1 ? 1 : 2;
   }
@@ -232,20 +238,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
     setState(() => _busy = true);
     try {
       await AppDependencyScope.of(context).socialRepository.updateMyProfile(
-            nickname: _nameController.text,
-            signature: _signatureController.text,
-            sex: _sex,
-            birthday: _birthdayController.text,
-            city: _cityController.text,
-          );
+        nickname: _nameController.text,
+        signature: _signatureController.text,
+        sex: _sex,
+        birthday: _birthdayController.text,
+        city: _cityController.text,
+      );
       if (mounted) {
         Navigator.of(context).pop();
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -263,9 +269,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: <Widget>[
-            const _InfoBanner(
-              text: '头像和封面上传需要对象存储适配器。本阶段先完成可直接联调的文字资料。',
-            ),
+            const _InfoBanner(text: '头像和封面上传需要对象存储适配器。本阶段先完成可直接联调的文字资料。'),
             const SizedBox(height: 14),
             TextFormField(
               controller: _nameController,
@@ -341,9 +345,9 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
 
   Future<void> _load() async {
     try {
-      final SocialProfile value = await AppDependencyScope.of(context)
-          .socialRepository
-          .fetchPublicProfile(widget.userId);
+      final SocialProfile value = await AppDependencyScope.of(
+        context,
+      ).socialRepository.fetchPublicProfile(widget.userId);
       if (mounted) {
         setState(() {
           _profile = value;
@@ -364,17 +368,17 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     setState(() => _busy = true);
     try {
       await AppDependencyScope.of(context).socialRepository.setFollowing(
-            userId: widget.userId,
-            following: !_profile!.user.isFollowing,
-          );
+        userId: widget.userId,
+        following: !_profile!.user.isFollowing,
+      );
       if (mounted) {
         await _load();
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -389,9 +393,7 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
       context: context,
       builder: (BuildContext context) => AlertDialog(
         title: Text(next ? '加入黑名单？' : '移出黑名单？'),
-        content: Text(next
-            ? '加入黑名单后将取消现有关注或好友关系。'
-            : '移出后不会自动恢复之前的关注关系。'),
+        content: Text(next ? '加入黑名单后将取消现有关注或好友关系。' : '移出后不会自动恢复之前的关注关系。'),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -407,10 +409,9 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     if (confirmed != true || !mounted) {
       return;
     }
-    await AppDependencyScope.of(context).socialRepository.setBlocked(
-          userId: widget.userId,
-          blocked: next,
-        );
+    await AppDependencyScope.of(
+      context,
+    ).socialRepository.setBlocked(userId: widget.userId, blocked: next);
     if (mounted) {
       await _load();
     }
@@ -423,8 +424,8 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
       appBar: AppBar(title: const Text('个人主页')),
       body: profile == null
           ? _error == null
-              ? const Center(child: CircularProgressIndicator())
-              : _ErrorState(message: _error!, onRetry: _load)
+                ? const Center(child: CircularProgressIndicator())
+                : _ErrorState(message: _error!, onRetry: _load)
           : ListView(
               padding: const EdgeInsets.all(20),
               children: <Widget>[
@@ -437,18 +438,22 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
                   runSpacing: 10,
                   children: <Widget>[
                     FilledButton.tonal(
-                      onPressed: _busy || profile.user.isBlocked ? null : _follow,
+                      onPressed: _busy || profile.user.isBlocked
+                          ? null
+                          : _follow,
                       child: Text(profile.user.isFollowing ? '取消关注' : '关注'),
                     ),
                     OutlinedButton(
-                      onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('腾讯 IM 接入后开放私聊')),
-                      ),
+                      onPressed: () =>
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('腾讯 IM 接入后开放私聊')),
+                          ),
                       child: const Text('私聊'),
                     ),
-                    OutlinedButton(onPressed: _block, child: Text(
-                      profile.user.isBlocked ? '移出黑名单' : '加入黑名单',
-                    )),
+                    OutlinedButton(
+                      onPressed: _block,
+                      child: Text(profile.user.isBlocked ? '移出黑名单' : '加入黑名单'),
+                    ),
                   ],
                 ),
                 if (profile.user.roomId != null) ...<Widget>[
@@ -456,9 +461,8 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
                   FilledButton.icon(
                     onPressed: () => Navigator.of(context).push<void>(
                       MaterialPageRoute<void>(
-                        builder: (BuildContext context) => RoomDeepLinkPage(
-                          input: profile.user.roomId!,
-                        ),
+                        builder: (BuildContext context) =>
+                            RoomDeepLinkPage(input: profile.user.roomId!),
                       ),
                     ),
                     icon: const Icon(Icons.headphones_rounded),

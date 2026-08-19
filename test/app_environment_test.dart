@@ -31,10 +31,7 @@ void main() {
     expect(summary, isNot(contains('client-id-value')));
     expect(summary, isNot(contains('/gateway/')));
     expect(environment.redactedSummary['oauthClientIdConfigured'], isTrue);
-    expect(
-      environment.redactedSummary['oauthClientSecretConfigured'],
-      isFalse,
-    );
+    expect(environment.redactedSummary['oauthClientSecretConfigured'], isFalse);
   });
 
   test('mobile public client never loads an OAuth secret', () {
@@ -100,9 +97,7 @@ void main() {
   });
 
   test('probe path must be absolute and timeout must be bounded', () {
-    final AppEnvironment invalidPath = liveEnvironment(
-      liveProbePath: 'health',
-    );
+    final AppEnvironment invalidPath = liveEnvironment(liveProbePath: 'health');
     expect(
       invalidPath.validateLiveConfiguration,
       throwsA(

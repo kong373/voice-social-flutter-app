@@ -4,18 +4,14 @@ abstract interface class RoomPkRepository {
   bool get supportsRealtimeInvitations;
   bool get supportsSurrender;
 
-  Future<List<RoomPkOpponent>> fetchHotOpponents({
-    required String roomId,
-  });
+  Future<List<RoomPkOpponent>> fetchHotOpponents({required String roomId});
 
   Future<List<RoomPkOpponent>> searchOpponents({
     required String roomId,
     required String keyword,
   });
 
-  Future<RoomPkInvitation?> fetchIncomingInvitation({
-    required String roomId,
-  });
+  Future<RoomPkInvitation?> fetchIncomingInvitation({required String roomId});
 
   Future<RoomPkInvitation> sendInvitation({
     required String roomId,

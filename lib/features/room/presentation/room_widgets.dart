@@ -35,33 +35,31 @@ class _RoomSkyPainter extends CustomPainter {
     );
 
     final Paint glow = Paint()
-      ..shader = RadialGradient(
-        colors: <Color>[
-          AppColors.primary.withValues(alpha: 0.33),
-          AppColors.primary.withValues(alpha: 0),
-        ],
-      ).createShader(
-        Rect.fromCircle(
-          center: Offset(size.width * 0.72, size.height * 0.15),
-          radius: size.width * 0.62,
-        ),
-      );
+      ..shader =
+          RadialGradient(
+            colors: <Color>[
+              AppColors.primary.withValues(alpha: 0.33),
+              AppColors.primary.withValues(alpha: 0),
+            ],
+          ).createShader(
+            Rect.fromCircle(
+              center: Offset(size.width * 0.72, size.height * 0.15),
+              radius: size.width * 0.62,
+            ),
+          );
     canvas.drawRect(rect, glow);
 
     final Paint moon = Paint()
-      ..shader = const RadialGradient(
-        colors: <Color>[Color(0xFFF5EEFF), Color(0xFF9B7BFF)],
-      ).createShader(
-        Rect.fromCircle(
-          center: Offset(size.width * 0.82, size.height * 0.105),
-          radius: 44,
-        ),
-      );
-    canvas.drawCircle(
-      Offset(size.width * 0.82, size.height * 0.105),
-      28,
-      moon,
-    );
+      ..shader =
+          const RadialGradient(
+            colors: <Color>[Color(0xFFF5EEFF), Color(0xFF9B7BFF)],
+          ).createShader(
+            Rect.fromCircle(
+              center: Offset(size.width * 0.82, size.height * 0.105),
+              radius: 44,
+            ),
+          );
+    canvas.drawCircle(Offset(size.width * 0.82, size.height * 0.105), 28, moon);
 
     final Paint star = Paint()..color = Colors.white.withValues(alpha: 0.42);
     for (int index = 0; index < 36; index += 1) {
@@ -113,8 +111,8 @@ class _MicSeatTile extends StatelessWidget {
     final Color ringColor = speaking
         ? AppColors.success
         : occupied
-            ? AppColors.primaryBright
-            : Colors.white.withValues(alpha: 0.15);
+        ? AppColors.primaryBright
+        : Colors.white.withValues(alpha: 0.15);
     final IconData stateIcon = switch (seat.state) {
       MicSeatState.locked => Icons.lock_rounded,
       MicSeatState.mutedAvailable => Icons.mic_off_rounded,
@@ -155,13 +153,8 @@ class _MicSeatTile extends StatelessWidget {
                         colors: avatarColors,
                       )
                     : null,
-                color: occupied
-                    ? null
-                    : Colors.white.withValues(alpha: 0.045),
-                border: Border.all(
-                  color: ringColor,
-                  width: speaking ? 3 : 1.5,
-                ),
+                color: occupied ? null : Colors.white.withValues(alpha: 0.045),
+                border: Border.all(color: ringColor, width: speaking ? 3 : 1.5),
                 boxShadow: speaking
                     ? <BoxShadow>[
                         BoxShadow(
@@ -177,9 +170,7 @@ class _MicSeatTile extends StatelessWidget {
                 children: <Widget>[
                   Icon(
                     occupied ? Icons.person_rounded : stateIcon,
-                    color: occupied
-                        ? Colors.white
-                        : AppColors.textSecondary,
+                    color: occupied ? Colors.white : AppColors.textSecondary,
                     size: occupied ? 28 : 22,
                   ),
                   if (occupied)
@@ -217,11 +208,11 @@ class _MicSeatTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: occupied
-                        ? AppColors.textPrimary
-                        : AppColors.textSecondary,
-                    fontWeight: occupied ? FontWeight.w700 : FontWeight.w500,
-                  ),
+                color: occupied
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary,
+                fontWeight: occupied ? FontWeight.w700 : FontWeight.w500,
+              ),
             ),
             const SizedBox(height: 2),
             Text(
@@ -229,10 +220,8 @@ class _MicSeatTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: speaking
-                        ? AppColors.success
-                        : AppColors.textTertiary,
-                  ),
+                color: speaking ? AppColors.success : AppColors.textTertiary,
+              ),
             ),
           ],
         ),
@@ -289,9 +278,7 @@ class _RoomAction extends StatelessWidget {
                         ],
                       )
                     : null,
-                color: enabled
-                    ? null
-                    : Colors.white.withValues(alpha: 0.03),
+                color: enabled ? null : Colors.white.withValues(alpha: 0.03),
                 borderRadius: BorderRadius.circular(17),
                 border: Border.all(
                   color: enabled
@@ -302,9 +289,7 @@ class _RoomAction extends StatelessWidget {
               child: Icon(
                 icon,
                 size: 22,
-                color: enabled
-                    ? AppColors.textPrimary
-                    : AppColors.textTertiary,
+                color: enabled ? AppColors.textPrimary : AppColors.textTertiary,
               ),
             ),
             const SizedBox(height: 6),
@@ -312,11 +297,9 @@ class _RoomAction extends StatelessWidget {
               label,
               maxLines: 1,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: enabled
-                        ? AppColors.textPrimary
-                        : AppColors.textTertiary,
-                    fontWeight: FontWeight.w650,
-                  ),
+                color: enabled ? AppColors.textPrimary : AppColors.textTertiary,
+                fontWeight: FontWeight.w650,
+              ),
             ),
           ],
         ),
@@ -433,10 +416,7 @@ class _RemoteExitOverlay extends StatelessWidget {
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: <Color>[
-                AppColors.surfaceHighest,
-                AppColors.surface,
-              ],
+              colors: <Color>[AppColors.surfaceHighest, AppColors.surface],
             ),
             borderRadius: BorderRadius.circular(26),
             border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
@@ -464,8 +444,8 @@ class _RemoteExitOverlay extends StatelessWidget {
                 message,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
+                  color: AppColors.textSecondary,
+                ),
               ),
               const SizedBox(height: 22),
               SizedBox(

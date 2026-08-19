@@ -31,9 +31,9 @@ class ScopedPlaceholderPage extends StatelessWidget {
               const SizedBox(height: 12),
               Text(
                 description,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
               ),
               const Spacer(),
               SizedBox(
