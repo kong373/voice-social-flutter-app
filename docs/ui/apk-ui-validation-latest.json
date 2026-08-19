@@ -1,0 +1,27 @@
+{
+  "run_id": 32216891496,
+  "tested_git_sha": "9beb63a40053f42c9fb3b3beec9816bc6ae8b239",
+  "conclusion": "failure",
+  "run_url": "https://github.com/kong373/voice-social-flutter-app/actions/runs/32216891496",
+  "screenshot_count": 0,
+  "artifact_count": 0,
+  "jobs": [
+    {
+      "name": "Format, analyze, tests, invariants, and APK",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "name": "Strict two-AVD visual verdict",
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    {
+      "name": "${{ matrix.id }} API ${{ matrix.api }} exact visual acceptance",
+      "status": "completed",
+      "conclusion": "skipped"
+    }
+  ],
+  "provider_calls_made": false,
+  "vendor_runtime_status": "VENDOR_BLOCKED"
+}
