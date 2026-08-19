@@ -1,0 +1,285 @@
+name: Dispatch full 69-page APK UI validation
+
+on:
+  push:
+    branches:
+      - feat/apk-ui-replica
+    paths:
+      - tool/ui/RUN_FULL_69_APK_UI_VALIDATION
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: apk-ui-full-69-dispatch
+  cancel-in-progress: false
+
+jobs:
+  dispatch-review-and-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_REF: feat/apk-ui-replica
+    steps:
+      - name: Checkout UI branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/apk-ui-replica
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Discover active full Android emulator acceptance workflow
+        id: workflow
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows?per_page=100" \
+            > "$RUNNER_TEMP/workflows.json"
+          jq '[.workflows[] | {
+                id,
+                name,
+                path,
+                state
+              } | select(.state == "active")]' \
+            "$RUNNER_TEMP/workflows.json" \
+            > "$RUNNER_TEMP/active-workflows.json"
+
+          jq '[.[] | select(
+                (.name | test("M2\\.4|M24"; "i")) and
+                (.name | test("Android|emulator|AVD|acceptance|验收"; "i"))
+              )]' "$RUNNER_TEMP/active-workflows.json" \
+            > "$RUNNER_TEMP/candidates.json"
+
+          count="$(jq 'length' "$RUNNER_TEMP/candidates.json")"
+          if [[ "$count" -gt 1 ]]; then
+            jq '[.[] | select(
+                  (.name | test("full|acceptance|验收|two-AVD|双"; "i")) and
+                  (.path | test("legacy|deprecated|retired"; "i") | not)
+                )]' "$RUNNER_TEMP/candidates.json" \
+              > "$RUNNER_TEMP/preferred.json"
+            preferred_count="$(jq 'length' "$RUNNER_TEMP/preferred.json")"
+            if [[ "$preferred_count" -eq 1 ]]; then
+              cp "$RUNNER_TEMP/preferred.json" "$RUNNER_TEMP/candidates.json"
+              count=1
+            fi
+          fi
+
+          if [[ "$count" -ne 1 ]]; then
+            mkdir -p docs/ui
+            cp "$RUNNER_TEMP/active-workflows.json" docs/ui/active-workflows.json
+            cp "$RUNNER_TEMP/candidates.json" docs/ui/full-69-workflow-candidates.json
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add docs/ui/active-workflows.json docs/ui/full-69-workflow-candidates.json
+            git commit -m "docs(ui): record ambiguous full acceptance workflows"
+            git push origin HEAD:feat/apk-ui-replica
+            echo "Expected one active M2.4 full emulator workflow, found $count." >&2
+            exit 1
+          fi
+
+          workflow_id="$(jq -r '.[0].id' "$RUNNER_TEMP/candidates.json")"
+          workflow_name="$(jq -r '.[0].name' "$RUNNER_TEMP/candidates.json")"
+          workflow_path="$(jq -r '.[0].path' "$RUNNER_TEMP/candidates.json")"
+          printf 'workflow_id=%s\n' "$workflow_id" >> "$GITHUB_OUTPUT"
+          printf 'workflow_name=%s\n' "$workflow_name" >> "$GITHUB_OUTPUT"
+          printf 'workflow_path=%s\n' "$workflow_path" >> "$GITHUB_OUTPUT"
+          echo "Selected: $workflow_name ($workflow_path, id=$workflow_id)"
+
+      - name: Dispatch full acceptance on UI branch
+        id: dispatch
+        shell: bash
+        env:
+          WORKFLOW_ID: ${{ steps.workflow.outputs.workflow_id }}
+        run: |
+          set -Eeuo pipefail
+          started_epoch="$(date -u +%s)"
+          gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/$WORKFLOW_ID/dispatches" \
+            -f ref="$TARGET_REF"
+
+          run_id=''
+          for _ in $(seq 1 120); do
+            run_id="$(
+              gh api \
+                "repos/$GITHUB_REPOSITORY/actions/workflows/$WORKFLOW_ID/runs?event=workflow_dispatch&branch=$TARGET_REF&per_page=20" \
+                --jq ".workflow_runs | map(select((.created_at | fromdateiso8601) >= ($started_epoch - 15))) | sort_by(.created_at) | reverse | .[0].id // empty"
+            )"
+            [[ -n "$run_id" ]] && break
+            sleep 3
+          done
+          [[ -n "$run_id" ]]
+          printf 'run_id=%s\n' "$run_id" >> "$GITHUB_OUTPUT"
+          printf 'run_url=https://github.com/%s/actions/runs/%s\n' \
+            "$GITHUB_REPOSITORY" "$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for full 69-page acceptance
+        shell: bash
+        env:
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          for _ in $(seq 1 840); do
+            status="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.status')"
+            [[ "$status" == completed ]] && break
+            sleep 10
+          done
+          status="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '.status')"
+          [[ "$status" == completed ]]
+
+      - name: Download full acceptance evidence
+        shell: bash
+        env:
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$RUNNER_TEMP/full-69-evidence"
+          mkdir -p "$RUNNER_TEMP/full-69-evidence"
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$RUNNER_TEMP/full-69-evidence" || true
+
+      - name: Review current-run evidence and publish result
+        id: review
+        shell: bash
+        env:
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
+          WORKFLOW_NAME: ${{ steps.workflow.outputs.workflow_name }}
+          WORKFLOW_PATH: ${{ steps.workflow.outputs.workflow_path }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p docs/ui
+          run_json="$RUNNER_TEMP/full-69-run.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > "$run_json"
+          conclusion="$(jq -r '.conclusion' "$run_json")"
+          head_sha="$(jq -r '.head_sha' "$run_json")"
+          current_ref_sha="$(git rev-parse HEAD)"
+
+          mapfile -t page_files < <(
+            find "$RUNNER_TEMP/full-69-evidence" -type f -name page_coverage.csv | sort
+          )
+          mapfile -t test_files < <(
+            find "$RUNNER_TEMP/full-69-evidence" -type f -name test_cases.csv | sort
+          )
+          png_count="$(find "$RUNNER_TEMP/full-69-evidence" -type f -name '*.png' | wc -l | tr -d ' ')"
+          artifact_count="$(find "$RUNNER_TEMP/full-69-evidence" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+
+          evidence_ok=true
+          python3 - "$head_sha" "${page_files[@]}" --tests "${test_files[@]}" <<'PY' || evidence_ok=false
+          import csv
+          import sys
+
+          args = sys.argv[1:]
+          head_sha = args[0]
+          split = args.index('--tests')
+          page_files = args[1:split]
+          test_files = args[split + 1:]
+          if len(page_files) < 2:
+              raise SystemExit(f'expected >=2 page coverage files, got {len(page_files)}')
+          if len(test_files) < 2:
+              raise SystemExit(f'expected >=2 test case files, got {len(test_files)}')
+
+          for filename in page_files:
+              with open(filename, encoding='utf-8-sig') as handle:
+                  rows = list(csv.DictReader(handle))
+              page_ids = {row.get('page_id') or row.get('Page ID') for row in rows}
+              page_ids.discard(None)
+              if len(page_ids) != 69:
+                  raise SystemExit(f'{filename}: page IDs={len(page_ids)}')
+              invalid = [row for row in rows if (row.get('result') or '').upper() not in {'PASS', 'CURRENT'}]
+              if invalid:
+                  raise SystemExit(f'{filename}: invalid page rows={invalid[:3]}')
+
+          for filename in test_files:
+              with open(filename, encoding='utf-8-sig') as handle:
+                  rows = list(csv.DictReader(handle))
+              if not rows:
+                  raise SystemExit(f'{filename}: empty')
+              invalid = [row for row in rows if (row.get('result') or '').upper() != 'PASS']
+              if invalid:
+                  raise SystemExit(f'{filename}: invalid tests={invalid[:3]}')
+          print('full_69_evidence=PASS')
+          PY
+
+          aggregate_files="$(find "$RUNNER_TEMP/full-69-evidence" -type f \( -iname '*aggregate*' -o -iname '*verdict*' \) | wc -l | tr -d ' ')"
+          final=FAIL
+          if [[ "$conclusion" == success && "$evidence_ok" == true && "$png_count" -ge 276 ]]; then
+            final=PASS
+          fi
+
+          jq -n \
+            --argjson run_id "$RUN_ID" \
+            --arg run_url "$RUN_URL" \
+            --arg workflow_name "$WORKFLOW_NAME" \
+            --arg workflow_path "$WORKFLOW_PATH" \
+            --arg head_sha "$head_sha" \
+            --arg current_ref_sha "$current_ref_sha" \
+            --arg conclusion "$conclusion" \
+            --arg final "$final" \
+            --argjson page_coverage_files "${#page_files[@]}" \
+            --argjson test_case_files "${#test_files[@]}" \
+            --argjson screenshot_count "$png_count" \
+            --argjson artifact_count "$artifact_count" \
+            --argjson aggregate_files "$aggregate_files" \
+            '{
+              run_id: $run_id,
+              run_url: $run_url,
+              workflow_name: $workflow_name,
+              workflow_path: $workflow_path,
+              tested_git_sha: $head_sha,
+              dispatcher_ref_sha: $current_ref_sha,
+              conclusion: $conclusion,
+              evidence_verdict: $final,
+              page_coverage_files: $page_coverage_files,
+              test_case_files: $test_case_files,
+              screenshot_count: $screenshot_count,
+              artifact_count: $artifact_count,
+              aggregate_files: $aggregate_files,
+              expected_page_ids_per_avd: 69,
+              expected_screenshot_minimum: 276,
+              provider_calls_made: false
+            }' > docs/ui/full-69-validation-latest.json
+
+          {
+            echo '# Full 69-page APK UI validation'
+            echo
+            echo "- Run: $RUN_ID"
+            echo "- Workflow: $WORKFLOW_NAME"
+            echo "- Tested SHA: $head_sha"
+            echo "- GitHub conclusion: $conclusion"
+            echo "- Evidence verdict: $final"
+            echo "- Page coverage files: ${#page_files[@]}"
+            echo "- Test case files: ${#test_files[@]}"
+            echo "- Screenshots: $png_count"
+            echo "- Artifacts: $artifact_count"
+          } > docs/ui/full-69-validation-latest.md
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/ui/full-69-validation-latest.json docs/ui/full-69-validation-latest.md
+          git commit -m "docs(ui): publish full 69-page validation run $RUN_ID"
+          git push origin HEAD:feat/apk-ui-replica
+
+          printf 'final=%s\n' "$final" >> "$GITHUB_OUTPUT"
+          [[ "$final" == PASS ]]
+
+      - name: Comment full validation result
+        if: always()
+        shell: bash
+        env:
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
+          FINAL: ${{ steps.review.outputs.final }}
+        run: |
+          set -Eeuo pipefail
+          gh pr comment 16 \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "FULL_69_APK_UI_VALIDATION_${FINAL:-FAIL}
+
+- run_id: $RUN_ID
+- run: $RUN_URL
+- branch: feat/apk-ui-replica
+- provider_calls_made: false"
