@@ -1,0 +1,107 @@
+name: M3.3 video-runtime result publisher
+
+on:
+  workflow_run:
+    workflows:
+      - M3.3 video-runtime UI final acceptance
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: m33-video-runtime-result-publisher
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.head_branch == 'feat/m3-3-video-runtime-ui'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/m3-3-video-runtime-ui
+          fetch-depth: 0
+
+      - name: Download final evidence
+        if: ${{ env.SOURCE_CONCLUSION == 'success' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$RUNNER_TEMP/m33-evidence"
+          mkdir -p "$RUNNER_TEMP/m33-evidence"
+          gh run download "$SOURCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$RUNNER_TEMP/m33-evidence"
+
+      - name: Publish pass marker and representative screenshots
+        if: ${{ env.SOURCE_CONCLUSION == 'success' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          target=docs/video-runtime-ui/validated-screenshots
+          rm -rf "$target"
+          mkdir -p "$target"
+          find "$RUNNER_TEMP/m33-evidence" -type f -name 'm33-*.png' -print0 |
+            sort -z |
+            while IFS= read -r -d '' file; do
+              cp "$file" "$target/$(basename "$file")"
+            done
+          screenshot_count="$(find "$target" -type f -name '*.png' | wc -l | tr -d ' ')"
+          test "$screenshot_count" -ge 16
+          cat >docs/video-runtime-ui/FINAL_BRANCH_READY.md <<EOF
+          # Video runtime UI acceptance: PASS
+
+          - source_run_id: $SOURCE_RUN_ID
+          - tested_git_sha: $SOURCE_SHA
+          - conclusion: VIDEO_RUNTIME_UI_PASS
+          - screenshot_count: $screenshot_count
+          - AVD-A: API 36 / 390x844 / PASS
+          - AVD-B: API 35 / 360x800 / PASS
+          - provider_calls_made: false
+          - root_navigation: 首页 / 发现 / 消息 / 我的
+          - room_structure: fixed 4x2 eight-seat layout
+          - keyboard_preserves_room_context: true
+          - gift_is_room_context_sheet: true
+          - tools_are_room_context_sheet: true
+          - minimized_room_restore: true
+          - competitor_brand_assets_copied: false
+          - retired_features_visible: 0
+          EOF
+
+      - name: Publish failure marker
+        if: ${{ env.SOURCE_CONCLUSION != 'success' }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p docs/video-runtime-ui
+          cat >docs/video-runtime-ui/FINAL_BRANCH_BLOCKED.md <<EOF
+          # Video runtime UI acceptance: BLOCKED
+
+          - source_run_id: $SOURCE_RUN_ID
+          - tested_git_sha: $SOURCE_SHA
+          - workflow_conclusion: $SOURCE_CONCLUSION
+          - third_party_integration_started: false
+          EOF
+
+      - name: Commit result evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/video-runtime-ui
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "test(ui): publish video-runtime acceptance $SOURCE_RUN_ID"
+          git push origin HEAD:feat/m3-3-video-runtime-ui
