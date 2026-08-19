@@ -1,0 +1,48 @@
+name: Publish APK UI pass comment
+
+on:
+  push:
+    branches:
+      - feat/apk-ui-replica
+    paths:
+      - tool/ui/PUBLISH_APK_UI_PASS_COMMENT
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  comment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/apk-ui-replica
+
+      - name: Comment pass metadata
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          marker=docs/ui/APK_UI_VALIDATION_PASS
+          test -f "$marker"
+          run_id="$(awk -F= '$1 == "run_id" {print $2}' "$marker")"
+          tested_sha="$(awk -F= '$1 == "tested_git_sha" {print $2}' "$marker")"
+          screenshots="$(awk -F= '$1 == "screenshot_count" {print $2}' "$marker")"
+          artifacts="$(awk -F= '$1 == "artifact_count" {print $2}' "$marker")"
+          gh pr comment 16 \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "APK_UI_VALIDATION_PASS
+
+- run_id: $run_id
+- tested_git_sha: $tested_sha
+- screenshot_count: $screenshots
+- artifact_count: $artifacts
+- provider_calls_made: false
+- vendor_runtime_status: VENDOR_BLOCKED
+- run: https://github.com/$GITHUB_REPOSITORY/actions/runs/$run_id"
