@@ -1,0 +1,87 @@
+name: M3.3 one-shot stable room entry correction
+
+on:
+  push:
+    branches:
+      - feat/m3-3-video-runtime-ui
+    paths:
+      - '.github/workflows/m33-video-runtime-stable-entry-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  correct:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/m3-3-video-runtime-ui
+          fetch-depth: 0
+      - name: Wait for earlier writers and refresh
+        run: |
+          sleep 60
+          git fetch origin feat/m3-3-video-runtime-ui
+          git reset --hard origin/feat/m3-3-video-runtime-ui
+      - name: Add a data-independent primary room entry key
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('lib/features/shell/video_runtime_pages.dart')
+          text = p.read_text()
+          old = '''            child: SocialCard(
+              padding: EdgeInsets.zero,
+              radius: 24,
+              onTap: room == null ? null : () => widget.onOpenRoom(room),'''
+          new = '''            child: SocialCard(
+              key: const Key('video-runtime-primary-room'),
+              padding: EdgeInsets.zero,
+              radius: 24,
+              onTap: room == null ? null : () => widget.onOpenRoom(room),'''
+          if old not in text and "key: const Key('video-runtime-primary-room')" not in text:
+              raise SystemExit('primary room card anchor was not found')
+          text = text.replace(old, new)
+          p.write_text(text)
+
+          for file in (
+              Path('test/video_runtime_ui_test.dart'),
+              Path('integration_test/m3_3_video_runtime_ui_test.dart'),
+          ):
+              value = file.read_text()
+              value = value.replace(
+                  "find.byKey(const Key('live-room-880217'))",
+                  "find.byKey(const Key('video-runtime-primary-room'))",
+              )
+              file.write_text(value)
+          PY
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.7
+          channel: stable
+          cache: true
+      - name: Format and validate targeted flow
+        run: |
+          flutter pub get --enforce-lockfile
+          dart format \
+            lib/features/shell/video_runtime_pages.dart \
+            test/video_runtime_ui_test.dart \
+            integration_test/m3_3_video_runtime_ui_test.dart
+          flutter analyze
+          flutter test test/video_runtime_ui_test.dart --reporter=expanded --timeout=120s
+      - name: Commit stable entry correction
+        run: |
+          rm -f .github/workflows/m33-video-runtime-stable-entry-fix.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix(ui): stabilize video-runtime room entry acceptance'
+          for attempt in 1 2 3; do
+            if git push origin HEAD:feat/m3-3-video-runtime-ui; then
+              exit 0
+            fi
+            git pull --rebase origin feat/m3-3-video-runtime-ui
+          done
+          exit 1
