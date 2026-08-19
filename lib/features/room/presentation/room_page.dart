@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/video_ui_components.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
+import 'package:voice_social_app/features/room/application/room_session_coordinator.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
@@ -39,11 +41,14 @@ class RoomPage extends StatefulWidget {
 }
 
 class _RoomPageState extends State<RoomPage> {
+  final RoomSessionCoordinator _sessionCoordinator =
+      RoomSessionCoordinator.instance;
   RoomController? _controllerInstance;
   RoomController get _controller => _controllerInstance!;
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _messageScrollController = ScrollController();
   bool _allowPop = false;
+  bool _minimized = false;
   String? _presentedError;
 
   @override
@@ -52,10 +57,25 @@ class _RoomPageState extends State<RoomPage> {
     if (_controllerInstance != null) {
       return;
     }
-    _controllerInstance = AppDependencyScope.of(context).createRoomController(
+
+    final RoomController? existing = _sessionCoordinator.controllerFor(
+      widget.roomId,
+    );
+    if (existing != null) {
+      _controllerInstance = existing..addListener(_handleControllerUpdate);
+      _sessionCoordinator.restore();
+      return;
+    }
+
+    final RoomController created = AppDependencyScope.of(context)
+        .createRoomController(roomId: widget.roomId, title: widget.title)
+      ..addListener(_handleControllerUpdate);
+    _controllerInstance = created;
+    _sessionCoordinator.attach(
+      controller: created,
       roomId: widget.roomId,
       title: widget.title,
-    )..addListener(_handleControllerUpdate);
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _controller.join(source: widget.entrySource);
@@ -67,9 +87,11 @@ class _RoomPageState extends State<RoomPage> {
   void dispose() {
     final RoomController? controller = _controllerInstance;
     if (controller != null) {
-      controller
-        ..removeListener(_handleControllerUpdate)
-        ..dispose();
+      controller.removeListener(_handleControllerUpdate);
+      if (!_minimized) {
+        _sessionCoordinator.detach(controller);
+        controller.dispose();
+      }
     }
     _messageController.dispose();
     _messageScrollController.dispose();
@@ -109,21 +131,26 @@ class _RoomPageState extends State<RoomPage> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope<Object?>(
-      canPop: _allowPop,
-      onPopInvokedWithResult: (bool didPop, Object? result) {
-        if (!didPop && !_allowPop) {
-          _confirmLeave();
-        }
-      },
-      child: Scaffold(
-        body: switch (_controller.status) {
-          RoomSessionStatus.idle ||
-          RoomSessionStatus.joining => _buildJoiningState(),
-          RoomSessionStatus.failed when _controller.snapshot == null =>
-            _buildJoinFailure(),
-          _ => _buildRoomContent(),
+    return Theme(
+      data: AppTheme.dark(),
+      child: PopScope<Object?>(
+        canPop: _allowPop,
+        onPopInvokedWithResult: (bool didPop, Object? result) {
+          if (!didPop && !_allowPop) {
+            _confirmLeave();
+          }
         },
+        child: Scaffold(
+          backgroundColor: AppColors.background,
+          resizeToAvoidBottomInset: true,
+          body: switch (_controller.status) {
+            RoomSessionStatus.idle ||
+            RoomSessionStatus.joining => _buildJoiningState(),
+            RoomSessionStatus.failed when _controller.snapshot == null =>
+              _buildJoinFailure(),
+            _ => _buildRoomContent(),
+          },
+        ),
       ),
     );
   }
@@ -190,8 +217,8 @@ class _RoomPageState extends State<RoomPage> {
                 Text(
                   _controller.errorMessage ?? '请检查网络后重试。',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
+                        color: AppColors.textSecondary,
+                      ),
                 ),
                 const SizedBox(height: 24),
                 FilledButton.icon(
@@ -219,7 +246,7 @@ class _RoomPageState extends State<RoomPage> {
               _buildTopic(),
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
                   children: <Widget>[
                     GridView.builder(
                       shrinkWrap: true,
@@ -227,16 +254,16 @@ class _RoomPageState extends State<RoomPage> {
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 4,
-                            mainAxisSpacing: 16,
+                            mainAxisSpacing: 14,
                             crossAxisSpacing: 8,
-                            mainAxisExtent: 106,
+                            mainAxisExtent: 112,
                           ),
                       itemCount: _controller.seats.length,
                       itemBuilder: (BuildContext context, int index) {
                         return _MicSeatTile(seat: _controller.seats[index]);
                       },
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     _buildPublicScreen(),
                   ],
                 ),
@@ -268,7 +295,7 @@ class _RoomPageState extends State<RoomPage> {
 
   Widget _buildHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 12, 6),
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
       child: Row(
         children: <Widget>[
           IconButton(
@@ -276,7 +303,13 @@ class _RoomPageState extends State<RoomPage> {
             onPressed: _confirmLeave,
             icon: const Icon(Icons.close_rounded),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 2),
+          ColorAvatar(
+            seed: _controller.roomCode,
+            size: 38,
+            ringColor: AppColors.primaryBright,
+          ),
+          const SizedBox(width: 9),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -295,6 +328,14 @@ class _RoomPageState extends State<RoomPage> {
                 ),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: '最小化房间',
+            onPressed: _controller.status == RoomSessionStatus.joined ||
+                    _controller.status == RoomSessionStatus.reconnecting
+                ? _minimizeRoom
+                : null,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded),
           ),
           IconButton(
             tooltip: '分享房间',
@@ -318,26 +359,35 @@ class _RoomPageState extends State<RoomPage> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(999),
         onTap: _openTopicPage,
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 16),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+            color: Colors.black.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
           child: Row(
             children: <Widget>[
               const Icon(
-                Icons.graphic_eq_rounded,
-                size: 18,
-                color: AppColors.accent,
+                Icons.campaign_outlined,
+                size: 17,
+                color: AppColors.gold,
               ),
               const SizedBox(width: 8),
-              Expanded(child: Text(topic)),
-              const Icon(Icons.chevron_right_rounded, size: 18),
+              Expanded(
+                child: Text(
+                  topic,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textPrimary,
+                      ),
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, size: 17),
             ],
           ),
         ),
@@ -347,29 +397,34 @@ class _RoomPageState extends State<RoomPage> {
 
   Widget _buildPublicScreen() {
     return Container(
-      height: 210,
-      padding: const EdgeInsets.all(14),
+      height: 190,
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
       decoration: BoxDecoration(
-        color: const Color(0xB20D1020),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+        color: Colors.black.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(18),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
-              Text('实时公屏', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                '实时公屏',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
               const Spacer(),
-              Text('仅显示进房后的消息', style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                '仅显示进房后的消息',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Expanded(
             child: ListView.separated(
               controller: _messageScrollController,
               itemCount: _controller.messages.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              separatorBuilder: (_, __) => const SizedBox(height: 7),
               itemBuilder: (BuildContext context, int index) {
                 final RoomMessage message = _controller.messages[index];
                 return Text.rich(
@@ -379,12 +434,15 @@ class _RoomPageState extends State<RoomPage> {
                         text: '${message.sender}  ',
                         style: TextStyle(
                           color: message.isSystem
-                              ? AppColors.warning
+                              ? AppColors.gold
                               : AppColors.accent,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      TextSpan(text: message.content),
+                      TextSpan(
+                        text: message.content,
+                        style: const TextStyle(color: AppColors.textPrimary),
+                      ),
                     ],
                   ),
                 );
@@ -406,6 +464,7 @@ class _RoomPageState extends State<RoomPage> {
         children: <Widget>[
           Expanded(
             child: TextField(
+              key: const Key('room-message-composer'),
               controller: _messageController,
               enabled: enabled,
               textInputAction: TextInputAction.send,
@@ -413,6 +472,7 @@ class _RoomPageState extends State<RoomPage> {
               decoration: InputDecoration(
                 hintText: enabled ? '说点什么…' : '当前不可发送公屏消息',
                 isDense: true,
+                fillColor: Colors.white.withValues(alpha: 0.10),
               ),
             ),
           ),
@@ -463,7 +523,7 @@ class _RoomPageState extends State<RoomPage> {
               onTap: _showGiftSheet,
             ),
             _RoomAction(
-              icon: Icons.tune_rounded,
+              icon: Icons.grid_view_rounded,
               label: '更多',
               enabled: joined,
               onTap: _showMoreSheet,
@@ -490,6 +550,20 @@ class _RoomPageState extends State<RoomPage> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('麦克风状态更新失败，请重试')));
+  }
+
+  void _minimizeRoom() {
+    if (_minimized) {
+      return;
+    }
+    _minimized = true;
+    _sessionCoordinator.minimize();
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    });
   }
 
   void _exitWithoutSession() {
