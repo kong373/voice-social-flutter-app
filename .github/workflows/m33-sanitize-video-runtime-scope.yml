@@ -1,0 +1,110 @@
+name: M3.3 sanitize video-runtime candidate scope
+
+on:
+  push:
+    branches:
+      - feat/m3-3-video-runtime-ui
+    paths:
+      - '.github/workflows/m33-sanitize-video-runtime-scope.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  sanitize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      BASE_SHA: dac406d394bd3a4448ee953550b6a57d313e2f3c
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/m3-3-video-runtime-ui
+          fetch-depth: 0
+      - name: Wait for the finalizer and refresh branch
+        run: |
+          sleep 180
+          git fetch origin feat/m3-3-video-runtime-ui
+          git reset --hard origin/feat/m3-3-video-runtime-ui
+      - name: Restore every out-of-scope product file to the reviewed business base
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          allowed() {
+            case "$1" in
+              lib/core/design_system/app_theme.dart|\
+              lib/core/design_system/runtime_surfaces.dart|\
+              lib/core/design_system/video_runtime_candidate.dart|\
+              lib/app/app.dart|\
+              lib/features/shell/main_shell.dart|\
+              lib/features/shell/video_runtime_pages.dart|\
+              lib/features/room/presentation/video_runtime_room_page.dart|\
+              test/video_runtime_ui_test.dart|\
+              integration_test/m3_3_video_runtime_ui_test.dart|\
+              .github/workflows/m33-video-runtime-final.yml|\
+              .github/workflows/m33-video-runtime-result-publisher.yml|\
+              .github/workflows/m33-finalize-video-runtime-candidate.yml|\
+              .github/workflows/m33-sanitize-video-runtime-scope.yml|\
+              docs/video-runtime-ui/*)
+                return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+          while IFS= read -r file; do
+            if allowed "$file"; then
+              continue
+            fi
+            if git cat-file -e "$BASE_SHA:$file" 2>/dev/null; then
+              git checkout "$BASE_SHA" -- "$file"
+            else
+              rm -rf -- "$file"
+            fi
+          done < <(git diff --name-only "$BASE_SHA" HEAD)
+          rm -f \
+            .github/workflows/m33-video-runtime-ui.yml \
+            .github/workflows/m33-video-runtime-ui-v2.yml \
+            .github/workflows/m33-video-runtime-autofix.yml \
+            .github/workflows/m33-video-runtime-dart-fix.yml \
+            .github/workflows/m33-video-runtime-surgical-fix.yml \
+            .github/workflows/m33-video-runtime-restore-guard.yml
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.7
+          channel: stable
+          cache: true
+      - name: Format and validate the scoped candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+          dart format \
+            lib/core/design_system/app_theme.dart \
+            lib/core/design_system/runtime_surfaces.dart \
+            lib/core/design_system/video_runtime_candidate.dart \
+            lib/app/app.dart \
+            lib/features/shell/main_shell.dart \
+            lib/features/shell/video_runtime_pages.dart \
+            lib/features/room/presentation/video_runtime_room_page.dart \
+            test/video_runtime_ui_test.dart \
+            integration_test/m3_3_video_runtime_ui_test.dart
+          flutter analyze
+          flutter test test/video_runtime_ui_test.dart --reporter=expanded --timeout=120s
+      - name: Commit sanitized scope
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Scope already clean.'
+            exit 0
+          fi
+          git commit -m 'chore(ui): sanitize video-runtime candidate scope'
+          for attempt in 1 2 3; do
+            if git push origin HEAD:feat/m3-3-video-runtime-ui; then
+              exit 0
+            fi
+            git pull --rebase origin feat/m3-3-video-runtime-ui
+          done
+          exit 1
