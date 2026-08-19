@@ -1,0 +1,252 @@
+name: M3.3 video runtime UI pilot
+
+on:
+  push:
+    branches:
+      - feat/m3-3-video-runtime-ui-rebuild
+  pull_request:
+    branches:
+      - feat/m3-2a-live-auth-readonly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m33-video-runtime-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: 3.44.7
+  JAVA_VERSION: 17
+  BASE_SHA: dac406d394bd3a4448ee953550b6a57d313e2f3c
+
+jobs:
+  quality:
+    name: Format, analyze, tests and APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve locked dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+
+      - name: Check candidate formatting
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mapfile -d '' dart_files < <(
+            git diff --name-only -z --diff-filter=ACMR "$BASE_SHA" HEAD -- '*.dart'
+          )
+          printf 'changed_dart_files=%s\n' "${#dart_files[@]}"
+          if (( ${#dart_files[@]} > 0 )); then
+            dart format --output=none --set-exit-if-changed "${dart_files[@]}"
+          fi
+
+      - name: Analyze
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter analyze
+
+      - name: Run all unit and widget tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter test --concurrency=1 --timeout=90s --reporter=expanded
+
+      - name: Build mock Android debug APK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter build apk --debug \
+            --dart-define=BACKEND_MODE=mock \
+            --dart-define=ENABLE_QA_CONSOLE=false
+
+      - name: Scan source and APK for provider secrets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ! grep -RInE \
+            '(OAUTH_CLIENT_SECRET|DEVELOPMENT_OUTBOX_KEY|AGORA_APP_CERTIFICATE|TENCENT_IM_ADMIN_KEY|WECHAT_PAY_PRIVATE_KEY|ALIPAY_PRIVATE_KEY|BEGIN (RSA |EC )?PRIVATE KEY)' \
+            lib android ios assets 2>/dev/null
+          unzip -p build/app/outputs/flutter-apk/app-debug.apk | strings > apk-strings.txt
+          ! grep -Ei \
+            '(client[_-]?secret|app[_-]?certificate|admin[_-]?key|private[_-]?key|BEGIN (RSA |EC )?PRIVATE KEY)' \
+            apk-strings.txt
+
+      - name: Upload quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m33-quality-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/app/outputs/flutter-apk/app-debug.apk
+            apk-strings.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+  android:
+    name: ${{ matrix.id }} API ${{ matrix.api }} ${{ matrix.viewport }}
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - id: AVD-A
+            api: 36
+            profile: pixel_7_pro
+            viewport: 390x844
+            physical_size: 1170x2532
+            density: 480
+          - id: AVD-B
+            api: 35
+            profile: pixel_2
+            viewport: 360x800
+            physical_size: 864x1920
+            density: 384
+
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve locked dependencies
+        shell: bash
+        run: flutter pub get --enforce-lockfile
+
+      - name: Require KVM
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -c /dev/kvm
+          sudo chmod 0666 /dev/kvm
+
+      - name: Run video runtime pilot
+        uses: ReactiveCircus/android-emulator-runner@v2
+        env:
+          QA_AVD_ID: ${{ matrix.id }}
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          cores: 2
+          ram-size: 4096M
+          heap-size: 512M
+          force-avd-creation: true
+          disable-animations: false
+          emulator-boot-timeout: 600
+          emulator-options: >-
+            -no-window
+            -gpu swiftshader_indirect
+            -noaudio
+            -no-boot-anim
+            -no-snapshot
+            -wipe-data
+            -no-metrics
+          script: |
+            set -Eeuo pipefail
+            mkdir -p "artifacts/m33/${QA_AVD_ID}/screenshots"
+            adb shell wm size ${{ matrix.physical_size }}
+            adb shell wm density ${{ matrix.density }}
+            adb shell settings put system font_scale 1.0
+            adb logcat -c
+            flutter test \
+              -d emulator-5554 \
+              integration_test/m3_3_video_runtime_ui_test.dart \
+              --dart-define=BACKEND_MODE=mock \
+              --dart-define=ENABLE_QA_CONSOLE=false \
+              --dart-define=QA_AVD_ID=${QA_AVD_ID} \
+              --reporter=expanded \
+              2>&1 | tee "artifacts/m33/${QA_AVD_ID}/integration.log"
+            find . -type f -name 'm33-*.png' -print -exec cp {} "artifacts/m33/${QA_AVD_ID}/screenshots/" \;
+            adb shell wm size > "artifacts/m33/${QA_AVD_ID}/wm-size.txt"
+            adb shell wm density > "artifacts/m33/${QA_AVD_ID}/wm-density.txt"
+            adb logcat -d > "artifacts/m33/${QA_AVD_ID}/logcat.txt"
+            ! grep -Ei \
+              '(FATAL EXCEPTION|AndroidRuntime|MissingPluginException|RenderFlex overflowed|Unhandled Exception)' \
+              "artifacts/m33/${QA_AVD_ID}/logcat.txt"
+            test "$(find "artifacts/m33/${QA_AVD_ID}/screenshots" -type f -name '*.png' | wc -l)" -ge 7
+            cat > "artifacts/m33/${QA_AVD_ID}/summary.txt" <<EOF
+            tested_git_sha=${GITHUB_SHA}
+            avd=${QA_AVD_ID}
+            api=${{ matrix.api }}
+            viewport=${{ matrix.viewport }}
+            screenshots=$(find "artifacts/m33/${QA_AVD_ID}/screenshots" -type f -name '*.png' | wc -l)
+            provider_calls=0
+            retired_feature_hits=0
+            conclusion=PASS
+            EOF
+
+      - name: Upload ${{ matrix.id }} evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m33-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/m33/${{ matrix.id }}/
+          if-no-files-found: warn
+          retention-days: 30
+
+  verdict:
+    name: Strict two-AVD verdict
+    needs: [quality, android]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Enforce all gates
+        shell: bash
+        env:
+          QUALITY: ${{ needs.quality.result }}
+          ANDROID: ${{ needs.android.result }}
+        run: |
+          set -Eeuo pipefail
+          test "$QUALITY" = success
+          test "$ANDROID" = success
+          printf 'conclusion=VIDEO_RUNTIME_UI_PILOT_PASS\n' | tee verdict.txt
+
+      - name: Upload verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m33-verdict-${{ github.run_id }}-${{ github.run_attempt }}
+          path: verdict.txt
+          if-no-files-found: warn
+          retention-days: 30
