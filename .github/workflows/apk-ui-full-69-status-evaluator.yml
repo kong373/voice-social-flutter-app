@@ -1,0 +1,59 @@
+name: Evaluate full 69-page APK UI validation
+
+on:
+  push:
+    branches:
+      - feat/apk-ui-replica
+    paths:
+      - tool/ui/EVALUATE_FULL_69_APK_UI_STATUS
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/apk-ui-replica
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Evaluate and commit stable marker
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          result=docs/ui/full-69-validation-latest.json
+          test -f "$result"
+          verdict="$(jq -r '.evidence_verdict' "$result")"
+          run_id="$(jq -r '.run_id' "$result")"
+          tested_sha="$(jq -r '.tested_git_sha' "$result")"
+          conclusion="$(jq -r '.conclusion' "$result")"
+          screenshots="$(jq -r '.screenshot_count' "$result")"
+          page_files="$(jq -r '.page_coverage_files' "$result")"
+          test_files="$(jq -r '.test_case_files' "$result")"
+          rm -f docs/ui/FULL_69_APK_UI_PASS docs/ui/FULL_69_APK_UI_FAIL
+          if [[ "$verdict" == PASS ]]; then
+            marker=docs/ui/FULL_69_APK_UI_PASS
+          else
+            marker=docs/ui/FULL_69_APK_UI_FAIL
+          fi
+          {
+            printf 'run_id=%s\n' "$run_id"
+            printf 'tested_git_sha=%s\n' "$tested_sha"
+            printf 'github_conclusion=%s\n' "$conclusion"
+            printf 'evidence_verdict=%s\n' "$verdict"
+            printf 'screenshot_count=%s\n' "$screenshots"
+            printf 'page_coverage_files=%s\n' "$page_files"
+            printf 'test_case_files=%s\n' "$test_files"
+          } > "$marker"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/ui/FULL_69_APK_UI_PASS docs/ui/FULL_69_APK_UI_FAIL
+          git commit -m "docs(ui): record full 69-page validation $verdict"
+          git push origin HEAD:feat/apk-ui-replica
+          [[ "$verdict" == PASS ]]
