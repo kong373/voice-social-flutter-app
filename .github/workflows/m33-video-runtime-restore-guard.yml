@@ -1,0 +1,60 @@
+name: M3.3 one-shot persistent room restore guard
+
+on:
+  push:
+    branches:
+      - feat/m3-3-video-runtime-ui
+    paths:
+      - '.github/workflows/m33-video-runtime-restore-guard.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  guard-restore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/m3-3-video-runtime-ui
+          fetch-depth: 0
+      - name: Avoid joining an already active room during restore
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('lib/features/room/presentation/video_runtime_room_page.dart')
+          text = p.read_text()
+          old = '''    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _controller.join();
+      }
+    });'''
+          new = '''    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      if (_controller.status == RoomSessionStatus.idle ||
+          _controller.status == RoomSessionStatus.failed) {
+        _controller.join();
+      }
+    });'''
+          if old not in text:
+              raise SystemExit('expected room init callback was not found')
+          p.write_text(text.replace(old, new))
+          PY
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.7
+          channel: stable
+          cache: true
+      - run: dart format lib/features/room/presentation/video_runtime_room_page.dart
+      - name: Commit restore guard
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add lib/features/room/presentation/video_runtime_room_page.dart
+          git commit -m 'fix(ui): restore active room without rejoining'
+          git push origin HEAD:feat/m3-3-video-runtime-ui
