@@ -1,0 +1,120 @@
+name: Final APK UI branch readiness
+
+on:
+  push:
+    branches:
+      - feat/apk-ui-replica
+    paths:
+      - docs/ui/REQUEST_FINAL_READINESS
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-ui-final-readiness
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+
+jobs:
+  verify-and-seal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout final candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/apk-ui-replica
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify cleanup and validation evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test ! -d tool/ui
+          test -f docs/ui/APK_UI_VALIDATION_PASS
+          test -f docs/ui/FULL_69_APK_UI_PASS
+          grep -Fxq 'conclusion=success' docs/ui/APK_UI_VALIDATION_PASS
+          grep -Fxq 'evidence_verdict=PASS' docs/ui/FULL_69_APK_UI_PASS
+          for file in \
+            apk-ui-replica-apply.yml \
+            apk-ui-phase2-apply.yml \
+            apk-ui-acceptance-test-apply.yml \
+            apk-ui-validation-publisher.yml \
+            apk-ui-status-evaluator.yml \
+            apk-ui-pass-comment.yml \
+            apk-ui-full-69-dispatch.yml \
+            apk-ui-full-69-status-evaluator.yml \
+            apk-ui-final-cleanup.yml; do
+            test ! -e ".github/workflows/$file"
+          done
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Run final quality gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+          git fetch origin feat/m3-2a-live-auth-readonly --depth=1
+          base_sha="$(git merge-base HEAD origin/feat/m3-2a-live-auth-readonly)"
+          mapfile -d '' dart_files < <(
+            git diff --name-only -z --diff-filter=ACMR \
+              "$base_sha" HEAD -- '*.dart'
+          )
+          dart format --output=none --set-exit-if-changed "${dart_files[@]}"
+          flutter analyze 2>&1 | tee final-analyze.log
+          flutter test \
+            --concurrency=1 \
+            --timeout=90s \
+            --reporter=expanded \
+            2>&1 | tee final-tests.log
+          flutter build apk --debug \
+            --dart-define=BACKEND_MODE=live \
+            --dart-define=APP_ENV=development \
+            --dart-define=ALLOW_INSECURE_HTTP=true \
+            --dart-define=API_BASE_URL=http://10.0.2.2:8765/ \
+            --dart-define=OAUTH_CLIENT_ID=voice-social-mobile-public
+          sha256sum build/app/outputs/flutter-apk/app-debug.apk \
+            | tee final-apk.sha256
+
+      - name: Seal final result and remove one-shot gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          strict_run="$(awk -F= '$1 == "run_id" {print $2}' docs/ui/APK_UI_VALIDATION_PASS)"
+          full_run="$(awk -F= '$1 == "run_id" {print $2}' docs/ui/FULL_69_APK_UI_PASS)"
+          full_screenshots="$(awk -F= '$1 == "screenshot_count" {print $2}' docs/ui/FULL_69_APK_UI_PASS)"
+          full_tested_sha="$(awk -F= '$1 == "tested_git_sha" {print $2}' docs/ui/FULL_69_APK_UI_PASS)"
+          apk_sha="$(awk '{print $1}' final-apk.sha256)"
+          {
+            printf 'final_gate_tested_sha=%s\n' "$GITHUB_SHA"
+            printf 'full_69_tested_sha=%s\n' "$full_tested_sha"
+            printf 'strict_validation_run_id=%s\n' "$strict_run"
+            printf 'full_69_validation_run_id=%s\n' "$full_run"
+            printf 'full_69_screenshot_count=%s\n' "$full_screenshots"
+            printf 'page_id_count=69\n'
+            printf 'format=PASS\n'
+            printf 'analyze=PASS\n'
+            printf 'tests=PASS\n'
+            printf 'android_debug_apk=PASS\n'
+            printf 'android_debug_apk_sha256=%s\n' "$apk_sha"
+            printf 'provider_calls_made=false\n'
+            printf 'vendor_runtime_status=VENDOR_BLOCKED\n'
+            printf 'conclusion=APK_UI_FRONTEND_REPLACEMENT_PASS\n'
+          } > docs/ui/FINAL_BRANCH_READY
+          rm -f docs/ui/REQUEST_FINAL_READINESS
+          rm -f .github/workflows/apk-ui-final-readiness.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "docs(ui): seal tested APK UI frontend replacement"
+          git push origin HEAD:feat/apk-ui-replica
