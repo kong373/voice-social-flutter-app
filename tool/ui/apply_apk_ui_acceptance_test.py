@@ -1,0 +1,350 @@
+#!/usr/bin/env python3
+"""Rewrite the M3.2 integration flow around stable product-facing UI keys."""
+
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+TARGET = ROOT / "integration_test/m3_2_vendor_readiness_test.dart"
+TARGET.write_text(
+r'''import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+import 'package:voice_social_app/features/room/presentation/room_page.dart';
+import 'package:voice_social_app/main.dart' as app;
+
+import 'm2_4_test_support.dart';
+
+const String _expectedWidthValue = String.fromEnvironment(
+  'QA_EXPECTED_VIEWPORT_WIDTH',
+  defaultValue: '390',
+);
+const String _expectedHeightValue = String.fromEnvironment(
+  'QA_EXPECTED_VIEWPORT_HEIGHT',
+  defaultValue: '844',
+);
+const String _expectedDprValue = String.fromEnvironment(
+  'QA_EXPECTED_DPR',
+  defaultValue: '3',
+);
+
+final double _expectedWidth = double.parse(_expectedWidthValue);
+final double _expectedHeight = double.parse(_expectedHeightValue);
+final double _expectedDpr = double.parse(_expectedDprValue);
+
+void main() {
+  final IntegrationTestWidgetsFlutterBinding binding =
+      IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+    'APK-inspired live public-client flow preserves every provider boundary',
+    (WidgetTester tester) async {
+      await app.main();
+      await _waitFor(
+        tester,
+        () => find.text('同意并继续').evaluate().isNotEmpty,
+        description: 'consent gate',
+      );
+      _expectExactViewport(tester);
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'm32-${qaAvdId.toLowerCase()}-01-consent',
+      );
+      await announceQaEvidence(tester, 'M32_CONSENT_READY');
+
+      await tester.tap(find.text('同意并继续').hitTestable());
+      await _waitFor(
+        tester,
+        () => find.text('登录 / 注册').evaluate().isNotEmpty,
+        description: 'login page',
+      );
+
+      final Finder phoneField = find.widgetWithText(
+        TextFormField,
+        '手机号码',
+      );
+      final Finder codeField = find.widgetWithText(
+        TextFormField,
+        '短信验证码',
+      );
+      await tester.enterText(phoneField, '13800138000');
+      await dismissQaImeAndWait(tester);
+      await tester.ensureVisible(find.text('获取验证码'));
+      await tester.tap(find.text('获取验证码').hitTestable());
+      await _waitFor(
+        tester,
+        () {
+          final Iterable<TextFormField> fields =
+              tester.widgetList<TextFormField>(codeField);
+          return fields.isNotEmpty &&
+              fields.first.controller?.text == '123456';
+        },
+        description: 'development SMS code autofill',
+      );
+      expect(find.textContaining('仅开发环境可见：验证码 123456'), findsOneWidget);
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'm32-${qaAvdId.toLowerCase()}-02-login',
+      );
+      await announceQaEvidence(tester, 'M32_SMS_OUTBOX_READY');
+
+      await tester.ensureVisible(find.text('登录 / 注册'));
+      await tester.tap(find.text('登录 / 注册').hitTestable());
+      await _waitFor(
+        tester,
+        () => find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty,
+        description: 'APK live home',
+      );
+      _expectExactViewport(tester);
+      expect(find.text('正在发生'), findsOneWidget);
+      expect(find.byKey(const Key('live-room-880217')), findsWidgets);
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'm32-${qaAvdId.toLowerCase()}-03-home',
+      );
+      await announceQaEvidence(tester, 'M32_LIVE_HOME_READY');
+
+      await tester.tap(find.byTooltip('搜索').first.hitTestable());
+      await _waitFor(
+        tester,
+        () => find.text('搜索用户与房间').evaluate().isNotEmpty,
+        description: 'global search page',
+      );
+      final Finder searchField = find.widgetWithText(
+        TextField,
+        '输入昵称、ID、房间名或房间号',
+      );
+      await tester.enterText(searchField, '深夜');
+      await dismissQaImeAndWait(tester);
+      await tester.tap(find.widgetWithText(TextButton, '搜索').hitTestable());
+      await _waitFor(
+        tester,
+        () => find.text('“深夜”的搜索结果').evaluate().isNotEmpty,
+        description: 'search results',
+      );
+      expect(find.text('深夜陪伴电台'), findsOneWidget);
+      expect(find.text('南风'), findsWidgets);
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'm32-${qaAvdId.toLowerCase()}-04-search',
+      );
+      await announceQaEvidence(tester, 'M32_SEARCH_READY');
+      await tester.pageBack();
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pageBack();
+      await _waitFor(
+        tester,
+        () => find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty,
+        description: 'home after search',
+      );
+
+      await tester.ensureVisible(find.byKey(const Key('live-room-880217')).first);
+      await tester.tap(find.byKey(const Key('live-room-880217')).first.hitTestable());
+      await _waitFor(
+        tester,
+        () => find.byType(RoomPage).evaluate().isNotEmpty &&
+            find.textContaining('房间号').evaluate().isNotEmpty,
+        description: 'authoritative room snapshot',
+      );
+      expect(find.text('当前不可发送公屏消息'), findsOneWidget);
+      expect(find.text('礼物'), findsOneWidget);
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'm32-${qaAvdId.toLowerCase()}-05-room',
+      );
+      await announceQaEvidence(tester, 'M32_ROOM_SNAPSHOT_READY');
+      await tester.tap(find.byTooltip('离开房间').first.hitTestable());
+      await _waitFor(
+        tester,
+        () => find.text('离开房间？').evaluate().isNotEmpty,
+        description: 'leave-room confirmation',
+      );
+      await tester.tap(find.text('确认离开').hitTestable());
+      await _waitFor(
+        tester,
+        () => find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty,
+        description: 'home after room',
+      );
+
+      await tester.tap(find.text('发现').hitTestable());
+      await _waitFor(
+        tester,
+        () => find
+            .byKey(const Key('live-discovery-unavailable'))
+            .evaluate()
+            .isNotEmpty,
+        description: 'discover fail-closed page',
+      );
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'm32-${qaAvdId.toLowerCase()}-06-discover',
+      );
+      await announceQaEvidence(tester, 'M32_DISCOVER_SURFACE_READY');
+
+      await tester.tap(find.text('消息').hitTestable());
+      await _waitFor(
+        tester,
+        () => find.byKey(const Key('im-vendor-blocked')).evaluate().isNotEmpty,
+        description: 'IM fail-closed page',
+      );
+      expect(find.text('消息服务正在准备'), findsOneWidget);
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'm32-${qaAvdId.toLowerCase()}-07-messages',
+      );
+      await announceQaEvidence(tester, 'M32_IM_FAIL_CLOSED');
+
+      await tester.tap(find.text('我的').hitTestable());
+      await _waitFor(
+        tester,
+        () => find
+            .byKey(const Key('current-user-contract-ready'))
+            .evaluate()
+            .isNotEmpty,
+        description: 'current-user account page',
+      );
+      expect(find.byKey(const Key('wallet-contract-ready')), findsOneWidget);
+      final Finder paymentBlocked = find.byKey(
+        const Key('payment-initiation-blocked'),
+      );
+      await tester.scrollUntilVisible(
+        paymentBlocked,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(paymentBlocked, findsOneWidget);
+      expect(find.text('P202608180001'), findsOneWidget);
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'm32-${qaAvdId.toLowerCase()}-08-account',
+      );
+      await announceQaEvidence(tester, 'M32_PAYMENT_READ_ONLY_READY');
+
+      final Finder diagnostics = find.byKey(
+        const Key('developer-vendor-readiness'),
+      );
+      await tester.scrollUntilVisible(
+        diagnostics,
+        220,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(diagnostics.hitTestable());
+      await _waitFor(
+        tester,
+        () => find
+            .byKey(const Key('vendor-readiness-summary'))
+            .evaluate()
+            .isNotEmpty,
+        description: 'server-authoritative vendor readiness',
+      );
+      expect(find.text('READY_FOR_PROVIDER_INTEGRATION'), findsOneWidget);
+      expect(find.text('运行状态：VENDOR_BLOCKED'), findsOneWidget);
+      expect(find.byKey(const Key('vendor-sms-status')), findsOneWidget);
+      final Finder vendorPayment = find.byKey(
+        const Key('vendor-payment-status'),
+      );
+      await tester.scrollUntilVisible(
+        vendorPayment,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.byKey(const Key('vendor-im-status')), findsOneWidget);
+      expect(vendorPayment, findsOneWidget);
+      final Finder secretBoundary = find.byKey(
+        const Key('vendor-secret-boundary'),
+      );
+      await tester.scrollUntilVisible(
+        secretBoundary,
+        180,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(secretBoundary, findsOneWidget);
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'm32-${qaAvdId.toLowerCase()}-09-vendor-readiness',
+      );
+      await announceQaEvidence(tester, 'M32_VENDOR_BOUNDARY_READY');
+      await tester.pageBack();
+      await _waitFor(
+        tester,
+        () => find.text('退出登录').evaluate().isNotEmpty,
+        description: 'account after diagnostics',
+      );
+
+      await tester.ensureVisible(find.text('退出登录'));
+      await tester.tap(find.text('退出登录').hitTestable());
+      await _waitFor(
+        tester,
+        () => find.text('登录 / 注册').evaluate().isNotEmpty,
+        description: 'server logout and local session deletion',
+      );
+      await captureQaScreenshot(
+        tester,
+        binding,
+        'm32-${qaAvdId.toLowerCase()}-10-logout',
+      );
+      await announceQaEvidence(tester, 'M32_ACCEPTANCE_COMPLETE');
+
+      binding.reportData ??= <String, dynamic>{};
+      binding.reportData!['m32Acceptance'] = <String, Object?>{
+        'avd': qaAvdId,
+        'logicalViewport': '${_expectedWidth.toInt()}x${_expectedHeight.toInt()}',
+        'devicePixelRatio': _expectedDpr,
+        'rootNavigation': '首页/发现/消息/我的',
+        'publicClientSecretPresent': false,
+        'providerCallsMade': false,
+        'vendorIntegrationStatus': 'READY_FOR_PROVIDER_INTEGRATION',
+        'vendorRuntimeStatus': 'VENDOR_BLOCKED',
+        'result': 'PASS',
+      };
+    },
+  );
+}
+
+void _expectExactViewport(WidgetTester tester) {
+  final double dpr = tester.view.devicePixelRatio;
+  final Size logicalSize = Size(
+    tester.view.physicalSize.width / dpr,
+    tester.view.physicalSize.height / dpr,
+  );
+  expect(dpr, closeTo(_expectedDpr, 0.01));
+  expect(logicalSize.width, closeTo(_expectedWidth, 0.1));
+  expect(logicalSize.height, closeTo(_expectedHeight, 0.1));
+  final BuildContext context = tester.element(find.byType(Scaffold).first);
+  final Size mediaQuerySize = MediaQuery.sizeOf(context);
+  expect(mediaQuerySize.width, closeTo(_expectedWidth, 0.1));
+  expect(mediaQuerySize.height, closeTo(_expectedHeight, 0.1));
+  debugPrint(
+    'M32_EXACT_VIEWPORT::$qaAvdId::'
+    '${logicalSize.width.toStringAsFixed(0)}x'
+    '${logicalSize.height.toStringAsFixed(0)}::'
+    '${dpr.toStringAsFixed(2)}',
+  );
+}
+
+Future<void> _waitFor(
+  WidgetTester tester,
+  bool Function() condition, {
+  required String description,
+}) async {
+  for (int attempt = 0; attempt < 300; attempt += 1) {
+    await tester.pump();
+    if (condition()) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  throw TestFailure('Timed out waiting for $description.');
+}
+''',
+encoding='utf-8',
+)
+print('APK UI acceptance flow migrated')
