@@ -1,0 +1,55 @@
+name: Evaluate APK UI validation status
+
+on:
+  push:
+    branches:
+      - feat/apk-ui-replica
+    paths:
+      - tool/ui/EVALUATE_APK_UI_STATUS
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/apk-ui-replica
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Evaluate and publish stable marker
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          result=docs/ui/apk-ui-validation-latest.json
+          test -f "$result"
+          conclusion="$(jq -r '.conclusion' "$result")"
+          run_id="$(jq -r '.run_id' "$result")"
+          tested_sha="$(jq -r '.tested_git_sha' "$result")"
+          screenshots="$(jq -r '.screenshot_count' "$result")"
+          artifacts="$(jq -r '.artifact_count' "$result")"
+          rm -f docs/ui/APK_UI_VALIDATION_PASS docs/ui/APK_UI_VALIDATION_FAIL
+          if [[ "$conclusion" == success ]]; then
+            marker=docs/ui/APK_UI_VALIDATION_PASS
+          else
+            marker=docs/ui/APK_UI_VALIDATION_FAIL
+          fi
+          {
+            printf 'run_id=%s\n' "$run_id"
+            printf 'tested_git_sha=%s\n' "$tested_sha"
+            printf 'conclusion=%s\n' "$conclusion"
+            printf 'screenshot_count=%s\n' "$screenshots"
+            printf 'artifact_count=%s\n' "$artifacts"
+          } > "$marker"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/ui/APK_UI_VALIDATION_PASS docs/ui/APK_UI_VALIDATION_FAIL
+          git commit -m "docs(ui): record APK UI validation $conclusion"
+          git push origin HEAD:feat/apk-ui-replica
+          [[ "$conclusion" == success ]]
