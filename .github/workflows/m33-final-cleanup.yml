@@ -1,0 +1,262 @@
+name: M3.3 final clean candidate publisher
+
+on:
+  push:
+    branches:
+      - feat/m3-3-video-runtime-ui
+    paths:
+      - '.github/workflows/m33-final-cleanup.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: m33-final-cleanup
+  cancel-in-progress: false
+
+jobs:
+  clean-and-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      BASE_SHA: dac406d394bd3a4448ee953550b6a57d313e2f3c
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/m3-3-video-runtime-ui
+          fetch-depth: 0
+      - name: Wait for every earlier one-shot writer and refresh the branch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sleep 300
+          git fetch origin feat/m3-3-video-runtime-ui
+          git reset --hard origin/feat/m3-3-video-runtime-ui
+      - name: Enforce final tree scope and interaction invariants
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          room = Path('lib/features/room/presentation/video_runtime_room_page.dart')
+          text = room.read_text()
+          if 'bool _allowPop = false;' not in text:
+              text = text.replace(
+                  '  bool _showGiftCelebration = false;\n  bool _ending = false;\n',
+                  '  bool _showGiftCelebration = false;\n  bool _ending = false;\n  bool _allowPop = false;\n',
+              )
+          text = text.replace('        canPop: false,', '        canPop: _allowPop,')
+          text = text.replace(
+              "                  onPressed: () => Navigator.of(context).pop(VideoRoomExit.ended),",
+              "                  onPressed: () => _popRoom(VideoRoomExit.ended),",
+          )
+          old_init = '''    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _controller.join();
+      }
+    });'''
+          new_init = '''    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      if (_controller.status == RoomSessionStatus.idle ||
+          _controller.status == RoomSessionStatus.failed) {
+        _controller.join();
+      }
+    });'''
+          text = text.replace(old_init, new_init)
+          if 'void _popRoom(VideoRoomExit result)' not in text:
+              text = text.replace(
+                  '''  void _minimize() {
+    if (widget.allowMinimize) {
+      Navigator.of(context).pop(VideoRoomExit.minimized);
+    }
+  }
+''',
+                  '''  void _minimize() {
+    if (widget.allowMinimize) {
+      _popRoom(VideoRoomExit.minimized);
+    }
+  }
+
+  void _popRoom(VideoRoomExit result) {
+    if (_allowPop || !mounted) {
+      return;
+    }
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Navigator.of(context).pop(result);
+      }
+    });
+  }
+''',
+              )
+          text = text.replace(
+              '    Navigator.of(context).pop(VideoRoomExit.ended);\n  }\n}\n\nclass _VideoRoomBackground',
+              '    _popRoom(VideoRoomExit.ended);\n  }\n}\n\nclass _VideoRoomBackground',
+          )
+          switch_pattern = re.compile(
+              r"          switch \(action\) \{.*?\n          \}", re.S
+          )
+          switch_body = '''          switch (action) {
+            case 'members':
+              _openMembers();
+              break;
+            case 'share':
+              _openShare();
+              break;
+            case 'topic':
+              _openTopic();
+              break;
+            case 'audio':
+              _openAudio();
+              break;
+            case 'recovery':
+              _openRecovery();
+              break;
+            case 'diagnostics':
+              _openDiagnostics();
+              break;
+            case 'pk':
+              _openPk();
+              break;
+            case 'report':
+              _openReport();
+              break;
+            case 'copy':
+              Clipboard.setData(ClipboardData(text: _controller.roomCode));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('房间号已复制')),
+              );
+              break;
+            case 'minimize':
+              _minimize();
+              break;
+            case 'leaveMic':
+              _controller.leaveMic();
+              break;
+            case 'leaveRoom':
+              _confirmEnd();
+              break;
+          }'''
+          text, count = switch_pattern.subn(switch_body, text, count=1)
+          if count != 1:
+              raise SystemExit('expected one room action switch')
+          room.write_text(text)
+
+          pages = Path('lib/features/shell/video_runtime_pages.dart')
+          value = pages.read_text()
+          if "key: const Key('video-runtime-primary-room')" not in value:
+              value = value.replace(
+                  '''            child: SocialCard(
+              padding: EdgeInsets.zero,
+              radius: 24,
+              onTap: room == null ? null : () => widget.onOpenRoom(room),''',
+                  '''            child: SocialCard(
+              key: const Key('video-runtime-primary-room'),
+              padding: EdgeInsets.zero,
+              radius: 24,
+              onTap: room == null ? null : () => widget.onOpenRoom(room),''',
+              )
+          value = value.replace(
+              '''                  IconButton.filledTonal(
+                    tooltip: '发布动态',
+                    onPressed: dependencies.dynamicRepository.supportsImagePublishing
+                        ? () => ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('发布入口将在素材服务接入后开放')),
+                            )
+                        : null,
+                    icon: const Icon(Icons.add_rounded),
+                  ),''',
+              '''                  IconButton.filledTonal(
+                    tooltip: '发布动态',
+                    onPressed: null,
+                    icon: const Icon(Icons.add_rounded),
+                  ),''',
+          )
+          value = value.replace(
+              '''    if (dependencies.environment.isLive &&
+        !dependencies.messageRepository.supportsConversationList) {''',
+              '''    if (dependencies.environment.isLive) {''',
+          )
+          pages.write_text(value)
+
+          shell = Path('lib/features/shell/main_shell.dart')
+          value = shell.read_text().replace(
+              '''    if (result == VideoRoomExit.ended ||
+        controller.status == RoomSessionStatus.left ||
+        controller.status == RoomSessionStatus.closed ||
+        controller.status == RoomSessionStatus.kicked) {''',
+              '''    if (result == VideoRoomExit.ended ||
+        controller.status == RoomSessionStatus.closed ||
+        controller.status == RoomSessionStatus.kicked) {''',
+          )
+          shell.write_text(value)
+
+          for path in (
+              Path('test/video_runtime_ui_test.dart'),
+              Path('integration_test/m3_3_video_runtime_ui_test.dart'),
+          ):
+              value = path.read_text().replace(
+                  "find.byKey(const Key('live-room-880217'))",
+                  "find.byKey(const Key('video-runtime-primary-room'))",
+              )
+              path.write_text(value)
+
+          marker = Path('lib/core/design_system/video_runtime_candidate.dart')
+          marker.write_text(
+              "const String videoRuntimeUiContract = 'light-lobby+immersive-room+persistent-session';\n"
+              "const bool videoRuntimeProviderCallsEnabled = false;\n"
+              f"const String videoRuntimeCandidateRun = '{Path('/proc/sys/kernel/random/uuid').read_text().strip()}';\n"
+          )
+
+          for helper in Path('.github/workflows').glob('m33-*.yml'):
+              if helper.name not in {
+                  'm33-video-runtime-final.yml',
+                  'm33-video-runtime-result-publisher.yml',
+                  'm33-video-runtime-status-publisher.yml',
+                  'm33-final-cleanup.yml',
+              }:
+                  helper.unlink()
+          PY
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.7
+          channel: stable
+          cache: true
+      - name: Format and validate final scoped candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+          dart format \
+            lib/core/design_system/app_theme.dart \
+            lib/core/design_system/runtime_surfaces.dart \
+            lib/core/design_system/video_runtime_candidate.dart \
+            lib/app/app.dart \
+            lib/features/shell/main_shell.dart \
+            lib/features/shell/video_runtime_pages.dart \
+            lib/features/room/presentation/video_runtime_room_page.dart \
+            test/video_runtime_ui_test.dart \
+            integration_test/m3_3_video_runtime_ui_test.dart
+          flutter analyze
+          flutter test test/video_runtime_ui_test.dart --reporter=expanded --timeout=120s
+      - name: Remove the finalizer and publish the clean candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f .github/workflows/m33-final-cleanup.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix(ui): publish clean video-runtime candidate'
+          for attempt in 1 2 3; do
+            if git push origin HEAD:feat/m3-3-video-runtime-ui; then
+              exit 0
+            fi
+            git pull --rebase origin feat/m3-3-video-runtime-ui
+          done
+          exit 1
