@@ -1,0 +1,111 @@
+name: M3.3 deterministic acceptance status publisher
+
+on:
+  workflow_run:
+    workflows:
+      - M3.3 video-runtime UI final acceptance
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: m33-deterministic-status-publisher
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event.workflow_run.head_branch == 'feat/m3-3-video-runtime-ui'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      SOURCE_STATUS: ${{ github.event.workflow_run.status }}
+      SOURCE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/m3-3-video-runtime-ui
+          fetch-depth: 0
+      - name: Download run evidence or failed logs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$RUNNER_TEMP/m33-status"
+          mkdir -p "$RUNNER_TEMP/m33-status"
+          if [[ "$SOURCE_CONCLUSION" == success ]]; then
+            gh run download "$SOURCE_RUN_ID" \
+              --repo "$GITHUB_REPOSITORY" \
+              --dir "$RUNNER_TEMP/m33-status/evidence"
+          else
+            gh run view "$SOURCE_RUN_ID" \
+              --repo "$GITHUB_REPOSITORY" \
+              --log-failed \
+              >"$RUNNER_TEMP/m33-status/failed.log" 2>&1 || true
+          fi
+      - name: Write authoritative status
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p docs/video-runtime-ui/status
+          rm -f \
+            docs/video-runtime-ui/status/LATEST_PASS \
+            docs/video-runtime-ui/status/LATEST_FAIL
+          screenshot_count=0
+          a_pass=false
+          b_pass=false
+          hard_errors_ok=false
+          provider_calls_ok=false
+          if [[ "$SOURCE_CONCLUSION" == success ]]; then
+            screenshot_count="$(find "$RUNNER_TEMP/m33-status/evidence" -type f -name 'm33-*.png' | wc -l | tr -d ' ')"
+            grep -R '^avd=AVD-A$' "$RUNNER_TEMP/m33-status/evidence" >/dev/null
+            a_pass=true
+            grep -R '^avd=AVD-B$' "$RUNNER_TEMP/m33-status/evidence" >/dev/null
+            b_pass=true
+            test "$(grep -R '^hard_errors=0$' "$RUNNER_TEMP/m33-status/evidence" | wc -l | tr -d ' ')" -eq 2
+            hard_errors_ok=true
+            test "$(grep -R '^provider_calls_made=false$' "$RUNNER_TEMP/m33-status/evidence" | wc -l | tr -d ' ')" -eq 2
+            provider_calls_ok=true
+            touch docs/video-runtime-ui/status/LATEST_PASS
+            rm -f docs/video-runtime-ui/FINAL_BRANCH_BLOCKED.md
+          else
+            touch docs/video-runtime-ui/status/LATEST_FAIL
+            rm -f docs/video-runtime-ui/FINAL_BRANCH_READY.md
+            cp "$RUNNER_TEMP/m33-status/failed.log" \
+              docs/video-runtime-ui/status/latest-failed.log
+          fi
+          cat >docs/video-runtime-ui/status/latest.json <<EOF
+          {
+            "source_run_id": "$SOURCE_RUN_ID",
+            "tested_git_sha": "$SOURCE_SHA",
+            "status": "$SOURCE_STATUS",
+            "conclusion": "$SOURCE_CONCLUSION",
+            "screenshot_count": $screenshot_count,
+            "avd_a_pass": $a_pass,
+            "avd_b_pass": $b_pass,
+            "hard_errors_zero": $hard_errors_ok,
+            "provider_calls_zero": $provider_calls_ok
+          }
+          EOF
+      - name: Commit status with retry
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/video-runtime-ui
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "test(ui): record final acceptance $SOURCE_RUN_ID"
+          for attempt in 1 2 3; do
+            if git push origin HEAD:feat/m3-3-video-runtime-ui; then
+              exit 0
+            fi
+            git pull --rebase origin feat/m3-3-video-runtime-ui
+          done
+          exit 1
