@@ -1,0 +1,139 @@
+name: Publish APK UI validation result
+
+on:
+  push:
+    branches:
+      - feat/apk-ui-replica
+    paths:
+      - tool/ui/PUBLISH_APK_UI_VALIDATION
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: apk-ui-validation-publisher
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_WORKFLOW: apk-ui-replica-validation.yml
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/apk-ui-replica
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Locate and wait for validation
+        id: validation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          run_id=''
+          for _ in $(seq 1 60); do
+            run_id="$(
+              gh run list \
+                --repo "$GITHUB_REPOSITORY" \
+                --workflow "$TARGET_WORKFLOW" \
+                --branch feat/apk-ui-replica \
+                --limit 10 \
+                --json databaseId,event,createdAt \
+                --jq '[.[] | select(.event == "push" or .event == "workflow_dispatch")] | sort_by(.createdAt) | reverse | .[0].databaseId // empty'
+            )"
+            [[ -n "$run_id" ]] && break
+            sleep 5
+          done
+          [[ -n "$run_id" ]]
+          printf 'run_id=%s\n' "$run_id" >> "$GITHUB_OUTPUT"
+
+          for _ in $(seq 1 360); do
+            status="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json status --jq '.status')"
+            [[ "$status" == completed ]] && break
+            sleep 10
+          done
+          status="$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json status --jq '.status')"
+          [[ "$status" == completed ]]
+
+      - name: Download available validation evidence
+        shell: bash
+        env:
+          RUN_ID: ${{ steps.validation.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$RUNNER_TEMP/apk-ui-validation-evidence"
+          mkdir -p "$RUNNER_TEMP/apk-ui-validation-evidence"
+          gh run download "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$RUNNER_TEMP/apk-ui-validation-evidence" || true
+
+      - name: Publish machine-readable result
+        shell: bash
+        env:
+          RUN_ID: ${{ steps.validation.outputs.run_id }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p docs/ui
+          gh run view "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json databaseId,name,event,headSha,status,conclusion,url,createdAt,updatedAt,jobs \
+            > "$RUNNER_TEMP/run.json"
+
+          aggregate="$(find "$RUNNER_TEMP/apk-ui-validation-evidence" -type f -name aggregate-verdict.txt -print -quit)"
+          tested_sha="$(jq -r '.headSha' "$RUNNER_TEMP/run.json")"
+          conclusion="$(jq -r '.conclusion' "$RUNNER_TEMP/run.json")"
+          if [[ -n "$aggregate" ]]; then
+            aggregate_tested_sha="$(awk -F= '$1 == "tested_git_sha" {print $2}' "$aggregate")"
+            [[ -z "$aggregate_tested_sha" ]] || tested_sha="$aggregate_tested_sha"
+          fi
+
+          screenshot_count="$(find "$RUNNER_TEMP/apk-ui-validation-evidence" -type f -name '*.png' | wc -l | tr -d ' ')"
+          artifact_count="$(find "$RUNNER_TEMP/apk-ui-validation-evidence" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+          jobs_json="$(jq -c '[.jobs[] | {name,status,conclusion}]' "$RUNNER_TEMP/run.json")"
+          run_url="$(jq -r '.url' "$RUNNER_TEMP/run.json")"
+
+          jq -n \
+            --argjson run_id "$RUN_ID" \
+            --arg tested_sha "$tested_sha" \
+            --arg conclusion "$conclusion" \
+            --arg run_url "$run_url" \
+            --argjson screenshot_count "$screenshot_count" \
+            --argjson artifact_count "$artifact_count" \
+            --argjson jobs "$jobs_json" \
+            '{
+              run_id: $run_id,
+              tested_git_sha: $tested_sha,
+              conclusion: $conclusion,
+              run_url: $run_url,
+              screenshot_count: $screenshot_count,
+              artifact_count: $artifact_count,
+              jobs: $jobs,
+              provider_calls_made: false,
+              vendor_runtime_status: "VENDOR_BLOCKED"
+            }' > docs/ui/apk-ui-validation-latest.json
+
+          {
+            echo '# APK UI validation latest result'
+            echo
+            echo "- Run: $RUN_ID"
+            echo "- Tested SHA: $tested_sha"
+            echo "- Conclusion: $conclusion"
+            echo "- Screenshot count: $screenshot_count"
+            echo "- Artifact count: $artifact_count"
+            echo "- Provider calls made: false"
+            echo "- Vendor runtime status: VENDOR_BLOCKED"
+          } > docs/ui/apk-ui-validation-latest.md
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/ui/apk-ui-validation-latest.json docs/ui/apk-ui-validation-latest.md
+          git commit -m "docs(ui): publish APK UI validation result for run $RUN_ID"
+          git push origin HEAD:feat/apk-ui-replica
+
+          [[ "$conclusion" == success ]]
