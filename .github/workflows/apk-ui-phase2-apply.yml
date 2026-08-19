@@ -1,0 +1,138 @@
+name: Apply APK live-shell migration
+
+on:
+  push:
+    branches:
+      - feat/apk-ui-replica
+    paths:
+      - tool/ui/APPLY_APK_UI_PHASE2
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-ui-phase2-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+
+jobs:
+  apply-test-and-commit:
+    name: Apply, validate, and commit live-shell UI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Checkout UI branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/apk-ui-replica
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Verify locked dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+
+      - name: Apply live-shell migration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 tool/ui/apply_apk_ui_phase2.py
+
+      - name: Format candidate delta
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          base_sha="$(git merge-base HEAD origin/main)"
+          mapfile -d '' dart_files < <(
+            git diff --name-only -z --diff-filter=ACMR \
+              "$base_sha" HEAD -- '*.dart'
+          )
+          if (( ${#dart_files[@]} > 0 )); then
+            dart format "${dart_files[@]}"
+          fi
+
+      - name: Analyze
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter analyze 2>&1 | tee phase2-analyze.log
+
+      - name: Run all Dart and widget tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter test \
+            --coverage \
+            --concurrency=1 \
+            --timeout=90s \
+            --reporter=expanded \
+            2>&1 | tee phase2-test.log
+
+      - name: Build live development APK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter build apk --debug \
+            --dart-define=BACKEND_MODE=live \
+            --dart-define=APP_ENV=development \
+            --dart-define=ALLOW_INSECURE_HTTP=true \
+            --dart-define=API_BASE_URL=http://10.0.2.2:8765/ \
+            --dart-define=OAUTH_CLIENT_ID=voice-social-mobile-public
+          sha256sum build/app/outputs/flutter-apk/app-debug.apk \
+            | tee phase2-apk.sha256
+
+      - name: Verify mobile secret hygiene
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf phase2-apk-inspection
+          mkdir phase2-apk-inspection
+          unzip -q build/app/outputs/flutter-apk/app-debug.apk \
+            -d phase2-apk-inspection
+          if grep -aRInE \
+            'OAUTH_CLIENT_SECRET|Client-Secret|DEVELOPMENT_OUTBOX_KEY|X-Development-Outbox-Key|actual-secret-value|never-expose-' \
+            phase2-apk-inspection; then
+            echo 'Forbidden credential marker found in APK.' >&2
+            exit 1
+          fi
+          rm -rf phase2-apk-inspection
+
+      - name: Commit tested live-shell migration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add lib test integration_test tool docs .github
+          if git diff --cached --quiet; then
+            echo 'No live-shell changes to commit.'
+            exit 0
+          fi
+          git commit -m "feat(ui): replace live shell with APK-inspired surfaces"
+          git push origin HEAD:feat/apk-ui-replica
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: apk-ui-phase2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            phase2-analyze.log
+            phase2-test.log
+            phase2-apk.sha256
+            coverage/
+            build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: warn
+          retention-days: 14
