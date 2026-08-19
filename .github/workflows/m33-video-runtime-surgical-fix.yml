@@ -1,0 +1,160 @@
+name: M3.3 one-shot room interaction correction
+
+on:
+  push:
+    branches:
+      - feat/m3-3-video-runtime-ui
+    paths:
+      - '.github/workflows/m33-video-runtime-surgical-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  correct-room-session:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/m3-3-video-runtime-ui
+          fetch-depth: 0
+      - name: Correct PopScope exit and switch termination
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('lib/features/room/presentation/video_runtime_room_page.dart')
+          text = p.read_text()
+          text = text.replace(
+              '  bool _showGiftCelebration = false;\n  bool _ending = false;\n',
+              '  bool _showGiftCelebration = false;\n  bool _ending = false;\n  bool _allowPop = false;\n',
+          )
+          text = text.replace('        canPop: false,', '        canPop: _allowPop,')
+          text = text.replace(
+              "                  onPressed: () => Navigator.of(context).pop(VideoRoomExit.ended),",
+              "                  onPressed: () => _popRoom(VideoRoomExit.ended),",
+          )
+          old_switch = '''          switch (action) {
+            case 'members':
+              _openMembers();
+            case 'share':
+              _openShare();
+            case 'topic':
+              _openTopic();
+            case 'audio':
+              _openAudio();
+            case 'recovery':
+              _openRecovery();
+            case 'diagnostics':
+              _openDiagnostics();
+            case 'pk':
+              _openPk();
+            case 'report':
+              _openReport();
+            case 'copy':
+              Clipboard.setData(ClipboardData(text: _controller.roomCode));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('房间号已复制')),
+              );
+            case 'minimize':
+              _minimize();
+            case 'leaveMic':
+              _controller.leaveMic();
+            case 'leaveRoom':
+              _confirmEnd();
+          }'''
+          new_switch = '''          switch (action) {
+            case 'members':
+              _openMembers();
+              break;
+            case 'share':
+              _openShare();
+              break;
+            case 'topic':
+              _openTopic();
+              break;
+            case 'audio':
+              _openAudio();
+              break;
+            case 'recovery':
+              _openRecovery();
+              break;
+            case 'diagnostics':
+              _openDiagnostics();
+              break;
+            case 'pk':
+              _openPk();
+              break;
+            case 'report':
+              _openReport();
+              break;
+            case 'copy':
+              Clipboard.setData(ClipboardData(text: _controller.roomCode));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('房间号已复制')),
+              );
+              break;
+            case 'minimize':
+              _minimize();
+              break;
+            case 'leaveMic':
+              _controller.leaveMic();
+              break;
+            case 'leaveRoom':
+              _confirmEnd();
+              break;
+          }'''
+          if old_switch not in text:
+              raise SystemExit('expected room tool switch was not found')
+          text = text.replace(old_switch, new_switch)
+          old_minimize = '''  void _minimize() {
+    if (widget.allowMinimize) {
+      Navigator.of(context).pop(VideoRoomExit.minimized);
+    }
+  }
+'''
+          new_minimize = '''  void _minimize() {
+    if (widget.allowMinimize) {
+      _popRoom(VideoRoomExit.minimized);
+    }
+  }
+
+  void _popRoom(VideoRoomExit result) {
+    if (_allowPop || !mounted) {
+      return;
+    }
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Navigator.of(context).pop(result);
+      }
+    });
+  }
+'''
+          if old_minimize not in text:
+              raise SystemExit('expected minimize method was not found')
+          text = text.replace(old_minimize, new_minimize)
+          text = text.replace(
+              '    Navigator.of(context).pop(VideoRoomExit.ended);\n  }\n}\n\nclass _VideoRoomBackground',
+              '    _popRoom(VideoRoomExit.ended);\n  }\n}\n\nclass _VideoRoomBackground',
+          )
+          p.write_text(text)
+          PY
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.7
+          channel: stable
+          cache: true
+      - name: Format corrected file
+        run: dart format lib/features/room/presentation/video_runtime_room_page.dart
+      - name: Commit correction
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add lib/features/room/presentation/video_runtime_room_page.dart
+          git commit -m 'fix(ui): preserve room session pop semantics'
+          git push origin HEAD:feat/m3-3-video-runtime-ui
