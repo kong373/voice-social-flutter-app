@@ -77,8 +77,9 @@ class HttpGatewayProbe implements GatewayProbe {
       stopwatch.stop();
       if (response.statusCode != HttpStatus.ok) {
         return GatewayProbeResult(
-          status: LiveBackendReadinessStatus.gatewayRejected,
-          message: '健康检查返回 HTTP ${response.statusCode}，暂不允许发起登录。',
+          status: LiveBackendReadinessStatus.gatewayReachable,
+          message:
+              '网关已返回 HTTP ${response.statusCode}，传输链路可达；业务权限由认证请求确认。',
           checkedAt: DateTime.now().toUtc(),
           latency: stopwatch.elapsed,
           httpStatus: response.statusCode,
@@ -172,7 +173,7 @@ class LiveBackendReadinessSnapshot {
 
   bool get canAttemptAuthentication =>
       status == LiveBackendReadinessStatus.gatewayReachable &&
-      httpStatus == HttpStatus.ok &&
+      httpStatus != null &&
       publicClientConfigured;
 
   Map<String, Object?> toRedactedJson() => <String, Object?>{
