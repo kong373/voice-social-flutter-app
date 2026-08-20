@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
@@ -40,7 +41,9 @@ class _EditRoomPageState extends State<EditRoomPage> {
     if (_repositoryInstance != null) {
       return;
     }
-    _repositoryInstance = AppDependencyScope.of(context).roomLifecycleRepository;
+    _repositoryInstance = AppDependencyScope.of(
+      context,
+    ).roomLifecycleRepository;
     _load();
   }
 
@@ -87,7 +90,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return RoomPageScaffold(
       appBar: AppBar(
         title: const Text('编辑与关闭房间'),
         actions: <Widget>[
@@ -101,8 +104,8 @@ class _EditRoomPageState extends State<EditRoomPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _room == null
-              ? _buildFailure()
-              : _buildForm(),
+          ? _buildFailure()
+          : _buildForm(),
     );
   }
 
@@ -115,10 +118,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
           children: <Widget>[
             const Icon(Icons.meeting_room_outlined, size: 48),
             const SizedBox(height: 18),
-            Text(
-              _error ?? '房间信息不可用',
-              textAlign: TextAlign.center,
-            ),
+            Text(_error ?? '房间信息不可用', textAlign: TextAlign.center),
             const SizedBox(height: 20),
             FilledButton.tonal(onPressed: _load, child: const Text('重新加载')),
           ],
@@ -140,12 +140,12 @@ class _EditRoomPageState extends State<EditRoomPage> {
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppColors.surfaceHigh,
+                    color: RoomColors.surfaceHigh,
                     borderRadius: BorderRadius.circular(18),
                   ),
                   child: Row(
                     children: <Widget>[
-                      const Icon(Icons.tag_rounded, color: AppColors.accent),
+                      const Icon(Icons.tag_rounded, color: RoomColors.accent),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -160,7 +160,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: AppColors.warning.withValues(alpha: 0.12),
+                      color: RoomColors.warning.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
@@ -168,7 +168,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
                       children: <Widget>[
                         const Icon(
                           Icons.error_outline_rounded,
-                          color: AppColors.warning,
+                          color: RoomColors.warning,
                         ),
                         const SizedBox(width: 10),
                         Expanded(child: Text(_error!)),
@@ -204,8 +204,8 @@ class _EditRoomPageState extends State<EditRoomPage> {
                 Text(
                   '关闭房间',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: const Color(0xFFFF7A8D),
-                      ),
+                    color: const Color(0xFFFF7A8D),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -292,9 +292,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         title: const Text('确认关闭房间？'),
-        content: Text(
-          '将关闭“${room.title}”，当前成员会结束本次房间会话。此操作不会被当作普通离房。',
-        ),
+        content: Text('将关闭“${room.title}”，当前成员会结束本次房间会话。此操作不会被当作普通离房。'),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),

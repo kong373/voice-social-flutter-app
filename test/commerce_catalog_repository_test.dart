@@ -42,8 +42,6 @@ void main() {
   test('payment return waits for server order confirmation', () async {
     final AppDependencies dependencies = AppDependencies.mock();
     final repository = dependencies.commerceCatalogRepository;
-    final MembershipSnapshot before = await repository
-        .fetchMembershipSnapshot();
     final RechargeProduct product = (await repository.fetchRechargeProducts(
       platform: ClientStorePlatform.android,
     )).first;
@@ -77,12 +75,6 @@ void main() {
       pageSize: 20,
     )).items.firstWhere((PaymentOrder item) => item.orderNo == order.orderNo);
     expect(projected.status, PaymentOrderStatus.succeeded);
-
-    final MembershipSnapshot after = await repository.fetchMembershipSnapshot();
-    expect(
-      after.giftCoinBalance,
-      before.giftCoinBalance + product.totalGiftCoins,
-    );
   });
 
   test(
@@ -106,8 +98,8 @@ void main() {
         expect(names.contains(retired), isFalse);
       }
 
-      MembershipSnapshot snapshot = await repository.fetchMembershipSnapshot();
-      final DecorationItem unowned = snapshot.decorations.firstWhere(
+      List<DecorationItem> decorations = await repository.fetchDecorations();
+      final DecorationItem unowned = decorations.firstWhere(
         (DecorationItem item) => !item.owned,
       );
       await repository.purchaseDecoration(unowned.id);
@@ -115,8 +107,8 @@ void main() {
         decorationId: unowned.id,
         equipped: true,
       );
-      snapshot = await repository.fetchMembershipSnapshot();
-      final DecorationItem updated = snapshot.decorations.firstWhere(
+      decorations = await repository.fetchDecorations();
+      final DecorationItem updated = decorations.firstWhere(
         (DecorationItem item) => item.id == unowned.id,
       );
       expect(updated.owned, isTrue);

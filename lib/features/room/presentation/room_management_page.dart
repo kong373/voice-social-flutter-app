@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
@@ -172,7 +173,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     return PopScope<bool>(
       canPop: true,
       onPopInvokedWithResult: (bool didPop, bool? result) {},
-      child: Scaffold(
+      child: RoomPageScaffold(
         appBar: AppBar(
           title: const Text('房间管理'),
           leading: IconButton(
@@ -270,39 +271,50 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       itemCount: manageable.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (BuildContext context, int index) {
         final RoomMember member = manageable[index];
-        return ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: CircleAvatar(child: Text(_initial(member.name))),
-          title: Row(
-            children: <Widget>[
-              Flexible(child: Text(member.name)),
-              if (member.isManager) ...<Widget>[
-                const SizedBox(width: 6),
-                _ManagementTag(
-                  label: member.role == RoomRole.owner ? '房主' : '房管',
-                ),
+        return Material(
+          color: RoomColors.surfaceHigh.withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(18),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            leading: RuntimeAvatar(
+              seed: '${member.userId}',
+              size: 44,
+              ringColor: RoomColors.primary.withValues(alpha: 0.78),
+            ),
+            title: Row(
+              children: <Widget>[
+                Flexible(child: Text(member.name)),
+                if (member.isManager) ...<Widget>[
+                  const SizedBox(width: 6),
+                  _ManagementTag(
+                    label: member.role == RoomRole.owner ? '房主' : '房管',
+                  ),
+                ],
+                if (member.isMuted) ...<Widget>[
+                  const SizedBox(width: 6),
+                  const _ManagementTag(label: '已禁言'),
+                ],
               ],
-              if (member.isMuted) ...<Widget>[
-                const SizedBox(width: 6),
-                const _ManagementTag(label: '已禁言'),
-              ],
-            ],
+            ),
+            subtitle: Text(
+              member.isOnMic && member.seatNumber != null
+                  ? '${member.seatNumber} 号麦'
+                  : '听众席',
+            ),
+            trailing: _busyUserId == member.userId
+                ? const SizedBox.square(
+                    dimension: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.more_horiz_rounded),
+            onTap: _busyUserId == null ? () => _showMemberMenu(member) : null,
           ),
-          subtitle: Text(
-            member.isOnMic && member.seatNumber != null
-                ? '${member.seatNumber} 号麦'
-                : '听众席',
-          ),
-          trailing: _busyUserId == member.userId
-              ? const SizedBox.square(
-                  dimension: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.more_horiz_rounded),
-          onTap: _busyUserId == null ? () => _showMemberMenu(member) : null,
         );
       },
     );
@@ -325,6 +337,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
             seat.state == MicSeatState.mutedAvailable ||
             seat.state == MicSeatState.occupiedMuted;
         return Card(
+          color: RoomColors.surfaceHigh.withValues(alpha: 0.9),
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(
@@ -394,26 +407,37 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       itemCount: _requests.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (BuildContext context, int index) {
         final MicAccessRequest request = _requests[index];
-        return ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: CircleAvatar(child: Text(_initial(request.member.name))),
-          title: Text(request.member.name),
-          subtitle: Text('申请 ${request.seatNumber} 号麦'),
-          trailing: Wrap(
-            spacing: 6,
-            children: <Widget>[
-              TextButton(
-                onPressed: () => _resolveRequest(request, false),
-                child: const Text('拒绝'),
-              ),
-              FilledButton.tonal(
-                onPressed: () => _resolveRequest(request, true),
-                child: const Text('同意'),
-              ),
-            ],
+        return Material(
+          color: RoomColors.surfaceHigh.withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(18),
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            leading: RuntimeAvatar(
+              seed: '${request.member.userId}',
+              size: 44,
+              ringColor: RoomColors.primary.withValues(alpha: 0.78),
+            ),
+            title: Text(request.member.name),
+            subtitle: Text('申请 ${request.seatNumber} 号麦'),
+            trailing: Wrap(
+              spacing: 6,
+              children: <Widget>[
+                TextButton(
+                  onPressed: () => _resolveRequest(request, false),
+                  child: const Text('拒绝'),
+                ),
+                FilledButton.tonal(
+                  onPressed: () => _resolveRequest(request, true),
+                  child: const Text('同意'),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -431,7 +455,11 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
           children: <Widget>[
             ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: CircleAvatar(child: Text(_initial(member.name))),
+              leading: RuntimeAvatar(
+                seed: '${member.userId}',
+                size: 46,
+                ringColor: RoomColors.primary.withValues(alpha: 0.78),
+              ),
               title: Text(member.name),
               subtitle: Text(
                 member.isOnMic ? '${member.seatNumber} 号麦' : '听众席',
@@ -788,9 +816,6 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     return '操作失败，请刷新后重试';
   }
 
-  static String _initial(String name) =>
-      name.isEmpty ? '房' : name.substring(0, 1);
-
   static String _seatStateLabel(MicSeat seat) {
     return switch (seat.state) {
       MicSeatState.available => '空闲',
@@ -812,7 +837,7 @@ class _ManagementTag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.18),
+        color: RoomColors.primary.withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(label, style: Theme.of(context).textTheme.bodySmall),

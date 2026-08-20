@@ -23,8 +23,9 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
 
   Future<void> _load() async {
     try {
-      final WalletSummary wallet =
-          await AppDependencyScope.of(context).commerceRepository.fetchWalletSummary();
+      final WalletSummary wallet = await AppDependencyScope.of(
+        context,
+      ).commerceRepository.fetchWalletSummary();
       if (mounted) {
         setState(() {
           _wallet = wallet;
@@ -46,7 +47,7 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('钱包与商业化'),
         actions: <Widget>[
@@ -59,8 +60,8 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
       ),
       body: _wallet == null
           ? _error == null
-              ? const Center(child: CircularProgressIndicator())
-              : _CommerceErrorState(message: _error!, onRetry: _load)
+                ? const Center(child: CircularProgressIndicator())
+                : _CommerceErrorState(message: _error!, onRetry: _load)
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: <Widget>[
@@ -80,15 +81,15 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
                 ),
                 _CommerceEntry(
                   icon: Icons.redeem_outlined,
-                  title: '礼物目录与赠送面板',
-                  subtitle: '浏览普通礼物和背包；实际赠送仍在语音房内完成',
+                  title: '礼物图鉴',
+                  subtitle: '浏览普通礼物；实际赠送仍在语音房内完成',
                   onTap: () => _open(const GiftCatalogPage()),
                 ),
                 _CommerceEntry(
-                  icon: Icons.workspace_premium_outlined,
-                  title: '会员装扮与背包',
-                  subtitle: '会员、装扮购买与穿戴、背包资产',
-                  onTap: () => _open(const MembershipBackpackPage()),
+                  icon: Icons.auto_awesome_outlined,
+                  title: '装扮中心',
+                  subtitle: '浏览、购买并穿戴头像框、进场和声波样式',
+                  onTap: () => _open(const DecorationPage()),
                 ),
                 _CommerceEntry(
                   icon: Icons.shopping_bag_outlined,
@@ -116,7 +117,8 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
                 ),
                 const SizedBox(height: 18),
                 const _CommerceInfoBanner(
-                  text: '微信支付、支付宝和 Apple IAP 尚在申请。Android 只保留微信与支付宝，iOS 只保留 Apple IAP；支付结果不由客户端自行判定。',
+                  text:
+                      '微信支付、支付宝和 Apple IAP 尚在申请。Android 只保留微信与支付宝，iOS 只保留 Apple IAP；支付结果不由客户端自行判定。',
                 ),
               ],
             ),
@@ -157,11 +159,7 @@ class _WalletPageState extends State<WalletPage> {
     try {
       final List<Object> results = await Future.wait<Object>(<Future<Object>>[
         _repository.fetchWalletSummary(),
-        _repository.fetchLedger(
-          direction: _direction,
-          page: 1,
-          pageSize: 50,
-        ),
+        _repository.fetchLedger(direction: _direction, page: 1, pageSize: 50),
       ]);
       final WalletSummary wallet = results[0] as WalletSummary;
       final CommercePage<LedgerEntry> page =
@@ -185,7 +183,7 @@ class _WalletPageState extends State<WalletPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('钱包与流水')),
       body: Column(
         children: <Widget>[

@@ -120,7 +120,7 @@ class RoomConfigurationForm extends StatelessWidget {
               selected: <RoomAccessMode>{accessMode},
               onSelectionChanged: enabled
                   ? (Set<RoomAccessMode> value) =>
-                      onAccessModeChanged(value.first)
+                        onAccessModeChanged(value.first)
                   : null,
             ),
           ),
@@ -146,10 +146,7 @@ class RoomConfigurationForm extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 22),
-          const _SectionTitle(
-            title: '房间规则',
-            description: '只配置当前已确认的普通语音房能力。',
-          ),
+          const _SectionTitle(title: '房间规则', description: '只配置当前已确认的普通语音房能力。'),
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
             value: showInHall,
@@ -168,19 +165,15 @@ class RoomConfigurationForm extends StatelessWidget {
             margin: const EdgeInsets.only(top: 12),
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AppColors.surfaceHigh,
+              color: RoomColors.surfaceHigh,
               borderRadius: BorderRadius.circular(18),
             ),
             child: const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Icon(Icons.info_outline_rounded, color: AppColors.accent),
+                Icon(Icons.info_outline_rounded, color: RoomColors.accent),
                 SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    '保存后，房间名称、话题、进入方式与麦位规则会立即生效。',
-                  ),
-                ),
+                Expanded(child: Text('保存后，房间名称、话题、进入方式与麦位规则会立即生效。')),
               ],
             ),
           ),

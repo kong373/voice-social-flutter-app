@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
@@ -76,7 +77,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: Text('“${widget.keyword}”的搜索结果')),
       body: Column(
         children: <Widget>[

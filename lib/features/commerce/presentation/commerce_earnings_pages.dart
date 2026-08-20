@@ -22,8 +22,9 @@ class _EarningsPageState extends State<EarningsPage> {
 
   Future<void> _load() async {
     try {
-      final CommerceRepository repository =
-          AppDependencyScope.of(context).commerceRepository;
+      final CommerceRepository repository = AppDependencyScope.of(
+        context,
+      ).commerceRepository;
       final List<Object> values = await Future.wait<Object>(<Future<Object>>[
         repository.fetchWalletSummary(),
         repository.fetchLedger(
@@ -48,12 +49,12 @@ class _EarningsPageState extends State<EarningsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('主播收益')),
       body: _wallet == null || _income == null
           ? _error == null
-              ? const Center(child: CircularProgressIndicator())
-              : _CommerceErrorState(message: _error!, onRetry: _load)
+                ? const Center(child: CircularProgressIndicator())
+                : _CommerceErrorState(message: _error!, onRetry: _load)
           : ListView(
               padding: const EdgeInsets.all(16),
               children: <Widget>[
@@ -153,9 +154,9 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   Future<void> _apply() async {
     final double? amount = double.tryParse(_amountController.text.trim());
     if (amount == null || amount <= 0 || _submitting) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入有效提现金额')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入有效提现金额')));
       return;
     }
     final bool? confirmed = await showDialog<bool>(
@@ -186,15 +187,15 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       _amountController.clear();
       await _load();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('提现申请已提交')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('提现申请已提交')));
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -205,74 +206,82 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('结算与提现')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? _CommerceErrorState(message: _error!, onRetry: _load)
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.all(20),
-                    children: <Widget>[
-                      _CommerceStatusCard(
-                        icon: Icons.account_balance_outlined,
-                        title: '可提现 ¥${_wallet!.cashBalance.toStringAsFixed(2)}',
-                        description: _wallet!.bankCard == null
-                            ? '尚未绑定银行卡'
-                            : '${_wallet!.bankCard!.bankName} ${_wallet!.bankCard!.maskedNumber}',
-                      ),
-                      const SizedBox(height: 14),
-                      if (!_wallet!.realNameVerified || _wallet!.bankCard == null)
-                        const _CommerceInfoBanner(
-                          text: '提交提现前必须完成实名认证并绑定银行卡。缺少条件时客户端会阻止提交。',
-                        ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: _amountController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: InputDecoration(
-                          labelText: '提现金额',
-                          helperText: '最低 ¥${_quote!.minimumAmount.toStringAsFixed(0)} · 手续费 ${_quote!.feeRateText}',
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      FilledButton(
-                        onPressed: _wallet!.realNameVerified &&
-                                _wallet!.bankCard != null &&
-                                !_submitting
-                            ? _apply
-                            : null,
-                        child: _submitting
-                            ? const SizedBox.square(
-                                dimension: 20,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('申请提现'),
-                      ),
-                      const SizedBox(height: 24),
-                      Text('提现记录', style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 8),
-                      if (_records!.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 30),
-                          child: Center(child: Text('暂无提现记录')),
-                        )
-                      else
-                        for (final WithdrawalRecord record in _records!)
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text('¥${record.amount.toStringAsFixed(2)} · ${record.statusText}'),
-                            subtitle: Text(
-                              '${record.bankName} ${record.maskedCard}\n${_formatDateTime(record.createdAt)}',
-                            ),
-                            isThreeLine: true,
-                            trailing: Text('到账 ¥${record.receivedAmount.toStringAsFixed(2)}'),
-                          ),
-                    ],
+          ? _CommerceErrorState(message: _error!, onRetry: _load)
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.all(20),
+                children: <Widget>[
+                  _CommerceStatusCard(
+                    icon: Icons.account_balance_outlined,
+                    title: '可提现 ¥${_wallet!.cashBalance.toStringAsFixed(2)}',
+                    description: _wallet!.bankCard == null
+                        ? '尚未绑定银行卡'
+                        : '${_wallet!.bankCard!.bankName} ${_wallet!.bankCard!.maskedNumber}',
                   ),
-                ),
+                  const SizedBox(height: 14),
+                  if (!_wallet!.realNameVerified || _wallet!.bankCard == null)
+                    const _CommerceInfoBanner(
+                      text: '提交提现前必须完成实名认证并绑定银行卡。缺少条件时客户端会阻止提交。',
+                    ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _amountController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: '提现金额',
+                      helperText:
+                          '最低 ¥${_quote!.minimumAmount.toStringAsFixed(0)} · 手续费 ${_quote!.feeRateText}',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  FilledButton(
+                    onPressed:
+                        _wallet!.realNameVerified &&
+                            _wallet!.bankCard != null &&
+                            !_submitting
+                        ? _apply
+                        : null,
+                    child: _submitting
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('申请提现'),
+                  ),
+                  const SizedBox(height: 24),
+                  Text('提现记录', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  if (_records!.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 30),
+                      child: Center(child: Text('暂无提现记录')),
+                    )
+                  else
+                    for (final WithdrawalRecord record in _records!)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          '¥${record.amount.toStringAsFixed(2)} · ${record.statusText}',
+                        ),
+                        subtitle: Text(
+                          '${record.bankName} ${record.maskedCard}\n${_formatDateTime(record.createdAt)}',
+                        ),
+                        isThreeLine: true,
+                        trailing: Text(
+                          '到账 ¥${record.receivedAmount.toStringAsFixed(2)}',
+                        ),
+                      ),
+                ],
+              ),
+            ),
     );
   }
 }

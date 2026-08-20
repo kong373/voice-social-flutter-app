@@ -45,7 +45,7 @@ class _ActivityCenterPageState extends State<ActivityCenterPage> {
   @override
   Widget build(BuildContext context) {
     final List<ThemeActivity>? activities = _activities;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('主题活动中心')),
       body: activities == null && _error == null
           ? const Center(child: CircularProgressIndicator())

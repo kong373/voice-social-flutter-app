@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
 
@@ -37,13 +38,13 @@ class _SystemPermissionCenterPageState
   Future<void> _load() async {
     try {
       final AccountComplianceSnapshot value =
-          await AppDependencyScope.of(context)
-              .accountComplianceRepository
-              .fetchSnapshot(
-                account: widget.account,
-                currentVersion: widget.currentVersion,
-                platformType: widget.platformType,
-              );
+          await AppDependencyScope.of(
+            context,
+          ).accountComplianceRepository.fetchSnapshot(
+            account: widget.account,
+            currentVersion: widget.currentVersion,
+            platformType: widget.platformType,
+          );
       if (mounted) {
         setState(() {
           _snapshot = value;
@@ -59,20 +60,20 @@ class _SystemPermissionCenterPageState
 
   Future<void> _request(PermissionSetting setting) async {
     try {
-      await AppDependencyScope.of(context)
-          .accountComplianceRepository
-          .setPermissionState(
-            kind: setting.kind,
-            state: PermissionState.granted,
-          );
+      await AppDependencyScope.of(
+        context,
+      ).accountComplianceRepository.setPermissionState(
+        kind: setting.kind,
+        state: PermissionState.granted,
+      );
       if (mounted) {
         await _load();
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     }
   }
@@ -80,30 +81,38 @@ class _SystemPermissionCenterPageState
   @override
   Widget build(BuildContext context) {
     final AccountComplianceSnapshot? snapshot = _snapshot;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('系统权限中心')),
       body: snapshot == null
           ? _error == null
-              ? const Center(child: CircularProgressIndicator())
-              : _PageError(message: _error!, onRetry: _load)
+                ? const Center(child: CircularProgressIndicator())
+                : _PageError(message: _error!, onRetry: _load)
           : ListView(
               padding: const EdgeInsets.all(18),
               children: <Widget>[
-                const _Info(
-                  text: '权限只在具体功能需要时请求。Live 模式必须由原生系统适配器返回真实状态。',
-                ),
+                const _Info(text: '权限只在具体功能需要时请求。Live 模式必须由原生系统适配器返回真实状态。'),
                 const SizedBox(height: 10),
-                for (final PermissionSetting item in snapshot.permissions)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(_permissionIcon(item.kind)),
-                    title: Text(item.title),
-                    subtitle: Text(item.purpose),
-                    trailing: Text(_permissionStateLabel(item.state)),
-                    onTap: item.state == PermissionState.granted
-                        ? null
-                        : () => _request(item),
+                for (final PermissionSetting item
+                    in snapshot.permissions) ...<Widget>[
+                  const SizedBox(height: 10),
+                  SocialCard(
+                    padding: EdgeInsets.zero,
+                    radius: 19,
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 4,
+                      ),
+                      leading: Icon(_permissionIcon(item.kind)),
+                      title: Text(item.title),
+                      subtitle: Text(item.purpose),
+                      trailing: Text(_permissionStateLabel(item.state)),
+                      onTap: item.state == PermissionState.granted
+                          ? null
+                          : () => _request(item),
+                    ),
                   ),
+                ],
               ],
             ),
     );
@@ -150,13 +159,13 @@ class _RealNamePageState extends State<RealNamePage> {
 
   Future<void> _load() async {
     final AccountComplianceSnapshot snapshot =
-        await AppDependencyScope.of(context)
-            .accountComplianceRepository
-            .fetchSnapshot(
-              account: widget.account,
-              currentVersion: widget.currentVersion,
-              platformType: widget.platformType,
-            );
+        await AppDependencyScope.of(
+          context,
+        ).accountComplianceRepository.fetchSnapshot(
+          account: widget.account,
+          currentVersion: widget.currentVersion,
+          platformType: widget.platformType,
+        );
     if (mounted) {
       setState(() => _state = snapshot.verificationState);
     }
@@ -168,20 +177,20 @@ class _RealNamePageState extends State<RealNamePage> {
     }
     setState(() => _busy = true);
     try {
-      await AppDependencyScope.of(context)
-          .accountComplianceRepository
-          .submitRealName(
-            realName: _nameController.text.trim(),
-            idNumber: _idController.text.trim(),
-          );
+      await AppDependencyScope.of(
+        context,
+      ).accountComplianceRepository.submitRealName(
+        realName: _nameController.text.trim(),
+        idNumber: _idController.text.trim(),
+      );
       if (mounted) {
         await _load();
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -192,9 +201,10 @@ class _RealNamePageState extends State<RealNamePage> {
 
   @override
   Widget build(BuildContext context) {
-    final AccountComplianceRepository repository =
-        AppDependencyScope.of(context).accountComplianceRepository;
-    return Scaffold(
+    final AccountComplianceRepository repository = AppDependencyScope.of(
+      context,
+    ).accountComplianceRepository;
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('实名认证')),
       body: _state == null
           ? const Center(child: CircularProgressIndicator())
@@ -220,8 +230,8 @@ class _RealNamePageState extends State<RealNamePage> {
                           decoration: const InputDecoration(labelText: '真实姓名'),
                           validator: (String? value) =>
                               value == null || value.trim().length < 2
-                                  ? '请输入真实姓名'
-                                  : null,
+                              ? '请输入真实姓名'
+                              : null,
                         ),
                         const SizedBox(height: 12),
                         TextFormField(
@@ -230,8 +240,8 @@ class _RealNamePageState extends State<RealNamePage> {
                           decoration: const InputDecoration(labelText: '身份证号'),
                           validator: (String? value) =>
                               value == null || value.trim().length != 18
-                                  ? '请输入 18 位身份证号'
-                                  : null,
+                              ? '请输入 18 位身份证号'
+                              : null,
                         ),
                         FilledButton(
                           onPressed: _busy ? null : _submit,
@@ -275,14 +285,13 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
   }
 
   Future<void> _load() async {
-    final AccountComplianceSnapshot value =
-        await AppDependencyScope.of(context)
-            .accountComplianceRepository
-            .fetchSnapshot(
-              account: widget.account,
-              currentVersion: widget.currentVersion,
-              platformType: widget.platformType,
-            );
+    final AccountComplianceSnapshot value = await AppDependencyScope.of(context)
+        .accountComplianceRepository
+        .fetchSnapshot(
+          account: widget.account,
+          currentVersion: widget.currentVersion,
+          platformType: widget.platformType,
+        );
     if (mounted) {
       setState(() => _snapshot = value);
     }
@@ -290,17 +299,17 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
 
   Future<void> _revoke(DeviceSession session) async {
     try {
-      await AppDependencyScope.of(context)
-          .accountComplianceRepository
-          .revokeDeviceSession(session.id);
+      await AppDependencyScope.of(
+        context,
+      ).accountComplianceRepository.revokeDeviceSession(session.id);
       if (mounted) {
         await _load();
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     }
   }
@@ -308,10 +317,10 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
   @override
   Widget build(BuildContext context) {
     final AccountComplianceSnapshot? snapshot = _snapshot;
-    final bool supported = AppDependencyScope.of(context)
-        .accountComplianceRepository
-        .supportsDeviceSessionManagement;
-    return Scaffold(
+    final bool supported = AppDependencyScope.of(
+      context,
+    ).accountComplianceRepository.supportsDeviceSessionManagement;
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('登录设备与会话')),
       body: snapshot == null
           ? const Center(child: CircularProgressIndicator())
@@ -319,26 +328,36 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
               padding: const EdgeInsets.all(18),
               children: <Widget>[
                 if (!supported)
-                  const _Info(
-                    text: '当前后端尚未提供用户侧会话撤销接口，只展示已知当前会话。',
+                  const _Info(text: '当前后端尚未提供用户侧会话撤销接口，只展示已知当前会话。'),
+                for (final DeviceSession session
+                    in snapshot.sessions) ...<Widget>[
+                  const SizedBox(height: 10),
+                  SocialCard(
+                    padding: EdgeInsets.zero,
+                    radius: 19,
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 4,
+                      ),
+                      leading: Icon(
+                        session.isCurrent
+                            ? Icons.phone_android_rounded
+                            : Icons.devices_other_rounded,
+                      ),
+                      title: Text(session.deviceName),
+                      subtitle: Text(session.location),
+                      trailing: session.isCurrent
+                          ? const Text('当前设备')
+                          : TextButton(
+                              onPressed: session.canRevoke
+                                  ? () => _revoke(session)
+                                  : null,
+                              child: const Text('移除'),
+                            ),
+                    ),
                   ),
-                for (final DeviceSession session in snapshot.sessions)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(session.isCurrent
-                        ? Icons.phone_android_rounded
-                        : Icons.devices_other_rounded),
-                    title: Text(session.deviceName),
-                    subtitle: Text(session.location),
-                    trailing: session.isCurrent
-                        ? const Text('当前设备')
-                        : TextButton(
-                            onPressed: session.canRevoke
-                                ? () => _revoke(session)
-                                : null,
-                            child: const Text('移除'),
-                          ),
-                  ),
+                ],
               ],
             ),
     );
@@ -358,16 +377,7 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Icon(icon, size: 42, color: AppColors.primary),
-        const SizedBox(height: 14),
-        Text(title, style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 8),
-        Text(description, style: Theme.of(context).textTheme.bodyLarge),
-      ],
-    );
+    return SocialPageIntro(icon: icon, title: title, description: description);
   }
 }
 
@@ -398,34 +408,31 @@ class _PageError extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: FilledButton.tonal(
-        onPressed: onRetry,
-        child: Text(message),
-      ),
+      child: FilledButton.tonal(onPressed: onRetry, child: Text(message)),
     );
   }
 }
 
 IconData _permissionIcon(PermissionKind kind) => switch (kind) {
-      PermissionKind.microphone => Icons.mic_none_rounded,
-      PermissionKind.notifications => Icons.notifications_none_rounded,
-      PermissionKind.photos => Icons.photo_library_outlined,
-    };
+  PermissionKind.microphone => Icons.mic_none_rounded,
+  PermissionKind.notifications => Icons.notifications_none_rounded,
+  PermissionKind.photos => Icons.photo_library_outlined,
+};
 
 String _permissionStateLabel(PermissionState state) => switch (state) {
-      PermissionState.notDetermined => '尚未请求',
-      PermissionState.granted => '已允许',
-      PermissionState.denied => '已拒绝',
-      PermissionState.restricted => '受系统限制',
-    };
+  PermissionState.notDetermined => '尚未请求',
+  PermissionState.granted => '已允许',
+  PermissionState.denied => '已拒绝',
+  PermissionState.restricted => '受系统限制',
+};
 
 String _verificationLabel(VerificationState state) => switch (state) {
-      VerificationState.unverified => '未认证',
-      VerificationState.pending => '审核中',
-      VerificationState.verified => '已认证',
-      VerificationState.rejected => '认证未通过',
-      VerificationState.unavailable => '认证服务不可用',
-    };
+  VerificationState.unverified => '未认证',
+  VerificationState.pending => '审核中',
+  VerificationState.verified => '已认证',
+  VerificationState.rejected => '认证未通过',
+  VerificationState.unavailable => '认证服务不可用',
+};
 
 String _messageFor(Object error) =>
     error is ApiException ? error.message : '操作失败，请稍后重试';

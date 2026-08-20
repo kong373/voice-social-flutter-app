@@ -49,7 +49,7 @@ class CommunityHubPage extends StatelessWidget {
         page: ActivityCenterPage(),
       ),
     ];
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('社交经营与活动')),
       body: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),

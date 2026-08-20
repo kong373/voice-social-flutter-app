@@ -80,16 +80,21 @@ class AppDependencies {
     return _build(environment: environment, store: store);
   }
 
-  factory AppDependencies.mock({Map<String, String>? initialStorage}) {
+  factory AppDependencies.mock({
+    Map<String, String>? initialStorage,
+    DateTime? mockNow,
+  }) {
     return _build(
       environment: AppEnvironment.mock(),
       store: MemoryKeyValueStore(initialStorage),
+      mockNow: mockNow,
     );
   }
 
   static AppDependencies _build({
     required AppEnvironment environment,
     required KeyValueStore store,
+    DateTime? mockNow,
   }) {
     final AuthSessionManager sessionManager = AuthSessionManager(store);
     final ApiClient apiClient = ApiClient(
@@ -115,11 +120,11 @@ class AppDependencies {
         : const MockAuthRepository();
     final AccountComplianceRepository accountComplianceRepository =
         environment.isLive
-            ? BackendAccountComplianceRepository(
-                apiClient: apiClient,
-                routes: routes,
-              )
-            : MockAccountComplianceRepository();
+        ? BackendAccountComplianceRepository(
+            apiClient: apiClient,
+            routes: routes,
+          )
+        : MockAccountComplianceRepository();
     final DiscoveryRepository discoveryRepository = environment.isLive
         ? BackendDiscoveryRepository(
             apiClient: apiClient,
@@ -157,7 +162,7 @@ class AppDependencies {
       );
     } else {
       final MockCommerceRepository mockCommerceRepository =
-          MockCommerceRepository();
+          MockCommerceRepository(now: mockNow);
       commerceRepository = mockCommerceRepository;
       commerceCatalogRepository = MockCommerceCatalogRepository(
         onRechargeOrderChanged: mockCommerceRepository.syncRechargeOrder,
@@ -169,7 +174,7 @@ class AppDependencies {
             routes: routes,
             currentUserIdProvider: () => sessionManager.session?.userId ?? 0,
           )
-        : MockMessageRepository();
+        : MockMessageRepository(now: mockNow);
     final RoomRepository roomRepository = environment.isLive
         ? BackendRoomRepository(apiClient: apiClient, routes: routes)
         : MockRoomRepository();
@@ -192,11 +197,12 @@ class AppDependencies {
         : MockRoomRealtimeGateway();
     final RoomAudioService roomAudioService = environment.isLive
         ? const UnavailableRoomAudioService()
-        : MockRoomAudioService();
-    final DeviceIdentityProvider deviceIdentityProvider = DeviceIdentityProvider(
-      environment: environment,
-      sessionManager: sessionManager,
-    );
+        : MockRoomAudioService(now: mockNow);
+    final DeviceIdentityProvider deviceIdentityProvider =
+        DeviceIdentityProvider(
+          environment: environment,
+          sessionManager: sessionManager,
+        );
     final AuthController authController = AuthController(
       repository: authRepository,
       sessionManager: sessionManager,
@@ -251,14 +257,14 @@ class AppDependencies {
     required String title,
   }) {
     final session = sessionManager.session;
-    if (session == null) {
+    if (session == null && environment.isLive) {
       throw StateError('用户未登录，不能创建房间会话');
     }
     return RoomController(
       roomId: roomId,
       title: title,
-      currentUserId: session.userId,
-      accessToken: session.accessToken,
+      currentUserId: session?.userId ?? 10001,
+      accessToken: session?.accessToken ?? 'mock-local-session',
       repository: roomRepository,
       rtcAdapter: rtcAdapter,
       realtimeGateway: realtimeGateway,

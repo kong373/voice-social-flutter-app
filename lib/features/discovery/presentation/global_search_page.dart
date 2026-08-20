@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/discovery/presentation/search_results_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_deep_link_page.dart';
 
@@ -42,7 +43,7 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         titleSpacing: 0,
         title: TextField(
@@ -172,9 +173,8 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
   void _openRoomDirect() {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomDeepLinkPage(
-          input: _controller.text.trim(),
-        ),
+        builder: (BuildContext context) =>
+            RoomDeepLinkPage(input: _controller.text.trim()),
       ),
     );
   }
@@ -214,10 +214,7 @@ class _SearchGuide extends StatelessWidget {
               children: <Widget>[
                 Text(title, style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                Text(description, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),

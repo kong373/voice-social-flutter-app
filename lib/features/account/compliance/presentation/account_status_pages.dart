@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
 
@@ -18,8 +19,7 @@ class AccountRestrictionPage extends StatefulWidget {
   final int platformType;
 
   @override
-  State<AccountRestrictionPage> createState() =>
-      _AccountRestrictionPageState();
+  State<AccountRestrictionPage> createState() => _AccountRestrictionPageState();
 }
 
 class _AccountRestrictionPageState extends State<AccountRestrictionPage> {
@@ -34,14 +34,13 @@ class _AccountRestrictionPageState extends State<AccountRestrictionPage> {
   }
 
   Future<void> _load() async {
-    final AccountComplianceSnapshot value =
-        await AppDependencyScope.of(context)
-            .accountComplianceRepository
-            .fetchSnapshot(
-              account: widget.account,
-              currentVersion: widget.currentVersion,
-              platformType: widget.platformType,
-            );
+    final AccountComplianceSnapshot value = await AppDependencyScope.of(context)
+        .accountComplianceRepository
+        .fetchSnapshot(
+          account: widget.account,
+          currentVersion: widget.currentVersion,
+          platformType: widget.platformType,
+        );
     if (mounted) {
       setState(() => _restriction = value.restriction);
     }
@@ -50,7 +49,7 @@ class _AccountRestrictionPageState extends State<AccountRestrictionPage> {
   @override
   Widget build(BuildContext context) {
     final AccountRestriction? restriction = _restriction;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('账号状态')),
       body: restriction == null
           ? const Center(child: CircularProgressIndicator())
@@ -110,9 +109,9 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
 
   Future<void> _submit() async {
     if (_busy || _explanationController.text.trim().length < 10) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('申诉说明至少填写 10 个字')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('申诉说明至少填写 10 个字')));
       return;
     }
     setState(() => _busy = true);
@@ -131,9 +130,9 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -145,7 +144,7 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
   @override
   Widget build(BuildContext context) {
     final AppealCase? appeal = _appeal;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('处罚申诉')),
       body: appeal == null
           ? const Center(child: CircularProgressIndicator())
@@ -232,22 +231,22 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
   }
 
   Future<void> _load() async {
-    final CancellationEligibility value = await AppDependencyScope.of(context)
-        .accountComplianceRepository
-        .queryCancellationEligibility();
+    final CancellationEligibility value = await AppDependencyScope.of(
+      context,
+    ).accountComplianceRepository.queryCancellationEligibility();
     if (mounted) {
       setState(() => _eligibility = value);
     }
   }
 
   Future<void> _sendCode() async {
-    final bool sent = await AppDependencyScope.of(context)
-        .authController
-        .sendSmsCode(widget.account);
+    final bool sent = await AppDependencyScope.of(
+      context,
+    ).authController.sendSmsCode(widget.account);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(sent ? '验证码已发送' : '验证码发送失败')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(sent ? '验证码已发送' : '验证码发送失败')));
     }
   }
 
@@ -274,17 +273,16 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
     }
     setState(() => _busy = true);
     try {
-      await AppDependencyScope.of(context)
-          .accountComplianceRepository
+      await AppDependencyScope.of(context).accountComplianceRepository
           .requestCancellation(smsCode: _codeController.text.trim());
       if (mounted) {
         await _load();
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -296,7 +294,7 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
   @override
   Widget build(BuildContext context) {
     final CancellationEligibility? eligibility = _eligibility;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('账号注销')),
       body: eligibility == null
           ? const Center(child: CircularProgressIndicator())
@@ -308,7 +306,8 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
                   title: eligibility.allowed ? '可以申请注销' : '暂不能申请注销',
                   description: eligibility.message,
                 ),
-                if (eligibility.allowed && eligibility.requiresSmsCode) ...<Widget>[
+                if (eligibility.allowed &&
+                    eligibility.requiresSmsCode) ...<Widget>[
                   const SizedBox(height: 18),
                   TextField(
                     controller: _codeController,
@@ -377,7 +376,7 @@ class _VersionUpgradePageState extends State<VersionUpgradePage> {
   @override
   Widget build(BuildContext context) {
     final VersionUpdateInfo? info = _info;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('版本升级')),
       body: info == null
           ? const Center(child: CircularProgressIndicator())
@@ -443,14 +442,13 @@ class _YouthModePageState extends State<YouthModePage> {
   }
 
   Future<void> _load() async {
-    final AccountComplianceSnapshot value =
-        await AppDependencyScope.of(context)
-            .accountComplianceRepository
-            .fetchSnapshot(
-              account: widget.account,
-              currentVersion: widget.currentVersion,
-              platformType: widget.platformType,
-            );
+    final AccountComplianceSnapshot value = await AppDependencyScope.of(context)
+        .accountComplianceRepository
+        .fetchSnapshot(
+          account: widget.account,
+          currentVersion: widget.currentVersion,
+          platformType: widget.platformType,
+        );
     if (mounted) {
       setState(() => _snapshot = value);
     }
@@ -458,28 +456,28 @@ class _YouthModePageState extends State<YouthModePage> {
 
   Future<void> _toggle() async {
     if (!RegExp(r'^\d{4}$').hasMatch(_pinController.text) || _busy) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入 4 位数字密码')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入 4 位数字密码')));
       return;
     }
     setState(() => _busy = true);
     try {
-      await AppDependencyScope.of(context)
-          .accountComplianceRepository
-          .setYouthMode(
-            enabled: !_snapshot!.youthModeEnabled,
-            pin: _pinController.text,
-          );
+      await AppDependencyScope.of(
+        context,
+      ).accountComplianceRepository.setYouthMode(
+        enabled: !_snapshot!.youthModeEnabled,
+        pin: _pinController.text,
+      );
       _pinController.clear();
       if (mounted) {
         await _load();
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -491,7 +489,7 @@ class _YouthModePageState extends State<YouthModePage> {
   @override
   Widget build(BuildContext context) {
     final AccountComplianceSnapshot? snapshot = _snapshot;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('青少年模式')),
       body: snapshot == null
           ? const Center(child: CircularProgressIndicator())
@@ -500,15 +498,11 @@ class _YouthModePageState extends State<YouthModePage> {
               children: <Widget>[
                 _Header(
                   icon: Icons.child_care_rounded,
-                  title: snapshot.youthModeEnabled
-                      ? '青少年模式已开启'
-                      : '青少年模式未开启',
+                  title: snapshot.youthModeEnabled ? '青少年模式已开启' : '青少年模式未开启',
                   description: '只限制创建新的充值订单，不影响进房、消息和社交。',
                 ),
                 const SizedBox(height: 14),
-                const _Info(
-                  text: '钱包查询、订单查询、退款、进房、消息和其他正常社交能力不被禁用。',
-                ),
+                const _Info(text: '钱包查询、订单查询、退款、进房、消息和其他正常社交能力不被禁用。'),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _pinController,
@@ -519,9 +513,7 @@ class _YouthModePageState extends State<YouthModePage> {
                     LengthLimitingTextInputFormatter(4),
                   ],
                   decoration: InputDecoration(
-                    labelText: snapshot.youthModeEnabled
-                        ? '关闭密码'
-                        : '设置 4 位密码',
+                    labelText: snapshot.youthModeEnabled ? '关闭密码' : '设置 4 位密码',
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -531,8 +523,8 @@ class _YouthModePageState extends State<YouthModePage> {
                     _busy
                         ? '提交中…'
                         : snapshot.youthModeEnabled
-                            ? '关闭青少年模式'
-                            : '开启青少年模式',
+                        ? '关闭青少年模式'
+                        : '开启青少年模式',
                   ),
                 ),
               ],
@@ -554,16 +546,7 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Icon(icon, size: 42, color: AppColors.primary),
-        const SizedBox(height: 14),
-        Text(title, style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 8),
-        Text(description, style: Theme.of(context).textTheme.bodyLarge),
-      ],
-    );
+    return SocialPageIntro(icon: icon, title: title, description: description);
   }
 }
 
@@ -586,11 +569,11 @@ class _Info extends StatelessWidget {
 }
 
 String _appealStateLabel(AppealState state) => switch (state) {
-      AppealState.none => '可提交申诉',
-      AppealState.pending => '申诉审核中',
-      AppealState.approved => '申诉已通过',
-      AppealState.rejected => '申诉未通过',
-    };
+  AppealState.none => '可提交申诉',
+  AppealState.pending => '申诉审核中',
+  AppealState.approved => '申诉已通过',
+  AppealState.rejected => '申诉未通过',
+};
 
 String _messageFor(Object error) =>
     error is ApiException ? error.message : '操作失败，请稍后重试';

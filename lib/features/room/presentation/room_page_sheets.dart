@@ -349,7 +349,7 @@ extension _RoomPageSheets on _RoomPageState {
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
-      backgroundColor: AppColors.surface,
+      backgroundColor: RoomColors.surface,
       builder: (BuildContext context) => GiftSheet(
         balance: _controller.giftBalance,
         account: account,

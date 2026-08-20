@@ -9,14 +9,14 @@ class _MessageInfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: SocialColors.card,
       borderRadius: BorderRadius.circular(18),
       child: Padding(
         padding: const EdgeInsets.all(15),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Icon(icon, color: AppColors.accent),
+            Icon(icon, color: SocialColors.accent),
             const SizedBox(width: 12),
             Expanded(child: Text(text)),
           ],
@@ -66,7 +66,7 @@ class _UnreadBadge extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: AppColors.error,
+        color: SocialColors.error,
         borderRadius: BorderRadius.circular(999),
       ),
       alignment: Alignment.center,
@@ -80,11 +80,6 @@ class _UnreadBadge extends StatelessWidget {
 
 String _messageFor(Object error) =>
     error is ApiException ? error.message : '操作失败，请稍后重试';
-
-String _initial(String source) {
-  final String value = source.trim();
-  return value.isEmpty ? '?' : String.fromCharCode(value.runes.first);
-}
 
 String _formatMessageTime(DateTime value) {
   final DateTime now = DateTime.now();

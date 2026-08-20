@@ -20,12 +20,24 @@ runtime configuration validation
 
 The default debug build remains **mock mode**. Live mode requires authorized non-production configuration and fails closed when values are missing or unsafe.
 
+### Video-runtime UI preview
+
+The current frontend candidate includes the video-referenced lobby, discovery, messages, account, fixed eight-seat room, room composer, original reaction/sticker sheet, gift sheet, room tools, and persistent minimize/restore flow. Run the interactive mock preview with:
+
+```bash
+flutter run --dart-define=ENABLE_VIDEO_RUNTIME_DEMO=true
+```
+
+This switch is debug-only. It uses local repositories and adapters, does not call an RTC, IM, payment, push, SMS, or storage provider, and does not claim a live backend result.
+
 ## Scope boundaries
 
 This public repository contains no APK source package, decompiled proprietary source, backend source archive, production host, credential, signing asset, or copied brand material.
 
 The following capabilities remain excluded even when legacy evidence exists:
 
+- memberships, paid status tiers, and membership privileges;
+- gift inventory or a gift backpack;
 - red packets;
 - KTV, song requests, singing, and chorus;
 - blind boxes, magic balls, dango, and love letters;
@@ -54,7 +66,6 @@ flutter run \
   --dart-define=CLIENT_TYPE=Android \
   --dart-define=CLIENT_INNER_VERSION=6 \
   --dart-define=OAUTH_CLIENT_ID=... \
-  --dart-define=OAUTH_CLIENT_SECRET=... \
   --dart-define=API_TIMEOUT_SECONDS=15 \
   --dart-define=LIVE_PROBE_PATH=/
 ```
@@ -79,5 +90,6 @@ GitHub Actions also generates an isolated Android runner, builds a debug APK, an
 - [Architecture](docs/architecture.md)
 - [M1 backend contract](docs/contracts/m1_backend_contract.md)
 - [M3.1 live readiness](docs/m3-live-backend-readiness.md)
+- [M3.3 video-runtime UI design QA](design-qa.md)
 - [Delivery roadmap](docs/roadmap.md)
 - [Security rules](docs/security.md)

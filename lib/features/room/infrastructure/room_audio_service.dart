@@ -9,27 +9,34 @@ abstract interface class RoomAudioService {
 }
 
 class MockRoomAudioService implements RoomAudioService {
-  RoomAudioSnapshot _snapshot = RoomAudioSnapshot(
-    configured: true,
-    route: RoomAudioRoute.speaker,
-    availableRoutes: const <RoomAudioRoute>{
-      RoomAudioRoute.speaker,
-      RoomAudioRoute.earpiece,
-      RoomAudioRoute.bluetooth,
-    },
-    microphonePermissionGranted: true,
-    microphoneEnabled: false,
-    rtcConnected: true,
-    realtimeConnected: true,
-    grade: RoomConnectionGrade.good,
-    latencyMs: 68,
-    packetLossPercent: 0.7,
-    updatedAt: DateTime.now(),
-  );
+  MockRoomAudioService({DateTime? now})
+    : _fixedNow = now,
+      _snapshot = RoomAudioSnapshot(
+        configured: true,
+        route: RoomAudioRoute.speaker,
+        availableRoutes: const <RoomAudioRoute>{
+          RoomAudioRoute.speaker,
+          RoomAudioRoute.earpiece,
+          RoomAudioRoute.bluetooth,
+        },
+        microphonePermissionGranted: true,
+        microphoneEnabled: false,
+        rtcConnected: true,
+        realtimeConnected: true,
+        grade: RoomConnectionGrade.good,
+        latencyMs: 68,
+        packetLossPercent: 0.7,
+        updatedAt: now ?? DateTime.now(),
+      );
+
+  final DateTime? _fixedNow;
+  RoomAudioSnapshot _snapshot;
+
+  DateTime get _currentTime => _fixedNow ?? DateTime.now();
 
   @override
   Future<RoomAudioSnapshot> inspect() async {
-    _snapshot = _snapshot.copyWith(updatedAt: DateTime.now());
+    _snapshot = _snapshot.copyWith(updatedAt: _currentTime);
     return _snapshot;
   }
 
@@ -38,7 +45,7 @@ class MockRoomAudioService implements RoomAudioService {
     if (!_snapshot.availableRoutes.contains(route)) {
       return _snapshot;
     }
-    _snapshot = _snapshot.copyWith(route: route, updatedAt: DateTime.now());
+    _snapshot = _snapshot.copyWith(route: route, updatedAt: _currentTime);
     return _snapshot;
   }
 
@@ -46,7 +53,7 @@ class MockRoomAudioService implements RoomAudioService {
   Future<RoomAudioSnapshot> setMicrophoneEnabled(bool enabled) async {
     _snapshot = _snapshot.copyWith(
       microphoneEnabled: enabled,
-      updatedAt: DateTime.now(),
+      updatedAt: _currentTime,
     );
     return _snapshot;
   }
@@ -56,18 +63,18 @@ class UnavailableRoomAudioService implements RoomAudioService {
   const UnavailableRoomAudioService();
 
   RoomAudioSnapshot _unavailable() => RoomAudioSnapshot(
-        configured: false,
-        route: RoomAudioRoute.speaker,
-        availableRoutes: const <RoomAudioRoute>{RoomAudioRoute.speaker},
-        microphonePermissionGranted: false,
-        microphoneEnabled: false,
-        rtcConnected: false,
-        realtimeConnected: false,
-        grade: RoomConnectionGrade.unknown,
-        latencyMs: null,
-        packetLossPercent: null,
-        updatedAt: DateTime.now(),
-      );
+    configured: false,
+    route: RoomAudioRoute.speaker,
+    availableRoutes: const <RoomAudioRoute>{RoomAudioRoute.speaker},
+    microphonePermissionGranted: false,
+    microphoneEnabled: false,
+    rtcConnected: false,
+    realtimeConnected: false,
+    grade: RoomConnectionGrade.unknown,
+    latencyMs: null,
+    packetLossPercent: null,
+    updatedAt: DateTime.now(),
+  );
 
   @override
   Future<RoomAudioSnapshot> inspect() async => _unavailable();

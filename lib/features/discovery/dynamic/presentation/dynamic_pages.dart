@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/community/presentation/community_pages.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_models.dart';
@@ -88,8 +89,9 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
           _posts.clear();
         }
         for (final DynamicPost post in result.items) {
-          final int existing =
-              _posts.indexWhere((DynamicPost item) => item.id == post.id);
+          final int existing = _posts.indexWhere(
+            (DynamicPost item) => item.id == post.id,
+          );
           if (existing >= 0) {
             _posts[existing] = post;
           } else {
@@ -126,8 +128,9 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
       await _load(reset: true);
       return;
     }
-    final int index =
-        _posts.indexWhere((DynamicPost item) => item.id == updated.id);
+    final int index = _posts.indexWhere(
+      (DynamicPost item) => item.id == updated.id,
+    );
     if (index >= 0) {
       setState(() => _posts[index] = updated);
     }
@@ -147,7 +150,7 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return Scaffold(
+    return SocialPageScaffold(
       body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
@@ -222,7 +225,10 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
               else if (_error != null && _posts.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,
-                  child: _FeedError(message: _error!, onRetry: () => _load(reset: true)),
+                  child: _FeedError(
+                    message: _error!,
+                    onRetry: () => _load(reset: true),
+                  ),
                 )
               else if (_posts.isEmpty)
                 SliverFillRemaining(
@@ -241,8 +247,8 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
                         post: post,
                         onOpen: () => _openPost(post),
                         onLike: () async {
-                          final DynamicPost updated =
-                              await _repository.toggleLike(post.id);
+                          final DynamicPost updated = await _repository
+                              .toggleLike(post.id);
                           if (mounted) {
                             setState(() => _posts[index] = updated);
                           }
@@ -367,17 +373,15 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
       }
       setState(() {
         _comments.insert(0, comment);
-        _post = _post?.copyWith(
-          commentCount: (_post?.commentCount ?? 0) + 1,
-        );
+        _post = _post?.copyWith(commentCount: (_post?.commentCount ?? 0) + 1);
         _commentController.clear();
         _replyingTo = null;
       });
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -414,9 +418,9 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     }
   }
@@ -426,7 +430,7 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
     final DynamicPost? post = _post;
     final int currentUserId =
         AppDependencyScope.of(context).sessionManager.session?.userId ?? 0;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('动态详情'),
         actions: <Widget>[
@@ -441,115 +445,124 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? _FeedError(message: _error!, onRetry: _load)
-              : post == null
-                  ? const Center(child: Text('动态不可用'))
-                  : Column(
+          ? _FeedError(message: _error!, onRetry: _load)
+          : post == null
+          ? const Center(child: Text('动态不可用'))
+          : Column(
+              children: <Widget>[
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
                       children: <Widget>[
-                        Expanded(
-                          child: RefreshIndicator(
-                            onRefresh: _load,
-                            child: ListView(
-                              padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
-                              children: <Widget>[
-                                DynamicPostCard(
-                                  post: post,
-                                  onOpen: () {},
-                                  onLike: () async {
-                                    final DynamicPost updated =
-                                        await _repository.toggleLike(post.id);
-                                    if (mounted) {
-                                      setState(() => _post = updated);
-                                    }
-                                  },
-                                  expanded: true,
-                                ),
-                                const SizedBox(height: 20),
-                                Text(
-                                  '评论 ${post.commentCount}',
-                                  style: Theme.of(context).textTheme.titleMedium,
-                                ),
-                                const SizedBox(height: 10),
-                                if (_comments.isEmpty)
-                                  const _CommentEmpty()
-                                else
-                                  for (final DynamicComment comment in _comments)
-                                    _CommentTile(
-                                      comment: comment,
-                                      onReply: () => setState(() {
-                                        _replyingTo = comment;
-                                        _commentController.selection = TextSelection.fromPosition(
-                                          TextPosition(
-                                            offset: _commentController.text.length,
-                                          ),
-                                        );
-                                      }),
-                                    ),
-                              ],
-                            ),
-                          ),
+                        DynamicPostCard(
+                          post: post,
+                          onOpen: () {},
+                          onLike: () async {
+                            final DynamicPost updated = await _repository
+                                .toggleLike(post.id);
+                            if (mounted) {
+                              setState(() => _post = updated);
+                            }
+                          },
+                          expanded: true,
                         ),
-                        Material(
-                          color: AppColors.surface,
-                          child: SafeArea(
-                            top: false,
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  if (_replyingTo != null)
-                                    Row(
-                                      children: <Widget>[
-                                        Expanded(
-                                          child: Text(
-                                            '回复 ${_replyingTo!.author.nickname}',
-                                            style: Theme.of(context).textTheme.bodySmall,
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: '取消回复',
-                                          onPressed: () => setState(() => _replyingTo = null),
-                                          icon: const Icon(Icons.close_rounded, size: 18),
-                                        ),
-                                      ],
-                                    ),
-                                  Row(
-                                    children: <Widget>[
-                                      Expanded(
-                                        child: TextField(
-                                          controller: _commentController,
-                                          minLines: 1,
-                                          maxLines: 4,
-                                          maxLength: 200,
-                                          decoration: InputDecoration(
-                                            hintText: _replyingTo == null
-                                                ? '说点真实的想法…'
-                                                : '回复 ${_replyingTo!.author.nickname}',
-                                            counterText: '',
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      IconButton.filled(
-                                        tooltip: '发送评论',
-                                        onPressed: _submitting ? null : _submitComment,
-                                        icon: _submitting
-                                            ? const SizedBox.square(
-                                                dimension: 18,
-                                                child: CircularProgressIndicator(strokeWidth: 2),
-                                              )
-                                            : const Icon(Icons.send_rounded),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                        const SizedBox(height: 20),
+                        Text(
+                          '评论 ${post.commentCount}',
+                          style: Theme.of(context).textTheme.titleMedium,
                         ),
+                        const SizedBox(height: 10),
+                        if (_comments.isEmpty)
+                          const _CommentEmpty()
+                        else
+                          for (final DynamicComment comment in _comments)
+                            _CommentTile(
+                              comment: comment,
+                              onReply: () => setState(() {
+                                _replyingTo = comment;
+                                _commentController.selection =
+                                    TextSelection.fromPosition(
+                                      TextPosition(
+                                        offset: _commentController.text.length,
+                                      ),
+                                    );
+                              }),
+                            ),
                       ],
                     ),
+                  ),
+                ),
+                Material(
+                  color: Colors.white.withValues(alpha: 0.94),
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          if (_replyingTo != null)
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: Text(
+                                    '回复 ${_replyingTo!.author.nickname}',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: '取消回复',
+                                  onPressed: () =>
+                                      setState(() => _replyingTo = null),
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    size: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: TextField(
+                                  controller: _commentController,
+                                  minLines: 1,
+                                  maxLines: 4,
+                                  maxLength: 200,
+                                  decoration: InputDecoration(
+                                    hintText: _replyingTo == null
+                                        ? '说点真实的想法…'
+                                        : '回复 ${_replyingTo!.author.nickname}',
+                                    counterText: '',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton.filled(
+                                tooltip: '发送评论',
+                                onPressed: _submitting ? null : _submitComment,
+                                icon: _submitting
+                                    ? const SizedBox.square(
+                                        dimension: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.send_rounded),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }
@@ -591,20 +604,22 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
           .toList(growable: false);
       final DynamicPost post = await AppDependencyScope.of(context)
           .dynamicRepository
-          .publish(PublishDynamicRequest(
-            content: _contentController.text,
-            category: _category,
-            topics: topics,
-            location: _locationController.text,
-          ));
+          .publish(
+            PublishDynamicRequest(
+              content: _contentController.text,
+              category: _category,
+              topics: topics,
+              location: _locationController.text,
+            ),
+          );
       if (mounted) {
         Navigator.of(context).pop(post);
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -615,9 +630,10 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bool supportsImages =
-        AppDependencyScope.of(context).dynamicRepository.supportsImagePublishing;
-    return Scaffold(
+    final bool supportsImages = AppDependencyScope.of(
+      context,
+    ).dynamicRepository.supportsImagePublishing;
+    return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('发布动态'),
         actions: <Widget>[
@@ -742,9 +758,9 @@ class _RankingPageState extends State<RankingPage> {
       _error = null;
     });
     try {
-      final RankingSnapshot value = await AppDependencyScope.of(context)
-          .dynamicRepository
-          .fetchRanking(board: _board, period: _period);
+      final RankingSnapshot value = await AppDependencyScope.of(
+        context,
+      ).dynamicRepository.fetchRanking(board: _board, period: _period);
       if (mounted) {
         setState(() {
           _snapshot = value;
@@ -781,7 +797,7 @@ class _RankingPageState extends State<RankingPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('排行榜')),
       body: RefreshIndicator(
         onRefresh: _load,
@@ -848,7 +864,7 @@ class _RankingPageState extends State<RankingPage> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: Material(
-                    color: AppColors.surface,
+                    color: SocialColors.card,
                     borderRadius: BorderRadius.circular(18),
                     child: ListTile(
                       shape: RoundedRectangleBorder(
@@ -857,8 +873,8 @@ class _RankingPageState extends State<RankingPage> {
                       onTap: () => _open(entry),
                       leading: CircleAvatar(
                         backgroundColor: entry.rank <= 3
-                            ? AppColors.primary.withValues(alpha: 0.28)
-                            : AppColors.surfaceHigh,
+                            ? SocialColors.primary.withValues(alpha: 0.18)
+                            : SocialColors.cardSoft,
                         child: Text('${entry.rank}'),
                       ),
                       title: Text(entry.name),
@@ -877,7 +893,7 @@ class _RankingPageState extends State<RankingPage> {
                 Text('我的排名', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 10),
                 Material(
-                  color: AppColors.surfaceHigh,
+                  color: SocialColors.card,
                   borderRadius: BorderRadius.circular(18),
                   child: ListTile(
                     leading: CircleAvatar(
@@ -913,103 +929,100 @@ class DynamicPostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(22),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onOpen,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  CircleAvatar(child: Text(_initial(post.author.nickname))),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          post.author.nickname,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        Text(
-                          <String>[
-                            post.createdAt,
-                            if (post.location.isNotEmpty) post.location,
-                          ].join(' · '),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (post.tags.isNotEmpty)
-                    Chip(
-                      visualDensity: VisualDensity.compact,
-                      label: Text(post.tags.first),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 13),
-              Text(
-                post.content,
-                maxLines: expanded ? null : 6,
-                overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-              if (post.topics.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: <Widget>[
-                    for (final String topic in post.topics)
+    return SocialCard(
+      padding: EdgeInsets.zero,
+      radius: 22,
+      onTap: onOpen,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                RuntimeAvatar(seed: '${post.author.userId}', size: 42),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
                       Text(
-                        '#$topic',
-                        style: const TextStyle(color: AppColors.accent),
+                        post.author.nickname,
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
-                  ],
+                      Text(
+                        <String>[
+                          post.createdAt,
+                          if (post.location.isNotEmpty) post.location,
+                        ].join(' · '),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
+                if (post.tags.isNotEmpty)
+                  Chip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text(post.tags.first),
+                  ),
               ],
-              if (post.images.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 12),
-                _ImageEvidence(images: post.images),
-              ],
-              const SizedBox(height: 12),
-              Row(
+            ),
+            const SizedBox(height: 13),
+            Text(
+              post.content,
+              maxLines: expanded ? null : 6,
+              overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            if (post.topics.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
                 children: <Widget>[
-                  TextButton.icon(
-                    onPressed: onLike,
-                    icon: Icon(
-                      post.isLiked
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                      color: post.isLiked ? AppColors.secondary : null,
-                    ),
-                    label: Text('${post.likeCount}'),
-                  ),
-                  TextButton.icon(
-                    onPressed: onOpen,
-                    icon: const Icon(Icons.chat_bubble_outline_rounded),
-                    label: Text('${post.commentCount}'),
-                  ),
-                  const Spacer(),
-                  if (post.unlockChat)
-                    const Tooltip(
-                      message: '互动后可建立后续社交关系',
-                      child: Icon(
-                        Icons.lock_open_rounded,
-                        size: 18,
-                        color: AppColors.success,
-                      ),
+                  for (final String topic in post.topics)
+                    Text(
+                      '#$topic',
+                      style: const TextStyle(color: SocialColors.primary),
                     ),
                 ],
               ),
             ],
-          ),
+            if (post.images.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 12),
+              _ImageEvidence(images: post.images),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: <Widget>[
+                TextButton.icon(
+                  onPressed: onLike,
+                  icon: Icon(
+                    post.isLiked
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded,
+                    color: post.isLiked ? SocialColors.secondary : null,
+                  ),
+                  label: Text('${post.likeCount}'),
+                ),
+                TextButton.icon(
+                  onPressed: onOpen,
+                  icon: const Icon(Icons.chat_bubble_outline_rounded),
+                  label: Text('${post.commentCount}'),
+                ),
+                const Spacer(),
+                if (post.unlockChat)
+                  const Tooltip(
+                    message: '互动后可建立后续社交关系',
+                    child: Icon(
+                      Icons.lock_open_rounded,
+                      size: 18,
+                      color: SocialColors.success,
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -1027,7 +1040,7 @@ class _ImageEvidence extends StatelessWidget {
       height: 120,
       width: double.infinity,
       decoration: BoxDecoration(
-        color: AppColors.surfaceHigh,
+        color: SocialColors.cardSoft,
         borderRadius: BorderRadius.circular(16),
       ),
       alignment: Alignment.center,
@@ -1052,11 +1065,14 @@ class _CommentTile extends StatelessWidget {
       child: ListTile(
         contentPadding: EdgeInsets.zero,
         onTap: onReply,
-        leading: CircleAvatar(child: Text(_initial(comment.author.nickname))),
+        leading: RuntimeAvatar(seed: '${comment.author.userId}', size: 42),
         title: Row(
           children: <Widget>[
             Expanded(child: Text(comment.author.nickname)),
-            Text(comment.createdAt, style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              comment.createdAt,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ],
         ),
         subtitle: Text(
@@ -1148,14 +1164,14 @@ class _InfoPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: SocialColors.card,
       borderRadius: BorderRadius.circular(18),
       child: Padding(
         padding: const EdgeInsets.all(15),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Icon(icon, color: AppColors.accent),
+            Icon(icon, color: SocialColors.accent),
             const SizedBox(width: 12),
             Expanded(child: Text(text)),
           ],
@@ -1163,11 +1179,6 @@ class _InfoPanel extends StatelessWidget {
       ),
     );
   }
-}
-
-String _initial(String source) {
-  final String value = source.trim();
-  return value.isEmpty ? '?' : String.fromCharCode(value.runes.first);
 }
 
 String _messageFor(Object error) =>

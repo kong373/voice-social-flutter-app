@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 
 class ThirdPartyAuthorizationPage extends StatelessWidget {
   const ThirdPartyAuthorizationPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('第三方账号绑定与分享授权')),
       body: SafeArea(
         child: ListView(

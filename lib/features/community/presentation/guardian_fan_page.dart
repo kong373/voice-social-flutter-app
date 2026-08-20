@@ -8,8 +8,9 @@ class GuardianFanPage extends StatefulWidget {
 }
 
 class _GuardianFanPageState extends State<GuardianFanPage> {
-  final TextEditingController _anchorController =
-      TextEditingController(text: '20001');
+  final TextEditingController _anchorController = TextEditingController(
+    text: '20001',
+  );
   GuardianFanSnapshot? _snapshot;
   bool _loading = true;
   bool _busy = false;
@@ -46,8 +47,9 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
       _error = null;
     });
     try {
-      final GuardianFanSnapshot value =
-          await _repository.fetchGuardianFan(anchorId);
+      final GuardianFanSnapshot value = await _repository.fetchGuardianFan(
+        anchorId,
+      );
       if (mounted) {
         setState(() {
           _snapshot = value;
@@ -99,9 +101,9 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -122,9 +124,9 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -136,7 +138,7 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
   @override
   Widget build(BuildContext context) {
     final GuardianFanSnapshot? snapshot = _snapshot;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('守护与粉团')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
@@ -177,8 +179,10 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(snapshot.anchorName,
-                        style: Theme.of(context).textTheme.titleLarge),
+                    Text(
+                      snapshot.anchorName,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
                     const SizedBox(height: 6),
                     Text('主播 ID ${snapshot.anchorUserId}'),
                     const SizedBox(height: 10),
@@ -196,10 +200,7 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
             Text('守护档位', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 10),
             if (snapshot.guardianLevels.isEmpty)
-              const _InfoCard(
-                icon: Icons.shield_outlined,
-                text: '当前没有可用守护档位。',
-              )
+              const _InfoCard(icon: Icons.shield_outlined, text: '当前没有可用守护档位。')
             else
               for (final GuardianLevel level in snapshot.guardianLevels)
                 Padding(
@@ -213,7 +214,9 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
                       ),
                       leading: const Icon(Icons.shield_outlined),
                       title: Text(level.name),
-                      subtitle: Text('${level.durationDays} 天 · ${level.price} 礼物币'),
+                      subtitle: Text(
+                        '${level.durationDays} 天 · ${level.price} 礼物币',
+                      ),
                       trailing: FilledButton.tonal(
                         onPressed: _busy ? null : () => _guard(level),
                         child: const Text('开通'),
@@ -228,8 +231,10 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Text(snapshot.fansTeamName,
-                          style: Theme.of(context).textTheme.titleLarge),
+                      Text(
+                        snapshot.fansTeamName,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         snapshot.joinedFansTeam
@@ -240,25 +245,29 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
                   ),
                 ),
                 FilledButton(
-                  onPressed: _busy || snapshot.joinedFansTeam ? null : _joinFans,
+                  onPressed: _busy || snapshot.joinedFansTeam
+                      ? null
+                      : _joinFans,
                   child: Text(snapshot.joinedFansTeam ? '已加入' : '加入粉团'),
                 ),
               ],
             ),
             const SizedBox(height: 12),
             if (snapshot.tasks.isEmpty)
-              const _InfoCard(
-                icon: Icons.task_alt_outlined,
-                text: '当前没有粉团任务。',
-              )
+              const _InfoCard(icon: Icons.task_alt_outlined, text: '当前没有粉团任务。')
             else
               for (final FansTask task in snapshot.tasks)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(task.title),
-                  subtitle: Text('${task.progress}/${task.target} · ${task.reward}'),
+                  subtitle: Text(
+                    '${task.progress}/${task.target} · ${task.reward}',
+                  ),
                   trailing: task.claimed
-                      ? const Icon(Icons.check_circle_rounded, color: AppColors.success)
+                      ? const Icon(
+                          Icons.check_circle_rounded,
+                          color: AppColors.success,
+                        )
                       : null,
                 ),
           ],

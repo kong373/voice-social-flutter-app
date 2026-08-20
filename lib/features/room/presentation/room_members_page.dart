@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
@@ -153,7 +154,7 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return RoomPageScaffold(
       appBar: AppBar(
         title: const Text('在线成员与听众席'),
         actions: <Widget>[
@@ -230,7 +231,7 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         itemCount: members.length + (_hasMore ? 1 : 0),
-        separatorBuilder: (_, __) => const Divider(height: 1),
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
         itemBuilder: (BuildContext context, int index) {
           if (index == members.length) {
             return Padding(
@@ -383,34 +384,39 @@ class _MemberTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      minVerticalPadding: 12,
-      contentPadding: EdgeInsets.zero,
-      leading: _MemberAvatar(member: member),
-      title: Row(
-        children: <Widget>[
-          Flexible(
-            child: Text(
-              member.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+    return Material(
+      color: RoomColors.surfaceHigh.withValues(alpha: 0.88),
+      borderRadius: BorderRadius.circular(18),
+      child: ListTile(
+        minVerticalPadding: 12,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        leading: _MemberAvatar(member: member),
+        title: Row(
+          children: <Widget>[
+            Flexible(
+              child: Text(
+                member.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
-          if (isCurrentUser) ...<Widget>[
-            const SizedBox(width: 6),
-            const _TinyTag(label: '我'),
+            if (isCurrentUser) ...<Widget>[
+              const SizedBox(width: 6),
+              const _TinyTag(label: '我'),
+            ],
+            if (member.isManager) ...<Widget>[
+              const SizedBox(width: 6),
+              _TinyTag(label: member.role == RoomRole.owner ? '房主' : '房管'),
+            ],
           ],
-          if (member.isManager) ...<Widget>[
-            const SizedBox(width: 6),
-            _TinyTag(label: member.role == RoomRole.owner ? '房主' : '房管'),
-          ],
-        ],
+        ),
+        subtitle: Text(_RoomMembersPageState._memberSubtitle(member)),
+        trailing: Icon(
+          canManage ? Icons.tune_rounded : Icons.chevron_right_rounded,
+        ),
+        onTap: onTap,
       ),
-      subtitle: Text(_RoomMembersPageState._memberSubtitle(member)),
-      trailing: Icon(
-        canManage ? Icons.tune_rounded : Icons.chevron_right_rounded,
-      ),
-      onTap: onTap,
     );
   }
 }
@@ -422,13 +428,10 @@ class _MemberAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String initial = member.name.isEmpty
-        ? '房'
-        : member.name.substring(0, 1);
-    return CircleAvatar(
-      backgroundColor: AppColors.surfaceHigh,
-      foregroundColor: AppColors.textPrimary,
-      child: Text(initial),
+    return RuntimeAvatar(
+      seed: '${member.userId}',
+      size: 46,
+      ringColor: RoomColors.primary.withValues(alpha: 0.78),
     );
   }
 }
@@ -443,7 +446,7 @@ class _TinyTag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.18),
+        color: RoomColors.primary.withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(label, style: Theme.of(context).textTheme.bodySmall),
@@ -469,12 +472,18 @@ class _MembersMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
+      child: Container(
+        margin: const EdgeInsets.all(28),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: RoomColors.surfaceHigh.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(icon, size: 44, color: AppColors.textSecondary),
+            Icon(icon, size: 44, color: RoomColors.textSecondary),
             const SizedBox(height: 16),
             Text(title, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),

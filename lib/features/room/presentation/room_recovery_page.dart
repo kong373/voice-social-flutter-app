@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 
@@ -51,7 +52,7 @@ class _RoomRecoveryPageState extends State<RoomRecoveryPage> {
     final RoomController controller = widget.controller;
     final bool reconnecting =
         controller.status == RoomSessionStatus.reconnecting;
-    return Scaffold(
+    return RoomPageScaffold(
       appBar: AppBar(title: const Text('弱网重连与会话恢复')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
@@ -60,9 +61,7 @@ class _RoomRecoveryPageState extends State<RoomRecoveryPage> {
             icon: controller.realtimeDegraded
                 ? Icons.wifi_off_rounded
                 : Icons.wifi_rounded,
-            title: controller.realtimeDegraded
-                ? '实时通道状态异常'
-                : '实时通道已连接',
+            title: controller.realtimeDegraded ? '实时通道状态异常' : '实时通道已连接',
             description: controller.realtimeDegraded
                 ? '麦位和操作区保持显示；状态可能延迟。'
                 : '麦位、公屏和成员状态正在正常更新。',
@@ -87,7 +86,7 @@ class _RoomRecoveryPageState extends State<RoomRecoveryPage> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.surfaceHigh,
+                color: RoomColors.surfaceHigh,
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Text(_resultMessage!),
@@ -142,17 +141,14 @@ class _RecoveryStatusCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: warning
-            ? AppColors.warning.withValues(alpha: 0.1)
-            : AppColors.surfaceHigh,
+            ? RoomColors.warning.withValues(alpha: 0.1)
+            : RoomColors.surfaceHigh,
         borderRadius: BorderRadius.circular(18),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(
-            icon,
-            color: warning ? AppColors.warning : AppColors.accent,
-          ),
+          Icon(icon, color: warning ? RoomColors.warning : RoomColors.accent),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -160,10 +156,7 @@ class _RecoveryStatusCard extends StatelessWidget {
               children: <Widget>[
                 Text(title, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                Text(description, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),

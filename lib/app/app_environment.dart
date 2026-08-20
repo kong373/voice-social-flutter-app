@@ -4,15 +4,19 @@ enum DeploymentEnvironment { local, development, staging, production }
 
 extension DeploymentEnvironmentLabel on DeploymentEnvironment {
   String get label => switch (this) {
-        DeploymentEnvironment.local => '本地',
-        DeploymentEnvironment.development => '开发',
-        DeploymentEnvironment.staging => '预发布',
-        DeploymentEnvironment.production => '生产',
-      };
+    DeploymentEnvironment.local => '本地',
+    DeploymentEnvironment.development => '开发',
+    DeploymentEnvironment.staging => '预发布',
+    DeploymentEnvironment.production => '生产',
+  };
 
   bool get requiresSecureTransport =>
       this == DeploymentEnvironment.staging ||
       this == DeploymentEnvironment.production;
+
+  bool get allowsDevelopmentTools =>
+      this == DeploymentEnvironment.local ||
+      this == DeploymentEnvironment.development;
 }
 
 /// Runtime configuration for the Flutter client.
@@ -75,13 +79,13 @@ class AppEnvironment {
   }
 
   factory AppEnvironment.mock() => const AppEnvironment(
-        backendMode: BackendMode.mock,
-        apiBaseUrl: '',
-        clientType: 'Android',
-        clientInnerVersion: '1',
-        oauthClientId: 'mock-client',
-        realtimeEndpoint: '',
-      );
+    backendMode: BackendMode.mock,
+    apiBaseUrl: '',
+    clientType: 'Android',
+    clientInnerVersion: '1',
+    oauthClientId: 'mock-client',
+    realtimeEndpoint: '',
+  );
 
   final BackendMode backendMode;
   final String apiBaseUrl;
@@ -120,19 +124,19 @@ class AppEnvironment {
   }
 
   Map<String, Object?> get redactedSummary => <String, Object?>{
-        'backendMode': backendMode.name,
-        'deploymentEnvironment': deploymentEnvironment.name,
-        'apiOrigin': redactedApiOrigin,
-        'clientType': clientType,
-        'clientInnerVersion': clientInnerVersion,
-        'apiTimeoutSeconds': apiTimeout.inSeconds,
-        'liveProbePath': liveProbePath,
-        'oauthClientIdConfigured': oauthClientId.trim().isNotEmpty,
-        'oauthClientSecretConfigured': false,
-        'developmentOutboxConfigured': false,
-        'realtimeEndpointConfigured': realtimeEndpoint.trim().isNotEmpty,
-        'allowInsecureHttp': allowInsecureHttp,
-      };
+    'backendMode': backendMode.name,
+    'deploymentEnvironment': deploymentEnvironment.name,
+    'apiOrigin': redactedApiOrigin,
+    'clientType': clientType,
+    'clientInnerVersion': clientInnerVersion,
+    'apiTimeoutSeconds': apiTimeout.inSeconds,
+    'liveProbePath': liveProbePath,
+    'oauthClientIdConfigured': oauthClientId.trim().isNotEmpty,
+    'oauthClientSecretConfigured': false,
+    'developmentOutboxConfigured': false,
+    'realtimeEndpointConfigured': realtimeEndpoint.trim().isNotEmpty,
+    'allowInsecureHttp': allowInsecureHttp,
+  };
 
   void validateLiveConfiguration() {
     if (!isLive) {
@@ -186,8 +190,7 @@ class AppEnvironment {
 DeploymentEnvironment _parseDeploymentEnvironment(String value) {
   return switch (value.trim().toLowerCase()) {
     'development' || 'dev' => DeploymentEnvironment.development,
-    'staging' || 'stage' || 'preproduction' =>
-      DeploymentEnvironment.staging,
+    'staging' || 'stage' || 'preproduction' => DeploymentEnvironment.staging,
     'production' || 'prod' => DeploymentEnvironment.production,
     _ => DeploymentEnvironment.local,
   };

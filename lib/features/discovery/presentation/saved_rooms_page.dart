@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
@@ -41,8 +42,8 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
       _error = null;
     });
     try {
-      final RoomCollectionSnapshot snapshot =
-          await _repository.fetchRoomCollections();
+      final RoomCollectionSnapshot snapshot = await _repository
+          .fetchRoomCollections();
       if (!mounted) {
         return;
       }
@@ -56,16 +57,14 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
       }
       setState(() {
         _loading = false;
-        _error = error is ApiException
-            ? error.message
-            : '房间收藏暂时无法加载，请稍后重试';
+        _error = error is ApiException ? error.message : '房间收藏暂时无法加载，请稍后重试';
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('收藏与我的房间'),
         actions: <Widget>[
@@ -119,7 +118,8 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
         onAction: _load,
       );
     }
-    final RoomCollectionSnapshot snapshot = _snapshot ??
+    final RoomCollectionSnapshot snapshot =
+        _snapshot ??
         const RoomCollectionSnapshot(
           favorites: <DiscoveryRoom>[],
           ownedRooms: <DiscoveryRoom>[],
@@ -180,9 +180,7 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            error is ApiException ? error.message : '取消收藏失败，请重试',
-          ),
+          content: Text(error is ApiException ? error.message : '取消收藏失败，请重试'),
         ),
       );
     } finally {
@@ -195,10 +193,8 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
   void _enterRoom(DiscoveryRoom room) {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomPage(
-          roomId: room.id,
-          title: room.title,
-        ),
+        builder: (BuildContext context) =>
+            RoomPage(roomId: room.id, title: room.title),
       ),
     );
   }

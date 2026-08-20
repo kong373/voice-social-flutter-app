@@ -13,7 +13,7 @@ class _RoomBackground extends StatelessWidget {
           colors: <Color>[
             Color(0xFF191334),
             Color(0xFF0D1020),
-            AppColors.background,
+            RoomColors.background,
           ],
         ),
       ),
@@ -31,10 +31,10 @@ class _MicSeatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool occupied = seat.userName != null;
     final Color ringColor = seat.isSpeaking
-        ? AppColors.success
+        ? RoomColors.success
         : occupied
-            ? AppColors.primary
-            : Colors.white.withValues(alpha: 0.16);
+        ? RoomColors.primary
+        : Colors.white.withValues(alpha: 0.16);
     final IconData stateIcon = switch (seat.state) {
       MicSeatState.locked => Icons.lock_rounded,
       MicSeatState.mutedAvailable => Icons.mic_off_rounded,
@@ -54,7 +54,7 @@ class _MicSeatTile extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: occupied
-                  ? AppColors.surfaceHigh
+                  ? RoomColors.surfaceHigh
                   : Colors.white.withValues(alpha: 0.05),
               border: Border.all(
                 color: ringColor,
@@ -63,7 +63,7 @@ class _MicSeatTile extends StatelessWidget {
               boxShadow: seat.isSpeaking
                   ? <BoxShadow>[
                       BoxShadow(
-                        color: AppColors.success.withValues(alpha: 0.25),
+                        color: RoomColors.success.withValues(alpha: 0.25),
                         blurRadius: 18,
                       ),
                     ]
@@ -72,8 +72,8 @@ class _MicSeatTile extends StatelessWidget {
             child: Icon(
               occupied ? Icons.person_rounded : stateIcon,
               color: occupied
-                  ? AppColors.textPrimary
-                  : AppColors.textSecondary,
+                  ? RoomColors.textPrimary
+                  : RoomColors.textSecondary,
             ),
           ),
           const SizedBox(height: 7),
@@ -81,12 +81,12 @@ class _MicSeatTile extends StatelessWidget {
             seat.userName ?? '${seat.number} 号麦',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppColors.textPrimary,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: RoomColors.textPrimary),
           ),
           const SizedBox(height: 2),
-          Icon(stateIcon, size: 14, color: AppColors.textSecondary),
+          Icon(stateIcon, size: 14, color: RoomColors.textSecondary),
         ],
       ),
     );
@@ -132,24 +132,22 @@ class _RoomAction extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: enabled ? 0.08 : 0.04),
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.06),
-                ),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
               ),
               child: Icon(
                 icon,
                 size: 22,
-                color: enabled ? null : AppColors.textSecondary,
+                color: enabled ? null : RoomColors.textSecondary,
               ),
             ),
             const SizedBox(height: 5),
             Text(
               label,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: enabled
-                        ? AppColors.textPrimary
-                        : AppColors.textSecondary,
-                  ),
+                color: enabled
+                    ? RoomColors.textPrimary
+                    : RoomColors.textSecondary,
+              ),
             ),
           ],
         ),
@@ -172,7 +170,7 @@ class _StatusBanner extends StatelessWidget {
           margin: const EdgeInsets.only(top: 58),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           decoration: BoxDecoration(
-            color: AppColors.warning,
+            color: RoomColors.warning,
             borderRadius: BorderRadius.circular(999),
           ),
           child: Text(
@@ -201,7 +199,7 @@ class _BlockingProgress extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: AppColors.surface,
+            color: RoomColors.surface,
             borderRadius: BorderRadius.circular(20),
           ),
           child: Column(
@@ -239,7 +237,7 @@ class _RemoteExitOverlay extends StatelessWidget {
           margin: const EdgeInsets.all(24),
           padding: const EdgeInsets.all(22),
           decoration: BoxDecoration(
-            color: AppColors.surface,
+            color: RoomColors.surface,
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
@@ -249,7 +247,7 @@ class _RemoteExitOverlay extends StatelessWidget {
               const Icon(
                 Icons.info_outline_rounded,
                 size: 36,
-                color: AppColors.warning,
+                color: RoomColors.warning,
               ),
               const SizedBox(height: 16),
               Text(title, style: Theme.of(context).textTheme.titleLarge),
@@ -258,8 +256,8 @@ class _RemoteExitOverlay extends StatelessWidget {
                 message,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
+                  color: RoomColors.textSecondary,
+                ),
               ),
               const SizedBox(height: 20),
               SizedBox(

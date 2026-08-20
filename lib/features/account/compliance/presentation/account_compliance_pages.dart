@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
 import 'package:voice_social_app/features/account/compliance/presentation/account_status_pages.dart';
@@ -74,7 +75,7 @@ class _AccountComplianceHubPageState extends State<AccountComplianceHubPage> {
   @override
   Widget build(BuildContext context) {
     final AccountComplianceSnapshot? snapshot = _snapshot;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('账号与安全')),
       body: snapshot == null
           ? _error == null
@@ -262,13 +263,27 @@ class _Entry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: AppColors.accent),
-      title: Text(title),
-      subtitle: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
-      trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: onTap,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: SocialCard(
+        padding: EdgeInsets.zero,
+        radius: 19,
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 4,
+          ),
+          leading: Icon(icon, color: AppColors.accent),
+          title: Text(title),
+          subtitle: Text(
+            subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: onTap,
+        ),
+      ),
     );
   }
 }

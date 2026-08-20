@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_repository.dart';
@@ -270,7 +271,7 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return RoomPageScaffold(
       appBar: AppBar(title: const Text('PK 邀请与准备')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -567,7 +568,7 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
     final double currentRatio = totalScore == 0
         ? 0.5
         : current.score / totalScore;
-    return Scaffold(
+    return RoomPageScaffold(
       appBar: AppBar(
         title: const Text('PK 对战与结算'),
         actions: <Widget>[
@@ -604,7 +605,7 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
             child: LinearProgressIndicator(
               minHeight: 12,
               value: currentRatio.clamp(0, 1),
-              backgroundColor: AppColors.secondary.withValues(alpha: 0.28),
+              backgroundColor: RoomColors.secondary.withValues(alpha: 0.28),
             ),
           ),
           const SizedBox(height: 14),
@@ -667,8 +668,8 @@ class _OpponentTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: selected
-          ? AppColors.primary.withValues(alpha: 0.18)
-          : AppColors.surface,
+          ? RoomColors.primary.withValues(alpha: 0.18)
+          : RoomColors.surface,
       borderRadius: BorderRadius.circular(18),
       child: ListTile(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -685,7 +686,7 @@ class _OpponentTile extends StatelessWidget {
                 selected
                     ? Icons.check_circle_rounded
                     : Icons.radio_button_unchecked_rounded,
-                color: selected ? AppColors.primary : AppColors.textSecondary,
+                color: selected ? RoomColors.primary : RoomColors.textSecondary,
               ),
       ),
     );
@@ -708,7 +709,7 @@ class _IncomingInvitationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: RoomColors.surface,
       borderRadius: BorderRadius.circular(20),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -762,13 +763,13 @@ class _OutgoingInvitationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surfaceHigh,
+      color: RoomColors.surfaceHigh,
       borderRadius: BorderRadius.circular(18),
       child: Padding(
         padding: const EdgeInsets.all(15),
         child: Row(
           children: <Widget>[
-            const Icon(Icons.outgoing_mail, color: AppColors.accent),
+            const Icon(Icons.outgoing_mail, color: RoomColors.accent),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -807,7 +808,7 @@ class _ActiveBattleCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.primary.withValues(alpha: 0.16),
+      color: RoomColors.primary.withValues(alpha: 0.16),
       borderRadius: BorderRadius.circular(20),
       child: ListTile(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -839,7 +840,7 @@ class _BattleHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: RoomColors.surface,
       borderRadius: BorderRadius.circular(24),
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -895,7 +896,7 @@ class _PkSideCard extends StatelessWidget {
         Text(
           '${side.score}',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            color: mine ? AppColors.accent : AppColors.secondary,
+            color: mine ? RoomColors.accent : RoomColors.secondary,
           ),
         ),
       ],
@@ -912,7 +913,7 @@ class _SupporterSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: RoomColors.surface,
       borderRadius: BorderRadius.circular(20),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -958,7 +959,7 @@ class _ResultCard extends StatelessWidget {
       RoomPkResult.canceled => '本场已取消',
     };
     return Material(
-      color: AppColors.surfaceHigh,
+      color: RoomColors.surfaceHigh,
       borderRadius: BorderRadius.circular(22),
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -970,8 +971,8 @@ class _ResultCard extends StatelessWidget {
                   : Icons.flag_rounded,
               size: 42,
               color: result == RoomPkResult.win
-                  ? AppColors.warning
-                  : AppColors.textSecondary,
+                  ? RoomColors.warning
+                  : RoomColors.textSecondary,
             ),
             const SizedBox(height: 10),
             Text(title, style: Theme.of(context).textTheme.titleLarge),
@@ -1029,14 +1030,14 @@ class _PkInfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: RoomColors.surface,
       borderRadius: BorderRadius.circular(18),
       child: Padding(
         padding: const EdgeInsets.all(15),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Icon(icon, color: AppColors.accent),
+            Icon(icon, color: RoomColors.accent),
             const SizedBox(width: 12),
             Expanded(child: Text(text)),
           ],
@@ -1082,7 +1083,7 @@ class _PkTag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.16),
+        color: RoomColors.primary.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(label, style: Theme.of(context).textTheme.bodySmall),

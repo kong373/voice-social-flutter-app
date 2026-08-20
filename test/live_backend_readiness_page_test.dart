@@ -16,7 +16,6 @@ void main() {
       clientInnerVersion: '6',
       oauthClientId: 'client-id-value',
       realtimeEndpoint: '',
-      developmentOutboxKey: 'development-outbox-key',
       deploymentEnvironment: DeploymentEnvironment.development,
     );
     final LiveBackendReadinessService service = LiveBackendReadinessService(
@@ -44,8 +43,7 @@ void main() {
     );
     expect(probeResult, findsOneWidget);
 
-    final Finder businessBoundary =
-        find.textContaining('只代表网络传输链路已收到 HTTP 响应');
+    final Finder businessBoundary = find.textContaining('只代表网络传输链路已收到 HTTP 响应');
     await tester.scrollUntilVisible(
       businessBoundary,
       240,

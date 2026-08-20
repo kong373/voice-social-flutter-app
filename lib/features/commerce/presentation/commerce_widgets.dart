@@ -7,40 +7,57 @@ class _WalletSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: <Color>[Color(0xFF2A2255), Color(0xFF171A34)],
+    final String? fontFamily = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.fontFamily;
+    return Theme(
+      data: AppTheme.room(fontFamily: fontFamily),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: <Color>[Color(0xFF302562), Color(0xFF171A3D)],
+          ),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text('礼物币余额', style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 4),
-          Text(
-            wallet.giftCoinBalance == null ? '读取中' : '${wallet.giftCoinBalance}',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 16),
-          const Divider(),
-          const SizedBox(height: 12),
-          Row(
-            children: <Widget>[
-              _SummaryMetric(label: '可提现', value: '¥${wallet.cashBalance.toStringAsFixed(2)}'),
-              _SummaryMetric(label: '冻结', value: '¥${wallet.frozenBalance.toStringAsFixed(2)}'),
-              _SummaryMetric(label: '累计收益', value: '¥${wallet.totalEarnings.toStringAsFixed(2)}'),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            '礼物币余额、主播现金收益和可提现余额是不同账户口径，不会混合展示。',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text('礼物币余额', style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 4),
+            Text(
+              wallet.giftCoinBalance == null
+                  ? '读取中'
+                  : '${wallet.giftCoinBalance}',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 12),
+            Row(
+              children: <Widget>[
+                _SummaryMetric(
+                  label: '可提现',
+                  value: '¥${wallet.cashBalance.toStringAsFixed(2)}',
+                ),
+                _SummaryMetric(
+                  label: '冻结',
+                  value: '¥${wallet.frozenBalance.toStringAsFixed(2)}',
+                ),
+                _SummaryMetric(
+                  label: '累计收益',
+                  value: '¥${wallet.totalEarnings.toStringAsFixed(2)}',
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '礼物币余额、主播现金收益和可提现余额是不同账户口径，不会混合展示。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -243,20 +260,21 @@ class _CommerceErrorState extends StatelessWidget {
 }
 
 String _orderStatusLabel(PaymentOrderStatus status) => switch (status) {
-      PaymentOrderStatus.pending => '待支付',
-      PaymentOrderStatus.confirming => '服务端确认中',
-      PaymentOrderStatus.succeeded => '支付成功',
-      PaymentOrderStatus.failed => '支付失败',
-      PaymentOrderStatus.canceled => '已取消',
-      PaymentOrderStatus.unknown => '状态待核验',
-    };
+  PaymentOrderStatus.pending => '待支付',
+  PaymentOrderStatus.confirming => '服务端确认中',
+  PaymentOrderStatus.succeeded => '支付成功',
+  PaymentOrderStatus.failed => '支付失败',
+  PaymentOrderStatus.canceled => '已取消',
+  PaymentOrderStatus.unknown => '状态待核验',
+};
 
 IconData _refundIcon(RefundStatus status) => switch (status) {
-      RefundStatus.approved => Icons.check_circle_rounded,
-      RefundStatus.rejected => Icons.cancel_rounded,
-      RefundStatus.reviewing || RefundStatus.resubmitted => Icons.hourglass_top_rounded,
-      RefundStatus.unavailable => Icons.block_rounded,
-    };
+  RefundStatus.approved => Icons.check_circle_rounded,
+  RefundStatus.rejected => Icons.cancel_rounded,
+  RefundStatus.reviewing ||
+  RefundStatus.resubmitted => Icons.hourglass_top_rounded,
+  RefundStatus.unavailable => Icons.block_rounded,
+};
 
 String _formatDateTime(DateTime value) {
   final DateTime local = value.toLocal();

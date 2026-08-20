@@ -160,7 +160,7 @@ void main() {
     await disposeScoped(tester);
   });
 
-  testWidgets('CM-009 and CM-010 expose only ordinary assets', (
+  testWidgets('CM-009 and CM-010 expose gifts and pure decorations only', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
@@ -168,15 +168,40 @@ void main() {
     final AppDependencies dependencies = AppDependencies.mock();
 
     await pumpScoped(tester, dependencies, const GiftCatalogPage());
-    expect(find.text('礼物目录与赠送面板'), findsOneWidget);
+    expect(find.text('礼物图鉴'), findsOneWidget);
     expect(find.text('星光'), findsWidgets);
     expect(find.text('红包'), findsNothing);
     expect(find.text('盲盒'), findsNothing);
+    expect(find.text('背包'), findsNothing);
 
-    await pumpScoped(tester, dependencies, const MembershipBackpackPage());
-    expect(find.text('会员装扮与背包'), findsOneWidget);
-    expect(find.text('装扮'), findsOneWidget);
-    expect(find.text('背包'), findsOneWidget);
+    await pumpScoped(tester, dependencies, const DecorationPage());
+    expect(find.text('装扮中心'), findsOneWidget);
+    expect(find.text('个性装扮'), findsOneWidget);
+    expect(find.textContaining('会员'), findsNothing);
+    expect(find.textContaining('背包'), findsNothing);
+
+    const Key entranceAction = Key('decoration-action-decor-entrance-night');
+    await tester.tap(find.byKey(entranceAction));
+    await tester.pumpAndSettle();
+    expect(find.text('购买夜色进场装扮？'), findsOneWidget);
+    await tester.tap(find.text('确认'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(entranceAction),
+        matching: find.text('穿戴'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(entranceAction));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(entranceAction),
+        matching: find.text('卸下'),
+      ),
+      findsOneWidget,
+    );
     await disposeScoped(tester);
   });
 

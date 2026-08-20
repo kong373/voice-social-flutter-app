@@ -7,7 +7,6 @@ void main() {
     DeploymentEnvironment deployment = DeploymentEnvironment.development,
     bool allowInsecureHttp = false,
     String liveProbePath = '/',
-    String developmentOutboxKey = '',
   }) {
     return AppEnvironment(
       backendMode: BackendMode.live,
@@ -16,7 +15,6 @@ void main() {
       clientInnerVersion: '6',
       oauthClientId: 'client-id-value',
       realtimeEndpoint: '',
-      developmentOutboxKey: developmentOutboxKey,
       deploymentEnvironment: deployment,
       allowInsecureHttp: allowInsecureHttp,
       liveProbePath: liveProbePath,
@@ -31,10 +29,7 @@ void main() {
     expect(summary, isNot(contains('client-id-value')));
     expect(summary, isNot(contains('/gateway/')));
     expect(environment.redactedSummary['oauthClientIdConfigured'], isTrue);
-    expect(
-      environment.redactedSummary['oauthClientSecretConfigured'],
-      isFalse,
-    );
+    expect(environment.redactedSummary['oauthClientSecretConfigured'], isFalse);
   });
 
   test('mobile public client never loads an OAuth secret', () {
@@ -82,27 +77,14 @@ void main() {
     );
   });
 
-  test('development outbox key is forbidden in staging and production', () {
-    final AppEnvironment environment = liveEnvironment(
-      deployment: DeploymentEnvironment.staging,
-      developmentOutboxKey: 'development-only-key',
-    );
-    expect(
-      environment.validateLiveConfiguration,
-      throwsA(
-        isA<StateError>().having(
-          (StateError error) => error.toString(),
-          'message',
-          contains('DEVELOPMENT_OUTBOX_KEY'),
-        ),
-      ),
-    );
+  test('mobile client never exposes development outbox credentials', () {
+    final AppEnvironment environment = liveEnvironment();
+    expect(environment.canReadDevelopmentSmsOutbox, isFalse);
+    expect(environment.redactedSummary['developmentOutboxConfigured'], isFalse);
   });
 
   test('probe path must be absolute and timeout must be bounded', () {
-    final AppEnvironment invalidPath = liveEnvironment(
-      liveProbePath: 'health',
-    );
+    final AppEnvironment invalidPath = liveEnvironment(liveProbePath: 'health');
     expect(
       invalidPath.validateLiveConfiguration,
       throwsA(

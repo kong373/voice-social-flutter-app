@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_audio_service.dart';
@@ -45,7 +46,7 @@ class _RoomDiagnosticsPageState extends State<RoomDiagnosticsPage> {
   @override
   Widget build(BuildContext context) {
     final RoomAudioSnapshot? snapshot = _snapshot;
-    return Scaffold(
+    return RoomPageScaffold(
       appBar: AppBar(title: const Text('房间质量诊断')),
       body: _running || snapshot == null
           ? const Center(child: CircularProgressIndicator())
@@ -66,7 +67,8 @@ class _RoomDiagnosticsPageState extends State<RoomDiagnosticsPage> {
                   value: snapshot.packetLossPercent == null
                       ? '未获取'
                       : '${snapshot.packetLossPercent!.toStringAsFixed(1)}%',
-                  ok: snapshot.packetLossPercent != null &&
+                  ok:
+                      snapshot.packetLossPercent != null &&
                       snapshot.packetLossPercent! < 5,
                 ),
                 _DiagnosticRow(
@@ -76,18 +78,18 @@ class _RoomDiagnosticsPageState extends State<RoomDiagnosticsPage> {
                 ),
                 _DiagnosticRow(
                   label: '实时消息',
-                  value: widget.controller.realtimeDegraded ||
+                  value:
+                      widget.controller.realtimeDegraded ||
                           !snapshot.realtimeConnected
                       ? '状态可能延迟'
                       : '已连接',
-                  ok: !widget.controller.realtimeDegraded &&
+                  ok:
+                      !widget.controller.realtimeDegraded &&
                       snapshot.realtimeConnected,
                 ),
                 _DiagnosticRow(
                   label: '麦克风权限',
-                  value: snapshot.microphonePermissionGranted
-                      ? '已授权'
-                      : '未授权',
+                  value: snapshot.microphonePermissionGranted ? '已授权' : '未授权',
                   ok: snapshot.microphonePermissionGranted,
                 ),
                 _DiagnosticRow(
@@ -130,7 +132,8 @@ class _DiagnosticHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool healthy = snapshot.configured &&
+    final bool healthy =
+        snapshot.configured &&
         snapshot.rtcConnected &&
         snapshot.realtimeConnected &&
         snapshot.grade != RoomConnectionGrade.poor;
@@ -138,8 +141,8 @@ class _DiagnosticHero extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: healthy
-            ? AppColors.success.withValues(alpha: 0.1)
-            : AppColors.warning.withValues(alpha: 0.1),
+            ? RoomColors.success.withValues(alpha: 0.1)
+            : RoomColors.warning.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(22),
       ),
       child: Row(
@@ -149,7 +152,7 @@ class _DiagnosticHero extends StatelessWidget {
                 ? Icons.check_circle_outline_rounded
                 : Icons.warning_amber_rounded,
             size: 38,
-            color: healthy ? AppColors.success : AppColors.warning,
+            color: healthy ? RoomColors.success : RoomColors.warning,
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -205,7 +208,7 @@ class _DiagnosticRow extends StatelessWidget {
           Icon(
             ok ? Icons.check_circle_rounded : Icons.info_outline_rounded,
             size: 18,
-            color: ok ? AppColors.success : AppColors.warning,
+            color: ok ? RoomColors.success : RoomColors.warning,
           ),
         ],
       ),

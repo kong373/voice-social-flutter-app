@@ -65,9 +65,9 @@ class _ReportPageState extends State<ReportPage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -78,7 +78,7 @@ class _ReportPageState extends State<ReportPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: Text('举报${widget.targetName}')),
       body: Form(
         key: _formKey,
@@ -111,9 +111,7 @@ class _ReportPageState extends State<ReportPage> {
               validator: (String? value) =>
                   value == null || value.trim().isEmpty ? '请填写举报说明' : null,
             ),
-            const _InfoBanner(
-              text: '图片凭证上传需要对象存储适配器。本阶段先提交可审核的文字证据。',
-            ),
+            const _InfoBanner(text: '图片凭证上传需要对象存储适配器。本阶段先提交可审核的文字证据。'),
             if (widget.targetType == ReportTargetType.user)
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
@@ -162,9 +160,9 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
   }
 
   Future<void> _load() async {
-    final SupportChannel value = await AppDependencyScope.of(context)
-        .socialRepository
-        .fetchCustomerService();
+    final SupportChannel value = await AppDependencyScope.of(
+      context,
+    ).socialRepository.fetchCustomerService();
     if (mounted) {
       setState(() => _channel = value);
     }
@@ -192,9 +190,9 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -205,7 +203,7 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('帮助与客服')),
       body: _channel == null
           ? const Center(child: CircularProgressIndicator())
@@ -269,17 +267,17 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
     }
     setState(() => _refreshing = true);
     try {
-      final SupportTicket value = await AppDependencyScope.of(context)
-          .socialRepository
-          .fetchSupportTicket(_ticket.id);
+      final SupportTicket value = await AppDependencyScope.of(
+        context,
+      ).socialRepository.fetchSupportTicket(_ticket.id);
       if (mounted) {
         setState(() => _ticket = value);
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -290,7 +288,7 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('工单详情与处理进度'),
         actions: <Widget>[

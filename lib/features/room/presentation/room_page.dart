@@ -22,7 +22,7 @@ import 'package:voice_social_app/features/social/presentation/social_pages.dart'
 part 'room_page_sheets.dart';
 part 'room_widgets.dart';
 
-class RoomPage extends StatefulWidget {
+class RoomPage extends StatelessWidget {
   const RoomPage({
     required this.roomId,
     required this.title,
@@ -35,10 +35,37 @@ class RoomPage extends StatefulWidget {
   final RoomEntrySource entrySource;
 
   @override
-  State<RoomPage> createState() => _RoomPageState();
+  Widget build(BuildContext context) {
+    final String? inheritedFontFamily = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.fontFamily;
+    return Theme(
+      data: AppTheme.room(fontFamily: inheritedFontFamily),
+      child: _RoomPageContent(
+        roomId: roomId,
+        title: title,
+        entrySource: entrySource,
+      ),
+    );
+  }
 }
 
-class _RoomPageState extends State<RoomPage> {
+class _RoomPageContent extends StatefulWidget {
+  const _RoomPageContent({
+    required this.roomId,
+    required this.title,
+    required this.entrySource,
+  });
+
+  final String roomId;
+  final String title;
+  final RoomEntrySource entrySource;
+
+  @override
+  State<_RoomPageContent> createState() => _RoomPageState();
+}
+
+class _RoomPageState extends State<_RoomPageContent> {
   RoomController? _controllerInstance;
   RoomController get _controller => _controllerInstance!;
   final TextEditingController _messageController = TextEditingController();
@@ -179,7 +206,7 @@ class _RoomPageState extends State<RoomPage> {
                 const Icon(
                   Icons.wifi_off_rounded,
                   size: 44,
-                  color: AppColors.warning,
+                  color: RoomColors.warning,
                 ),
                 const SizedBox(height: 20),
                 Text(
@@ -190,7 +217,7 @@ class _RoomPageState extends State<RoomPage> {
                 Text(
                   _controller.errorMessage ?? '请检查网络后重试。',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: AppColors.textSecondary,
+                    color: RoomColors.textSecondary,
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -333,7 +360,7 @@ class _RoomPageState extends State<RoomPage> {
               const Icon(
                 Icons.graphic_eq_rounded,
                 size: 18,
-                color: AppColors.accent,
+                color: RoomColors.accent,
               ),
               const SizedBox(width: 8),
               Expanded(child: Text(topic)),
@@ -379,8 +406,8 @@ class _RoomPageState extends State<RoomPage> {
                         text: '${message.sender}  ',
                         style: TextStyle(
                           color: message.isSystem
-                              ? AppColors.warning
-                              : AppColors.accent,
+                              ? RoomColors.warning
+                              : RoomColors.accent,
                           fontWeight: FontWeight.w700,
                         ),
                       ),

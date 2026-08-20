@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/features/discovery/dynamic/presentation/dynamic_pages.dart';
+import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
 import 'package:voice_social_app/features/shell/main_shell.dart';
@@ -11,12 +13,15 @@ void main() {
   test('video runtime uses separate light lobby and immersive room themes', () {
     expect(AppTheme.social().brightness, Brightness.light);
     expect(AppTheme.room().brightness, Brightness.dark);
-    expect(AppTheme.social().bottomNavigationBarTheme.type,
-        BottomNavigationBarType.fixed);
+    expect(
+      AppTheme.social().bottomNavigationBarTheme.type,
+      BottomNavigationBarType.fixed,
+    );
   });
 
-  testWidgets('home enters room, opens gift sheet and minimizes the session',
-      (WidgetTester tester) async {
+  testWidgets('home enters room, opens gift sheet and minimizes the session', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
@@ -28,10 +33,7 @@ void main() {
         dependencies: dependencies,
         child: MaterialApp(
           theme: AppTheme.social(),
-          home: MainShell(
-            dependencies: dependencies,
-            onSignOut: () async {},
-          ),
+          home: MainShell(dependencies: dependencies, onSignOut: () async {}),
         ),
       ),
     );
@@ -39,7 +41,7 @@ void main() {
 
     expect(find.byKey(const Key('video-runtime-home')), findsOneWidget);
     expect(find.text('首页'), findsOneWidget);
-    expect(find.text('发现'), findsOneWidget);
+    expect(find.text('发现'), findsWidgets);
     expect(find.text('消息'), findsOneWidget);
     expect(find.text('我的'), findsOneWidget);
 
@@ -52,6 +54,23 @@ void main() {
     expect(find.text('礼物'), findsOneWidget);
     expect(find.text('成员'), findsOneWidget);
     expect(find.byKey(const Key('video-room-composer')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('room-follow-host')));
+    await tester.pump();
+    expect(find.text('已关注'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('room-expression-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('room-expression-sheet')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('room-expression-晚安')));
+    await tester.pumpAndSettle();
+    final TextField composer = tester.widget<TextField>(
+      find.byKey(const Key('video-room-composer')),
+    );
+    expect(composer.controller?.text, '[晚安]');
+    FocusManager.instance.primaryFocus?.unfocus();
+    tester.testTextInput.hide();
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('礼物').hitTestable());
     await tester.pumpAndSettle();
@@ -72,8 +91,78 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('light lobby remains stable at 360x800 and 1.3 text scale',
-      (WidgetTester tester) async {
+  testWidgets('lobby tabs, discovery publishing and private chat are routed', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1170, 2532);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final AppDependencies dependencies = AppDependencies.mock();
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: dependencies,
+        child: MaterialApp(
+          theme: AppTheme.social(),
+          home: MainShell(dependencies: dependencies, onSignOut: () async {}),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('电台').hitTestable());
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('live-room-520906')), findsOneWidget);
+    expect(find.byKey(const Key('live-room-880217')), findsNothing);
+
+    await tester.tap(find.text('发现').last.hitTestable());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('发布动态'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PublishDynamicPage), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('消息').hitTestable());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('晚星').first.hitTestable());
+    await tester.pumpAndSettle();
+    expect(find.byType(PrivateChatPage), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('account recent room restores a real room route', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final AppDependencies dependencies = AppDependencies.mock();
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: dependencies,
+        child: MaterialApp(
+          theme: AppTheme.social(),
+          home: MainShell(dependencies: dependencies, onSignOut: () async {}),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('我的').hitTestable());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('recent-room-880217')));
+    await tester.pumpAndSettle();
+    expect(find.byType(VideoRuntimeRoomPage), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('light lobby remains stable at 360x800 and 1.3 text scale', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(864, 1920);
     tester.view.devicePixelRatio = 2.4;
     addTearDown(tester.view.resetPhysicalSize);
@@ -87,10 +176,7 @@ void main() {
           dependencies: dependencies,
           child: MaterialApp(
             theme: AppTheme.social(),
-            home: MainShell(
-              dependencies: dependencies,
-              onSignOut: () async {},
-            ),
+            home: MainShell(dependencies: dependencies, onSignOut: () async {}),
           ),
         ),
       ),
@@ -99,6 +185,51 @@ void main() {
 
     expect(find.byKey(const Key('video-runtime-home')), findsOneWidget);
     expect(find.text('正在发生'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('room sheets remain stable at 360x800 and 1.3 text scale', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(864, 1920);
+    tester.view.devicePixelRatio = 2.4;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final AppDependencies dependencies = AppDependencies.mock();
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
+        child: AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            theme: AppTheme.social(),
+            home: MainShell(dependencies: dependencies, onSignOut: () async {}),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('live-room-880217')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const Key('room-expression-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('room-expression-sheet')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('贴图').hitTestable());
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('room-expression-星河鲸鱼')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    Navigator.of(
+      tester.element(find.byKey(const Key('room-expression-sheet'))),
+    ).pop();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('礼物').hitTestable());
+    await tester.pumpAndSettle();
+    expect(find.byType(GiftSheet), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

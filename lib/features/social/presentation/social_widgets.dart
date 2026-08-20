@@ -9,11 +9,7 @@ class _ProfileHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: <Widget>[
-        CircleAvatar(
-          radius: 34,
-          backgroundColor: AppColors.surfaceHigh,
-          child: Text(_initial(profile.user.name)),
-        ),
+        RuntimeAvatar(seed: '${profile.user.userId}', size: 72),
         const SizedBox(width: 14),
         Expanded(
           child: Column(
@@ -88,7 +84,7 @@ class _Section extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: SocialColors.card,
       borderRadius: BorderRadius.circular(20),
       clipBehavior: Clip.antiAlias,
       child: Padding(
@@ -129,7 +125,7 @@ class _Entry extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: AppColors.accent),
+      leading: Icon(icon, color: SocialColors.accent),
       title: Text(title),
       subtitle: Text(subtitle),
       trailing: const Icon(Icons.chevron_right_rounded),
@@ -148,7 +144,7 @@ class _InfoBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.1),
+        color: SocialColors.primary.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(15),
       ),
       child: Text(text, style: Theme.of(context).textTheme.bodySmall),
@@ -214,13 +210,13 @@ class _StatusCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: SocialColors.card,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(icon, size: 36, color: AppColors.primary),
+          Icon(icon, size: 36, color: SocialColors.primary),
           const SizedBox(height: 12),
           Text(title, style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 7),
@@ -253,14 +249,12 @@ class _Detail extends StatelessWidget {
   }
 }
 
-String _initial(String name) => name.trim().isEmpty ? '用' : name.trim()[0];
-
 String _friendRequestLabel(FriendRequestStatus status) => switch (status) {
-      FriendRequestStatus.pending => '待处理',
-      FriendRequestStatus.accepted => '已接受',
-      FriendRequestStatus.rejected => '已拒绝',
-      FriendRequestStatus.expired => '已过期',
-    };
+  FriendRequestStatus.pending => '待处理',
+  FriendRequestStatus.accepted => '已接受',
+  FriendRequestStatus.rejected => '已拒绝',
+  FriendRequestStatus.expired => '已过期',
+};
 
 String _formatDateTime(DateTime value) {
   final DateTime local = value.toLocal();

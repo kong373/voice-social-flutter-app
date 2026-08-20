@@ -877,14 +877,14 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
   ),
   QaPageEntry(
     id: 'CM-010',
-    name: '会员装扮与背包',
+    name: '装扮中心',
     area: ProductArea.commerce,
-    widgetClass: 'MembershipBackpackPage',
+    widgetClass: 'DecorationPage',
     sourcePath:
         'lib/features/commerce/presentation/commerce_catalog_pages.dart',
-    userEntry: '钱包、订单与收益 → 会员装扮与背包',
+    userEntry: '我的 → 装扮；钱包与商业化 → 装扮中心',
     requiredStates: _repositoryStates,
-    builder: (_, __) => const MembershipBackpackPage(),
+    builder: (_, __) => const DecorationPage(),
   ),
   QaPageEntry(
     id: 'CM-011',

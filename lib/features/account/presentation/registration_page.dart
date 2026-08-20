@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 
@@ -28,7 +29,7 @@ class _RegistrationPageState extends State<RegistrationPage> {
   @override
   Widget build(BuildContext context) {
     final AuthController controller = widget.controller;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         leading: IconButton(
           tooltip: '返回登录',
@@ -43,9 +44,9 @@ class _RegistrationPageState extends State<RegistrationPage> {
           children: <Widget>[
             Text(
               '手机号 ${controller.pendingPhone}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppColors.textSecondary,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
             ),
             const SizedBox(height: 22),
             Form(
@@ -74,15 +75,13 @@ class _RegistrationPageState extends State<RegistrationPage> {
                     onSelectionChanged: controller.busy
                         ? null
                         : (Set<int> values) =>
-                            setState(() => _sex = values.first),
+                              setState(() => _sex = values.first),
                   ),
                   const SizedBox(height: 18),
                   TextFormField(
                     controller: _inviteCodeController,
                     textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(
-                      labelText: '邀请码（选填）',
-                    ),
+                    decoration: const InputDecoration(labelText: '邀请码（选填）'),
                   ),
                 ],
               ),

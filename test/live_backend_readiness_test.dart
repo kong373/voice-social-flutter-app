@@ -3,7 +3,9 @@ import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/live_backend_readiness.dart';
 
 void main() {
-  AppEnvironment liveEnvironment({String apiBaseUrl = 'https://dev.example.com/'}) {
+  AppEnvironment liveEnvironment({
+    String apiBaseUrl = 'https://dev.example.com/',
+  }) {
     return AppEnvironment(
       backendMode: BackendMode.live,
       apiBaseUrl: apiBaseUrl,
@@ -26,9 +28,9 @@ void main() {
     );
     final LiveBackendReadinessSnapshot snapshot =
         await LiveBackendReadinessService(
-      environment: AppEnvironment.mock(),
-      gatewayProbe: probe,
-    ).check();
+          environment: AppEnvironment.mock(),
+          gatewayProbe: probe,
+        ).check();
 
     expect(snapshot.status, LiveBackendReadinessStatus.mockMode);
     expect(snapshot.canAttemptAuthentication, isFalse);
@@ -45,14 +47,11 @@ void main() {
     );
     final LiveBackendReadinessSnapshot snapshot =
         await LiveBackendReadinessService(
-      environment: liveEnvironment(apiBaseUrl: 'http://dev.example.com/'),
-      gatewayProbe: probe,
-    ).check();
+          environment: liveEnvironment(apiBaseUrl: 'http://dev.example.com/'),
+          gatewayProbe: probe,
+        ).check();
 
-    expect(
-      snapshot.status,
-      LiveBackendReadinessStatus.configurationInvalid,
-    );
+    expect(snapshot.status, LiveBackendReadinessStatus.configurationInvalid);
     expect(probe.callCount, 0);
   });
 
@@ -60,20 +59,20 @@ void main() {
     final _FakeGatewayProbe probe = _FakeGatewayProbe(
       GatewayProbeResult(
         status: LiveBackendReadinessStatus.gatewayReachable,
-        message: 'HTTP 401 still proves the gateway is reachable',
+        message: 'HTTP 200 proves the health endpoint is ready',
         checkedAt: DateTime.utc(2026, 8, 17),
         latency: const Duration(milliseconds: 87),
-        httpStatus: 401,
+        httpStatus: 200,
       ),
     );
     final LiveBackendReadinessSnapshot snapshot =
         await LiveBackendReadinessService(
-      environment: liveEnvironment(),
-      gatewayProbe: probe,
-    ).check();
+          environment: liveEnvironment(),
+          gatewayProbe: probe,
+        ).check();
 
     expect(snapshot.canAttemptAuthentication, isTrue);
-    expect(snapshot.httpStatus, 401);
+    expect(snapshot.httpStatus, 200);
     expect(snapshot.apiOrigin, 'https://dev.example.com');
     expect(probe.callCount, 1);
     expect(snapshot.toRedactedText(), isNot(contains('secret-value')));
@@ -90,9 +89,9 @@ void main() {
     );
     final LiveBackendReadinessSnapshot snapshot =
         await LiveBackendReadinessService(
-      environment: liveEnvironment(),
-      gatewayProbe: probe,
-    ).check();
+          environment: liveEnvironment(),
+          gatewayProbe: probe,
+        ).check();
 
     expect(snapshot.status, LiveBackendReadinessStatus.networkUnavailable);
     expect(snapshot.canAttemptAuthentication, isFalse);

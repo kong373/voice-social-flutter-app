@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
@@ -109,7 +110,7 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return RoomPageScaffold(
       appBar: AppBar(title: Text(widget.canEdit ? '编辑房间公告' : '房间公告')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

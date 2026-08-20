@@ -115,7 +115,7 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('充值商品目录')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -363,7 +363,7 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
     final List<PaymentChannelType> channels = _repository.availableChannels(
       widget.platform,
     );
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('支付方式与提交')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
@@ -511,7 +511,7 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
         success ||
         _order.state == RechargeOrderState.failed ||
         _order.state == RechargeOrderState.canceled;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('支付返回与结果')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 34, 20, 28),
@@ -598,7 +598,6 @@ class GiftCatalogPage extends StatefulWidget {
 
 class _GiftCatalogPageState extends State<GiftCatalogPage> {
   List<GiftCatalogItem>? _gifts;
-  List<BackpackGiftItem>? _backpack;
   WalletSummary? _wallet;
   GiftCatalogCategory _category = GiftCatalogCategory.popular;
   bool _loading = true;
@@ -621,14 +620,12 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
     try {
       final List<Object> result = await Future.wait<Object>(<Future<Object>>[
         dependencies.commerceCatalogRepository.fetchGiftCatalog(),
-        dependencies.commerceCatalogRepository.fetchBackpackGifts(),
         dependencies.commerceRepository.fetchWalletSummary(),
       ]);
       if (mounted) {
         setState(() {
           _gifts = result[0] as List<GiftCatalogItem>;
-          _backpack = result[1] as List<BackpackGiftItem>;
-          _wallet = result[2] as WalletSummary;
+          _wallet = result[1] as WalletSummary;
           _loading = false;
         });
       }
@@ -647,8 +644,8 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
     final List<GiftCatalogItem> visible = (_gifts ?? const <GiftCatalogItem>[])
         .where((GiftCatalogItem item) => item.category == _category)
         .toList(growable: false);
-    return Scaffold(
-      appBar: AppBar(title: const Text('礼物目录与赠送面板')),
+    return SocialPageScaffold(
+      appBar: AppBar(title: const Text('礼物图鉴')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -731,29 +728,9 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
                         );
                       },
                     ),
-                  const SizedBox(height: 20),
-                  Text('背包礼物', style: Theme.of(context).textTheme.titleLarge),
-                  const SizedBox(height: 10),
-                  if (_backpack == null || _backpack!.isEmpty)
-                    const _CommerceInfoBanner(text: '背包中没有可用礼物。')
-                  else
-                    for (final BackpackGiftItem item in _backpack!)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const CircleAvatar(
-                          child: Icon(Icons.inventory_2_outlined),
-                        ),
-                        title: Text(item.gift.name),
-                        subtitle: Text(
-                          item.expiresAt == null
-                              ? '长期有效'
-                              : '有效期至 ${_formatDateTime(item.expiresAt!)}',
-                        ),
-                        trailing: Text('×${item.quantity}'),
-                      ),
                   const SizedBox(height: 14),
                   const _CommerceInfoBanner(
-                    text: '从钱包进入时只浏览礼物和背包。实际赠送必须在语音房内选择麦上用户，礼物面板会保留当前房间上下文。',
+                    text: '这里只展示普通礼物。实际赠送必须在语音房内选择麦上用户，礼物面板会保留当前房间上下文。',
                   ),
                 ],
               ),
@@ -762,16 +739,16 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
   }
 }
 
-class MembershipBackpackPage extends StatefulWidget {
-  const MembershipBackpackPage({super.key});
+class DecorationPage extends StatefulWidget {
+  const DecorationPage({super.key});
 
   @override
-  State<MembershipBackpackPage> createState() => _MembershipBackpackPageState();
+  State<DecorationPage> createState() => _DecorationPageState();
 }
 
-class _MembershipBackpackPageState extends State<MembershipBackpackPage> {
-  MembershipSnapshot? _snapshot;
-  int _section = 0;
+class _DecorationPageState extends State<DecorationPage> {
+  List<DecorationItem>? _decorations;
+  DecorationKind? _filter;
   String? _busyId;
   bool _loading = true;
   String? _error;
@@ -782,7 +759,7 @@ class _MembershipBackpackPageState extends State<MembershipBackpackPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_loading && _snapshot == null) {
+    if (_loading && _decorations == null) {
       _load();
     }
   }
@@ -793,14 +770,12 @@ class _MembershipBackpackPageState extends State<MembershipBackpackPage> {
       _error = null;
     });
     try {
-      final MembershipSnapshot value = await _repository
-          .fetchMembershipSnapshot();
-      if (mounted) {
-        setState(() {
-          _snapshot = value;
-          _loading = false;
-        });
-      }
+      final List<DecorationItem> result = await _repository.fetchDecorations();
+      if (!mounted) return;
+      setState(() {
+        _decorations = result;
+        _loading = false;
+      });
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -830,35 +805,6 @@ class _MembershipBackpackPageState extends State<MembershipBackpackPage> {
           ),
         ) ??
         false;
-  }
-
-  Future<void> _buyMembership(MembershipPlan plan) async {
-    if (_busyId != null ||
-        !await _confirm(
-          '开通${plan.name}？',
-          '将扣除 ${plan.priceGiftCoins} 礼物币，有效期 ${plan.durationDays} 天。',
-        )) {
-      return;
-    }
-    setState(() => _busyId = plan.id);
-    try {
-      final MembershipSnapshot value = await _repository.purchaseMembership(
-        plan.id,
-      );
-      if (mounted) {
-        setState(() => _snapshot = value);
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _busyId = null);
-      }
-    }
   }
 
   Future<void> _operateDecoration(DecorationItem item) async {
@@ -902,128 +848,170 @@ class _MembershipBackpackPageState extends State<MembershipBackpackPage> {
 
   @override
   Widget build(BuildContext context) {
-    final MembershipSnapshot? snapshot = _snapshot;
-    return Scaffold(
-      appBar: AppBar(title: const Text('会员装扮与背包')),
+    final List<DecorationItem> decorations =
+        _decorations ?? const <DecorationItem>[];
+    final List<DecorationItem> visible = decorations
+        .where((DecorationItem item) => _filter == null || item.kind == _filter)
+        .toList(growable: false);
+    final int ownedCount = decorations
+        .where((DecorationItem item) => item.owned)
+        .length;
+    final int equippedCount = decorations
+        .where((DecorationItem item) => item.equipped)
+        .length;
+    return SocialPageScaffold(
+      appBar: AppBar(
+        title: Text('装扮中心', style: Theme.of(context).textTheme.titleMedium),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
           ? _CommerceErrorState(message: _error!, onRetry: _load)
-          : snapshot == null
-          ? const Center(child: Text('会员与背包数据不可用'))
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                 children: <Widget>[
-                  Material(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(22),
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Row(
-                        children: <Widget>[
-                          CircleAvatar(
-                            child: Icon(
-                              snapshot.active
-                                  ? Icons.workspace_premium_rounded
-                                  : Icons.person_outline_rounded,
-                            ),
+                  SocialCard(
+                    padding: const EdgeInsets.all(18),
+                    child: Row(
+                      children: <Widget>[
+                        Container(
+                          width: 54,
+                          height: 54,
+                          decoration: BoxDecoration(
+                            gradient: SocialColors.brandGradient,
+                            borderRadius: BorderRadius.circular(18),
                           ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                Text(
-                                  snapshot.levelName,
-                                  style: Theme.of(context).textTheme.titleLarge,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  snapshot.expiresAt == null
-                                      ? '当前未开通有效会员'
-                                      : '有效期至 ${_formatDateTime(snapshot.expiresAt!)}',
-                                ),
-                              ],
-                            ),
+                          child: const Icon(
+                            Icons.auto_awesome_rounded,
+                            color: Colors.white,
+                            size: 28,
                           ),
-                          Text('余额 ${snapshot.giftCoinBalance}'),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                '个性装扮',
+                                style: Theme.of(context).textTheme.titleLarge,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '头像框、进场效果与声波样式',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: <Widget>[
+                            Text(
+                              '已拥有 $ownedCount',
+                              style: const TextStyle(
+                                color: SocialColors.primary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '穿戴中 $equippedCount',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 14),
-                  SegmentedButton<int>(
-                    showSelectedIcon: false,
-                    segments: const <ButtonSegment<int>>[
-                      ButtonSegment<int>(value: 0, label: Text('会员')),
-                      ButtonSegment<int>(value: 1, label: Text('装扮')),
-                      ButtonSegment<int>(value: 2, label: Text('背包')),
-                    ],
-                    selected: <int>{_section},
-                    onSelectionChanged: (Set<int> value) =>
-                        setState(() => _section = value.first),
-                  ),
-                  const SizedBox(height: 16),
-                  if (_section == 0)
-                    if (snapshot.plans.isEmpty)
-                      const _CommerceInfoBanner(text: '当前没有可购买的权威会员商品。')
-                    else
-                      for (final MembershipPlan plan in snapshot.plans)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 9),
-                          child: Material(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(18),
-                            child: ListTile(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                              title: Text(plan.name),
-                              subtitle: Text(
-                                '${plan.durationDays} 天 · ${plan.priceGiftCoins} 礼物币\n${plan.benefits.join(' · ')}',
-                              ),
-                              trailing: FilledButton.tonal(
-                                onPressed: _busyId == null
-                                    ? () => _buyMembership(plan)
-                                    : null,
-                                child: Text(_busyId == plan.id ? '处理中…' : '开通'),
-                              ),
-                            ),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: <Widget>[
+                        SocialPill(
+                          label: '全部',
+                          active: _filter == null,
+                          onTap: () => setState(() => _filter = null),
+                        ),
+                        for (final DecorationKind kind
+                            in DecorationKind.values) ...<Widget>[
+                          const SizedBox(width: 8),
+                          SocialPill(
+                            label: kind.label,
+                            active: _filter == kind,
+                            onTap: () => setState(() => _filter = kind),
                           ),
-                        )
-                  else if (_section == 1)
-                    if (snapshot.decorations.isEmpty)
-                      const _CommerceInfoBanner(text: '当前没有可用装扮。')
-                    else
-                      for (final DecorationItem item in snapshot.decorations)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 9),
-                          child: Material(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(18),
-                            child: ListTile(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(18),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  if (visible.isEmpty)
+                    const SocialCard(child: Center(child: Text('当前分类没有可用装扮')))
+                  else
+                    for (final DecorationItem item in visible)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: SocialCard(
+                          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+                          child: Row(
+                            children: <Widget>[
+                              Container(
+                                width: 46,
+                                height: 46,
+                                decoration: BoxDecoration(
+                                  color: SocialColors.cardSoft,
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                                child: Icon(
+                                  _iconForDecoration(item.kind),
+                                  color: SocialColors.primary,
+                                ),
                               ),
-                              leading: const CircleAvatar(
-                                child: Icon(Icons.auto_awesome_outlined),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Row(
+                                      children: <Widget>[
+                                        Expanded(
+                                          child: Text(
+                                            item.name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.titleMedium,
+                                          ),
+                                        ),
+                                        _CommercePill(label: item.kind.label),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      item.owned
+                                          ? item.equipped
+                                                ? '已拥有 · 当前穿戴'
+                                                : '已拥有 · 未穿戴'
+                                          : '${item.priceGiftCoins} 礼物币',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
                               ),
-                              title: Row(
-                                children: <Widget>[
-                                  Expanded(child: Text(item.name)),
-                                  _CommercePill(label: item.kind.label),
-                                ],
-                              ),
-                              subtitle: Text(
-                                item.owned
-                                    ? (item.equipped
-                                          ? '已拥有 · 当前穿戴'
-                                          : '已拥有 · 未穿戴')
-                                    : '${item.priceGiftCoins} 礼物币',
-                              ),
-                              trailing: FilledButton.tonal(
+                              const SizedBox(width: 10),
+                              FilledButton(
+                                key: Key('decoration-action-${item.id}'),
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size(64, 44),
+                                ),
                                 onPressed: _busyId == null
                                     ? () => _operateDecoration(item)
                                     : null,
@@ -1031,35 +1019,33 @@ class _MembershipBackpackPageState extends State<MembershipBackpackPage> {
                                   _busyId == item.id
                                       ? '处理中…'
                                       : item.owned
-                                      ? (item.equipped ? '卸下' : '穿戴')
+                                      ? item.equipped
+                                            ? '卸下'
+                                            : '穿戴'
                                       : '购买',
+                                  style: Theme.of(context).textTheme.labelLarge
+                                      ?.copyWith(color: Colors.white),
                                 ),
                               ),
-                            ),
+                            ],
                           ),
-                        )
-                  else if (snapshot.backpack.isEmpty)
-                    const _CommerceInfoBanner(text: '背包中没有可用礼物或体验卡。')
-                  else
-                    for (final BackpackGiftItem item in snapshot.backpack)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const CircleAvatar(
-                          child: Icon(Icons.inventory_2_outlined),
                         ),
-                        title: Text(item.gift.name),
-                        subtitle: Text(
-                          item.expiresAt == null
-                              ? '长期有效'
-                              : '有效期至 ${_formatDateTime(item.expiresAt!)}',
-                        ),
-                        trailing: Text('×${item.quantity}'),
                       ),
+                  const SizedBox(height: 4),
+                  const _CommerceInfoBanner(text: '装扮购买与穿戴结果以服务端资产记录为准。'),
                 ],
               ),
             ),
     );
   }
+
+  static IconData _iconForDecoration(DecorationKind kind) => switch (kind) {
+    DecorationKind.avatarFrame => Icons.account_circle_outlined,
+    DecorationKind.entrance => Icons.login_rounded,
+    DecorationKind.nickname => Icons.text_fields_rounded,
+    DecorationKind.voiceWave => Icons.graphic_eq_rounded,
+    DecorationKind.profileCard => Icons.badge_outlined,
+  };
 }
 
 class _CommercePill extends StatelessWidget {

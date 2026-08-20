@@ -29,39 +29,16 @@ class _MainShellState extends State<MainShell> {
   bool _roomRouteOpen = false;
 
   List<Widget> get _pages => <Widget>[
-        VideoRuntimeHomePage(
-          dependencies: widget.dependencies,
-          onOpenRoom: _openRoom,
-        ),
-        VideoRuntimeDiscoveryPage(dependencies: widget.dependencies),
-        VideoRuntimeMessagesPage(dependencies: widget.dependencies),
-        VideoRuntimeAccountPage(
-          dependencies: widget.dependencies,
-          onSignOut: widget.onSignOut,
-        ),
-      ];
-
-  static const List<BottomNavigationBarItem> _items =
-      <BottomNavigationBarItem>[
-    BottomNavigationBarItem(
-      icon: Icon(Icons.home_outlined),
-      activeIcon: Icon(Icons.home_rounded),
-      label: '首页',
+    VideoRuntimeHomePage(
+      dependencies: widget.dependencies,
+      onOpenRoom: _openRoom,
     ),
-    BottomNavigationBarItem(
-      icon: Icon(Icons.explore_outlined),
-      activeIcon: Icon(Icons.explore_rounded),
-      label: '发现',
-    ),
-    BottomNavigationBarItem(
-      icon: Icon(Icons.chat_bubble_outline_rounded),
-      activeIcon: Icon(Icons.chat_bubble_rounded),
-      label: '消息',
-    ),
-    BottomNavigationBarItem(
-      icon: Icon(Icons.person_outline_rounded),
-      activeIcon: Icon(Icons.person_rounded),
-      label: '我的',
+    VideoRuntimeDiscoveryPage(dependencies: widget.dependencies),
+    VideoRuntimeMessagesPage(dependencies: widget.dependencies),
+    VideoRuntimeAccountPage(
+      dependencies: widget.dependencies,
+      onOpenRoom: _openRoom,
+      onSignOut: widget.onSignOut,
     ),
   ];
 
@@ -95,16 +72,20 @@ class _MainShellState extends State<MainShell> {
       return;
     }
     _roomRouteOpen = true;
-    final VideoRoomExit? result = await Navigator.of(context).push<VideoRoomExit>(
-      PageRouteBuilder<VideoRoomExit>(
-        transitionDuration: const Duration(milliseconds: 260),
-        reverseTransitionDuration: const Duration(milliseconds: 220),
-        pageBuilder: (_, Animation<double> animation, __) => FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-          child: VideoRuntimeRoomPage(controller: controller),
-        ),
-      ),
-    );
+    final VideoRoomExit? result = await Navigator.of(context)
+        .push<VideoRoomExit>(
+          PageRouteBuilder<VideoRoomExit>(
+            transitionDuration: const Duration(milliseconds: 260),
+            reverseTransitionDuration: const Duration(milliseconds: 220),
+            pageBuilder: (_, Animation<double> animation, __) => FadeTransition(
+              opacity: CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              ),
+              child: VideoRuntimeRoomPage(controller: controller),
+            ),
+          ),
+        );
     _roomRouteOpen = false;
     if (!mounted) {
       return;
@@ -139,8 +120,11 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final bool showMiniRoom = _roomController != null && !_roomRouteOpen;
+    final String? inheritedFontFamily = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.fontFamily;
     return Theme(
-      data: AppTheme.social(),
+      data: AppTheme.social(fontFamily: inheritedFontFamily),
       child: Scaffold(
         extendBody: true,
         backgroundColor: SocialColors.page,
@@ -159,25 +143,112 @@ class _MainShellState extends State<MainShell> {
               ),
           ],
         ),
-        bottomNavigationBar: Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFAFFFFFF),
-            border: Border(top: BorderSide(color: SocialColors.divider)),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: Color(0x140F1A35),
-                blurRadius: 22,
-                offset: Offset(0, -8),
-              ),
-            ],
+        bottomNavigationBar: _VideoNavigationBar(
+          currentIndex: _selectedIndex,
+          onTap: (int index) => setState(() => _selectedIndex = index),
+        ),
+      ),
+    );
+  }
+}
+
+class _VideoNavigationBar extends StatelessWidget {
+  const _VideoNavigationBar({required this.currentIndex, required this.onTap});
+
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+
+  static const List<(IconData, IconData, String, Color)> _items =
+      <(IconData, IconData, String, Color)>[
+        (Icons.home_outlined, Icons.home_rounded, '首页', Color(0xFFFFB45F)),
+        (
+          Icons.explore_outlined,
+          Icons.explore_rounded,
+          '发现',
+          Color(0xFF8A7BF6),
+        ),
+        (
+          Icons.chat_bubble_outline_rounded,
+          Icons.chat_bubble_rounded,
+          '消息',
+          Color(0xFF68B7F6),
+        ),
+        (
+          Icons.person_outline_rounded,
+          Icons.person_rounded,
+          '我的',
+          Color(0xFF9D82F4),
+        ),
+      ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFAFFFFFF),
+        border: Border(top: BorderSide(color: Color(0x91FFFFFF))),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Color(0x160F1A35),
+            blurRadius: 24,
+            offset: Offset(0, -8),
           ),
-          child: SafeArea(
-            top: false,
-            child: BottomNavigationBar(
-              currentIndex: _selectedIndex,
-              onTap: (int index) => setState(() => _selectedIndex = index),
-              items: _items,
-            ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 60,
+          child: Row(
+            children: <Widget>[
+              for (int index = 0; index < _items.length; index += 1)
+                Expanded(
+                  child: InkWell(
+                    onTap: () => onTap(index),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 5, bottom: 4),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            width: currentIndex == index ? 42 : 34,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: currentIndex == index
+                                  ? _items[index].$4.withValues(alpha: 0.14)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Icon(
+                              currentIndex == index
+                                  ? _items[index].$2
+                                  : _items[index].$1,
+                              size: 23,
+                              color: currentIndex == index
+                                  ? _items[index].$4
+                                  : SocialColors.textTertiary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _items[index].$3,
+                            style: TextStyle(
+                              color: currentIndex == index
+                                  ? SocialColors.textPrimary
+                                  : SocialColors.textTertiary,
+                              fontSize: 10,
+                              fontWeight: currentIndex == index
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),

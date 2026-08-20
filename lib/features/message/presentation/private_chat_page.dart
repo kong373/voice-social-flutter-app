@@ -41,8 +41,9 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       _error = null;
     });
     try {
-      final List<ChatMessage> value =
-          await _repository.fetchPrivateMessages(widget.conversation);
+      final List<ChatMessage> value = await _repository.fetchPrivateMessages(
+        widget.conversation,
+      );
       if (!mounted) {
         return;
       }
@@ -87,9 +88,9 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       _scrollToEnd();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -133,10 +134,11 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bool canSend = _repository.supportsPrivateSend &&
+    final bool canSend =
+        _repository.supportsPrivateSend &&
         widget.conversation.available &&
         !_sending;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -157,16 +159,14 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                 _report();
               }
             },
-            itemBuilder: (BuildContext context) => const <PopupMenuEntry<String>>[
-              PopupMenuItem<String>(
-                value: 'profile',
-                child: Text('查看公开主页'),
-              ),
-              PopupMenuItem<String>(
-                value: 'report',
-                child: Text('举报用户'),
-              ),
-            ],
+            itemBuilder: (BuildContext context) =>
+                const <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(
+                    value: 'profile',
+                    child: Text('查看公开主页'),
+                  ),
+                  PopupMenuItem<String>(value: 'report', child: Text('举报用户')),
+                ],
           ),
         ],
       ),
@@ -184,38 +184,33 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                    ? _MessageError(message: _error!, onRetry: _load)
-                    : _messages.isEmpty
-                        ? Center(
-                            child: Text(
-                              _repository.supportsPrivateHistory
-                                  ? '还没有消息，认真说第一句话吧'
-                                  : '当前没有可恢复的私聊历史',
-                            ),
-                          )
-                        : RefreshIndicator(
-                            onRefresh: _load,
-                            child: ListView.builder(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.fromLTRB(14, 14, 14, 22),
-                              itemCount: _messages.length,
-                              itemBuilder: (BuildContext context, int index) {
-                                return _ChatBubble(message: _messages[index]);
-                              },
-                            ),
-                          ),
+                ? _MessageError(message: _error!, onRetry: _load)
+                : _messages.isEmpty
+                ? Center(
+                    child: Text(
+                      _repository.supportsPrivateHistory
+                          ? '还没有消息，认真说第一句话吧'
+                          : '当前没有可恢复的私聊历史',
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 22),
+                      itemCount: _messages.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        return _ChatBubble(message: _messages[index]);
+                      },
+                    ),
+                  ),
           ),
           Material(
-            color: AppColors.surface,
+            color: Colors.white.withValues(alpha: 0.94),
             child: SafeArea(
               top: false,
               child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  12,
-                  8,
-                  12,
-                  10 + MediaQuery.viewInsetsOf(context).bottom,
-                ),
+                padding: EdgeInsets.fromLTRB(12, 8, 12, 10),
                 child: Row(
                   children: <Widget>[
                     Expanded(
@@ -228,9 +223,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                         textInputAction: TextInputAction.send,
                         onSubmitted: (_) => _send(),
                         decoration: InputDecoration(
-                          hintText: canSend
-                              ? '输入消息…'
-                              : '腾讯 IM 接入后开放发送',
+                          hintText: canSend ? '输入消息…' : '腾讯 IM 接入后开放发送',
                           counterText: '',
                         ),
                       ),
@@ -272,8 +265,18 @@ class _ChatBubble extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: message.isMine
-              ? AppColors.primary.withValues(alpha: 0.82)
-              : AppColors.surfaceHigh,
+              ? SocialColors.primary
+              : Colors.white.withValues(alpha: 0.94),
+          border: message.isMine
+              ? null
+              : Border.all(color: const Color(0x1417213C)),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x100F1C3D),
+              blurRadius: 14,
+              offset: Offset(0, 6),
+            ),
+          ],
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(18),
             topRight: const Radius.circular(18),
@@ -284,14 +287,23 @@ class _ChatBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(message.content),
+            Text(
+              message.content,
+              style: TextStyle(
+                color: message.isMine ? Colors.white : SocialColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 4),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Text(
                   _formatMessageTime(message.createdAt),
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: message.isMine
+                        ? Colors.white.withValues(alpha: 0.78)
+                        : SocialColors.textTertiary,
+                  ),
                 ),
                 if (message.status == ChatMessageStatus.failed) ...<Widget>[
                   const SizedBox(width: 5),

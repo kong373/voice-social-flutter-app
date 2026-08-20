@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 
@@ -15,29 +13,24 @@ class SocialSkySurface extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: <Widget>[
+          Image.asset(
+            'assets/runtime/social-sky.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.topCenter,
+          ),
           const DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: <Color>[
-                  Color(0xFFDDEEFF),
-                  Color(0xFFF0EDFF),
+                  Color(0x00F7F9FF),
+                  Color(0x48F7F9FF),
                   SocialColors.page,
                 ],
-                stops: <double>[0, 0.34, 0.72],
+                stops: <double>[0, 0.42, 0.78],
               ),
             ),
-          ),
-          const Positioned(
-            top: -86,
-            right: -74,
-            child: _SoftOrb(size: 260, color: Color(0x668F79FF)),
-          ),
-          const Positioned(
-            top: 120,
-            left: -110,
-            child: _SoftOrb(size: 250, color: Color(0x554FBFFF)),
           ),
           child,
         ],
@@ -46,24 +39,112 @@ class SocialSkySurface extends StatelessWidget {
   }
 }
 
-class _SoftOrb extends StatelessWidget {
-  const _SoftOrb({required this.size, required this.color});
+class SocialPageScaffold extends StatelessWidget {
+  const SocialPageScaffold({
+    required this.body,
+    this.appBar,
+    this.floatingActionButton,
+    this.bottomNavigationBar,
+    this.resizeToAvoidBottomInset,
+    super.key,
+  });
 
-  final double size;
-  final Color color;
+  final PreferredSizeWidget? appBar;
+  final Widget body;
+  final Widget? floatingActionButton;
+  final Widget? bottomNavigationBar;
+  final bool? resizeToAvoidBottomInset;
 
   @override
   Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: SizedBox.square(
-        dimension: size,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              colors: <Color>[color, color.withValues(alpha: 0)],
+    final String? inheritedFontFamily = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.fontFamily;
+    return Theme(
+      data: AppTheme.social(fontFamily: inheritedFontFamily),
+      child: SocialSkySurface(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: appBar,
+          body: body,
+          floatingActionButton: floatingActionButton,
+          bottomNavigationBar: bottomNavigationBar,
+          resizeToAvoidBottomInset: resizeToAvoidBottomInset,
+        ),
+      ),
+    );
+  }
+}
+
+class RoomCosmosSurface extends StatelessWidget {
+  const RoomCosmosSurface({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: RoomColors.background,
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          Image.asset(
+            'assets/runtime/room-cosmos.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.topCenter,
+          ),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[
+                  Color(0x1608091B),
+                  Color(0xA608091B),
+                  RoomColors.background,
+                ],
+                stops: <double>[0, 0.48, 0.88],
+              ),
             ),
           ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class RoomPageScaffold extends StatelessWidget {
+  const RoomPageScaffold({
+    required this.body,
+    this.appBar,
+    this.floatingActionButton,
+    this.bottomNavigationBar,
+    this.resizeToAvoidBottomInset,
+    super.key,
+  });
+
+  final PreferredSizeWidget? appBar;
+  final Widget body;
+  final Widget? floatingActionButton;
+  final Widget? bottomNavigationBar;
+  final bool? resizeToAvoidBottomInset;
+
+  @override
+  Widget build(BuildContext context) {
+    final String? inheritedFontFamily = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.fontFamily;
+    return Theme(
+      data: AppTheme.room(fontFamily: inheritedFontFamily),
+      child: RoomCosmosSurface(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: appBar,
+          body: body,
+          floatingActionButton: floatingActionButton,
+          bottomNavigationBar: bottomNavigationBar,
+          resizeToAvoidBottomInset: resizeToAvoidBottomInset,
         ),
       ),
     );
@@ -89,12 +170,13 @@ class SocialCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final BorderRadius borderRadius = BorderRadius.circular(radius);
-    final Widget body = Container(
-      padding: padding,
+    final Widget content = Padding(padding: padding, child: child);
+    final Widget interactiveContent = onTap == null
+        ? content
+        : InkWell(onTap: onTap, borderRadius: borderRadius, child: content);
+    return Container(
       decoration: BoxDecoration(
-        color: color,
         borderRadius: borderRadius,
-        border: Border.all(color: const Color(0x0F17213C)),
         boxShadow: const <BoxShadow>[
           BoxShadow(
             color: Color(0x120F1C3D),
@@ -103,15 +185,15 @@ class SocialCard extends StatelessWidget {
           ),
         ],
       ),
-      child: child,
-    );
-    if (onTap == null) {
-      return body;
-    }
-    return Material(
-      color: Colors.transparent,
-      borderRadius: borderRadius,
-      child: InkWell(onTap: onTap, borderRadius: borderRadius, child: body),
+      child: Material(
+        color: color,
+        shape: RoundedRectangleBorder(
+          borderRadius: borderRadius,
+          side: const BorderSide(color: Color(0x0F17213C)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: interactiveContent,
+      ),
     );
   }
 }
@@ -147,6 +229,184 @@ class SocialSectionTitle extends StatelessWidget {
         ),
         if (trailing != null) trailing!,
       ],
+    );
+  }
+}
+
+class SocialPageIntro extends StatelessWidget {
+  const SocialPageIntro({
+    required this.icon,
+    required this.title,
+    required this.description,
+    this.trailing,
+    this.accent = SocialColors.primary,
+    super.key,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final Widget? trailing;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return SocialCard(
+      padding: const EdgeInsets.all(18),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: accent, size: 24),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 4),
+                Text(description, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+          if (trailing != null) ...<Widget>[
+            const SizedBox(width: 10),
+            trailing!,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class SocialStateView extends StatelessWidget {
+  const SocialStateView({
+    required this.icon,
+    required this.title,
+    required this.description,
+    this.actionLabel,
+    this.onAction,
+    super.key,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: SocialCard(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: SocialColors.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: SocialColors.primary, size: 31),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 7),
+              Text(
+                description,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              if (actionLabel != null && onAction != null) ...<Widget>[
+                const SizedBox(height: 20),
+                FilledButton.tonal(
+                  onPressed: onAction,
+                  child: Text(actionLabel!),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class SocialMetric extends StatelessWidget {
+  const SocialMetric({
+    required this.label,
+    required this.value,
+    this.emphasized = false,
+    super.key,
+  });
+
+  final String label;
+  final String value;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          value,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            color: emphasized ? SocialColors.primary : SocialColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+class RoomGlassCard extends StatelessWidget {
+  const RoomGlassCard({
+    required this.child,
+    this.padding = const EdgeInsets.all(16),
+    this.onTap,
+    this.radius = 22,
+    super.key,
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final VoidCallback? onTap;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final BorderRadius borderRadius = BorderRadius.circular(radius);
+    return Material(
+      color: Colors.white.withValues(alpha: 0.075),
+      shape: RoundedRectangleBorder(
+        borderRadius: borderRadius,
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.09)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: borderRadius,
+        child: Padding(padding: padding, child: child),
+      ),
     );
   }
 }
@@ -225,77 +485,45 @@ class OriginalRoomArtwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final int value = _stableSeed(seed);
+    const List<String> artwork = <String>[
+      'assets/runtime/room-cover-ruby.png',
+      'assets/runtime/room-cover-island.png',
+      'assets/runtime/room-cover-festival.png',
+      'assets/runtime/room-cover-moon.png',
+    ];
     return ClipRRect(
       borderRadius: borderRadius,
       child: SizedBox(
         height: height,
         width: double.infinity,
-        child: CustomPaint(
-          painter: _OriginalRoomPainter(seed),
-          child: child,
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            Image.asset(
+              artwork[value.abs() % artwork.length],
+              fit: BoxFit.cover,
+            ),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: <Color>[
+                    Color(0x08000000),
+                    Color(0x15000000),
+                    Color(0xA6000018),
+                  ],
+                  stops: <double>[0, 0.48, 1],
+                ),
+              ),
+            ),
+            if (child != null) child!,
+          ],
         ),
       ),
     );
   }
-}
-
-class _OriginalRoomPainter extends CustomPainter {
-  _OriginalRoomPainter(String seed)
-      : value = seed.codeUnits.fold<int>(19, (int a, int b) => a * 37 + b);
-
-  final int value;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final math.Random random = math.Random(value);
-    const List<List<Color>> palettes = <List<Color>>[
-      <Color>[Color(0xFF6F84FF), Color(0xFFAE7CE9), Color(0xFF303A7B)],
-      <Color>[Color(0xFF4AB6CE), Color(0xFF7E8EED), Color(0xFF35416C)],
-      <Color>[Color(0xFFF18CB1), Color(0xFF967CDB), Color(0xFF3C3769)],
-      <Color>[Color(0xFFFFBA7A), Color(0xFFEC829E), Color(0xFF57406F)],
-    ];
-    final List<Color> colors = palettes[value.abs() % palettes.length];
-    final Rect rect = Offset.zero & size;
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: colors,
-        ).createShader(rect),
-    );
-    canvas.drawCircle(
-      Offset(size.width * 0.83, size.height * 0.16),
-      size.shortestSide * 0.22,
-      Paint()..color = Colors.white.withValues(alpha: 0.12),
-    );
-    final Paint star = Paint()..color = Colors.white.withValues(alpha: 0.6);
-    for (int index = 0; index < 30; index += 1) {
-      canvas.drawCircle(
-        Offset(
-          random.nextDouble() * size.width,
-          random.nextDouble() * size.height * 0.65,
-        ),
-        random.nextDouble() * 1.3 + 0.3,
-        star,
-      );
-    }
-    final Path hills = Path()..moveTo(0, size.height);
-    double x = 0;
-    while (x <= size.width) {
-      hills.lineTo(x, size.height * (0.62 + random.nextDouble() * 0.16));
-      x += size.width / 7;
-    }
-    hills
-      ..lineTo(size.width, size.height)
-      ..close();
-    canvas.drawPath(hills, Paint()..color = const Color(0x66302C69));
-  }
-
-  @override
-  bool shouldRepaint(covariant _OriginalRoomPainter oldDelegate) =>
-      oldDelegate.value != value;
 }
 
 class RuntimeAvatar extends StatelessWidget {
@@ -312,13 +540,12 @@ class RuntimeAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final int value = seed.codeUnits.fold<int>(13, (int a, int b) => a * 31 + b);
-    const List<Color> palette = <Color>[
-      SocialColors.primary,
-      SocialColors.secondary,
-      SocialColors.accent,
-      Color(0xFFFFB46F),
-      Color(0xFF69C8A7),
+    final int value = _stableSeed(seed);
+    const List<String> avatars = <String>[
+      'assets/runtime/avatar-rose.png',
+      'assets/runtime/avatar-night.png',
+      'assets/runtime/avatar-copper.png',
+      'assets/runtime/avatar-silver.png',
     ];
     return Container(
       width: size,
@@ -331,25 +558,23 @@ class RuntimeAvatar extends StatelessWidget {
           width: 2,
         ),
       ),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            colors: <Color>[
-              palette[value.abs() % palette.length],
-              palette[(value.abs() + 2) % palette.length],
-            ],
+      child: ClipOval(
+        child: Image.asset(
+          avatars[value.abs() % avatars.length],
+          fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
+          errorBuilder: (_, __, ___) => const ColoredBox(
+            color: SocialColors.primary,
+            child: Icon(Icons.person_rounded, color: Colors.white),
           ),
-        ),
-        child: Icon(
-          value.isEven ? Icons.person_rounded : Icons.auto_awesome_rounded,
-          color: Colors.white,
-          size: size * 0.52,
         ),
       ),
     );
   }
 }
+
+int _stableSeed(String seed) =>
+    seed.codeUnits.fold<int>(17, (int value, int unit) => value * 37 + unit);
 
 class RuntimeWaveform extends StatelessWidget {
   const RuntimeWaveform({this.active = true, this.width = 42, super.key});
@@ -412,42 +637,56 @@ class MinimizedRoomPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xF21B1A41),
-      borderRadius: BorderRadius.circular(999),
+      color: const Color(0xF4E8E2FF),
+      borderRadius: BorderRadius.circular(20),
       elevation: 10,
-      shadowColor: const Color(0x553A2C78),
+      shadowColor: const Color(0x3D5D4CBF),
       child: InkWell(
         key: const Key('minimized-room-pill'),
         onTap: onRestore,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(20),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(5, 5, 3, 5),
+          padding: const EdgeInsets.fromLTRB(5, 5, 2, 5),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              RuntimeAvatar(seed: title, size: 34, ringColor: Colors.white),
-              const SizedBox(width: 8),
+              RuntimeAvatar(seed: title, size: 36, ringColor: Colors.white),
+              const SizedBox(width: 7),
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 110),
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                  ),
+                constraints: const BoxConstraints(maxWidth: 86),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: SocialColors.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const RuntimeWaveform(width: 31),
+                  ],
                 ),
               ),
-              const SizedBox(width: 5),
-              const RuntimeWaveform(width: 28),
               IconButton(
                 tooltip: '退出当前房间',
                 visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints.tightFor(
+                  width: 34,
+                  height: 34,
+                ),
+                padding: EdgeInsets.zero,
                 onPressed: onClose,
-                icon: const Icon(Icons.close_rounded, size: 18),
-                color: Colors.white70,
+                icon: const Icon(
+                  Icons.power_settings_new_rounded,
+                  size: 17,
+                  color: SocialColors.primary,
+                ),
               ),
             ],
           ),

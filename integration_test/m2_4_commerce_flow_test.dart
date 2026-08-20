@@ -416,16 +416,10 @@ void main() {
     final Future<List<GiftCatalogItem>> giftsFuture = dependencies
         .commerceCatalogRepository
         .fetchGiftCatalog();
-    final Future<List<BackpackGiftItem>> backpackFuture = dependencies
-        .commerceCatalogRepository
-        .fetchBackpackGifts();
     await tester.pump(const Duration(milliseconds: 100));
     final List<GiftCatalogItem> gifts = await giftsFuture;
-    final List<BackpackGiftItem> backpack = await backpackFuture;
     _expectNoRetiredTokens(<String>[
       for (final GiftCatalogItem gift in gifts) '${gift.id} ${gift.name}',
-      for (final BackpackGiftItem item in backpack)
-        '${item.id} ${item.gift.id} ${item.gift.name}',
     ]);
   });
 }

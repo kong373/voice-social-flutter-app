@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 
 class ConsentPage extends StatelessWidget {
   const ConsentPage({required this.onAccept, super.key});
@@ -8,7 +9,7 @@ class ConsentPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 30, 24, 24),
