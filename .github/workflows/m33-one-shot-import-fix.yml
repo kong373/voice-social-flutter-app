@@ -1,0 +1,63 @@
+name: M3.3 one-shot import fix
+
+on:
+  pull_request:
+    types: [synchronize, opened, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  add-import:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/m3-3-video-runtime-ui' &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      FLUTTER_VERSION: 3.44.7
+      TARGET_BRANCH: feat/m3-3-video-runtime-ui
+    steps:
+      - name: Checkout candidate head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Import deployment environment extension
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('lib/features/shell/live_product_pages.dart')
+          text = path.read_text(encoding='utf-8')
+          anchor = "import 'package:voice_social_app/app/app_dependencies.dart';\n"
+          addition = anchor + "import 'package:voice_social_app/app/app_environment.dart';\n"
+          if "app/app_environment.dart" not in text:
+              if anchor not in text:
+                  raise SystemExit('Import anchor not found')
+              text = text.replace(anchor, addition, 1)
+              path.write_text(text, encoding='utf-8')
+          PY
+          dart format lib/features/shell/live_product_pages.dart
+          rm -f .github/workflows/m33-one-shot-import-fix.yml
+
+      - name: Commit import fix
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(ui): import deployment environment extension'
+          git push origin "HEAD:$TARGET_BRANCH"
