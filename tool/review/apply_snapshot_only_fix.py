@@ -8,12 +8,10 @@ path = ROOT / ".github/workflows/m32-pre-provider-review.yml"
 text = path.read_text(encoding="utf-8")
 old = """          script: |
             set -Eeuo pipefail
-            DEVICE_ID=\"$(adb devices | awk 'NR>1 && $2==\"device\" {print $1; exit}')\"
 """
 new = """          script: |
             set -eu
-            DEVICE_ID=\"$(adb devices | awk 'NR>1 && $2==\"device\" {print $1; exit}')\"
 """
 if text.count(old) != 1:
-    raise SystemExit("expected exactly one emulator runner shell block")
+    raise SystemExit(f"expected exactly one emulator runner shell block, got {text.count(old)}")
 path.write_text(text.replace(old, new, 1), encoding="utf-8")
