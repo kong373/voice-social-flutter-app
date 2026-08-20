@@ -595,20 +595,13 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           account: account,
           targets: targets,
           balance: _controller.giftBalance,
-          onSend:
-              (
-                String giftId,
-                String giftName,
-                int receiverUserId,
-                String targetName,
-                int quantity,
-              ) => _controller.sendGift(
-                giftId: giftId,
-                giftName: giftName,
-                receiverUserId: receiverUserId,
-                targetName: targetName,
-                quantity: quantity,
-              ),
+          onSend: (GiftSendRequest request) => _controller.sendGift(
+            giftId: request.gift.id,
+            giftName: request.gift.name,
+            receiverUserId: request.target.userId,
+            targetName: request.target.name,
+            quantity: request.quantity,
+          ),
           onRechargeReturn: () async {
             await _controller.reconnect();
             return _controller.giftBalance;
