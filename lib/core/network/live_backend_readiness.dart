@@ -75,6 +75,17 @@ class HttpGatewayProbe implements GatewayProbe {
       );
       await response.drain<void>().timeout(environment.apiTimeout);
       stopwatch.stop();
+
+      if (response.statusCode == HttpStatus.unauthorized ||
+          response.statusCode == HttpStatus.forbidden) {
+        return GatewayProbeResult(
+          status: LiveBackendReadinessStatus.gatewayReachable,
+          message: '网关已返回有效的鉴权响应，可以进入认证阶段。',
+          checkedAt: DateTime.now().toUtc(),
+          latency: stopwatch.elapsed,
+          httpStatus: response.statusCode,
+        );
+      }
       if (response.statusCode != HttpStatus.ok) {
         return GatewayProbeResult(
           status: LiveBackendReadinessStatus.gatewayRejected,
@@ -172,7 +183,6 @@ class LiveBackendReadinessSnapshot {
 
   bool get canAttemptAuthentication =>
       status == LiveBackendReadinessStatus.gatewayReachable &&
-      httpStatus == HttpStatus.ok &&
       publicClientConfigured;
 
   Map<String, Object?> toRedactedJson() => <String, Object?>{
