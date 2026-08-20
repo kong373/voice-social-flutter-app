@@ -16,7 +16,6 @@ void main() {
       clientInnerVersion: '6',
       oauthClientId: 'client-id-value',
       realtimeEndpoint: '',
-      developmentOutboxKey: 'development-outbox-key',
       deploymentEnvironment: DeploymentEnvironment.development,
     );
     final LiveBackendReadinessService service = LiveBackendReadinessService(
