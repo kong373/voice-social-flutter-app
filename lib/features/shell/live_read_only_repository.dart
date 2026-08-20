@@ -211,9 +211,7 @@ class LiveReadOnlyRepository {
         runtimeStatus: _string(raw['runtimeStatus'], fallback: 'UNKNOWN'),
         provider: _string(raw['provider'], fallback: 'UNCONFIGURED'),
         missingConfiguration: _strings(raw['missingConfiguration']),
-        serverOnlySecretProperties: _strings(
-          raw['serverOnlySecretProperties'],
-        ),
+        serverOnlySecretProperties: _strings(raw['serverOnlySecretProperties']),
         adapterContract: _string(raw['adapterContract']),
         securityBoundary: _string(raw['securityBoundary']),
       );
@@ -244,9 +242,9 @@ class LiveReadOnlyRepository {
       value is List<Object?> ? value : <Object?>[];
 
   static List<String> _strings(Object? value) => <String>[
-        for (final Object? item in _list(value))
-          if (_string(item).isNotEmpty) _string(item),
-      ];
+    for (final Object? item in _list(value))
+      if (_string(item).isNotEmpty) _string(item),
+  ];
 
   static int? _int(Object? value) {
     if (value is int) {

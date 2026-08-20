@@ -35,11 +35,11 @@ class ApiClient {
     HttpClient? httpClient,
     this.timeout = const Duration(seconds: 15),
     this.maximumResponseBytes = 2 * 1024 * 1024,
-  })  : _baseUri = baseUri,
-        _authorizationProvider = authorizationProvider,
-        _requestHeadersProvider = requestHeadersProvider,
-        _unauthorizedRecovery = unauthorizedRecovery,
-        _httpClient = httpClient ?? HttpClient();
+  }) : _baseUri = baseUri,
+       _authorizationProvider = authorizationProvider,
+       _requestHeadersProvider = requestHeadersProvider,
+       _unauthorizedRecovery = unauthorizedRecovery,
+       _httpClient = httpClient ?? HttpClient();
 
   final Uri _baseUri;
   final String clientType;
@@ -60,14 +60,13 @@ class ApiClient {
     Map<String, String>? query,
     Map<String, String>? headers,
     bool authenticated = true,
-  }) =>
-      _request(
-        method: 'GET',
-        path: path,
-        query: query,
-        headers: headers,
-        authenticated: authenticated,
-      );
+  }) => _request(
+    method: 'GET',
+    path: path,
+    query: query,
+    headers: headers,
+    authenticated: authenticated,
+  );
 
   Future<ApiResponse> put(
     String path, {
@@ -75,15 +74,14 @@ class ApiClient {
     Map<String, String>? headers,
     Map<String, Object?>? body,
     bool authenticated = true,
-  }) =>
-      _request(
-        method: 'PUT',
-        path: path,
-        query: query,
-        headers: headers,
-        body: body,
-        authenticated: authenticated,
-      );
+  }) => _request(
+    method: 'PUT',
+    path: path,
+    query: query,
+    headers: headers,
+    body: body,
+    authenticated: authenticated,
+  );
 
   Future<ApiResponse> patch(
     String path, {
@@ -91,15 +89,14 @@ class ApiClient {
     Map<String, String>? headers,
     Map<String, Object?>? body,
     bool authenticated = true,
-  }) =>
-      _request(
-        method: 'PATCH',
-        path: path,
-        query: query,
-        headers: headers,
-        body: body,
-        authenticated: authenticated,
-      );
+  }) => _request(
+    method: 'PATCH',
+    path: path,
+    query: query,
+    headers: headers,
+    body: body,
+    authenticated: authenticated,
+  );
 
   Future<ApiResponse> post(
     String path, {
@@ -107,15 +104,14 @@ class ApiClient {
     Map<String, String>? headers,
     Map<String, Object?>? body,
     bool authenticated = true,
-  }) =>
-      _request(
-        method: 'POST',
-        path: path,
-        query: query,
-        headers: headers,
-        body: body,
-        authenticated: authenticated,
-      );
+  }) => _request(
+    method: 'POST',
+    path: path,
+    query: query,
+    headers: headers,
+    body: body,
+    authenticated: authenticated,
+  );
 
   Future<ApiResponse> delete(
     String path, {
@@ -123,15 +119,14 @@ class ApiClient {
     Map<String, String>? headers,
     Map<String, Object?>? body,
     bool authenticated = true,
-  }) =>
-      _request(
-        method: 'DELETE',
-        path: path,
-        query: query,
-        headers: headers,
-        body: body,
-        authenticated: authenticated,
-      );
+  }) => _request(
+    method: 'DELETE',
+    path: path,
+    query: query,
+    headers: headers,
+    body: body,
+    authenticated: authenticated,
+  );
 
   Future<ApiResponse> _request({
     required String method,
@@ -149,12 +144,15 @@ class ApiClient {
       );
     }
 
-    final Uri uri = _baseUri.resolve(path).replace(
+    final Uri uri = _baseUri
+        .resolve(path)
+        .replace(
           queryParameters: query == null || query.isEmpty ? null : query,
         );
     try {
-      final HttpClientRequest request =
-          await _httpClient.openUrl(method, uri).timeout(timeout);
+      final HttpClientRequest request = await _httpClient
+          .openUrl(method, uri)
+          .timeout(timeout);
       request.headers
         ..set(HttpHeaders.acceptHeader, 'application/json')
         ..set(HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8')
@@ -182,7 +180,9 @@ class ApiClient {
         request.write(jsonEncode(body));
       }
 
-      final HttpClientResponse response = await request.close().timeout(timeout);
+      final HttpClientResponse response = await request.close().timeout(
+        timeout,
+      );
       final String responseBody = await _readResponseBody(response);
       if (responseBody.trim().isEmpty) {
         throw ApiException(

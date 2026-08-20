@@ -10,8 +10,7 @@ class LiveVendorBoundaryPage extends StatefulWidget {
   final AppDependencies dependencies;
 
   @override
-  State<LiveVendorBoundaryPage> createState() =>
-      _LiveVendorBoundaryPageState();
+  State<LiveVendorBoundaryPage> createState() => _LiveVendorBoundaryPageState();
 }
 
 class _LiveVendorBoundaryPageState extends State<LiveVendorBoundaryPage> {
@@ -31,9 +30,10 @@ class _LiveVendorBoundaryPageState extends State<LiveVendorBoundaryPage> {
       _error = null;
     });
     try {
-      final VendorReadinessOverview overview =
-          await widget.dependencies.liveReadOnlyRepository
-              .fetchVendorReadiness();
+      final VendorReadinessOverview overview = await widget
+          .dependencies
+          .liveReadOnlyRepository
+          .fetchVendorReadiness();
       if (!mounted) {
         return;
       }
@@ -63,16 +63,13 @@ class _LiveVendorBoundaryPageState extends State<LiveVendorBoundaryPage> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
           children: <Widget>[
-            Text(
-              '厂商接入准备',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
+            Text('厂商接入准备', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 8),
             Text(
               '状态来自后端的脱敏接入清单。只有边界就绪不代表厂商能力已启用；缺少适配器或服务端密钥时必须返回 VENDOR_BLOCKED。',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
             ),
             const SizedBox(height: 18),
             if (_loading)
@@ -214,10 +211,7 @@ class _VendorCapabilityCard extends StatelessWidget {
               ),
               if (!runtimeReady) ...<Widget>[
                 const SizedBox(height: 10),
-                Text(
-                  '待补配置',
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
+                Text('待补配置', style: Theme.of(context).textTheme.labelLarge),
                 const SizedBox(height: 5),
                 for (final String item in readiness.missingConfiguration)
                   Padding(
@@ -231,9 +225,9 @@ class _VendorCapabilityCard extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 readiness.securityBoundary,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
               ),
             ],
           ),
@@ -292,10 +286,7 @@ class _SecurityBoundaryCard extends StatelessWidget {
 }
 
 class _VendorReadinessError extends StatelessWidget {
-  const _VendorReadinessError({
-    required this.message,
-    required this.onRetry,
-  });
+  const _VendorReadinessError({required this.message, required this.onRetry});
 
   final String message;
   final Future<void> Function() onRetry;
@@ -323,17 +314,17 @@ class _VendorReadinessError extends StatelessWidget {
 }
 
 String _capabilityLabel(String capability) => switch (capability) {
-      'SMS' => '短信',
-      'RTC' => '实时语音 RTC',
-      'IM' => '腾讯 IM',
-      'PAYMENT' => '支付',
-      _ => capability,
-    };
+  'SMS' => '短信',
+  'RTC' => '实时语音 RTC',
+  'IM' => '腾讯 IM',
+  'PAYMENT' => '支付',
+  _ => capability,
+};
 
 IconData _capabilityIcon(String capability) => switch (capability) {
-      'SMS' => Icons.sms_outlined,
-      'RTC' => Icons.graphic_eq_rounded,
-      'IM' => Icons.forum_outlined,
-      'PAYMENT' => Icons.payments_outlined,
-      _ => Icons.extension_outlined,
-    };
+  'SMS' => Icons.sms_outlined,
+  'RTC' => Icons.graphic_eq_rounded,
+  'IM' => Icons.forum_outlined,
+  'PAYMENT' => Icons.payments_outlined,
+  _ => Icons.extension_outlined,
+};

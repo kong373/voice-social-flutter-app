@@ -13,8 +13,7 @@ class LiveBackendReadinessPage extends StatefulWidget {
       _LiveBackendReadinessPageState();
 }
 
-class _LiveBackendReadinessPageState
-    extends State<LiveBackendReadinessPage> {
+class _LiveBackendReadinessPageState extends State<LiveBackendReadinessPage> {
   LiveBackendReadinessSnapshot? _snapshot;
   bool _busy = false;
 
@@ -44,13 +43,11 @@ class _LiveBackendReadinessPageState
     if (snapshot == null) {
       return;
     }
-    await Clipboard.setData(
-      ClipboardData(text: snapshot.toRedactedText()),
-    );
+    await Clipboard.setData(ClipboardData(text: snapshot.toRedactedText()));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已复制脱敏诊断摘要')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已复制脱敏诊断摘要')));
     }
   }
 
@@ -103,10 +100,7 @@ class _LiveBackendReadinessPageState
                     ? '已配置（值已隐藏）'
                     : '未配置',
               ),
-              const MapEntry<String, String>(
-                '移动端 Client Secret',
-                '未携带（正确）',
-              ),
+              const MapEntry<String, String>('移动端 Client Secret', '未携带（正确）'),
               MapEntry<String, String>(
                 '开发验证码回读',
                 environment['developmentOutboxConfigured'] == true
@@ -153,7 +147,8 @@ class _LiveBackendReadinessPageState
           const SizedBox(height: 10),
           const _NoticeCard(
             icon: Icons.extension_off_outlined,
-            text: '正式短信、RTC、腾讯 IM、微信支付、支付宝、Apple IAP、推送和对象存储在厂商配置完成前保持 VENDOR_BLOCKED。',
+            text:
+                '正式短信、RTC、腾讯 IM、微信支付、支付宝、Apple IAP、推送和对象存储在厂商配置完成前保持 VENDOR_BLOCKED。',
           ),
         ],
       ),
@@ -201,9 +196,7 @@ class _DetailsCard extends StatelessWidget {
 class _ResultCard extends StatelessWidget {
   const _ResultCard({required this.snapshot}) : loading = false;
 
-  const _ResultCard.loading()
-      : snapshot = null,
-        loading = true;
+  const _ResultCard.loading() : snapshot = null, loading = true;
 
   final LiveBackendReadinessSnapshot? snapshot;
   final bool loading;
@@ -288,26 +281,22 @@ class _NoticeCard extends StatelessWidget {
 }
 
 Color _statusColor(LiveBackendReadinessStatus status) => switch (status) {
-      LiveBackendReadinessStatus.gatewayReachable => AppColors.success,
-      LiveBackendReadinessStatus.mockMode => AppColors.accent,
-      LiveBackendReadinessStatus.configurationInvalid ||
-      LiveBackendReadinessStatus.tlsRejected =>
-        AppColors.error,
-      LiveBackendReadinessStatus.networkUnavailable ||
-      LiveBackendReadinessStatus.timedOut ||
-      LiveBackendReadinessStatus.unexpectedFailure =>
-        AppColors.warning,
-    };
+  LiveBackendReadinessStatus.gatewayReachable => AppColors.success,
+  LiveBackendReadinessStatus.mockMode => AppColors.accent,
+  LiveBackendReadinessStatus.configurationInvalid ||
+  LiveBackendReadinessStatus.tlsRejected => AppColors.error,
+  LiveBackendReadinessStatus.networkUnavailable ||
+  LiveBackendReadinessStatus.timedOut ||
+  LiveBackendReadinessStatus.unexpectedFailure => AppColors.warning,
+};
 
 IconData _statusIcon(LiveBackendReadinessStatus status) => switch (status) {
-      LiveBackendReadinessStatus.gatewayReachable => Icons.cloud_done_outlined,
-      LiveBackendReadinessStatus.mockMode => Icons.science_outlined,
-      LiveBackendReadinessStatus.configurationInvalid =>
-        Icons.settings_suggest_outlined,
-      LiveBackendReadinessStatus.tlsRejected => Icons.gpp_bad_outlined,
-      LiveBackendReadinessStatus.networkUnavailable =>
-        Icons.cloud_off_outlined,
-      LiveBackendReadinessStatus.timedOut => Icons.timer_off_outlined,
-      LiveBackendReadinessStatus.unexpectedFailure =>
-        Icons.error_outline_rounded,
-    };
+  LiveBackendReadinessStatus.gatewayReachable => Icons.cloud_done_outlined,
+  LiveBackendReadinessStatus.mockMode => Icons.science_outlined,
+  LiveBackendReadinessStatus.configurationInvalid =>
+    Icons.settings_suggest_outlined,
+  LiveBackendReadinessStatus.tlsRejected => Icons.gpp_bad_outlined,
+  LiveBackendReadinessStatus.networkUnavailable => Icons.cloud_off_outlined,
+  LiveBackendReadinessStatus.timedOut => Icons.timer_off_outlined,
+  LiveBackendReadinessStatus.unexpectedFailure => Icons.error_outline_rounded,
+};

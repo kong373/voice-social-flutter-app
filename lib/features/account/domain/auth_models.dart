@@ -40,19 +40,19 @@ class AuthSession {
       '${tokenType.isEmpty ? 'Bearer' : tokenType} $accessToken';
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'schema': 2,
-        'accessToken': accessToken,
-        'tokenType': tokenType,
-        'expiresAt': expiresAt.toUtc().toIso8601String(),
-        'refreshToken': refreshToken,
-        'refreshExpiresAt': refreshExpiresAt.toUtc().toIso8601String(),
-        'deviceId': deviceId,
-        'clientId': clientId,
-        'userId': userId,
-        'mobile': mobile,
-        'roles': roles,
-        'boundRoomId': boundRoomId,
-      };
+    'schema': 2,
+    'accessToken': accessToken,
+    'tokenType': tokenType,
+    'expiresAt': expiresAt.toUtc().toIso8601String(),
+    'refreshToken': refreshToken,
+    'refreshExpiresAt': refreshExpiresAt.toUtc().toIso8601String(),
+    'deviceId': deviceId,
+    'clientId': clientId,
+    'userId': userId,
+    'mobile': mobile,
+    'roles': roles,
+    'boundRoomId': boundRoomId,
+  };
 
   String encode() => jsonEncode(toJson());
 
@@ -62,8 +62,9 @@ class AuthSession {
       return null;
     }
     final String? accessToken = decoded['accessToken']?.toString();
-    final DateTime? expiresAt =
-        DateTime.tryParse(decoded['expiresAt']?.toString() ?? '');
+    final DateTime? expiresAt = DateTime.tryParse(
+      decoded['expiresAt']?.toString() ?? '',
+    );
     final int? userId = int.tryParse(decoded['userId']?.toString() ?? '');
     if (accessToken == null ||
         accessToken.isEmpty ||
@@ -72,9 +73,8 @@ class AuthSession {
       return null;
     }
     final String refreshToken = decoded['refreshToken']?.toString() ?? '';
-    final DateTime refreshExpiresAt = DateTime.tryParse(
-          decoded['refreshExpiresAt']?.toString() ?? '',
-        ) ??
+    final DateTime refreshExpiresAt =
+        DateTime.tryParse(decoded['refreshExpiresAt']?.toString() ?? '') ??
         expiresAt;
     return AuthSession(
       accessToken: accessToken,
@@ -111,11 +111,11 @@ class SmsChallenge {
   final String? developmentCode;
 
   SmsChallenge copyWith({String? developmentCode}) => SmsChallenge(
-        challengeId: challengeId,
-        expiresAt: expiresAt,
-        retryAfter: retryAfter,
-        developmentCode: developmentCode ?? this.developmentCode,
-      );
+    challengeId: challengeId,
+    expiresAt: expiresAt,
+    retryAfter: retryAfter,
+    developmentCode: developmentCode ?? this.developmentCode,
+  );
 }
 
 class ClientDevice {
@@ -142,10 +142,10 @@ class AuthOutcome {
   const AuthOutcome._({required this.type, this.session});
 
   const AuthOutcome.authenticated(AuthSession session)
-      : this._(type: AuthOutcomeType.authenticated, session: session);
+    : this._(type: AuthOutcomeType.authenticated, session: session);
 
   const AuthOutcome.registrationRequired()
-      : this._(type: AuthOutcomeType.registrationRequired);
+    : this._(type: AuthOutcomeType.registrationRequired);
 
   final AuthOutcomeType type;
   final AuthSession? session;
