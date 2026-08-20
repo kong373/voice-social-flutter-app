@@ -51,14 +51,8 @@ void main() {
         description: 'login page',
       );
 
-      final Finder phoneField = find.widgetWithText(
-        TextFormField,
-        '手机号码',
-      );
-      final Finder codeField = find.widgetWithText(
-        TextFormField,
-        '短信验证码',
-      );
+      final Finder phoneField = find.widgetWithText(TextFormField, '手机号码');
+      final Finder codeField = find.widgetWithText(TextFormField, '短信验证码');
       await tester.enterText(phoneField, '13800138000');
       await dismissQaImeAndWait(tester);
       await tester.ensureVisible(find.text('获取验证码'));
@@ -135,7 +129,8 @@ void main() {
       await tester.tap(find.byKey(const Key('live-room-880217')).hitTestable());
       await _waitFor(
         tester,
-        () => find.byType(RoomPage).evaluate().isNotEmpty &&
+        () =>
+            find.byType(RoomPage).evaluate().isNotEmpty &&
             find.textContaining('HTTP_SNAPSHOT_ONLY').evaluate().isNotEmpty,
         description: 'authoritative room snapshot',
       );
@@ -261,7 +256,8 @@ void main() {
       binding.reportData ??= <String, dynamic>{};
       binding.reportData!['m32Acceptance'] = <String, Object?>{
         'avd': qaAvdId,
-        'logicalViewport': '${_expectedWidth.toInt()}x${_expectedHeight.toInt()}',
+        'logicalViewport':
+            '${_expectedWidth.toInt()}x${_expectedHeight.toInt()}',
         'devicePixelRatio': _expectedDpr,
         'publicClientSecretPresent': false,
         'developmentOutboxSecretPresent': false,

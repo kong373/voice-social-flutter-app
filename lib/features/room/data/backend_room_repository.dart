@@ -14,9 +14,9 @@ class BackendRoomRepository implements RoomRepository {
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
     FixedEightSeatAdapter seatAdapter = const FixedEightSeatAdapter(),
-  })  : _apiClient = apiClient,
-        _routes = routes,
-        _seatAdapter = seatAdapter;
+  }) : _apiClient = apiClient,
+       _routes = routes,
+       _seatAdapter = seatAdapter;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
@@ -49,7 +49,8 @@ class BackendRoomRepository implements RoomRepository {
       query: <String, String>{'roomId': roomId},
     );
     final Map<String, Object?> data = _asMap(response.data);
-    final String resolvedRoomId = _nonEmptyString(data['roomIdStr']) ??
+    final String resolvedRoomId =
+        _nonEmptyString(data['roomIdStr']) ??
         _nonEmptyString(data['roomId']) ??
         _nonEmptyString(data['id']) ??
         '';
@@ -59,9 +60,7 @@ class BackendRoomRepository implements RoomRepository {
         message: '房间快照缺少房间 ID',
       );
     }
-    final int ownerId = _asInt(data['ownerId']) ??
-        _asInt(data['userId']) ??
-        0;
+    final int ownerId = _asInt(data['ownerId']) ?? _asInt(data['userId']) ?? 0;
     final List<BackendMicSeat> backendSeats = <BackendMicSeat>[
       for (final Object? raw in _asList(data['seats']))
         if (raw is Map<String, Object?>)
@@ -79,10 +78,12 @@ class BackendRoomRepository implements RoomRepository {
     return RoomSnapshot(
       roomId: resolvedRoomId,
       roomCode: _nonEmptyString(data['roomCode']) ?? resolvedRoomId,
-      title: _nonEmptyString(data['roomName']) ??
+      title:
+          _nonEmptyString(data['roomName']) ??
           _nonEmptyString(data['name']) ??
           '语音房',
-      topic: _nonEmptyString(data['topicContent']) ??
+      topic:
+          _nonEmptyString(data['topicContent']) ??
           _nonEmptyString(data['description']) ??
           '',
       ownerId: ownerId,
@@ -101,7 +102,8 @@ class BackendRoomRepository implements RoomRepository {
       giftCatalogAvailable: false,
       giftBalance: null,
       onlineCount: _asInt(data['onlineNum']) ?? _asInt(data['liveCount']),
-      coverUrl: _nonEmptyString(data['coverImgUrl']) ??
+      coverUrl:
+          _nonEmptyString(data['coverImgUrl']) ??
           _nonEmptyString(data['coverImage']),
     );
   }
@@ -139,10 +141,10 @@ class BackendRoomRepository implements RoomRepository {
   }) async => _vendorBlocked();
 
   Never _vendorBlocked() => throw const ApiException(
-        kind: ApiFailureKind.configuration,
-        code: 503,
-        message: 'VENDOR_BLOCKED：RTC、IM 与房间写入适配器尚未配置',
-      );
+    kind: ApiFailureKind.configuration,
+    code: 503,
+    message: 'VENDOR_BLOCKED：RTC、IM 与房间写入适配器尚未配置',
+  );
 
   static Map<String, Object?> _asMap(Object? value) =>
       value is Map<String, Object?> ? value : <String, Object?>{};

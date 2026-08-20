@@ -38,8 +38,10 @@ class _LiveHomePageState extends State<LiveHomePage> {
       });
     }
     try {
-      final List<DiscoveryRoom> rooms =
-          await widget.dependencies.discoveryRepository.fetchHomeRooms();
+      final List<DiscoveryRoom> rooms = await widget
+          .dependencies
+          .discoveryRepository
+          .fetchHomeRooms();
       if (!mounted) {
         return;
       }
@@ -92,9 +94,9 @@ class _LiveHomePageState extends State<LiveHomePage> {
             const SizedBox(height: 8),
             Text(
               '看看大家正在聊什么，找到喜欢的房间后可以先听一会儿。',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
             ),
             const SizedBox(height: 22),
             if (_loading)
@@ -191,7 +193,10 @@ class _LiveAccountPageState extends State<LiveAccountPage> {
 
   bool get _showDeveloperReadiness =>
       kDebugMode &&
-      widget.dependencies.environment.deploymentEnvironment
+      widget
+          .dependencies
+          .environment
+          .deploymentEnvironment
           .allowsDevelopmentTools;
 
   @override
@@ -208,8 +213,10 @@ class _LiveAccountPageState extends State<LiveAccountPage> {
       });
     }
     try {
-      final LiveReadOnlyOverview overview =
-          await widget.dependencies.liveReadOnlyRepository.fetchOverview();
+      final LiveReadOnlyOverview overview = await widget
+          .dependencies
+          .liveReadOnlyRepository
+          .fetchOverview();
       if (!mounted) {
         return;
       }
@@ -294,8 +301,7 @@ class _LiveAccountPageState extends State<LiveAccountPage> {
                   key: const Key('developer-vendor-readiness'),
                   onPressed: () => Navigator.of(context).push<void>(
                     MaterialPageRoute<void>(
-                      builder: (BuildContext context) =>
-                          LiveVendorBoundaryPage(
+                      builder: (BuildContext context) => LiveVendorBoundaryPage(
                         dependencies: widget.dependencies,
                       ),
                     ),
@@ -515,12 +521,12 @@ class _OrderTile extends StatelessWidget {
   }
 
   static String _statusLabel(String status) => switch (status) {
-        'SUCCEEDED' => '已完成',
-        'CONFIRMING' => '确认中',
-        'FAILED' => '失败',
-        'CANCELLED' => '已取消',
-        _ => '处理中',
-      };
+    'SUCCEEDED' => '已完成',
+    'CONFIRMING' => '确认中',
+    'FAILED' => '失败',
+    'CANCELLED' => '已取消',
+    _ => '处理中',
+  };
 }
 
 class _ProductStatePanel extends StatelessWidget {
@@ -563,10 +569,7 @@ class _ProductStatePanel extends StatelessWidget {
             ),
             if (actionLabel != null && onAction != null) ...<Widget>[
               const SizedBox(height: 16),
-              OutlinedButton(
-                onPressed: onAction,
-                child: Text(actionLabel!),
-              ),
+              OutlinedButton(onPressed: onAction, child: Text(actionLabel!)),
             ],
           ],
         ),

@@ -46,29 +46,28 @@ class _MainShellState extends State<MainShell> {
     ];
   }
 
-  static const List<BottomNavigationBarItem> _items =
-      <BottomNavigationBarItem>[
-        BottomNavigationBarItem(
-          icon: Icon(Icons.home_outlined),
-          activeIcon: Icon(Icons.home_rounded),
-          label: '首页',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.explore_outlined),
-          activeIcon: Icon(Icons.explore_rounded),
-          label: '发现',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.chat_bubble_outline_rounded),
-          activeIcon: Icon(Icons.chat_bubble_rounded),
-          label: '消息',
-        ),
-        BottomNavigationBarItem(
-          icon: Icon(Icons.person_outline_rounded),
-          activeIcon: Icon(Icons.person_rounded),
-          label: '我的',
-        ),
-      ];
+  static const List<BottomNavigationBarItem> _items = <BottomNavigationBarItem>[
+    BottomNavigationBarItem(
+      icon: Icon(Icons.home_outlined),
+      activeIcon: Icon(Icons.home_rounded),
+      label: '首页',
+    ),
+    BottomNavigationBarItem(
+      icon: Icon(Icons.explore_outlined),
+      activeIcon: Icon(Icons.explore_rounded),
+      label: '发现',
+    ),
+    BottomNavigationBarItem(
+      icon: Icon(Icons.chat_bubble_outline_rounded),
+      activeIcon: Icon(Icons.chat_bubble_rounded),
+      label: '消息',
+    ),
+    BottomNavigationBarItem(
+      icon: Icon(Icons.person_outline_rounded),
+      activeIcon: Icon(Icons.person_rounded),
+      label: '我的',
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {

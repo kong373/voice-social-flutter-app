@@ -44,8 +44,7 @@ void main() {
     );
     expect(probeResult, findsOneWidget);
 
-    final Finder businessBoundary =
-        find.textContaining('只代表网络传输链路已收到 HTTP 响应');
+    final Finder businessBoundary = find.textContaining('只代表网络传输链路已收到 HTTP 响应');
     await tester.scrollUntilVisible(
       businessBoundary,
       240,

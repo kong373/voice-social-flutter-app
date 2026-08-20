@@ -40,8 +40,10 @@ class _LiveProductHomePageState extends State<LiveProductHomePage> {
       _error = null;
     });
     try {
-      final List<DiscoveryRoom> rooms =
-          await widget.dependencies.discoveryRepository.fetchHomeRooms();
+      final List<DiscoveryRoom> rooms = await widget
+          .dependencies
+          .discoveryRepository
+          .fetchHomeRooms();
       if (!mounted) {
         return;
       }
@@ -124,8 +126,8 @@ class _LiveProductHomePageState extends State<LiveProductHomePage> {
               Text(
                 '点击房间即可查看当前话题、在线人数和固定 8 个麦位。',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
+                  color: AppColors.textSecondary,
+                ),
               ),
               const SizedBox(height: 18),
               if (_loading)
@@ -242,8 +244,10 @@ class _LiveReadOnlyAccountPageState extends State<LiveReadOnlyAccountPage> {
       _error = null;
     });
     try {
-      final LiveReadOnlyOverview overview =
-          await widget.dependencies.liveReadOnlyRepository.fetchOverview();
+      final LiveReadOnlyOverview overview = await widget
+          .dependencies
+          .liveReadOnlyRepository
+          .fetchOverview();
       if (!mounted) {
         return;
       }
@@ -281,9 +285,7 @@ class _LiveReadOnlyAccountPageState extends State<LiveReadOnlyAccountPage> {
       MaterialPageRoute<void>(
         builder: (BuildContext context) => Scaffold(
           appBar: AppBar(title: const Text('开发环境接入诊断')),
-          body: LiveVendorBoundaryPage(
-            dependencies: widget.dependencies,
-          ),
+          body: LiveVendorBoundaryPage(dependencies: widget.dependencies),
         ),
       ),
     );
@@ -547,8 +549,14 @@ class _WalletCard extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: <Widget>[
             _Metric(label: '礼物币', value: '${wallet.giftCoinBalance}'),
-            _Metric(label: '现金余额', value: wallet.cashBalance.toStringAsFixed(2)),
-            _Metric(label: '冻结金额', value: wallet.frozenBalance.toStringAsFixed(2)),
+            _Metric(
+              label: '现金余额',
+              value: wallet.cashBalance.toStringAsFixed(2),
+            ),
+            _Metric(
+              label: '冻结金额',
+              value: wallet.frozenBalance.toStringAsFixed(2),
+            ),
           ],
         ),
       ),
@@ -592,12 +600,12 @@ class _OrderTile extends StatelessWidget {
 }
 
 String _statusLabel(String status) => switch (status) {
-      'SUCCEEDED' => '支付成功',
-      'CONFIRMING' => '确认中',
-      'FAILED' => '支付失败',
-      'CANCELLED' => '已取消',
-      _ => '状态更新中',
-    };
+  'SUCCEEDED' => '支付成功',
+  'CONFIRMING' => '确认中',
+  'FAILED' => '支付失败',
+  'CANCELLED' => '已取消',
+  _ => '状态更新中',
+};
 
 String _maskMobile(String mobile) {
   if (mobile.contains('*')) {

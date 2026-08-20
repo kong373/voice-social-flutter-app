@@ -50,8 +50,9 @@ void main() {
   });
 
   test('expired access token is refreshed during startup', () async {
-    final AuthSessionManager sessionManager =
-        AuthSessionManager(MemoryKeyValueStore());
+    final AuthSessionManager sessionManager = AuthSessionManager(
+      MemoryKeyValueStore(),
+    );
     await sessionManager.acceptConsent();
     await sessionManager.save(
       AuthSession(
@@ -83,8 +84,9 @@ void main() {
   });
 
   test('unregistered phone enters profile completion and registers', () async {
-    final AuthSessionManager sessionManager =
-        AuthSessionManager(MemoryKeyValueStore());
+    final AuthSessionManager sessionManager = AuthSessionManager(
+      MemoryKeyValueStore(),
+    );
     final AuthController controller = AuthController(
       repository: const MockAuthRepository(),
       sessionManager: sessionManager,
@@ -96,10 +98,7 @@ void main() {
     addTearDown(controller.dispose);
 
     await controller.acceptConsent();
-    await controller.signInWithSms(
-      phone: '13900000000',
-      smsCode: '123456',
-    );
+    await controller.signInWithSms(phone: '13900000000', smsCode: '123456');
     expect(controller.stage, AuthFlowStage.registrationRequired);
 
     final bool registered = await controller.completeRegistration(
