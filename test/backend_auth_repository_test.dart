@@ -59,7 +59,6 @@ void main() {
         clientInnerVersion: '6',
         oauthClientId: 'voice-social-mobile-public',
         realtimeEndpoint: '',
-        developmentOutboxKey: 'development-outbox-key',
         deploymentEnvironment: DeploymentEnvironment.development,
         allowInsecureHttp: true,
       );
@@ -87,10 +86,7 @@ void main() {
         device: device,
       );
       expect(challenge.challengeId, 'challenge-1');
-      expect(
-        await repository.readDevelopmentSmsCode(challenge.challengeId),
-        '123456',
-      );
+      expect(challenge.developmentCode, '123456');
 
       final AuthOutcome outcome = await repository.signInWithSms(
         phone: '13800138000',
@@ -110,9 +106,15 @@ void main() {
       activeSession = refreshed;
       await repository.logout(refreshed);
 
-      expect(captured, hasLength(5));
+      expect(captured, hasLength(4));
       expect(
         captured.map((Map<String, Object?> item) => item['clientSecretHeader']),
+        everyElement(isNull),
+      );
+      expect(
+        captured.map(
+          (Map<String, Object?> item) => item['developmentOutboxKey'],
+        ),
         everyElement(isNull),
       );
       final String serialized = jsonEncode(captured);
@@ -124,12 +126,7 @@ void main() {
       expect(send['deviceId'], 'install-device-1');
       expect(send['authorization'], isNull);
 
-      final Map<String, Object?> outbox = captured[1];
-      expect(outbox['developmentClientId'], 'voice-social-mobile-public');
-      expect(outbox['developmentOutboxKey'], 'development-outbox-key');
-      expect(outbox['authorization'], isNull);
-
-      final Map<String, Object?> login = captured[2];
+      final Map<String, Object?> login = captured[1];
       expect(login['authorization'], isNull);
       final Map<String, Object?> loginBody = Map<String, Object?>.from(
         login['body']! as Map,
@@ -137,11 +134,11 @@ void main() {
       expect(loginBody['clientId'], 'voice-social-mobile-public');
       expect(loginBody, isNot(contains('clientSecret')));
 
-      final Map<String, Object?> refresh = captured[3];
+      final Map<String, Object?> refresh = captured[2];
       expect(refresh['authorization'], isNull);
       expect(refresh['clientId'], 'voice-social-mobile-public');
 
-      final Map<String, Object?> logout = captured[4];
+      final Map<String, Object?> logout = captured[3];
       expect(logout['authorization'], 'Bearer access-2');
     },
   );
@@ -152,10 +149,7 @@ Object? _authResponseFor(String path) => switch (path) {
     'challengeId': 'challenge-1',
     'expiresIn': 300,
     'retryAfter': 60,
-  },
-  '/internal/development/sms-outbox/challenge-1' => <String, Object?>{
-    'challengeId': 'challenge-1',
-    'code': '123456',
+    'developmentCode': '123456',
   },
   '/app-register-api/userAccount/v1/loginByMobileAndSmsCode' => _token(
     'access-1',
