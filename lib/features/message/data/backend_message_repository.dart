@@ -9,9 +9,9 @@ class BackendMessageRepository implements MessageRepository {
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
     required int Function() currentUserIdProvider,
-  })  : _apiClient = apiClient,
-        _routes = routes,
-        _currentUserIdProvider = currentUserIdProvider;
+  }) : _apiClient = apiClient,
+       _routes = routes,
+       _currentUserIdProvider = currentUserIdProvider;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
@@ -64,12 +64,16 @@ class BackendMessageRepository implements MessageRepository {
       },
     );
     return _extractList(response.data)
-        .map((Map<String, Object?> item) =>
-            _chatMessageFromMap(conversation, item))
+        .map(
+          (Map<String, Object?> item) =>
+              _chatMessageFromMap(conversation, item),
+        )
         .where((ChatMessage item) => item.id.isNotEmpty)
         .toList(growable: false)
-      ..sort((ChatMessage left, ChatMessage right) =>
-          left.createdAt.compareTo(right.createdAt));
+      ..sort(
+        (ChatMessage left, ChatMessage right) =>
+            left.createdAt.compareTo(right.createdAt),
+      );
   }
 
   @override
@@ -94,12 +98,15 @@ class BackendMessageRepository implements MessageRepository {
       _routes.dynamicNotifications,
       body: const <String, Object?>{'pageNum': 1, 'pageSize': 100},
     );
-    final List<AppNotification> notifications = _extractList(response.data)
-        .map(_interactionNotificationFromMap)
-        .where((AppNotification item) => item.id.isNotEmpty)
-        .toList(growable: false)
-      ..sort((AppNotification left, AppNotification right) =>
-          right.createdAt.compareTo(left.createdAt));
+    final List<AppNotification> notifications =
+        _extractList(response.data)
+            .map(_interactionNotificationFromMap)
+            .where((AppNotification item) => item.id.isNotEmpty)
+            .toList(growable: false)
+          ..sort(
+            (AppNotification left, AppNotification right) =>
+                right.createdAt.compareTo(left.createdAt),
+          );
     for (final AppNotification item in notifications) {
       _notificationCache[item.id] = item;
     }
@@ -135,10 +142,7 @@ class BackendMessageRepository implements MessageRepository {
       id: notificationId,
       category: NotificationCategory.system,
       title: _string(data['title'], fallback: '系统通知'),
-      summary: _string(
-        data['summary'] ?? data['content'],
-        fallback: '查看通知详情',
-      ),
+      summary: _string(data['summary'] ?? data['content'], fallback: '查看通知详情'),
       details: _string(data['content'] ?? data['details']),
       createdAt: _asDateTime(data['createTime'] ?? data['createdAt']),
       unread: false,
@@ -191,9 +195,8 @@ class BackendMessageRepository implements MessageRepository {
     ConversationSummary conversation,
     Map<String, Object?> item,
   ) {
-    final int senderId = _asInt(
-          item['senderUserId'] ?? item['fromUserId'] ?? item['userId'],
-        ) ??
+    final int senderId =
+        _asInt(item['senderUserId'] ?? item['fromUserId'] ?? item['userId']) ??
         0;
     final int currentUserId = _currentUserIdProvider();
     final bool mine = senderId == currentUserId || _asBool(item['isMine']);
@@ -229,7 +232,8 @@ class BackendMessageRepository implements MessageRepository {
     final bool targetAvailable = dynamicId.isNotEmpty;
     return AppNotification(
       id: _string(
-        item['id'] ?? item['commentId'] ??
+        item['id'] ??
+            item['commentId'] ??
             'dynamic-$dynamicId-${item['createDate'] ?? ''}',
       ),
       category: NotificationCategory.interaction,
@@ -239,9 +243,7 @@ class BackendMessageRepository implements MessageRepository {
             item['dynamicContent'] ??
             item['publishNickName'],
       ),
-      details: _string(
-        item['commentContent'] ?? item['dynamicContent'],
-      ),
+      details: _string(item['commentContent'] ?? item['dynamicContent']),
       createdAt: _asDateTime(item['createDate'] ?? item['createTime']),
       unread: _asBool(item['isRedPoint'] ?? 1),
       targetType: NotificationTargetType.dynamicPost,
@@ -272,7 +274,8 @@ class BackendMessageRepository implements MessageRepository {
 
   static List<Map<String, Object?>> _extractList(Object? value) {
     final Map<String, Object?> map = _asMap(value);
-    final Object? source = map['records'] ??
+    final Object? source =
+        map['records'] ??
         map['list'] ??
         map['rows'] ??
         map['items'] ??
@@ -290,10 +293,12 @@ class BackendMessageRepository implements MessageRepository {
     final String text = value?.toString().trim() ?? '';
     return text.isEmpty ? fallback : text;
   }
+
   static String? _optionalString(Object? value) {
     final String text = value?.toString().trim() ?? '';
     return text.isEmpty ? null : text;
   }
+
   static int? _asInt(Object? value) =>
       value is int ? value : int.tryParse(value?.toString() ?? '');
   static bool _asBool(Object? value) =>

@@ -4,10 +4,10 @@ enum PaymentChannelType { wechat, alipay, appleIap }
 
 extension PaymentChannelLabel on PaymentChannelType {
   String get label => switch (this) {
-        PaymentChannelType.wechat => '微信支付',
-        PaymentChannelType.alipay => '支付宝',
-        PaymentChannelType.appleIap => 'Apple IAP',
-      };
+    PaymentChannelType.wechat => '微信支付',
+    PaymentChannelType.alipay => '支付宝',
+    PaymentChannelType.appleIap => 'Apple IAP',
+  };
 }
 
 enum RechargeOrderState {
@@ -22,14 +22,14 @@ enum RechargeOrderState {
 
 extension RechargeOrderStateLabel on RechargeOrderState {
   String get label => switch (this) {
-        RechargeOrderState.created => '订单已创建',
-        RechargeOrderState.invoking => '正在调起支付',
-        RechargeOrderState.confirming => '服务端确认中',
-        RechargeOrderState.succeeded => '充值成功',
-        RechargeOrderState.failed => '充值失败',
-        RechargeOrderState.canceled => '已取消',
-        RechargeOrderState.unavailable => '暂不可用',
-      };
+    RechargeOrderState.created => '订单已创建',
+    RechargeOrderState.invoking => '正在调起支付',
+    RechargeOrderState.confirming => '服务端确认中',
+    RechargeOrderState.succeeded => '充值成功',
+    RechargeOrderState.failed => '充值失败',
+    RechargeOrderState.canceled => '已取消',
+    RechargeOrderState.unavailable => '暂不可用',
+  };
 }
 
 class RechargeProduct {
@@ -55,10 +55,7 @@ class RechargeProduct {
 }
 
 class RechargeEligibility {
-  const RechargeEligibility({
-    required this.allowed,
-    required this.message,
-  });
+  const RechargeEligibility({required this.allowed, required this.message});
 
   final bool allowed;
   final String message;
@@ -83,10 +80,7 @@ class RechargeOrder {
   final DateTime createdAt;
   final String message;
 
-  RechargeOrder copyWith({
-    RechargeOrderState? state,
-    String? message,
-  }) {
+  RechargeOrder copyWith({RechargeOrderState? state, String? message}) {
     return RechargeOrder(
       orderNo: orderNo,
       account: account,
@@ -103,10 +97,10 @@ enum GiftCatalogCategory { popular, companionship, celebration }
 
 extension GiftCatalogCategoryLabel on GiftCatalogCategory {
   String get label => switch (this) {
-        GiftCatalogCategory.popular => '热门',
-        GiftCatalogCategory.companionship => '陪伴',
-        GiftCatalogCategory.celebration => '庆祝',
-      };
+    GiftCatalogCategory.popular => '热门',
+    GiftCatalogCategory.companionship => '陪伴',
+    GiftCatalogCategory.celebration => '庆祝',
+  };
 }
 
 class GiftCatalogItem {
@@ -141,22 +135,16 @@ class BackpackGiftItem {
   final DateTime? expiresAt;
 }
 
-enum DecorationKind {
-  avatarFrame,
-  entrance,
-  nickname,
-  voiceWave,
-  profileCard,
-}
+enum DecorationKind { avatarFrame, entrance, nickname, voiceWave, profileCard }
 
 extension DecorationKindLabel on DecorationKind {
   String get label => switch (this) {
-        DecorationKind.avatarFrame => '头像框',
-        DecorationKind.entrance => '进场装扮',
-        DecorationKind.nickname => '昵称装扮',
-        DecorationKind.voiceWave => '声波装扮',
-        DecorationKind.profileCard => '资料卡装扮',
-      };
+    DecorationKind.avatarFrame => '头像框',
+    DecorationKind.entrance => '进场装扮',
+    DecorationKind.nickname => '昵称装扮',
+    DecorationKind.voiceWave => '声波装扮',
+    DecorationKind.profileCard => '资料卡装扮',
+  };
 }
 
 class DecorationItem {
@@ -180,11 +168,7 @@ class DecorationItem {
   final String? assetUrl;
   final DateTime? expiresAt;
 
-  DecorationItem copyWith({
-    bool? owned,
-    bool? equipped,
-    DateTime? expiresAt,
-  }) {
+  DecorationItem copyWith({bool? owned, bool? equipped, DateTime? expiresAt}) {
     return DecorationItem(
       id: id,
       name: name,

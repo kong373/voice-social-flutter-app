@@ -33,8 +33,8 @@ class _MicSeatTile extends StatelessWidget {
     final Color ringColor = seat.isSpeaking
         ? AppColors.success
         : occupied
-            ? AppColors.primary
-            : Colors.white.withValues(alpha: 0.16);
+        ? AppColors.primary
+        : Colors.white.withValues(alpha: 0.16);
     final IconData stateIcon = switch (seat.state) {
       MicSeatState.locked => Icons.lock_rounded,
       MicSeatState.mutedAvailable => Icons.mic_off_rounded,
@@ -71,9 +71,7 @@ class _MicSeatTile extends StatelessWidget {
             ),
             child: Icon(
               occupied ? Icons.person_rounded : stateIcon,
-              color: occupied
-                  ? AppColors.textPrimary
-                  : AppColors.textSecondary,
+              color: occupied ? AppColors.textPrimary : AppColors.textSecondary,
             ),
           ),
           const SizedBox(height: 7),
@@ -81,9 +79,9 @@ class _MicSeatTile extends StatelessWidget {
             seat.userName ?? '${seat.number} 号麦',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: AppColors.textPrimary,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.textPrimary),
           ),
           const SizedBox(height: 2),
           Icon(stateIcon, size: 14, color: AppColors.textSecondary),
@@ -132,9 +130,7 @@ class _RoomAction extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: enabled ? 0.08 : 0.04),
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.06),
-                ),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
               ),
               child: Icon(
                 icon,
@@ -146,10 +142,10 @@ class _RoomAction extends StatelessWidget {
             Text(
               label,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: enabled
-                        ? AppColors.textPrimary
-                        : AppColors.textSecondary,
-                  ),
+                color: enabled
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary,
+              ),
             ),
           ],
         ),
@@ -258,8 +254,8 @@ class _RemoteExitOverlay extends StatelessWidget {
                 message,
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
+                  color: AppColors.textSecondary,
+                ),
               ),
               const SizedBox(height: 20),
               SizedBox(

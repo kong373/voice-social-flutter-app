@@ -10,7 +10,7 @@ abstract interface class KeyValueStore {
 
 class MemoryKeyValueStore implements KeyValueStore {
   MemoryKeyValueStore([Map<String, String>? initialValues])
-      : _values = Map<String, String>.of(initialValues ?? <String, String>{});
+    : _values = Map<String, String>.of(initialValues ?? <String, String>{});
 
   final Map<String, String> _values;
 
@@ -30,7 +30,7 @@ class MemoryKeyValueStore implements KeyValueStore {
 
 class SecureKeyValueStore implements KeyValueStore {
   SecureKeyValueStore({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage();
+    : _storage = storage ?? const FlutterSecureStorage();
 
   final FlutterSecureStorage _storage;
 

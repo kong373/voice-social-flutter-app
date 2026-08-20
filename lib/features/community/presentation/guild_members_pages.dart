@@ -21,9 +21,9 @@ class _GuildMembersEntryPageState extends State<GuildMembersEntryPage> {
 
   Future<void> _load() async {
     try {
-      final GuildHomeSnapshot value = await AppDependencyScope.of(context)
-          .communityRepository
-          .fetchGuildHome();
+      final GuildHomeSnapshot value = await AppDependencyScope.of(
+        context,
+      ).communityRepository.fetchGuildHome();
       if (mounted) {
         setState(() => _snapshot = value);
       }
@@ -42,31 +42,33 @@ class _GuildMembersEntryPageState extends State<GuildMembersEntryPage> {
       body: _error != null
           ? _StateError(message: _error!, onRetry: _load)
           : _snapshot == null
-              ? const Center(child: CircularProgressIndicator())
-              : guild == null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(28),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            const Icon(Icons.group_off_outlined, size: 46),
-                            const SizedBox(height: 14),
-                            const Text('尚未加入公会'),
-                            const SizedBox(height: 14),
-                            FilledButton(
-                              onPressed: () => Navigator.of(context).pushReplacement<void, void>(
-                                MaterialPageRoute<void>(
-                                  builder: (BuildContext context) => const GuildHomePage(),
-                                ),
-                              ),
-                              child: const Text('浏览公会'),
+          ? const Center(child: CircularProgressIndicator())
+          : guild == null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    const Icon(Icons.group_off_outlined, size: 46),
+                    const SizedBox(height: 14),
+                    const Text('尚未加入公会'),
+                    const SizedBox(height: 14),
+                    FilledButton(
+                      onPressed: () =>
+                          Navigator.of(context).pushReplacement<void, void>(
+                            MaterialPageRoute<void>(
+                              builder: (BuildContext context) =>
+                                  const GuildHomePage(),
                             ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : GuildMembersPage(guildId: guild.id, embedded: true),
+                          ),
+                      child: const Text('浏览公会'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : GuildMembersPage(guildId: guild.id, embedded: true),
     );
   }
 }
@@ -112,8 +114,9 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
     });
     try {
       final GuildSummary guild = await _repository.fetchGuild(widget.guildId);
-      final List<GuildMember> members =
-          await _repository.fetchGuildMembers(widget.guildId);
+      final List<GuildMember> members = await _repository.fetchGuildMembers(
+        widget.guildId,
+      );
       List<GuildApplication> applications = const <GuildApplication>[];
       if (guild.role.canManage) {
         applications = await _repository.fetchGuildApplications(widget.guildId);
@@ -153,9 +156,9 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -196,167 +199,179 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
     final Widget body = _loading
         ? const Center(child: CircularProgressIndicator())
         : _error != null
-            ? _StateError(message: _error!, onRetry: _load)
-            : RefreshIndicator(
-                onRefresh: _load,
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-                  children: <Widget>[
-                    if (canManage)
-                      SegmentedButton<int>(
-                        showSelectedIcon: false,
-                        segments: <ButtonSegment<int>>[
-                          const ButtonSegment<int>(value: 0, label: Text('成员')),
-                          ButtonSegment<int>(
-                            value: 1,
-                            label: Text('申请 ${_applications.length}'),
-                          ),
-                        ],
-                        selected: <int>{_tab},
-                        onSelectionChanged: (Set<int> value) =>
-                            setState(() => _tab = value.first),
+        ? _StateError(message: _error!, onRetry: _load)
+        : RefreshIndicator(
+            onRefresh: _load,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+              children: <Widget>[
+                if (canManage)
+                  SegmentedButton<int>(
+                    showSelectedIcon: false,
+                    segments: <ButtonSegment<int>>[
+                      const ButtonSegment<int>(value: 0, label: Text('成员')),
+                      ButtonSegment<int>(
+                        value: 1,
+                        label: Text('申请 ${_applications.length}'),
                       ),
-                    const SizedBox(height: 12),
-                    if (_tab == 0)
-                      if (_members.isEmpty)
-                        const _InfoCard(
-                          icon: Icons.group_off_outlined,
-                          text: '当前没有公会成员。',
-                        )
-                      else
-                        for (final GuildMember member in _members)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Material(
-                              color: AppColors.surface,
+                    ],
+                    selected: <int>{_tab},
+                    onSelectionChanged: (Set<int> value) =>
+                        setState(() => _tab = value.first),
+                  ),
+                const SizedBox(height: 12),
+                if (_tab == 0)
+                  if (_members.isEmpty)
+                    const _InfoCard(
+                      icon: Icons.group_off_outlined,
+                      text: '当前没有公会成员。',
+                    )
+                  else
+                    for (final GuildMember member in _members)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Material(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(18),
+                          child: ListTile(
+                            shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(18),
-                              child: ListTile(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(18),
-                                ),
-                                leading: CircleAvatar(
-                                  child: Text(_initial(member.nickname)),
-                                ),
-                                title: Row(
-                                  children: <Widget>[
-                                    Expanded(child: Text(member.nickname)),
-                                    _SmallTag(label: member.role.label),
-                                    if (member.isMuted) ...<Widget>[
-                                      const SizedBox(width: 5),
-                                      const _SmallTag(label: '已禁言'),
-                                    ],
-                                  ],
-                                ),
-                                subtitle: Text(
-                                  member.roomId == null
-                                      ? (member.isSigned ? '今日已签到' : '当前未在公会房')
-                                      : '正在公会房间 ${member.roomId}',
-                                ),
-                                trailing: _busyId == member.recordId
-                                    ? const SizedBox.square(
-                                        dimension: 20,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
-                                      )
-                                    : canManage && member.role != GuildRole.owner
-                                        ? PopupMenuButton<String>(
-                                            onSelected: (String value) {
-                                              if (value == 'mute') {
-                                                _operate(
-                                                  member.recordId,
-                                                  () => _repository.setGuildMemberMuted(
-                                                    memberRecordId: member.recordId,
-                                                    muted: !member.isMuted,
-                                                  ),
-                                                );
-                                              } else {
-                                                _remove(member);
-                                              }
-                                            },
-                                            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                                              PopupMenuItem<String>(
-                                                value: 'mute',
-                                                child: Text(member.isMuted ? '解除禁言' : '禁言成员'),
-                                              ),
-                                              const PopupMenuItem<String>(
-                                                value: 'remove',
-                                                child: Text('移出公会'),
-                                              ),
-                                            ],
-                                          )
-                                        : null,
-                                onTap: member.userId > 0
-                                    ? () => Navigator.of(context).push<void>(
-                                          MaterialPageRoute<void>(
-                                            builder: (BuildContext context) =>
-                                                PublicProfilePage(userId: member.userId),
-                                          ),
-                                        )
-                                    : null,
-                              ),
                             ),
-                          )
-                    else if (_applications.isEmpty)
-                      const _InfoCard(
-                        icon: Icons.mark_email_read_outlined,
-                        text: '当前没有待处理的入会申请。',
+                            leading: CircleAvatar(
+                              child: Text(_initial(member.nickname)),
+                            ),
+                            title: Row(
+                              children: <Widget>[
+                                Expanded(child: Text(member.nickname)),
+                                _SmallTag(label: member.role.label),
+                                if (member.isMuted) ...<Widget>[
+                                  const SizedBox(width: 5),
+                                  const _SmallTag(label: '已禁言'),
+                                ],
+                              ],
+                            ),
+                            subtitle: Text(
+                              member.roomId == null
+                                  ? (member.isSigned ? '今日已签到' : '当前未在公会房')
+                                  : '正在公会房间 ${member.roomId}',
+                            ),
+                            trailing: _busyId == member.recordId
+                                ? const SizedBox.square(
+                                    dimension: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : canManage && member.role != GuildRole.owner
+                                ? PopupMenuButton<String>(
+                                    onSelected: (String value) {
+                                      if (value == 'mute') {
+                                        _operate(
+                                          member.recordId,
+                                          () => _repository.setGuildMemberMuted(
+                                            memberRecordId: member.recordId,
+                                            muted: !member.isMuted,
+                                          ),
+                                        );
+                                      } else {
+                                        _remove(member);
+                                      }
+                                    },
+                                    itemBuilder: (BuildContext context) =>
+                                        <PopupMenuEntry<String>>[
+                                          PopupMenuItem<String>(
+                                            value: 'mute',
+                                            child: Text(
+                                              member.isMuted ? '解除禁言' : '禁言成员',
+                                            ),
+                                          ),
+                                          const PopupMenuItem<String>(
+                                            value: 'remove',
+                                            child: Text('移出公会'),
+                                          ),
+                                        ],
+                                  )
+                                : null,
+                            onTap: member.userId > 0
+                                ? () => Navigator.of(context).push<void>(
+                                    MaterialPageRoute<void>(
+                                      builder: (BuildContext context) =>
+                                          PublicProfilePage(
+                                            userId: member.userId,
+                                          ),
+                                    ),
+                                  )
+                                : null,
+                          ),
+                        ),
                       )
-                    else
-                      for (final GuildApplication application in _applications)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Material(
-                            color: AppColors.surface,
+                else if (_applications.isEmpty)
+                  const _InfoCard(
+                    icon: Icons.mark_email_read_outlined,
+                    text: '当前没有待处理的入会申请。',
+                  )
+                else
+                  for (final GuildApplication application in _applications)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Material(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(18),
+                        child: ListTile(
+                          shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(18),
-                            child: ListTile(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(18),
-                              ),
-                              leading: CircleAvatar(
-                                child: Text(_initial(application.nickname)),
-                              ),
-                              title: Text(application.nickname),
-                              subtitle: Text(
-                                <String>[
-                                  application.appliedAt,
-                                  if (application.message.isNotEmpty) application.message,
-                                ].join(' · '),
-                              ),
-                              trailing: _busyId == application.id
-                                  ? const SizedBox.square(
-                                      dimension: 20,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                  : Wrap(
-                                      spacing: 4,
-                                      children: <Widget>[
-                                        TextButton(
-                                          onPressed: () => _operate(
-                                            application.id,
-                                            () => _repository.resolveGuildApplication(
+                          ),
+                          leading: CircleAvatar(
+                            child: Text(_initial(application.nickname)),
+                          ),
+                          title: Text(application.nickname),
+                          subtitle: Text(
+                            <String>[
+                              application.appliedAt,
+                              if (application.message.isNotEmpty)
+                                application.message,
+                            ].join(' · '),
+                          ),
+                          trailing: _busyId == application.id
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Wrap(
+                                  spacing: 4,
+                                  children: <Widget>[
+                                    TextButton(
+                                      onPressed: () => _operate(
+                                        application.id,
+                                        () =>
+                                            _repository.resolveGuildApplication(
                                               applicationId: application.id,
                                               accepted: false,
                                             ),
-                                          ),
-                                          child: const Text('拒绝'),
-                                        ),
-                                        FilledButton.tonal(
-                                          onPressed: () => _operate(
-                                            application.id,
-                                            () => _repository.resolveGuildApplication(
+                                      ),
+                                      child: const Text('拒绝'),
+                                    ),
+                                    FilledButton.tonal(
+                                      onPressed: () => _operate(
+                                        application.id,
+                                        () =>
+                                            _repository.resolveGuildApplication(
                                               applicationId: application.id,
                                               accepted: true,
                                             ),
-                                          ),
-                                          child: const Text('通过'),
-                                        ),
-                                      ],
+                                      ),
+                                      child: const Text('通过'),
                                     ),
-                            ),
-                          ),
+                                  ],
+                                ),
                         ),
-                  ],
-                ),
-              );
+                      ),
+                    ),
+              ],
+            ),
+          );
     return widget.embedded
         ? body
         : Scaffold(

@@ -35,21 +35,21 @@ void main() {
     expect(find.text('动态详情'), findsOneWidget);
   });
 
-  testWidgets('DS-006 validates text content and keeps image capability explicit', (
-    WidgetTester tester,
-  ) async {
-    await pumpScoped(tester, const PublishDynamicPage());
-    expect(find.text('发布动态'), findsWidgets);
-    expect(find.textContaining('图片对象存储尚未接入'), findsOneWidget);
+  testWidgets(
+    'DS-006 validates text content and keeps image capability explicit',
+    (WidgetTester tester) async {
+      await pumpScoped(tester, const PublishDynamicPage());
+      expect(find.text('发布动态'), findsWidgets);
+      expect(find.textContaining('图片对象存储尚未接入'), findsOneWidget);
 
-    final Finder publishButton =
-        find.widgetWithText(FilledButton, '发布动态');
-    expect(publishButton, findsOneWidget);
-    await tester.ensureVisible(publishButton);
-    await tester.tap(publishButton);
-    await tester.pumpAndSettle();
-    expect(find.text('请输入动态内容'), findsOneWidget);
-  });
+      final Finder publishButton = find.widgetWithText(FilledButton, '发布动态');
+      expect(publishButton, findsOneWidget);
+      await tester.ensureVisible(publishButton);
+      await tester.tap(publishButton);
+      await tester.pumpAndSettle();
+      expect(find.text('请输入动态内容'), findsOneWidget);
+    },
+  );
 
   testWidgets('DS-007 exposes user and room ranking boards', (
     WidgetTester tester,
@@ -79,29 +79,30 @@ void main() {
     }
   });
 
-  testWidgets('guild, CP, guardian, task, and activity pages render business state', (
-    WidgetTester tester,
-  ) async {
-    await pumpScoped(tester, const GuildHomePage());
-    expect(find.text('晚风陪伴社'), findsOneWidget);
+  testWidgets(
+    'guild, CP, guardian, task, and activity pages render business state',
+    (WidgetTester tester) async {
+      await pumpScoped(tester, const GuildHomePage());
+      expect(find.text('晚风陪伴社'), findsOneWidget);
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await pumpScoped(tester, const CpRelationPage());
-    expect(find.text('当前关系'), findsOneWidget);
-    expect(find.text('林深'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpScoped(tester, const CpRelationPage());
+      expect(find.text('当前关系'), findsOneWidget);
+      expect(find.text('林深'), findsOneWidget);
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await pumpScoped(tester, const GuardianFanPage());
-    expect(find.text('晚星'), findsOneWidget);
-    expect(find.text('守护档位'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpScoped(tester, const GuardianFanPage());
+      expect(find.text('晚星'), findsOneWidget);
+      expect(find.text('守护档位'), findsOneWidget);
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await pumpScoped(tester, const TaskCheckInPage());
-    expect(find.textContaining('连续签到'), findsOneWidget);
-    expect(find.text('平台任务'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpScoped(tester, const TaskCheckInPage());
+      expect(find.textContaining('连续签到'), findsOneWidget);
+      expect(find.text('平台任务'), findsOneWidget);
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await pumpScoped(tester, const ActivityCenterPage());
-    expect(find.text('周末陪伴主题房'), findsOneWidget);
-  });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpScoped(tester, const ActivityCenterPage());
+      expect(find.text('周末陪伴主题房'), findsOneWidget);
+    },
+  );
 }

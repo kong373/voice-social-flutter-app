@@ -43,9 +43,9 @@ class _RegistrationPageState extends State<RegistrationPage> {
           children: <Widget>[
             Text(
               '手机号 ${controller.pendingPhone}',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppColors.textSecondary,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
             ),
             const SizedBox(height: 22),
             Form(
@@ -74,15 +74,13 @@ class _RegistrationPageState extends State<RegistrationPage> {
                     onSelectionChanged: controller.busy
                         ? null
                         : (Set<int> values) =>
-                            setState(() => _sex = values.first),
+                              setState(() => _sex = values.first),
                   ),
                   const SizedBox(height: 18),
                   TextFormField(
                     controller: _inviteCodeController,
                     textCapitalization: TextCapitalization.characters,
-                    decoration: const InputDecoration(
-                      labelText: '邀请码（选填）',
-                    ),
+                    decoration: const InputDecoration(labelText: '邀请码（选填）'),
                   ),
                 ],
               ),

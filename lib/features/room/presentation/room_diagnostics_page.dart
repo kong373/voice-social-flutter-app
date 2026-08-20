@@ -66,7 +66,8 @@ class _RoomDiagnosticsPageState extends State<RoomDiagnosticsPage> {
                   value: snapshot.packetLossPercent == null
                       ? '未获取'
                       : '${snapshot.packetLossPercent!.toStringAsFixed(1)}%',
-                  ok: snapshot.packetLossPercent != null &&
+                  ok:
+                      snapshot.packetLossPercent != null &&
                       snapshot.packetLossPercent! < 5,
                 ),
                 _DiagnosticRow(
@@ -76,18 +77,18 @@ class _RoomDiagnosticsPageState extends State<RoomDiagnosticsPage> {
                 ),
                 _DiagnosticRow(
                   label: '实时消息',
-                  value: widget.controller.realtimeDegraded ||
+                  value:
+                      widget.controller.realtimeDegraded ||
                           !snapshot.realtimeConnected
                       ? '状态可能延迟'
                       : '已连接',
-                  ok: !widget.controller.realtimeDegraded &&
+                  ok:
+                      !widget.controller.realtimeDegraded &&
                       snapshot.realtimeConnected,
                 ),
                 _DiagnosticRow(
                   label: '麦克风权限',
-                  value: snapshot.microphonePermissionGranted
-                      ? '已授权'
-                      : '未授权',
+                  value: snapshot.microphonePermissionGranted ? '已授权' : '未授权',
                   ok: snapshot.microphonePermissionGranted,
                 ),
                 _DiagnosticRow(
@@ -130,7 +131,8 @@ class _DiagnosticHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool healthy = snapshot.configured &&
+    final bool healthy =
+        snapshot.configured &&
         snapshot.rtcConnected &&
         snapshot.realtimeConnected &&
         snapshot.grade != RoomConnectionGrade.poor;

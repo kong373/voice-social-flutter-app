@@ -60,9 +60,7 @@ class _RoomRecoveryPageState extends State<RoomRecoveryPage> {
             icon: controller.realtimeDegraded
                 ? Icons.wifi_off_rounded
                 : Icons.wifi_rounded,
-            title: controller.realtimeDegraded
-                ? '实时通道状态异常'
-                : '实时通道已连接',
+            title: controller.realtimeDegraded ? '实时通道状态异常' : '实时通道已连接',
             description: controller.realtimeDegraded
                 ? '麦位和操作区保持显示；状态可能延迟。'
                 : '麦位、公屏和成员状态正在正常更新。',
@@ -149,10 +147,7 @@ class _RecoveryStatusCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(
-            icon,
-            color: warning ? AppColors.warning : AppColors.accent,
-          ),
+          Icon(icon, color: warning ? AppColors.warning : AppColors.accent),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -160,10 +155,7 @@ class _RecoveryStatusCard extends StatelessWidget {
               children: <Widget>[
                 Text(title, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                Text(description, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),

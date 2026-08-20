@@ -41,8 +41,8 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
       _error = null;
     });
     try {
-      final RoomCollectionSnapshot snapshot =
-          await _repository.fetchRoomCollections();
+      final RoomCollectionSnapshot snapshot = await _repository
+          .fetchRoomCollections();
       if (!mounted) {
         return;
       }
@@ -56,9 +56,7 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
       }
       setState(() {
         _loading = false;
-        _error = error is ApiException
-            ? error.message
-            : '房间收藏暂时无法加载，请稍后重试';
+        _error = error is ApiException ? error.message : '房间收藏暂时无法加载，请稍后重试';
       });
     }
   }
@@ -119,7 +117,8 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
         onAction: _load,
       );
     }
-    final RoomCollectionSnapshot snapshot = _snapshot ??
+    final RoomCollectionSnapshot snapshot =
+        _snapshot ??
         const RoomCollectionSnapshot(
           favorites: <DiscoveryRoom>[],
           ownedRooms: <DiscoveryRoom>[],
@@ -180,9 +179,7 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            error is ApiException ? error.message : '取消收藏失败，请重试',
-          ),
+          content: Text(error is ApiException ? error.message : '取消收藏失败，请重试'),
         ),
       );
     } finally {
@@ -195,10 +192,8 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
   void _enterRoom(DiscoveryRoom room) {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomPage(
-          roomId: room.id,
-          title: room.title,
-        ),
+        builder: (BuildContext context) =>
+            RoomPage(roomId: room.id, title: room.title),
       ),
     );
   }

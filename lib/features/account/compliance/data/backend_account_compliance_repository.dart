@@ -8,8 +8,8 @@ class BackendAccountComplianceRepository
   BackendAccountComplianceRepository({
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
-  })  : _apiClient = apiClient,
-        _routes = routes;
+  }) : _apiClient = apiClient,
+       _routes = routes;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
@@ -39,7 +39,8 @@ class BackendAccountComplianceRepository
       platformType: platformType,
     );
 
-    final int verificationCode = _asInt(
+    final int verificationCode =
+        _asInt(
           profile['realNameAuthStatus'] ??
               profile['certificationStatus'] ??
               profile['isRealName'],
@@ -145,10 +146,7 @@ class BackendAccountComplianceRepository
   }) async {
     final ApiResponse response = await _apiClient.post(
       _routes.queryAppealInfo,
-      body: <String, Object?>{
-        'account': account,
-        'reasonType': reasonType,
-      },
+      body: <String, Object?>{'account': account, 'reasonType': reasonType},
     );
     final Map<String, Object?> data = _asMap(response.data);
     final bool hasRecord = _string(data['hasAppealRecord']) == '1';
@@ -195,14 +193,14 @@ class BackendAccountComplianceRepository
     final String process = _string(data['process']);
     final String result = _string(data['result']);
     final String normalized = '$process$result';
-    final AppealState state = normalized.contains('通过') ||
-            normalized.contains('成功')
+    final AppealState state =
+        normalized.contains('通过') || normalized.contains('成功')
         ? AppealState.approved
         : normalized.contains('拒绝') || normalized.contains('失败')
-            ? AppealState.rejected
-            : normalized.isEmpty
-                ? AppealState.none
-                : AppealState.pending;
+        ? AppealState.rejected
+        : normalized.isEmpty
+        ? AppealState.none
+        : AppealState.pending;
     return AppealCase(
       account: _string(data['account'], fallback: account),
       nickname: _string(data['nickname'], fallback: '当前用户'),

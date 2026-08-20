@@ -58,9 +58,11 @@ void main() {
     await tester.tap(find.text('确认离开'));
 
     final Finder homeTitle = find.text('此刻适合你的房间');
-    for (int attempt = 0;
-        attempt < 40 && homeTitle.evaluate().isEmpty;
-        attempt += 1) {
+    for (
+      int attempt = 0;
+      attempt < 40 && homeTitle.evaluate().isEmpty;
+      attempt += 1
+    ) {
       await tester.pump(const Duration(milliseconds: 100));
     }
 

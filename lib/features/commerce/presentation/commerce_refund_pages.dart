@@ -26,8 +26,8 @@ class _RefundListPageState extends State<RefundListPage> {
 
   Future<void> _load() async {
     try {
-      final List<RefundApplication> applications =
-          await _repository.fetchRefundApplications(widget.account);
+      final List<RefundApplication> applications = await _repository
+          .fetchRefundApplications(widget.account);
       if (mounted) {
         setState(() {
           _applications = applications;
@@ -71,8 +71,8 @@ class _RefundListPageState extends State<RefundListPage> {
       ),
       body: _applications == null
           ? _error == null
-              ? const Center(child: CircularProgressIndicator())
-              : _CommerceErrorState(message: _error!, onRetry: _load)
+                ? const Center(child: CircularProgressIndicator())
+                : _CommerceErrorState(message: _error!, onRetry: _load)
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
               children: <Widget>[
@@ -95,7 +95,9 @@ class _RefundListPageState extends State<RefundListPage> {
                   for (final RefundApplication application in _applications!)
                     Card(
                       child: ListTile(
-                        title: Text('${application.statusText} · ¥${application.amount.toStringAsFixed(2)}'),
+                        title: Text(
+                          '${application.statusText} · ¥${application.amount.toStringAsFixed(2)}',
+                        ),
                         subtitle: Text(
                           '申请编号 ${application.id}\n${_formatDateTime(application.createdAt)}',
                         ),
@@ -130,10 +132,13 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
   final TextEditingController _ageController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _reasonController = TextEditingController();
-  final TextEditingController _receivingAccountController = TextEditingController();
-  final TextEditingController _receivingNameController = TextEditingController();
+  final TextEditingController _receivingAccountController =
+      TextEditingController();
+  final TextEditingController _receivingNameController =
+      TextEditingController();
   final TextEditingController _guardianNameController = TextEditingController();
-  final TextEditingController _guardianPhoneController = TextEditingController();
+  final TextEditingController _guardianPhoneController =
+      TextEditingController();
   RefundEligibility? _eligibility;
   bool _submitting = false;
   String? _error;
@@ -161,9 +166,9 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
 
   Future<void> _check() async {
     try {
-      final RefundEligibility eligibility = await AppDependencyScope.of(context)
-          .commerceRepository
-          .checkRefundEligibility(widget.account);
+      final RefundEligibility eligibility = await AppDependencyScope.of(
+        context,
+      ).commerceRepository.checkRefundEligibility(widget.account);
       if (mounted) {
         setState(() {
           _eligibility = eligibility;
@@ -233,9 +238,9 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -250,8 +255,8 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
       appBar: AppBar(title: const Text('退款申请')),
       body: _eligibility == null
           ? _error == null
-              ? const Center(child: CircularProgressIndicator())
-              : _CommerceErrorState(message: _error!, onRetry: _check)
+                ? const Center(child: CircularProgressIndicator())
+                : _CommerceErrorState(message: _error!, onRetry: _check)
           : Form(
               key: _formKey,
               child: ListView(
@@ -281,13 +286,17 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
                     decoration: const InputDecoration(labelText: '年龄'),
                     validator: (String? value) {
                       final int? age = int.tryParse(value ?? '');
-                      return age == null || age < 1 || age > 120 ? '请输入有效年龄' : null;
+                      return age == null || age < 1 || age > 120
+                          ? '请输入有效年龄'
+                          : null;
                     },
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _amountController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     decoration: const InputDecoration(labelText: '申请退款金额'),
                     validator: (String? value) {
                       final double? amount = double.tryParse(value ?? '');
@@ -303,8 +312,8 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
                     decoration: const InputDecoration(labelText: '退款原因'),
                     validator: (String? value) =>
                         value == null || value.trim().length < 5
-                            ? '退款原因至少填写 5 个字'
-                            : null,
+                        ? '退款原因至少填写 5 个字'
+                        : null,
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
@@ -319,7 +328,9 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: _guardianNameController,
-                    decoration: const InputDecoration(labelText: '监护人姓名（未成年人场景）'),
+                    decoration: const InputDecoration(
+                      labelText: '监护人姓名（未成年人场景）',
+                    ),
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
@@ -333,7 +344,9 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
                   ),
                   const SizedBox(height: 16),
                   FilledButton(
-                    onPressed: _eligibility!.allowed && !_submitting ? _submit : null,
+                    onPressed: _eligibility!.allowed && !_submitting
+                        ? _submit
+                        : null,
                     child: _submitting
                         ? const SizedBox.square(
                             dimension: 20,
@@ -370,17 +383,17 @@ class _RefundResultPageState extends State<RefundResultPage> {
   Future<void> _refresh() async {
     setState(() => _refreshing = true);
     try {
-      final RefundApplication updated = await AppDependencyScope.of(context)
-          .commerceRepository
-          .fetchRefundResult(_application.id);
+      final RefundApplication updated = await AppDependencyScope.of(
+        context,
+      ).commerceRepository.fetchRefundResult(_application.id);
       if (mounted) {
         setState(() => _application = updated);
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -392,17 +405,17 @@ class _RefundResultPageState extends State<RefundResultPage> {
   Future<void> _resubmit() async {
     setState(() => _refreshing = true);
     try {
-      final RefundApplication updated = await AppDependencyScope.of(context)
-          .commerceRepository
-          .resubmitRefund(_application.id);
+      final RefundApplication updated = await AppDependencyScope.of(
+        context,
+      ).commerceRepository.resubmitRefund(_application.id);
       if (mounted) {
         setState(() => _application = updated);
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -437,8 +450,14 @@ class _RefundResultPageState extends State<RefundResultPage> {
           const SizedBox(height: 18),
           _CommerceDetail(label: '申请编号', value: _application.id),
           _CommerceDetail(label: '申请账号', value: _application.account),
-          _CommerceDetail(label: '申请金额', value: '¥${_application.amount.toStringAsFixed(2)}'),
-          _CommerceDetail(label: '提交时间', value: _formatDateTime(_application.createdAt)),
+          _CommerceDetail(
+            label: '申请金额',
+            value: '¥${_application.amount.toStringAsFixed(2)}',
+          ),
+          _CommerceDetail(
+            label: '提交时间',
+            value: _formatDateTime(_application.createdAt),
+          ),
           if (_application.status == RefundStatus.rejected)
             FilledButton(
               onPressed: _refreshing ? null : _resubmit,

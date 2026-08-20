@@ -8,8 +8,8 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
   BackendRoomLifecycleRepository({
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
-  })  : _apiClient = apiClient,
-        _routes = routes;
+  }) : _apiClient = apiClient,
+       _routes = routes;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
@@ -28,9 +28,8 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
         message: '我的房间列表结构无法识别',
       );
     }
-    final String roomId = _nonEmptyString(first['id']) ??
-        _nonEmptyString(first['roomId']) ??
-        '';
+    final String roomId =
+        _nonEmptyString(first['id']) ?? _nonEmptyString(first['roomId']) ?? '';
     if (roomId.isEmpty) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -44,10 +43,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
   Future<RoomConfiguration> fetchRoom(String roomId) async {
     final List<ApiResponse> responses = await Future.wait<ApiResponse>(
       <Future<ApiResponse>>[
-        _apiClient.get(
-          _routes.roomById,
-          query: <String, String>{'id': roomId},
-        ),
+        _apiClient.get(_routes.roomById, query: <String, String>{'id': roomId}),
         _apiClient.get(
           _routes.roomTopic,
           query: <String, String>{'roomId': roomId},
@@ -56,9 +52,8 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
     );
     final Map<String, Object?> info = _asMap(responses[0].data);
     final Map<String, Object?> topic = _asMap(responses[1].data);
-    final String id = _nonEmptyString(info['idStr']) ??
-        _nonEmptyString(info['id']) ??
-        roomId;
+    final String id =
+        _nonEmptyString(info['idStr']) ?? _nonEmptyString(info['id']) ?? roomId;
     return RoomConfiguration(
       roomId: id,
       roomCode: _nonEmptyString(info['code']) ?? id,

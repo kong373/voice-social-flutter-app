@@ -17,16 +17,14 @@ class RoomSharePage extends StatelessWidget {
   String get _shareText =>
       '$roomTitle\n房间号：$roomCode\nvoice-social://room/$roomId';
 
-  Future<void> _copy(
-    BuildContext context,
-    String text,
-    String message,
-  ) async {
+  Future<void> _copy(BuildContext context, String text, String message) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (!context.mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -45,22 +43,14 @@ class RoomSharePage extends StatelessWidget {
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.08),
-              ),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const Icon(
-                  Icons.graphic_eq_rounded,
-                  color: AppColors.accent,
-                ),
+                const Icon(Icons.graphic_eq_rounded, color: AppColors.accent),
                 const SizedBox(height: 20),
-                Text(
-                  roomTitle,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
+                Text(roomTitle, style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8),
                 Text(
                   '房间号 $roomCode',

@@ -18,8 +18,7 @@ class AccountRestrictionPage extends StatefulWidget {
   final int platformType;
 
   @override
-  State<AccountRestrictionPage> createState() =>
-      _AccountRestrictionPageState();
+  State<AccountRestrictionPage> createState() => _AccountRestrictionPageState();
 }
 
 class _AccountRestrictionPageState extends State<AccountRestrictionPage> {
@@ -34,14 +33,13 @@ class _AccountRestrictionPageState extends State<AccountRestrictionPage> {
   }
 
   Future<void> _load() async {
-    final AccountComplianceSnapshot value =
-        await AppDependencyScope.of(context)
-            .accountComplianceRepository
-            .fetchSnapshot(
-              account: widget.account,
-              currentVersion: widget.currentVersion,
-              platformType: widget.platformType,
-            );
+    final AccountComplianceSnapshot value = await AppDependencyScope.of(context)
+        .accountComplianceRepository
+        .fetchSnapshot(
+          account: widget.account,
+          currentVersion: widget.currentVersion,
+          platformType: widget.platformType,
+        );
     if (mounted) {
       setState(() => _restriction = value.restriction);
     }
@@ -110,9 +108,9 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
 
   Future<void> _submit() async {
     if (_busy || _explanationController.text.trim().length < 10) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('申诉说明至少填写 10 个字')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('申诉说明至少填写 10 个字')));
       return;
     }
     setState(() => _busy = true);
@@ -131,9 +129,9 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -232,22 +230,22 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
   }
 
   Future<void> _load() async {
-    final CancellationEligibility value = await AppDependencyScope.of(context)
-        .accountComplianceRepository
-        .queryCancellationEligibility();
+    final CancellationEligibility value = await AppDependencyScope.of(
+      context,
+    ).accountComplianceRepository.queryCancellationEligibility();
     if (mounted) {
       setState(() => _eligibility = value);
     }
   }
 
   Future<void> _sendCode() async {
-    final bool sent = await AppDependencyScope.of(context)
-        .authController
-        .sendSmsCode(widget.account);
+    final bool sent = await AppDependencyScope.of(
+      context,
+    ).authController.sendSmsCode(widget.account);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(sent ? '验证码已发送' : '验证码发送失败')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(sent ? '验证码已发送' : '验证码发送失败')));
     }
   }
 
@@ -274,17 +272,16 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
     }
     setState(() => _busy = true);
     try {
-      await AppDependencyScope.of(context)
-          .accountComplianceRepository
+      await AppDependencyScope.of(context).accountComplianceRepository
           .requestCancellation(smsCode: _codeController.text.trim());
       if (mounted) {
         await _load();
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -308,7 +305,8 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
                   title: eligibility.allowed ? '可以申请注销' : '暂不能申请注销',
                   description: eligibility.message,
                 ),
-                if (eligibility.allowed && eligibility.requiresSmsCode) ...<Widget>[
+                if (eligibility.allowed &&
+                    eligibility.requiresSmsCode) ...<Widget>[
                   const SizedBox(height: 18),
                   TextField(
                     controller: _codeController,
@@ -443,14 +441,13 @@ class _YouthModePageState extends State<YouthModePage> {
   }
 
   Future<void> _load() async {
-    final AccountComplianceSnapshot value =
-        await AppDependencyScope.of(context)
-            .accountComplianceRepository
-            .fetchSnapshot(
-              account: widget.account,
-              currentVersion: widget.currentVersion,
-              platformType: widget.platformType,
-            );
+    final AccountComplianceSnapshot value = await AppDependencyScope.of(context)
+        .accountComplianceRepository
+        .fetchSnapshot(
+          account: widget.account,
+          currentVersion: widget.currentVersion,
+          platformType: widget.platformType,
+        );
     if (mounted) {
       setState(() => _snapshot = value);
     }
@@ -458,28 +455,28 @@ class _YouthModePageState extends State<YouthModePage> {
 
   Future<void> _toggle() async {
     if (!RegExp(r'^\d{4}$').hasMatch(_pinController.text) || _busy) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入 4 位数字密码')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入 4 位数字密码')));
       return;
     }
     setState(() => _busy = true);
     try {
-      await AppDependencyScope.of(context)
-          .accountComplianceRepository
-          .setYouthMode(
-            enabled: !_snapshot!.youthModeEnabled,
-            pin: _pinController.text,
-          );
+      await AppDependencyScope.of(
+        context,
+      ).accountComplianceRepository.setYouthMode(
+        enabled: !_snapshot!.youthModeEnabled,
+        pin: _pinController.text,
+      );
       _pinController.clear();
       if (mounted) {
         await _load();
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -500,15 +497,11 @@ class _YouthModePageState extends State<YouthModePage> {
               children: <Widget>[
                 _Header(
                   icon: Icons.child_care_rounded,
-                  title: snapshot.youthModeEnabled
-                      ? '青少年模式已开启'
-                      : '青少年模式未开启',
+                  title: snapshot.youthModeEnabled ? '青少年模式已开启' : '青少年模式未开启',
                   description: '只限制创建新的充值订单，不影响进房、消息和社交。',
                 ),
                 const SizedBox(height: 14),
-                const _Info(
-                  text: '钱包查询、订单查询、退款、进房、消息和其他正常社交能力不被禁用。',
-                ),
+                const _Info(text: '钱包查询、订单查询、退款、进房、消息和其他正常社交能力不被禁用。'),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _pinController,
@@ -519,9 +512,7 @@ class _YouthModePageState extends State<YouthModePage> {
                     LengthLimitingTextInputFormatter(4),
                   ],
                   decoration: InputDecoration(
-                    labelText: snapshot.youthModeEnabled
-                        ? '关闭密码'
-                        : '设置 4 位密码',
+                    labelText: snapshot.youthModeEnabled ? '关闭密码' : '设置 4 位密码',
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -531,8 +522,8 @@ class _YouthModePageState extends State<YouthModePage> {
                     _busy
                         ? '提交中…'
                         : snapshot.youthModeEnabled
-                            ? '关闭青少年模式'
-                            : '开启青少年模式',
+                        ? '关闭青少年模式'
+                        : '开启青少年模式',
                   ),
                 ),
               ],
@@ -586,11 +577,11 @@ class _Info extends StatelessWidget {
 }
 
 String _appealStateLabel(AppealState state) => switch (state) {
-      AppealState.none => '可提交申诉',
-      AppealState.pending => '申诉审核中',
-      AppealState.approved => '申诉已通过',
-      AppealState.rejected => '申诉未通过',
-    };
+  AppealState.none => '可提交申诉',
+  AppealState.pending => '申诉审核中',
+  AppealState.approved => '申诉已通过',
+  AppealState.rejected => '申诉未通过',
+};
 
 String _messageFor(Object error) =>
     error is ApiException ? error.message : '操作失败，请稍后重试';

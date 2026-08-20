@@ -35,8 +35,8 @@ class FixedEightSeatAdapter {
       for (int uiIndex = 1; uiIndex <= 8; uiIndex += 1)
         _toUiSeat(
           uiIndex: uiIndex,
-          backend: regular[uiIndex] ??
-              BackendMicSeat(index: uiIndex, status: 0),
+          backend:
+              regular[uiIndex] ?? BackendMicSeat(index: uiIndex, status: 0),
         ),
     ];
 
@@ -60,10 +60,7 @@ class FixedEightSeatAdapter {
     return List<MicSeat>.unmodifiable(result);
   }
 
-  static BackendMicSeat? _findSeat(
-    List<BackendMicSeat> seats,
-    int index,
-  ) {
+  static BackendMicSeat? _findSeat(List<BackendMicSeat> seats, int index) {
     for (final BackendMicSeat seat in seats) {
       if (seat.index == index) {
         return seat;

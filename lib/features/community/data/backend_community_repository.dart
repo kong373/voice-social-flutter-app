@@ -8,8 +8,8 @@ class BackendCommunityRepository implements CommunityRepository {
   BackendCommunityRepository({
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
-  })  : _apiClient = apiClient,
-        _routes = routes;
+  }) : _apiClient = apiClient,
+       _routes = routes;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
@@ -23,14 +23,19 @@ class BackendCommunityRepository implements CommunityRepository {
   @override
   Future<GuildHomeSnapshot> fetchGuildHome() async {
     final List<Object?> results = await Future.wait<Object?>(<Future<Object?>>[
-      _apiClient.get(_routes.guildHomepage).then((ApiResponse value) => value.data),
-      _apiClient.post(
-        _routes.recommendedGuilds,
-        body: <String, Object?>{'pageNum': 1, 'pageSize': 20},
-      ).then((ApiResponse value) => value.data),
+      _apiClient
+          .get(_routes.guildHomepage)
+          .then((ApiResponse value) => value.data),
+      _apiClient
+          .post(
+            _routes.recommendedGuilds,
+            body: <String, Object?>{'pageNum': 1, 'pageSize': 20},
+          )
+          .then((ApiResponse value) => value.data),
     ]);
     final Map<String, Object?> currentData = _asMap(results[0]);
-    final GuildSummary? current = currentData.isEmpty ||
+    final GuildSummary? current =
+        currentData.isEmpty ||
             _string(currentData['id'] ?? currentData['guildId']).isEmpty
         ? null
         : _guildFromMap(currentData);
@@ -180,7 +185,9 @@ class BackendCommunityRepository implements CommunityRepository {
 
   @override
   Future<List<CpInvitation>> fetchPendingCpInvitations() async {
-    final ApiResponse response = await _apiClient.get(_routes.cpPendingInvitations);
+    final ApiResponse response = await _apiClient.get(
+      _routes.cpPendingInvitations,
+    );
     return _extractList(response.data)
         .map(_cpInvitationFromMap)
         .where((CpInvitation value) => value.invitationId.isNotEmpty)
@@ -195,7 +202,9 @@ class BackendCommunityRepository implements CommunityRepository {
     );
     final Map<String, Object?> data = _asMap(response.data);
     return CpEligibility(
-      allowed: _asBool(data['allowed'] ?? data['eligible'] ?? data['canInvite']),
+      allowed: _asBool(
+        data['allowed'] ?? data['eligible'] ?? data['canInvite'],
+      ),
       message: _string(
         data['message'] ?? data['reason'],
         fallback: '以服务端关系状态为准',
@@ -210,10 +219,7 @@ class BackendCommunityRepository implements CommunityRepository {
       body: <String, Object?>{'targetUserId': targetUserId},
     );
     final Map<String, Object?> data = _asMap(response.data);
-    return _string(
-      data['invitationId'] ?? data['id'],
-      fallback: 'submitted',
-    );
+    return _string(data['invitationId'] ?? data['id'], fallback: 'submitted');
   }
 
   @override
@@ -230,19 +236,27 @@ class BackendCommunityRepository implements CommunityRepository {
   @override
   Future<GuardianFanSnapshot> fetchGuardianFan(int anchorUserId) async {
     final List<Object?> results = await Future.wait<Object?>(<Future<Object?>>[
-      _apiClient.get(_routes.guardianLevels).then((ApiResponse value) => value.data),
-      _apiClient.get(
-        _routes.guardianInfo,
-        query: <String, String>{'anchorUserId': '$anchorUserId'},
-      ).then((ApiResponse value) => value.data),
-      _apiClient.get(
-        _routes.fansTeamRelation,
-        query: <String, String>{'anchorUserId': '$anchorUserId'},
-      ).then((ApiResponse value) => value.data),
-      _apiClient.get(
-        _routes.fansTeamTasks,
-        query: <String, String>{'anchorUserId': '$anchorUserId'},
-      ).then((ApiResponse value) => value.data),
+      _apiClient
+          .get(_routes.guardianLevels)
+          .then((ApiResponse value) => value.data),
+      _apiClient
+          .get(
+            _routes.guardianInfo,
+            query: <String, String>{'anchorUserId': '$anchorUserId'},
+          )
+          .then((ApiResponse value) => value.data),
+      _apiClient
+          .get(
+            _routes.fansTeamRelation,
+            query: <String, String>{'anchorUserId': '$anchorUserId'},
+          )
+          .then((ApiResponse value) => value.data),
+      _apiClient
+          .get(
+            _routes.fansTeamTasks,
+            query: <String, String>{'anchorUserId': '$anchorUserId'},
+          )
+          .then((ApiResponse value) => value.data),
     ]);
     final List<GuardianLevel> levels = _extractList(results[0])
         .map(_guardianLevelFromMap)
@@ -310,29 +324,30 @@ class BackendCommunityRepository implements CommunityRepository {
   @override
   Future<TaskCenterSnapshot> fetchTaskCenter() async {
     final List<Object?> results = await Future.wait<Object?>(<Future<Object?>>[
-      _apiClient.get(
-        _routes.taskRecords,
-        query: const <String, String>{'type': '1'},
-      ).then((ApiResponse value) => value.data),
-      _apiClient.get(_routes.signRewards).then((ApiResponse value) => value.data),
-      _apiClient.get(_routes.todaySignStatus).then((ApiResponse value) => value.data),
+      _apiClient
+          .get(_routes.taskRecords, query: const <String, String>{'type': '1'})
+          .then((ApiResponse value) => value.data),
+      _apiClient
+          .get(_routes.signRewards)
+          .then((ApiResponse value) => value.data),
+      _apiClient
+          .get(_routes.todaySignStatus)
+          .then((ApiResponse value) => value.data),
     ]);
     final List<TaskItem> tasks = _extractList(results[0])
         .map(_taskFromMap)
         .where((TaskItem value) => value.id.isNotEmpty)
         .toList(growable: false);
-    final List<CheckInDay> days = _extractList(results[1])
-        .map(_checkInFromMap)
-        .toList(growable: false);
+    final List<CheckInDay> days = _extractList(
+      results[1],
+    ).map(_checkInFromMap).toList(growable: false);
     final Map<String, Object?> status = _asMap(results[2]);
     return TaskCenterSnapshot(
       signedToday: _asBool(
         status['signedToday'] ?? status['isSign'] ?? status['status'],
       ),
-      continuousDays: _asInt(
-            status['continuousDays'] ?? status['consecutiveDays'],
-          ) ??
-          0,
+      continuousDays:
+          _asInt(status['continuousDays'] ?? status['consecutiveDays']) ?? 0,
       checkInDays: days,
       tasks: tasks,
     );
@@ -380,17 +395,24 @@ class BackendCommunityRepository implements CommunityRepository {
       ownerName: _string(item['presidentNickName'] ?? item['ownerName']),
       role: role,
       joined: _asBool(
-        item['isJoinGuild'] ?? item['isJoinCurrentGuild'] ?? role != GuildRole.visitor,
+        item['isJoinGuild'] ??
+            item['isJoinCurrentGuild'] ??
+            role != GuildRole.visitor,
       ),
       applicationPending: _asBool(item['isCurrentGuildApply']),
-      hasNewApplications: _asBool(item['hasNewApplications'] ?? item['isHotPoint']),
+      hasNewApplications: _asBool(
+        item['hasNewApplications'] ?? item['isHotPoint'],
+      ),
       hasSignedToday: _asBool(item['hasSign']),
       rooms: _asMapList(item['playhouseList'])
-          .map((Map<String, Object?> room) => GuildRoom(
-                roomId: _string(room['roomId'] ?? room['id']),
-                name: _string(room['roomName'] ?? room['name'], fallback: '公会房'),
-                onlineUsers: _asInt(room['onlineUsers'] ?? room['onlineNum']) ?? 0,
-              ))
+          .map(
+            (Map<String, Object?> room) => GuildRoom(
+              roomId: _string(room['roomId'] ?? room['id']),
+              name: _string(room['roomName'] ?? room['name'], fallback: '公会房'),
+              onlineUsers:
+                  _asInt(room['onlineUsers'] ?? room['onlineNum']) ?? 0,
+            ),
+          )
           .where((GuildRoom room) => room.roomId.isNotEmpty)
           .toList(growable: false),
     );
@@ -428,7 +450,10 @@ class BackendCommunityRepository implements CommunityRepository {
     return CpRelation(
       relationId: _string(item['relationId'] ?? item['id']),
       userId: _asInt(item['targetUserId'] ?? item['userId']) ?? 0,
-      nickname: _string(item['nickname'] ?? item['nickName'], fallback: 'CP 用户'),
+      nickname: _string(
+        item['nickname'] ?? item['nickName'],
+        fallback: 'CP 用户',
+      ),
       avatarUrl: _optionalString(item['avatarUrl'] ?? item['headImgUrl']),
       days: _asInt(item['days'] ?? item['relationDays']) ?? 0,
       boundAt: _string(item['boundAt'] ?? item['createTime']),
@@ -495,7 +520,8 @@ class BackendCommunityRepository implements CommunityRepository {
 
   static List<Map<String, Object?>> _extractList(Object? value) {
     final Map<String, Object?> map = _asMap(value);
-    final Object? source = map['records'] ??
+    final Object? source =
+        map['records'] ??
         map['list'] ??
         map['rows'] ??
         map['items'] ??
@@ -514,10 +540,12 @@ class BackendCommunityRepository implements CommunityRepository {
     final String text = value?.toString().trim() ?? '';
     return text.isEmpty ? fallback : text;
   }
+
   static String? _optionalString(Object? value) {
     final String text = value?.toString().trim() ?? '';
     return text.isEmpty ? null : text;
   }
+
   static int? _asInt(Object? value) =>
       value is int ? value : int.tryParse(value?.toString() ?? '');
   static bool _asBool(Object? value) =>

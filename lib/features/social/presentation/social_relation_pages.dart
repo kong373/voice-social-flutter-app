@@ -38,9 +38,9 @@ class _RelationsPageState extends State<RelationsPage> {
       _error = null;
     });
     try {
-      final SocialPage<SocialUser> page = await AppDependencyScope.of(context)
-          .socialRepository
-          .fetchRelations(type: _type, page: 1, pageSize: 50);
+      final SocialPage<SocialUser> page = await AppDependencyScope.of(
+        context,
+      ).socialRepository.fetchRelations(type: _type, page: 1, pageSize: 50);
       if (mounted) {
         setState(() {
           _items
@@ -94,35 +94,35 @@ class _RelationsPageState extends State<RelationsPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                    ? _ErrorState(message: _error!, onRetry: _load)
-                    : _items.isEmpty
-                        ? const Center(child: Text('当前没有符合条件的用户'))
-                        : RefreshIndicator(
-                            onRefresh: _load,
-                            child: ListView.separated(
-                              itemCount: _items.length,
-                              separatorBuilder: (_, __) => const Divider(height: 1),
-                              itemBuilder: (BuildContext context, int index) {
-                                final SocialUser user = _items[index];
-                                return ListTile(
-                                  leading: CircleAvatar(
-                                    child: Text(_initial(user.name)),
-                                  ),
-                                  title: Text(user.name),
-                                  subtitle: Text(user.signature),
-                                  trailing: user.roomId == null
-                                      ? const Icon(Icons.chevron_right_rounded)
-                                      : const Icon(Icons.headphones_rounded),
-                                  onTap: () => Navigator.of(context).push<void>(
-                                    MaterialPageRoute<void>(
-                                      builder: (BuildContext context) =>
-                                          PublicProfilePage(userId: user.userId),
-                                    ),
-                                  ),
-                                );
-                              },
+                ? _ErrorState(message: _error!, onRetry: _load)
+                : _items.isEmpty
+                ? const Center(child: Text('当前没有符合条件的用户'))
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView.separated(
+                      itemCount: _items.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (BuildContext context, int index) {
+                        final SocialUser user = _items[index];
+                        return ListTile(
+                          leading: CircleAvatar(
+                            child: Text(_initial(user.name)),
+                          ),
+                          title: Text(user.name),
+                          subtitle: Text(user.signature),
+                          trailing: user.roomId == null
+                              ? const Icon(Icons.chevron_right_rounded)
+                              : const Icon(Icons.headphones_rounded),
+                          onTap: () => Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(
+                              builder: (BuildContext context) =>
+                                  PublicProfilePage(userId: user.userId),
                             ),
                           ),
+                        );
+                      },
+                    ),
+                  ),
           ),
         ],
       ),
@@ -151,9 +151,9 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
 
   Future<void> _load() async {
     try {
-      final List<FriendRequest> value = await AppDependencyScope.of(context)
-          .socialRepository
-          .fetchFriendRequests();
+      final List<FriendRequest> value = await AppDependencyScope.of(
+        context,
+      ).socialRepository.fetchFriendRequests();
       if (mounted) {
         setState(() => _items = value);
       }
@@ -166,26 +166,25 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
 
   Future<void> _resolve(FriendRequest request, bool accepted) async {
     try {
-      await AppDependencyScope.of(context).socialRepository.resolveFriendRequest(
-            requestId: request.id,
-            accepted: accepted,
-          );
+      await AppDependencyScope.of(context).socialRepository
+          .resolveFriendRequest(requestId: request.id, accepted: accepted);
       if (mounted) {
         await _load();
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final SocialRepository repository =
-        AppDependencyScope.of(context).socialRepository;
+    final SocialRepository repository = AppDependencyScope.of(
+      context,
+    ).socialRepository;
     return Scaffold(
       appBar: AppBar(title: const Text('好友请求')),
       body: !repository.supportsFriendRequestWorkflow
@@ -194,39 +193,39 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
               message: '当前后端只确认了关注与互相关注关系，不能伪造接受或拒绝流程。',
             )
           : _items == null
-              ? _error == null
-                  ? const Center(child: CircularProgressIndicator())
-                  : _ErrorState(message: _error!, onRetry: _load)
-              : _items!.isEmpty
-                  ? const Center(child: Text('暂无好友请求'))
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _items!.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (BuildContext context, int index) {
-                        final FriendRequest request = _items![index];
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(request.user.name),
-                          subtitle: Text(request.message),
-                          trailing: request.status == FriendRequestStatus.pending
-                              ? Wrap(
-                                  spacing: 4,
-                                  children: <Widget>[
-                                    TextButton(
-                                      onPressed: () => _resolve(request, false),
-                                      child: const Text('拒绝'),
-                                    ),
-                                    FilledButton.tonal(
-                                      onPressed: () => _resolve(request, true),
-                                      child: const Text('接受'),
-                                    ),
-                                  ],
-                                )
-                              : Text(_friendRequestLabel(request.status)),
-                        );
-                      },
-                    ),
+          ? _error == null
+                ? const Center(child: CircularProgressIndicator())
+                : _ErrorState(message: _error!, onRetry: _load)
+          : _items!.isEmpty
+          ? const Center(child: Text('暂无好友请求'))
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: _items!.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (BuildContext context, int index) {
+                final FriendRequest request = _items![index];
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(request.user.name),
+                  subtitle: Text(request.message),
+                  trailing: request.status == FriendRequestStatus.pending
+                      ? Wrap(
+                          spacing: 4,
+                          children: <Widget>[
+                            TextButton(
+                              onPressed: () => _resolve(request, false),
+                              child: const Text('拒绝'),
+                            ),
+                            FilledButton.tonal(
+                              onPressed: () => _resolve(request, true),
+                              child: const Text('接受'),
+                            ),
+                          ],
+                        )
+                      : Text(_friendRequestLabel(request.status)),
+                );
+              },
+            ),
     );
   }
 }
@@ -251,9 +250,9 @@ class _VisitorRecordsPageState extends State<VisitorRecordsPage> {
   }
 
   Future<void> _load() async {
-    final SocialPage<SocialUser> value = await AppDependencyScope.of(context)
-        .socialRepository
-        .fetchVisitors(type: _type, page: 1, pageSize: 50);
+    final SocialPage<SocialUser> value = await AppDependencyScope.of(
+      context,
+    ).socialRepository.fetchVisitors(type: _type, page: 1, pageSize: 50);
     if (mounted) {
       setState(() => _items = value.items);
     }
@@ -292,24 +291,24 @@ class _VisitorRecordsPageState extends State<VisitorRecordsPage> {
             child: _items == null
                 ? const Center(child: CircularProgressIndicator())
                 : _items!.isEmpty
-                    ? const Center(child: Text('暂无访客记录'))
-                    : ListView.builder(
-                        itemCount: _items!.length,
-                        itemBuilder: (BuildContext context, int index) {
-                          final SocialUser user = _items![index];
-                          return ListTile(
-                            leading: CircleAvatar(child: Text(_initial(user.name))),
-                            title: Text(user.name),
-                            subtitle: Text('访问 ${user.visitCount} 次'),
-                            onTap: () => Navigator.of(context).push<void>(
-                              MaterialPageRoute<void>(
-                                builder: (BuildContext context) =>
-                                    PublicProfilePage(userId: user.userId),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                ? const Center(child: Text('暂无访客记录'))
+                : ListView.builder(
+                    itemCount: _items!.length,
+                    itemBuilder: (BuildContext context, int index) {
+                      final SocialUser user = _items![index];
+                      return ListTile(
+                        leading: CircleAvatar(child: Text(_initial(user.name))),
+                        title: Text(user.name),
+                        subtitle: Text('访问 ${user.visitCount} 次'),
+                        onTap: () => Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (BuildContext context) =>
+                                PublicProfilePage(userId: user.userId),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -337,8 +336,9 @@ class _PrivacyBlacklistPageState extends State<PrivacyBlacklistPage> {
   }
 
   Future<void> _load() async {
-    final SocialRepository repository =
-        AppDependencyScope.of(context).socialRepository;
+    final SocialRepository repository = AppDependencyScope.of(
+      context,
+    ).socialRepository;
     final List<Object> values = await Future.wait<Object>(<Future<Object>>[
       repository.fetchPrivacySettings(),
       repository.fetchBlacklist(page: 1, pageSize: 100),
@@ -352,19 +352,18 @@ class _PrivacyBlacklistPageState extends State<PrivacyBlacklistPage> {
   }
 
   Future<void> _togglePrivacy(bool value) async {
-    final PrivacySettings updated = await AppDependencyScope.of(context)
-        .socialRepository
-        .updatePrivacySettings(onlyFollowedCanFollow: value);
+    final PrivacySettings updated = await AppDependencyScope.of(
+      context,
+    ).socialRepository.updatePrivacySettings(onlyFollowedCanFollow: value);
     if (mounted) {
       setState(() => _settings = updated);
     }
   }
 
   Future<void> _unblock(SocialUser user) async {
-    await AppDependencyScope.of(context).socialRepository.setBlocked(
-          userId: user.userId,
-          blocked: false,
-        );
+    await AppDependencyScope.of(
+      context,
+    ).socialRepository.setBlocked(userId: user.userId, blocked: false);
     if (mounted) {
       await _load();
     }
@@ -382,9 +381,11 @@ class _PrivacyBlacklistPageState extends State<PrivacyBlacklistPage> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('仅允许我关注的人关注我'),
-                  subtitle: Text(_settings!.serverValueKnown
-                      ? '当前设置已与服务端同步'
-                      : '服务端未提供读取接口，首次修改后才可确认'),
+                  subtitle: Text(
+                    _settings!.serverValueKnown
+                        ? '当前设置已与服务端同步'
+                        : '服务端未提供读取接口，首次修改后才可确认',
+                  ),
                   value: _settings!.onlyFollowedCanFollow,
                   onChanged: _togglePrivacy,
                 ),

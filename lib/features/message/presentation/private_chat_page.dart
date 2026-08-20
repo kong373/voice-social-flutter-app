@@ -41,8 +41,9 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       _error = null;
     });
     try {
-      final List<ChatMessage> value =
-          await _repository.fetchPrivateMessages(widget.conversation);
+      final List<ChatMessage> value = await _repository.fetchPrivateMessages(
+        widget.conversation,
+      );
       if (!mounted) {
         return;
       }
@@ -87,9 +88,9 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       _scrollToEnd();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -133,7 +134,8 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bool canSend = _repository.supportsPrivateSend &&
+    final bool canSend =
+        _repository.supportsPrivateSend &&
         widget.conversation.available &&
         !_sending;
     return Scaffold(
@@ -157,16 +159,14 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                 _report();
               }
             },
-            itemBuilder: (BuildContext context) => const <PopupMenuEntry<String>>[
-              PopupMenuItem<String>(
-                value: 'profile',
-                child: Text('查看公开主页'),
-              ),
-              PopupMenuItem<String>(
-                value: 'report',
-                child: Text('举报用户'),
-              ),
-            ],
+            itemBuilder: (BuildContext context) =>
+                const <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(
+                    value: 'profile',
+                    child: Text('查看公开主页'),
+                  ),
+                  PopupMenuItem<String>(value: 'report', child: Text('举报用户')),
+                ],
           ),
         ],
       ),
@@ -184,26 +184,26 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _error != null
-                    ? _MessageError(message: _error!, onRetry: _load)
-                    : _messages.isEmpty
-                        ? Center(
-                            child: Text(
-                              _repository.supportsPrivateHistory
-                                  ? '还没有消息，认真说第一句话吧'
-                                  : '当前没有可恢复的私聊历史',
-                            ),
-                          )
-                        : RefreshIndicator(
-                            onRefresh: _load,
-                            child: ListView.builder(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.fromLTRB(14, 14, 14, 22),
-                              itemCount: _messages.length,
-                              itemBuilder: (BuildContext context, int index) {
-                                return _ChatBubble(message: _messages[index]);
-                              },
-                            ),
-                          ),
+                ? _MessageError(message: _error!, onRetry: _load)
+                : _messages.isEmpty
+                ? Center(
+                    child: Text(
+                      _repository.supportsPrivateHistory
+                          ? '还没有消息，认真说第一句话吧'
+                          : '当前没有可恢复的私聊历史',
+                    ),
+                  )
+                : RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 22),
+                      itemCount: _messages.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        return _ChatBubble(message: _messages[index]);
+                      },
+                    ),
+                  ),
           ),
           Material(
             color: AppColors.surface,
@@ -228,9 +228,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                         textInputAction: TextInputAction.send,
                         onSubmitted: (_) => _send(),
                         decoration: InputDecoration(
-                          hintText: canSend
-                              ? '输入消息…'
-                              : '腾讯 IM 接入后开放发送',
+                          hintText: canSend ? '输入消息…' : '腾讯 IM 接入后开放发送',
                           counterText: '',
                         ),
                       ),
