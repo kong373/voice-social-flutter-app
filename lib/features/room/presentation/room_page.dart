@@ -148,10 +148,7 @@ class _RoomPageState extends State<RoomPage> {
               const SizedBox(height: 18),
               Text('正在进入房间…', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
-              Text(
-                '正在获取房间状态并建立音频连接',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              Text('正在获取房间状态', style: Theme.of(context).textTheme.bodySmall),
               const Spacer(),
             ],
           ),
@@ -445,7 +442,11 @@ class _RoomPageState extends State<RoomPage> {
               label: _controller.isOnMic
                   ? (_controller.micMuted ? '开麦' : '闭麦')
                   : '申请上麦',
-              enabled: joined,
+              enabled:
+                  joined &&
+                  (_controller.isOnMic
+                      ? _controller.allows(RoomCapability.toggleMicrophone)
+                      : _controller.allows(RoomCapability.requestMic)),
               onTap: _controller.isOnMic
                   ? _toggleMicrophone
                   : _showMicRequestSheet,

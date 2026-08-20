@@ -61,6 +61,7 @@ class RoomController extends ChangeNotifier {
   bool get micRequestPending => _micRequestPending;
   bool get giftSubmitting => _giftSubmitting;
   bool get realtimeDegraded => _realtimeDegraded;
+  bool get isSnapshotOnly => _snapshot?.isSnapshotOnly ?? false;
   bool get mutedInRoom => _mutedInRoom;
   bool get canSendPublicMessage =>
       !_mutedInRoom && allows(RoomCapability.sendPublicMessage);
@@ -135,20 +136,22 @@ class RoomController extends ChangeNotifier {
         await _abandonEnteredRoom(snapshot);
         return;
       }
-      await _rtcAdapter.join(snapshot.rtc);
-      if (_joinCancelled || _disposed) {
-        await _abandonEnteredRoom(snapshot);
-        return;
-      }
-      await _replaceRealtimeSubscription();
-      try {
-        await _realtimeGateway.connect(
-          roomId: snapshot.roomId,
-          userId: _currentUserId,
-          accessToken: _accessToken,
-        );
-      } catch (_) {
-        _realtimeDegraded = true;
+      if (!snapshot.isSnapshotOnly) {
+        await _rtcAdapter.join(snapshot.rtc);
+        if (_joinCancelled || _disposed) {
+          await _abandonEnteredRoom(snapshot);
+          return;
+        }
+        await _replaceRealtimeSubscription();
+        try {
+          await _realtimeGateway.connect(
+            roomId: snapshot.roomId,
+            userId: _currentUserId,
+            accessToken: _accessToken,
+          );
+        } catch (_) {
+          _realtimeDegraded = true;
+        }
       }
       if (_joinCancelled || _disposed) {
         await _abandonEnteredRoom(snapshot);
@@ -163,7 +166,7 @@ class RoomController extends ChangeNotifier {
             content: '欢迎进入房间，请友善交流。',
             isSystem: true,
           ),
-          if (_realtimeDegraded)
+          if (!snapshot.isSnapshotOnly && _realtimeDegraded)
             const RoomMessage(
               sender: '系统',
               content: '实时消息通道暂未连接，房间状态可能延迟。',
@@ -400,12 +403,16 @@ class RoomController extends ChangeNotifier {
         roomId: roomId,
         currentUserId: _currentUserId,
       );
-      await _rtcAdapter.reconnect(snapshot.rtc);
-      try {
-        await _realtimeGateway.reconnect();
+      if (!snapshot.isSnapshotOnly) {
+        await _rtcAdapter.reconnect(snapshot.rtc);
+        try {
+          await _realtimeGateway.reconnect();
+          _realtimeDegraded = false;
+        } catch (_) {
+          _realtimeDegraded = true;
+        }
+      } else {
         _realtimeDegraded = false;
-      } catch (_) {
-        _realtimeDegraded = true;
       }
       _snapshot = snapshot;
       _messages.add(
