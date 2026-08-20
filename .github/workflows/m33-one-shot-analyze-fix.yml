@@ -1,23 +1,25 @@
-name: M3.3 one-shot analyzer fixes
+name: M3.3 one-shot formatter via pull request
 
 on:
-  push:
-    branches:
-      - feat/m3-3-video-runtime-ui
+  pull_request:
+    types: [synchronize, opened, reopened]
 
 permissions:
   contents: write
 
 jobs:
-  apply-fixes:
-    if: github.actor != 'github-actions[bot]'
+  format-candidate:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'feat/m3-3-video-runtime-ui' &&
+      github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
       FLUTTER_VERSION: 3.44.7
       TARGET_BRANCH: feat/m3-3-video-runtime-ui
     steps:
-      - name: Checkout candidate
+      - name: Checkout candidate head
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ env.TARGET_BRANCH }}
@@ -31,112 +33,25 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Apply deterministic analyzer fixes
+      - name: Format the complete Dart delta against main
         shell: bash
         run: |
           set -Eeuo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          def replace(path: str, old: str, new: str) -> None:
-              file = Path(path)
-              text = file.read_text(encoding='utf-8')
-              if old not in text:
-                  raise SystemExit(f'Expected text missing in {path}: {old[:120]!r}')
-              file.write_text(text.replace(old, new), encoding='utf-8')
-
-          replace(
-              'lib/features/account/presentation/live_backend_readiness_page.dart',
-              '''  LiveBackendReadinessStatus.configurationInvalid ||\n  LiveBackendReadinessStatus.tlsRejected => AppColors.error,''',
-              '''  LiveBackendReadinessStatus.configurationInvalid ||\n  LiveBackendReadinessStatus.tlsRejected => AppColors.error,\n  LiveBackendReadinessStatus.gatewayRejected => AppColors.warning,''',
+          git fetch origin main:refs/remotes/origin/main
+          base_sha="$(git merge-base HEAD origin/main)"
+          mapfile -d '' dart_files < <(
+            git diff --name-only -z --diff-filter=ACMR \
+              "$base_sha" HEAD -- '*.dart'
           )
-          replace(
-              'lib/features/account/presentation/live_backend_readiness_page.dart',
-              '''  LiveBackendReadinessStatus.tlsRejected => Icons.gpp_bad_outlined,\n  LiveBackendReadinessStatus.networkUnavailable => Icons.cloud_off_outlined,''',
-              '''  LiveBackendReadinessStatus.tlsRejected => Icons.gpp_bad_outlined,\n  LiveBackendReadinessStatus.gatewayRejected => Icons.cloud_off_outlined,\n  LiveBackendReadinessStatus.networkUnavailable => Icons.cloud_off_outlined,''',
-          )
-
-          room_path = Path('lib/features/room/presentation/video_runtime_room_page.dart')
-          room_text = room_path.read_text(encoding='utf-8')
-          old_send = '''          onSend:\n              (\n                String giftId,\n                String giftName,\n                int receiverUserId,\n                String targetName,\n                int quantity,\n              ) => _controller.sendGift(\n                giftId: giftId,\n                giftName: giftName,\n                receiverUserId: receiverUserId,\n                targetName: targetName,\n                quantity: quantity,\n              ),'''
-          new_send = '''          onSend: (GiftSendRequest request) => _controller.sendGift(\n            giftId: request.gift.id,\n            giftName: request.gift.name,\n            receiverUserId: request.target.userId,\n            targetName: request.target.name,\n            quantity: request.quantity,\n          ),'''
-          if old_send not in room_text:
-              raise SystemExit('Expected legacy GiftSheet callback was not found')
-          room_path.write_text(room_text.replace(old_send, new_send), encoding='utf-8')
-
-          replace(
-              'lib/app/app_environment.dart',
-              '''  bool get requiresSecureTransport =>\n      this == DeploymentEnvironment.staging ||\n      this == DeploymentEnvironment.production;''',
-              '''  bool get requiresSecureTransport =>\n      this == DeploymentEnvironment.staging ||\n      this == DeploymentEnvironment.production;\n\n  bool get allowsDevelopmentTools =>\n      this == DeploymentEnvironment.local ||\n      this == DeploymentEnvironment.development;''',
-          )
-
-          app_env_test = Path('test/app_environment_test.dart')
-          text = app_env_test.read_text(encoding='utf-8')
-          text = text.replace("    String developmentOutboxKey = '',\n", '')
-          text = text.replace('      developmentOutboxKey: developmentOutboxKey,\n', '')
-          pattern = re.compile(
-              r"  test\('development outbox key is forbidden in staging and production', \(\) \{.*?\n  \}\);\n\n",
-              re.S,
-          )
-          replacement = '''  test('mobile client never exposes development outbox configuration', () {\n    final AppEnvironment environment = liveEnvironment(\n      deployment: DeploymentEnvironment.staging,\n    );\n    expect(environment.canReadDevelopmentSmsOutbox, isFalse);\n    expect(\n      environment.redactedSummary['developmentOutboxConfigured'],\n      isFalse,\n    );\n  });\n\n'''
-          text, count = pattern.subn(replacement, text, count=1)
-          if count != 1:
-              raise SystemExit('Expected obsolete development outbox test block was not found')
-          app_env_test.write_text(text, encoding='utf-8')
-
-          readiness_test = Path('test/live_backend_readiness_page_test.dart')
-          text = readiness_test.read_text(encoding='utf-8')
-          text = text.replace("      developmentOutboxKey: 'development-outbox-key',\n", '')
-          readiness_test.write_text(text, encoding='utf-8')
-
-          auth_test = Path('test/backend_auth_repository_test.dart')
-          text = auth_test.read_text(encoding='utf-8')
-          text = text.replace("        developmentOutboxKey: 'development-outbox-key',\n", '')
-          text = text.replace(
-              '''      expect(\n        await repository.readDevelopmentSmsCode(challenge.challengeId),\n        '123456',\n      );''',
-              '''      expect(challenge.developmentCode, '123456');''',
-          )
-          text = text.replace('      expect(captured, hasLength(5));', '      expect(captured, hasLength(4));')
-          old_outbox = '''      final Map<String, Object?> outbox = captured[1];\n      expect(outbox['developmentClientId'], 'voice-social-mobile-public');\n      expect(outbox['developmentOutboxKey'], 'development-outbox-key');\n      expect(outbox['authorization'], isNull);\n\n      final Map<String, Object?> login = captured[2];'''
-          new_outbox = '''      expect(\n        captured.map(\n          (Map<String, Object?> item) => item['developmentOutboxKey'],\n        ),\n        everyElement(isNull),\n      );\n\n      final Map<String, Object?> login = captured[1];'''
-          if old_outbox not in text:
-              raise SystemExit('Expected obsolete outbox assertions were not found')
-          text = text.replace(old_outbox, new_outbox)
-          text = text.replace(
-              '      final Map<String, Object?> refresh = captured[3];',
-              '      final Map<String, Object?> refresh = captured[2];',
-          )
-          text = text.replace(
-              '      final Map<String, Object?> logout = captured[4];',
-              '      final Map<String, Object?> logout = captured[3];',
-          )
-          text = text.replace(
-              '''  '/app-register-api/util/v1/sendSmsCode' => <String, Object?>{\n    'challengeId': 'challenge-1',\n    'expiresIn': 300,\n    'retryAfter': 60,\n  },\n  '/internal/development/sms-outbox/challenge-1' => <String, Object?>{\n    'challengeId': 'challenge-1',\n    'code': '123456',\n  },''',
-              '''  '/app-register-api/util/v1/sendSmsCode' => <String, Object?>{\n    'challengeId': 'challenge-1',\n    'expiresIn': 300,\n    'retryAfter': 60,\n    'developmentCode': '123456',\n  },''',
-          )
-          auth_test.write_text(text, encoding='utf-8')
-          PY
-
-          mapfile -d '' dart_files < <(git ls-files -z '*.dart')
-          dart format "${dart_files[@]}"
+          printf 'format_base=%s\n' "$base_sha"
+          printf 'format_head=%s\n' "$(git rev-parse HEAD)"
+          printf 'candidate_dart_files=%s\n' "${#dart_files[@]}"
+          if (( ${#dart_files[@]} > 0 )); then
+            dart format "${dart_files[@]}"
+          fi
           rm -f .github/workflows/m33-one-shot-analyze-fix.yml
 
-      - name: Verify analyzer and focused tests
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          flutter pub get --enforce-lockfile
-          flutter analyze
-          flutter test \
-            test/app_environment_test.dart \
-            test/backend_auth_repository_test.dart \
-            test/live_backend_readiness_page_test.dart \
-            test/video_runtime_ui_test.dart \
-            --reporter=expanded \
-            --timeout=120s
-
-      - name: Commit fixes
+      - name: Commit exact Flutter 3.44.7 formatting
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -144,8 +59,8 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           if git diff --cached --quiet; then
-            echo 'No analyzer changes were required.'
+            echo 'No formatting changes were required.'
             exit 0
           fi
-          git commit -m 'fix(ui): align video runtime candidate with current contracts'
+          git commit -m 'style(ui): apply exact Flutter 3.44.7 formatting'
           git push origin "HEAD:$TARGET_BRANCH"
