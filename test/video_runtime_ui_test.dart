@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
 import 'package:voice_social_app/features/shell/main_shell.dart';
@@ -25,7 +26,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final AppDependencies dependencies = AppDependencies.mock();
+    final AppDependencies dependencies = await _authenticatedDependencies();
     await tester.pumpWidget(
       AppDependencyScope(
         dependencies: dependencies,
@@ -80,7 +81,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final AppDependencies dependencies = AppDependencies.mock();
+    final AppDependencies dependencies = await _authenticatedDependencies();
     await tester.pumpWidget(
       MediaQuery(
         data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
@@ -99,4 +100,23 @@ void main() {
     expect(find.text('正在发生'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+}
+
+Future<AppDependencies> _authenticatedDependencies() async {
+  final AppDependencies dependencies = AppDependencies.mock();
+  await dependencies.sessionManager.save(
+    AuthSession(
+      accessToken: 'test-access',
+      tokenType: 'Bearer',
+      expiresAt: DateTime.now().add(const Duration(hours: 1)),
+      refreshToken: 'test-refresh',
+      refreshExpiresAt: DateTime.now().add(const Duration(days: 30)),
+      deviceId: 'test-device',
+      clientId: 'mock-client',
+      userId: 10001,
+      mobile: '13800138000',
+      roles: 'USER',
+    ),
+  );
+  return dependencies;
 }
