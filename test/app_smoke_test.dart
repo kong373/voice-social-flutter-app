@@ -46,29 +46,38 @@ void main() {
     expect(find.text('送礼物'), findsOneWidget);
     expect(find.text('普通礼物'), findsOneWidget);
     await tester.tap(find.text('赠送 · 10').hitTestable());
-    await tester.pump(const Duration(milliseconds: 300));
+    await _pumpUntilVisible(
+      tester,
+      find.byKey(const Key('gift-celebration-overlay')),
+    );
     expect(find.byKey(const Key('gift-celebration-overlay')), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const Key('gift-celebration-overlay')), findsNothing);
 
     await tester.tap(find.byTooltip('离开房间').hitTestable());
-    await tester.pumpAndSettle();
+    await _pumpUntilVisible(tester, find.text('收起房间'));
     expect(find.text('收起房间'), findsOneWidget);
     await tester.tap(find.text('收起房间').hitTestable());
-    await tester.pumpAndSettle();
+    await _pumpUntilVisible(
+      tester,
+      find.byKey(const Key('minimized-room-pill')),
+    );
 
     expect(find.byKey(const Key('video-runtime-home')), findsOneWidget);
     expect(find.byKey(const Key('minimized-room-pill')), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('minimized-room-pill')));
-    await tester.pumpAndSettle();
+    await _pumpUntilVisible(tester, find.byType(VideoRuntimeRoomPage));
     expect(find.byType(VideoRuntimeRoomPage), findsOneWidget);
 
     await tester.tap(find.byTooltip('离开房间').hitTestable());
-    await tester.pumpAndSettle();
+    await _pumpUntilVisible(tester, find.text('离开房间'));
     await tester.tap(find.text('离开房间').hitTestable());
-    await tester.pumpAndSettle();
+    await _pumpUntilVisible(tester, find.text('离开房间？'));
     expect(find.text('离开房间？'), findsOneWidget);
     await tester.tap(find.text('确认离开').hitTestable());
-    await tester.pumpAndSettle();
+    await _pumpUntilHidden(tester, find.byType(VideoRuntimeRoomPage));
 
     expect(find.byType(VideoRuntimeRoomPage), findsNothing);
     expect(find.byKey(const Key('video-runtime-home')), findsOneWidget);
@@ -76,4 +85,32 @@ void main() {
     expect(find.text('正在结束房间会话…'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+}
+
+Future<void> _pumpUntilVisible(
+  WidgetTester tester,
+  Finder finder, {
+  int maximumPumps = 40,
+}) async {
+  for (int index = 0; index < maximumPumps; index += 1) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (finder.evaluate().isNotEmpty) {
+      return;
+    }
+  }
+  fail('Timed out waiting for ${finder.description} to become visible.');
+}
+
+Future<void> _pumpUntilHidden(
+  WidgetTester tester,
+  Finder finder, {
+  int maximumPumps = 60,
+}) async {
+  for (int index = 0; index < maximumPumps; index += 1) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (finder.evaluate().isEmpty) {
+      return;
+    }
+  }
+  fail('Timed out waiting for ${finder.description} to disappear.');
 }
