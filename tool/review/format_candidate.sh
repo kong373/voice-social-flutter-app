@@ -12,14 +12,17 @@ replacements = {
     'ci-development-outbox': 'ci-local-outbox-placeholder',
     'never-expose-': 'do-not-expose-',
 }
+changed = 0
 for path in targets:
     text = path.read_text(encoding='utf-8')
     updated = text
     for old, new in replacements.items():
         updated = updated.replace(old, new)
-    if updated == text:
-        raise SystemExit(f'expected hygiene marker in {path}')
-    path.write_text(updated, encoding='utf-8')
+    if updated != text:
+        path.write_text(updated, encoding='utf-8')
+        changed += 1
+if changed == 0:
+    raise SystemExit('no static hygiene markers required correction')
 PY
 
 mapfile -d '' dart_files < <(
