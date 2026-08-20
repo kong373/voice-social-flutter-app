@@ -285,6 +285,7 @@ Color _statusColor(LiveBackendReadinessStatus status) => switch (status) {
   LiveBackendReadinessStatus.mockMode => AppColors.accent,
   LiveBackendReadinessStatus.configurationInvalid ||
   LiveBackendReadinessStatus.tlsRejected => AppColors.error,
+  LiveBackendReadinessStatus.gatewayRejected ||
   LiveBackendReadinessStatus.networkUnavailable ||
   LiveBackendReadinessStatus.timedOut ||
   LiveBackendReadinessStatus.unexpectedFailure => AppColors.warning,
@@ -295,6 +296,7 @@ IconData _statusIcon(LiveBackendReadinessStatus status) => switch (status) {
   LiveBackendReadinessStatus.mockMode => Icons.science_outlined,
   LiveBackendReadinessStatus.configurationInvalid =>
     Icons.settings_suggest_outlined,
+  LiveBackendReadinessStatus.gatewayRejected => Icons.cloud_sync_outlined,
   LiveBackendReadinessStatus.tlsRejected => Icons.gpp_bad_outlined,
   LiveBackendReadinessStatus.networkUnavailable => Icons.cloud_off_outlined,
   LiveBackendReadinessStatus.timedOut => Icons.timer_off_outlined,
