@@ -21,6 +21,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 PUBLIC_CLIENT_ID = "voice-social-mobile-public"
+MAX_REQUEST_BODY_BYTES = 1024 * 1024
 
 HEALTH = "/health"
 SEND_SMS = "/app-register-api/util/v1/sendSmsCode"
@@ -220,19 +221,47 @@ class ContractHandler(BaseHTTPRequestHandler):
         )
 
     def _read_json_body(self) -> Any:
-        raw_length = self.headers.get("Content-Length")
-        length = int(raw_length) if raw_length and raw_length.isdigit() else 0
-        if length > 1024 * 1024:
-            raise ValueError("REQUEST_BODY_TOO_LARGE")
-        if length <= 0:
-            return None
-        raw = self.rfile.read(length)
+        transfer_encoding = self.headers.get("Transfer-Encoding", "").lower()
+        if "chunked" in transfer_encoding:
+            raw = self._read_chunked_body()
+        else:
+            raw_length = self.headers.get("Content-Length")
+            length = int(raw_length) if raw_length and raw_length.isdigit() else 0
+            if length > MAX_REQUEST_BODY_BYTES:
+                raise ValueError("REQUEST_BODY_TOO_LARGE")
+            raw = self.rfile.read(length) if length > 0 else b""
+
         if not raw.strip():
             return None
         try:
             return json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ValueError("INVALID_JSON") from error
+
+    def _read_chunked_body(self) -> bytes:
+        chunks = bytearray()
+        while True:
+            size_line = self.rfile.readline()
+            if not size_line:
+                raise ValueError("INVALID_CHUNKED_BODY")
+            try:
+                size_token = size_line.split(b";", 1)[0].strip()
+                size = int(size_token, 16)
+            except ValueError as error:
+                raise ValueError("INVALID_CHUNKED_BODY") from error
+            if size < 0:
+                raise ValueError("INVALID_CHUNKED_BODY")
+            if size == 0:
+                while True:
+                    trailer = self.rfile.readline()
+                    if trailer in {b"", b"\r\n", b"\n"}:
+                        return bytes(chunks)
+            if len(chunks) + size > MAX_REQUEST_BODY_BYTES:
+                raise ValueError("REQUEST_BODY_TOO_LARGE")
+            data = self.rfile.read(size)
+            if len(data) != size or self.rfile.read(2) != b"\r\n":
+                raise ValueError("INVALID_CHUNKED_BODY")
+            chunks.extend(data)
 
     def _validate_request(
         self,
