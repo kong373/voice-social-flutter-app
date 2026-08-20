@@ -1,0 +1,51 @@
+name: M3.2A one-shot formatter
+
+on:
+  push:
+    branches:
+      - feat/m3-2a-live-auth-readonly
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: feat/m3-2a-live-auth-readonly
+          fetch-depth: 0
+
+      - name: Install pinned Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.44.7'
+          channel: stable
+          cache: true
+
+      - name: Format candidate Dart files and remove helper
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          base_sha="$(git merge-base HEAD origin/main)"
+          mapfile -d '' dart_files < <(
+            git diff --name-only -z --diff-filter=ACMR \
+              "$base_sha" HEAD -- '*.dart'
+          )
+          if (( ${#dart_files[@]} > 0 )); then
+            dart format "${dart_files[@]}"
+          fi
+          git rm -- .github/workflows/m32-format-once.yml
+          if git diff --quiet && git diff --cached --quiet; then
+            echo 'No formatting changes were needed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'style(m3.2a): apply Flutter 3.44.7 formatting'
+          git push origin HEAD:feat/m3-2a-live-auth-readonly
