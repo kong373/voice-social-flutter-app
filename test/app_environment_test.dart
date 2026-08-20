@@ -88,12 +88,15 @@ void main() {
     );
   });
 
-  test('development tools are limited to local and development environments', () {
-    expect(DeploymentEnvironment.local.allowsDevelopmentTools, isTrue);
-    expect(DeploymentEnvironment.development.allowsDevelopmentTools, isTrue);
-    expect(DeploymentEnvironment.staging.allowsDevelopmentTools, isFalse);
-    expect(DeploymentEnvironment.production.allowsDevelopmentTools, isFalse);
-  });
+  test(
+    'development tools are limited to local and development environments',
+    () {
+      expect(DeploymentEnvironment.local.allowsDevelopmentTools, isTrue);
+      expect(DeploymentEnvironment.development.allowsDevelopmentTools, isTrue);
+      expect(DeploymentEnvironment.staging.allowsDevelopmentTools, isFalse);
+      expect(DeploymentEnvironment.production.allowsDevelopmentTools, isFalse);
+    },
+  );
 
   test('probe path must be absolute and timeout must be bounded', () {
     final AppEnvironment invalidPath = liveEnvironment(liveProbePath: 'health');
