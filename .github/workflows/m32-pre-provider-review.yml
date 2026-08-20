@@ -302,7 +302,7 @@ jobs:
             -camera-front none
           working-directory: .review_app
           script: |
-            set -Eeuo pipefail
+            set -eu
             DEVICE_ID="$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')"
             test -n "$DEVICE_ID"
             adb -s "$DEVICE_ID" shell settings put system accelerometer_rotation 0
