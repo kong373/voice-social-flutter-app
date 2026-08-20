@@ -82,10 +82,7 @@ void main() {
       deployment: DeploymentEnvironment.staging,
     );
     expect(environment.canReadDevelopmentSmsOutbox, isFalse);
-    expect(
-      environment.redactedSummary['developmentOutboxConfigured'],
-      isFalse,
-    );
+    expect(environment.redactedSummary['developmentOutboxConfigured'], isFalse);
   });
 
   test(
