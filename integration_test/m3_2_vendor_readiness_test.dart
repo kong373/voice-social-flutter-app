@@ -59,7 +59,7 @@ void main() {
       await tester.tap(find.text('获取验证码').hitTestable());
       await _waitFor(
         tester,
-        () => find.textContaining('验证码已发送').evaluate().isNotEmpty,
+        () => find.textContaining('验证码挑战已创建').evaluate().isNotEmpty,
         description: 'SMS challenge accepted',
       );
       // The trusted contract runner knows the deterministic test code. The
