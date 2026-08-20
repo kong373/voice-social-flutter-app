@@ -216,8 +216,13 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
 
   Widget _heroMosaic() {
     final DiscoveryRoom? room = _rooms.isEmpty ? null : _rooms.first;
+    final double textScale = MediaQuery.textScalerOf(context).scale(1);
+    final double mosaicHeight = (202 + (textScale - 1) * 190).clamp(
+      202.0,
+      268.0,
+    );
     return SizedBox(
-      height: 202,
+      height: mosaicHeight,
       child: Row(
         children: <Widget>[
           Expanded(
