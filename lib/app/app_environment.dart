@@ -13,6 +13,10 @@ extension DeploymentEnvironmentLabel on DeploymentEnvironment {
   bool get requiresSecureTransport =>
       this == DeploymentEnvironment.staging ||
       this == DeploymentEnvironment.production;
+
+  bool get allowsDevelopmentTools =>
+      this == DeploymentEnvironment.local ||
+      this == DeploymentEnvironment.development;
 }
 
 /// Runtime configuration for the Flutter client.
