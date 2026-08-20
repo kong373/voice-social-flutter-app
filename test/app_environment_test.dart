@@ -7,7 +7,6 @@ void main() {
     DeploymentEnvironment deployment = DeploymentEnvironment.development,
     bool allowInsecureHttp = false,
     String liveProbePath = '/',
-    String developmentOutboxKey = '',
   }) {
     return AppEnvironment(
       backendMode: BackendMode.live,
@@ -16,7 +15,6 @@ void main() {
       clientInnerVersion: '6',
       oauthClientId: 'client-id-value',
       realtimeEndpoint: '',
-      developmentOutboxKey: developmentOutboxKey,
       deploymentEnvironment: deployment,
       allowInsecureHttp: allowInsecureHttp,
       liveProbePath: liveProbePath,
@@ -34,9 +32,18 @@ void main() {
     expect(environment.redactedSummary['oauthClientSecretConfigured'], isFalse);
   });
 
-  test('mobile public client never loads an OAuth secret', () {
+  test('mobile public client never loads confidential credentials', () {
     final AppEnvironment environment = liveEnvironment();
     expect(environment.oauthClientSecret, isEmpty);
+    expect(environment.canReadDevelopmentSmsOutbox, isFalse);
+    expect(environment.redactedSummary['developmentOutboxConfigured'], isFalse);
+  });
+
+  test('development tools are limited to local and development', () {
+    expect(DeploymentEnvironment.local.allowsDevelopmentTools, isTrue);
+    expect(DeploymentEnvironment.development.allowsDevelopmentTools, isTrue);
+    expect(DeploymentEnvironment.staging.allowsDevelopmentTools, isFalse);
+    expect(DeploymentEnvironment.production.allowsDevelopmentTools, isFalse);
   });
 
   test('development HTTP requires an explicit insecure override', () {
@@ -74,23 +81,6 @@ void main() {
           (StateError error) => error.toString(),
           'message',
           contains('HTTPS'),
-        ),
-      ),
-    );
-  });
-
-  test('development outbox key is forbidden in staging and production', () {
-    final AppEnvironment environment = liveEnvironment(
-      deployment: DeploymentEnvironment.staging,
-      developmentOutboxKey: 'development-only-key',
-    );
-    expect(
-      environment.validateLiveConfiguration,
-      throwsA(
-        isA<StateError>().having(
-          (StateError error) => error.toString(),
-          'message',
-          contains('DEVELOPMENT_OUTBOX_KEY'),
         ),
       ),
     );
