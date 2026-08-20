@@ -47,10 +47,7 @@ void main() {
     expect(find.text('普通礼物'), findsOneWidget);
     await tester.tap(find.text('赠送 · 10').hitTestable());
     await tester.pump(const Duration(milliseconds: 300));
-    expect(
-      find.byKey(const Key('gift-celebration-overlay')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const Key('gift-celebration-overlay')), findsOneWidget);
 
     await tester.tap(find.byTooltip('离开房间').hitTestable());
     await tester.pumpAndSettle();

@@ -78,8 +78,7 @@ class HttpGatewayProbe implements GatewayProbe {
       if (response.statusCode != HttpStatus.ok) {
         return GatewayProbeResult(
           status: LiveBackendReadinessStatus.gatewayReachable,
-          message:
-              '网关已返回 HTTP ${response.statusCode}，传输链路可达；业务权限由认证请求确认。',
+          message: '网关已返回 HTTP ${response.statusCode}，传输链路可达；业务权限由认证请求确认。',
           checkedAt: DateTime.now().toUtc(),
           latency: stopwatch.elapsed,
           httpStatus: response.statusCode,
