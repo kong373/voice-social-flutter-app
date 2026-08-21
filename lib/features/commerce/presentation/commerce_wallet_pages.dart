@@ -47,9 +47,9 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SocialPageScaffold(
+    return _CommerceScaffold(
       appBar: AppBar(
-        title: const Text('钱包与商业化'),
+        title: const Text('钱包与商城'),
         actions: <Widget>[
           IconButton(
             tooltip: '刷新',
@@ -66,30 +66,37 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: <Widget>[
                 _WalletSummaryCard(wallet: _wallet!),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
+                Row(
+                  children: <Widget>[
+                    _CommerceShortcut(
+                      icon: Icons.add_card_rounded,
+                      label: '充值',
+                      asset: 'assets/runtime/gift-ticket.png',
+                      onTap: () => _open(const RechargeCatalogPage()),
+                    ),
+                    const SizedBox(width: 9),
+                    _CommerceShortcut(
+                      icon: Icons.auto_awesome_rounded,
+                      label: '装扮',
+                      asset: 'assets/runtime/avatar-rose.png',
+                      onTap: () => _open(const DecorationPage()),
+                    ),
+                    const SizedBox(width: 9),
+                    _CommerceShortcut(
+                      icon: Icons.redeem_rounded,
+                      label: '礼物',
+                      asset: 'assets/runtime/gift-whale.png',
+                      onTap: () => _open(const GiftCatalogPage()),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
                 _CommerceEntry(
                   icon: Icons.receipt_long_outlined,
                   title: '钱包与流水',
                   subtitle: '查看礼物币、现金收益和收支明细',
                   onTap: () => _open(const WalletPage()),
-                ),
-                _CommerceEntry(
-                  icon: Icons.add_card_rounded,
-                  title: '充值商品目录',
-                  subtitle: '选择充值档位、平台支付方式并查询服务端结果',
-                  onTap: () => _open(const RechargeCatalogPage()),
-                ),
-                _CommerceEntry(
-                  icon: Icons.redeem_outlined,
-                  title: '礼物图鉴',
-                  subtitle: '浏览普通礼物；实际赠送仍在语音房内完成',
-                  onTap: () => _open(const GiftCatalogPage()),
-                ),
-                _CommerceEntry(
-                  icon: Icons.auto_awesome_outlined,
-                  title: '装扮中心',
-                  subtitle: '浏览、购买并穿戴头像框、进场和声波样式',
-                  onTap: () => _open(const DecorationPage()),
                 ),
                 _CommerceEntry(
                   icon: Icons.shopping_bag_outlined,
@@ -183,7 +190,7 @@ class _WalletPageState extends State<WalletPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SocialPageScaffold(
+    return _CommerceScaffold(
       appBar: AppBar(title: const Text('钱包与流水')),
       body: Column(
         children: <Widget>[
@@ -238,39 +245,57 @@ class _WalletPageState extends State<WalletPage> {
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         itemCount: entries.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
+        separatorBuilder: (_, __) => const SizedBox(height: 8),
         itemBuilder: (BuildContext context, int index) {
           final LedgerEntry entry = entries[index];
-          return ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: CircleAvatar(
-              backgroundColor: entry.direction == LedgerDirection.income
-                  ? AppColors.success.withValues(alpha: 0.16)
-                  : AppColors.warning.withValues(alpha: 0.16),
-              child: Icon(
-                entry.direction == LedgerDirection.income
-                    ? Icons.south_west_rounded
-                    : Icons.north_east_rounded,
-              ),
-            ),
-            title: Text(entry.title),
-            subtitle: Text(
-              <String>[
-                if (entry.relatedUserName.isNotEmpty) entry.relatedUserName,
-                if (entry.businessName.isNotEmpty) entry.businessName,
-                _formatDateTime(entry.createdAt),
-              ].join(' · '),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: Text(
-              '${entry.direction == LedgerDirection.income ? '+' : '-'}¥${entry.amount.toStringAsFixed(2)}',
-              style: TextStyle(
-                color: entry.direction == LedgerDirection.income
-                    ? AppColors.success
-                    : AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
-              ),
+          return _CommercePanel(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+            child: Row(
+              children: <Widget>[
+                _CommerceAssetOrb(
+                  size: 40,
+                  icon: entry.direction == LedgerDirection.income
+                      ? Icons.south_west_rounded
+                      : Icons.north_east_rounded,
+                  colors: entry.direction == LedgerDirection.income
+                      ? const <Color>[Color(0xFFDFFFF2), Color(0xFFE7F8FF)]
+                      : const <Color>[Color(0xFFFFF0D5), Color(0xFFFFE8EF)],
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        entry.title,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        <String>[
+                          if (entry.relatedUserName.isNotEmpty)
+                            entry.relatedUserName,
+                          if (entry.businessName.isNotEmpty) entry.businessName,
+                          _formatDateTime(entry.createdAt),
+                        ].join(' · '),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${entry.direction == LedgerDirection.income ? '+' : '-'}¥${entry.amount.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    color: entry.direction == LedgerDirection.income
+                        ? AppColors.success
+                        : AppColors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
           );
         },

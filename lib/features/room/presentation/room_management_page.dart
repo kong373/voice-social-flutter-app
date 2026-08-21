@@ -6,6 +6,7 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
+import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
 enum _ManagementSection { members, seats, requests }
 
@@ -174,8 +175,8 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       canPop: true,
       onPopInvokedWithResult: (bool didPop, bool? result) {},
       child: RoomPageScaffold(
-        appBar: AppBar(
-          title: const Text('房间管理'),
+        appBar: roomOxygenAppBar(
+          title: '房间管理',
           leading: IconButton(
             tooltip: '返回房间',
             onPressed: () => Navigator.of(context).pop(_changed),
@@ -191,6 +192,16 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
         ),
         body: Column(
           children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: RoomOxygenContextBar(
+                title: '深夜温柔陪伴',
+                subtitle: '房间号 ${widget.roomId} · 权威状态管理',
+                seed: widget.roomId,
+                status: _isOwner ? '房主' : '房管',
+                statusColor: _isOwner ? RoomColors.gold : RoomColors.primary,
+              ),
+            ),
             _buildSectionPicker(),
             Expanded(child: _buildBody()),
           ],
@@ -204,7 +215,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
         _repository.micCoordinationMode == MicCoordinationMode.approval;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: SegmentedButton<_ManagementSection>(
         showSelectedIcon: false,
         segments: <ButtonSegment<_ManagementSection>>[
@@ -274,14 +285,12 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (BuildContext context, int index) {
         final RoomMember member = manageable[index];
-        return Material(
-          color: RoomColors.surfaceHigh.withValues(alpha: 0.88),
-          borderRadius: BorderRadius.circular(18),
+        return RoomGlassCard(
+          padding: EdgeInsets.zero,
+          radius: 16,
+          onTap: _busyUserId == null ? () => _showMemberMenu(member) : null,
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
             leading: RuntimeAvatar(
               seed: '${member.userId}',
               size: 44,
@@ -313,7 +322,6 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.more_horiz_rounded),
-            onTap: _busyUserId == null ? () => _showMemberMenu(member) : null,
           ),
         );
       },
@@ -325,9 +333,9 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        mainAxisExtent: 184,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        mainAxisExtent: 154,
       ),
       itemCount: _seats.length,
       itemBuilder: (BuildContext context, int index) {
@@ -336,64 +344,62 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
         final bool muted =
             seat.state == MicSeatState.mutedAvailable ||
             seat.state == MicSeatState.occupiedMuted;
-        return Card(
-          color: RoomColors.surfaceHigh.withValues(alpha: 0.9),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Text(
-                      '${seat.number} 号麦',
-                      style: Theme.of(context).textTheme.titleMedium,
+        return RoomGlassCard(
+          padding: const EdgeInsets.all(12),
+          radius: 16,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Text(
+                    '${seat.number} 号麦',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const Spacer(),
+                  if (_busySeatNumber == seat.number)
+                    const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
                     ),
-                    const Spacer(),
-                    if (_busySeatNumber == seat.number)
-                      const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  seat.userName ?? _seatStateLabel(seat),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const Spacer(),
-                Wrap(
-                  spacing: 6,
-                  children: <Widget>[
-                    ActionChip(
-                      avatar: Icon(
-                        locked
-                            ? Icons.lock_open_rounded
-                            : Icons.lock_outline_rounded,
-                        size: 16,
-                      ),
-                      label: Text(locked ? '解锁' : '锁定'),
-                      onPressed: _busySeatNumber == null
-                          ? () => _setSeatLocked(seat, !locked)
-                          : null,
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(
+                seat.userName ?? _seatStateLabel(seat),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const Spacer(),
+              Wrap(
+                spacing: 4,
+                children: <Widget>[
+                  ActionChip(
+                    avatar: Icon(
+                      locked
+                          ? Icons.lock_open_rounded
+                          : Icons.lock_outline_rounded,
+                      size: 16,
                     ),
-                    ActionChip(
-                      avatar: Icon(
-                        muted ? Icons.mic_rounded : Icons.mic_off_rounded,
-                        size: 16,
-                      ),
-                      label: Text(muted ? '开麦' : '闭麦'),
-                      onPressed: locked || _busySeatNumber != null
-                          ? null
-                          : () => _setSeatMuted(seat, !muted),
+                    label: Text(locked ? '解锁' : '锁定'),
+                    onPressed: _busySeatNumber == null
+                        ? () => _setSeatLocked(seat, !locked)
+                        : null,
+                  ),
+                  ActionChip(
+                    avatar: Icon(
+                      muted ? Icons.mic_rounded : Icons.mic_off_rounded,
+                      size: 16,
                     ),
-                  ],
-                ),
-              ],
-            ),
+                    label: Text(muted ? '开麦' : '闭麦'),
+                    onPressed: locked || _busySeatNumber != null
+                        ? null
+                        : () => _setSeatMuted(seat, !muted),
+                  ),
+                ],
+              ),
+            ],
           ),
         );
       },
@@ -410,14 +416,11 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (BuildContext context, int index) {
         final MicAccessRequest request = _requests[index];
-        return Material(
-          color: RoomColors.surfaceHigh.withValues(alpha: 0.88),
-          borderRadius: BorderRadius.circular(18),
+        return RoomGlassCard(
+          padding: EdgeInsets.zero,
+          radius: 16,
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(18),
-            ),
             leading: RuntimeAvatar(
               seed: '${request.member.userId}',
               size: 44,
@@ -449,23 +452,20 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       context: context,
       useSafeArea: true,
       builder: (BuildContext sheetContext) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: RuntimeAvatar(
-                seed: '${member.userId}',
-                size: 46,
-                ringColor: RoomColors.primary.withValues(alpha: 0.78),
-              ),
-              title: Text(member.name),
-              subtitle: Text(
-                member.isOnMic ? '${member.seatNumber} 号麦' : '听众席',
-              ),
+            RoomOxygenContextBar(
+              title: member.name,
+              subtitle: member.isOnMic ? '${member.seatNumber} 号麦' : '听众席',
+              seed: '${member.userId}',
+              status: member.isManager ? '管理' : '成员',
+              statusColor: member.isManager
+                  ? RoomColors.gold
+                  : RoomColors.accent,
             ),
-            const Divider(),
+            const SizedBox(height: 10),
             ListTile(
               leading: Icon(
                 member.isMuted

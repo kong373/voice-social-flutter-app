@@ -516,6 +516,87 @@ abstract final class AppTheme {
           minimumSize: const Size(44, 44),
         ),
       ),
+      appBarTheme: AppBarTheme(
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
+        backgroundColor: Colors.transparent,
+        foregroundColor: RoomColors.textPrimary,
+        titleTextStyle: TextStyle(
+          color: RoomColors.textPrimary,
+          fontSize: 17,
+          fontWeight: FontWeight.w800,
+          fontFamily: fontFamily,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: Colors.white.withValues(alpha: 0.06),
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.07)),
+        ),
+      ),
+      listTileTheme: ListTileThemeData(
+        iconColor: RoomColors.textPrimary,
+        textColor: RoomColors.textPrimary,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        titleTextStyle: TextStyle(
+          color: RoomColors.textPrimary,
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          fontFamily: fontFamily,
+        ),
+        subtitleTextStyle: TextStyle(
+          color: RoomColors.textSecondary,
+          fontSize: 11,
+          height: 1.35,
+          fontFamily: fontFamily,
+        ),
+      ),
+      dividerColor: Colors.white.withValues(alpha: 0.08),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith<Color>((states) {
+          return states.contains(WidgetState.selected)
+              ? Colors.white
+              : RoomColors.textSecondary;
+        }),
+        trackColor: WidgetStateProperty.resolveWith<Color>((states) {
+          return states.contains(WidgetState.selected)
+              ? RoomColors.primary
+              : Colors.white.withValues(alpha: 0.12);
+        }),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          foregroundColor: WidgetStateProperty.resolveWith<Color>((states) {
+            return states.contains(WidgetState.selected)
+                ? Colors.white
+                : RoomColors.textSecondary;
+          }),
+          backgroundColor: WidgetStateProperty.resolveWith<Color>((states) {
+            return states.contains(WidgetState.selected)
+                ? RoomColors.primary.withValues(alpha: 0.7)
+                : Colors.white.withValues(alpha: 0.055);
+          }),
+          side: WidgetStatePropertyAll<BorderSide>(
+            BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          shape: WidgetStatePropertyAll<OutlinedBorder>(
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
+          ),
+          textStyle: WidgetStatePropertyAll<TextStyle>(
+            TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              fontFamily: fontFamily,
+            ),
+          ),
+        ),
+      ),
       bottomSheetTheme: const BottomSheetThemeData(
         backgroundColor: Color(0xFF13142C),
         modalBackgroundColor: Color(0xFF13142C),

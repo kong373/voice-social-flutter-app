@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
+import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
 class RoomSharePage extends StatelessWidget {
   const RoomSharePage({
@@ -31,60 +32,73 @@ class RoomSharePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RoomPageScaffold(
-      appBar: AppBar(title: const Text('房间分享')),
+      appBar: roomOxygenAppBar(title: '房间分享'),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: <Widget>[
-          Container(
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: <Color>[Color(0xFF242752), Color(0xFF151832)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          OriginalRoomArtwork(
+            seed: roomId,
+            height: 164,
+            borderRadius: BorderRadius.circular(18),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  const RoomOxygenPill(
+                    label: '语音房邀请',
+                    icon: Icons.graphic_eq_rounded,
+                    active: true,
+                    accent: RoomColors.accent,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    roomTitle,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '房间号 $roomCode · 点击有效链接直接进入',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: RoomColors.textPrimary,
+                    ),
+                  ),
+                ],
               ),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
             ),
+          ),
+          const SizedBox(height: 18),
+          RoomOxygenSection(
+            title: '分享给朋友',
+            subtitle: '复制邀请后可发送到任意会话，失效链接会被安全拦截。',
+            icon: Icons.ios_share_rounded,
+            padding: EdgeInsets.zero,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const Icon(Icons.graphic_eq_rounded, color: RoomColors.accent),
-                const SizedBox(height: 20),
-                Text(roomTitle, style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 8),
-                Text(
-                  '房间号 $roomCode',
-                  style: Theme.of(context).textTheme.bodySmall,
+                ListTile(
+                  leading: const Icon(Icons.tag_rounded),
+                  title: const Text('复制房间号'),
+                  subtitle: Text(roomCode),
+                  trailing: const Icon(Icons.copy_rounded, size: 19),
+                  onTap: () => _copy(context, roomCode, '房间号已复制'),
                 ),
-                const SizedBox(height: 20),
-                Text(
-                  '点击有效房间链接后直接进入语音房；链接失效时展示恢复界面。',
-                  style: Theme.of(context).textTheme.bodyMedium,
+                const Divider(height: 1, indent: 54),
+                ListTile(
+                  leading: const Icon(Icons.link_rounded),
+                  title: const Text('复制房间邀请'),
+                  subtitle: const Text('包含房间标题、房间号和深链'),
+                  trailing: const Icon(Icons.copy_all_rounded, size: 19),
+                  onTap: () => _copy(context, _shareText, '房间邀请已复制'),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 24),
-          ListTile(
-            leading: const Icon(Icons.tag_rounded),
-            title: const Text('复制房间号'),
-            subtitle: Text(roomCode),
-            trailing: const Icon(Icons.copy_rounded),
-            onTap: () => _copy(context, roomCode, '房间号已复制'),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.link_rounded),
-            title: const Text('复制房间邀请'),
-            subtitle: const Text('包含房间标题、房间号和深链'),
-            trailing: const Icon(Icons.copy_all_rounded),
-            onTap: () => _copy(context, _shareText, '房间邀请已复制'),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            '更多系统分享渠道暂不可用，可先复制房间邀请。',
-            style: Theme.of(context).textTheme.bodySmall,
+          const SizedBox(height: 14),
+          const RoomOxygenNotice(
+            icon: Icons.info_outline_rounded,
+            title: '系统分享暂不可用',
+            message: '当前不会伪造分享成功，可先复制房间邀请。',
           ),
         ],
       ),

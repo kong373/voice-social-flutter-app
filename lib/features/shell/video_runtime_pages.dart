@@ -12,8 +12,8 @@ import 'package:voice_social_app/features/discovery/dynamic/presentation/dynamic
 import 'package:voice_social_app/features/discovery/presentation/global_search_page.dart';
 import 'package:voice_social_app/features/discovery/presentation/saved_rooms_page.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
-import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/shell/live_read_only_pages.dart';
+import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 class VideoRuntimeHomePage extends StatefulWidget {
@@ -973,42 +973,70 @@ class _VideoRuntimeDiscoveryPageState extends State<VideoRuntimeDiscoveryPage> {
   }
 
   Future<void> _showCommentSheet(String name) async {
-    final TextEditingController controller = TextEditingController();
-    await showModalBottomSheet<void>(
+    final bool? published = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      builder: (BuildContext sheetContext) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          8,
-          16,
-          14 + MediaQuery.viewInsetsOf(sheetContext).bottom,
-        ),
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: TextField(
-                controller: controller,
-                autofocus: true,
-                decoration: InputDecoration(hintText: '回复 $name…'),
-              ),
+      builder: (BuildContext sheetContext) =>
+          _CommentComposerSheet(replyTo: name),
+    );
+    if (published == true && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('评论已发布')));
+    }
+  }
+}
+
+class _CommentComposerSheet extends StatefulWidget {
+  const _CommentComposerSheet({required this.replyTo});
+
+  final String replyTo;
+
+  @override
+  State<_CommentComposerSheet> createState() => _CommentComposerSheetState();
+}
+
+class _CommentComposerSheetState extends State<_CommentComposerSheet> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_controller.text.trim().isEmpty) {
+      return;
+    }
+    Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        14 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              autofocus: true,
+              decoration: InputDecoration(hintText: '回复 ${widget.replyTo}…'),
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _submit(),
             ),
-            const SizedBox(width: 8),
-            FilledButton(
-              onPressed: () {
-                if (controller.text.trim().isEmpty) return;
-                Navigator.of(sheetContext).pop();
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(const SnackBar(content: Text('评论已发布')));
-              },
-              child: const Text('发送'),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(onPressed: _submit, child: const Text('发送')),
+        ],
       ),
     );
-    controller.dispose();
   }
 }
 
@@ -1247,497 +1275,125 @@ class _FeedAction extends StatelessWidget {
   );
 }
 
-class VideoRuntimeMessagesPage extends StatefulWidget {
+class VideoRuntimeMessagesPage extends StatelessWidget {
   const VideoRuntimeMessagesPage({required this.dependencies, super.key});
 
   final AppDependencies dependencies;
 
   @override
-  State<VideoRuntimeMessagesPage> createState() =>
-      _VideoRuntimeMessagesPageState();
+  Widget build(BuildContext context) =>
+      const MessageCenterPage(key: Key('video-runtime-messages'));
 }
 
-class _VideoRuntimeMessagesPageState extends State<VideoRuntimeMessagesPage> {
-  int _tab = 0;
-  List<ConversationSummary>? _conversations;
-  bool _loading = true;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    Future<void>.microtask(_loadConversations);
-  }
-
-  Future<void> _loadConversations() async {
-    if (!widget.dependencies.messageRepository.supportsConversationList) {
-      if (mounted) setState(() => _loading = false);
-      return;
-    }
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final List<ConversationSummary> value = await widget
-          .dependencies
-          .messageRepository
-          .fetchConversations();
-      if (!mounted) return;
-      setState(() {
-        _conversations = value;
-        _loading = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = error is ApiException ? error.message : '消息列表暂时无法加载';
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.dependencies.environment.isLive &&
-        !widget.dependencies.messageRepository.supportsConversationList) {
-      return const _LiveMessageSurface();
-    }
-    final List<ConversationSummary> conversations =
-        (_conversations ?? const <ConversationSummary>[])
-            .where((ConversationSummary item) => _tab == 0 || item.available)
-            .toList(growable: false);
-    return SocialSkySurface(
-      child: SafeArea(
-        bottom: false,
-        child: ListView(
-          key: const Key('video-runtime-messages'),
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 32),
-          children: <Widget>[
-            _header(),
-            const SizedBox(height: 20),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: _MessageShortcut(
-                    icon: Icons.notifications_none_rounded,
-                    title: '系统消息',
-                    accent: Color(0xFF6D9BFF),
-                    onTap: () =>
-                        _openNotifications(NotificationCategory.system),
-                  ),
-                ),
-                Expanded(
-                  child: _MessageShortcut(
-                    icon: Icons.favorite_border_rounded,
-                    title: '互动通知',
-                    accent: SocialColors.secondary,
-                    onTap: () =>
-                        _openNotifications(NotificationCategory.interaction),
-                  ),
-                ),
-                Expanded(
-                  child: _MessageShortcut(
-                    icon: Icons.person_add_alt_1_rounded,
-                    title: '好友请求',
-                    accent: Color(0xFF63CDB6),
-                    onTap: () => _openPage(const RelationsPage()),
-                  ),
-                ),
-                Expanded(
-                  child: _MessageShortcut(
-                    icon: Icons.support_agent_rounded,
-                    title: '帮助助手',
-                    accent: Color(0xFFFFB466),
-                    onTap: () => _openPage(const HelpCenterPage()),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Text(
-              _tab == 0 ? '最近消息' : '我的联系人',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 10),
-            if (_loading)
-              const SizedBox(
-                height: 170,
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_error != null)
-              SizedBox(
-                height: 190,
-                child: _LightState(
-                  icon: Icons.cloud_off_rounded,
-                  title: '消息加载失败',
-                  description: _error!,
-                  actionLabel: '重试',
-                  onAction: _loadConversations,
-                ),
-              )
-            else if (conversations.isEmpty)
-              _LightState(
-                icon: Icons.forum_outlined,
-                title: _tab == 0 ? '还没有消息' : '还没有可联系的好友',
-                description: _tab == 0 ? '进入感兴趣的房间，认识同频的人。' : '建立好友关系后，会显示在这里。',
-              )
-            else
-              SocialCard(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                radius: 20,
-                child: Column(
-                  children: <Widget>[
-                    for (
-                      int index = 0;
-                      index < conversations.length;
-                      index += 1
-                    ) ...<Widget>[
-                      _ConversationRow(
-                        conversation: conversations[index],
-                        contactOnly: _tab == 1,
-                        onTap: () => _openConversation(conversations[index]),
-                      ),
-                      if (index < conversations.length - 1)
-                        const Divider(height: 1),
-                    ],
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _header() => Row(
-    crossAxisAlignment: CrossAxisAlignment.end,
-    children: <Widget>[
-      for (int index = 0; index < 2; index += 1)
-        Padding(
-          padding: const EdgeInsets.only(right: 22),
-          child: InkWell(
-            onTap: () => setState(() => _tab = index),
-            child: Text(
-              index == 0 ? '消息' : '联系人',
-              style: TextStyle(
-                color: _tab == index
-                    ? SocialColors.textPrimary
-                    : SocialColors.textSecondary,
-                fontSize: _tab == index ? 25 : 15,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ),
-      const Spacer(),
-      _RoundHeaderButton(
-        icon: Icons.search_rounded,
-        tooltip: '搜索消息',
-        onTap: _openMessageCenter,
-      ),
-    ],
-  );
-
-  void _openMessageCenter() => Navigator.of(context).push<void>(
-    MaterialPageRoute<void>(
-      builder: (BuildContext context) => const MessageCenterPage(),
-    ),
-  );
-
-  void _openNotifications(NotificationCategory category) =>
-      _openPage(NotificationCenterPage(initialCategory: category));
-
-  void _openConversation(ConversationSummary conversation) =>
-      Navigator.of(context)
-          .push<void>(
-            MaterialPageRoute<void>(
-              builder: (BuildContext context) =>
-                  PrivateChatPage(conversation: conversation),
-            ),
-          )
-          .then((_) => _loadConversations());
-
-  void _openPage(Widget page) => Navigator.of(context).push<void>(
-    MaterialPageRoute<void>(builder: (BuildContext context) => page),
-  );
-}
-
-class _ConversationRow extends StatelessWidget {
-  const _ConversationRow({
-    required this.conversation,
-    required this.contactOnly,
-    required this.onTap,
-  });
-
-  final ConversationSummary conversation;
-  final bool contactOnly;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          children: <Widget>[
-            Stack(
-              children: <Widget>[
-                RuntimeAvatar(seed: conversation.id, size: 48),
-                if (conversation.available)
-                  Positioned(
-                    right: 1,
-                    bottom: 2,
-                    child: Container(
-                      width: 11,
-                      height: 11,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF59D8A4),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    conversation.title,
-                    style: const TextStyle(
-                      color: SocialColors.textPrimary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    contactOnly
-                        ? '在线 · 可以开始聊天'
-                        : conversation.available
-                        ? conversation.lastMessage
-                        : conversation.unavailableReason,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: SocialColors.textSecondary,
-                      fontSize: 11,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (!contactOnly)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: <Widget>[
-                  Text(
-                    _conversationTime(conversation.updatedAt),
-                    style: const TextStyle(
-                      color: SocialColors.textTertiary,
-                      fontSize: 9,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  if (conversation.unreadCount > 0)
-                    Container(
-                      constraints: const BoxConstraints(minWidth: 17),
-                      height: 17,
-                      padding: const EdgeInsets.symmetric(horizontal: 5),
-                      decoration: BoxDecoration(
-                        color: SocialColors.secondary,
-                        borderRadius: BorderRadius.circular(99),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        '${conversation.unreadCount}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  static String _conversationTime(DateTime value) {
-    final DateTime now = DateTime.now();
-    final DateTime today = DateTime(now.year, now.month, now.day);
-    final DateTime messageDay = DateTime(value.year, value.month, value.day);
-    if (messageDay == today) {
-      return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
-    }
-    if (today.difference(messageDay).inDays == 1) {
-      return '昨天';
-    }
-    return '${value.month}/${value.day}';
-  }
-}
-
-class _LiveMessageSurface extends StatelessWidget {
-  const _LiveMessageSurface();
-
-  @override
-  Widget build(BuildContext context) => SocialSkySurface(
-    child: SafeArea(
-      bottom: false,
-      child: ListView(
-        key: const Key('video-runtime-messages'),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 30),
-        children: <Widget>[
-          Text('消息', style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 20),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: _MessageShortcut(
-                  icon: Icons.notifications_none_rounded,
-                  title: '系统消息',
-                  accent: Color(0xFF6D9BFF),
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute<void>(
-                      builder: (BuildContext context) =>
-                          const NotificationCenterPage(),
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: _MessageShortcut(
-                  icon: Icons.favorite_border_rounded,
-                  title: '互动通知',
-                  accent: SocialColors.secondary,
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute<void>(
-                      builder: (BuildContext context) =>
-                          const NotificationCenterPage(
-                            initialCategory: NotificationCategory.interaction,
-                          ),
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: _MessageShortcut(
-                  icon: Icons.person_add_alt_1_rounded,
-                  title: '好友请求',
-                  accent: Color(0xFF63CDB6),
-                  onTap: () => Navigator.of(context).push<void>(
-                    MaterialPageRoute<void>(
-                      builder: (BuildContext context) => const RelationsPage(),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 28),
-          const _LightState(
-            key: Key('im-vendor-blocked'),
-            icon: Icons.forum_outlined,
-            title: '消息服务正在准备',
-            description: '不会伪造私聊和互动消息。服务接通后会展示真实会话。',
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _MessageShortcut extends StatelessWidget {
-  const _MessageShortcut({
-    required this.icon,
-    required this.title,
-    required this.accent,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final Color accent;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(18),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        children: <Widget>[
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: <Color>[accent.withValues(alpha: 0.55), accent],
-              ),
-              borderRadius: BorderRadius.circular(17),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: accent.withValues(alpha: 0.22),
-                  blurRadius: 12,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-            ),
-            child: Icon(icon, color: Colors.white, size: 24),
-          ),
-          const SizedBox(height: 7),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: SocialColors.textSecondary,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class VideoRuntimeAccountPage extends StatelessWidget {
+class VideoRuntimeAccountPage extends StatefulWidget {
   const VideoRuntimeAccountPage({
     required this.dependencies,
     required this.onOpenRoom,
     required this.onSignOut,
+    this.profileRepository,
     super.key,
   });
 
   final AppDependencies dependencies;
   final void Function(DiscoveryRoom room) onOpenRoom;
   final Future<void> Function() onSignOut;
+  final SocialRepository? profileRepository;
 
-  void _open(BuildContext context, Widget page) =>
-      Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(builder: (BuildContext context) => page),
-      );
+  @override
+  State<VideoRuntimeAccountPage> createState() =>
+      _VideoRuntimeAccountPageState();
+}
+
+class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
+  SocialProfile? _profile;
+  String? _profileError;
+  bool _loadingProfile = false;
+  int _profileLoadRequestId = 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_profile == null && !_loadingProfile && _profileError == null) {
+      _loadProfile();
+    }
+  }
+
+  Future<void> _loadProfile() async {
+    final int requestId = ++_profileLoadRequestId;
+    setState(() {
+      _loadingProfile = true;
+      _profileError = null;
+    });
+    try {
+      final SocialProfile profile =
+          await (widget.profileRepository ??
+                  widget.dependencies.socialRepository)
+              .fetchMyProfile();
+      if (!mounted || requestId != _profileLoadRequestId) {
+        return;
+      }
+      setState(() {
+        _profile = profile;
+        _loadingProfile = false;
+      });
+    } catch (error) {
+      if (!mounted || requestId != _profileLoadRequestId) {
+        return;
+      }
+      setState(() {
+        _loadingProfile = false;
+        _profileError = error is ApiException ? error.message : '个人资料暂时无法加载';
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _profileLoadRequestId += 1;
+    super.dispose();
+  }
+
+  Future<void> _open(
+    BuildContext context,
+    Widget page, {
+    bool refreshProfile = false,
+  }) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (BuildContext context) => page),
+    );
+    if (refreshProfile && mounted) {
+      await _loadProfile();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final String account = dependencies.sessionManager.session?.mobile ?? '';
-    final Widget accountPage = dependencies.environment.isLive
+    final SocialProfile? profile = _profile;
+    if (profile == null) {
+      return SocialSkySurface(
+        child: SafeArea(
+          child: _profileError == null
+              ? const Center(child: CircularProgressIndicator())
+              : _LightState(
+                  icon: Icons.person_off_outlined,
+                  title: '个人资料加载失败',
+                  description: _profileError!,
+                  actionLabel: '重试',
+                  onAction: _loadProfile,
+                ),
+        ),
+      );
+    }
+    final String account =
+        widget.dependencies.sessionManager.session?.mobile ?? profile.account;
+    final Widget accountPage = widget.dependencies.environment.isLive
         ? LiveReadOnlyAccountPage(
-            dependencies: dependencies,
-            onSignOut: onSignOut,
+            dependencies: widget.dependencies,
+            onSignOut: widget.onSignOut,
           )
         : PersonalCenterPage(
-            session: dependencies.sessionManager.session,
-            onSignOut: onSignOut,
+            session: widget.dependencies.sessionManager.session,
+            onSignOut: widget.onSignOut,
           );
     return SocialSkySurface(
       child: SafeArea(
@@ -1758,7 +1414,8 @@ class VideoRuntimeAccountPage extends StatelessWidget {
                     _RoundHeaderButton(
                       icon: Icons.settings_outlined,
                       tooltip: '设置',
-                      onTap: () => _open(context, accountPage),
+                      onTap: () =>
+                          _open(context, accountPage, refreshProfile: true),
                     ),
                   ],
                 ),
@@ -1767,7 +1424,11 @@ class VideoRuntimeAccountPage extends StatelessWidget {
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
               sliver: SliverToBoxAdapter(
-                child: _ProfileHeader(onTap: () => _open(context, accountPage)),
+                child: _ProfileHeader(
+                  profile: profile,
+                  onTap: () =>
+                      _open(context, accountPage, refreshProfile: true),
+                ),
               ),
             ),
             SliverPadding(
@@ -1829,7 +1490,7 @@ class VideoRuntimeAccountPage extends StatelessWidget {
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               sliver: SliverToBoxAdapter(
-                child: _RecentRoomsStrip(onOpenRoom: onOpenRoom),
+                child: _RecentRoomsStrip(onOpenRoom: widget.onOpenRoom),
               ),
             ),
             SliverPadding(
@@ -1875,7 +1536,8 @@ class VideoRuntimeAccountPage extends StatelessWidget {
                       _AccountTool(
                         icon: Icons.manage_accounts_outlined,
                         label: '资料与设置',
-                        onTap: () => _open(context, accountPage),
+                        onTap: () =>
+                            _open(context, accountPage, refreshProfile: true),
                       ),
                       _AccountTool(
                         icon: Icons.notifications_none_rounded,
@@ -1891,12 +1553,14 @@ class VideoRuntimeAccountPage extends StatelessWidget {
                       _AccountTool(
                         icon: Icons.verified_user_outlined,
                         label: '隐私与安全',
-                        onTap: () => _open(context, accountPage),
+                        onTap: () =>
+                            _open(context, accountPage, refreshProfile: true),
                       ),
                       _AccountTool(
                         icon: Icons.more_horiz_rounded,
                         label: '更多',
-                        onTap: () => _open(context, accountPage),
+                        onTap: () =>
+                            _open(context, accountPage, refreshProfile: true),
                       ),
                     ],
                   ),
@@ -1911,8 +1575,9 @@ class VideoRuntimeAccountPage extends StatelessWidget {
 }
 
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.onTap});
+  const _ProfileHeader({required this.profile, required this.onTap});
 
+  final SocialProfile profile;
   final VoidCallback onTap;
 
   @override
@@ -1923,10 +1588,10 @@ class _ProfileHeader extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         children: <Widget>[
-          const Row(
+          Row(
             children: <Widget>[
-              RuntimeAvatar(seed: 'current-user', size: 74),
-              SizedBox(width: 13),
+              RuntimeAvatar(seed: '${profile.user.userId}', size: 74),
+              const SizedBox(width: 13),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1935,28 +1600,31 @@ class _ProfileHeader extends StatelessWidget {
                       children: <Widget>[
                         Flexible(
                           child: Text(
-                            '星河漫游者',
+                            profile.user.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: SocialColors.textPrimary,
                               fontSize: 20,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
                         ),
-                        SizedBox(width: 6),
-                        Icon(
+                        const SizedBox(width: 6),
+                        const Icon(
                           Icons.verified_rounded,
                           color: SocialColors.primary,
                           size: 18,
                         ),
                       ],
                     ),
-                    SizedBox(height: 5),
+                    const SizedBox(height: 5),
                     Text(
-                      'ID 880217 · 今天也在认真生活',
-                      style: TextStyle(
+                      'ID ${profile.account} · '
+                      '${profile.user.signature.isEmpty ? '今天也在认真生活' : profile.user.signature}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
                         color: SocialColors.textSecondary,
                         fontSize: 11,
                       ),
@@ -1964,19 +1632,19 @@ class _ProfileHeader extends StatelessWidget {
                   ],
                 ),
               ),
-              Icon(
+              const Icon(
                 Icons.chevron_right_rounded,
                 color: SocialColors.textTertiary,
               ),
             ],
           ),
           const SizedBox(height: 16),
-          const Row(
+          Row(
             children: <Widget>[
-              _ProfileStat(value: '128', label: '关注'),
-              _ProfileStat(value: '2.6k', label: '粉丝'),
-              _ProfileStat(value: '18.9k', label: '获赞'),
-              _ProfileStat(value: '32', label: '访客'),
+              _ProfileStat(value: '${profile.followingCount}', label: '关注'),
+              _ProfileStat(value: '${profile.followerCount}', label: '粉丝'),
+              _ProfileStat(value: '${profile.friendCount}', label: '好友'),
+              _ProfileStat(value: '${profile.postCount}', label: '动态'),
             ],
           ),
         ],
@@ -2269,7 +1937,6 @@ class _LightState extends StatelessWidget {
     required this.description,
     this.actionLabel,
     this.onAction,
-    super.key,
   });
 
   final IconData icon;

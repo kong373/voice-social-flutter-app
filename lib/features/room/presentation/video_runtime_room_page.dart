@@ -9,10 +9,12 @@ import 'package:voice_social_app/features/room/application/room_controller.dart'
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_permission_policy.dart';
+import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
 import 'package:voice_social_app/features/room/pk/presentation/room_pk_pages.dart';
 import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
 import 'package:voice_social_app/features/room/presentation/room_audio_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_diagnostics_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_members_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_recovery_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_share_page.dart';
@@ -26,11 +28,13 @@ class VideoRuntimeRoomPage extends StatefulWidget {
   const VideoRuntimeRoomPage({
     required this.controller,
     this.allowMinimize = true,
+    this.entrySource = RoomEntrySource.home,
     super.key,
   });
 
   final RoomController controller;
   final bool allowMinimize;
+  final RoomEntrySource entrySource;
 
   @override
   State<VideoRuntimeRoomPage> createState() => _VideoRuntimeRoomPageState();
@@ -55,7 +59,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     _controller.addListener(_onControllerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _controller.join();
+        _controller.join(source: widget.entrySource);
       }
     });
   }
@@ -193,7 +197,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                 Text(_controller.errorMessage ?? '请检查网络后重试。'),
                 const SizedBox(height: 22),
                 FilledButton.icon(
-                  onPressed: () => _controller.join(),
+                  onPressed: () => _controller.join(source: widget.entrySource),
                   icon: const Icon(Icons.refresh_rounded),
                   label: const Text('重新进入'),
                 ),
@@ -208,6 +212,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
 
   Widget _roomContent() {
     final double keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    final bool composing = keyboard > 0 || _composerFocus.hasFocus;
     return Stack(
       children: <Widget>[
         const _VideoRoomBackground(),
@@ -224,16 +229,16 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                   child: Column(
                     children: <Widget>[
                       SizedBox(
-                        height: keyboard > 0 ? 198 : 252,
+                        height: composing ? 176 : 218,
                         child: GridView.builder(
-                          padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                          padding: const EdgeInsets.fromLTRB(12, 7, 12, 0),
                           physics: const NeverScrollableScrollPhysics(),
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
                                 crossAxisCount: 4,
-                                mainAxisSpacing: 8,
-                                crossAxisSpacing: 8,
-                                childAspectRatio: 0.8,
+                                mainAxisSpacing: 5,
+                                crossAxisSpacing: 6,
+                                childAspectRatio: 0.88,
                               ),
                           itemCount: _controller.seats.length,
                           itemBuilder: (BuildContext context, int index) =>
@@ -244,10 +249,11 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                     ],
                   ),
                 ),
-                if (keyboard > 0 || _composerFocus.hasFocus)
+                if (composing) ...<Widget>[
                   _replySuggestions(),
-                _composerBar(),
-                if (keyboard == 0) _actions(),
+                  _composerBar(),
+                ] else
+                  _roomDock(),
               ],
             ),
           ),
@@ -288,13 +294,20 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                   _controller.displayTitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: const TextStyle(
+                    color: RoomColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 Text(
                   _controller.snapshot?.onlineCount == null
                       ? '房间号 ${_controller.roomCode}'
                       : '房间号 ${_controller.roomCode} · ${_controller.snapshot!.onlineCount} 人在线',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: const TextStyle(
+                    color: RoomColors.textSecondary,
+                    fontSize: 10,
+                  ),
                 ),
               ],
             ),
@@ -377,82 +390,248 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         ? '欢迎来到房间，请友善交流'
         : _controller.topic;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 2, 14, 0),
-      child: Column(
+      padding: const EdgeInsets.fromLTRB(14, 1, 14, 0),
+      child: Row(
         children: <Widget>[
-          _AnnouncementChip(
-            icon: Icons.campaign_outlined,
-            label: topic,
-            onTap: _openTopic,
+          Flexible(
+            child: _AnnouncementChip(
+              icon: Icons.campaign_outlined,
+              eyebrow: '今晚的话题',
+              label: topic,
+              onTap: _openTopic,
+            ),
           ),
-          const SizedBox(height: 5),
-          const _AnnouncementChip(
-            icon: Icons.workspace_premium_outlined,
-            label: '房间等级正在积累 · 欢迎留下聊聊',
-          ),
+          const SizedBox(width: 7),
+          const _RoomHeatChip(),
         ],
       ),
     );
   }
 
   Widget _publicScreen() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(14, 6, 14, 6),
-      alignment: Alignment.bottomLeft,
-      child: ShaderMask(
-        shaderCallback: (Rect bounds) => const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: <Color>[Colors.transparent, Colors.white, Colors.white],
-          stops: <double>[0, 0.3, 1],
-        ).createShader(bounds),
-        blendMode: BlendMode.dstIn,
-        child: ListView.separated(
-          controller: _messageScroll,
-          padding: const EdgeInsets.only(top: 24),
-          itemCount: _controller.messages.length + 1,
-          separatorBuilder: (_, __) => const SizedBox(height: 7),
-          itemBuilder: (BuildContext context, int index) {
-            if (index == 0) {
-              return _RoomConversationCard(topic: _controller.topic);
-            }
-            final RoomMessage message = _controller.messages[index - 1];
-            return Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 330),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 7,
+    final List<RoomMessage> feedMessages = _controller.messages.length > 1
+        ? _controller.messages
+        : <RoomMessage>[
+            for (final MicSeat seat
+                in _controller.seats
+                    .where((MicSeat seat) => seat.isOccupied)
+                    .take(2))
+              RoomMessage(
+                sender: '麦位动态',
+                content:
+                    '${seat.userName ?? '${seat.number} 号麦'}${seat.isSpeaking ? ' 正在说话' : ' 已在麦上'}',
+                isSystem: true,
+              ),
+            ..._controller.messages,
+          ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 4),
+      child: Column(
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Text(
+                '实时公屏',
+                style: TextStyle(
+                  color: RoomColors.textPrimary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
                 ),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Text.rich(
-                  TextSpan(
-                    children: <InlineSpan>[
-                      TextSpan(
-                        text: '${message.sender}  ',
-                        style: TextStyle(
-                          color: message.isSystem
-                              ? RoomColors.gold
-                              : RoomColors.accent,
-                          fontWeight: FontWeight.w700,
+              ),
+              const SizedBox(width: 12),
+              const _RoomChannelTab(label: '全部'),
+              const _RoomChannelTab(label: '房间', selected: true),
+              const Spacer(),
+              Material(
+                color: RoomColors.secondary.withValues(alpha: 0.74),
+                borderRadius: BorderRadius.circular(999),
+                child: InkWell(
+                  onTap: _openTopic,
+                  borderRadius: BorderRadius.circular(999),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(Icons.music_note_rounded, size: 14),
+                        SizedBox(width: 4),
+                        Text(
+                          '我要点歌',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      ),
-                      TextSpan(text: message.content),
-                    ],
-                  ),
-                  style: const TextStyle(
-                    color: RoomColors.textPrimary,
-                    fontSize: 12,
-                    height: 1.35,
+                      ],
+                    ),
                   ),
                 ),
               ),
-            );
-          },
+            ],
+          ),
+          const SizedBox(height: 5),
+          _RoomMoodStage(topic: _controller.topic),
+          const SizedBox(height: 4),
+          Expanded(
+            child: ListView.separated(
+              controller: _messageScroll,
+              padding: const EdgeInsets.fromLTRB(0, 7, 0, 10),
+              itemCount: feedMessages.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 5),
+              itemBuilder: (BuildContext context, int index) {
+                final RoomMessage message = feedMessages[index];
+                return Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 344),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: message.isSystem
+                          ? RoomColors.primary.withValues(alpha: 0.12)
+                          : Colors.black.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Text.rich(
+                      TextSpan(
+                        children: <InlineSpan>[
+                          TextSpan(
+                            text: '${message.sender}  ',
+                            style: TextStyle(
+                              color: message.isSystem
+                                  ? RoomColors.gold
+                                  : RoomColors.accent,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          TextSpan(text: message.content),
+                        ],
+                      ),
+                      style: const TextStyle(
+                        color: RoomColors.textPrimary,
+                        fontSize: 11,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _roomDock() {
+    final bool joined = _controller.status == RoomSessionStatus.joined;
+    final bool canChat = joined && _controller.canSendPublicMessage;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 1, 10, 8),
+        child: Row(
+          children: <Widget>[
+            _RoomDockPill(
+              icon: _controller.isOnMic
+                  ? (_controller.micMuted
+                        ? Icons.mic_off_rounded
+                        : Icons.mic_rounded)
+                  : Icons.keyboard_voice_rounded,
+              label: _controller.isOnMic
+                  ? (_controller.micMuted ? '开麦' : '闭麦')
+                  : '上麦',
+              onTap: joined
+                  ? (_controller.isOnMic ? _toggleMicrophone : _showMicSheet)
+                  : null,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Container(
+                height: 39,
+                padding: const EdgeInsets.only(left: 2, right: 1),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.27),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.09),
+                  ),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: TextField(
+                        key: const Key('video-room-composer'),
+                        controller: _composer,
+                        focusNode: _composerFocus,
+                        enabled: canChat,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                        ),
+                        cursorColor: RoomColors.accent,
+                        textInputAction: TextInputAction.send,
+                        onSubmitted: (_) => _sendMessage(),
+                        decoration: InputDecoration(
+                          filled: false,
+                          hintText: canChat ? '聊聊天…' : '当前不可发言',
+                          hintStyle: const TextStyle(
+                            color: RoomColors.textSecondary,
+                            fontSize: 11,
+                          ),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      key: const Key('room-expression-button'),
+                      tooltip: '表情与贴图',
+                      onPressed: canChat ? _showExpressionSheet : null,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 34,
+                        height: 34,
+                      ),
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(
+                        Icons.sentiment_satisfied_alt_rounded,
+                        color: RoomColors.textPrimary,
+                        size: 20,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 5),
+            _RoomDockAction(
+              icon: Icons.redeem_rounded,
+              label: '礼物',
+              highlighted: true,
+              onTap: joined && _controller.allows(RoomCapability.sendGift)
+                  ? _showGiftSheet
+                  : null,
+            ),
+            _RoomDockAction(
+              icon: Icons.groups_2_outlined,
+              label: '成员',
+              onTap: joined ? _openMembers : null,
+            ),
+            _RoomDockAction(
+              icon: Icons.grid_view_rounded,
+              label: '更多',
+              onTap: joined ? _showMoreSheet : null,
+            ),
+          ],
         ),
       ),
     );
@@ -554,52 +733,6 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
               offset: _composer.text.length,
             );
           },
-        ),
-      ),
-    );
-  }
-
-  Widget _actions() {
-    final bool joined = _controller.status == RoomSessionStatus.joined;
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: <Widget>[
-            _RoomAction(
-              icon: _controller.isOnMic
-                  ? (_controller.micMuted
-                        ? Icons.mic_off_rounded
-                        : Icons.mic_rounded)
-                  : Icons.keyboard_voice_rounded,
-              label: _controller.isOnMic
-                  ? (_controller.micMuted ? '开麦' : '闭麦')
-                  : '上麦',
-              enabled: joined,
-              onTap: _controller.isOnMic ? _toggleMicrophone : _showMicSheet,
-            ),
-            _RoomAction(
-              icon: Icons.groups_2_rounded,
-              label: '成员',
-              enabled: joined,
-              onTap: _openMembers,
-            ),
-            _RoomAction(
-              icon: Icons.redeem_rounded,
-              label: '礼物',
-              highlighted: true,
-              enabled: joined && _controller.allows(RoomCapability.sendGift),
-              onTap: _showGiftSheet,
-            ),
-            _RoomAction(
-              icon: Icons.apps_rounded,
-              label: '更多',
-              enabled: joined,
-              onTap: _showMoreSheet,
-            ),
-          ],
         ),
       ),
     );
@@ -756,37 +889,53 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
       backgroundColor: const Color(0xFF14152E),
       builder: (BuildContext sheetContext) => _RoomToolsSheet(
         canPk: _controller.allows(RoomCapability.startPk),
+        canManage: _controller.allows(RoomCapability.manageMembers),
         isOnMic: _controller.isOnMic,
         onAction: (String action) {
           Navigator.of(sheetContext).pop();
           switch (action) {
+            case 'management':
+              _openManagement();
+              return;
             case 'members':
               _openMembers();
+              return;
             case 'share':
               _openShare();
+              return;
             case 'topic':
               _openTopic();
+              return;
             case 'audio':
               _openAudio();
+              return;
             case 'recovery':
               _openRecovery();
+              return;
             case 'diagnostics':
               _openDiagnostics();
+              return;
             case 'pk':
               _openPk();
+              return;
             case 'report':
               _openReport();
+              return;
             case 'copy':
               Clipboard.setData(ClipboardData(text: _controller.roomCode));
               ScaffoldMessenger.of(
                 context,
               ).showSnackBar(const SnackBar(content: Text('房间号已复制')));
+              return;
             case 'minimize':
               _minimize();
+              return;
             case 'leaveMic':
               _controller.leaveMic();
+              return;
             case 'leaveRoom':
               _confirmEnd();
+              return;
           }
         },
       ),
@@ -801,6 +950,23 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (BuildContext context) => RoomMembersPage(
+          roomId: snapshot.roomId,
+          currentUserId: _controller.currentUserId,
+          currentRole: snapshot.role,
+          seats: snapshot.seats,
+        ),
+      ),
+    );
+  }
+
+  void _openManagement() {
+    final RoomSnapshot? snapshot = _controller.snapshot;
+    if (snapshot == null || !_controller.allows(RoomCapability.manageMembers)) {
+      return;
+    }
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => RoomManagementPage(
           roomId: snapshot.roomId,
           currentUserId: _controller.currentUserId,
           currentRole: snapshot.role,
@@ -899,6 +1065,14 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Future<void> _showExitChoices() async {
+    final RoomPkBattle? activePk = await _fetchActivePk();
+    if (!mounted) {
+      return;
+    }
+    if (activePk?.isActive == true) {
+      await _confirmEnd(activePk: activePk);
+      return;
+    }
     await showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
@@ -947,14 +1121,36 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     }
   }
 
-  Future<void> _confirmEnd() async {
+  Future<RoomPkBattle?> _fetchActivePk() async {
+    final RoomSnapshot? snapshot = _controller.snapshot;
+    if (snapshot == null) {
+      return null;
+    }
+    try {
+      return await AppDependencyScope.of(
+        context,
+      ).roomPkRepository.fetchActiveBattle(roomId: snapshot.roomId);
+    } catch (_) {
+      // Optional PK status must never block leaving an otherwise valid room.
+      return null;
+    }
+  }
+
+  Future<void> _confirmEnd({RoomPkBattle? activePk}) async {
+    activePk ??= await _fetchActivePk();
+    if (!mounted) {
+      return;
+    }
+    final String content = activePk?.isActive == true
+        ? '当前房间正在 PK。离开可能被服务端视为主动结束或认输；如果你在麦上，也会同时下麦并结束本次房间会话。'
+        : _controller.isOnMic
+        ? '离开后将同时下麦，并结束本次房间会话。'
+        : '确认结束本次收听？';
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
         title: const Text('离开房间？'),
-        content: Text(
-          _controller.isOnMic ? '离开后将同时下麦，并结束本次房间会话。' : '确认结束本次收听？',
-        ),
+        content: Text(content),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -996,11 +1192,13 @@ class _AnnouncementChip extends StatelessWidget {
   const _AnnouncementChip({
     required this.icon,
     required this.label,
+    this.eyebrow,
     this.onTap,
   });
 
   final IconData icon;
   final String label;
+  final String? eyebrow;
   final VoidCallback? onTap;
 
   @override
@@ -1016,6 +1214,17 @@ class _AnnouncementChip extends StatelessWidget {
           children: <Widget>[
             Icon(icon, size: 13, color: RoomColors.gold),
             const SizedBox(width: 6),
+            if (eyebrow != null) ...<Widget>[
+              Text(
+                eyebrow!,
+                style: const TextStyle(
+                  color: RoomColors.textPrimary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
             Expanded(
               child: Text(
                 label,
@@ -1040,57 +1249,194 @@ class _AnnouncementChip extends StatelessWidget {
   );
 }
 
-class _RoomConversationCard extends StatelessWidget {
-  const _RoomConversationCard({required this.topic});
+class _RoomHeatChip extends StatelessWidget {
+  const _RoomHeatChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(
+            Icons.local_fire_department_rounded,
+            size: 13,
+            color: RoomColors.gold,
+          ),
+          SizedBox(width: 3),
+          Text(
+            '3.6k',
+            style: TextStyle(
+              color: RoomColors.textSecondary,
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoomChannelTab extends StatelessWidget {
+  const _RoomChannelTab({required this.label, this.selected = false});
+
+  final String label;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : RoomColors.textSecondary,
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            width: selected ? 20 : 0,
+            height: 2,
+            decoration: BoxDecoration(
+              color: RoomColors.primary,
+              borderRadius: BorderRadius.circular(99),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoomMoodStage extends StatelessWidget {
+  const _RoomMoodStage({required this.topic});
 
   final String topic;
 
   @override
-  Widget build(BuildContext context) => Align(
-    alignment: Alignment.centerLeft,
-    child: Container(
-      width: 255,
-      padding: const EdgeInsets.fromLTRB(13, 11, 13, 12),
-      decoration: BoxDecoration(
-        color: const Color(0x9C29123F),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.055)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Row(
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+          decoration: BoxDecoration(
+            color: RoomColors.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: const Text(
+            '温馨提示：请大家绿色聊天、友好互动，保护好个人信息。',
+            style: TextStyle(
+              color: RoomColors.accent,
+              fontSize: 10,
+              height: 1.35,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          height: 168,
+          width: 258,
+          padding: const EdgeInsets.fromLTRB(15, 10, 14, 10),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[Color(0x9E351341), Color(0x6E17132D)],
+            ),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: RoomColors.primary.withValues(alpha: 0.09),
+            ),
+          ),
+          child: Stack(
             children: <Widget>[
-              Icon(Icons.forum_rounded, color: RoomColors.accent, size: 14),
-              SizedBox(width: 6),
-              Text(
-                '今晚的话题',
-                style: TextStyle(
-                  color: RoomColors.accent,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
+              Positioned(
+                right: -6,
+                top: 5,
+                child: Icon(
+                  Icons.music_note_rounded,
+                  size: 56,
+                  color: RoomColors.accent.withValues(alpha: 0.04),
                 ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Row(
+                    children: <Widget>[
+                      Icon(
+                        Icons.graphic_eq_rounded,
+                        color: RoomColors.accent,
+                        size: 12,
+                      ),
+                      SizedBox(width: 5),
+                      Text(
+                        '深夜放映中',
+                        style: TextStyle(
+                          color: RoomColors.accent,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Spacer(),
+                      RuntimeWaveform(width: 30),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    topic.isEmpty ? '把今天的疲惫放在门外' : topic,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: RoomColors.accent,
+                      fontSize: 11,
+                      height: 1.35,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  const Text(
+                    '静静听一会儿，也可以开麦聊聊\n愿每一次相遇都被温柔接住',
+                    style: TextStyle(
+                      color: Color(0xFFAFC7FF),
+                      fontSize: 9,
+                      height: 1.5,
+                    ),
+                  ),
+                  const Spacer(),
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      '房间心愿墙',
+                      style: TextStyle(
+                        color: RoomColors.textSecondary,
+                        fontSize: 8,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 7),
-          Text(
-            topic.isEmpty ? '最近有什么让你觉得被治愈的小事？' : topic,
-            style: const TextStyle(
-              color: RoomColors.textPrimary,
-              fontSize: 12,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '可以聊聊今天的心情，也可以安静听一会儿。',
-            style: TextStyle(color: RoomColors.textSecondary, fontSize: 10),
-          ),
-        ],
-      ),
-    ),
-  );
+        ),
+      ],
+    );
+  }
 }
 
 class _VideoRoomBackground extends StatelessWidget {
@@ -1101,10 +1447,16 @@ class _VideoRoomBackground extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        Image.asset(
-          'assets/runtime/room-cosmos.png',
-          fit: BoxFit.cover,
-          alignment: Alignment.topCenter,
+        const ColoredBox(color: Color(0xFF16051F)),
+        Opacity(
+          opacity: 0.34,
+          child: Image.asset(
+            'assets/runtime/room-cosmos.png',
+            fit: BoxFit.cover,
+            alignment: Alignment.topCenter,
+            color: const Color(0xFF4A123E),
+            colorBlendMode: BlendMode.multiply,
+          ),
         ),
         const DecoratedBox(
           decoration: BoxDecoration(
@@ -1112,11 +1464,11 @@ class _VideoRoomBackground extends StatelessWidget {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: <Color>[
-                Color(0x521A0638),
-                Color(0x94210844),
-                Color(0xEC090B1E),
+                Color(0x5C350839),
+                Color(0xB02C073A),
+                Color(0xF20B0918),
               ],
-              stops: <double>[0, 0.52, 1],
+              stops: <double>[0, 0.54, 1],
             ),
           ),
         ),
@@ -1135,7 +1487,7 @@ class _VideoMicSeat extends StatelessWidget {
     final bool occupied = seat.isOccupied && seat.userName != null;
     final bool speaking = seat.isSpeaking;
     final bool dense = MediaQuery.textScalerOf(context).scale(1) > 1.15;
-    final double seatSize = dense ? 50 : 58;
+    final double seatSize = dense ? 44 : 56;
     final Color ring = speaking
         ? RoomColors.success
         : occupied
@@ -1181,7 +1533,7 @@ class _VideoMicSeat extends StatelessWidget {
                 if (occupied)
                   RuntimeAvatar(
                     seed: '${seat.userId}-${seat.number}',
-                    size: dense ? 46 : 54,
+                    size: dense ? 40 : 52,
                     ringColor: Colors.transparent,
                   )
                 else
@@ -1197,8 +1549,8 @@ class _VideoMicSeat extends StatelessWidget {
                     right: 0,
                     bottom: 0,
                     child: Container(
-                      width: dense ? 18 : 20,
-                      height: dense ? 18 : 20,
+                      width: dense ? 16 : 20,
+                      height: dense ? 16 : 20,
                       decoration: BoxDecoration(
                         color: seat.state == MicSeatState.occupiedMuted
                             ? RoomColors.error
@@ -1214,21 +1566,21 @@ class _VideoMicSeat extends StatelessWidget {
                             ? Icons.mic_off_rounded
                             : Icons.mic_rounded,
                         color: Colors.white,
-                        size: 11,
+                        size: dense ? 9 : 11,
                       ),
                     ),
                   ),
               ],
             ),
           ),
-          SizedBox(height: dense ? 3 : 6),
+          SizedBox(height: dense ? 2 : 5),
           Text(
             seat.userName ?? '${seat.number} 号麦',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: RoomColors.textPrimary,
-              fontSize: 11,
+              fontSize: dense ? 9 : 10,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -1239,7 +1591,7 @@ class _VideoMicSeat extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: speaking ? RoomColors.success : RoomColors.textSecondary,
-              fontSize: 9,
+              fontSize: dense ? 7 : 8,
             ),
           ),
         ],
@@ -1256,59 +1608,123 @@ class _VideoMicSeat extends StatelessWidget {
   };
 }
 
-class _RoomAction extends StatelessWidget {
-  const _RoomAction({
+class _RoomDockPill extends StatelessWidget {
+  const _RoomDockPill({
     required this.icon,
     required this.label,
-    required this.enabled,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: onTap == null ? 0.12 : 0.28),
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: SizedBox(
+          height: 39,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(icon, size: 15, color: RoomColors.textPrimary),
+                const SizedBox(width: 4),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: RoomColors.textPrimary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoomDockAction extends StatelessWidget {
+  const _RoomDockAction({
+    required this.icon,
+    required this.label,
     required this.onTap,
     this.highlighted = false,
   });
 
   final IconData icon;
   final String label;
-  final bool enabled;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
-    return InkResponse(
-      onTap: enabled ? onTap : null,
-      radius: 30,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: highlighted && enabled
-                  ? const LinearGradient(
-                      colors: <Color>[RoomColors.primary, RoomColors.secondary],
-                    )
-                  : null,
-              color: highlighted
-                  ? null
-                  : Colors.white.withValues(alpha: enabled ? 0.09 : 0.035),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-            ),
-            child: Icon(
-              icon,
-              color: enabled ? Colors.white : Colors.white38,
-              size: 22,
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        button: true,
+        enabled: onTap != null,
+        label: label,
+        child: InkResponse(
+          onTap: onTap,
+          radius: 24,
+          child: SizedBox(
+            width: 41,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: highlighted && onTap != null
+                        ? const LinearGradient(
+                            colors: <Color>[
+                              RoomColors.accent,
+                              RoomColors.primary,
+                            ],
+                          )
+                        : null,
+                    color: highlighted
+                        ? null
+                        : Colors.black.withValues(
+                            alpha: onTap == null ? 0.12 : 0.3,
+                          ),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.08),
+                    ),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 18,
+                    color: onTap == null ? Colors.white30 : Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: onTap == null
+                        ? Colors.white30
+                        : RoomColors.textSecondary,
+                    fontSize: 8,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 5),
-          Text(
-            label,
-            style: TextStyle(
-              color: enabled ? RoomColors.textPrimary : Colors.white38,
-              fontSize: 10,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1505,21 +1921,16 @@ class _RoomExpressionSheetState extends State<_RoomExpressionSheet> {
                 ),
               ),
               const Spacer(),
-              SegmentedButton<int>(
-                showSelectedIcon: false,
-                segments: const <ButtonSegment<int>>[
-                  ButtonSegment<int>(
-                    value: 0,
-                    label: Text('表情', style: TextStyle(color: Colors.white)),
-                  ),
-                  ButtonSegment<int>(
-                    value: 1,
-                    label: Text('贴图', style: TextStyle(color: Colors.white)),
-                  ),
-                ],
-                selected: <int>{_tab},
-                onSelectionChanged: (Set<int> value) =>
-                    setState(() => _tab = value.first),
+              _RoomSheetTab(
+                label: '表情',
+                selected: _tab == 0,
+                onTap: () => setState(() => _tab = 0),
+              ),
+              const SizedBox(width: 20),
+              _RoomSheetTab(
+                label: '贴图',
+                selected: _tab == 1,
+                onTap: () => setState(() => _tab = 1),
               ),
             ],
           ),
@@ -1542,11 +1953,8 @@ class _RoomExpressionSheetState extends State<_RoomExpressionSheet> {
                   child: Container(
                     padding: const EdgeInsets.all(7),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.065),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.06),
-                      ),
+                      color: Colors.white.withValues(alpha: 0.035),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                     child: Column(
                       children: <Widget>[
@@ -1577,11 +1985,13 @@ class _RoomExpressionSheetState extends State<_RoomExpressionSheet> {
 class _RoomToolsSheet extends StatefulWidget {
   const _RoomToolsSheet({
     required this.canPk,
+    required this.canManage,
     required this.isOnMic,
     required this.onAction,
   });
 
   final bool canPk;
+  final bool canManage;
   final bool isOnMic;
   final void Function(String action) onAction;
 
@@ -1595,18 +2005,24 @@ class _RoomToolsSheetState extends State<_RoomToolsSheet> {
   @override
   Widget build(BuildContext context) {
     final List<_ToolItem> interactions = <_ToolItem>[
+      if (widget.canManage)
+        const _ToolItem(
+          'management',
+          Icons.admin_panel_settings_outlined,
+          '房管',
+        ),
       const _ToolItem('members', Icons.groups_2_outlined, '成员'),
       const _ToolItem('share', Icons.ios_share_rounded, '分享'),
       const _ToolItem('topic', Icons.campaign_outlined, '公告'),
       if (widget.canPk)
         const _ToolItem('pk', Icons.sports_kabaddi_rounded, '房间 PK'),
       const _ToolItem('copy', Icons.copy_rounded, '复制房间号'),
+      const _ToolItem('report', Icons.report_outlined, '举报房间'),
     ];
     final List<_ToolItem> tools = <_ToolItem>[
       const _ToolItem('audio', Icons.volume_up_outlined, '音频'),
       const _ToolItem('recovery', Icons.sync_rounded, '重新连接'),
       const _ToolItem('diagnostics', Icons.monitor_heart_outlined, '质量诊断'),
-      const _ToolItem('report', Icons.report_outlined, '举报'),
       const _ToolItem('minimize', Icons.picture_in_picture_alt_rounded, '收起房间'),
       if (widget.isOnMic)
         const _ToolItem('leaveMic', Icons.mic_off_outlined, '主动下麦'),
@@ -1618,25 +2034,44 @@ class _RoomToolsSheetState extends State<_RoomToolsSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          SegmentedButton<int>(
-            showSelectedIcon: false,
-            segments: const <ButtonSegment<int>>[
-              ButtonSegment<int>(value: 0, label: Text('互动')),
-              ButtonSegment<int>(value: 1, label: Text('工具')),
-            ],
-            selected: <int>{_tab},
-            onSelectionChanged: (Set<int> values) =>
-                setState(() => _tab = values.first),
+          Container(
+            width: 38,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(99),
+            ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              _RoomSheetTab(
+                label: '互动玩法',
+                selected: _tab == 0,
+                onTap: () => setState(() => _tab = 0),
+              ),
+              const SizedBox(width: 24),
+              _RoomSheetTab(
+                label: '工具',
+                selected: _tab == 1,
+                onTap: () => setState(() => _tab = 1),
+              ),
+              const Spacer(),
+              const Text(
+                '房间功能',
+                style: TextStyle(color: RoomColors.textSecondary, fontSize: 10),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 4,
-              mainAxisSpacing: 16,
+              mainAxisSpacing: 14,
               crossAxisSpacing: 10,
-              childAspectRatio: 0.82,
+              childAspectRatio: 0.9,
             ),
             itemCount: visible.length,
             itemBuilder: (BuildContext context, int index) {
@@ -1647,27 +2082,83 @@ class _RoomToolsSheetState extends State<_RoomToolsSheet> {
                 child: Column(
                   children: <Widget>[
                     Container(
-                      width: 50,
-                      height: 50,
+                      width: 48,
+                      height: 48,
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.07),
-                        borderRadius: BorderRadius.circular(18),
+                        color: Colors.white.withValues(alpha: 0.085),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.055),
+                        ),
                       ),
                       child: Icon(
                         item.icon,
                         color: item.action == 'leaveRoom'
                             ? RoomColors.error
-                            : RoomColors.primary,
+                            : RoomColors.textPrimary,
+                        size: 22,
                       ),
                     ),
-                    const SizedBox(height: 7),
-                    Text(item.label, style: const TextStyle(fontSize: 11)),
+                    const SizedBox(height: 6),
+                    Text(
+                      item.label,
+                      style: const TextStyle(
+                        color: RoomColors.textSecondary,
+                        fontSize: 10,
+                      ),
+                    ),
                   ],
                 ),
               );
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RoomSheetTab extends StatelessWidget {
+  const _RoomSheetTab({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 5),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : RoomColors.textSecondary,
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 5),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              width: selected ? 24 : 0,
+              height: 2,
+              decoration: BoxDecoration(
+                color: RoomColors.primary,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

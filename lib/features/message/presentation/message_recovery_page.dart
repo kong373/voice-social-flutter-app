@@ -88,7 +88,7 @@ class _MessagePermissionRecoveryPageState
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+                padding: const EdgeInsets.fromLTRB(14, 6, 14, 28),
                 children: <Widget>[
                   _MessageInfoCard(
                     icon: snapshot.privateRealtimeAvailable
@@ -97,48 +97,35 @@ class _MessagePermissionRecoveryPageState
                     text: snapshot.message,
                   ),
                   const SizedBox(height: 14),
-                  Material(
-                    color: SocialColors.card,
-                    borderRadius: BorderRadius.circular(20),
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            '私聊实时通道',
-                            style: Theme.of(context).textTheme.titleMedium,
+                  _MessageListPanel(
+                    child: Column(
+                      children: <Widget>[
+                        _RecoveryStatusRow(
+                          icon: Icons.chat_bubble_outline_rounded,
+                          title: '私聊实时通道',
+                          value: snapshot.privateRealtimeAvailable
+                              ? '当前可用'
+                              : '腾讯 IM 尚未接入',
+                        ),
+                        const Divider(height: 1),
+                        _RecoveryStatusRow(
+                          icon: Icons.notifications_none_rounded,
+                          title: '系统通知权限',
+                          value: _permissionLabel(
+                            snapshot.notificationPermission,
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            snapshot.privateRealtimeAvailable
-                                ? '当前可用'
-                                : '腾讯 IM 尚未接入',
-                          ),
-                          const Divider(height: 26),
-                          Text(
-                            '系统通知权限',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            _permissionLabel(snapshot.notificationPermission),
-                          ),
-                          const Divider(height: 26),
-                          Text(
-                            '最近通知同步',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            snapshot.lastNotificationSyncAt == null
-                                ? '尚未完成同步'
-                                : _formatMessageTime(
-                                    snapshot.lastNotificationSyncAt!,
-                                  ),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const Divider(height: 1),
+                        _RecoveryStatusRow(
+                          icon: Icons.sync_rounded,
+                          title: '最近通知同步',
+                          value: snapshot.lastNotificationSyncAt == null
+                              ? '尚未完成同步'
+                              : _formatMessageTime(
+                                  snapshot.lastNotificationSyncAt!,
+                                ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -184,4 +171,60 @@ class _MessagePermissionRecoveryPageState
         NativeNotificationPermissionState.restricted => '受系统限制',
         NativeNotificationPermissionState.unavailable => '适配器未接入',
       };
+}
+
+class _RecoveryStatusRow extends StatelessWidget {
+  const _RecoveryStatusRow({
+    required this.icon,
+    required this.title,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String title;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 13),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 40,
+            height: 40,
+            decoration: const BoxDecoration(
+              color: Color(0xFFEAE6FF),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: SocialColors.primary, size: 20),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: SocialColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: SocialColors.textSecondary,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

@@ -6,6 +6,7 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_configuration_form.dart';
+import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
 
 class CreateRoomPage extends StatefulWidget {
@@ -95,7 +96,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
   @override
   Widget build(BuildContext context) {
     return RoomPageScaffold(
-      appBar: AppBar(title: const Text('创建房间')),
+      appBar: roomOxygenAppBar(title: '创建房间'),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null && _existing == null
@@ -129,34 +130,27 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
         children: <Widget>[
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               children: <Widget>[
                 if (existing != null) ...<Widget>[
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: RoomColors.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        const Icon(
-                          Icons.meeting_room_outlined,
-                          color: RoomColors.primary,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            existing.isOpen
-                                ? '当前账号已有个人房 ${existing.roomCode ?? existing.roomId}。保存后直接进入，不重复创建房间。'
-                                : '当前个人房已关闭。保存后会重新开放并进入房间。',
-                          ),
-                        ),
-                      ],
-                    ),
+                  RoomOxygenContextBar(
+                    title: existing.title,
+                    subtitle:
+                        '房间号 ${existing.roomCode ?? existing.roomId} · ${existing.isOpen ? '保存后直接进入' : '保存后重新开放'}',
+                    seed: existing.roomId ?? existing.roomCode ?? 'owned-room',
+                    status: existing.isOpen ? '已开放' : '已关闭',
+                    statusColor: existing.isOpen
+                        ? RoomColors.success
+                        : RoomColors.warning,
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 18),
+                ] else ...<Widget>[
+                  const RoomOxygenNotice(
+                    icon: Icons.meeting_room_outlined,
+                    title: '创建固定 8 麦房',
+                    message: '填写基本信息后直接进入房间，不会创建重复个人房。',
+                  ),
+                  const SizedBox(height: 18),
                 ],
                 if (_error != null) ...<Widget>[
                   _InlineError(message: _error!),
@@ -187,7 +181,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
@@ -277,20 +271,10 @@ class _InlineError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: RoomColors.warning.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Icon(Icons.error_outline_rounded, color: RoomColors.warning),
-          const SizedBox(width: 10),
-          Expanded(child: Text(message)),
-        ],
-      ),
+    return RoomOxygenNotice(
+      icon: Icons.error_outline_rounded,
+      message: message,
+      accent: RoomColors.warning,
     );
   }
 }

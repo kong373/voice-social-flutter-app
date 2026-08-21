@@ -135,23 +135,16 @@ class _NotificationCenterPageState extends State<NotificationCenterPage> {
       body: Column(
         children: <Widget>[
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-            child: SegmentedButton<NotificationCategory>(
-              showSelectedIcon: false,
-              segments: const <ButtonSegment<NotificationCategory>>[
-                ButtonSegment<NotificationCategory>(
-                  value: NotificationCategory.system,
-                  label: Text('系统通知'),
-                ),
-                ButtonSegment<NotificationCategory>(
-                  value: NotificationCategory.interaction,
-                  label: Text('互动通知'),
-                ),
-              ],
-              selected: <NotificationCategory>{_category},
-              onSelectionChanged: (Set<NotificationCategory> value) {
+            padding: const EdgeInsets.fromLTRB(14, 2, 14, 10),
+            child: _MessageInlineTabs<NotificationCategory>(
+              items: const <NotificationCategory, String>{
+                NotificationCategory.system: '系统通知',
+                NotificationCategory.interaction: '互动通知',
+              },
+              value: _category,
+              onChanged: (NotificationCategory value) {
                 setState(() {
-                  _category = value.first;
+                  _category = value;
                   _notifications = null;
                 });
                 _load();
@@ -182,53 +175,28 @@ class _NotificationCenterPageState extends State<NotificationCenterPage> {
                   )
                 : RefreshIndicator(
                     onRefresh: _load,
-                    child: ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(14, 6, 14, 28),
-                      itemCount: notifications.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (BuildContext context, int index) {
-                        final AppNotification notification =
-                            notifications[index];
-                        return Material(
-                          color: SocialColors.card,
-                          borderRadius: BorderRadius.circular(18),
-                          child: ListTile(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            leading: Stack(
-                              clipBehavior: Clip.none,
-                              children: <Widget>[
-                                CircleAvatar(
-                                  child: Icon(
-                                    notification.category ==
-                                            NotificationCategory.system
-                                        ? Icons.notifications_outlined
-                                        : Icons.favorite_border_rounded,
-                                  ),
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(14, 4, 14, 28),
+                      children: <Widget>[
+                        _MessageListPanel(
+                          child: Column(
+                            children: <Widget>[
+                              for (
+                                int index = 0;
+                                index < notifications.length;
+                                index += 1
+                              ) ...<Widget>[
+                                _MessageNotificationRow(
+                                  notification: notifications[index],
+                                  onTap: () => _open(notifications[index]),
                                 ),
-                                if (notification.unread)
-                                  const Positioned(
-                                    right: -1,
-                                    top: -1,
-                                    child: CircleAvatar(
-                                      radius: 5,
-                                      backgroundColor: SocialColors.error,
-                                    ),
-                                  ),
+                                if (index < notifications.length - 1)
+                                  const Divider(height: 1),
                               ],
-                            ),
-                            title: Text(notification.title),
-                            subtitle: Text(
-                              '${notification.summary}\n${_formatMessageTime(notification.createdAt)}',
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            trailing: const Icon(Icons.chevron_right_rounded),
-                            onTap: () => _open(notification),
+                            ],
                           ),
-                        );
-                      },
+                        ),
+                      ],
                     ),
                   ),
           ),
@@ -335,41 +303,68 @@ class _NotificationDetailPageState extends State<NotificationDetailPage> {
           : notification == null
           ? const Center(child: Text('通知不可用'))
           : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 28),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: <Widget>[
-                Icon(
-                  notification.category == NotificationCategory.system
-                      ? Icons.notifications_active_outlined
-                      : Icons.favorite_outline_rounded,
-                  size: 48,
-                  color: SocialColors.accent,
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  notification.title,
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _formatMessageTime(notification.createdAt),
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 18),
-                Text(notification.summary),
-                if (notification.details.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 14),
-                  Material(
-                    color: SocialColors.card,
-                    borderRadius: BorderRadius.circular(18),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(notification.details),
+                _MessageListPanel(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 18, 8, 16),
+                    child: Column(
+                      children: <Widget>[
+                        Container(
+                          width: 58,
+                          height: 58,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: <Color>[
+                                const Color(0xFF7DA6FF),
+                                notification.category ==
+                                        NotificationCategory.system
+                                    ? const Color(0xFF6D7FF0)
+                                    : const Color(0xFFFF75B8),
+                              ],
+                            ),
+                          ),
+                          child: Icon(
+                            notification.category == NotificationCategory.system
+                                ? Icons.notifications_active_outlined
+                                : Icons.favorite_outline_rounded,
+                            size: 28,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        Text(
+                          notification.title,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          _formatMessageTime(notification.createdAt),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(notification.summary, textAlign: TextAlign.center),
+                        if (notification.details.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: 14),
+                          const Divider(height: 1),
+                          const SizedBox(height: 14),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              notification.details,
+                              style: const TextStyle(height: 1.55),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                ],
+                ),
                 if (notification.targetType !=
                     NotificationTargetType.none) ...<Widget>[
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 16),
                   FilledButton(
                     onPressed: _openTarget,
                     child: Text(
@@ -401,28 +396,52 @@ class NotificationTargetUnavailablePage extends StatelessWidget {
       appBar: AppBar(title: Text(title)),
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const Icon(Icons.link_off_rounded, size: 56),
-              const SizedBox(height: 18),
-              Text(title, style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 10),
-              Text(reason, textAlign: TextAlign.center),
-              if (onRetry != null) ...<Widget>[
-                const SizedBox(height: 18),
-                FilledButton.tonal(
-                  onPressed: () async => onRetry!(),
-                  child: const Text('重新检查'),
-                ),
-              ],
-              const SizedBox(height: 10),
-              OutlinedButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('返回消息'),
+          padding: const EdgeInsets.all(22),
+          child: _MessageListPanel(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 28, 20, 22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Container(
+                    width: 66,
+                    height: 66,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFECE9FF),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.link_off_rounded,
+                      size: 30,
+                      color: SocialColors.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(title, style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  Text(
+                    reason,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: SocialColors.textSecondary,
+                      height: 1.45,
+                    ),
+                  ),
+                  if (onRetry != null) ...<Widget>[
+                    const SizedBox(height: 18),
+                    FilledButton.tonal(
+                      onPressed: () async => onRetry!(),
+                      child: const Text('重新检查'),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('返回消息'),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

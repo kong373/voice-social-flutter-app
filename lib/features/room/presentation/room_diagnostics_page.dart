@@ -5,6 +5,7 @@ import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_audio_service.dart';
+import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
 class RoomDiagnosticsPage extends StatefulWidget {
   const RoomDiagnosticsPage({required this.controller, super.key});
@@ -47,68 +48,103 @@ class _RoomDiagnosticsPageState extends State<RoomDiagnosticsPage> {
   Widget build(BuildContext context) {
     final RoomAudioSnapshot? snapshot = _snapshot;
     return RoomPageScaffold(
-      appBar: AppBar(title: const Text('房间质量诊断')),
+      appBar: roomOxygenAppBar(title: '房间质量诊断'),
       body: _running || snapshot == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: <Widget>[
+                RoomOxygenContextBar(
+                  title: widget.controller.snapshot?.title ?? '深夜温柔陪伴',
+                  subtitle: '只读诊断 · 不改变麦位和权限',
+                  seed: widget.controller.roomId,
+                  status: snapshot.configured ? '已采样' : '未配置',
+                  statusColor: snapshot.configured
+                      ? RoomColors.success
+                      : RoomColors.warning,
+                ),
+                const SizedBox(height: 14),
                 _DiagnosticHero(snapshot: snapshot),
-                const SizedBox(height: 18),
-                _DiagnosticRow(
-                  label: '网络延迟',
-                  value: snapshot.latencyMs == null
-                      ? '未获取'
-                      : '${snapshot.latencyMs} ms',
-                  ok: snapshot.latencyMs != null && snapshot.latencyMs! < 180,
+                const SizedBox(height: 16),
+                RoomOxygenSection(
+                  title: '实时采样',
+                  subtitle: '本次结果只用于定位当前设备与网络问题。',
+                  icon: Icons.monitor_heart_outlined,
+                  padding: const EdgeInsets.symmetric(horizontal: 13),
+                  child: Column(
+                    children: <Widget>[
+                      _DiagnosticRow(
+                        label: '网络延迟',
+                        value: snapshot.latencyMs == null
+                            ? '未获取'
+                            : '${snapshot.latencyMs} ms',
+                        ok:
+                            snapshot.latencyMs != null &&
+                            snapshot.latencyMs! < 180,
+                      ),
+                      const Divider(height: 1),
+                      _DiagnosticRow(
+                        label: '丢包率',
+                        value: snapshot.packetLossPercent == null
+                            ? '未获取'
+                            : '${snapshot.packetLossPercent!.toStringAsFixed(1)}%',
+                        ok:
+                            snapshot.packetLossPercent != null &&
+                            snapshot.packetLossPercent! < 5,
+                      ),
+                      const Divider(height: 1),
+                      _DiagnosticRow(
+                        label: 'RTC 音频',
+                        value: snapshot.rtcConnected ? '已连接' : '未连接',
+                        ok: snapshot.rtcConnected,
+                      ),
+                      const Divider(height: 1),
+                      _DiagnosticRow(
+                        label: '实时消息',
+                        value:
+                            widget.controller.realtimeDegraded ||
+                                !snapshot.realtimeConnected
+                            ? '状态可能延迟'
+                            : '已连接',
+                        ok:
+                            !widget.controller.realtimeDegraded &&
+                            snapshot.realtimeConnected,
+                      ),
+                      const Divider(height: 1),
+                      _DiagnosticRow(
+                        label: '麦克风权限',
+                        value: snapshot.microphonePermissionGranted
+                            ? '已授权'
+                            : '未授权',
+                        ok: snapshot.microphonePermissionGranted,
+                      ),
+                      const Divider(height: 1),
+                      _DiagnosticRow(
+                        label: '当前音频路由',
+                        value: _routeLabel(snapshot.route),
+                        ok: snapshot.configured,
+                      ),
+                    ],
+                  ),
                 ),
-                _DiagnosticRow(
-                  label: '丢包率',
-                  value: snapshot.packetLossPercent == null
-                      ? '未获取'
-                      : '${snapshot.packetLossPercent!.toStringAsFixed(1)}%',
-                  ok:
-                      snapshot.packetLossPercent != null &&
-                      snapshot.packetLossPercent! < 5,
-                ),
-                _DiagnosticRow(
-                  label: 'RTC 音频',
-                  value: snapshot.rtcConnected ? '已连接' : '未连接',
-                  ok: snapshot.rtcConnected,
-                ),
-                _DiagnosticRow(
-                  label: '实时消息',
-                  value:
-                      widget.controller.realtimeDegraded ||
-                          !snapshot.realtimeConnected
-                      ? '状态可能延迟'
-                      : '已连接',
-                  ok:
-                      !widget.controller.realtimeDegraded &&
-                      snapshot.realtimeConnected,
-                ),
-                _DiagnosticRow(
-                  label: '麦克风权限',
-                  value: snapshot.microphonePermissionGranted ? '已授权' : '未授权',
-                  ok: snapshot.microphonePermissionGranted,
-                ),
-                _DiagnosticRow(
-                  label: '当前音频路由',
-                  value: _routeLabel(snapshot.route),
-                  ok: snapshot.configured,
-                ),
-                const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: _run,
-                  icon: const Icon(Icons.monitor_heart_rounded),
-                  label: const Text('重新运行诊断'),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _run,
+                    icon: const Icon(Icons.monitor_heart_rounded),
+                    label: const Text('重新运行诊断'),
+                  ),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  snapshot.configured
-                      ? '诊断结果仅用于定位当前设备和网络问题，不改变麦位或房间权限。'
-                      : '当前构建尚未接入真实设备音频与 RTC 遥测，未知数据不会被显示为正常。',
-                  style: Theme.of(context).textTheme.bodySmall,
+                RoomOxygenNotice(
+                  icon: Icons.shield_outlined,
+                  message: snapshot.configured
+                      ? '诊断结果不会改变麦位或房间权限。'
+                      : '真实设备音频与 RTC 遥测未接入，未知数据不会显示为正常。',
+                  accent: snapshot.configured
+                      ? RoomColors.accent
+                      : RoomColors.warning,
                 ),
               ],
             ),
@@ -138,12 +174,17 @@ class _DiagnosticHero extends StatelessWidget {
         snapshot.realtimeConnected &&
         snapshot.grade != RoomConnectionGrade.poor;
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: healthy
             ? RoomColors.success.withValues(alpha: 0.1)
             : RoomColors.warning.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(
+          color: (healthy ? RoomColors.success : RoomColors.warning).withValues(
+            alpha: 0.2,
+          ),
+        ),
       ),
       child: Row(
         children: <Widget>[
@@ -151,7 +192,7 @@ class _DiagnosticHero extends StatelessWidget {
             healthy
                 ? Icons.check_circle_outline_rounded
                 : Icons.warning_amber_rounded,
-            size: 38,
+            size: 30,
             color: healthy ? RoomColors.success : RoomColors.warning,
           ),
           const SizedBox(width: 14),
@@ -197,21 +238,6 @@ class _DiagnosticRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(label),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(value),
-          const SizedBox(width: 8),
-          Icon(
-            ok ? Icons.check_circle_rounded : Icons.info_outline_rounded,
-            size: 18,
-            color: ok ? RoomColors.success : RoomColors.warning,
-          ),
-        ],
-      ),
-    );
+    return RoomOxygenMetric(label: label, value: value, ok: ok);
   }
 }

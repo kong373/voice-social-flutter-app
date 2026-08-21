@@ -806,37 +806,44 @@ class _RankingPageState extends State<RankingPage> {
           children: <Widget>[
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
-              child: SegmentedButton<RankingBoard>(
-                showSelectedIcon: false,
-                segments: <ButtonSegment<RankingBoard>>[
-                  for (final RankingBoard board in RankingBoard.values)
-                    ButtonSegment<RankingBoard>(
-                      value: board,
-                      label: Text(board.label),
+              child: Row(
+                children: <Widget>[
+                  for (final RankingBoard board
+                      in RankingBoard.values) ...<Widget>[
+                    SocialPill(
+                      label: board.label,
+                      active: _board == board,
+                      onTap: () {
+                        if (_board == board) return;
+                        setState(() => _board = board);
+                        _load();
+                      },
                     ),
+                    const SizedBox(width: 8),
+                  ],
                 ],
-                selected: <RankingBoard>{_board},
-                onSelectionChanged: (Set<RankingBoard> value) {
-                  setState(() => _board = value.first);
-                  _load();
-                },
               ),
             ),
-            const SizedBox(height: 14),
-            SegmentedButton<RankingPeriod>(
-              showSelectedIcon: false,
-              segments: <ButtonSegment<RankingPeriod>>[
-                for (final RankingPeriod period in RankingPeriod.values)
-                  ButtonSegment<RankingPeriod>(
-                    value: period,
-                    label: Text(period.label),
-                  ),
-              ],
-              selected: <RankingPeriod>{_period},
-              onSelectionChanged: (Set<RankingPeriod> value) {
-                setState(() => _period = value.first);
-                _load();
-              },
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  for (final RankingPeriod period
+                      in RankingPeriod.values) ...<Widget>[
+                    SocialPill(
+                      label: period.label,
+                      active: _period == period,
+                      onTap: () {
+                        if (_period == period) return;
+                        setState(() => _period = period);
+                        _load();
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(height: 18),
             if (_loading)
@@ -853,59 +860,150 @@ class _RankingPageState extends State<RankingPage> {
               )
             else ...<Widget>[
               if (_snapshot!.countdownSeconds > 0)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    '本期剩余 ${_duration(_snapshot!.countdownSeconds)}',
-                    style: Theme.of(context).textTheme.bodySmall,
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: <Color>[Color(0xFFE9E5FF), Color(0xFFFFEAF2)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      const Icon(
+                        Icons.auto_awesome_rounded,
+                        color: SocialColors.primary,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          '${_board.label} · 本期剩余 ${_duration(_snapshot!.countdownSeconds)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               for (final RankingEntry entry in _snapshot!.entries)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Material(
-                    color: SocialColors.card,
-                    borderRadius: BorderRadius.circular(18),
-                    child: ListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      onTap: () => _open(entry),
-                      leading: CircleAvatar(
-                        backgroundColor: entry.rank <= 3
-                            ? SocialColors.primary.withValues(alpha: 0.18)
-                            : SocialColors.cardSoft,
-                        child: Text('${entry.rank}'),
-                      ),
-                      title: Text(entry.name),
-                      subtitle: entry.subtitle.isEmpty
-                          ? null
-                          : Text(entry.subtitle),
-                      trailing: Text(
-                        _compact(entry.value),
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
-                  ),
+                _RankingEntryCard(
+                  entry: entry,
+                  valueLabel: _compact(entry.value),
+                  onTap: () => _open(entry),
                 ),
               if (_snapshot!.selfEntry != null) ...<Widget>[
                 const Divider(height: 28),
                 Text('我的排名', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 10),
-                Material(
-                  color: SocialColors.card,
-                  borderRadius: BorderRadius.circular(18),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      child: Text('${_snapshot!.selfEntry!.rank}'),
-                    ),
-                    title: Text(_snapshot!.selfEntry!.name),
-                    subtitle: Text(_snapshot!.selfEntry!.subtitle),
-                    trailing: Text(_compact(_snapshot!.selfEntry!.value)),
-                  ),
+                _RankingEntryCard(
+                  entry: _snapshot!.selfEntry!,
+                  valueLabel: _compact(_snapshot!.selfEntry!.value),
+                  emphasized: true,
+                  onTap: () => _open(_snapshot!.selfEntry!),
                 ),
               ],
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RankingEntryCard extends StatelessWidget {
+  const _RankingEntryCard({
+    required this.entry,
+    required this.valueLabel,
+    required this.onTap,
+    this.emphasized = false,
+  });
+
+  final RankingEntry entry;
+  final String valueLabel;
+  final VoidCallback onTap;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool podium = entry.rank <= 3;
+    final Color accent = switch (entry.rank) {
+      1 => const Color(0xFFFFB74F),
+      2 => const Color(0xFF8BB8D7),
+      3 => const Color(0xFFD79978),
+      _ => SocialColors.primary,
+    };
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: SocialCard(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        radius: podium ? 20 : 17,
+        color: emphasized
+            ? const Color(0xFFF0EDFF)
+            : podium
+            ? accent.withValues(alpha: 0.1)
+            : Colors.white.withValues(alpha: 0.82),
+        onTap: onTap,
+        child: Row(
+          children: <Widget>[
+            SizedBox(
+              width: 30,
+              child: Text(
+                '${entry.rank}',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: podium ? 20 : 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            RuntimeAvatar(
+              seed: '${entry.userId ?? entry.roomId ?? entry.name}',
+              size: podium ? 48 : 42,
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    entry.name,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  if (entry.subtitle.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 2),
+                    Text(
+                      entry.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                valueLabel,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
           ],
         ),
       ),

@@ -43,7 +43,7 @@ class _RefundListPageState extends State<RefundListPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SocialPageScaffold(
+    return _CommerceScaffold(
       appBar: AppBar(
         title: const Text('退款申请列表'),
         actions: <Widget>[
@@ -93,21 +93,62 @@ class _RefundListPageState extends State<RefundListPage> {
                   )
                 else
                   for (final RefundApplication application in _applications!)
-                    Card(
-                      child: ListTile(
-                        title: Text(
-                          '${application.statusText} · ¥${application.amount.toStringAsFixed(2)}',
-                        ),
-                        subtitle: Text(
-                          '申请编号 ${application.id}\n${_formatDateTime(application.createdAt)}',
-                        ),
-                        isThreeLine: true,
-                        trailing: const Icon(Icons.chevron_right_rounded),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 9),
+                      child: _CommercePanel(
                         onTap: () => Navigator.of(context).push<void>(
                           MaterialPageRoute<void>(
                             builder: (BuildContext context) =>
                                 RefundResultPage(application: application),
                           ),
+                        ),
+                        padding: const EdgeInsets.all(13),
+                        child: Row(
+                          children: <Widget>[
+                            _CommerceAssetOrb(
+                              icon: _refundIcon(application.status),
+                              size: 42,
+                            ),
+                            const SizedBox(width: 11),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Row(
+                                    children: <Widget>[
+                                      Expanded(
+                                        child: Text(
+                                          '¥${application.amount.toStringAsFixed(2)}',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.titleSmall,
+                                        ),
+                                      ),
+                                      _CommercePill(
+                                        label: application.statusText,
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '申请编号 ${application.id}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                  Text(
+                                    _formatDateTime(application.createdAt),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right_rounded, size: 20),
+                          ],
                         ),
                       ),
                     ),
@@ -251,7 +292,7 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SocialPageScaffold(
+    return _CommerceScaffold(
       appBar: AppBar(title: const Text('退款申请')),
       body: _eligibility == null
           ? _error == null
@@ -264,79 +305,133 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
                 children: <Widget>[
                   _CommerceInfoBanner(text: _eligibility!.message),
                   const SizedBox(height: 14),
-                  TextFormField(
-                    initialValue: widget.account,
-                    readOnly: true,
-                    decoration: const InputDecoration(labelText: '申请账号'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(labelText: '账号使用人姓名'),
-                    validator: (String? value) =>
-                        value == null || value.trim().isEmpty ? '请输入姓名' : null,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _ageController,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: <TextInputFormatter>[
-                      FilteringTextInputFormatter.digitsOnly,
-                    ],
-                    decoration: const InputDecoration(labelText: '年龄'),
-                    validator: (String? value) {
-                      final int? age = int.tryParse(value ?? '');
-                      return age == null || age < 1 || age > 120
-                          ? '请输入有效年龄'
-                          : null;
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _amountController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
+                  _CommercePanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const _CommerceSectionTitle(title: '退款资料'),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          initialValue: widget.account,
+                          readOnly: true,
+                          decoration: const InputDecoration(labelText: '申请账号'),
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: _nameController,
+                          decoration: const InputDecoration(
+                            labelText: '账号使用人姓名',
+                          ),
+                          validator: (String? value) =>
+                              value == null || value.trim().isEmpty
+                              ? '请输入姓名'
+                              : null,
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Expanded(
+                              child: TextFormField(
+                                controller: _ageController,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: <TextInputFormatter>[
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                decoration: const InputDecoration(
+                                  labelText: '年龄',
+                                ),
+                                validator: (String? value) {
+                                  final int? age = int.tryParse(value ?? '');
+                                  return age == null || age < 1 || age > 120
+                                      ? '请输入有效年龄'
+                                      : null;
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              flex: 2,
+                              child: TextFormField(
+                                controller: _amountController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                decoration: const InputDecoration(
+                                  labelText: '申请退款金额',
+                                ),
+                                validator: (String? value) {
+                                  final double? amount = double.tryParse(
+                                    value ?? '',
+                                  );
+                                  return amount == null || amount <= 0
+                                      ? '请输入有效金额'
+                                      : null;
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                    decoration: const InputDecoration(labelText: '申请退款金额'),
-                    validator: (String? value) {
-                      final double? amount = double.tryParse(value ?? '');
-                      return amount == null || amount <= 0 ? '请输入有效金额' : null;
-                    },
                   ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _reasonController,
-                    minLines: 3,
-                    maxLines: 6,
-                    maxLength: 300,
-                    decoration: const InputDecoration(labelText: '退款原因'),
-                    validator: (String? value) =>
-                        value == null || value.trim().length < 5
-                        ? '退款原因至少填写 5 个字'
-                        : null,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _receivingAccountController,
-                    decoration: const InputDecoration(labelText: '退款收款账号'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _receivingNameController,
-                    decoration: const InputDecoration(labelText: '收款人姓名'),
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _guardianNameController,
-                    decoration: const InputDecoration(
-                      labelText: '监护人姓名（未成年人场景）',
+                  const SizedBox(height: 12),
+                  _CommercePanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const _CommerceSectionTitle(title: '退款说明'),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: _reasonController,
+                          minLines: 3,
+                          maxLines: 6,
+                          maxLength: 300,
+                          decoration: const InputDecoration(labelText: '退款原因'),
+                          validator: (String? value) =>
+                              value == null || value.trim().length < 5
+                              ? '退款原因至少填写 5 个字'
+                              : null,
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _guardianPhoneController,
-                    keyboardType: TextInputType.phone,
-                    decoration: const InputDecoration(labelText: '监护人手机号（可选）'),
+                  const SizedBox(height: 12),
+                  _CommercePanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const _CommerceSectionTitle(title: '收款与监护信息'),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: _receivingAccountController,
+                          decoration: const InputDecoration(
+                            labelText: '退款收款账号',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: _receivingNameController,
+                          decoration: const InputDecoration(labelText: '收款人姓名'),
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: _guardianNameController,
+                          decoration: const InputDecoration(
+                            labelText: '监护人姓名（未成年人场景）',
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: _guardianPhoneController,
+                          keyboardType: TextInputType.phone,
+                          decoration: const InputDecoration(
+                            labelText: '监护人手机号（可选）',
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   const _CommerceInfoBanner(
@@ -426,7 +521,7 @@ class _RefundResultPageState extends State<RefundResultPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SocialPageScaffold(
+    return _CommerceScaffold(
       appBar: AppBar(
         title: const Text('退款申请结果'),
         actions: <Widget>[
@@ -447,17 +542,25 @@ class _RefundResultPageState extends State<RefundResultPage> {
                 ? '平台将根据提交资料进行人工审核。'
                 : _application.rejectedReason,
           ),
-          const SizedBox(height: 18),
-          _CommerceDetail(label: '申请编号', value: _application.id),
-          _CommerceDetail(label: '申请账号', value: _application.account),
-          _CommerceDetail(
-            label: '申请金额',
-            value: '¥${_application.amount.toStringAsFixed(2)}',
+          const SizedBox(height: 14),
+          _CommercePanel(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: <Widget>[
+                _CommerceDetail(label: '申请编号', value: _application.id),
+                _CommerceDetail(label: '申请账号', value: _application.account),
+                _CommerceDetail(
+                  label: '申请金额',
+                  value: '¥${_application.amount.toStringAsFixed(2)}',
+                ),
+                _CommerceDetail(
+                  label: '提交时间',
+                  value: _formatDateTime(_application.createdAt),
+                ),
+              ],
+            ),
           ),
-          _CommerceDetail(
-            label: '提交时间',
-            value: _formatDateTime(_application.createdAt),
-          ),
+          const SizedBox(height: 14),
           if (_application.status == RefundStatus.rejected)
             FilledButton(
               onPressed: _refreshing ? null : _resubmit,

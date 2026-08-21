@@ -5,6 +5,7 @@ import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
+import 'package:voice_social_app/features/account/presentation/account_oxygen_components.dart';
 
 class AccountRestrictionPage extends StatefulWidget {
   const AccountRestrictionPage({
@@ -52,18 +53,64 @@ class _AccountRestrictionPageState extends State<AccountRestrictionPage> {
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('账号状态')),
       body: restriction == null
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(22),
-              child: _Header(
-                icon: restriction.isRestricted
-                    ? Icons.block_rounded
-                    : Icons.verified_user_outlined,
-                title: restriction.isRestricted ? '账号存在限制' : '账号状态正常',
-                description: restriction.isRestricted
-                    ? restriction.reason
-                    : '当前没有检测到账号、设备或公屏处罚。',
-              ),
+          ? const AccountCompactProgress(label: '正在检查账号状态')
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
+              children: <Widget>[
+                AccountStatusHero(
+                  icon: restriction.isRestricted
+                      ? Icons.block_rounded
+                      : Icons.verified_user_outlined,
+                  title: restriction.isRestricted ? '账号存在限制' : '账号状态正常',
+                  description: restriction.isRestricted
+                      ? restriction.reason
+                      : '当前没有检测到账号、设备或公屏处罚。',
+                  tone: restriction.isRestricted
+                      ? AppColors.warning
+                      : AppColors.success,
+                  badge: restriction.isRestricted ? '需要处理' : '状态良好',
+                ),
+                const SizedBox(height: 16),
+                AccountSheet(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 2,
+                  ),
+                  child: Column(
+                    children: <Widget>[
+                      AccountSettingRow(
+                        icon: Icons.person_outline_rounded,
+                        title: '账号权限',
+                        trailingLabel: restriction.isRestricted ? '受限' : '正常',
+                        tone: restriction.isRestricted
+                            ? AppColors.warning
+                            : AppColors.success,
+                      ),
+                      AccountSettingRow(
+                        icon: Icons.phone_android_rounded,
+                        title: '设备状态',
+                        trailingLabel: restriction.isRestricted ? '需核验' : '正常',
+                        tone: const Color(0xFF5D84E8),
+                      ),
+                      AccountSettingRow(
+                        icon: Icons.forum_outlined,
+                        title: '公屏互动',
+                        trailingLabel: restriction.isRestricted
+                            ? '以处罚为准'
+                            : '正常',
+                        tone: AccountOxygenColors.cyan,
+                        showDivider: false,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const AccountNoticeStrip(
+                  icon: Icons.sync_rounded,
+                  text: '账号限制以服务端状态为准，本页不会通过本地开关绕过处罚。',
+                  tone: AccountOxygenColors.violet,
+                ),
+              ],
             ),
     );
   }
@@ -149,44 +196,80 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
       body: appeal == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(20),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
               children: <Widget>[
-                _Header(
+                AccountStatusHero(
                   icon: Icons.fact_check_outlined,
                   title: _appealStateLabel(appeal.state),
                   description: appeal.processText,
+                  tone: appeal.state == AppealState.approved
+                      ? AppColors.success
+                      : appeal.state == AppealState.rejected
+                      ? AppColors.error
+                      : AccountOxygenColors.violet,
+                  badge: appeal.state == AppealState.none ? '可提交' : '平台进度',
                 ),
                 const SizedBox(height: 18),
-                SegmentedButton<String>(
-                  segments: const <ButtonSegment<String>>[
-                    ButtonSegment<String>(value: '1', label: Text('账号安全')),
-                    ButtonSegment<String>(value: '3', label: Text('内容处罚')),
-                  ],
-                  selected: <String>{_reasonType},
-                  onSelectionChanged: (Set<String> value) {
-                    setState(() => _reasonType = value.first);
-                    _query();
-                  },
+                const AccountSectionLabel(text: '申诉类型与说明'),
+                AccountSheet(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      SizedBox(
+                        width: double.infinity,
+                        child: SegmentedButton<String>(
+                          segments: const <ButtonSegment<String>>[
+                            ButtonSegment<String>(
+                              value: '1',
+                              label: Text('账号安全'),
+                            ),
+                            ButtonSegment<String>(
+                              value: '3',
+                              label: Text('内容处罚'),
+                            ),
+                          ],
+                          selected: <String>{_reasonType},
+                          onSelectionChanged: (Set<String> value) {
+                            setState(() => _reasonType = value.first);
+                            _query();
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        '处罚原因：${appeal.reason.isEmpty ? '待平台返回' : appeal.reason}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      if (appeal.state == AppealState.none) ...<Widget>[
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: _explanationController,
+                          minLines: 5,
+                          maxLines: 8,
+                          maxLength: 500,
+                          decoration: const InputDecoration(
+                            labelText: '申诉说明',
+                            alignLabelWithHint: true,
+                          ),
+                        ),
+                        AccountPrimaryAction(
+                          label: '提交申诉',
+                          busy: _busy,
+                          onPressed: _submit,
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 14),
-                Text('处罚原因：${appeal.reason.isEmpty ? '待平台返回' : appeal.reason}'),
-                if (appeal.state == AppealState.none) ...<Widget>[
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: _explanationController,
-                    minLines: 5,
-                    maxLines: 8,
-                    maxLength: 500,
-                    decoration: const InputDecoration(labelText: '申诉说明'),
-                  ),
-                  FilledButton(
-                    onPressed: _busy ? null : _submit,
-                    child: Text(_busy ? '提交中…' : '提交申诉'),
-                  ),
-                ],
                 if (appeal.resultText.isNotEmpty) ...<Widget>[
                   const SizedBox(height: 14),
-                  _Info(text: appeal.resultText),
+                  AccountNoticeStrip(
+                    icon: Icons.schedule_rounded,
+                    text: appeal.resultText,
+                    tone: AccountOxygenColors.cyan,
+                  ),
                 ],
               ],
             ),
@@ -299,35 +382,56 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
       body: eligibility == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(20),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
               children: <Widget>[
-                _Header(
+                AccountStatusHero(
                   icon: Icons.person_remove_alt_1_outlined,
                   title: eligibility.allowed ? '可以申请注销' : '暂不能申请注销',
                   description: eligibility.message,
+                  tone: eligibility.allowed
+                      ? AppColors.warning
+                      : AccountOxygenColors.violet,
+                  badge: eligibility.allowed ? '高风险操作' : '条件未满足',
+                ),
+                const SizedBox(height: 14),
+                const AccountNoticeStrip(
+                  icon: Icons.warning_amber_rounded,
+                  text: '注销会影响资料、关系与账号访问，请先确认钱包和其他未完成事项。',
+                  tone: AppColors.warning,
                 ),
                 if (eligibility.allowed &&
                     eligibility.requiresSmsCode) ...<Widget>[
                   const SizedBox(height: 18),
-                  TextField(
-                    controller: _codeController,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: <TextInputFormatter>[
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(6),
-                    ],
-                    decoration: InputDecoration(
-                      labelText: '短信验证码',
-                      suffixIcon: TextButton(
-                        onPressed: _sendCode,
-                        child: const Text('获取'),
-                      ),
+                  const AccountSectionLabel(text: '验证当前手机号'),
+                  AccountSheet(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+                    child: Column(
+                      children: <Widget>[
+                        TextField(
+                          controller: _codeController,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: <TextInputFormatter>[
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(6),
+                          ],
+                          decoration: InputDecoration(
+                            labelText: '短信验证码',
+                            prefixIcon: const Icon(Icons.sms_outlined),
+                            suffixIcon: TextButton(
+                              onPressed: _sendCode,
+                              child: const Text('获取'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        AccountPrimaryAction(
+                          label: '申请注销',
+                          busy: _busy,
+                          onPressed: _submit,
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  FilledButton(
-                    onPressed: _busy ? null : _submit,
-                    child: Text(_busy ? '提交中…' : '申请注销'),
                   ),
                 ],
               ],
@@ -381,9 +485,9 @@ class _VersionUpgradePageState extends State<VersionUpgradePage> {
       body: info == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(22),
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
               children: <Widget>[
-                _Header(
+                AccountStatusHero(
                   icon: Icons.system_update_alt_rounded,
                   title: info.hasUpdate
                       ? '发现新版本 ${info.versionName}'
@@ -391,13 +495,46 @@ class _VersionUpgradePageState extends State<VersionUpgradePage> {
                   description: info.releaseNotes.isEmpty
                       ? '暂无版本说明。'
                       : info.releaseNotes,
+                  tone: info.hasUpdate
+                      ? AccountOxygenColors.violet
+                      : AppColors.success,
+                  badge: info.hasUpdate ? '可升级' : '最新版本',
+                ),
+                const SizedBox(height: 18),
+                const AccountSectionLabel(text: '版本信息'),
+                AccountSheet(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 2,
+                  ),
+                  child: Column(
+                    children: <Widget>[
+                      AccountSettingRow(
+                        icon: Icons.apps_rounded,
+                        title: '当前内部版本',
+                        trailingLabel: '${widget.currentVersion}',
+                        tone: const Color(0xFF5D84E8),
+                      ),
+                      AccountSettingRow(
+                        icon: Icons.system_update_rounded,
+                        title: '更新状态',
+                        trailingLabel: info.hasUpdate ? '发现更新' : '无需更新',
+                        tone: info.hasUpdate
+                            ? AccountOxygenColors.violet
+                            : AppColors.success,
+                        showDivider: false,
+                      ),
+                    ],
+                  ),
                 ),
                 if (info.hasUpdate) ...<Widget>[
-                  const SizedBox(height: 18),
-                  _Info(
+                  const SizedBox(height: 12),
+                  AccountNoticeStrip(
+                    icon: Icons.info_outline_rounded,
                     text: info.packageUrl.isEmpty
                         ? '安装渠道尚未配置，当前不会伪造下载或升级成功。'
                         : '服务端已返回升级地址，正式渠道适配后执行升级。',
+                    tone: AppColors.warning,
                   ),
                 ],
               ],
@@ -494,76 +631,57 @@ class _YouthModePageState extends State<YouthModePage> {
       body: snapshot == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(20),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
               children: <Widget>[
-                _Header(
+                AccountStatusHero(
                   icon: Icons.child_care_rounded,
                   title: snapshot.youthModeEnabled ? '青少年模式已开启' : '青少年模式未开启',
                   description: '只限制创建新的充值订单，不影响进房、消息和社交。',
+                  tone: snapshot.youthModeEnabled
+                      ? AppColors.success
+                      : const Color(0xFF5D84E8),
+                  badge: snapshot.youthModeEnabled ? '保护中' : '未开启',
                 ),
                 const SizedBox(height: 14),
-                const _Info(text: '钱包查询、订单查询、退款、进房、消息和其他正常社交能力不被禁用。'),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _pinController,
-                  obscureText: true,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: <TextInputFormatter>[
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(4),
-                  ],
-                  decoration: InputDecoration(
-                    labelText: snapshot.youthModeEnabled ? '关闭密码' : '设置 4 位密码',
-                  ),
+                const AccountNoticeStrip(
+                  icon: Icons.info_outline_rounded,
+                  text: '钱包查询、订单查询、退款、进房、消息和其他正常社交能力不被禁用。',
+                  tone: AccountOxygenColors.cyan,
                 ),
-                const SizedBox(height: 14),
-                FilledButton(
-                  onPressed: _busy ? null : _toggle,
-                  child: Text(
-                    _busy
-                        ? '提交中…'
-                        : snapshot.youthModeEnabled
-                        ? '关闭青少年模式'
-                        : '开启青少年模式',
+                const SizedBox(height: 18),
+                AccountSheet(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+                  child: Column(
+                    children: <Widget>[
+                      TextField(
+                        controller: _pinController,
+                        obscureText: true,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: <TextInputFormatter>[
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(4),
+                        ],
+                        decoration: InputDecoration(
+                          labelText: snapshot.youthModeEnabled
+                              ? '关闭密码'
+                              : '设置 4 位密码',
+                          prefixIcon: const Icon(Icons.password_rounded),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      AccountPrimaryAction(
+                        label: snapshot.youthModeEnabled
+                            ? '关闭青少年模式'
+                            : '开启青少年模式',
+                        busy: _busy,
+                        onPressed: _toggle,
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-    );
-  }
-}
-
-class _Header extends StatelessWidget {
-  const _Header({
-    required this.icon,
-    required this.title,
-    required this.description,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-
-  @override
-  Widget build(BuildContext context) {
-    return SocialPageIntro(icon: icon, title: title, description: description);
-  }
-}
-
-class _Info extends StatelessWidget {
-  const _Info({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(13),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Text(text, style: Theme.of(context).textTheme.bodySmall),
     );
   }
 }

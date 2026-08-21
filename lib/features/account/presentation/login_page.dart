@@ -7,6 +7,7 @@ import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/live_backend_readiness.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
+import 'package:voice_social_app/features/account/presentation/account_oxygen_components.dart';
 import 'package:voice_social_app/features/account/presentation/live_backend_readiness_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -47,71 +48,92 @@ class _LoginPageState extends State<LoginPage> {
     return SocialPageScaffold(
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(24, 54, 24, 28),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(22, 36, 22, 26),
           children: <Widget>[
-            Text('手机号登录', style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 10),
+            const AccountMistHero(
+              eyebrow: 'VOICE SOCIAL',
+              title: '听见同频的人',
+              subtitle: '登录后继续你的房间、好友和消息旅程',
+              markSize: 68,
+            ),
+            const SizedBox(height: 30),
             Text(
-              '完成身份验证后可浏览首页、搜索、房间快照、钱包与订单。实时语音、即时消息和支付渠道将在厂商适配器接入后开放。',
+              '手机号登录',
               style: Theme.of(
                 context,
-              ).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
+              ).textTheme.titleLarge?.copyWith(color: AccountOxygenColors.ink),
             ),
-            const SizedBox(height: 34),
-            Form(
-              key: _formKey,
-              child: Column(
-                children: <Widget>[
-                  TextFormField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    autofillHints: const <String>[
-                      AutofillHints.telephoneNumber,
-                    ],
-                    inputFormatters: <TextInputFormatter>[
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(11),
-                    ],
-                    decoration: const InputDecoration(
-                      labelText: '手机号码',
-                      prefixText: '+86  ',
-                    ),
-                    validator: (String? value) {
-                      final String phone = value?.trim() ?? '';
-                      return RegExp(r'^1[3-9]\d{9}$').hasMatch(phone)
-                          ? null
-                          : '请输入正确的手机号码';
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _codeController,
-                    keyboardType: TextInputType.number,
-                    autofillHints: const <String>[AutofillHints.oneTimeCode],
-                    inputFormatters: <TextInputFormatter>[
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(6),
-                    ],
-                    decoration: InputDecoration(
-                      labelText: '短信验证码',
-                      suffixIcon: TextButton(
-                        onPressed:
-                            controller.sendingCode || _secondsRemaining > 0
+            const SizedBox(height: 12),
+            AccountSheet(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  children: <Widget>[
+                    TextFormField(
+                      controller: _phoneController,
+                      keyboardType: TextInputType.phone,
+                      autofillHints: const <String>[
+                        AutofillHints.telephoneNumber,
+                      ],
+                      inputFormatters: <TextInputFormatter>[
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(11),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: '手机号码',
+                        hintText: '请输入手机号',
+                        prefixText: '+86  ',
+                        prefixIcon: Icon(Icons.phone_iphone_rounded),
+                      ),
+                      validator: (String? value) {
+                        final String phone = value?.trim() ?? '';
+                        return RegExp(r'^1[3-9]\d{9}$').hasMatch(phone)
                             ? null
-                            : _sendCode,
-                        child: Text(
-                          _secondsRemaining > 0
-                              ? '${_secondsRemaining}s'
-                              : controller.sendingCode
-                              ? '发送中'
-                              : '获取验证码',
+                            : '请输入正确的手机号码';
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _codeController,
+                      keyboardType: TextInputType.number,
+                      autofillHints: const <String>[AutofillHints.oneTimeCode],
+                      inputFormatters: <TextInputFormatter>[
+                        FilteringTextInputFormatter.digitsOnly,
+                        LengthLimitingTextInputFormatter(6),
+                      ],
+                      decoration: InputDecoration(
+                        labelText: '短信验证码',
+                        hintText: '6 位验证码',
+                        prefixIcon: const Icon(Icons.sms_outlined),
+                        suffixIcon: TextButton(
+                          onPressed:
+                              controller.sendingCode || _secondsRemaining > 0
+                              ? null
+                              : _sendCode,
+                          child: Text(
+                            _secondsRemaining > 0
+                                ? '${_secondsRemaining}s'
+                                : controller.sendingCode
+                                ? '发送中'
+                                : '获取验证码',
+                          ),
                         ),
                       ),
+                      validator: (String? value) =>
+                          (value?.trim().length ?? 0) == 6
+                          ? null
+                          : '请输入 6 位验证码',
                     ),
-                    validator: (String? value) =>
-                        (value?.trim().length ?? 0) == 6 ? null : '请输入 6 位验证码',
-                  ),
-                ],
+                    const SizedBox(height: 18),
+                    AccountPrimaryAction(
+                      label: '登录 / 注册',
+                      busy: controller.busy,
+                      onPressed: _signIn,
+                    ),
+                  ],
+                ),
               ),
             ),
             if (developmentCode != null) ...<Widget>[
@@ -122,24 +144,14 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 16),
               _ErrorNotice(message: controller.errorMessage!),
             ],
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: controller.busy ? null : _signIn,
-                child: controller.busy
-                    ? const SizedBox.square(
-                        dimension: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('登录 / 注册'),
-              ),
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             Text(
-              '未注册手机号将在验证通过后进入资料完善流程。',
+              '未注册手机号会在验证后进入资料完善。实时语音、即时消息与支付渠道仍会在厂商适配器接入前保持不可用。',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AccountOxygenColors.muted,
+                height: 1.5,
+              ),
             ),
             if (widget.showLiveReadiness &&
                 widget.liveReadinessService != null) ...<Widget>[

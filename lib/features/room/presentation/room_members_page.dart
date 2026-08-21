@@ -8,6 +8,7 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
@@ -155,8 +156,8 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
   @override
   Widget build(BuildContext context) {
     return RoomPageScaffold(
-      appBar: AppBar(
-        title: const Text('在线成员与听众席'),
+      appBar: roomOxygenAppBar(
+        title: '在线成员与听众席',
         actions: <Widget>[
           IconButton(
             tooltip: '刷新',
@@ -167,6 +168,16 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
       ),
       body: Column(
         children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: RoomOxygenContextBar(
+              title: '深夜温柔陪伴',
+              subtitle: '房间号 ${widget.roomId} · ${_members.length} 人在线',
+              seed: widget.roomId,
+              status: _canManage ? '可管理' : '在线',
+              statusColor: _canManage ? RoomColors.primary : RoomColors.success,
+            ),
+          ),
           _buildFilters(),
           Expanded(child: _buildBody()),
         ],
@@ -180,7 +191,7 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
         .length;
     final int listeners = _members.length - onMic;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Wrap(
         spacing: 8,
         children: <Widget>[
@@ -267,81 +278,105 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
       context: context,
       useSafeArea: true,
       builder: (BuildContext sheetContext) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: _MemberAvatar(member: member),
-              title: Text(member.name),
-              subtitle: Text(_memberSubtitle(member)),
+            RoomOxygenContextBar(
+              title: member.name,
+              subtitle: _memberSubtitle(member),
+              seed: '${member.userId}',
+              status: member.isOnMic ? '麦上' : '听众',
+              statusColor: member.isOnMic
+                  ? RoomColors.accent
+                  : RoomColors.textSecondary,
             ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.person_outline_rounded),
-              title: const Text('查看主页'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _openMemberPage(PublicProfilePage(userId: member.userId));
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.chat_bubble_outline_rounded),
-              title: const Text('发起私聊'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _openMemberPage(
-                  PrivateChatPage(
-                    conversation: ConversationSummary(
-                      id: 'conversation-${member.userId}',
-                      kind: ConversationKind.privateChat,
-                      title: member.name,
-                      lastMessage: '',
-                      updatedAt: DateTime.now(),
-                      unreadCount: 0,
-                      targetUserId: member.userId,
-                    ),
+            const SizedBox(height: 12),
+            RoomGlassCard(
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: <Widget>[
+                  ListTile(
+                    leading: const Icon(Icons.person_outline_rounded),
+                    title: const Text('查看主页'),
+                    trailing: const Icon(Icons.chevron_right_rounded, size: 19),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _openMemberPage(PublicProfilePage(userId: member.userId));
+                    },
                   ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.report_outlined),
-              title: const Text('举报用户'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _openMemberPage(
-                  ReportPage(
-                    targetType: ReportTargetType.user,
-                    targetId: '${member.userId}',
-                    targetName: member.name,
+                  const Divider(height: 1, indent: 52),
+                  ListTile(
+                    leading: const Icon(Icons.chat_bubble_outline_rounded),
+                    title: const Text('发起私聊'),
+                    trailing: const Icon(Icons.chevron_right_rounded, size: 19),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _openMemberPage(
+                        PrivateChatPage(
+                          conversation: ConversationSummary(
+                            id: 'conversation-${member.userId}',
+                            kind: ConversationKind.privateChat,
+                            title: member.name,
+                            lastMessage: '',
+                            updatedAt: DateTime.now(),
+                            unreadCount: 0,
+                            targetUserId: member.userId,
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
-            if (_canManage && member.userId != widget.currentUserId)
-              ListTile(
-                leading: const Icon(Icons.admin_panel_settings_outlined),
-                title: const Text('房间管理操作'),
-                onTap: () async {
-                  Navigator.of(sheetContext).pop();
-                  final bool? changed = await Navigator.of(context).push<bool>(
-                    MaterialPageRoute<bool>(
-                      builder: (BuildContext context) => RoomManagementPage(
-                        roomId: widget.roomId,
-                        currentUserId: widget.currentUserId,
-                        currentRole: widget.currentRole,
-                        seats: widget.seats,
-                        initialMemberId: member.userId,
+                  const Divider(height: 1, indent: 52),
+                  ListTile(
+                    leading: const Icon(Icons.report_outlined),
+                    title: const Text('举报用户'),
+                    trailing: const Icon(Icons.chevron_right_rounded, size: 19),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _openMemberPage(
+                        ReportPage(
+                          targetType: ReportTargetType.user,
+                          targetId: '${member.userId}',
+                          targetName: member.name,
+                        ),
+                      );
+                    },
+                  ),
+                  if (_canManage &&
+                      member.userId != widget.currentUserId) ...<Widget>[
+                    const Divider(height: 1, indent: 52),
+                    ListTile(
+                      leading: const Icon(Icons.admin_panel_settings_outlined),
+                      title: const Text('房间管理操作'),
+                      trailing: const Icon(
+                        Icons.chevron_right_rounded,
+                        size: 19,
                       ),
+                      onTap: () async {
+                        Navigator.of(sheetContext).pop();
+                        final bool? changed = await Navigator.of(context)
+                            .push<bool>(
+                              MaterialPageRoute<bool>(
+                                builder: (BuildContext context) =>
+                                    RoomManagementPage(
+                                      roomId: widget.roomId,
+                                      currentUserId: widget.currentUserId,
+                                      currentRole: widget.currentRole,
+                                      seats: widget.seats,
+                                      initialMemberId: member.userId,
+                                    ),
+                              ),
+                            );
+                        if (changed == true && mounted) {
+                          await _load(reset: true);
+                        }
+                      },
                     ),
-                  );
-                  if (changed == true && mounted) {
-                    await _load(reset: true);
-                  }
-                },
+                  ],
+                ],
               ),
+            ),
           ],
         ),
       ),
@@ -384,13 +419,13 @@ class _MemberTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: RoomColors.surfaceHigh.withValues(alpha: 0.88),
-      borderRadius: BorderRadius.circular(18),
+    return RoomGlassCard(
+      padding: EdgeInsets.zero,
+      radius: 16,
+      onTap: onTap,
       child: ListTile(
-        minVerticalPadding: 12,
+        minVerticalPadding: 9,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         leading: _MemberAvatar(member: member),
         title: Row(
           children: <Widget>[
@@ -415,7 +450,6 @@ class _MemberTile extends StatelessWidget {
         trailing: Icon(
           canManage ? Icons.tune_rounded : Icons.chevron_right_rounded,
         ),
-        onTap: onTap,
       ),
     );
   }
@@ -472,34 +506,31 @@ class _MembersMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Container(
-        margin: const EdgeInsets.all(28),
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: RoomColors.surfaceHigh.withValues(alpha: 0.9),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, size: 44, color: RoomColors.textSecondary),
-            const SizedBox(height: 16),
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            if (actionLabel != null && onAction != null) ...<Widget>[
-              const SizedBox(height: 18),
-              FilledButton.tonal(
-                onPressed: onAction,
-                child: Text(actionLabel!),
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: RoomGlassCard(
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: 44, color: RoomColors.textSecondary),
+              const SizedBox(height: 16),
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
+              if (actionLabel != null && onAction != null) ...<Widget>[
+                const SizedBox(height: 18),
+                FilledButton.tonal(
+                  onPressed: onAction,
+                  child: Text(actionLabel!),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

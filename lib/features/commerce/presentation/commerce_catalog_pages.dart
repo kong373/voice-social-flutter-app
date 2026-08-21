@@ -115,7 +115,7 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SocialPageScaffold(
+    return _CommerceScaffold(
       appBar: AppBar(title: const Text('充值商品目录')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -126,41 +126,42 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                 children: <Widget>[
-                  Material(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(22),
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Row(
-                        children: <Widget>[
-                          const CircleAvatar(
-                            child: Icon(Icons.account_balance_wallet_outlined),
+                  _CommercePanel(
+                    padding: const EdgeInsets.all(15),
+                    child: Row(
+                      children: <Widget>[
+                        const _CommerceAssetOrb(
+                          icon: Icons.diamond_rounded,
+                          size: 48,
+                          colors: <Color>[Color(0xFFFFE88B), Color(0xFFFFB1DA)],
+                        ),
+                        const SizedBox(width: 13),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                '当前礼物币余额',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _wallet?.giftCoinBalance == null
+                                    ? '以服务端为准'
+                                    : '${_wallet!.giftCoinBalance}',
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.headlineSmall,
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                const Text('当前礼物币余额'),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _wallet?.giftCoinBalance == null
-                                      ? '以服务端为准'
-                                      : '${_wallet!.giftCoinBalance}',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.headlineSmall,
-                                ),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            _platform == ClientStorePlatform.ios
-                                ? 'iOS'
-                                : 'Android',
-                          ),
-                        ],
-                      ),
+                        ),
+                        _CommercePill(
+                          label: _platform == ClientStorePlatform.ios
+                              ? 'iOS'
+                              : 'Android',
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -169,7 +170,7 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
                       text: '青少年模式已开启，只限制创建新的充值订单；进房、消息、社交、钱包查询和其他正常功能不受影响。',
                     ),
                   const SizedBox(height: 18),
-                  Text('选择充值档位', style: Theme.of(context).textTheme.titleLarge),
+                  const _CommerceSectionTitle(title: '选择充值档位'),
                   const SizedBox(height: 10),
                   if (_products == null || _products!.isEmpty)
                     const _CommerceInfoBanner(text: '当前没有可用充值商品，请稍后刷新。')
@@ -182,67 +183,72 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
                             crossAxisCount: 2,
                             mainAxisSpacing: 10,
                             crossAxisSpacing: 10,
-                            mainAxisExtent: 170,
+                            mainAxisExtent: 138,
                           ),
                       itemCount: _products!.length,
                       itemBuilder: (BuildContext context, int index) {
                         final RechargeProduct product = _products![index];
                         final bool selected = _selected?.id == product.id;
-                        return Material(
-                          color: selected
-                              ? AppColors.primary.withValues(alpha: 0.18)
-                              : AppColors.surface,
-                          borderRadius: BorderRadius.circular(18),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(18),
-                            onTap: product.enabled
-                                ? () => setState(() => _selected = product)
-                                : null,
-                            child: Container(
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(
-                                  color: selected
-                                      ? AppColors.primary
-                                      : AppColors.divider,
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
+                        return _CommercePanel(
+                          selected: selected,
+                          onTap: product.enabled
+                              ? () => setState(() => _selected = product)
+                              : null,
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: <Widget>[
+                              Row(
                                 children: <Widget>[
-                                  Row(
-                                    children: <Widget>[
-                                      Expanded(
-                                        child: Text(
-                                          '${product.totalGiftCoins} 礼物币',
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.titleMedium,
-                                        ),
-                                      ),
-                                      if (product.recommended)
-                                        const _CommercePill(label: '推荐'),
-                                    ],
+                                  const _CommerceAssetOrb(
+                                    icon: Icons.diamond_rounded,
+                                    size: 32,
                                   ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    '¥${product.priceCny.toStringAsFixed(product.priceCny % 1 == 0 ? 0 : 2)}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.headlineSmall,
-                                  ),
-                                  if (product.bonusGiftCoins > 0)
-                                    Text(
-                                      '含赠送 ${product.bonusGiftCoins}',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
-                                    ),
+                                  const Spacer(),
+                                  if (product.recommended)
+                                    const _CommercePill(label: '推荐'),
                                 ],
                               ),
-                            ),
+                              const SizedBox(height: 7),
+                              Text(
+                                '${product.totalGiftCoins} 礼物币',
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: <Widget>[
+                                  Expanded(
+                                    child: FittedBox(
+                                      alignment: Alignment.centerLeft,
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
+                                        '¥${product.priceCny.toStringAsFixed(product.priceCny % 1 == 0 ? 0 : 2)}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleLarge
+                                            ?.copyWith(fontSize: 18),
+                                      ),
+                                    ),
+                                  ),
+                                  if (product.bonusGiftCoins > 0) ...<Widget>[
+                                    const SizedBox(width: 6),
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 1),
+                                      child: Text(
+                                        '+${product.bonusGiftCoins}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: AppColors.secondary,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
                           ),
                         );
                       },
@@ -363,47 +369,56 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
     final List<PaymentChannelType> channels = _repository.availableChannels(
       widget.platform,
     );
-    return SocialPageScaffold(
+    return _CommerceScaffold(
       appBar: AppBar(title: const Text('支付方式与提交')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: <Widget>[
-          Material(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(20),
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                children: <Widget>[
-                  _CommerceKeyValue(
-                    label: '充值账号',
-                    value:
-                        AppDependencyScope.of(
-                          context,
-                        ).sessionManager.session?.mobile ??
-                        '当前账号',
-                  ),
-                  _CommerceKeyValue(
-                    label: '充值商品',
-                    value: '${widget.product.totalGiftCoins} 礼物币',
-                  ),
-                  _CommerceKeyValue(
-                    label: '实付金额',
-                    value: '¥${widget.product.priceCny.toStringAsFixed(2)}',
-                  ),
-                ],
-              ),
+          _CommercePanel(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: <Widget>[
+                const Row(
+                  children: <Widget>[
+                    _CommerceAssetOrb(
+                      icon: Icons.receipt_long_rounded,
+                      size: 38,
+                    ),
+                    SizedBox(width: 10),
+                    Expanded(child: _CommerceSectionTitle(title: '订单确认')),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Divider(height: 1),
+                const SizedBox(height: 6),
+                _CommerceKeyValue(
+                  label: '充值账号',
+                  value:
+                      AppDependencyScope.of(
+                        context,
+                      ).sessionManager.session?.mobile ??
+                      '当前账号',
+                ),
+                _CommerceKeyValue(
+                  label: '充值商品',
+                  value: '${widget.product.totalGiftCoins} 礼物币',
+                ),
+                _CommerceKeyValue(
+                  label: '实付金额',
+                  value: '¥${widget.product.priceCny.toStringAsFixed(2)}',
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 20),
-          Text('选择支付方式', style: Theme.of(context).textTheme.titleLarge),
+          const _CommerceSectionTitle(title: '选择支付方式'),
           const SizedBox(height: 10),
           for (final PaymentChannelType channel in channels)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Material(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(18),
+              child: _CommercePanel(
+                selected: _channel == channel,
+                padding: EdgeInsets.zero,
                 child: RadioListTile<PaymentChannelType>(
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(18),
@@ -414,6 +429,14 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
                       ? null
                       : (PaymentChannelType? value) =>
                             setState(() => _channel = value),
+                  secondary: _CommerceAssetOrb(
+                    icon: channel == PaymentChannelType.wechat
+                        ? Icons.chat_bubble_rounded
+                        : channel == PaymentChannelType.alipay
+                        ? Icons.account_balance_wallet_rounded
+                        : Icons.apple_rounded,
+                    size: 40,
+                  ),
                   title: Text(channel.label),
                   subtitle: Text(
                     channel == PaymentChannelType.appleIap
@@ -511,55 +534,59 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
         success ||
         _order.state == RechargeOrderState.failed ||
         _order.state == RechargeOrderState.canceled;
-    return SocialPageScaffold(
+    return _CommerceScaffold(
       appBar: AppBar(title: const Text('支付返回与结果')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 34, 20, 28),
         children: <Widget>[
-          Icon(
-            success
-                ? Icons.check_circle_rounded
-                : terminal
-                ? Icons.error_outline_rounded
-                : Icons.hourglass_top_rounded,
-            size: 68,
-            color: success
-                ? AppColors.success
-                : terminal
-                ? AppColors.error
-                : AppColors.warning,
+          _CommercePanel(
+            padding: const EdgeInsets.fromLTRB(18, 24, 18, 20),
+            child: Column(
+              children: <Widget>[
+                _CommerceAssetOrb(
+                  icon: success
+                      ? Icons.check_rounded
+                      : terminal
+                      ? Icons.close_rounded
+                      : Icons.hourglass_top_rounded,
+                  size: 70,
+                  colors: success
+                      ? const <Color>[Color(0xFFD7FFF0), Color(0xFFDDF7FF)]
+                      : terminal
+                      ? const <Color>[Color(0xFFFFE4EA), Color(0xFFFFF1DE)]
+                      : const <Color>[Color(0xFFFFF1C9), Color(0xFFF1E7FF)],
+                ),
+                const SizedBox(height: 15),
+                Text(
+                  _order.state.label,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _order.message.isEmpty ? '订单结果以服务端状态为准' : _order.message,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 18),
-          Text(
-            _order.state.label,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _order.message.isEmpty ? '订单结果以服务端状态为准' : _order.message,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 22),
-          Material(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(20),
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                children: <Widget>[
-                  _CommerceKeyValue(label: '订单号', value: _order.orderNo),
-                  _CommerceKeyValue(
-                    label: '充值商品',
-                    value: '${_order.product.totalGiftCoins} 礼物币',
-                  ),
-                  _CommerceKeyValue(label: '支付方式', value: _order.channel.label),
-                  _CommerceKeyValue(
-                    label: '实付金额',
-                    value: '¥${_order.product.priceCny.toStringAsFixed(2)}',
-                  ),
-                ],
-              ),
+          const SizedBox(height: 14),
+          _CommercePanel(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: <Widget>[
+                _CommerceKeyValue(label: '订单号', value: _order.orderNo),
+                _CommerceKeyValue(
+                  label: '充值商品',
+                  value: '${_order.product.totalGiftCoins} 礼物币',
+                ),
+                _CommerceKeyValue(label: '支付方式', value: _order.channel.label),
+                _CommerceKeyValue(
+                  label: '实付金额',
+                  value: '¥${_order.product.priceCny.toStringAsFixed(2)}',
+                ),
+              ],
             ),
           ),
           if (_error != null) ...<Widget>[
@@ -641,10 +668,14 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
 
   @override
   Widget build(BuildContext context) {
-    final List<GiftCatalogItem> visible = (_gifts ?? const <GiftCatalogItem>[])
-        .where((GiftCatalogItem item) => item.category == _category)
-        .toList(growable: false);
-    return SocialPageScaffold(
+    final List<GiftCatalogItem> gifts = _gifts ?? const <GiftCatalogItem>[];
+    final List<GiftCatalogItem> visible =
+        _category == GiftCatalogCategory.popular
+        ? gifts.take(8).toList(growable: false)
+        : gifts
+              .where((GiftCatalogItem item) => item.category == _category)
+              .toList(growable: false);
+    return _CommerceScaffold(
       appBar: AppBar(title: const Text('礼物图鉴')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -655,23 +686,41 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                 children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          '普通礼物',
-                          style: Theme.of(context).textTheme.titleLarge,
+                  _GiftBalanceBanner(balance: _wallet?.giftCoinBalance),
+                  const SizedBox(height: 12),
+                  _CommercePanel(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 9,
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        for (final String asset in const <String>[
+                          'assets/runtime/avatar-rose.png',
+                          'assets/runtime/avatar-night.png',
+                          'assets/runtime/avatar-copper.png',
+                        ]) ...<Widget>[
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: const Color(0xFFECE8FF),
+                            backgroundImage: AssetImage(asset),
+                          ),
+                          const SizedBox(width: 5),
+                        ],
+                        const SizedBox(width: 3),
+                        Expanded(
+                          child: Text(
+                            '进入房间后选择麦上用户送礼',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                         ),
-                      ),
-                      Text(
-                        _wallet?.giftCoinBalance == null
-                            ? '余额以服务端为准'
-                            : '余额 ${_wallet!.giftCoinBalance}',
-                        style: const TextStyle(color: AppColors.warning),
-                      ),
-                    ],
+                        const _CommercePill(label: '房间内送出'),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   SegmentedButton<GiftCatalogCategory>(
                     showSelectedIcon: false,
                     segments: <ButtonSegment<GiftCatalogCategory>>[
@@ -695,35 +744,58 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate:
                           const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            mainAxisSpacing: 10,
-                            crossAxisSpacing: 10,
-                            childAspectRatio: 0.92,
+                            crossAxisCount: 4,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                            childAspectRatio: 0.72,
                           ),
                       itemCount: visible.length,
                       itemBuilder: (BuildContext context, int index) {
                         final GiftCatalogItem gift = visible[index];
-                        return Material(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(18),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: <Widget>[
-                                const Icon(Icons.redeem_rounded, size: 30),
-                                const SizedBox(height: 8),
-                                Text(
-                                  gift.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                Text(
-                                  '${gift.price}',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
-                            ),
+                        final String asset = switch (gift.id % 4) {
+                          0 => 'assets/runtime/gift-blossom.png',
+                          1 => 'assets/runtime/gift-whale.png',
+                          2 => 'assets/runtime/gift-ticket.png',
+                          _ => 'assets/runtime/gift-celebration-banner.png',
+                        };
+                        return _CommercePanel(
+                          padding: const EdgeInsets.fromLTRB(5, 9, 5, 7),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: <Widget>[
+                              Expanded(
+                                child: Image.asset(asset, fit: BoxFit.contain),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                gift.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.labelMedium
+                                    ?.copyWith(color: AppColors.textPrimary),
+                              ),
+                              const SizedBox(height: 2),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: <Widget>[
+                                  const Icon(
+                                    Icons.circle,
+                                    size: 7,
+                                    color: Color(0xFFFFC84E),
+                                  ),
+                                  const SizedBox(width: 3),
+                                  Flexible(
+                                    child: Text(
+                                      '${gift.price}',
+                                      maxLines: 1,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         );
                       },
@@ -859,9 +931,16 @@ class _DecorationPageState extends State<DecorationPage> {
     final int equippedCount = decorations
         .where((DecorationItem item) => item.equipped)
         .length;
-    return SocialPageScaffold(
+    return _CommerceScaffold(
       appBar: AppBar(
-        title: Text('装扮中心', style: Theme.of(context).textTheme.titleMedium),
+        title: const Text(
+          '装扮中心',
+          style: TextStyle(
+            color: SocialColors.textPrimary,
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -873,36 +952,36 @@ class _DecorationPageState extends State<DecorationPage> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                 children: <Widget>[
-                  SocialCard(
+                  _CommercePanel(
                     padding: const EdgeInsets.all(18),
                     child: Row(
                       children: <Widget>[
-                        Container(
-                          width: 54,
-                          height: 54,
-                          decoration: BoxDecoration(
-                            gradient: SocialColors.brandGradient,
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: const Icon(
-                            Icons.auto_awesome_rounded,
-                            color: Colors.white,
-                            size: 28,
-                          ),
+                        const _CommerceAssetOrb(
+                          icon: Icons.auto_awesome_rounded,
+                          asset: 'assets/runtime/avatar-rose.png',
+                          size: 58,
+                          colors: <Color>[Color(0xFFDFF8FF), Color(0xFFFFE1F3)],
                         ),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: <Widget>[
-                              Text(
+                              const Text(
                                 '个性装扮',
-                                style: Theme.of(context).textTheme.titleLarge,
+                                style: TextStyle(
+                                  color: SocialColors.textPrimary,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                               const SizedBox(height: 4),
-                              Text(
+                              const Text(
                                 '头像框、进场效果与声波样式',
-                                style: Theme.of(context).textTheme.bodySmall,
+                                style: TextStyle(
+                                  color: SocialColors.textSecondary,
+                                  fontSize: 12,
+                                ),
                               ),
                             ],
                           ),
@@ -920,7 +999,10 @@ class _DecorationPageState extends State<DecorationPage> {
                             const SizedBox(height: 3),
                             Text(
                               '穿戴中 $equippedCount',
-                              style: Theme.of(context).textTheme.bodySmall,
+                              style: const TextStyle(
+                                color: SocialColors.textSecondary,
+                                fontSize: 12,
+                              ),
                             ),
                           ],
                         ),
@@ -951,86 +1033,96 @@ class _DecorationPageState extends State<DecorationPage> {
                   ),
                   const SizedBox(height: 14),
                   if (visible.isEmpty)
-                    const SocialCard(child: Center(child: Text('当前分类没有可用装扮')))
+                    const _CommercePanel(
+                      child: Center(child: Text('当前分类没有可用装扮')),
+                    )
                   else
-                    for (final DecorationItem item in visible)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: SocialCard(
-                          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-                          child: Row(
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 10,
+                            crossAxisSpacing: 10,
+                            mainAxisExtent: 188,
+                          ),
+                      itemCount: visible.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        final DecorationItem item = visible[index];
+                        final String asset = switch (item.kind) {
+                          DecorationKind.avatarFrame =>
+                            'assets/runtime/avatar-rose.png',
+                          DecorationKind.entrance =>
+                            'assets/runtime/room-cover-festival.png',
+                          DecorationKind.nickname =>
+                            'assets/runtime/gift-ticket.png',
+                          DecorationKind.voiceWave =>
+                            'assets/runtime/gift-blossom.png',
+                          DecorationKind.profileCard =>
+                            'assets/runtime/room-cover-moon.png',
+                        };
+                        return _CommercePanel(
+                          selected: item.equipped,
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                          child: Column(
                             children: <Widget>[
-                              Container(
-                                width: 46,
-                                height: 46,
-                                decoration: BoxDecoration(
-                                  color: SocialColors.cardSoft,
-                                  borderRadius: BorderRadius.circular(15),
-                                ),
-                                child: Icon(
-                                  _iconForDecoration(item.kind),
-                                  color: SocialColors.primary,
-                                ),
+                              _CommerceAssetOrb(
+                                icon: _iconForDecoration(item.kind),
+                                asset: asset,
+                                size: 64,
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    Row(
-                                      children: <Widget>[
-                                        Expanded(
-                                          child: Text(
-                                            item.name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(
-                                              context,
-                                            ).textTheme.titleMedium,
-                                          ),
-                                        ),
-                                        _CommercePill(label: item.kind.label),
-                                      ],
+                              const SizedBox(height: 8),
+                              Text(
+                                item.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                item.owned
+                                    ? item.equipped
+                                          ? '当前穿戴'
+                                          : '已拥有'
+                                    : '${item.priceGiftCoins} 礼物币',
+                                maxLines: 1,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              const Spacer(),
+                              SizedBox(
+                                width: double.infinity,
+                                height: 38,
+                                child: FilledButton(
+                                  key: Key('decoration-action-${item.id}'),
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: const Size(52, 38),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      item.owned
+                                  ),
+                                  onPressed: _busyId == null
+                                      ? () => _operateDecoration(item)
+                                      : null,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      _busyId == item.id
+                                          ? '处理中…'
+                                          : item.owned
                                           ? item.equipped
-                                                ? '已拥有 · 当前穿戴'
-                                                : '已拥有 · 未穿戴'
-                                          : '${item.priceGiftCoins} 礼物币',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                                ? '卸下'
+                                                : '穿戴'
+                                          : '购买',
                                     ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              FilledButton(
-                                key: Key('decoration-action-${item.id}'),
-                                style: FilledButton.styleFrom(
-                                  minimumSize: const Size(64, 44),
-                                ),
-                                onPressed: _busyId == null
-                                    ? () => _operateDecoration(item)
-                                    : null,
-                                child: Text(
-                                  _busyId == item.id
-                                      ? '处理中…'
-                                      : item.owned
-                                      ? item.equipped
-                                            ? '卸下'
-                                            : '穿戴'
-                                      : '购买',
-                                  style: Theme.of(context).textTheme.labelLarge
-                                      ?.copyWith(color: Colors.white),
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                      ),
+                        );
+                      },
+                    ),
                   const SizedBox(height: 4),
                   const _CommerceInfoBanner(text: '装扮购买与穿戴结果以服务端资产记录为准。'),
                 ],

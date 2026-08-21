@@ -383,7 +383,7 @@ class RoomGlassCard extends StatelessWidget {
     required this.child,
     this.padding = const EdgeInsets.all(16),
     this.onTap,
-    this.radius = 22,
+    this.radius = 18,
     super.key,
   });
 
@@ -396,10 +396,10 @@ class RoomGlassCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final BorderRadius borderRadius = BorderRadius.circular(radius);
     return Material(
-      color: Colors.white.withValues(alpha: 0.075),
+      color: Colors.white.withValues(alpha: 0.055),
       shape: RoundedRectangleBorder(
         borderRadius: borderRadius,
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.09)),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.07)),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
