@@ -3,7 +3,9 @@ import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/live_backend_readiness.dart';
 
 void main() {
-  AppEnvironment liveEnvironment({String apiBaseUrl = 'https://dev.example.com/'}) {
+  AppEnvironment liveEnvironment({
+    String apiBaseUrl = 'https://dev.example.com/',
+  }) {
     return AppEnvironment(
       backendMode: BackendMode.live,
       apiBaseUrl: apiBaseUrl,
@@ -26,9 +28,9 @@ void main() {
     );
     final LiveBackendReadinessSnapshot snapshot =
         await LiveBackendReadinessService(
-      environment: AppEnvironment.mock(),
-      gatewayProbe: probe,
-    ).check();
+          environment: AppEnvironment.mock(),
+          gatewayProbe: probe,
+        ).check();
 
     expect(snapshot.status, LiveBackendReadinessStatus.mockMode);
     expect(snapshot.canAttemptAuthentication, isFalse);
@@ -45,14 +47,11 @@ void main() {
     );
     final LiveBackendReadinessSnapshot snapshot =
         await LiveBackendReadinessService(
-      environment: liveEnvironment(apiBaseUrl: 'http://dev.example.com/'),
-      gatewayProbe: probe,
-    ).check();
+          environment: liveEnvironment(apiBaseUrl: 'http://dev.example.com/'),
+          gatewayProbe: probe,
+        ).check();
 
-    expect(
-      snapshot.status,
-      LiveBackendReadinessStatus.configurationInvalid,
-    );
+    expect(snapshot.status, LiveBackendReadinessStatus.configurationInvalid);
     expect(probe.callCount, 0);
   });
 
@@ -68,9 +67,9 @@ void main() {
     );
     final LiveBackendReadinessSnapshot snapshot =
         await LiveBackendReadinessService(
-      environment: liveEnvironment(),
-      gatewayProbe: probe,
-    ).check();
+          environment: liveEnvironment(),
+          gatewayProbe: probe,
+        ).check();
 
     expect(snapshot.canAttemptAuthentication, isTrue);
     expect(snapshot.httpStatus, 401);
@@ -90,9 +89,9 @@ void main() {
     );
     final LiveBackendReadinessSnapshot snapshot =
         await LiveBackendReadinessService(
-      environment: liveEnvironment(),
-      gatewayProbe: probe,
-    ).check();
+          environment: liveEnvironment(),
+          gatewayProbe: probe,
+        ).check();
 
     expect(snapshot.status, LiveBackendReadinessStatus.networkUnavailable);
     expect(snapshot.canAttemptAuthentication, isFalse);

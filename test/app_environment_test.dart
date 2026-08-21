@@ -14,7 +14,6 @@ void main() {
       clientType: 'Android',
       clientInnerVersion: '6',
       oauthClientId: 'client-id-value',
-      oauthClientSecret: 'secret-value',
       realtimeEndpoint: '',
       deploymentEnvironment: deployment,
       allowInsecureHttp: allowInsecureHttp,
@@ -22,19 +21,29 @@ void main() {
     );
   }
 
-  test('redacted summary never exposes OAuth values or gateway path', () {
+  test('redacted summary never exposes client id or gateway path', () {
     final AppEnvironment environment = liveEnvironment();
     final String summary = environment.redactedSummary.toString();
 
     expect(environment.redactedApiOrigin, 'https://dev.example.com:8443');
     expect(summary, isNot(contains('client-id-value')));
-    expect(summary, isNot(contains('secret-value')));
     expect(summary, isNot(contains('/gateway/')));
     expect(environment.redactedSummary['oauthClientIdConfigured'], isTrue);
-    expect(
-      environment.redactedSummary['oauthClientSecretConfigured'],
-      isTrue,
-    );
+    expect(environment.redactedSummary['oauthClientSecretConfigured'], isFalse);
+  });
+
+  test('mobile public client never loads confidential credentials', () {
+    final AppEnvironment environment = liveEnvironment();
+    expect(environment.oauthClientSecret, isEmpty);
+    expect(environment.canReadDevelopmentSmsOutbox, isFalse);
+    expect(environment.redactedSummary['developmentOutboxConfigured'], isFalse);
+  });
+
+  test('development tools are limited to local and development', () {
+    expect(DeploymentEnvironment.local.allowsDevelopmentTools, isTrue);
+    expect(DeploymentEnvironment.development.allowsDevelopmentTools, isTrue);
+    expect(DeploymentEnvironment.staging.allowsDevelopmentTools, isFalse);
+    expect(DeploymentEnvironment.production.allowsDevelopmentTools, isFalse);
   });
 
   test('development HTTP requires an explicit insecure override', () {
@@ -78,9 +87,7 @@ void main() {
   });
 
   test('probe path must be absolute and timeout must be bounded', () {
-    final AppEnvironment invalidPath = liveEnvironment(
-      liveProbePath: 'health',
-    );
+    final AppEnvironment invalidPath = liveEnvironment(liveProbePath: 'health');
     expect(
       invalidPath.validateLiveConfiguration,
       throwsA(
@@ -98,7 +105,6 @@ void main() {
       clientType: 'Android',
       clientInnerVersion: '6',
       oauthClientId: 'client',
-      oauthClientSecret: 'secret',
       realtimeEndpoint: '',
       deploymentEnvironment: DeploymentEnvironment.development,
       apiTimeout: const Duration(seconds: 2),

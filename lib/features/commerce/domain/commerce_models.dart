@@ -24,14 +24,7 @@ enum RefundStatus { reviewing, approved, rejected, resubmitted, unavailable }
 
 enum RefundScope { accountLegacy, order }
 
-enum WithdrawalStatus {
-  pending,
-  approved,
-  rejected,
-  paying,
-  succeeded,
-  failed,
-}
+enum WithdrawalStatus { pending, approved, rejected, paying, succeeded, failed }
 
 class BankCardSummary {
   const BankCardSummary({

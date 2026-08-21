@@ -68,9 +68,9 @@ class _GuildHomePageState extends State<GuildHomePage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -97,100 +97,106 @@ class _GuildHomePageState extends State<GuildHomePage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? _StateError(message: _error!, onRetry: _load)
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+          ? _StateError(message: _error!, onRetry: _load)
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+                children: <Widget>[
+                  Row(
                     children: <Widget>[
-                      Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              textInputAction: TextInputAction.search,
-                              onSubmitted: (_) => _search(),
-                              decoration: const InputDecoration(
-                                hintText: '搜索公会名称或公会号',
-                                prefixIcon: Icon(Icons.search_rounded),
-                              ),
-                            ),
+                      Expanded(
+                        child: TextField(
+                          controller: _searchController,
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: (_) => _search(),
+                          decoration: const InputDecoration(
+                            hintText: '搜索公会名称或公会号',
+                            prefixIcon: Icon(Icons.search_rounded),
                           ),
-                          const SizedBox(width: 8),
-                          IconButton.filledTonal(
-                            tooltip: '搜索',
-                            onPressed: _searching ? null : _search,
-                            icon: _searching
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.arrow_forward_rounded),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      if (_searchResults != null) ...<Widget>[
-                        Row(
-                          children: <Widget>[
-                            Text('搜索结果', style: Theme.of(context).textTheme.titleLarge),
-                            const Spacer(),
-                            TextButton(
-                              onPressed: () => setState(() => _searchResults = null),
-                              child: const Text('清除'),
-                            ),
-                          ],
                         ),
-                        const SizedBox(height: 8),
-                        if (_searchResults!.isEmpty)
-                          const _InfoCard(
-                            icon: Icons.search_off_rounded,
-                            text: '没有找到匹配公会。',
-                          )
-                        else
-                          for (final GuildSummary guild in _searchResults!)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: _GuildTile(
-                                guild: guild,
-                                onTap: () => _openGuild(guild),
-                              ),
-                            ),
-                      ] else ...<Widget>[
-                        Text('我的公会', style: Theme.of(context).textTheme.titleLarge),
-                        const SizedBox(height: 10),
-                        if (_snapshot?.currentGuild == null)
-                          const _InfoCard(
-                            icon: Icons.groups_outlined,
-                            text: '当前没有加入公会，可从推荐列表选择后提交申请。',
-                          )
-                        else
-                          _GuildTile(
-                            guild: _snapshot!.currentGuild!,
-                            prominent: true,
-                            onTap: () => _openGuild(_snapshot!.currentGuild!),
-                          ),
-                        const SizedBox(height: 22),
-                        Text('推荐公会', style: Theme.of(context).textTheme.titleLarge),
-                        const SizedBox(height: 10),
-                        if (_snapshot?.recommended.isEmpty ?? true)
-                          const _InfoCard(
-                            icon: Icons.auto_awesome_outlined,
-                            text: '当前没有可推荐的公会。',
-                          )
-                        else
-                          for (final GuildSummary guild in _snapshot!.recommended)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: _GuildTile(
-                                guild: guild,
-                                onTap: () => _openGuild(guild),
-                              ),
-                            ),
-                      ],
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        tooltip: '搜索',
+                        onPressed: _searching ? null : _search,
+                        icon: _searching
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.arrow_forward_rounded),
+                      ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 18),
+                  if (_searchResults != null) ...<Widget>[
+                    Row(
+                      children: <Widget>[
+                        Text(
+                          '搜索结果',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () =>
+                              setState(() => _searchResults = null),
+                          child: const Text('清除'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (_searchResults!.isEmpty)
+                      const _InfoCard(
+                        icon: Icons.search_off_rounded,
+                        text: '没有找到匹配公会。',
+                      )
+                    else
+                      for (final GuildSummary guild in _searchResults!)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _GuildTile(
+                            guild: guild,
+                            onTap: () => _openGuild(guild),
+                          ),
+                        ),
+                  ] else ...<Widget>[
+                    Text('我的公会', style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 10),
+                    if (_snapshot?.currentGuild == null)
+                      const _InfoCard(
+                        icon: Icons.groups_outlined,
+                        text: '当前没有加入公会，可从推荐列表选择后提交申请。',
+                      )
+                    else
+                      _GuildTile(
+                        guild: _snapshot!.currentGuild!,
+                        prominent: true,
+                        onTap: () => _openGuild(_snapshot!.currentGuild!),
+                      ),
+                    const SizedBox(height: 22),
+                    Text('推荐公会', style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 10),
+                    if (_snapshot?.recommended.isEmpty ?? true)
+                      const _InfoCard(
+                        icon: Icons.auto_awesome_outlined,
+                        text: '当前没有可推荐的公会。',
+                      )
+                    else
+                      for (final GuildSummary guild in _snapshot!.recommended)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _GuildTile(
+                            guild: guild,
+                            onTap: () => _openGuild(guild),
+                          ),
+                        ),
+                  ],
+                ],
+              ),
+            ),
     );
   }
 }
@@ -254,13 +260,15 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(success)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(success)));
       await _load();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -300,98 +308,98 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? _StateError(message: _error!, onRetry: _load)
-              : guild == null
-                  ? const Center(child: Text('公会不可用'))
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
-                        children: <Widget>[
-                          _GuildHero(guild: guild),
-                          const SizedBox(height: 16),
-                          Wrap(
-                            spacing: 9,
-                            runSpacing: 9,
-                            children: <Widget>[
-                              if (!guild.joined)
-                                FilledButton(
-                                  onPressed: _busy || guild.applicationPending
-                                      ? null
-                                      : () => _run(
-                                            () => _repository.applyToJoinGuild(guild.id),
-                                            '入会申请已提交',
-                                          ),
-                                  child: Text(
-                                    guild.applicationPending ? '申请审核中' : '申请加入',
-                                  ),
+          ? _StateError(message: _error!, onRetry: _load)
+          : guild == null
+          ? const Center(child: Text('公会不可用'))
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
+                children: <Widget>[
+                  _GuildHero(guild: guild),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 9,
+                    runSpacing: 9,
+                    children: <Widget>[
+                      if (!guild.joined)
+                        FilledButton(
+                          onPressed: _busy || guild.applicationPending
+                              ? null
+                              : () => _run(
+                                  () => _repository.applyToJoinGuild(guild.id),
+                                  '入会申请已提交',
                                 ),
-                              if (guild.joined)
-                                FilledButton.tonal(
-                                  onPressed: _busy || guild.hasSignedToday
-                                      ? null
-                                      : () => _run(
-                                            () => _repository.signGuild(guild.id),
-                                            '公会签到成功',
-                                          ),
-                                  child: Text(
-                                    guild.hasSignedToday ? '今日已签到' : '公会签到',
-                                  ),
-                                ),
-                              if (guild.joined)
-                                OutlinedButton(
-                                  onPressed: _busy ? null : () {
-                                    Navigator.of(context).push<void>(
-                                      MaterialPageRoute<void>(
-                                        builder: (BuildContext context) =>
-                                            GuildMembersPage(guildId: guild.id),
-                                      ),
-                                    );
-                                  },
-                                  child: const Text('成员与管理'),
-                                ),
-                              if (guild.joined && guild.role != GuildRole.owner)
-                                OutlinedButton(
-                                  onPressed: _busy ? null : _quit,
-                                  child: const Text('退出公会'),
-                                ),
-                            ],
+                          child: Text(
+                            guild.applicationPending ? '申请审核中' : '申请加入',
                           ),
-                          const SizedBox(height: 22),
-                          Text('公会房间', style: Theme.of(context).textTheme.titleLarge),
-                          const SizedBox(height: 10),
-                          if (guild.rooms.isEmpty)
-                            const _InfoCard(
-                              icon: Icons.meeting_room_outlined,
-                              text: '当前没有可进入的有效公会房间。',
-                            )
-                          else
-                            for (final GuildRoom room in guild.rooms)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 9),
-                                child: Material(
-                                  color: AppColors.surface,
-                                  borderRadius: BorderRadius.circular(18),
-                                  child: ListTile(
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(18),
-                                    ),
-                                    leading: const Icon(Icons.graphic_eq_rounded),
-                                    title: Text(room.name),
-                                    subtitle: Text('${room.onlineUsers} 人在线'),
-                                    trailing: const Icon(Icons.chevron_right_rounded),
-                                    onTap: () => Navigator.of(context).push<void>(
-                                      MaterialPageRoute<void>(
-                                        builder: (BuildContext context) =>
-                                            RoomDeepLinkPage(input: room.roomId),
-                                      ),
-                                    ),
-                                  ),
+                        ),
+                      if (guild.joined)
+                        FilledButton.tonal(
+                          onPressed: _busy || guild.hasSignedToday
+                              ? null
+                              : () => _run(
+                                  () => _repository.signGuild(guild.id),
+                                  '公会签到成功',
                                 ),
+                          child: Text(guild.hasSignedToday ? '今日已签到' : '公会签到'),
+                        ),
+                      if (guild.joined)
+                        OutlinedButton(
+                          onPressed: _busy
+                              ? null
+                              : () {
+                                  Navigator.of(context).push<void>(
+                                    MaterialPageRoute<void>(
+                                      builder: (BuildContext context) =>
+                                          GuildMembersPage(guildId: guild.id),
+                                    ),
+                                  );
+                                },
+                          child: const Text('成员与管理'),
+                        ),
+                      if (guild.joined && guild.role != GuildRole.owner)
+                        OutlinedButton(
+                          onPressed: _busy ? null : _quit,
+                          child: const Text('退出公会'),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  Text('公会房间', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 10),
+                  if (guild.rooms.isEmpty)
+                    const _InfoCard(
+                      icon: Icons.meeting_room_outlined,
+                      text: '当前没有可进入的有效公会房间。',
+                    )
+                  else
+                    for (final GuildRoom room in guild.rooms)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 9),
+                        child: Material(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(18),
+                          child: ListTile(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            leading: const Icon(Icons.graphic_eq_rounded),
+                            title: Text(room.name),
+                            subtitle: Text('${room.onlineUsers} 人在线'),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: () => Navigator.of(context).push<void>(
+                              MaterialPageRoute<void>(
+                                builder: (BuildContext context) =>
+                                    RoomDeepLinkPage(input: room.roomId),
                               ),
-                        ],
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                ],
+              ),
+            ),
     );
   }
 }

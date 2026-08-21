@@ -1,17 +1,12 @@
-enum GuildRole {
-  visitor,
-  member,
-  manager,
-  owner,
-}
+enum GuildRole { visitor, member, manager, owner }
 
 extension GuildRoleLabel on GuildRole {
   String get label => switch (this) {
-        GuildRole.visitor => '未加入',
-        GuildRole.member => '成员',
-        GuildRole.manager => '管理员',
-        GuildRole.owner => '会长',
-      };
+    GuildRole.visitor => '未加入',
+    GuildRole.member => '成员',
+    GuildRole.manager => '管理员',
+    GuildRole.owner => '会长',
+  };
 
   bool get canManage => this == GuildRole.manager || this == GuildRole.owner;
 }
@@ -119,10 +114,7 @@ class GuildMember {
   final bool isSigned;
   final String? roomId;
 
-  GuildMember copyWith({
-    GuildRole? role,
-    bool? isMuted,
-  }) {
+  GuildMember copyWith({GuildRole? role, bool? isMuted}) {
     return GuildMember(
       recordId: recordId,
       userId: userId,
@@ -136,12 +128,7 @@ class GuildMember {
   }
 }
 
-enum GuildApplicationStatus {
-  pending,
-  accepted,
-  rejected,
-  expired,
-}
+enum GuildApplicationStatus { pending, accepted, rejected, expired }
 
 class GuildApplication {
   const GuildApplication({
@@ -214,10 +201,7 @@ class CpInvitation {
 }
 
 class CpEligibility {
-  const CpEligibility({
-    required this.allowed,
-    required this.message,
-  });
+  const CpEligibility({required this.allowed, required this.message});
 
   final bool allowed;
   final String message;
@@ -290,8 +274,7 @@ class GuardianFanSnapshot {
       anchorUserId: anchorUserId,
       anchorName: anchorName,
       guardianLevels: guardianLevels,
-      currentGuardianLevel:
-          currentGuardianLevel ?? this.currentGuardianLevel,
+      currentGuardianLevel: currentGuardianLevel ?? this.currentGuardianLevel,
       fansTeamName: fansTeamName,
       fansLevel: fansLevel ?? this.fansLevel,
       intimacy: intimacy ?? this.intimacy,
@@ -301,12 +284,7 @@ class GuardianFanSnapshot {
   }
 }
 
-enum TaskState {
-  inProgress,
-  claimable,
-  claimed,
-  expired,
-}
+enum TaskState { inProgress, claimable, claimed, expired }
 
 class TaskItem {
   const TaskItem({
@@ -382,18 +360,14 @@ class TaskCenterSnapshot {
   }
 }
 
-enum ThemeActivityStatus {
-  upcoming,
-  active,
-  ended,
-}
+enum ThemeActivityStatus { upcoming, active, ended }
 
 extension ThemeActivityStatusLabel on ThemeActivityStatus {
   String get label => switch (this) {
-        ThemeActivityStatus.upcoming => '即将开始',
-        ThemeActivityStatus.active => '进行中',
-        ThemeActivityStatus.ended => '已结束',
-      };
+    ThemeActivityStatus.upcoming => '即将开始',
+    ThemeActivityStatus.active => '进行中',
+    ThemeActivityStatus.ended => '已结束',
+  };
 }
 
 class ThemeActivity {

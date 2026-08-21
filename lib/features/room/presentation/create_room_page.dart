@@ -38,7 +38,9 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
     if (_repositoryInstance != null) {
       return;
     }
-    _repositoryInstance = AppDependencyScope.of(context).roomLifecycleRepository;
+    _repositoryInstance = AppDependencyScope.of(
+      context,
+    ).roomLifecycleRepository;
     _load();
   }
 
@@ -96,8 +98,8 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null && _existing == null
-              ? _buildFailure()
-              : _buildForm(),
+          ? _buildFailure()
+          : _buildForm(),
     );
   }
 
@@ -110,10 +112,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
           children: <Widget>[
             const Icon(Icons.cloud_off_rounded, size: 48),
             const SizedBox(height: 18),
-            Text(
-              _error ?? '房间配置加载失败',
-              textAlign: TextAlign.center,
-            ),
+            Text(_error ?? '房间配置加载失败', textAlign: TextAlign.center),
             const SizedBox(height: 20),
             FilledButton.tonal(onPressed: _load, child: const Text('重新加载')),
           ],
@@ -232,17 +231,16 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
       coverUrl: _existing?.coverUrl,
     );
     try {
-      final RoomLifecycleSaveResult result =
-          await _repository.saveRoom(configuration);
+      final RoomLifecycleSaveResult result = await _repository.saveRoom(
+        configuration,
+      );
       if (!mounted) {
         return;
       }
       Navigator.of(context).pushReplacement<void, void>(
         MaterialPageRoute<void>(
-          builder: (BuildContext context) => RoomPage(
-            roomId: result.roomId,
-            title: configuration.title,
-          ),
+          builder: (BuildContext context) =>
+              RoomPage(roomId: result.roomId, title: configuration.title),
         ),
       );
     } catch (error) {

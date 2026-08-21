@@ -47,58 +47,56 @@ void main() {
     expect(find.text('青少年模式'), findsOneWidget);
   });
 
-  testWidgets('US personal center exposes social, support, and account routes', (
-    WidgetTester tester,
-  ) async {
-    final AppDependencies dependencies = AppDependencies.mock();
-    await pumpScoped(
-      tester,
-      PersonalCenterPage(
-        session: null,
-        onSignOut: () async {},
-      ),
-      dependencies,
-    );
+  testWidgets(
+    'US personal center exposes social, support, and account routes',
+    (WidgetTester tester) async {
+      final AppDependencies dependencies = AppDependencies.mock();
+      await pumpScoped(
+        tester,
+        PersonalCenterPage(session: null, onSignOut: () async {}),
+        dependencies,
+      );
 
-    expect(find.text('编辑个人资料'), findsOneWidget);
-    expect(find.text('关注、粉丝与好友'), findsOneWidget);
-    expect(find.text('好友请求'), findsOneWidget);
-    expect(find.text('访客记录'), findsOneWidget);
-    expect(find.text('隐私与黑名单'), findsOneWidget);
-    expect(find.text('帮助与客服'), findsOneWidget);
-    expect(find.text('钱包、订单与收益'), findsOneWidget);
-  });
+      expect(find.text('编辑个人资料'), findsOneWidget);
+      expect(find.text('关注、粉丝与好友'), findsOneWidget);
+      expect(find.text('好友请求'), findsOneWidget);
+      expect(find.text('访客记录'), findsOneWidget);
+      expect(find.text('隐私与黑名单'), findsOneWidget);
+      expect(find.text('帮助与客服'), findsOneWidget);
+      expect(find.text('钱包、订单与收益'), findsOneWidget);
+    },
+  );
 
-  testWidgets('CM hub exposes ledger, orders, account refund, earnings, and withdrawal', (
-    WidgetTester tester,
-  ) async {
-    final AppDependencies dependencies = AppDependencies.mock();
-    await pumpScoped(
-      tester,
-      const CommerceHubPage(account: '13900139000'),
-      dependencies,
-    );
+  testWidgets(
+    'CM hub exposes ledger, orders, account refund, earnings, and withdrawal',
+    (WidgetTester tester) async {
+      final AppDependencies dependencies = AppDependencies.mock();
+      await pumpScoped(
+        tester,
+        const CommerceHubPage(account: '13900139000'),
+        dependencies,
+      );
 
-    expect(find.text('钱包与流水'), findsOneWidget);
-    expect(find.text('充值订单'), findsOneWidget);
-    expect(find.text('退款申请'), findsOneWidget);
-    expect(find.text('主播收益'), findsOneWidget);
+      expect(find.text('钱包与流水'), findsOneWidget);
+      expect(find.text('充值订单'), findsOneWidget);
+      expect(find.text('退款申请'), findsOneWidget);
+      expect(find.text('主播收益'), findsOneWidget);
 
-    final Finder withdrawalEntry = find.text('结算与提现');
-    await tester.scrollUntilVisible(
-      withdrawalEntry,
-      240,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(withdrawalEntry, findsOneWidget);
+      final Finder withdrawalEntry = find.text('结算与提现');
+      await tester.scrollUntilVisible(
+        withdrawalEntry,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(withdrawalEntry, findsOneWidget);
 
-    final Finder paymentBoundary =
-        find.textContaining('微信支付、支付宝和 Apple IAP');
-    await tester.scrollUntilVisible(
-      paymentBoundary,
-      240,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(paymentBoundary, findsOneWidget);
-  });
+      final Finder paymentBoundary = find.textContaining('微信支付、支付宝和 Apple IAP');
+      await tester.scrollUntilVisible(
+        paymentBoundary,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(paymentBoundary, findsOneWidget);
+    },
+  );
 }

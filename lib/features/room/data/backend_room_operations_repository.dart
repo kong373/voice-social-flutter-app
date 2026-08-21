@@ -9,8 +9,8 @@ class BackendRoomOperationsRepository implements RoomOperationsRepository {
   BackendRoomOperationsRepository({
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
-  })  : _apiClient = apiClient,
-        _routes = routes;
+  }) : _apiClient = apiClient,
+       _routes = routes;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
@@ -165,10 +165,7 @@ class BackendRoomOperationsRepository implements RoomOperationsRepository {
   }
 
   @override
-  Future<void> kickUser({
-    required String roomId,
-    required int userId,
-  }) async {
+  Future<void> kickUser({required String roomId, required int userId}) async {
     await _apiClient.post(
       _routes.kickRoomUser,
       query: <String, String>{'roomId': roomId, 'beUserId': '$userId'},

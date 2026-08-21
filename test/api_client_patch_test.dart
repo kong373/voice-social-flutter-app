@@ -7,8 +7,10 @@ import 'package:voice_social_app/core/network/api_client.dart';
 
 void main() {
   test('api client sends PATCH bodies with authenticated headers', () async {
-    final HttpServer server =
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
     addTearDown(() => server.close(force: true));
     final Completer<void> handled = Completer<void>();
 
@@ -20,10 +22,10 @@ void main() {
         'Bearer room-test',
       );
       final String body = await utf8.decoder.bind(request).join();
-      expect(
-        jsonDecode(body),
-        <String, Object?>{'roomId': 9527, 'topicTitle': '今晚话题'},
-      );
+      expect(jsonDecode(body), <String, Object?>{
+        'roomId': 9527,
+        'topicTitle': '今晚话题',
+      });
       request.response.headers.contentType = ContentType.json;
       request.response.write(
         jsonEncode(<String, Object?>{

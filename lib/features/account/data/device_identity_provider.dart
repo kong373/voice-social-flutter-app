@@ -9,8 +9,8 @@ class DeviceIdentityProvider {
   DeviceIdentityProvider({
     required AppEnvironment environment,
     required AuthSessionManager sessionManager,
-  })  : _environment = environment,
-        _sessionManager = sessionManager;
+  }) : _environment = environment,
+       _sessionManager = sessionManager;
 
   final AppEnvironment _environment;
   final AuthSessionManager _sessionManager;

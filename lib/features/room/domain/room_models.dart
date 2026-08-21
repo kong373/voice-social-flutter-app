@@ -1,11 +1,4 @@
-enum RoomRole {
-  guest,
-  listener,
-  speaker,
-  moderator,
-  owner,
-  platformModerator,
-}
+enum RoomRole { guest, listener, speaker, moderator, owner, platformModerator }
 
 enum RoomSessionStatus {
   idle,
@@ -19,15 +12,11 @@ enum RoomSessionStatus {
   failed,
 }
 
-enum MicSeatState {
-  available,
-  locked,
-  mutedAvailable,
-  occupied,
-  occupiedMuted,
-}
+enum MicSeatState { available, locked, mutedAvailable, occupied, occupiedMuted }
 
 enum RtcSolution { agora, zego, unknown }
+
+enum RoomTransportMode { interactive, snapshotOnly }
 
 enum RoomEntrySource {
   home(0),
@@ -149,6 +138,7 @@ class RoomSnapshot {
     required this.autoLockMic,
     required this.giftCatalogAvailable,
     required this.giftBalance,
+    this.transportMode = RoomTransportMode.interactive,
     this.onlineCount,
     this.coverUrl,
     this.backgroundUrl,
@@ -162,6 +152,7 @@ class RoomSnapshot {
   final RoomRole role;
   final List<MicSeat> seats;
   final RtcCredentials rtc;
+  final RoomTransportMode transportMode;
   final bool publicScreenEnabled;
   final bool pictureMessagesAllowed;
   final bool autoLockMic;
@@ -171,12 +162,15 @@ class RoomSnapshot {
   final String? coverUrl;
   final String? backgroundUrl;
 
+  bool get isSnapshotOnly => transportMode == RoomTransportMode.snapshotOnly;
+
   RoomSnapshot copyWith({
     String? title,
     String? topic,
     RoomRole? role,
     List<MicSeat>? seats,
     RtcCredentials? rtc,
+    RoomTransportMode? transportMode,
     bool? publicScreenEnabled,
     bool? pictureMessagesAllowed,
     bool? autoLockMic,
@@ -193,12 +187,12 @@ class RoomSnapshot {
       role: role ?? this.role,
       seats: seats ?? this.seats,
       rtc: rtc ?? this.rtc,
+      transportMode: transportMode ?? this.transportMode,
       publicScreenEnabled: publicScreenEnabled ?? this.publicScreenEnabled,
       pictureMessagesAllowed:
           pictureMessagesAllowed ?? this.pictureMessagesAllowed,
       autoLockMic: autoLockMic ?? this.autoLockMic,
-      giftCatalogAvailable:
-          giftCatalogAvailable ?? this.giftCatalogAvailable,
+      giftCatalogAvailable: giftCatalogAvailable ?? this.giftCatalogAvailable,
       giftBalance: giftBalance ?? this.giftBalance,
       onlineCount: onlineCount ?? this.onlineCount,
       coverUrl: coverUrl ?? this.coverUrl,
@@ -208,10 +202,7 @@ class RoomSnapshot {
 }
 
 class GiftReceipt {
-  const GiftReceipt({
-    required this.success,
-    required this.remainingBalance,
-  });
+  const GiftReceipt({required this.success, required this.remainingBalance});
 
   final bool success;
   final int? remainingBalance;

@@ -46,6 +46,7 @@ import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 import 'package:voice_social_app/features/room/pk/data/backend_room_pk_repository.dart';
 import 'package:voice_social_app/features/room/pk/data/mock_room_pk_repository.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_repository.dart';
+import 'package:voice_social_app/features/shell/live_read_only_repository.dart';
 import 'package:voice_social_app/features/social/data/backend_social_repository.dart';
 import 'package:voice_social_app/features/social/data/mock_social_repository.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
@@ -55,6 +56,7 @@ class AppDependencies {
     required this.environment,
     required this.sessionManager,
     required this.authController,
+    required this.liveReadOnlyRepository,
     required this.accountComplianceRepository,
     required this.discoveryRepository,
     required this.dynamicRepository,
@@ -95,7 +97,14 @@ class AppDependencies {
       clientType: environment.clientType,
       clientInnerVersion: environment.clientInnerVersion,
       authorizationProvider: () => sessionManager.authorizationHeader,
+      requestHeadersProvider: () => <String, String>{
+        if (environment.oauthClientId.trim().isNotEmpty)
+          'Client-Id': environment.oauthClientId,
+      },
+      timeout: environment.apiTimeout,
     );
+    final LiveReadOnlyRepository liveReadOnlyRepository =
+        LiveReadOnlyRepository(apiClient);
     const BackendRouteCatalog routes = BackendRouteCatalog();
     final AuthRepository authRepository = environment.isLive
         ? BackendAuthRepository(
@@ -176,10 +185,10 @@ class AppDependencies {
         ? BackendRoomPkRepository(apiClient: apiClient, routes: routes)
         : MockRoomPkRepository();
     final RtcAdapter rtcAdapter = environment.isLive
-        ? const UnavailableRtcAdapter()
+        ? const SnapshotOnlyRtcAdapter()
         : MockRtcAdapter();
     final RoomRealtimeGateway realtimeGateway = environment.isLive
-        ? const UnavailableRoomRealtimeGateway()
+        ? const SnapshotOnlyRoomRealtimeGateway()
         : MockRoomRealtimeGateway();
     final RoomAudioService roomAudioService = environment.isLive
         ? const UnavailableRoomAudioService()
@@ -194,10 +203,12 @@ class AppDependencies {
       sessionManager: sessionManager,
       deviceIdentityProvider: deviceIdentityProvider,
     );
+    apiClient.setUnauthorizedRecovery(authController.refreshSession);
     return AppDependencies._(
       environment: environment,
       sessionManager: sessionManager,
       authController: authController,
+      liveReadOnlyRepository: liveReadOnlyRepository,
       accountComplianceRepository: accountComplianceRepository,
       discoveryRepository: discoveryRepository,
       dynamicRepository: dynamicRepository,
@@ -219,6 +230,7 @@ class AppDependencies {
   final AppEnvironment environment;
   final AuthSessionManager sessionManager;
   final AuthController authController;
+  final LiveReadOnlyRepository liveReadOnlyRepository;
   final AccountComplianceRepository accountComplianceRepository;
   final DiscoveryRepository discoveryRepository;
   final DynamicRepository dynamicRepository;

@@ -9,9 +9,9 @@ class BackendDynamicRepository implements DynamicRepository {
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
     required int Function() currentUserIdProvider,
-  })  : _apiClient = apiClient,
-        _routes = routes,
-        _currentUserIdProvider = currentUserIdProvider;
+  }) : _apiClient = apiClient,
+       _routes = routes,
+       _currentUserIdProvider = currentUserIdProvider;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
@@ -46,7 +46,12 @@ class BackendDynamicRepository implements DynamicRepository {
     return PagedResult<DynamicPost>(
       items: items,
       page: page,
-      hasMore: _hasMore(pageData, page: page, pageSize: pageSize, count: items.length),
+      hasMore: _hasMore(
+        pageData,
+        page: page,
+        pageSize: pageSize,
+        count: items.length,
+      ),
     );
   }
 
@@ -57,7 +62,10 @@ class BackendDynamicRepository implements DynamicRepository {
       return cached;
     }
     for (int page = 1; page <= 3; page += 1) {
-      final PagedResult<DynamicPost> result = await fetchFeed(page: page, pageSize: 30);
+      final PagedResult<DynamicPost> result = await fetchFeed(
+        page: page,
+        pageSize: 30,
+      );
       for (final DynamicPost post in result.items) {
         if (post.id == dynamicId) {
           return post;
@@ -95,7 +103,12 @@ class BackendDynamicRepository implements DynamicRepository {
     return PagedResult<DynamicComment>(
       items: items,
       page: page,
-      hasMore: _hasMore(pageData, page: page, pageSize: pageSize, count: items.length),
+      hasMore: _hasMore(
+        pageData,
+        page: page,
+        pageSize: pageSize,
+        count: items.length,
+      ),
     );
   }
 
@@ -109,7 +122,9 @@ class BackendDynamicRepository implements DynamicRepository {
     final bool liked = !current.isLiked;
     final DynamicPost optimistic = current.copyWith(
       isLiked: liked,
-      likeCount: (current.likeCount + (liked ? 1 : -1)).clamp(0, 1 << 31).toInt(),
+      likeCount: (current.likeCount + (liked ? 1 : -1))
+          .clamp(0, 1 << 31)
+          .toInt(),
     );
     _postCache[dynamicId] = optimistic;
     return optimistic;
@@ -135,7 +150,8 @@ class BackendDynamicRepository implements DynamicRepository {
         'dynamicId': _numericId(dynamicId),
         'content': value,
         if (replyToUserId != null) 'replyToUserId': replyToUserId,
-        if (replyToCommentId != null) 'replyToCommentId': _numericId(replyToCommentId),
+        if (replyToCommentId != null)
+          'replyToCommentId': _numericId(replyToCommentId),
       },
     );
     final Map<String, Object?> data = _asMap(response.data);
@@ -225,17 +241,21 @@ class BackendDynamicRepository implements DynamicRepository {
       );
       final Map<String, Object?> data = _asMap(response.data);
       final List<RankingEntry> entries = <RankingEntry>[];
-      final List<Map<String, Object?>> raw = _asMapList(data['itemVos'] ?? data['list']);
+      final List<Map<String, Object?>> raw = _asMapList(
+        data['itemVos'] ?? data['list'],
+      );
       for (int index = 0; index < raw.length; index += 1) {
         final Map<String, Object?> item = raw[index];
-        entries.add(RankingEntry(
-          rank: _asInt(item['rankNo']) ?? index + 1,
-          roomId: _string(item['roomId']),
-          name: _string(item['roomName'], fallback: '语音房'),
-          avatarUrl: _optionalString(item['roomHeadImgUrl']),
-          value: _asNum(item['theVal'] ?? item['value']) ?? 0,
-          subtitle: _string(item['text']),
-        ));
+        entries.add(
+          RankingEntry(
+            rank: _asInt(item['rankNo']) ?? index + 1,
+            roomId: _string(item['roomId']),
+            name: _string(item['roomName'], fallback: '语音房'),
+            avatarUrl: _optionalString(item['roomHeadImgUrl']),
+            value: _asNum(item['theVal'] ?? item['value']) ?? 0,
+            subtitle: _string(item['text']),
+          ),
+        );
       }
       return RankingSnapshot(
         board: board,
@@ -257,7 +277,9 @@ class BackendDynamicRepository implements DynamicRepository {
     );
     final Map<String, Object?> data = _asMap(response.data);
     final List<RankingEntry> entries = <RankingEntry>[];
-    final List<Map<String, Object?>> raw = _asMapList(data['ranks'] ?? data['list']);
+    final List<Map<String, Object?>> raw = _asMapList(
+      data['ranks'] ?? data['list'],
+    );
     for (int index = 0; index < raw.length; index += 1) {
       entries.add(_userRank(raw[index], fallbackRank: index + 1));
     }
@@ -278,10 +300,7 @@ class BackendDynamicRepository implements DynamicRepository {
     return RankingEntry(
       rank: _asInt(item['rankNo']) ?? fallbackRank,
       userId: _asInt(item['userId'] ?? item['attachUserId']),
-      name: _string(
-        item['userNickname'] ?? item['nickName'],
-        fallback: '用户',
-      ),
+      name: _string(item['userNickname'] ?? item['nickName'], fallback: '用户'),
       avatarUrl: _optionalString(item['userHeadImg'] ?? item['headImgUrl']),
       value: _asNum(item['theVal'] ?? item['value']) ?? 0,
       subtitle: _string(item['text']),
@@ -294,7 +313,10 @@ class BackendDynamicRepository implements DynamicRepository {
       id: _string(item['id'] ?? item['dynamicId']),
       author: DynamicAuthor(
         userId: userId,
-        nickname: _string(item['nickname'] ?? item['nickName'], fallback: '用户$userId'),
+        nickname: _string(
+          item['nickname'] ?? item['nickName'],
+          fallback: '用户$userId',
+        ),
         avatarUrl: _optionalString(item['avatarUrl'] ?? item['headImgUrl']),
         gender: _asInt(item['gender'] ?? item['sex']) ?? 0,
       ),
@@ -325,7 +347,10 @@ class BackendDynamicRepository implements DynamicRepository {
       dynamicId: dynamicId,
       author: DynamicAuthor(
         userId: userId,
-        nickname: _string(item['nickname'] ?? item['nickName'], fallback: '用户$userId'),
+        nickname: _string(
+          item['nickname'] ?? item['nickName'],
+          fallback: '用户$userId',
+        ),
         avatarUrl: _optionalString(item['avatarUrl'] ?? item['headImgUrl']),
       ),
       content: _string(item['content']),
@@ -346,7 +371,9 @@ class BackendDynamicRepository implements DynamicRepository {
   }
 
   static List<Map<String, Object?>> _items(Map<String, Object?> data) =>
-      _asMapList(data['records'] ?? data['list'] ?? data['rows'] ?? data['items']);
+      _asMapList(
+        data['records'] ?? data['list'] ?? data['rows'] ?? data['items'],
+      );
 
   static bool _hasMore(
     Map<String, Object?> data, {
@@ -375,10 +402,12 @@ class BackendDynamicRepository implements DynamicRepository {
     final String result = value?.toString().trim() ?? '';
     return result.isEmpty ? fallback : result;
   }
+
   static String? _optionalString(Object? value) {
     final String result = value?.toString().trim() ?? '';
     return result.isEmpty ? null : result;
   }
+
   static int? _asInt(Object? value) =>
       value is int ? value : int.tryParse(value?.toString() ?? '');
   static num? _asNum(Object? value) =>

@@ -72,16 +72,17 @@ abstract final class AppTheme {
         filled: true,
         fillColor: AppColors.surfaceHigh.withValues(alpha: 0.72),
         hintStyle: const TextStyle(color: AppColors.textSecondary),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(
-            color: Colors.white.withValues(alpha: 0.06),
-          ),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),

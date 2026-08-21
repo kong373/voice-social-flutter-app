@@ -1,0 +1,83 @@
+name: M3.2 Flutter review result publisher
+
+on:
+  workflow_run:
+    workflows:
+      - M3.2 pre-provider comprehensive review
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+env:
+  EVIDENCE_BRANCH: evidence/m32-pre-provider-review
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.head_branch == 'feat/m3-2a-live-auth-readonly'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feat/m3-2a-live-auth-readonly
+
+      - name: Build redacted result
+        shell: bash
+        env:
+          REVIEW_RUN_ID: ${{ github.event.workflow_run.id }}
+          REVIEW_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          REVIEW_SHA: ${{ github.event.workflow_run.head_sha }}
+          REVIEW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          REVIEW_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p /tmp/m32-result
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg branch "${{ github.event.workflow_run.head_branch }}" \
+            --arg sha "$REVIEW_SHA" \
+            --arg conclusion "$REVIEW_CONCLUSION" \
+            --arg runId "$REVIEW_RUN_ID" \
+            --arg runAttempt "$REVIEW_RUN_ATTEMPT" \
+            --arg runUrl "$REVIEW_URL" \
+            --arg generatedAt "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            '{
+              repository: $repository,
+              branch: $branch,
+              testedGitSha: $sha,
+              workflowConclusion: $conclusion,
+              runId: ($runId | tonumber),
+              runAttempt: ($runAttempt | tonumber),
+              runUrl: $runUrl,
+              generatedAt: $generatedAt,
+              providerCallsMade: false,
+              providerRuntimeStatus: "VENDOR_BLOCKED",
+              requiredRootNavigation: "首页/发现/消息/我的",
+              requiredPageCount: 69
+            }' > /tmp/m32-result/review-result.json
+
+      - name: Publish isolated evidence branch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          if git ls-remote --exit-code --heads origin "$EVIDENCE_BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$EVIDENCE_BRANCH"
+            git switch -C "$EVIDENCE_BRANCH" FETCH_HEAD
+          else
+            git switch --orphan "$EVIDENCE_BRANCH"
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+          cp /tmp/m32-result/review-result.json review-result.json
+          git add review-result.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "evidence: publish Flutter pre-provider review result"
+          git push origin HEAD:"$EVIDENCE_BRANCH"

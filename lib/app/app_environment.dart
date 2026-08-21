@@ -1,20 +1,33 @@
 enum BackendMode { mock, live }
 
-enum DeploymentEnvironment { local, development, staging, production }
+enum DeploymentEnvironment {
+  local,
+  development,
+  staging,
+  production;
 
-extension DeploymentEnvironmentLabel on DeploymentEnvironment {
   String get label => switch (this) {
-        DeploymentEnvironment.local => '本地',
-        DeploymentEnvironment.development => '开发',
-        DeploymentEnvironment.staging => '预发布',
-        DeploymentEnvironment.production => '生产',
-      };
+    DeploymentEnvironment.local => '本地',
+    DeploymentEnvironment.development => '开发',
+    DeploymentEnvironment.staging => '预发布',
+    DeploymentEnvironment.production => '生产',
+  };
 
   bool get requiresSecureTransport =>
       this == DeploymentEnvironment.staging ||
       this == DeploymentEnvironment.production;
+
+  bool get allowsDevelopmentTools =>
+      this == DeploymentEnvironment.local ||
+      this == DeploymentEnvironment.development;
 }
 
+/// Runtime configuration for the Flutter client.
+///
+/// The mobile application is an OAuth public client. It carries only a public
+/// client identifier; vendor and OAuth secrets stay on the backend. Local
+/// development SMS codes may be included in the profile-gated first-party
+/// challenge response, never fetched with a confidential client credential.
 class AppEnvironment {
   const AppEnvironment({
     required this.backendMode,
@@ -22,12 +35,13 @@ class AppEnvironment {
     required this.clientType,
     required this.clientInnerVersion,
     required this.oauthClientId,
-    required this.oauthClientSecret,
     required this.realtimeEndpoint,
     this.deploymentEnvironment = DeploymentEnvironment.local,
     this.apiTimeout = const Duration(seconds: 15),
     this.liveProbePath = '/',
     this.allowInsecureHttp = false,
+    @Deprecated('Mobile clients are public clients and never carry a secret.')
+    String oauthClientSecret = '',
   });
 
   factory AppEnvironment.fromDefines() {
@@ -56,7 +70,6 @@ class AppEnvironment {
         defaultValue: '1',
       ),
       oauthClientId: const String.fromEnvironment('OAUTH_CLIENT_ID'),
-      oauthClientSecret: const String.fromEnvironment('OAUTH_CLIENT_SECRET'),
       realtimeEndpoint: const String.fromEnvironment('ROOM_REALTIME_ENDPOINT'),
       deploymentEnvironment: _parseDeploymentEnvironment(deploymentValue),
       apiTimeout: Duration(seconds: timeoutSeconds),
@@ -69,26 +82,33 @@ class AppEnvironment {
   }
 
   factory AppEnvironment.mock() => const AppEnvironment(
-        backendMode: BackendMode.mock,
-        apiBaseUrl: '',
-        clientType: 'Android',
-        clientInnerVersion: '1',
-        oauthClientId: 'mock-client',
-        oauthClientSecret: 'mock-secret',
-        realtimeEndpoint: '',
-      );
+    backendMode: BackendMode.mock,
+    apiBaseUrl: '',
+    clientType: 'Android',
+    clientInnerVersion: '1',
+    oauthClientId: 'mock-client',
+    realtimeEndpoint: '',
+  );
 
   final BackendMode backendMode;
   final String apiBaseUrl;
   final String clientType;
   final String clientInnerVersion;
   final String oauthClientId;
-  final String oauthClientSecret;
   final String realtimeEndpoint;
   final DeploymentEnvironment deploymentEnvironment;
   final Duration apiTimeout;
   final String liveProbePath;
   final bool allowInsecureHttp;
+
+  /// Compatibility getter for older callers. The value is deliberately empty.
+  @Deprecated('Mobile clients are public clients and never carry a secret.')
+  String get oauthClientSecret => '';
+
+  /// Compatibility getter retained for old diagnostics. Confidential outbox
+  /// credentials are never loaded by the mobile application.
+  @Deprecated('Development codes come from a profile-gated challenge response.')
+  bool get canReadDevelopmentSmsOutbox => false;
 
   bool get isLive => backendMode == BackendMode.live;
 
@@ -107,18 +127,19 @@ class AppEnvironment {
   }
 
   Map<String, Object?> get redactedSummary => <String, Object?>{
-        'backendMode': backendMode.name,
-        'deploymentEnvironment': deploymentEnvironment.name,
-        'apiOrigin': redactedApiOrigin,
-        'clientType': clientType,
-        'clientInnerVersion': clientInnerVersion,
-        'apiTimeoutSeconds': apiTimeout.inSeconds,
-        'liveProbePath': liveProbePath,
-        'oauthClientIdConfigured': oauthClientId.trim().isNotEmpty,
-        'oauthClientSecretConfigured': oauthClientSecret.trim().isNotEmpty,
-        'realtimeEndpointConfigured': realtimeEndpoint.trim().isNotEmpty,
-        'allowInsecureHttp': allowInsecureHttp,
-      };
+    'backendMode': backendMode.name,
+    'deploymentEnvironment': deploymentEnvironment.name,
+    'apiOrigin': redactedApiOrigin,
+    'clientType': clientType,
+    'clientInnerVersion': clientInnerVersion,
+    'apiTimeoutSeconds': apiTimeout.inSeconds,
+    'liveProbePath': liveProbePath,
+    'oauthClientIdConfigured': oauthClientId.trim().isNotEmpty,
+    'oauthClientSecretConfigured': false,
+    'developmentOutboxConfigured': false,
+    'realtimeEndpointConfigured': realtimeEndpoint.trim().isNotEmpty,
+    'allowInsecureHttp': allowInsecureHttp,
+  };
 
   void validateLiveConfiguration() {
     if (!isLive) {
@@ -129,7 +150,6 @@ class AppEnvironment {
       if (clientType.trim().isEmpty) '缺少 CLIENT_TYPE',
       if (clientInnerVersion.trim().isEmpty) '缺少 CLIENT_INNER_VERSION',
       if (oauthClientId.trim().isEmpty) '缺少 OAUTH_CLIENT_ID',
-      if (oauthClientSecret.trim().isEmpty) '缺少 OAUTH_CLIENT_SECRET',
     ];
 
     final Uri? uri = apiBaseUri;
@@ -173,8 +193,7 @@ class AppEnvironment {
 DeploymentEnvironment _parseDeploymentEnvironment(String value) {
   return switch (value.trim().toLowerCase()) {
     'development' || 'dev' => DeploymentEnvironment.development,
-    'staging' || 'stage' || 'preproduction' =>
-      DeploymentEnvironment.staging,
+    'staging' || 'stage' || 'preproduction' => DeploymentEnvironment.staging,
     'production' || 'prod' => DeploymentEnvironment.production,
     _ => DeploymentEnvironment.local,
   };

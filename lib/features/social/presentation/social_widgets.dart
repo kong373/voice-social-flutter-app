@@ -256,11 +256,11 @@ class _Detail extends StatelessWidget {
 String _initial(String name) => name.trim().isEmpty ? '用' : name.trim()[0];
 
 String _friendRequestLabel(FriendRequestStatus status) => switch (status) {
-      FriendRequestStatus.pending => '待处理',
-      FriendRequestStatus.accepted => '已接受',
-      FriendRequestStatus.rejected => '已拒绝',
-      FriendRequestStatus.expired => '已过期',
-    };
+  FriendRequestStatus.pending => '待处理',
+  FriendRequestStatus.accepted => '已接受',
+  FriendRequestStatus.rejected => '已拒绝',
+  FriendRequestStatus.expired => '已过期',
+};
 
 String _formatDateTime(DateTime value) {
   final DateTime local = value.toLocal();

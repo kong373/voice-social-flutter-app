@@ -11,8 +11,8 @@ class AppDependencyScope extends InheritedWidget {
   final AppDependencies dependencies;
 
   static AppDependencies of(BuildContext context) {
-    final AppDependencyScope? scope =
-        context.dependOnInheritedWidgetOfExactType<AppDependencyScope>();
+    final AppDependencyScope? scope = context
+        .dependOnInheritedWidgetOfExactType<AppDependencyScope>();
     if (scope == null) {
       throw StateError('AppDependencyScope is missing above this route');
     }

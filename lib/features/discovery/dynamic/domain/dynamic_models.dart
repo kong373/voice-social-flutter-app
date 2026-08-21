@@ -1,24 +1,19 @@
-enum DynamicCategory {
-  all,
-  companionship,
-  music,
-  chat,
-}
+enum DynamicCategory { all, companionship, music, chat }
 
 extension DynamicCategoryLabel on DynamicCategory {
   String get label => switch (this) {
-        DynamicCategory.all => '全部',
-        DynamicCategory.companionship => '陪伴',
-        DynamicCategory.music => '音乐',
-        DynamicCategory.chat => '聊天',
-      };
+    DynamicCategory.all => '全部',
+    DynamicCategory.companionship => '陪伴',
+    DynamicCategory.music => '音乐',
+    DynamicCategory.chat => '聊天',
+  };
 
   String? get backendTag => switch (this) {
-        DynamicCategory.all => null,
-        DynamicCategory.companionship => '陪伴',
-        DynamicCategory.music => '音乐',
-        DynamicCategory.chat => '聊天',
-      };
+    DynamicCategory.all => null,
+    DynamicCategory.companionship => '陪伴',
+    DynamicCategory.music => '音乐',
+    DynamicCategory.chat => '聊天',
+  };
 }
 
 class DynamicAuthor {
@@ -140,46 +135,37 @@ class PublishDynamicRequest {
   final List<String> images;
 }
 
-enum RankingBoard {
-  charm,
-  wealth,
-  contribution,
-  room,
-}
+enum RankingBoard { charm, wealth, contribution, room }
 
 extension RankingBoardLabel on RankingBoard {
   String get label => switch (this) {
-        RankingBoard.charm => '魅力榜',
-        RankingBoard.wealth => '财富榜',
-        RankingBoard.contribution => '贡献榜',
-        RankingBoard.room => '房间榜',
-      };
+    RankingBoard.charm => '魅力榜',
+    RankingBoard.wealth => '财富榜',
+    RankingBoard.contribution => '贡献榜',
+    RankingBoard.room => '房间榜',
+  };
 }
 
-enum RankingPeriod {
-  day,
-  week,
-  month,
-}
+enum RankingPeriod { day, week, month }
 
 extension RankingPeriodValue on RankingPeriod {
   String get label => switch (this) {
-        RankingPeriod.day => '日榜',
-        RankingPeriod.week => '周榜',
-        RankingPeriod.month => '月榜',
-      };
+    RankingPeriod.day => '日榜',
+    RankingPeriod.week => '周榜',
+    RankingPeriod.month => '月榜',
+  };
 
   int get userBackendValue => switch (this) {
-        RankingPeriod.day => 1,
-        RankingPeriod.week => 2,
-        RankingPeriod.month => 3,
-      };
+    RankingPeriod.day => 1,
+    RankingPeriod.week => 2,
+    RankingPeriod.month => 3,
+  };
 
   int get roomBackendValue => switch (this) {
-        RankingPeriod.day => 1,
-        RankingPeriod.week => 2,
-        RankingPeriod.month => 3,
-      };
+    RankingPeriod.day => 1,
+    RankingPeriod.week => 2,
+    RankingPeriod.month => 3,
+  };
 }
 
 class RankingEntry {

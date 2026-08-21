@@ -227,8 +227,7 @@ class MockAccountComplianceRepository implements AccountComplianceRepository {
   Future<VersionUpdateInfo> checkVersion({
     required int currentVersion,
     required int platformType,
-  }) async =>
-      _requireSnapshot().versionInfo;
+  }) async => _requireSnapshot().versionInfo;
 
   @override
   Future<bool> setYouthMode({

@@ -46,6 +46,7 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
       appBar: AppBar(
         titleSpacing: 0,
         title: TextField(
+          key: const Key('global-search-field'),
           controller: _controller,
           focusNode: _focusNode,
           textInputAction: TextInputAction.search,
@@ -172,9 +173,8 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
   void _openRoomDirect() {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomDeepLinkPage(
-          input: _controller.text.trim(),
-        ),
+        builder: (BuildContext context) =>
+            RoomDeepLinkPage(input: _controller.text.trim()),
       ),
     );
   }
@@ -214,10 +214,7 @@ class _SearchGuide extends StatelessWidget {
               children: <Widget>[
                 Text(title, style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                Text(description, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
           ),

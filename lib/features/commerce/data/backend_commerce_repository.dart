@@ -7,8 +7,8 @@ class BackendCommerceRepository implements CommerceRepository {
   BackendCommerceRepository({
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
-  })  : _apiClient = apiClient,
-        _routes = routes;
+  }) : _apiClient = apiClient,
+       _routes = routes;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
@@ -35,7 +35,9 @@ class BackendCommerceRepository implements CommerceRepository {
 
   @override
   Future<WalletSummary> fetchWalletSummary() async {
-    final ApiResponse ncoinResponse = await _apiClient.get(_routes.ncoinBalance);
+    final ApiResponse ncoinResponse = await _apiClient.get(
+      _routes.ncoinBalance,
+    );
     final ApiResponse walletResponse = await _apiClient.get(
       _routes.walletOverview,
     );
@@ -161,8 +163,9 @@ class BackendCommerceRepository implements CommerceRepository {
     final String existingId = _string(data['string']);
     return RefundEligibility(
       allowed: existingId.isEmpty || existingId == 'null',
-      existingApplicationId:
-          existingId.isEmpty || existingId == 'null' ? null : existingId,
+      existingApplicationId: existingId.isEmpty || existingId == 'null'
+          ? null
+          : existingId,
       message: existingId.isEmpty || existingId == 'null'
           ? '当前账号可以提交账户退款申请。'
           : '已有账户退款申请正在处理，请先查看结果。',
@@ -171,8 +174,9 @@ class BackendCommerceRepository implements CommerceRepository {
 
   @override
   Future<RefundApplication> submitRefund(RefundRequest request) async {
-    final RefundEligibility eligibility =
-        await checkRefundEligibility(request.account);
+    final RefundEligibility eligibility = await checkRefundEligibility(
+      request.account,
+    );
     if (!eligibility.allowed && eligibility.existingApplicationId != null) {
       return fetchRefundResult(eligibility.existingApplicationId!);
     }
@@ -228,7 +232,8 @@ class BackendCommerceRepository implements CommerceRepository {
       3 => RefundStatus.resubmitted,
       _ => RefundStatus.reviewing,
     };
-    final RefundApplication base = _knownRefunds[applicationId] ??
+    final RefundApplication base =
+        _knownRefunds[applicationId] ??
         RefundApplication(
           id: applicationId,
           account: '',
@@ -264,7 +269,9 @@ class BackendCommerceRepository implements CommerceRepository {
   }
 
   @override
-  Future<List<RefundApplication>> fetchRefundApplications(String account) async {
+  Future<List<RefundApplication>> fetchRefundApplications(
+    String account,
+  ) async {
     final RefundEligibility eligibility = await checkRefundEligibility(account);
     final String? id = eligibility.existingApplicationId;
     if (id == null) {
@@ -377,19 +384,17 @@ class BackendCommerceRepository implements CommerceRepository {
     return _withdrawalFromMap(data);
   }
 
-  static LedgerKind _ledgerKind(
-    String subtype,
-    LedgerDirection direction,
-  ) {
+  static LedgerKind _ledgerKind(String subtype, LedgerDirection direction) {
     return switch (subtype) {
       'gift_income' => LedgerKind.giftIncome,
       'send_gift' => LedgerKind.giftExpense,
       'agent_income' => LedgerKind.agentIncome,
       'super_agent_income' => LedgerKind.superAgentIncome,
       'withdrawal' => LedgerKind.withdrawal,
-      _ => direction == LedgerDirection.income
-          ? LedgerKind.other
-          : LedgerKind.other,
+      _ =>
+        direction == LedgerDirection.income
+            ? LedgerKind.other
+            : LedgerKind.other,
     };
   }
 
@@ -404,7 +409,10 @@ class BackendCommerceRepository implements CommerceRepository {
       fee: _asDouble(raw['fee']) ?? 0,
       receivedAmount: _asDouble(raw['actualAmount']) ?? 0,
       status: status,
-      statusText: _string(raw['statusName'], fallback: _withdrawalStatusText(status)),
+      statusText: _string(
+        raw['statusName'],
+        fallback: _withdrawalStatusText(status),
+      ),
       createdAt: _asDateTime(raw['createTime']) ?? DateTime.now(),
       rejectedReason: _string(raw['rejectReason']),
       bankName: _string(raw['bankCardName']),
@@ -421,8 +429,8 @@ class BackendCommerceRepository implements CommerceRepository {
     final int current = _asInt(data['current']) ?? page;
     final int size = _asInt(data['size']) ?? pageSize;
     final int total = _asInt(data['total']) ?? items.length;
-    final int pages = _asInt(data['pages']) ??
-        (size <= 0 ? 1 : (total / size).ceil());
+    final int pages =
+        _asInt(data['pages']) ?? (size <= 0 ? 1 : (total / size).ceil());
     return CommercePage<T>(
       items: items,
       page: current,
@@ -433,30 +441,30 @@ class BackendCommerceRepository implements CommerceRepository {
   }
 
   static String _refundStatusText(RefundStatus status) => switch (status) {
-        RefundStatus.reviewing => '审核中',
-        RefundStatus.approved => '已通过',
-        RefundStatus.rejected => '已拒绝',
-        RefundStatus.resubmitted => '已重新提交',
-        RefundStatus.unavailable => '不可用',
-      };
+    RefundStatus.reviewing => '审核中',
+    RefundStatus.approved => '已通过',
+    RefundStatus.rejected => '已拒绝',
+    RefundStatus.resubmitted => '已重新提交',
+    RefundStatus.unavailable => '不可用',
+  };
 
   static WithdrawalStatus _withdrawalStatus(int code) => switch (code) {
-        1 => WithdrawalStatus.approved,
-        2 => WithdrawalStatus.rejected,
-        3 => WithdrawalStatus.paying,
-        4 => WithdrawalStatus.succeeded,
-        5 => WithdrawalStatus.failed,
-        _ => WithdrawalStatus.pending,
-      };
+    1 => WithdrawalStatus.approved,
+    2 => WithdrawalStatus.rejected,
+    3 => WithdrawalStatus.paying,
+    4 => WithdrawalStatus.succeeded,
+    5 => WithdrawalStatus.failed,
+    _ => WithdrawalStatus.pending,
+  };
 
   static int _withdrawalStatusCode(WithdrawalStatus status) => switch (status) {
-        WithdrawalStatus.pending => 0,
-        WithdrawalStatus.approved => 1,
-        WithdrawalStatus.rejected => 2,
-        WithdrawalStatus.paying => 3,
-        WithdrawalStatus.succeeded => 4,
-        WithdrawalStatus.failed => 5,
-      };
+    WithdrawalStatus.pending => 0,
+    WithdrawalStatus.approved => 1,
+    WithdrawalStatus.rejected => 2,
+    WithdrawalStatus.paying => 3,
+    WithdrawalStatus.succeeded => 4,
+    WithdrawalStatus.failed => 5,
+  };
 
   static String _withdrawalStatusText(WithdrawalStatus status) =>
       switch (status) {
