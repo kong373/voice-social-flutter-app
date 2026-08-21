@@ -74,6 +74,20 @@ On the live login page, `开发环境联调诊断` performs only a side-effect-f
 
 The manual workflow `.github/workflows/m3-live-contract-preflight.yml` reads values only from the protected GitHub `development` environment and uploads a redacted readiness artifact.
 
+### Live development launcher
+
+For local first-party integration, use [`tool/live_development.sh`](tool/live_development.sh) instead of hand-writing `--dart-define` values. It requires only `API_BASE_URL` and the public `OAUTH_CLIENT_ID`, fixes `BACKEND_MODE=live` and `APP_ENV=development`, and fails before Flutter when the target address or configuration is unsafe.
+
+```bash
+export API_BASE_URL=http://10.0.2.2:18080/
+export OAUTH_CLIENT_ID=voice-social-mobile-public
+
+./tool/live_development.sh run --target android-emulator --device emulator-5554
+./tool/live_development.sh build-apk --target android-emulator
+```
+
+Use `http://127.0.0.1:18080/` with `--target host` only for `run` when Flutter itself runs on the Mac; `build-apk` accepts only `--target android-emulator`. `127.0.0.1` is not the Mac host from inside an Android Emulator. The launcher rejects OAuth client secrets, vendor secrets, and `--dart-define-from-file`; see [live development](docs/live-development.md).
+
 ## Quality checks
 
 ```bash
@@ -90,6 +104,7 @@ GitHub Actions also generates an isolated Android runner, builds a debug APK, an
 - [Architecture](docs/architecture.md)
 - [M1 backend contract](docs/contracts/m1_backend_contract.md)
 - [M3.1 live readiness](docs/m3-live-backend-readiness.md)
+- [Live development launcher](docs/live-development.md)
 - [M3.3 video-runtime UI design QA](design-qa.md)
 - [Delivery roadmap](docs/roadmap.md)
 - [Security rules](docs/security.md)
