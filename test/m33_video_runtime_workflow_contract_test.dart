@@ -21,6 +21,14 @@ void main() {
     expect(workflow, isNot(contains('echo "provider_calls_made=false"')));
   });
 
+  test('quality failures retain golden diagnostics and bind the APK hash', () {
+    expect(workflow, contains('test/failures/**'));
+    expect(workflow, contains('apk-sha256.txt'));
+    expect(workflow, contains('shasum -a 256 app-debug.apk'));
+    expect(workflow, contains('shasum -a 256 -c apk-sha256.txt'));
+    expect(workflow, contains('apk_sha256='));
+  });
+
   test('quality gate uses the executable 69-page manifest contract', () {
     expect(
       workflow,
@@ -90,6 +98,15 @@ void main() {
     );
     expect(workflow, isNot(contains("find . -type f -name 'm33-*.png'")));
     expect(workflow, contains(r'''find "$EVIDENCE_ROOT/screenshots"'''));
+  });
+
+  test('each AVD records and gates a non-empty interaction video', () {
+    expect(workflow, contains('adb shell screenrecord'));
+    expect(workflow, contains(r'''"$EVIDENCE_ROOT/videos"'''));
+    expect(workflow, contains("-name '*.mp4' -size +0c"));
+    expect(workflow, contains(r'''test "$videos" -ge 1'''));
+    expect(workflow, contains(r'''echo "videos=$videos"'''));
+    expect(workflow, contains(r'''sed -n 's/^videos=//p' "$summary"'''));
   });
 
   test('AVD hard-error and forbidden-entry scans fail closed', () {

@@ -66,6 +66,13 @@ jobs:
           flutter build apk --debug
           --dart-define=BACKEND_MODE=mock
           --dart-define=ENABLE_VIDEO_RUNTIME_DEMO=true
+      - name: Record APK SHA-256
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd build/app/outputs/flutter-apk
+          shasum -a 256 app-debug.apk > apk-sha256.txt
+          shasum -a 256 -c apk-sha256.txt
       - name: Verify page denominator, roots, forbidden entries and secrets
         shell: bash
         run: |
@@ -91,6 +98,11 @@ jobs:
         run: |
           set -Eeuo pipefail
           test -s build/app/outputs/flutter-apk/app-debug.apk
+          test -s build/app/outputs/flutter-apk/apk-sha256.txt
+          (
+            cd build/app/outputs/flutter-apk
+            shasum -a 256 -c apk-sha256.txt
+          )
           test -s pubspec.lock
       - name: Upload quality evidence
         if: always()
@@ -99,7 +111,9 @@ jobs:
           name: m33-final-quality-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             build/app/outputs/flutter-apk/app-debug.apk
+            build/app/outputs/flutter-apk/apk-sha256.txt
             pubspec.lock
+            test/failures/**
           if-no-files-found: error
           retention-days: 14
 
@@ -180,7 +194,7 @@ jobs:
             -camera-front none
           script: |
             set -Eeuo pipefail
-            mkdir -p "$EVIDENCE_ROOT/screenshots"
+            mkdir -p "$EVIDENCE_ROOT/screenshots" "$EVIDENCE_ROOT/videos"
             adb shell wm size ${{ matrix.physical }}
             adb shell wm density ${{ matrix.density }}
             adb shell settings put system font_scale 1.0
@@ -190,7 +204,30 @@ jobs:
             adb logcat -c
             adb logcat -v threadtime >"$EVIDENCE_ROOT/logcat.txt" &
             logcat_pid=$!
-            trap 'kill "$logcat_pid" 2>/dev/null || true' EXIT
+            video_remote="/sdcard/m33-${{ matrix.id }}.mp4"
+            video_local="$EVIDENCE_ROOT/videos/${{ matrix.id }}.mp4"
+            screenrecord_pid=''
+            adb shell rm -f "$video_remote"
+            adb shell screenrecord \
+              --size '${{ matrix.width }}x${{ matrix.height }}' \
+              --bit-rate 4000000 \
+              --time-limit 180 \
+              "$video_remote" \
+              >"$EVIDENCE_ROOT/screenrecord.log" 2>&1 &
+            screenrecord_pid=$!
+            stop_recording() {
+              if [[ -n "$screenrecord_pid" ]]; then
+                adb shell pkill -INT screenrecord 2>/dev/null || true
+                wait "$screenrecord_pid" 2>/dev/null || true
+                screenrecord_pid=''
+              fi
+            }
+            cleanup() {
+              stop_recording
+              kill "$logcat_pid" 2>/dev/null || true
+            }
+            trap cleanup EXIT
+            set +e
             QA_SCREENSHOT_DIR="$EVIDENCE_ROOT/screenshots" \
               flutter drive \
               --driver=test_driver/integration_test.dart \
@@ -203,7 +240,20 @@ jobs:
               --dart-define=QA_EXPECTED_VIEWPORT_HEIGHT=${{ matrix.height }} \
               --dart-define=QA_EXPECTED_DPR=${{ matrix.dpr }} \
               2>&1 | tee "$EVIDENCE_ROOT/flutter-drive.log"
+            drive_status="${PIPESTATUS[0]}"
+            set -e
+            stop_recording
+            for attempt in 1 2 3 4 5; do
+              if adb shell test -s "$video_remote"; then
+                break
+              fi
+              sleep 1
+            done
+            adb pull "$video_remote" "$video_local"
+            adb shell rm -f "$video_remote"
+            test "$drive_status" -eq 0
             screenshots="$(find "$EVIDENCE_ROOT/screenshots" -type f -name '*.png' | wc -l | tr -d ' ')"
+            videos="$(find "$EVIDENCE_ROOT/videos" -type f -name '*.mp4' -size +0c | wc -l | tr -d ' ')"
             hard_errors="$(
               cat "$EVIDENCE_ROOT/logcat.txt" "$EVIDENCE_ROOT/flutter-drive.log" |
                 grep -Eci 'FATAL EXCEPTION|AndroidRuntime|ANR in|MissingPluginException|RenderFlex overflow|Unhandled Exception|EXCEPTION CAUGHT BY|Failed assertion|_dependents.isEmpty' || true
@@ -238,6 +288,7 @@ jobs:
             provider_guard_connection_attempts="${provider_guard_markers[0]#*=}"
             test "$provider_guard_connection_attempts" -eq 0
             test "$screenshots" -ge 8
+            test "$videos" -ge 1
             test "$hard_errors" -eq 0
             {
               echo "conclusion=PASS"
@@ -249,6 +300,7 @@ jobs:
               echo "viewport=${{ matrix.viewport }}"
               echo "dpr=${{ matrix.dpr }}"
               echo "screenshots=$screenshots"
+              echo "videos=$videos"
               echo "hard_errors=$hard_errors"
               echo "provider_calls_made=$provider_calls_made"
               echo "provider_dependency_graph=$provider_dependency_graph"
@@ -283,6 +335,7 @@ jobs:
           path: evidence
           merge-multiple: false
       - name: Verify quality APK and lockfile
+        id: quality_verify
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -299,17 +352,32 @@ jobs:
           mapfile -t quality_lockfiles < <(
             find "$quality_root" -type f -name pubspec.lock | sort
           )
+          mapfile -t quality_hashes < <(
+            find "$quality_root" -type f -name apk-sha256.txt | sort
+          )
           test "${#quality_apks[@]}" -eq 1
           test "${#quality_lockfiles[@]}" -eq 1
+          test "${#quality_hashes[@]}" -eq 1
           test -s "${quality_apks[0]}"
           test -s "${quality_lockfiles[0]}"
+          test -s "${quality_hashes[0]}"
           unzip -t "${quality_apks[0]}" >/dev/null
           grep -q '^packages:' "${quality_lockfiles[0]}"
+          test "$(dirname "${quality_apks[0]}")" = \
+            "$(dirname "${quality_hashes[0]}")"
+          (
+            cd "$(dirname "${quality_apks[0]}")"
+            shasum -a 256 -c apk-sha256.txt
+          )
+          apk_sha256="$(awk '{print $1}' "${quality_hashes[0]}")"
+          test "${#apk_sha256}" -eq 64
+          echo "apk_sha256=$apk_sha256" >> "$GITHUB_OUTPUT"
       - name: Verify both exact-viewport runs
         shell: bash
         env:
           QUALITY: ${{ needs.quality.result }}
           AVD: ${{ needs.avd.result }}
+          APK_SHA256: ${{ steps.quality_verify.outputs.apk_sha256 }}
         run: |
           set -Eeuo pipefail
           test "$QUALITY" = success
@@ -351,11 +419,17 @@ jobs:
             )
             test "${#guard_attempt_values[@]}" -eq 1
             test "${guard_attempt_values[0]}" -eq 0
+            mapfile -t video_values < <(
+              sed -n 's/^videos=//p' "$summary"
+            )
+            test "${#video_values[@]}" -eq 1
+            test "${video_values[0]}" -ge 1
           done
           {
             echo "tested_git_sha=${{ github.sha }}"
             echo "quality=$QUALITY"
             echo "avd_matrix=$AVD"
+            echo "apk_sha256=$APK_SHA256"
             echo "conclusion=VIDEO_RUNTIME_UI_PASS"
           } | tee aggregate-verdict.txt
       - name: Upload aggregate verdict
