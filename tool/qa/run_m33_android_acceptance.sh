@@ -20,7 +20,7 @@ readonly PROJECT_ROOT="$(pwd -P)"
 readonly APP_ROOT="$PROJECT_ROOT/ci_app"
 readonly SCREENSHOT_DIR="$EVIDENCE_ROOT/screenshots"
 readonly VIDEO_DIR="$EVIDENCE_ROOT/videos"
-readonly VIDEO_REMOTE="/sdcard/m33-${QA_AVD_ID}.mp4"
+readonly VIDEO_REMOTE="/data/local/tmp/m33-${QA_AVD_ID}.mp4"
 readonly VIDEO_LOCAL="$VIDEO_DIR/${QA_AVD_ID}.mp4"
 readonly PROGRESS_FILE="$EVIDENCE_ROOT/runner-progress.txt"
 

@@ -149,11 +149,11 @@ void main() {
         await tester.pumpAndSettle();
       }
 
-      await tester.tap(find.text('更多').hitTestable());
+      await tester.tap(find.byTooltip('更多').hitTestable());
       await _waitFor(
         tester,
         () =>
-            find.text('互动').evaluate().isNotEmpty &&
+            find.text('互动玩法').evaluate().isNotEmpty &&
             find.text('工具').evaluate().isNotEmpty,
         description: 'room tools sheet',
       );

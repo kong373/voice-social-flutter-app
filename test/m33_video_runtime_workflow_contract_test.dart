@@ -279,11 +279,22 @@ void main() {
 
   test('each AVD records and gates a non-empty interaction video', () {
     expect(androidAcceptanceScript, contains('adb shell screenrecord'));
+    expect(
+      androidAcceptanceScript,
+      contains(r'''/data/local/tmp/m33-${QA_AVD_ID}.mp4'''),
+    );
+    expect(androidAcceptanceScript, isNot(contains('/sdcard/m33-')));
     expect(androidAcceptanceScript, contains(r'''"$EVIDENCE_ROOT/videos"'''));
     expect(androidAcceptanceScript, contains("-name '*.mp4' -size +0c"));
     expect(androidAcceptanceScript, contains(r'''test "$videos" -ge 1'''));
     expect(androidAcceptanceScript, contains(r'''echo "videos=$videos"'''));
     expect(workflow, contains(r'''sed -n 's/^videos=//p' "$summary"'''));
+  });
+
+  test('room tools acceptance uses stable semantics and current labels', () {
+    expect(integrationTest, contains("find.byTooltip('更多').hitTestable()"));
+    expect(integrationTest, contains("find.text('互动玩法')"));
+    expect(integrationTest, isNot(contains("find.text('互动')")));
   });
 
   test('AVD hard-error and forbidden-entry scans fail closed', () {

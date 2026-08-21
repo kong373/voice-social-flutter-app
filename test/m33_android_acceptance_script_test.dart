@@ -143,8 +143,8 @@ printf '%s\n' \
     for (final String command in <String>[
       'shell wm size 1170x2532',
       'shell wm density 480',
-      'shell screenrecord --size 390x844 --bit-rate 4000000 --time-limit 180 /sdcard/m33-AVD-A.mp4',
-      'pull /sdcard/m33-AVD-A.mp4 ${evidence.path}/videos/AVD-A.mp4',
+      'shell screenrecord --size 390x844 --bit-rate 4000000 --time-limit 180 /data/local/tmp/m33-AVD-A.mp4',
+      'pull /data/local/tmp/m33-AVD-A.mp4 ${evidence.path}/videos/AVD-A.mp4',
     ]) {
       expect(
         adbInvocationLog,
