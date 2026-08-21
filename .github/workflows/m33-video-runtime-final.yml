@@ -61,16 +61,34 @@ jobs:
         run: flutter analyze
       - name: Run all Dart and widget tests
         run: flutter test --concurrency=1 --timeout=90s --reporter=expanded
+      - name: Create isolated Android host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test ! -e ci_app
+          flutter create --platforms=android --org=com.kong373 --project-name=voice_social_app --no-pub ci_app
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.dart_tool' \
+            --exclude='ci_app' \
+            --exclude='artifacts' \
+            --exclude='build' \
+            --exclude='test/failures' \
+            --exclude='android' \
+            ./ ci_app/
+          (cd ci_app && flutter pub get --enforce-lockfile)
       - name: Build Android debug APK
-        run: >-
-          flutter build apk --debug
-          --dart-define=BACKEND_MODE=mock
-          --dart-define=ENABLE_VIDEO_RUNTIME_DEMO=true
+        run: |
+          cd ci_app
+          flutter build apk --debug \
+            --dart-define=BACKEND_MODE=mock \
+            --dart-define=ENABLE_VIDEO_RUNTIME_DEMO=true
       - name: Record APK SHA-256
         shell: bash
         run: |
           set -Eeuo pipefail
-          cd build/app/outputs/flutter-apk
+          cd ci_app/build/app/outputs/flutter-apk
           shasum -a 256 app-debug.apk > apk-sha256.txt
           shasum -a 256 -c apk-sha256.txt
       - name: Verify page denominator, roots, forbidden entries and secrets
@@ -78,18 +96,20 @@ jobs:
         run: |
           set -Eeuo pipefail
           flutter test --no-pub test/page_manifest_test.dart
-          grep -F "label: '首页'" lib/features/shell/main_shell.dart
-          grep -F "label: '发现'" lib/features/shell/main_shell.dart
-          grep -F "label: '消息'" lib/features/shell/main_shell.dart
-          grep -F "label: '我的'" lib/features/shell/main_shell.dart
+          grep -F "label: '首页'" ci_app/lib/features/shell/main_shell.dart
+          grep -F "label: '发现'" ci_app/lib/features/shell/main_shell.dart
+          grep -F "label: '消息'" ci_app/lib/features/shell/main_shell.dart
+          grep -F "label: '我的'" ci_app/lib/features/shell/main_shell.dart
           ! grep -RInE \
             '(会员|VIP|礼物背包|背包|红包|KTV|点歌|演唱|合唱|盲盒|魔法球|团子|情书|随机遇见|附近的人)' \
-            lib/core/design_system/runtime_surfaces.dart \
-            lib/features/shell/main_shell.dart \
-            lib/features/shell/video_runtime_pages.dart \
-            lib/features/room/presentation/video_runtime_room_page.dart
-          secret_roots=(lib android)
-          [[ -d ios ]] && secret_roots+=(ios)
+            ci_app/lib/core/design_system/runtime_surfaces.dart \
+            ci_app/lib/features/shell/main_shell.dart \
+            ci_app/lib/features/shell/video_runtime_pages.dart \
+            ci_app/lib/features/room/presentation/video_runtime_room_page.dart
+          test -d ci_app/android
+          test -d ci_app/lib
+          secret_roots=(ci_app/lib ci_app/android)
+          [[ -d ci_app/ios ]] && secret_roots+=(ci_app/ios)
           ! grep -RInE \
             '(M3_OAUTH_CLIENT_SECRET|OAUTH_CLIENT_SECRET|RTC_APP_CERTIFICATE|IM_ADMIN_SECRET|PAYMENT_PRIVATE_KEY|BEGIN (RSA |EC )?PRIVATE KEY)' \
             "${secret_roots[@]}"
@@ -97,10 +117,10 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test -s build/app/outputs/flutter-apk/app-debug.apk
-          test -s build/app/outputs/flutter-apk/apk-sha256.txt
+          test -s ci_app/build/app/outputs/flutter-apk/app-debug.apk
+          test -s ci_app/build/app/outputs/flutter-apk/apk-sha256.txt
           (
-            cd build/app/outputs/flutter-apk
+            cd ci_app/build/app/outputs/flutter-apk
             shasum -a 256 -c apk-sha256.txt
           )
           test -s pubspec.lock
@@ -110,8 +130,8 @@ jobs:
         with:
           name: m33-final-quality-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            build/app/outputs/flutter-apk/app-debug.apk
-            build/app/outputs/flutter-apk/apk-sha256.txt
+            ci_app/build/app/outputs/flutter-apk/app-debug.apk
+            ci_app/build/app/outputs/flutter-apk/apk-sha256.txt
             pubspec.lock
             test/failures/**
           if-no-files-found: error
@@ -159,8 +179,26 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+      - name: Create isolated Android host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test ! -e ci_app
+          flutter create --platforms=android --org=com.kong373 --project-name=voice_social_app --no-pub ci_app
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.dart_tool' \
+            --exclude='ci_app' \
+            --exclude='artifacts' \
+            --exclude='build' \
+            --exclude='test/failures' \
+            --exclude='android' \
+            ./ ci_app/
       - name: Resolve locked dependencies
-        run: flutter pub get --enforce-lockfile
+        run: |
+          cd ci_app
+          flutter pub get --enforce-lockfile
       - name: Require KVM
         run: |
           test -c /dev/kvm
@@ -228,6 +266,7 @@ jobs:
             }
             trap cleanup EXIT
             set +e
+            cd ci_app
             QA_SCREENSHOT_DIR="$EVIDENCE_ROOT/screenshots" \
               flutter drive \
               --driver=test_driver/integration_test.dart \

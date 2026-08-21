@@ -29,6 +29,83 @@ void main() {
     expect(workflow, contains('apk_sha256='));
   });
 
+  test('Android jobs build through an isolated generated host', () {
+    for (final String marker in <String>[
+      'flutter create --platforms=android',
+      '--org=com.kong373',
+      '--project-name=voice_social_app',
+      '--no-pub',
+      'test ! -e ci_app',
+      'ci_app',
+      'rsync -a',
+      "--exclude='.git'",
+      "--exclude='.github'",
+      "--exclude='.dart_tool'",
+      "--exclude='ci_app'",
+      "--exclude='artifacts'",
+      "--exclude='build'",
+      "--exclude='test/failures'",
+      'flutter pub get --enforce-lockfile',
+      'cd ci_app',
+    ]) {
+      expect(workflow, contains(marker), reason: 'missing $marker');
+    }
+    int occurrences(String value) => value.allMatches(workflow).length;
+    expect(
+      occurrences('flutter create --platforms=android'),
+      greaterThanOrEqualTo(2),
+    );
+    expect(occurrences('rsync -a'), greaterThanOrEqualTo(2));
+    expect(
+      occurrences('flutter pub get --enforce-lockfile'),
+      greaterThanOrEqualTo(2),
+    );
+    expect(occurrences('cd ci_app'), greaterThanOrEqualTo(2));
+    expect(workflow, isNot(contains('rm -rf ci_app')));
+    expect(workflow, isNot(contains('rsync -a --delete')));
+    expect(workflow, isNot(contains('.ci_app')));
+    expect(workflow, contains('ci_app/build/app/outputs/flutter-apk'));
+    expect(workflow, contains('test/failures/**'));
+    expect(workflow, contains('pubspec.lock'));
+    expect(
+      workflow,
+      contains('(cd ci_app && flutter pub get --enforce-lockfile)'),
+    );
+    expect(workflow, contains('flutter build apk --debug'));
+    expect(workflow, contains('flutter drive'));
+    expect(workflow, contains('secret_roots=(ci_app/lib ci_app/android)'));
+    expect(
+      workflow,
+      contains(r'EVIDENCE_ROOT: ${{ github.workspace }}/artifacts'),
+    );
+  });
+
+  test('quality runs source-root tests before creating the Android host', () {
+    final String quality = workflow.split('  avd:').first;
+    expect(quality, contains('run: flutter pub get --enforce-lockfile'));
+    expect(quality, contains('run: flutter analyze'));
+    expect(
+      quality,
+      contains(
+        'run: flutter test --concurrency=1 --timeout=90s --reporter=expanded',
+      ),
+    );
+    expect(
+      quality.indexOf('Create isolated Android host'),
+      greaterThan(
+        quality.indexOf(
+          'run: flutter test --concurrency=1 --timeout=90s --reporter=expanded',
+        ),
+      ),
+    );
+    expect(
+      quality,
+      contains('(cd ci_app && flutter pub get --enforce-lockfile)'),
+    );
+    expect(quality, contains('test -s pubspec.lock'));
+    expect(quality, contains('ci_app/build/app/outputs/flutter-apk'));
+  });
+
   test('quality gate uses the executable 69-page manifest contract', () {
     expect(
       workflow,
@@ -134,8 +211,13 @@ void main() {
   test(
     'mobile secret scan cannot be bypassed by a missing platform directory',
     () {
-      expect(workflow, contains('secret_roots=(lib android)'));
-      expect(workflow, contains('[[ -d ios ]] && secret_roots+=(ios)'));
+      expect(workflow, contains('test -d ci_app/android'));
+      expect(workflow, contains('test -d ci_app/lib'));
+      expect(workflow, contains('secret_roots=(ci_app/lib ci_app/android)'));
+      expect(
+        workflow,
+        contains('[[ -d ci_app/ios ]] && secret_roots+=(ci_app/ios)'),
+      );
       expect(workflow, contains(r'''"${secret_roots[@]}"'''));
       expect(workflow, isNot(contains('lib android ios')));
     },
