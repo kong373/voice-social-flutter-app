@@ -32,9 +32,18 @@ void main() {
     expect(environment.redactedSummary['oauthClientSecretConfigured'], isFalse);
   });
 
-  test('mobile public client never loads an OAuth secret', () {
+  test('mobile public client never loads confidential credentials', () {
     final AppEnvironment environment = liveEnvironment();
     expect(environment.oauthClientSecret, isEmpty);
+    expect(environment.canReadDevelopmentSmsOutbox, isFalse);
+    expect(environment.redactedSummary['developmentOutboxConfigured'], isFalse);
+  });
+
+  test('development tools are limited to local and development', () {
+    expect(DeploymentEnvironment.local.allowsDevelopmentTools, isTrue);
+    expect(DeploymentEnvironment.development.allowsDevelopmentTools, isTrue);
+    expect(DeploymentEnvironment.staging.allowsDevelopmentTools, isFalse);
+    expect(DeploymentEnvironment.production.allowsDevelopmentTools, isFalse);
   });
 
   test('development HTTP requires an explicit insecure override', () {

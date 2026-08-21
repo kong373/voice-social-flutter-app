@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'contract_test_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -43,14 +44,11 @@ void main() {
   });
 
   test(
-    'catalog recharge precheck and order preserve query/body contracts',
+    'catalog recharge precheck and unsupported SDK fail closed before order',
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {
         return switch (request.path) {
           '/app-economy-api/pay/check' => _Response.ok(<String, Object?>{}),
-          '/app-economy-api/pay/v1/wechat/order' => _Response.ok(
-            <String, Object?>{'outTradeNo': 'recharge-1'},
-          ),
           '/app-economy-api/pay/isOrderSuccess' => _Response.ok(true),
           _ => _Response.ok(<String, Object?>{}),
         };
@@ -65,28 +63,50 @@ void main() {
         giftCoins: 100,
         priceCny: 6,
       );
-      final RechargeOrder order = await repository.createRechargeOrder(
-        account: '  user-1 ',
+      await expectLater(
+        repository.createRechargeOrder(
+          account: '  user-1 ',
+          product: product,
+          channel: PaymentChannelType.wechat,
+          platform: ClientStorePlatform.android,
+          youthModeEnabled: false,
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException e) => e.kind,
+            'kind',
+            ApiFailureKind.configuration,
+          ),
+        ),
+      );
+
+      final RechargeOrder existingOrder = RechargeOrder(
+        orderNo: 'recharge-1',
+        account: 'user-1',
         product: product,
         channel: PaymentChannelType.wechat,
-        platform: ClientStorePlatform.android,
-        youthModeEnabled: false,
+        state: RechargeOrderState.created,
+        createdAt: DateTime(2026),
       );
-      expect(order.orderNo, 'recharge-1');
-      expect(order.account, 'user-1');
-      expect(order.state, RechargeOrderState.created);
       final RechargeOrder confirmed = await repository.queryRechargeOrder(
-        order,
+        existingOrder,
       );
       expect(confirmed.state, RechargeOrderState.succeeded);
-      expect(harness.requests, hasLength(4));
+      expect(harness.requests, hasLength(3));
       expect(harness.requests[0].method, 'POST');
       expect(harness.requests[0].body, isNull);
       expect(harness.requests[1].path, '/app-economy-api/pay/check');
-      expect(harness.requests[2].query, <String, String>{'amount': '6.00'});
-      expect(harness.requests[3].query, <String, String>{
+      expect(harness.requests[2].query, <String, String>{
         'orderNo': 'recharge-1',
       });
+      expect(
+        harness.requests.where(
+          (RequestRecord request) =>
+              request.path == '/app-economy-api/pay/v1/wechat/order' ||
+              request.path == '/app-economy-api/pay/v1/alipay/order',
+        ),
+        isEmpty,
+      );
     },
   );
 
@@ -342,6 +362,7 @@ class _Harness {
         method: request.method,
         path: request.uri.path,
         query: request.uri.queryParameters,
+        authorization: captureContractAuthorization(request),
         body: decodedBody is Map
             ? Map<String, Object?>.from(decodedBody)
             : decodedBody,
@@ -370,12 +391,14 @@ class RequestRecord {
     required this.method,
     required this.path,
     required this.query,
+    required this.authorization,
     required this.body,
   });
 
   final String method;
   final String path;
   final Map<String, String> query;
+  final String authorization;
   final Object? body;
 }
 

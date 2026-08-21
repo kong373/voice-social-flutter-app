@@ -106,6 +106,7 @@ class _LiveProductHomePageState extends State<LiveProductHomePage> {
             padding: const EdgeInsets.fromLTRB(18, 14, 18, 32),
             children: <Widget>[
               InkWell(
+                key: const Key('open-global-search'),
                 borderRadius: BorderRadius.circular(18),
                 onTap: _openSearch,
                 child: const IgnorePointer(

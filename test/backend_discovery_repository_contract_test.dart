@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'contract_test_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -226,10 +227,12 @@ void main() {
 class _RequestRecord {
   _RequestRecord(HttpRequest request, this.body)
     : method = request.method,
-      path = request.uri.path;
+      path = request.uri.path,
+      authorization = captureContractAuthorization(request);
 
   final String method;
   final String path;
+  final String authorization;
   final Object? body;
 }
 

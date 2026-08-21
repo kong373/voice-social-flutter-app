@@ -1,7 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
@@ -10,8 +10,9 @@ import 'package:voice_social_app/debug/qa_console/qa_fixtures.dart';
 import 'package:voice_social_app/debug/qa_console/qa_models.dart';
 import 'package:voice_social_app/debug/qa_console/qa_page_catalog.dart';
 
+import 'support/golden_font_gate.dart';
+
 void main() {
-  late bool goldenFontsAvailable;
   late GoldenFileComparator originalGoldenComparator;
 
   setUpAll(() async {
@@ -22,7 +23,7 @@ void main() {
       ),
       precisionTolerance: 0.001,
     );
-    goldenFontsAvailable = await _loadGoldenFonts();
+    await loadGoldenFonts();
   });
 
   tearDownAll(() {
@@ -33,7 +34,6 @@ void main() {
     testWidgets('${entry.id} ${entry.name} visual contract at 390x844', (
       WidgetTester tester,
     ) async {
-      if (!goldenFontsAvailable) return;
       _configureGoldenView(tester);
       final AppDependencies dependencies = await createQaDependencies();
       const QaScenario scenario = QaScenario(
@@ -50,7 +50,7 @@ void main() {
             dependencies: dependencies,
             child: MaterialApp(
               debugShowCheckedModeBanner: false,
-              theme: AppTheme.social(fontFamily: 'M3GoldenCjk'),
+              theme: AppTheme.social(fontFamily: kGoldenFontFamily),
               home: entry.builder(dependencies, scenario),
             ),
           ),
@@ -71,60 +71,26 @@ void main() {
       await tester.pump();
     });
   }
-}
 
-Future<bool> _loadGoldenFonts() async {
-  final File fallbackFont = File(
-    '${Directory.current.parent.path}/artifacts/m3-3/fonts/M3GoldenCjk.ttf',
-  );
-  if (!fallbackFont.existsSync()) return false;
-  final File regularFont = File(
-    '${Directory.current.parent.path}/artifacts/m3-3/fonts/M3GoldenCjkRegular.ttf',
-  );
-  final File boldFont = File(
-    '${Directory.current.parent.path}/artifacts/m3-3/fonts/M3GoldenCjkBold.ttf',
-  );
-  final File visualFont = regularFont.existsSync() ? regularFont : fallbackFont;
-  final Uint8List regularBytes = visualFont.readAsBytesSync();
-  final FontLoader loader = FontLoader('M3GoldenCjk')
-    ..addFont(
-      Future<ByteData>.value(
-        regularBytes.buffer.asByteData(
-          regularBytes.offsetInBytes,
-          regularBytes.lengthInBytes,
-        ),
-      ),
-    );
-  if (boldFont.existsSync()) {
-    final Uint8List boldBytes = boldFont.readAsBytesSync();
-    loader.addFont(
-      Future<ByteData>.value(
-        boldBytes.buffer.asByteData(
-          boldBytes.offsetInBytes,
-          boldBytes.lengthInBytes,
-        ),
-      ),
-    );
-  }
-  await loader.load();
+  test(
+    'M3.3 golden font gate fails closed when the baseline font is absent',
+    () async {
+      final Directory emptyFontDirectory = await Directory.systemTemp
+          .createTemp('m33-empty-golden-fonts-');
+      addTearDown(() => emptyFontDirectory.delete(recursive: true));
 
-  final Directory flutterRoot = File(
-    Platform.resolvedExecutable,
-  ).parent.parent.parent.parent.parent.parent;
-  final Uint8List iconBytes = File(
-    '${flutterRoot.path}/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-  ).readAsBytesSync();
-  final FontLoader iconLoader = FontLoader('MaterialIcons')
-    ..addFont(
-      Future<ByteData>.value(
-        iconBytes.buffer.asByteData(
-          iconBytes.offsetInBytes,
-          iconBytes.lengthInBytes,
+      await expectLater(
+        loadGoldenFonts(goldenFontDirectory: emptyFontDirectory),
+        throwsA(
+          isA<StateError>().having(
+            (StateError error) => error.message,
+            'message',
+            contains('M3.3 golden font gate failed'),
+          ),
         ),
-      ),
-    );
-  await iconLoader.load();
-  return true;
+      );
+    },
+  );
 }
 
 void _configureGoldenView(WidgetTester tester) {

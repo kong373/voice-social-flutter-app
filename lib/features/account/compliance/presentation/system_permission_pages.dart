@@ -491,7 +491,6 @@ String _permissionStateLabel(PermissionState state) => switch (state) {
   PermissionState.denied => '已拒绝',
   PermissionState.restricted => '受系统限制',
 };
-
 Color _permissionTone(PermissionKind kind) => switch (kind) {
   PermissionKind.microphone => AccountOxygenColors.violet,
   PermissionKind.notifications => AccountOxygenColors.cyan,

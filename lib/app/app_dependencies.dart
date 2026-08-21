@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
@@ -86,6 +87,19 @@ class AppDependencies {
   }) {
     return _build(
       environment: AppEnvironment.mock(),
+      store: MemoryKeyValueStore(initialStorage),
+      mockNow: mockNow,
+    );
+  }
+
+  @visibleForTesting
+  factory AppDependencies.forTestEnvironment({
+    required AppEnvironment environment,
+    Map<String, String>? initialStorage,
+    DateTime? mockNow,
+  }) {
+    return _build(
+      environment: environment,
       store: MemoryKeyValueStore(initialStorage),
       mockNow: mockNow,
     );

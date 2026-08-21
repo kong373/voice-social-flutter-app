@@ -254,7 +254,7 @@ QA_SCREENSHOT_DIR="$SCREENSHOT_DIR" \
     --dart-define=API_BASE_URL=http://10.0.2.2:8765/ \
     --dart-define=API_TIMEOUT_SECONDS=15 \
     --dart-define=OAUTH_CLIENT_ID=voice-social-mobile-public \
-    --dart-define=DEVELOPMENT_OUTBOX_KEY=ci-development-outbox \
+    --dart-define=DEVELOPMENT_OUTBOX_KEY=ci-local-outbox-placeholder \
     --dart-define=QA_AVD_ID="$AVD_ID" \
     --dart-define=QA_EXPECTED_VIEWPORT_WIDTH="$EXPECTED_WIDTH" \
     --dart-define=QA_EXPECTED_VIEWPORT_HEIGHT="$EXPECTED_HEIGHT" \
@@ -277,7 +277,7 @@ if [[ -f build/app/outputs/flutter-apk/app-debug.apk ]]; then
   rm -rf "$APK_DIR/inspection"
   mkdir -p "$APK_DIR/inspection"
   unzip -q "$APK_DIR/m32-${AVD_ID}-app-debug.apk" -d "$APK_DIR/inspection"
-  if grep -aRInE 'OAUTH_CLIENT_SECRET|Client-Secret|actual-secret-value|never-expose-' \
+  if grep -aRInE 'OAUTH_CLIENT_SECRET|Client-Secret|actual-secret-value|do-not-expose-' \
       "$APK_DIR/inspection" >"$LOG_DIR/apk-secret-scan.txt" 2>&1; then
     FAIL_REASON="forbidden_secret_marker_in_apk"
     DRIVE_STATUS=1

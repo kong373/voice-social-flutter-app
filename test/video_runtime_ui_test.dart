@@ -55,9 +55,10 @@ void main() {
     expect(find.text('成员'), findsOneWidget);
     expect(find.byKey(const Key('video-room-composer')), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('room-follow-host')));
-    await tester.pump();
-    expect(find.text('已关注'), findsOneWidget);
+    expect(find.byKey(const Key('room-follow-host')), findsNothing);
+    expect(find.text('关注房主'), findsNothing);
+    expect(find.text('已关注'), findsNothing);
+    expect(find.text('我要点歌'), findsNothing);
 
     await tester.tap(find.byKey(const Key('room-expression-button')));
     await tester.pumpAndSettle();

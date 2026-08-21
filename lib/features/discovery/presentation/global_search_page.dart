@@ -47,6 +47,7 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
       appBar: AppBar(
         titleSpacing: 0,
         title: TextField(
+          key: const Key('global-search-field'),
           controller: _controller,
           focusNode: _focusNode,
           textInputAction: TextInputAction.search,

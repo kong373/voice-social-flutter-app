@@ -790,6 +790,9 @@ class _VideoRuntimeDiscoveryPageState extends State<VideoRuntimeDiscoveryPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.dependencies.environment.isLive) {
+      return const LiveDiscoveryHoldingPage();
+    }
     final List<_MockPost> visiblePosts = _visiblePosts;
     return SocialSkySurface(
       child: SafeArea(
@@ -1281,8 +1284,12 @@ class VideoRuntimeMessagesPage extends StatelessWidget {
   final AppDependencies dependencies;
 
   @override
-  Widget build(BuildContext context) =>
-      const MessageCenterPage(key: Key('video-runtime-messages'));
+  Widget build(BuildContext context) {
+    if (dependencies.environment.isLive) {
+      return const LiveMessageHoldingPage();
+    }
+    return const MessageCenterPage(key: Key('video-runtime-messages'));
+  }
 }
 
 class VideoRuntimeAccountPage extends StatefulWidget {
@@ -1313,6 +1320,9 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (widget.dependencies.environment.isLive) {
+      return;
+    }
     if (_profile == null && !_loadingProfile && _profileError == null) {
       _loadProfile();
     }
@@ -1368,6 +1378,12 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.dependencies.environment.isLive) {
+      return LiveReadOnlyAccountPage(
+        dependencies: widget.dependencies,
+        onSignOut: widget.onSignOut,
+      );
+    }
     final SocialProfile? profile = _profile;
     if (profile == null) {
       return SocialSkySurface(

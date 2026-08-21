@@ -90,7 +90,7 @@ void main() {
 
       final AuthOutcome outcome = await repository.signInWithSms(
         phone: '13800138000',
-        smsCode: '123456',
+        smsCode: challenge.developmentCode!,
         device: device,
       );
       activeSession = outcome.session;
@@ -120,6 +120,7 @@ void main() {
       final String serialized = jsonEncode(captured);
       expect(serialized, isNot(contains('OAUTH_CLIENT_SECRET')));
       expect(serialized, isNot(contains('secret-value')));
+      expect(serialized, isNot(contains('Development-Outbox')));
 
       final Map<String, Object?> send = captured[0];
       expect(send['clientId'], 'voice-social-mobile-public');

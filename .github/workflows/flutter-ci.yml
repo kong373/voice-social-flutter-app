@@ -90,7 +90,7 @@ jobs:
             echo 'Provider secret property leaked into the mobile source tree.' >&2
             exit 1
           fi
-          if grep -RInE 'DEVELOPMENT_OUTBOX_KEY|X-Development-Outbox-Key|ci-development-outbox' lib integration_test; then
+          if grep -RInE 'DEVELOPMENT_OUTBOX_KEY|X-Development-Outbox-Key|ci-local-outbox-placeholder' lib integration_test; then
             echo 'A confidential development outbox credential leaked into mobile source.' >&2
             exit 1
           fi
@@ -197,7 +197,7 @@ jobs:
           rm -rf apk-inspection
           mkdir apk-inspection
           unzip -q build/app/outputs/flutter-apk/app-debug.apk -d apk-inspection
-          if grep -aRInE 'OAUTH_CLIENT_SECRET|Client-Secret|DEVELOPMENT_OUTBOX_KEY|X-Development-Outbox-Key|ci-development-outbox|actual-secret-value|never-expose-' apk-inspection; then
+          if grep -aRInE 'OAUTH_CLIENT_SECRET|Client-Secret|DEVELOPMENT_OUTBOX_KEY|X-Development-Outbox-Key|ci-local-outbox-placeholder|actual-secret-value|do-not-expose-' apk-inspection; then
             echo 'Forbidden secret marker found in APK.' >&2
             exit 1
           fi

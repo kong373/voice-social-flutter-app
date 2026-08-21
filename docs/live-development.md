@@ -67,6 +67,11 @@ export API_BASE_URL=http://127.0.0.1:18080/
 ./tool/live_development.sh run --target host --device macos
 ```
 
+The M3.3 golden/widget tests no longer depend on `../artifacts` font drops.
+They load the checked-in subset fonts under `test/fonts/`, and the subset can
+be regenerated deterministically with `python3 tool/qa/build_m33_golden_fonts.py`
+from the pinned upstream Noto Sans SC commit when needed.
+
 The launcher always injects:
 
 ```text
@@ -82,14 +87,18 @@ It also sets the non-sensitive client metadata defaults used by
 prints only the target, API origin, and whether the public client is configured;
 it never prints the client identifier itself.
 
-The launcher uses an explicit two-level environment policy. Exported names
-that clearly denote application or vendor credentials (`SECRET`, `PASSWORD`,
-`PRIVATE_KEY`, or `ACCESS_KEY`) fail before Flutter. Ordinary `*_TOKEN` names
-are removed from the Flutter child environment instead of being forwarded;
-this keeps unrelated host tokens out without blocking a local tool that happens
-to export one. The child still receives no OAuth or vendor credential. Run the
-launcher from a shell without hard credential variables when local tooling sets
-them.
+The launcher uses an explicit two-level environment policy. Environment
+variable and CLI argument checks are case-insensitive: names that clearly
+denote application or vendor credentials (`CLIENT_SECRET`, `SECRET`,
+`PASSWORD`, `PRIVATE_KEY`, or `ACCESS_KEY`) fail before Flutter. Ordinary
+`*_TOKEN` names, including lowercase or mixed-case spellings, are removed from
+the Flutter child environment instead of being forwarded; their values are
+never printed. `--dart-define` and `--dart-define-from-file` are rejected
+regardless of argument casing. This keeps unrelated host tokens out without
+blocking a local tool that happens to export one, while ensuring a secret
+cannot bypass the launcher through casing. The child still receives no OAuth
+or vendor credential. Run the launcher from a shell without hard credential
+variables when local tooling sets them.
 
 ## What this does not do
 

@@ -59,7 +59,7 @@ void main() {
       await tester.tap(find.text('获取验证码').hitTestable());
       await _waitFor(
         tester,
-        () => find.textContaining('验证码已发送').evaluate().isNotEmpty,
+        () => find.textContaining('验证码挑战已创建').evaluate().isNotEmpty,
         description: 'SMS challenge accepted',
       );
       // The trusted contract runner knows the deterministic test code. The
@@ -76,12 +76,16 @@ void main() {
       await tester.tap(find.text('登录 / 注册').hitTestable());
       await _waitFor(
         tester,
-        () => find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty,
-        description: 'live read-only home',
+        () =>
+            find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty &&
+            find.byKey(const Key('live-room-880217')).evaluate().isNotEmpty &&
+            find.text('深夜陪伴电台').evaluate().isNotEmpty,
+        description: 'loaded live read-only home contract',
       );
       _expectExactViewport(tester);
-      expect(find.text('实时后端 · 只读验收'), findsOneWidget);
-      expect(find.textContaining('HTTP_SNAPSHOT_ONLY'), findsOneWidget);
+      expect(find.text('此刻适合你的房间'), findsOneWidget);
+      expect(find.byKey(const Key('live-room-880217')), findsOneWidget);
+      expect(find.text('深夜陪伴电台'), findsOneWidget);
       await captureQaScreenshot(
         tester,
         binding,
@@ -89,24 +93,27 @@ void main() {
       );
       await announceQaEvidence(tester, 'M32_LIVE_HOME_READY');
 
-      await tester.tap(find.byTooltip('搜索').hitTestable());
+      await tester.tap(
+        find.byKey(const Key('open-global-search')).hitTestable(),
+      );
       await _waitFor(
         tester,
-        () => find.text('搜索用户与房间').evaluate().isNotEmpty,
+        () => find.text('最近搜索').evaluate().isNotEmpty,
         description: 'global search page',
       );
-      final Finder searchField = find.widgetWithText(
-        TextField,
-        '输入昵称、ID、房间名或房间号',
-      );
+      final Finder searchField = find.byKey(const Key('global-search-field'));
+      expect(searchField, findsOneWidget);
       await tester.enterText(searchField, '深夜');
       await dismissQaImeAndWait(tester);
       final Finder searchAction = find.widgetWithText(TextButton, '搜索');
       await tester.tap(searchAction.hitTestable());
       await _waitFor(
         tester,
-        () => find.text('“深夜”的搜索结果').evaluate().isNotEmpty,
-        description: 'search results',
+        () =>
+            find.text('“深夜”的搜索结果').evaluate().isNotEmpty &&
+            find.text('深夜陪伴电台').evaluate().isNotEmpty &&
+            find.text('南风').evaluate().isNotEmpty,
+        description: 'loaded search contract results',
       );
       expect(find.text('深夜陪伴电台'), findsOneWidget);
       expect(find.text('南风'), findsWidgets);
@@ -116,12 +123,23 @@ void main() {
         'm32-${qaAvdId.toLowerCase()}-04-search-contract',
       );
       await announceQaEvidence(tester, 'M32_SEARCH_READY');
-      await tester.pageBack();
-      await tester.pump(const Duration(milliseconds: 250));
-      await tester.pageBack();
+      Navigator.of(tester.element(find.text('“深夜”的搜索结果'))).pop();
+      await tester.pumpAndSettle();
       await _waitFor(
         tester,
-        () => find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty,
+        () =>
+            find.byKey(const Key('global-search-field')).evaluate().isNotEmpty,
+        description: 'global search after results',
+      );
+      Navigator.of(
+        tester.element(find.byKey(const Key('global-search-field'))),
+      ).pop();
+      await tester.pumpAndSettle();
+      await _waitFor(
+        tester,
+        () =>
+            find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty &&
+            find.byKey(const Key('live-room-880217')).evaluate().isNotEmpty,
         description: 'home after search',
       );
 
@@ -131,7 +149,7 @@ void main() {
         tester,
         () =>
             find.byType(RoomPage).evaluate().isNotEmpty &&
-            find.textContaining('HTTP_SNAPSHOT_ONLY').evaluate().isNotEmpty,
+            find.text('当前不可发送公屏消息').evaluate().isNotEmpty,
         description: 'authoritative room snapshot',
       );
       expect(find.text('当前不可发送公屏消息'), findsOneWidget);
@@ -151,11 +169,35 @@ void main() {
       await tester.tap(find.text('确认离开').hitTestable());
       await _waitFor(
         tester,
-        () => find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty,
+        () =>
+            find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty &&
+            find.byKey(const Key('live-room-880217')).evaluate().isNotEmpty,
         description: 'home after room snapshot',
       );
 
-      await tester.tap(find.text('接入').hitTestable());
+      await tester.tap(find.text('我的').hitTestable());
+      await _waitFor(
+        tester,
+        () =>
+            find
+                .byKey(const Key('live-account-overview'))
+                .evaluate()
+                .isNotEmpty &&
+            find
+                .byKey(const Key('open-vendor-diagnostics'))
+                .evaluate()
+                .isNotEmpty,
+        description: 'account overview before developer diagnostics',
+      );
+      final Finder vendorDiagnostics = find.byKey(
+        const Key('open-vendor-diagnostics'),
+      );
+      await tester.scrollUntilVisible(
+        vendorDiagnostics,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(vendorDiagnostics.hitTestable());
       await _waitFor(
         tester,
         () => find
@@ -197,6 +239,34 @@ void main() {
         'm32-${qaAvdId.toLowerCase()}-06-vendor-readiness',
       );
       await announceQaEvidence(tester, 'M32_VENDOR_BOUNDARY_READY');
+      await tester.pageBack();
+      await _waitFor(
+        tester,
+        () => find
+            .byKey(const Key('live-account-overview'))
+            .evaluate()
+            .isNotEmpty,
+        description: 'account overview after developer diagnostics',
+      );
+      await tester.fling(
+        find.byKey(const Key('live-account-overview')),
+        const Offset(0, 1200),
+        2000,
+      );
+      await tester.pumpAndSettle();
+      await _waitFor(
+        tester,
+        () =>
+            find
+                .byKey(const Key('current-user-contract-ready'))
+                .evaluate()
+                .isNotEmpty &&
+            find
+                .byKey(const Key('wallet-contract-ready'))
+                .evaluate()
+                .isNotEmpty,
+        description: 'account overview reset after developer diagnostics',
+      );
 
       await tester.tap(find.text('消息').hitTestable());
       await _waitFor(
@@ -204,7 +274,8 @@ void main() {
         () => find.byKey(const Key('im-vendor-blocked')).evaluate().isNotEmpty,
         description: 'IM fail-closed page',
       );
-      expect(find.textContaining('腾讯 IM · VENDOR_BLOCKED'), findsOneWidget);
+      expect(find.text('消息服务正在准备'), findsOneWidget);
+      expect(find.textContaining('暂不能收发私聊'), findsOneWidget);
       await captureQaScreenshot(
         tester,
         binding,
@@ -215,13 +286,25 @@ void main() {
       await tester.tap(find.text('我的').hitTestable());
       await _waitFor(
         tester,
-        () => find
-            .byKey(const Key('current-user-contract-ready'))
-            .evaluate()
-            .isNotEmpty,
+        () =>
+            find
+                .byKey(const Key('current-user-contract-ready'))
+                .evaluate()
+                .isNotEmpty &&
+            find
+                .byKey(const Key('wallet-contract-ready'))
+                .evaluate()
+                .isNotEmpty,
         description: 'current-user wallet and order overview',
       );
       expect(find.byKey(const Key('wallet-contract-ready')), findsOneWidget);
+      final Finder order = find.text('P202608180001');
+      await tester.scrollUntilVisible(
+        order,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(order, findsOneWidget);
       final Finder paymentBlocked = find.byKey(
         const Key('payment-initiation-blocked'),
       );
@@ -231,7 +314,6 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       expect(paymentBlocked, findsOneWidget);
-      expect(find.text('P202608180001'), findsOneWidget);
       await captureQaScreenshot(
         tester,
         binding,

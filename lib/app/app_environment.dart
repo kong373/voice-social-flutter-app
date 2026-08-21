@@ -1,8 +1,11 @@
 enum BackendMode { mock, live }
 
-enum DeploymentEnvironment { local, development, staging, production }
+enum DeploymentEnvironment {
+  local,
+  development,
+  staging,
+  production;
 
-extension DeploymentEnvironmentLabel on DeploymentEnvironment {
   String get label => switch (this) {
     DeploymentEnvironment.local => '本地',
     DeploymentEnvironment.development => '开发',

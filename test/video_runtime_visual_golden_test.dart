@@ -1,7 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
@@ -17,8 +17,9 @@ import 'package:voice_social_app/features/room/presentation/room_members_page.da
 import 'package:voice_social_app/features/shell/main_shell.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
+import 'support/golden_font_gate.dart';
+
 void main() {
-  late bool goldenFontsAvailable;
   late GoldenFileComparator originalGoldenComparator;
 
   setUpAll(() async {
@@ -29,7 +30,7 @@ void main() {
       ),
       precisionTolerance: 0.0002,
     );
-    goldenFontsAvailable = await _loadGoldenFonts();
+    await loadGoldenFonts();
   });
 
   tearDownAll(() {
@@ -39,7 +40,6 @@ void main() {
   testWidgets('M3.3 video-runtime visual states at 390x844', (
     WidgetTester tester,
   ) async {
-    if (!goldenFontsAvailable) return;
     _configureGoldenView(tester);
 
     const Key captureKey = Key('video-runtime-golden-boundary');
@@ -87,7 +87,6 @@ void main() {
   testWidgets('M3.3 root tabs and pure decoration states at 390x844', (
     WidgetTester tester,
   ) async {
-    if (!goldenFontsAvailable) return;
     _configureGoldenView(tester);
 
     const Key captureKey = Key('video-runtime-account-golden-boundary');
@@ -136,7 +135,6 @@ void main() {
   });
 
   testWidgets('M3.3 secondary flows at 390x844', (WidgetTester tester) async {
-    if (!goldenFontsAvailable) return;
     _configureGoldenView(tester);
 
     const Key captureKey = Key('video-runtime-secondary-golden-boundary');
@@ -231,59 +229,26 @@ void main() {
       'goldens/m3_3_room_management_390x844.png',
     );
   });
-}
 
-Future<bool> _loadGoldenFonts() async {
-  final File cjkFont = File(
-    '${Directory.current.parent.path}/artifacts/m3-3/fonts/M3GoldenCjk.ttf',
-  );
-  if (!cjkFont.existsSync()) return false;
-  final File regularFont = File(
-    '${Directory.current.parent.path}/artifacts/m3-3/fonts/M3GoldenCjkRegular.ttf',
-  );
-  final File boldFont = File(
-    '${Directory.current.parent.path}/artifacts/m3-3/fonts/M3GoldenCjkBold.ttf',
-  );
-  final File visualFont = regularFont.existsSync() ? regularFont : cjkFont;
-  final Uint8List fontBytes = visualFont.readAsBytesSync();
-  final FontLoader loader = FontLoader('M3GoldenCjk')
-    ..addFont(
-      Future<ByteData>.value(
-        fontBytes.buffer.asByteData(
-          fontBytes.offsetInBytes,
-          fontBytes.lengthInBytes,
+  test(
+    'M3.3 video-runtime golden font gate fails closed when the baseline font is absent',
+    () async {
+      final Directory emptyFontDirectory = await Directory.systemTemp
+          .createTemp('m33-empty-video-golden-fonts-');
+      addTearDown(() => emptyFontDirectory.delete(recursive: true));
+
+      await expectLater(
+        loadGoldenFonts(goldenFontDirectory: emptyFontDirectory),
+        throwsA(
+          isA<StateError>().having(
+            (StateError error) => error.message,
+            'message',
+            contains('M3.3 golden font gate failed'),
+          ),
         ),
-      ),
-    );
-  if (boldFont.existsSync()) {
-    final Uint8List boldBytes = boldFont.readAsBytesSync();
-    loader.addFont(
-      Future<ByteData>.value(
-        boldBytes.buffer.asByteData(
-          boldBytes.offsetInBytes,
-          boldBytes.lengthInBytes,
-        ),
-      ),
-    );
-  }
-  await loader.load();
-  final Directory flutterRoot = File(
-    Platform.resolvedExecutable,
-  ).parent.parent.parent.parent.parent.parent;
-  final Uint8List iconBytes = File(
-    '${flutterRoot.path}/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf',
-  ).readAsBytesSync();
-  final FontLoader iconLoader = FontLoader('MaterialIcons')
-    ..addFont(
-      Future<ByteData>.value(
-        iconBytes.buffer.asByteData(
-          iconBytes.offsetInBytes,
-          iconBytes.lengthInBytes,
-        ),
-      ),
-    );
-  await iconLoader.load();
-  return true;
+      );
+    },
+  );
 }
 
 void _configureGoldenView(WidgetTester tester) {
@@ -300,7 +265,7 @@ Widget _goldenApp(Key captureKey, AppDependencies dependencies) {
       dependencies: dependencies,
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.social(fontFamily: 'M3GoldenCjk'),
+        theme: AppTheme.social(fontFamily: kGoldenFontFamily),
         home: MainShell(dependencies: dependencies, onSignOut: () async {}),
       ),
     ),
@@ -318,7 +283,7 @@ Widget _goldenPageApp(
       dependencies: dependencies,
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.social(fontFamily: 'M3GoldenCjk'),
+        theme: AppTheme.social(fontFamily: kGoldenFontFamily),
         home: page,
       ),
     ),

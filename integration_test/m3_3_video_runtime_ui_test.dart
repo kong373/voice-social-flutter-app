@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:voice_social_app/app/app.dart' as voice_app;
+import 'package:voice_social_app/app/app_dependencies.dart';
+import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
-import 'package:voice_social_app/main.dart' as app;
 
 import 'm2_4_test_support.dart';
 
@@ -23,6 +27,8 @@ const String _expectedDprValue = String.fromEnvironment(
 final double _expectedWidth = double.parse(_expectedWidthValue);
 final double _expectedHeight = double.parse(_expectedHeightValue);
 final double _expectedDpr = double.parse(_expectedDprValue);
+const String _providerEvidenceScope =
+    'm33_video_runtime_mock_graph_and_http_outbound_guard';
 
 void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
@@ -31,7 +37,18 @@ void main() {
   testWidgets(
     'video runtime lobby and persistent room interaction matches target',
     (WidgetTester tester) async {
-      await app.main();
+      final _ProviderCallGuard providerCallGuard = _ProviderCallGuard.install();
+      addTearDown(providerCallGuard.restore);
+      final AppDependencies dependencies = AppDependencies.fromEnvironment();
+      final _MockDependencyGraphEvidence dependencyGraph =
+          _MockDependencyGraphEvidence(dependencies);
+      expect(
+        dependencyGraph.proven,
+        isTrue,
+        reason: dependencyGraph.failureDescription,
+      );
+      dependencies.environment.validateLiveConfiguration();
+      runApp(voice_app.VoiceSocialApp(dependencies: dependencies));
       await _waitFor(
         tester,
         () => find.byKey(const Key('video-runtime-home')).evaluate().isNotEmpty,
@@ -200,6 +217,25 @@ void main() {
       );
       await announceQaEvidence(tester, 'M33_ROOM_RESTORED');
 
+      providerCallGuard.seal();
+      final bool providerCallsMade = providerCallGuard.providerCallsMade(
+        mockDependencyGraphProven: dependencyGraph.proven,
+      );
+      final int providerGuardConnectionAttempts =
+          providerCallGuard.connectionAttempts;
+      debugPrint('M33_PROVIDER_CALLS_MADE=$providerCallsMade');
+      debugPrint('M33_PROVIDER_GRAPH_PROVEN=${dependencyGraph.proven}');
+      debugPrint('M33_PROVIDER_EVIDENCE_SCOPE=$_providerEvidenceScope');
+      debugPrint(
+        'M33_PROVIDER_GUARD_CONNECTION_ATTEMPTS='
+        '$providerGuardConnectionAttempts',
+      );
+      expect(
+        providerCallsMade,
+        isFalse,
+        reason: providerCallGuard.failureDescription,
+      );
+
       binding.reportData ??= <String, dynamic>{};
       binding.reportData!['m33VideoRuntimeUi'] = <String, Object?>{
         'avd': qaAvdId,
@@ -214,7 +250,10 @@ void main() {
         'giftIsRoomSheet': true,
         'toolsAreRoomSheet': true,
         'roomMinimizeAndRestore': true,
-        'providerCallsMade': false,
+        'providerCallsMade': providerCallsMade,
+        'providerDependencyGraphProven': dependencyGraph.proven,
+        'providerOutboundConnectionAttempts': providerGuardConnectionAttempts,
+        'providerEvidenceScope': _providerEvidenceScope,
         'result': 'PASS',
       };
     },
@@ -245,4 +284,136 @@ Future<void> _waitFor(
     await Future<void>.delayed(const Duration(milliseconds: 100));
   }
   throw TestFailure('Timed out waiting for $description.');
+}
+
+class _MockDependencyGraphEvidence {
+  _MockDependencyGraphEvidence(this.dependencies)
+    : _providerDependencies = <Object>[
+        dependencies.accountComplianceRepository,
+        dependencies.discoveryRepository,
+        dependencies.dynamicRepository,
+        dependencies.socialRepository,
+        dependencies.communityRepository,
+        dependencies.commerceRepository,
+        dependencies.commerceCatalogRepository,
+        dependencies.messageRepository,
+        dependencies.roomRepository,
+        dependencies.roomOperationsRepository,
+        dependencies.roomLifecycleRepository,
+        dependencies.roomPkRepository,
+        dependencies.rtcAdapter,
+        dependencies.realtimeGateway,
+        dependencies.roomAudioService,
+      ];
+
+  final AppDependencies dependencies;
+  final List<Object> _providerDependencies;
+
+  bool get proven =>
+      dependencies.environment.backendMode == BackendMode.mock &&
+      _providerDependencies.isNotEmpty &&
+      _providerDependencies.every(
+        (Object dependency) =>
+            dependency.runtimeType.toString().startsWith('Mock'),
+      );
+
+  String get failureDescription {
+    final String runtimeTypes = _providerDependencies
+        .map((Object dependency) => dependency.runtimeType.toString())
+        .join(', ');
+    return 'M33 requires the mock dependency graph; observed '
+        'backendMode=${dependencies.environment.backendMode.name}, '
+        'providerDependencies=[$runtimeTypes].';
+  }
+}
+
+class _ProviderCallGuard {
+  _ProviderCallGuard._(this._previousOverrides) {
+    _httpOverrides = _GuardHttpOverrides(this);
+    HttpOverrides.global = _httpOverrides;
+  }
+
+  factory _ProviderCallGuard.install() {
+    return _ProviderCallGuard._(HttpOverrides.current);
+  }
+
+  final HttpOverrides? _previousOverrides;
+  late final _GuardHttpOverrides _httpOverrides;
+  final List<HttpClient> _clients = <HttpClient>[];
+  int connectionAttempts = 0;
+  Uri? _firstConnectionUri;
+  bool _sealed = false;
+
+  void _recordConnectionAttempt(Uri uri) {
+    connectionAttempts += 1;
+    _firstConnectionUri ??= uri;
+  }
+
+  void seal() {
+    if (!identical(HttpOverrides.current, _httpOverrides)) {
+      throw StateError(
+        'M33 outbound-call guard was replaced before evidence was sealed.',
+      );
+    }
+    _sealed = true;
+  }
+
+  bool providerCallsMade({required bool mockDependencyGraphProven}) {
+    if (!_sealed || !identical(HttpOverrides.current, _httpOverrides)) {
+      throw StateError(
+        'M33 outbound-call guard could not prove that it remained installed.',
+      );
+    }
+    if (!mockDependencyGraphProven) {
+      throw StateError(
+        'M33 mock dependency graph could not be proven at runtime.',
+      );
+    }
+    return connectionAttempts > 0;
+  }
+
+  String get failureDescription {
+    final String? firstUri = _firstConnectionUri?.toString();
+    return connectionAttempts == 0
+        ? 'No provider outbound calls were observed by the installed '
+              'mock guard.'
+        : 'M33 blocked and observed $connectionAttempts provider outbound '
+              'connection attempt(s); first URI=${firstUri ?? 'unknown'}.';
+  }
+
+  void restore() {
+    if (identical(HttpOverrides.current, _httpOverrides)) {
+      HttpOverrides.global = _previousOverrides;
+    }
+    for (final HttpClient client in _clients) {
+      client.close(force: true);
+    }
+  }
+}
+
+class _GuardHttpOverrides extends HttpOverrides {
+  _GuardHttpOverrides(this.owner);
+
+  final _ProviderCallGuard owner;
+
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    final HttpOverrides? activeOverrides = HttpOverrides.current;
+    HttpOverrides.global = null;
+    late final HttpClient client;
+    try {
+      client = HttpClient(context: context);
+    } finally {
+      HttpOverrides.global = activeOverrides;
+    }
+    client.findProxy = (Uri _) => 'DIRECT';
+    client.connectionFactory = (Uri uri, String? proxyHost, int? proxyPort) {
+      owner._recordConnectionAttempt(uri);
+      return Future<ConnectionTask<Socket>>.error(
+        StateError('M33 outbound provider call blocked: $uri'),
+      );
+    };
+    owner._clients.add(client);
+    return client;
+  }
 }

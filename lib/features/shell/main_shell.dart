@@ -6,6 +6,7 @@ import 'package:voice_social_app/features/discovery/domain/discovery_models.dart
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
+import 'package:voice_social_app/features/shell/live_read_only_pages.dart';
 import 'package:voice_social_app/features/shell/video_runtime_pages.dart';
 
 class MainShell extends StatefulWidget {
@@ -27,20 +28,35 @@ class _MainShellState extends State<MainShell> {
   RoomController? _roomController;
   String? _roomTitle;
   bool _roomRouteOpen = false;
+  bool _roomOpenInFlight = false;
+  DiscoveryRoom? _pendingRoom;
 
-  List<Widget> get _pages => <Widget>[
-    VideoRuntimeHomePage(
-      dependencies: widget.dependencies,
-      onOpenRoom: _openRoom,
-    ),
-    VideoRuntimeDiscoveryPage(dependencies: widget.dependencies),
-    VideoRuntimeMessagesPage(dependencies: widget.dependencies),
-    VideoRuntimeAccountPage(
-      dependencies: widget.dependencies,
-      onOpenRoom: _openRoom,
-      onSignOut: widget.onSignOut,
-    ),
-  ];
+  List<Widget> get _pages {
+    if (widget.dependencies.environment.isLive) {
+      return <Widget>[
+        LiveProductHomePage(dependencies: widget.dependencies),
+        const LiveDiscoveryHoldingPage(),
+        const LiveMessageHoldingPage(),
+        LiveReadOnlyAccountPage(
+          dependencies: widget.dependencies,
+          onSignOut: widget.onSignOut,
+        ),
+      ];
+    }
+    return <Widget>[
+      VideoRuntimeHomePage(
+        dependencies: widget.dependencies,
+        onOpenRoom: _openRoom,
+      ),
+      VideoRuntimeDiscoveryPage(dependencies: widget.dependencies),
+      VideoRuntimeMessagesPage(dependencies: widget.dependencies),
+      VideoRuntimeAccountPage(
+        dependencies: widget.dependencies,
+        onOpenRoom: _openRoom,
+        onSignOut: widget.onSignOut,
+      ),
+    ];
+  }
 
   @override
   void dispose() {
@@ -49,21 +65,11 @@ class _MainShellState extends State<MainShell> {
   }
 
   Future<void> _openRoom(DiscoveryRoom room) async {
-    final RoomController? existing = _roomController;
-    if (existing != null && existing.roomId != room.id) {
-      await existing.leaveRoom();
-      existing.dispose();
-      _roomController = null;
+    _pendingRoom = room;
+    if (_roomRouteOpen || !mounted) {
+      return;
     }
-    _roomTitle = room.title;
-    _roomController ??= widget.dependencies.createRoomController(
-      roomId: room.id,
-      title: room.title,
-    );
-    if (mounted) {
-      setState(() {});
-    }
-    await _restoreRoom();
+    await _drainRoomRequests();
   }
 
   Future<void> _restoreRoom() async {
@@ -72,33 +78,42 @@ class _MainShellState extends State<MainShell> {
       return;
     }
     _roomRouteOpen = true;
-    final VideoRoomExit? result = await Navigator.of(context)
-        .push<VideoRoomExit>(
-          PageRouteBuilder<VideoRoomExit>(
-            transitionDuration: const Duration(milliseconds: 260),
-            reverseTransitionDuration: const Duration(milliseconds: 220),
-            pageBuilder: (_, Animation<double> animation, __) => FadeTransition(
-              opacity: CurvedAnimation(
-                parent: animation,
-                curve: Curves.easeOutCubic,
-              ),
-              child: VideoRuntimeRoomPage(controller: controller),
+    final VideoRoomExit? result;
+    try {
+      result = await Navigator.of(context).push<VideoRoomExit>(
+        PageRouteBuilder<VideoRoomExit>(
+          transitionDuration: const Duration(milliseconds: 260),
+          reverseTransitionDuration: const Duration(milliseconds: 220),
+          pageBuilder: (_, Animation<double> animation, __) => FadeTransition(
+            opacity: CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
             ),
+            child: VideoRuntimeRoomPage(controller: controller),
           ),
-        );
-    _roomRouteOpen = false;
+        ),
+      );
+    } finally {
+      _roomRouteOpen = false;
+    }
     if (!mounted) {
       return;
     }
-    if (result == VideoRoomExit.ended ||
-        controller.status == RoomSessionStatus.left ||
-        controller.status == RoomSessionStatus.closed ||
-        controller.status == RoomSessionStatus.kicked) {
+    // A pending room may have been requested while this route was open. The
+    // route's controller owns the result, so never clear a newer controller.
+    if (_roomController == controller &&
+        (result == VideoRoomExit.ended ||
+            controller.status == RoomSessionStatus.left ||
+            controller.status == RoomSessionStatus.closed ||
+            controller.status == RoomSessionStatus.kicked)) {
       controller.dispose();
       _roomController = null;
       _roomTitle = null;
     }
     setState(() {});
+    if (!_roomOpenInFlight) {
+      await _drainRoomRequests();
+    }
   }
 
   Future<void> _closeMinimizedRoom() async {
@@ -106,15 +121,69 @@ class _MainShellState extends State<MainShell> {
     if (controller == null) {
       return;
     }
-    await controller.leaveRoom();
-    controller.dispose();
+    final bool left = await controller.leaveRoom();
     if (!mounted) {
       return;
     }
+    // Keep the pill and its controller when the server rejected the leave.
+    if (!left || _roomController != controller) {
+      return;
+    }
+    controller.dispose();
     setState(() {
       _roomController = null;
       _roomTitle = null;
     });
+  }
+
+  Future<void> _drainRoomRequests() async {
+    if (_roomOpenInFlight || !mounted) {
+      return;
+    }
+    _roomOpenInFlight = true;
+    try {
+      while (mounted && _pendingRoom != null) {
+        if (_roomRouteOpen) {
+          return;
+        }
+        DiscoveryRoom room = _pendingRoom!;
+        _pendingRoom = null;
+        final RoomController? existing = _roomController;
+        if (existing != null && existing.roomId != room.id) {
+          final bool left = await existing.leaveRoom();
+          if (!mounted || _roomController != existing) {
+            return;
+          }
+          if (!left) {
+            // A failed leave is recoverable from the currently displayed pill;
+            // do not replace it with a controller that cannot be entered.
+            return;
+          }
+          existing.dispose();
+          _roomController = null;
+          _roomTitle = null;
+          // A newer request may have arrived while the previous controller
+          // was leaving. Skip the stale intermediate room.
+          if (_pendingRoom != null) {
+            room = _pendingRoom!;
+            _pendingRoom = null;
+          }
+        }
+        if (_roomController == null) {
+          _roomController = widget.dependencies.createRoomController(
+            roomId: room.id,
+            title: room.title,
+          );
+        }
+        _roomTitle = room.title;
+        if (mounted) {
+          setState(() {});
+        }
+        await _restoreRoom();
+      }
+    } finally {
+      _roomOpenInFlight = false;
+    }
   }
 
   @override

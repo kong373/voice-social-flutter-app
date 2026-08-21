@@ -78,10 +78,7 @@ void main() {
                   onPressed: () => Navigator.of(context).push<void>(
                     MaterialPageRoute<void>(
                       builder: (BuildContext context) =>
-                          const RoomTopicPage(
-                        roomId: '9527',
-                        canEdit: true,
-                      ),
+                          const RoomTopicPage(roomId: '9527', canEdit: true),
                     ),
                   ),
                   child: const Text('打开公告'),

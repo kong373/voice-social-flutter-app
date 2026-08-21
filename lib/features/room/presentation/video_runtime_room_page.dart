@@ -48,7 +48,6 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   bool _showGiftCelebration = false;
   bool _ending = false;
   bool _allowPop = false;
-  bool _followingHost = false;
   String? _presentedError;
 
   RoomController get _controller => widget.controller;
@@ -316,44 +315,6 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
               ],
             ),
           ),
-          Semantics(
-            button: true,
-            selected: _followingHost,
-            label: _followingHost ? '已关注房主' : '关注房主',
-            child: Material(
-              color: _followingHost
-                  ? Colors.white.withValues(alpha: 0.13)
-                  : RoomColors.primary.withValues(alpha: 0.72),
-              borderRadius: BorderRadius.circular(999),
-              child: InkWell(
-                key: const Key('room-follow-host'),
-                onTap: () => setState(() => _followingHost = !_followingHost),
-                borderRadius: BorderRadius.circular(999),
-                child: SizedBox(
-                  height: 30,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 9),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        const Icon(Icons.favorite_rounded, size: 14),
-                        const SizedBox(width: 4),
-                        Text(
-                          _followingHost ? '已关注' : '关注',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
           SizedBox(
             width: 55,
             child: Stack(
@@ -446,29 +407,27 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
               const _RoomChannelTab(label: '全部'),
               const _RoomChannelTab(label: '房间', selected: true),
               const Spacer(),
-              Material(
-                color: RoomColors.secondary.withValues(alpha: 0.74),
-                borderRadius: BorderRadius.circular(999),
-                child: InkWell(
-                  onTap: _openTopic,
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: RoomColors.secondary.withValues(alpha: 0.74),
                   borderRadius: BorderRadius.circular(999),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Icon(Icons.music_note_rounded, size: 14),
-                        SizedBox(width: 4),
-                        Text(
-                          '我要点歌',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                          ),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(Icons.forum_outlined, size: 14),
+                      SizedBox(width: 4),
+                      Text(
+                        '房间动态',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),

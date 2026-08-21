@@ -18,7 +18,10 @@ void main() {
     fakeFlutter.writeAsStringSync('''#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "\$@" > "\${FAKE_FLUTTER_LOG}"
-printf '%s\\n' "\${HOST_TOOL_TOKEN-<unset>}" > "\${FAKE_FLUTTER_ENV_LOG}"
+printf 'HOST_TOOL_TOKEN=%s\\n' "\${HOST_TOOL_TOKEN-<unset>}" > "\${FAKE_FLUTTER_ENV_LOG}"
+printf 'access_token=%s\\n' "\${access_token-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG}"
+printf 'Access_Token=%s\\n' "\${Access_Token-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG}"
+printf 'MiXeD_TOkEn=%s\\n' "\${MiXeD_TOkEn-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG}"
 ''');
     Process.runSync('chmod', <String>['+x', fakeFlutter.path]);
   });
@@ -141,6 +144,47 @@ printf '%s\\n' "\${HOST_TOOL_TOKEN-<unset>}" > "\${FAKE_FLUTTER_ENV_LOG}"
   );
 
   test(
+    'build-apk passes only live public-client defines without a device flag',
+    () {
+      final ProcessResult result = _run(<String>[
+        'build-apk',
+        '--target',
+        'android-emulator',
+      ], environment: _baseEnvironment());
+
+      expect(result.exitCode, 0);
+      final List<String> invocationLines = fakeFlutterLog
+          .readAsStringSync()
+          .trim()
+          .split('\n');
+      expect(invocationLines, contains('build'));
+      expect(invocationLines, contains('apk'));
+      expect(invocationLines, contains('--debug'));
+      expect(invocationLines, contains('--no-pub'));
+      expect(invocationLines, contains('--dart-define=BACKEND_MODE=live'));
+      expect(invocationLines, contains('--dart-define=APP_ENV=development'));
+      expect(
+        invocationLines,
+        contains('--dart-define=API_BASE_URL=http://10.0.2.2:18080/'),
+      );
+      expect(
+        invocationLines,
+        contains('--dart-define=ALLOW_INSECURE_HTTP=true'),
+      );
+      expect(
+        invocationLines,
+        contains('--dart-define=OAUTH_CLIENT_ID=public-client'),
+      );
+      expect(invocationLines, contains('--dart-define=CLIENT_TYPE=Android'));
+      expect(invocationLines, contains('--dart-define=CLIENT_INNER_VERSION=6'));
+      expect(invocationLines, contains('--dart-define=API_TIMEOUT_SECONDS=15'));
+      expect(invocationLines, contains('--dart-define=LIVE_PROBE_PATH=/'));
+      expect(invocationLines, isNot(contains('-d')));
+      expect(invocationLines, isNot(contains('emulator-5554')));
+    },
+  );
+
+  test(
     'rejects OAuth and vendor secret environment variables without echoing values',
     () {
       const String secretValue = 'never-print-this-secret';
@@ -164,8 +208,57 @@ printf '%s\\n' "\${HOST_TOOL_TOKEN-<unset>}" > "\${FAKE_FLUTTER_ENV_LOG}"
     );
 
     expect(result.exitCode, 0);
-    expect(fakeFlutterEnvLog.readAsStringSync().trim(), '<unset>');
+    expect(
+      fakeFlutterEnvLog.readAsStringSync(),
+      contains('HOST_TOOL_TOKEN=<unset>'),
+    );
   });
+
+  test('strips lowercase and mixed-case token environment variables', () {
+    final ProcessResult result = _run(
+      <String>['run', '--target', 'android-emulator'],
+      environment: _baseEnvironment()
+        ..['access_token'] = 'lowercase-token'
+        ..['Access_Token'] = 'mixed-token'
+        ..['MiXeD_TOkEn'] = 'mixed-token-2',
+    );
+
+    final String output = '${result.stdout}\n${result.stderr}';
+    expect(result.exitCode, 0);
+    expect(output, isNot(contains('lowercase-token')));
+    expect(output, isNot(contains('mixed-token')));
+    expect(output, isNot(contains('mixed-token-2')));
+    final String childEnvironment = fakeFlutterEnvLog.readAsStringSync();
+    expect(childEnvironment, contains('access_token=<unset>'));
+    expect(childEnvironment, contains('Access_Token=<unset>'));
+    expect(childEnvironment, contains('MiXeD_TOkEn=<unset>'));
+  });
+
+  test(
+    'rejects lowercase and mixed-case confidential environment variables',
+    () {
+      for (final MapEntry<String, String> entry in <String, String>{
+        'oauth_client_secret': 'lowercase-client-secret',
+        'OAuth_Client_Secret': 'mixed-client-secret',
+        'sEcReT': 'mixed-secret',
+        'PaSsWoRd': 'mixed-password',
+        'private_key': 'lowercase-private-key',
+        'ACCESS_KEY': 'mixed-access-key',
+      }.entries) {
+        final ProcessResult result = _run(<String>[
+          'run',
+          '--target',
+          'android-emulator',
+        ], environment: _baseEnvironment()..[entry.key] = entry.value);
+
+        final String output = '${result.stdout}\n${result.stderr}';
+        expect(result.exitCode, isNot(0), reason: entry.key);
+        expect(output, contains('confidential credential'), reason: entry.key);
+        expect(output, isNot(contains(entry.value)), reason: entry.key);
+        expect(fakeFlutterLog.existsSync(), isFalse, reason: entry.key);
+      }
+    },
+  );
 
   test('rejects a dart-define file before Flutter can read it', () {
     final ProcessResult result = _run(<String>[
@@ -178,6 +271,48 @@ printf '%s\\n' "\${HOST_TOOL_TOKEN-<unset>}" > "\${FAKE_FLUTTER_ENV_LOG}"
     expect(result.exitCode, isNot(0));
     expect(result.stderr, contains('dart-define-from-file'));
     expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('rejects mixed-case define and define-file arguments', () {
+    for (final String argument in <String>[
+      '--DART-DEFINE=access_token=lowercase-token',
+      '--DART-DEFINE',
+      '--dArT-DeFiNe-FrOm-FiLe=local.env.json',
+    ]) {
+      final ProcessResult result = _run(<String>[
+        'run',
+        '--target',
+        'android-emulator',
+        argument,
+      ], environment: _baseEnvironment());
+
+      final String output = '${result.stdout}\n${result.stderr}';
+      expect(result.exitCode, isNot(0), reason: argument);
+      expect(output, isNot(contains('lowercase-token')), reason: argument);
+      expect(fakeFlutterLog.existsSync(), isFalse, reason: argument);
+    }
+  });
+
+  test('rejects lowercase and mixed-case confidential CLI arguments', () {
+    for (final MapEntry<String, String> entry in <String, String>{
+      '--oauth_client_secret=lowercase-client-secret':
+          'lowercase-client-secret',
+      '--PrIvAtE_KeY=mixed-private-key': 'mixed-private-key',
+      '--ACCESS_TOKEN=mixed-access-token': 'mixed-access-token',
+    }.entries) {
+      final ProcessResult result = _run(<String>[
+        'run',
+        '--target',
+        'android-emulator',
+        entry.key,
+      ], environment: _baseEnvironment());
+
+      final String output = '${result.stdout}\n${result.stderr}';
+      expect(result.exitCode, isNot(0), reason: entry.key);
+      expect(output, contains('confidential credential'), reason: entry.key);
+      expect(output, isNot(contains(entry.value)), reason: entry.key);
+      expect(fakeFlutterLog.existsSync(), isFalse, reason: entry.key);
+    }
   });
 }
 
@@ -209,6 +344,15 @@ Map<String, String> _baseEnvironment() {
     'APNS_PRIVATE_KEY',
     'IM_ADMIN_SECRET',
     'PAYMENT_PRIVATE_KEY',
+    'oauth_client_secret',
+    'OAuth_Client_Secret',
+    'sEcReT',
+    'PaSsWoRd',
+    'private_key',
+    'ACCESS_KEY',
+    'access_token',
+    'Access_Token',
+    'MiXeD_TOkEn',
   ]) {
     environment.remove(name);
   }

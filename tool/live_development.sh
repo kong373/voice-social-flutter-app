@@ -47,11 +47,15 @@ fail() {
 }
 
 is_hard_confidential_name() {
-  [[ "$1" =~ (^|_)(OAUTH_CLIENT_SECRET|CLIENT_SECRET|SECRET|PASSWORD|PRIVATE_KEY|ACCESS_KEY)(_|$) ]]
+  local normalized_name
+  normalized_name="$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  [[ "$normalized_name" =~ (^|_)(oauth_client_secret|client_secret|secret|password|private_key|access_key)(_|$) ]]
 }
 
 is_token_name() {
-  [[ "$1" =~ (^|_)TOKEN(_|$) ]]
+  local normalized_name
+  normalized_name="$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  [[ "$normalized_name" =~ (^|_)token(_|$) ]]
 }
 
 reject_confidential_environment() {
@@ -69,18 +73,21 @@ reject_confidential_environment() {
 
 reject_confidential_argument() {
   local argument="$1"
-  if [[ "$argument" == --dart-define-from-file* ]]; then
+  local normalized_argument
+  normalized_argument="$(printf '%s' "$argument" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  if [[ "$normalized_argument" == --dart-define-from-file* ]]; then
     fail "--dart-define-from-file is not accepted; it could carry confidential credentials"
   fi
-  if [[ "$argument" == *OAUTH_CLIENT_SECRET* ||
-    "$argument" == *CLIENT_SECRET* ||
-    "$argument" == *PRIVATE_KEY* ||
-    "$argument" == *ACCESS_KEY* ||
-    "$argument" == *PASSWORD* ||
-    "$argument" == *TOKEN* ]]; then
+  if [[ "$normalized_argument" == *client_secret* ||
+    "$normalized_argument" == *secret* ||
+    "$normalized_argument" == *private_key* ||
+    "$normalized_argument" == *access_key* ||
+    "$normalized_argument" == *password* ||
+    "$normalized_argument" == *token* ]]; then
     fail "confidential credential arguments are not accepted"
   fi
-  if [[ "$argument" == --dart-define=* ]]; then
+  if [[ "$normalized_argument" == --dart-define ||
+    "$normalized_argument" == --dart-define=* ]]; then
     fail "additional --dart-define arguments are not accepted; runtime defines are owned by this wrapper"
   fi
 }

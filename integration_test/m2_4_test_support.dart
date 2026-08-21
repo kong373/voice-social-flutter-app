@@ -337,8 +337,13 @@ Future<void> captureQaScreenshot(
     // process-local guard in the same lifecycle so every test starts clean.
     addTearDown(() => _qaScreenshotSurfaceActive = false);
   }
-  // Android needs a rendered frame after swapping FlutterSurfaceView for
-  // FlutterImageView, otherwise the captured frame can be blank or stale.
+  // Android needs multiple platform-rendered frames after route, async-data,
+  // and FlutterImageView transitions; a single fake-clock pump can otherwise
+  // capture the immediately preceding loading frame even after assertions pass.
+  for (int frame = 0; frame < 3; frame += 1) {
+    await tester.pump();
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+  }
   await tester.pump();
   await binding.takeScreenshot(safeName);
 }

@@ -1,28 +1,10 @@
 enum RoomPkInvitationDirection { outgoing, incoming }
 
-enum RoomPkInvitationStatus {
-  pending,
-  accepted,
-  rejected,
-  expired,
-  canceled,
-}
+enum RoomPkInvitationStatus { pending, accepted, rejected, expired, canceled }
 
-enum RoomPkBattleStage {
-  preparing,
-  fighting,
-  settling,
-  completed,
-  canceled,
-}
+enum RoomPkBattleStage { preparing, fighting, settling, completed, canceled }
 
-enum RoomPkResult {
-  win,
-  lose,
-  draw,
-  surrendered,
-  canceled,
-}
+enum RoomPkResult { win, lose, draw, surrendered, canceled }
 
 class RoomPkOpponent {
   const RoomPkOpponent({
@@ -157,7 +139,8 @@ class RoomPkBattle {
   RoomPkSide get opponentSide =>
       sender.roomId == currentRoomId ? receiver : sender;
 
-  bool get isActive => stage == RoomPkBattleStage.preparing ||
+  bool get isActive =>
+      stage == RoomPkBattleStage.preparing ||
       stage == RoomPkBattleStage.fighting ||
       stage == RoomPkBattleStage.settling;
 

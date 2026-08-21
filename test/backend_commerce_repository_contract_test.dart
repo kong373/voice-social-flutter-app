@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'contract_test_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -371,6 +372,7 @@ class _Harness {
         method: request.method,
         path: request.uri.path,
         query: request.uri.queryParameters,
+        authorization: captureContractAuthorization(request),
         body: decodedBody is Map
             ? Map<String, Object?>.from(decodedBody)
             : decodedBody,
@@ -399,12 +401,14 @@ class RequestRecord {
     required this.method,
     required this.path,
     required this.query,
+    required this.authorization,
     required this.body,
   });
 
   final String method;
   final String path;
   final Map<String, String> query;
+  final String authorization;
   final Object? body;
 }
 

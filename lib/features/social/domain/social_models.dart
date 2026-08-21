@@ -6,7 +6,13 @@ enum VisitorRecordType { viewedMe, viewedByMe }
 
 enum ReportTargetType { user, room }
 
-enum SupportTicketStatus { submitted, processing, resolved, rejected, unavailable }
+enum SupportTicketStatus {
+  submitted,
+  processing,
+  resolved,
+  rejected,
+  unavailable,
+}
 
 class SocialUser {
   const SocialUser({
@@ -242,10 +248,7 @@ abstract interface class SocialRepository {
     required int pageSize,
   });
 
-  Future<void> setFollowing({
-    required int userId,
-    required bool following,
-  });
+  Future<void> setFollowing({required int userId, required bool following});
 
   Future<List<FriendRequest>> fetchFriendRequests();
 
@@ -271,10 +274,7 @@ abstract interface class SocialRepository {
     required int pageSize,
   });
 
-  Future<void> setBlocked({
-    required int userId,
-    required bool blocked,
-  });
+  Future<void> setBlocked({required int userId, required bool blocked});
 
   Future<String> submitReport({
     required ReportTargetType targetType,

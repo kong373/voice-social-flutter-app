@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'contract_test_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -320,12 +321,14 @@ class _CapturedRequest {
     required this.method,
     required this.path,
     required this.query,
+    required this.authorization,
     required this.body,
   });
 
   final String method;
   final String path;
   final Map<String, String> query;
+  final String authorization;
   final Object? body;
 }
 
@@ -371,6 +374,7 @@ class _RunningServer {
         method: request.method,
         path: request.uri.path,
         query: request.uri.queryParameters,
+        authorization: captureContractAuthorization(request),
         body: body,
       );
       requests.add(captured);

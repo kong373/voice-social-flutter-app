@@ -31,14 +31,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
@@ -70,29 +70,37 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(grep -c "PageManifestEntry(" lib/app/page_manifest.dart)" -eq 69
+          flutter test --no-pub test/page_manifest_test.dart
           grep -F "label: '首页'" lib/features/shell/main_shell.dart
           grep -F "label: '发现'" lib/features/shell/main_shell.dart
           grep -F "label: '消息'" lib/features/shell/main_shell.dart
           grep -F "label: '我的'" lib/features/shell/main_shell.dart
           ! grep -RInE \
-            '(红包|KTV|点歌|演唱|合唱|盲盒|魔法球|团子|情书|随机遇见|附近的人)' \
+            '(会员|VIP|礼物背包|背包|红包|KTV|点歌|演唱|合唱|盲盒|魔法球|团子|情书|随机遇见|附近的人)' \
             lib/core/design_system/runtime_surfaces.dart \
             lib/features/shell/main_shell.dart \
             lib/features/shell/video_runtime_pages.dart \
             lib/features/room/presentation/video_runtime_room_page.dart
+          secret_roots=(lib android)
+          [[ -d ios ]] && secret_roots+=(ios)
           ! grep -RInE \
             '(M3_OAUTH_CLIENT_SECRET|OAUTH_CLIENT_SECRET|RTC_APP_CERTIFICATE|IM_ADMIN_SECRET|PAYMENT_PRIVATE_KEY|BEGIN (RSA |EC )?PRIVATE KEY)' \
-            lib android ios
+            "${secret_roots[@]}"
+      - name: Require quality evidence files
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -s build/app/outputs/flutter-apk/app-debug.apk
+          test -s pubspec.lock
       - name: Upload quality evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: m33-final-quality-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             build/app/outputs/flutter-apk/app-debug.apk
             pubspec.lock
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
 
   avd:
@@ -125,14 +133,14 @@ jobs:
             density: 400
             dpr: '2.5'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
@@ -144,7 +152,7 @@ jobs:
           test -c /dev/kvm
           sudo chmod 0666 /dev/kvm
       - name: Run exact-viewport interaction acceptance
-        uses: ReactiveCircus/android-emulator-runner@v2
+        uses: ReactiveCircus/android-emulator-runner@324029e2f414c084d8b15ba075288885e74aef9c # v2.34.0
         env:
           EVIDENCE_ROOT: ${{ github.workspace }}/artifacts/m3.3/${{ matrix.id }}
         with:
@@ -183,7 +191,8 @@ jobs:
             adb logcat -v threadtime >"$EVIDENCE_ROOT/logcat.txt" &
             logcat_pid=$!
             trap 'kill "$logcat_pid" 2>/dev/null || true' EXIT
-            flutter drive \
+            QA_SCREENSHOT_DIR="$EVIDENCE_ROOT/screenshots" \
+              flutter drive \
               --driver=test_driver/integration_test.dart \
               --target=integration_test/m3_3_video_runtime_ui_test.dart \
               -d emulator-5554 \
@@ -194,9 +203,42 @@ jobs:
               --dart-define=QA_EXPECTED_VIEWPORT_HEIGHT=${{ matrix.height }} \
               --dart-define=QA_EXPECTED_DPR=${{ matrix.dpr }} \
               2>&1 | tee "$EVIDENCE_ROOT/flutter-drive.log"
-            find . -type f -name 'm33-*.png' -print -exec cp {} "$EVIDENCE_ROOT/screenshots/" \;
             screenshots="$(find "$EVIDENCE_ROOT/screenshots" -type f -name '*.png' | wc -l | tr -d ' ')"
-            hard_errors="$(grep -Eci 'FATAL EXCEPTION|AndroidRuntime|ANR in|MissingPluginException|RenderFlex overflow|Unhandled Exception' "$EVIDENCE_ROOT/logcat.txt" || true)"
+            hard_errors="$(
+              cat "$EVIDENCE_ROOT/logcat.txt" "$EVIDENCE_ROOT/flutter-drive.log" |
+                grep -Eci 'FATAL EXCEPTION|AndroidRuntime|ANR in|MissingPluginException|RenderFlex overflow|Unhandled Exception|EXCEPTION CAUGHT BY|Failed assertion|_dependents.isEmpty' || true
+            )"
+            mapfile -t provider_markers < <(
+              grep -Eo 'M33_PROVIDER_CALLS_MADE=(true|false)' \
+                "$EVIDENCE_ROOT/flutter-drive.log" || true
+            )
+            test "${#provider_markers[@]}" -eq 1
+            provider_calls_made="${provider_markers[0]#*=}"
+            test "$provider_calls_made" = false
+            mapfile -t provider_graph_markers < <(
+              grep -Eo 'M33_PROVIDER_GRAPH_PROVEN=(true|false)' \
+                "$EVIDENCE_ROOT/flutter-drive.log" || true
+            )
+            test "${#provider_graph_markers[@]}" -eq 1
+            provider_dependency_graph="${provider_graph_markers[0]#*=}"
+            test "$provider_dependency_graph" = true
+            mapfile -t provider_scope_markers < <(
+              grep -Eo 'M33_PROVIDER_EVIDENCE_SCOPE=[A-Za-z0-9_-]+' \
+                "$EVIDENCE_ROOT/flutter-drive.log" || true
+            )
+            test "${#provider_scope_markers[@]}" -eq 1
+            provider_evidence_scope="${provider_scope_markers[0]#*=}"
+            test "$provider_evidence_scope" = \
+              m33_video_runtime_mock_graph_and_http_outbound_guard
+            mapfile -t provider_guard_markers < <(
+              grep -Eo 'M33_PROVIDER_GUARD_CONNECTION_ATTEMPTS=[0-9]+' \
+                "$EVIDENCE_ROOT/flutter-drive.log" || true
+            )
+            test "${#provider_guard_markers[@]}" -eq 1
+            provider_guard_connection_attempts="${provider_guard_markers[0]#*=}"
+            test "$provider_guard_connection_attempts" -eq 0
+            test "$screenshots" -ge 8
+            test "$hard_errors" -eq 0
             {
               echo "conclusion=PASS"
               echo "run_id=${{ github.run_id }}"
@@ -208,17 +250,18 @@ jobs:
               echo "dpr=${{ matrix.dpr }}"
               echo "screenshots=$screenshots"
               echo "hard_errors=$hard_errors"
-              echo "provider_calls_made=false"
+              echo "provider_calls_made=$provider_calls_made"
+              echo "provider_dependency_graph=$provider_dependency_graph"
+              echo "provider_evidence_scope=$provider_evidence_scope"
+              echo "provider_guard_connection_attempts=$provider_guard_connection_attempts"
             } | tee "$EVIDENCE_ROOT/summary.txt"
-            test "$screenshots" -ge 8
-            test "$hard_errors" -eq 0
       - name: Upload AVD evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: m33-final-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/m3.3/${{ matrix.id }}/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
 
   verdict:
@@ -228,11 +271,40 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download quality evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: m33-final-quality-*
+          path: quality
+          merge-multiple: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: m33-final-AVD-*
           path: evidence
           merge-multiple: false
+      - name: Verify quality APK and lockfile
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mapfile -t quality_artifacts < <(
+            find quality -mindepth 1 -maxdepth 1 -type d \
+              -name 'm33-final-quality-*' | sort
+          )
+          test "${#quality_artifacts[@]}" -eq 1
+          quality_root="${quality_artifacts[0]}"
+          mapfile -t quality_apks < <(
+            find "$quality_root" -type f \
+              -path '*/build/app/outputs/flutter-apk/app-debug.apk' | sort
+          )
+          mapfile -t quality_lockfiles < <(
+            find "$quality_root" -type f -name pubspec.lock | sort
+          )
+          test "${#quality_apks[@]}" -eq 1
+          test "${#quality_lockfiles[@]}" -eq 1
+          test -s "${quality_apks[0]}"
+          test -s "${quality_lockfiles[0]}"
+          unzip -t "${quality_apks[0]}" >/dev/null
+          grep -q '^packages:' "${quality_lockfiles[0]}"
       - name: Verify both exact-viewport runs
         shell: bash
         env:
@@ -244,13 +316,42 @@ jobs:
           test "$AVD" = success
           mapfile -t summaries < <(find evidence -type f -name summary.txt | sort)
           test "${#summaries[@]}" -eq 2
+          expected_sha='${{ github.sha }}'
+          for summary in "${summaries[@]}"; do
+            test "$(grep -c '^git_sha=' "$summary")" -eq 1
+            actual_sha="$(sed -n 's/^git_sha=//p' "$summary")"
+            test -n "$actual_sha"
+            test "$actual_sha" = "$expected_sha"
+          done
           grep -R '^avd=AVD-A$' evidence
           grep -R '^avd=AVD-B$' evidence
           grep -R '^viewport=390x844$' evidence
           grep -R '^viewport=360x800$' evidence
           test "$(grep -R '^conclusion=PASS$' evidence | wc -l | tr -d ' ')" -eq 2
           test "$(grep -R '^hard_errors=0$' evidence | wc -l | tr -d ' ')" -eq 2
-          test "$(grep -R '^provider_calls_made=false$' evidence | wc -l | tr -d ' ')" -eq 2
+          for summary in "${summaries[@]}"; do
+            mapfile -t provider_values < <(
+              sed -n 's/^provider_calls_made=//p' "$summary"
+            )
+            test "${#provider_values[@]}" -eq 1
+            test "${provider_values[0]}" = false
+            mapfile -t graph_values < <(
+              sed -n 's/^provider_dependency_graph=//p' "$summary"
+            )
+            test "${#graph_values[@]}" -eq 1
+            test "${graph_values[0]}" = true
+            mapfile -t scope_values < <(
+              sed -n 's/^provider_evidence_scope=//p' "$summary"
+            )
+            test "${#scope_values[@]}" -eq 1
+            test "${scope_values[0]}" = \
+              m33_video_runtime_mock_graph_and_http_outbound_guard
+            mapfile -t guard_attempt_values < <(
+              sed -n 's/^provider_guard_connection_attempts=//p' "$summary"
+            )
+            test "${#guard_attempt_values[@]}" -eq 1
+            test "${guard_attempt_values[0]}" -eq 0
+          done
           {
             echo "tested_git_sha=${{ github.sha }}"
             echo "quality=$QUALITY"
@@ -259,7 +360,7 @@ jobs:
           } | tee aggregate-verdict.txt
       - name: Upload aggregate verdict
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: m33-final-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
           path: aggregate-verdict.txt

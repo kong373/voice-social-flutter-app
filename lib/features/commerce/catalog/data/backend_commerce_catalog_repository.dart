@@ -82,6 +82,12 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         message: 'Apple IAP 商品和收据校验尚未接入，不能创建虚假 iOS 充值订单',
       );
     }
+    if (!supportsPaymentChannelInvocation) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '支付渠道 SDK 尚未接入，当前版本不会创建充值订单',
+      );
+    }
     final String route = channel == PaymentChannelType.wechat
         ? _routes.createWechatRechargeOrder
         : _routes.createAlipayRechargeOrder;

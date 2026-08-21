@@ -52,6 +52,11 @@ CI pins Flutter to `3.44.7`.
 flutter run
 ```
 
+Golden/widget tests now load their checked-in CJK baseline fonts from
+`test/fonts/`. If those files ever need to be regenerated, use
+`python3 tool/qa/build_m33_golden_fonts.py` to rebuild the deterministic
+subset from the pinned Noto Sans SC upstream commit before re-running tests.
+
 The default mock login accepts any valid mainland China mobile number with a six-digit code. `13900000000` exercises the registration-required branch.
 
 ### Live readiness mode
@@ -86,7 +91,7 @@ export OAUTH_CLIENT_ID=voice-social-mobile-public
 ./tool/live_development.sh build-apk --target android-emulator
 ```
 
-Use `http://127.0.0.1:18080/` with `--target host` only for `run` when Flutter itself runs on the Mac; `build-apk` accepts only `--target android-emulator`. `127.0.0.1` is not the Mac host from inside an Android Emulator. The launcher rejects OAuth client secrets, vendor secrets, and `--dart-define-from-file`; see [live development](docs/live-development.md).
+Use `http://127.0.0.1:18080/` with `--target host` only for `run` when Flutter itself runs on the Mac; `build-apk` accepts only `--target android-emulator`. `127.0.0.1` is not the Mac host from inside an Android Emulator. The launcher rejects OAuth client secrets, vendor secrets, and `--dart-define-from-file` case-insensitively; ordinary token environment variables are stripped before Flutter runs. See [live development](docs/live-development.md).
 
 ## Quality checks
 

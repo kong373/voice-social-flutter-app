@@ -9,9 +9,9 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
     required ApiClient apiClient,
     required String clientType,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
-  })  : _apiClient = apiClient,
-        _routes = routes,
-        _platformCode = clientType.toLowerCase().contains('ios') ? 2 : 1;
+  }) : _apiClient = apiClient,
+       _routes = routes,
+       _platformCode = clientType.toLowerCase().contains('ios') ? 2 : 1;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
@@ -85,10 +85,7 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
       <Future<ApiResponse>>[
         _apiClient.post(
           _routes.favoriteRooms,
-          body: <String, Object?>{
-            'pageNum': page,
-            'pageSize': pageSize,
-          },
+          body: <String, Object?>{'pageNum': page, 'pageSize': pageSize},
         ),
         _apiClient.get(_routes.ownedRooms),
       ],
@@ -130,7 +127,8 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
     Map<String, Object?> map, {
     required bool favorite,
   }) {
-    final String id = _nonEmptyString(map['roomIdStr']) ??
+    final String id =
+        _nonEmptyString(map['roomIdStr']) ??
         _nonEmptyString(map['roomId']) ??
         _nonEmptyString(map['id']) ??
         '';
@@ -142,16 +140,20 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
     }
     return DiscoveryRoom(
       id: id,
-      code: _nonEmptyString(map['roomCode']) ??
+      code:
+          _nonEmptyString(map['roomCode']) ??
           _nonEmptyString(map['code']) ??
           id,
-      title: _nonEmptyString(map['roomName']) ??
+      title:
+          _nonEmptyString(map['roomName']) ??
           _nonEmptyString(map['name']) ??
           '语音房',
-      topic: _nonEmptyString(map['description']) ??
+      topic:
+          _nonEmptyString(map['description']) ??
           _nonEmptyString(map['labelName']) ??
           '正在发生的实时语音聊天',
-      onlineCount: _asInt(map['liveCount']) ??
+      onlineCount:
+          _asInt(map['liveCount']) ??
           _asInt(map['userTotal']) ??
           _asInt(map['onlineNum']) ??
           0,
@@ -160,11 +162,11 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
       isFavorite: favorite || _asBool(map['collectionFlag']),
       ownerUserId: _asInt(map['userId']),
       ownerName: _nonEmptyString(map['nickName']),
-      coverUrl: _nonEmptyString(map['coverImage']) ??
+      coverUrl:
+          _nonEmptyString(map['coverImage']) ??
           _nonEmptyString(map['coverImgUrl']),
       relationReason: _nonEmptyString(map['labelName']),
-      isLocked: _asInt(map['isLockRoom']) == 1 ||
-          _asInt(map['isLock']) == 1,
+      isLocked: _asInt(map['isLockRoom']) == 1 || _asInt(map['isLock']) == 1,
     );
   }
 

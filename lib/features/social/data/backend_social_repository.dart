@@ -8,9 +8,9 @@ class BackendSocialRepository implements SocialRepository {
     required ApiClient apiClient,
     required int Function() currentUserIdProvider,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
-  })  : _apiClient = apiClient,
-        _currentUserIdProvider = currentUserIdProvider,
-        _routes = routes;
+  }) : _apiClient = apiClient,
+       _currentUserIdProvider = currentUserIdProvider,
+       _routes = routes;
 
   final ApiClient _apiClient;
   final int Function() _currentUserIdProvider;
@@ -209,9 +209,7 @@ class BackendSocialRepository implements SocialRepository {
   }) async {
     await _apiClient.get(
       _routes.onlyFollowedCanFollow,
-      query: <String, String>{
-        'type': onlyFollowedCanFollow ? '1' : '0',
-      },
+      query: <String, String>{'type': onlyFollowedCanFollow ? '1' : '0'},
     );
     _privacy = PrivacySettings(
       onlyFollowedCanFollow: onlyFollowedCanFollow,
@@ -253,16 +251,10 @@ class BackendSocialRepository implements SocialRepository {
   }
 
   @override
-  Future<void> setBlocked({
-    required int userId,
-    required bool blocked,
-  }) async {
+  Future<void> setBlocked({required int userId, required bool blocked}) async {
     await _apiClient.get(
       _routes.setBlocked,
-      query: <String, String>{
-        'userId': '$userId',
-        'type': blocked ? '1' : '0',
-      },
+      query: <String, String>{'userId': '$userId', 'type': blocked ? '1' : '0'},
     );
   }
 
@@ -302,9 +294,7 @@ class BackendSocialRepository implements SocialRepository {
 
   @override
   Future<SupportChannel> fetchCustomerService() async {
-    final ApiResponse response = await _apiClient.get(
-      _routes.customerService,
-    );
+    final ApiResponse response = await _apiClient.get(_routes.customerService);
     final Map<String, Object?> data = _asMap(response.data);
     return SupportChannel(
       id: _string(data['accid'], fallback: 'customer-service'),
@@ -373,9 +363,7 @@ class BackendSocialRepository implements SocialRepository {
         fallback: isSelf ? '当前用户' : '用户 $userId',
       ),
       signature: _string(homepage['signature']),
-      avatarUrl: _string(
-        homepage['headImgUrl'] ?? personal['headImgUrl'],
-      ),
+      avatarUrl: _string(homepage['headImgUrl'] ?? personal['headImgUrl']),
       isFollowing: isSelf ? false : isFollowing,
       isFollower: isSelf ? false : isFriend,
       isFriend: isSelf ? false : isFriend,
@@ -393,10 +381,8 @@ class BackendSocialRepository implements SocialRepository {
       birthday: _string(homepage['birthday']),
       city: _string(homepage['piAddress'] ?? homepage['address']),
       coverUrl: _string(homepage['coverImgUrl']),
-      followingCount: _asInt(
-            homepage['attentionNum'] ?? personal['attentionNum'],
-          ) ??
-          0,
+      followingCount:
+          _asInt(homepage['attentionNum'] ?? personal['attentionNum']) ?? 0,
       followerCount: _asInt(homepage['fansNum'] ?? personal['fansNum']) ?? 0,
       friendCount: _asInt(homepage['playmateNum']) ?? 0,
       postCount: _asInt(homepage['dynamicNum'] ?? personal['dynamicNum']) ?? 0,
@@ -408,8 +394,8 @@ class BackendSocialRepository implements SocialRepository {
     Map<String, Object?> raw,
     SocialRelationList type,
   ) {
-    final bool isFriend = type == SocialRelationList.friends ||
-        _asInt(raw['mark']) == 0;
+    final bool isFriend =
+        type == SocialRelationList.friends || _asInt(raw['mark']) == 0;
     return SocialUser(
       userId: _asInt(raw['userId']) ?? 0,
       name: _string(raw['nickName'], fallback: '用户'),
@@ -435,8 +421,8 @@ class BackendSocialRepository implements SocialRepository {
     final int current = _asInt(data['current']) ?? page;
     final int size = _asInt(data['size']) ?? pageSize;
     final int total = _asInt(data['total']) ?? items.length;
-    final int pages = _asInt(data['pages']) ??
-        (size <= 0 ? 1 : (total / size).ceil());
+    final int pages =
+        _asInt(data['pages']) ?? (size <= 0 ? 1 : (total / size).ceil());
     return SocialPage<SocialUser>(
       items: items,
       page: current,
