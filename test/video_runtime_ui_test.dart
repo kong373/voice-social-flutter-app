@@ -289,6 +289,13 @@ void main() {
         find.byKey(const Key('video-room-mood-stage-standard')),
         findsNothing,
       );
+      expect(
+        find.ancestor(
+          of: find.byKey(const Key('video-room-mood-stage-compact')),
+          matching: find.byType(Scrollable),
+        ),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
 
       final Finder composer = find.byKey(const Key('video-room-composer'));

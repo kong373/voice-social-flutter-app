@@ -169,7 +169,7 @@ void main() {
       await tester.tap(find.byTooltip('离开房间').hitTestable());
       await _waitFor(
         tester,
-        () => find.text('收起房间').evaluate().isNotEmpty,
+        () => find.text('收起房间').hitTestable().evaluate().isNotEmpty,
         description: 'minimize room action',
       );
       await tester.tap(find.text('收起房间').hitTestable());

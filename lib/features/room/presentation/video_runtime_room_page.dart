@@ -441,19 +441,30 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                 ],
               ),
               const SizedBox(height: 5),
-              _RoomMoodStage(
-                topic: _controller.topic,
-                compact: compactMoodStage,
-              ),
-              const SizedBox(height: 4),
+              if (!compactMoodStage) ...<Widget>[
+                _RoomMoodStage(topic: _controller.topic),
+                const SizedBox(height: 4),
+              ],
               Expanded(
                 child: ListView.separated(
                   controller: _messageScroll,
-                  padding: const EdgeInsets.fromLTRB(0, 7, 0, 10),
-                  itemCount: feedMessages.length,
+                  padding: EdgeInsets.fromLTRB(
+                    0,
+                    compactMoodStage ? 0 : 7,
+                    0,
+                    10,
+                  ),
+                  itemCount: feedMessages.length + (compactMoodStage ? 1 : 0),
                   separatorBuilder: (_, __) => const SizedBox(height: 5),
                   itemBuilder: (BuildContext context, int index) {
-                    final RoomMessage message = feedMessages[index];
+                    if (compactMoodStage && index == 0) {
+                      return _RoomMoodStage(
+                        topic: _controller.topic,
+                        compact: true,
+                      );
+                    }
+                    final int messageIndex = index - (compactMoodStage ? 1 : 0);
+                    final RoomMessage message = feedMessages[messageIndex];
                     return Align(
                       alignment: Alignment.centerLeft,
                       child: Container(

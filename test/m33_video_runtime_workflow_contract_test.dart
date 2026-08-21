@@ -300,6 +300,10 @@ void main() {
       'tester.binding.handlePopRoute()'.allMatches(integrationTest).length,
       2,
     );
+    expect(
+      integrationTest,
+      contains("find.text('收起房间').hitTestable().evaluate().isNotEmpty"),
+    );
   });
 
   test('AVD hard-error and forbidden-entry scans fail closed', () {
