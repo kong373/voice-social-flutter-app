@@ -114,6 +114,23 @@ void main() {
     expect(workflow, isNot(contains('grep -c "PageManifestEntry("')));
   });
 
+  test('quality gate verifies root navigation through executable UI tests', () {
+    expect(
+      workflow,
+      contains(
+        'flutter test --no-pub test/page_manifest_test.dart '
+        'test/live_shell_gate_test.dart',
+      ),
+    );
+    for (final String label in <String>['首页', '发现', '消息', '我的']) {
+      expect(
+        workflow,
+        isNot(contains('grep -F "label: \'$label\'"')),
+        reason: '$label must be verified by widget behavior, not source layout',
+      );
+    }
+  });
+
   test('workflow pins every scoped action to a full commit sha', () {
     expect(
       workflow,

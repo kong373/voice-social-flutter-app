@@ -95,11 +95,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          flutter test --no-pub test/page_manifest_test.dart
-          grep -F "label: '首页'" ci_app/lib/features/shell/main_shell.dart
-          grep -F "label: '发现'" ci_app/lib/features/shell/main_shell.dart
-          grep -F "label: '消息'" ci_app/lib/features/shell/main_shell.dart
-          grep -F "label: '我的'" ci_app/lib/features/shell/main_shell.dart
+          flutter test --no-pub test/page_manifest_test.dart test/live_shell_gate_test.dart
           ! grep -RInE \
             '(会员|VIP|礼物背包|背包|红包|KTV|点歌|演唱|合唱|盲盒|魔法球|团子|情书|随机遇见|附近的人)' \
             ci_app/lib/core/design_system/runtime_surfaces.dart \
