@@ -238,6 +238,25 @@ void main() {
             .isNotEmpty,
         description: 'account overview after developer diagnostics',
       );
+      await tester.fling(
+        find.byKey(const Key('live-account-overview')),
+        const Offset(0, 1200),
+        2000,
+      );
+      await tester.pumpAndSettle();
+      await _waitFor(
+        tester,
+        () =>
+            find
+                .byKey(const Key('current-user-contract-ready'))
+                .evaluate()
+                .isNotEmpty &&
+            find
+                .byKey(const Key('wallet-contract-ready'))
+                .evaluate()
+                .isNotEmpty,
+        description: 'account overview reset after developer diagnostics',
+      );
 
       await tester.tap(find.text('消息').hitTestable());
       await _waitFor(
