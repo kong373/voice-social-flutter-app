@@ -227,6 +227,7 @@ jobs:
             -camera-back none
             -camera-front none
           script: |
+            bash <<'BASH'
             set -Eeuo pipefail
             mkdir -p "$EVIDENCE_ROOT/screenshots" "$EVIDENCE_ROOT/videos"
             adb shell wm size ${{ matrix.physical }}
@@ -342,6 +343,7 @@ jobs:
               echo "provider_evidence_scope=$provider_evidence_scope"
               echo "provider_guard_connection_attempts=$provider_guard_connection_attempts"
             } | tee "$EVIDENCE_ROOT/summary.txt"
+            BASH
       - name: Upload AVD evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

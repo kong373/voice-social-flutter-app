@@ -185,6 +185,33 @@ void main() {
     expect(workflow, contains(r'''= "$expected_sha"'''));
   });
 
+  test('emulator runner executes the acceptance script with Bash', () {
+    expect(
+      workflow,
+      contains(
+        'script: |\n'
+        '            bash <<\'BASH\'\n'
+        '            set -Eeuo pipefail',
+      ),
+    );
+    expect(
+      workflow,
+      contains(
+        '            BASH\n'
+        '      - name: Upload AVD evidence',
+      ),
+    );
+    expect(
+      workflow,
+      isNot(
+        contains(
+          'script: |\n'
+          '            set -Eeuo pipefail',
+        ),
+      ),
+    );
+  });
+
   test('screenshots are emitted directly into the evidence root', () {
     expect(
       workflow,
