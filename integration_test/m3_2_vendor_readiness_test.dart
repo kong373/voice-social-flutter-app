@@ -123,9 +123,18 @@ void main() {
         'm32-${qaAvdId.toLowerCase()}-04-search-contract',
       );
       await announceQaEvidence(tester, 'M32_SEARCH_READY');
-      await tester.pageBack();
-      await tester.pump(const Duration(milliseconds: 250));
-      await tester.pageBack();
+      Navigator.of(tester.element(find.text('“深夜”的搜索结果'))).pop();
+      await tester.pumpAndSettle();
+      await _waitFor(
+        tester,
+        () =>
+            find.byKey(const Key('global-search-field')).evaluate().isNotEmpty,
+        description: 'global search after results',
+      );
+      Navigator.of(
+        tester.element(find.byKey(const Key('global-search-field'))),
+      ).pop();
+      await tester.pumpAndSettle();
       await _waitFor(
         tester,
         () =>
