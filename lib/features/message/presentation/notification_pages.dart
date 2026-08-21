@@ -293,6 +293,7 @@ class _NotificationDetailPageState extends State<NotificationDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final DateTime now = AppDependencyScope.of(context).currentTime();
     final AppNotification? notification = _notification;
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('通知详情')),
@@ -341,7 +342,7 @@ class _NotificationDetailPageState extends State<NotificationDetailPage> {
                         ),
                         const SizedBox(height: 5),
                         Text(
-                          _formatMessageTime(notification.createdAt),
+                          _formatMessageTime(notification.createdAt, now),
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                         const SizedBox(height: 16),

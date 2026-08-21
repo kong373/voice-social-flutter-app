@@ -300,6 +300,7 @@ class _ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final DateTime now = AppDependencyScope.of(context).currentTime();
     return Align(
       alignment: message.isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -340,7 +341,7 @@ class _ChatBubble extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Text(
-                  _formatMessageTime(message.createdAt),
+                  _formatMessageTime(message.createdAt, now),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: message.isMine
                         ? Colors.white.withValues(alpha: 0.78)

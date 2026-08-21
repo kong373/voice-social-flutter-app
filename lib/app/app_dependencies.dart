@@ -57,6 +57,7 @@ class AppDependencies {
     required this.environment,
     required this.sessionManager,
     required this.authController,
+    required this.currentTime,
     required this.liveReadOnlyRepository,
     required this.accountComplianceRepository,
     required this.discoveryRepository,
@@ -227,6 +228,7 @@ class AppDependencies {
       environment: environment,
       sessionManager: sessionManager,
       authController: authController,
+      currentTime: () => mockNow ?? DateTime.now(),
       liveReadOnlyRepository: liveReadOnlyRepository,
       accountComplianceRepository: accountComplianceRepository,
       discoveryRepository: discoveryRepository,
@@ -249,6 +251,7 @@ class AppDependencies {
   final AppEnvironment environment;
   final AuthSessionManager sessionManager;
   final AuthController authController;
+  final DateTime Function() currentTime;
   final LiveReadOnlyRepository liveReadOnlyRepository;
   final AccountComplianceRepository accountComplianceRepository;
   final DiscoveryRepository discoveryRepository;

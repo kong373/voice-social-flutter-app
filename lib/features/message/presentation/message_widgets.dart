@@ -333,6 +333,7 @@ class _MessageNotificationRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final DateTime now = AppDependencyScope.of(context).currentTime();
     final bool system = notification.category == NotificationCategory.system;
     final Color accent = system
         ? const Color(0xFF6D9BFF)
@@ -407,7 +408,7 @@ class _MessageNotificationRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: <Widget>[
                 Text(
-                  _formatMessageTime(notification.createdAt),
+                  _formatMessageTime(notification.createdAt, now),
                   style: const TextStyle(
                     color: SocialColors.textTertiary,
                     fontSize: 9,
@@ -439,6 +440,7 @@ class _MessageConversationRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final DateTime now = AppDependencyScope.of(context).currentTime();
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -496,7 +498,7 @@ class _MessageConversationRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: <Widget>[
                 Text(
-                  _formatMessageTime(conversation.updatedAt),
+                  _formatMessageTime(conversation.updatedAt, now),
                   style: const TextStyle(
                     color: SocialColors.textTertiary,
                     fontSize: 9,
@@ -568,8 +570,7 @@ class _UnreadBadge extends StatelessWidget {
 String _messageFor(Object error) =>
     error is ApiException ? error.message : '操作失败，请稍后重试';
 
-String _formatMessageTime(DateTime value) {
-  final DateTime now = DateTime.now();
+String _formatMessageTime(DateTime value, DateTime now) {
   if (now.difference(value).inDays == 0) {
     return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
   }

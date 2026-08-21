@@ -76,6 +76,7 @@ class _MessagePermissionRecoveryPageState
 
   @override
   Widget build(BuildContext context) {
+    final DateTime now = AppDependencyScope.of(context).currentTime();
     final MessageRecoverySnapshot? snapshot = _snapshot;
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('通知权限与消息恢复')),
@@ -123,6 +124,7 @@ class _MessagePermissionRecoveryPageState
                               ? '尚未完成同步'
                               : _formatMessageTime(
                                   snapshot.lastNotificationSyncAt!,
+                                  now,
                                 ),
                         ),
                       ],
