@@ -101,10 +101,7 @@ void main() {
         () => find.text('最近搜索').evaluate().isNotEmpty,
         description: 'global search page',
       );
-      final Finder searchField = find.widgetWithText(
-        TextField,
-        '搜索房间、用户或房间号',
-      );
+      final Finder searchField = find.widgetWithText(TextField, '搜索房间、用户或房间号');
       await tester.enterText(searchField, '深夜');
       await dismissQaImeAndWait(tester);
       final Finder searchAction = find.widgetWithText(TextButton, '搜索');
