@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+# One-shot trigger: normalize the latest dual-AVD acceptance test.
 mapfile -d '' dart_files < <(
   find lib test integration_test tool -type f -name '*.dart' -print0 | sort -z
 )
