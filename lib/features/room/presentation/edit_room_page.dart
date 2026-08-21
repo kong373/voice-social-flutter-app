@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_configuration_form.dart';
+import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
 class EditRoomPage extends StatefulWidget {
   const EditRoomPage({required this.roomId, super.key});
@@ -89,9 +91,9 @@ class _EditRoomPageState extends State<EditRoomPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('编辑与关闭房间'),
+    return RoomPageScaffold(
+      appBar: roomOxygenAppBar(
+        title: '编辑与关闭房间',
         actions: <Widget>[
           IconButton(
             tooltip: '刷新权威状态',
@@ -134,48 +136,27 @@ class _EditRoomPageState extends State<EditRoomPage> {
         children: <Widget>[
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               children: <Widget>[
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceHigh,
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      const Icon(Icons.tag_rounded, color: AppColors.accent),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          '房间号 ${room.roomCode ?? room.roomId ?? widget.roomId} · ${room.isOpen ? '当前开放' : '当前关闭'}',
-                        ),
-                      ),
-                    ],
-                  ),
+                RoomOxygenContextBar(
+                  title: room.title,
+                  subtitle:
+                      '房间号 ${room.roomCode ?? room.roomId ?? widget.roomId} · 设置即时生效',
+                  seed: room.roomId ?? room.roomCode ?? widget.roomId,
+                  status: room.isOpen ? '开放中' : '已关闭',
+                  statusColor: room.isOpen
+                      ? RoomColors.success
+                      : RoomColors.warning,
                 ),
                 if (_error != null) ...<Widget>[
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppColors.warning.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        const Icon(
-                          Icons.error_outline_rounded,
-                          color: AppColors.warning,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(child: Text(_error!)),
-                      ],
-                    ),
+                  const SizedBox(height: 12),
+                  RoomOxygenNotice(
+                    icon: Icons.error_outline_rounded,
+                    message: _error!,
+                    accent: RoomColors.warning,
                   ),
                 ],
-                const SizedBox(height: 22),
+                const SizedBox(height: 18),
                 RoomConfigurationForm(
                   formKey: _formKey,
                   titleController: _titleController,
@@ -197,36 +178,45 @@ class _EditRoomPageState extends State<EditRoomPage> {
                     setState(() => _autoLockMic = value);
                   },
                 ),
-                const SizedBox(height: 28),
-                const Divider(),
                 const SizedBox(height: 18),
-                Text(
-                  '关闭房间',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: const Color(0xFFFF7A8D),
+                RoomOxygenSection(
+                  title: '关闭房间',
+                  subtitle: '关闭会结束当前会话，但不会删除账号或房间配置。',
+                  icon: Icons.power_settings_new_rounded,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const RoomOxygenNotice(
+                        icon: Icons.warning_amber_rounded,
+                        message: '关闭后用户无法继续进入，当前成员会结束本次房间会话。',
+                        accent: RoomColors.error,
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: enabled && room.isOpen
+                              ? _confirmClose
+                              : null,
+                          icon: _closing
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.power_settings_new_rounded),
+                          label: Text(room.isOpen ? '关闭房间' : '房间已关闭'),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '关闭后用户不能继续进入，本次房间会话会结束。关闭不是退出房间，也不会删除账号。',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 14),
-                OutlinedButton.icon(
-                  onPressed: enabled && room.isOpen ? _confirmClose : null,
-                  icon: _closing
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.power_settings_new_rounded),
-                  label: Text(room.isOpen ? '关闭房间' : '房间已关闭'),
                 ),
               ],
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: SizedBox(
               width: double.infinity,
               child: FilledButton.icon(

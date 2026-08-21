@@ -78,48 +78,96 @@ class _ReportPageState extends State<ReportPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: Text('举报${widget.targetName}')),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 30),
           children: <Widget>[
-            DropdownButtonFormField<int>(
-              initialValue: _reasonCode,
-              decoration: const InputDecoration(labelText: '举报原因'),
-              items: const <DropdownMenuItem<int>>[
-                DropdownMenuItem<int>(value: 1, child: Text('泄露隐私')),
-                DropdownMenuItem<int>(value: 2, child: Text('人身攻击')),
-                DropdownMenuItem<int>(value: 3, child: Text('淫秽色情')),
-                DropdownMenuItem<int>(value: 4, child: Text('垃圾广告')),
-                DropdownMenuItem<int>(value: 5, child: Text('敏感信息')),
-              ],
-              onChanged: (int? value) {
-                if (value != null) {
-                  setState(() => _reasonCode = value);
-                }
-              },
+            _OxygenPanel(
+              padding: const EdgeInsets.all(13),
+              child: Row(
+                children: <Widget>[
+                  const CircleAvatar(
+                    backgroundColor: Color(0xFFFFE9EF),
+                    child: Icon(
+                      Icons.report_gmailerrorred_rounded,
+                      color: SocialColors.error,
+                    ),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          '举报对象：${widget.targetName}',
+                          style: const TextStyle(
+                            color: SocialColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        const Text(
+                          '所有提交都会进入审核，请描述真实情况',
+                          style: TextStyle(
+                            color: SocialColors.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _descriptionController,
-              minLines: 5,
-              maxLines: 8,
-              maxLength: 300,
-              decoration: const InputDecoration(labelText: '补充说明'),
-              validator: (String? value) =>
-                  value == null || value.trim().isEmpty ? '请填写举报说明' : null,
-            ),
-            const _InfoBanner(text: '图片凭证上传需要对象存储适配器。本阶段先提交可审核的文字证据。'),
-            if (widget.targetType == ReportTargetType.user)
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                value: _alsoBlock,
-                onChanged: (bool? value) =>
-                    setState(() => _alsoBlock = value ?? false),
-                title: const Text('同时加入黑名单'),
+            _OxygenPanel(
+              child: Column(
+                children: <Widget>[
+                  DropdownButtonFormField<int>(
+                    initialValue: _reasonCode,
+                    decoration: const InputDecoration(labelText: '举报原因'),
+                    items: const <DropdownMenuItem<int>>[
+                      DropdownMenuItem<int>(value: 1, child: Text('泄露隐私')),
+                      DropdownMenuItem<int>(value: 2, child: Text('人身攻击')),
+                      DropdownMenuItem<int>(value: 3, child: Text('淫秽色情')),
+                      DropdownMenuItem<int>(value: 4, child: Text('垃圾广告')),
+                      DropdownMenuItem<int>(value: 5, child: Text('敏感信息')),
+                    ],
+                    onChanged: (int? value) {
+                      if (value != null) {
+                        setState(() => _reasonCode = value);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _descriptionController,
+                    minLines: 5,
+                    maxLines: 8,
+                    maxLength: 300,
+                    decoration: const InputDecoration(labelText: '补充说明'),
+                    validator: (String? value) =>
+                        value == null || value.trim().isEmpty
+                        ? '请填写举报说明'
+                        : null,
+                  ),
+                  const _InfoBanner(text: '图片凭证上传需要对象存储适配器。本阶段先提交可审核的文字证据。'),
+                  if (widget.targetType == ReportTargetType.user)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: _alsoBlock,
+                      onChanged: (bool? value) =>
+                          setState(() => _alsoBlock = value ?? false),
+                      title: const Text('同时加入黑名单'),
+                    ),
+                ],
               ),
+            ),
+            const SizedBox(height: 16),
             FilledButton(
               onPressed: _busy ? null : _submit,
               child: Text(_busy ? '提交中…' : '提交举报'),
@@ -203,35 +251,95 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('帮助与客服')),
       body: _channel == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 30),
               children: <Widget>[
-                _StatusCard(
-                  icon: Icons.support_agent_outlined,
-                  title: _channel!.name,
-                  description: _channel!.description,
+                _OxygenPanel(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: <Widget>[
+                      Container(
+                        width: 58,
+                        height: 58,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: <Color>[
+                              Color(0xFFB895FF),
+                              Color(0xFF7E6BEF),
+                            ],
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.support_agent_rounded,
+                          color: Colors.white,
+                          size: 29,
+                        ),
+                      ),
+                      const SizedBox(width: 13),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              _channel!.name,
+                              style: const TextStyle(
+                                color: SocialColors.textPrimary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _channel!.description,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: SocialColors.textSecondary,
+                                fontSize: 11,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: SocialColors.textTertiary,
+                      ),
+                    ],
+                  ),
                 ),
                 if (!_channel!.liveConversationAvailable) ...<Widget>[
                   const SizedBox(height: 12),
                   const _InfoBanner(text: '腾讯 IM 接入前不开放伪即时客服会话。'),
                 ],
-                const SizedBox(height: 18),
-                TextField(
-                  controller: _subjectController,
-                  decoration: const InputDecoration(labelText: '问题主题'),
+                const SizedBox(height: 16),
+                const _OxygenSectionLabel(title: '提交问题'),
+                const SizedBox(height: 8),
+                _OxygenPanel(
+                  child: Column(
+                    children: <Widget>[
+                      TextField(
+                        controller: _subjectController,
+                        decoration: const InputDecoration(labelText: '问题主题'),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _contentController,
+                        minLines: 5,
+                        maxLines: 8,
+                        maxLength: 200,
+                        decoration: const InputDecoration(labelText: '问题描述'),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _contentController,
-                  minLines: 5,
-                  maxLines: 8,
-                  maxLength: 200,
-                  decoration: const InputDecoration(labelText: '问题描述'),
-                ),
+                const SizedBox(height: 16),
                 FilledButton(
                   onPressed: _busy ? null : _submit,
                   child: Text(_busy ? '提交中…' : '提交反馈'),
@@ -288,7 +396,7 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('工单详情与处理进度'),
         actions: <Widget>[
@@ -299,20 +407,71 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 30),
         children: <Widget>[
-          _StatusCard(
-            icon: Icons.receipt_long_outlined,
-            title: _ticket.statusText,
-            description: _ticket.progressAvailable
-                ? '可刷新查看当前处理状态。'
-                : '当前反馈接口只确认已提交，不提供处理进度查询。',
+          _OxygenPanel(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(0xFFE9E4FF),
+                  ),
+                  child: const Icon(
+                    Icons.receipt_long_outlined,
+                    color: SocialColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        _ticket.statusText,
+                        style: const TextStyle(
+                          color: SocialColors.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        _ticket.progressAvailable
+                            ? '可刷新查看当前处理状态。'
+                            : '当前反馈接口只确认已提交，不提供处理进度查询。',
+                        style: const TextStyle(
+                          color: SocialColors.textSecondary,
+                          fontSize: 11,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 18),
-          _Detail(label: '工单编号', value: _ticket.id),
-          _Detail(label: '主题', value: _ticket.subject),
-          _Detail(label: '内容', value: _ticket.content),
-          _Detail(label: '提交时间', value: _formatDateTime(_ticket.createdAt)),
+          const SizedBox(height: 14),
+          _OxygenPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const _OxygenSectionLabel(title: '工单信息'),
+                const SizedBox(height: 14),
+                _Detail(label: '工单编号', value: _ticket.id),
+                _Detail(label: '主题', value: _ticket.subject),
+                _Detail(label: '内容', value: _ticket.content),
+                _Detail(
+                  label: '提交时间',
+                  value: _formatDateTime(_ticket.createdAt),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

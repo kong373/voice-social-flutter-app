@@ -82,6 +82,12 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         message: 'Apple IAP 商品和收据校验尚未接入，不能创建虚假 iOS 充值订单',
       );
     }
+    if (!supportsPaymentChannelInvocation) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '支付渠道 SDK 尚未接入，当前版本不会创建充值订单',
+      );
+    }
     final String route = channel == PaymentChannelType.wechat
         ? _routes.createWechatRechargeOrder
         : _routes.createAlipayRechargeOrder;
@@ -170,81 +176,15 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   }
 
   @override
-  Future<List<BackpackGiftItem>> fetchBackpackGifts() async {
+  Future<List<DecorationItem>> fetchDecorations() async {
     final ApiResponse response = await _apiClient.post(
-      _routes.userBackpackGifts,
+      _routes.userDecorations,
       body: <String, Object?>{'pageNum': 1, 'pageSize': 100},
     );
     return _extractList(response.data)
-        .where((Map<String, Object?> item) => !_isRetiredGift(item))
-        .map(_backpackFromMap)
-        .where((BackpackGiftItem item) => item.gift.id > 0 && item.quantity > 0)
-        .toList(growable: false);
-  }
-
-  @override
-  Future<MembershipSnapshot> fetchMembershipSnapshot() async {
-    final List<Object?> results = await Future.wait<Object?>(<Future<Object?>>[
-      _apiClient
-          .post(_routes.vipInformation)
-          .then((ApiResponse value) => value.data),
-      _apiClient
-          .post(
-            _routes.userDecorations,
-            body: <String, Object?>{'pageNum': 1, 'pageSize': 100},
-          )
-          .then((ApiResponse value) => value.data),
-      fetchBackpackGifts(),
-      _apiClient
-          .get(_routes.ncoinBalance)
-          .then((ApiResponse value) => value.data),
-    ]);
-    final Map<String, Object?> vip = _asMap(results[0]);
-    final List<DecorationItem> decorations = _extractList(results[1])
         .map(_decorationFromMap)
         .where((DecorationItem item) => item.id.isNotEmpty)
         .toList(growable: false);
-    final List<BackpackGiftItem> backpack =
-        results[2] as List<BackpackGiftItem>;
-    final int balance = _balanceFrom(results[3]);
-    final List<MembershipPlan> plans =
-        _asMapList(vip['plans'] ?? vip['vipList'] ?? vip['products'])
-            .map(_membershipPlanFromMap)
-            .where((MembershipPlan plan) => plan.id.isNotEmpty)
-            .toList(growable: false);
-    final DateTime? expiresAt = _optionalDateTime(
-      vip['expireTime'] ?? vip['expiresAt'] ?? vip['vipEndTime'],
-    );
-    final bool active =
-        _asBool(vip['isVip'] ?? vip['active'] ?? vip['vipStatus']) ||
-        (expiresAt?.isAfter(DateTime.now()) ?? false);
-    return MembershipSnapshot(
-      giftCoinBalance: balance,
-      active: active,
-      levelName: _string(
-        vip['vipName'] ?? vip['levelName'],
-        fallback: active ? '会员' : '普通用户',
-      ),
-      expiresAt: expiresAt,
-      plans: plans,
-      decorations: decorations,
-      backpack: backpack,
-    );
-  }
-
-  @override
-  Future<MembershipSnapshot> purchaseMembership(String planId) async {
-    if (planId.trim().isEmpty) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '请选择有效会员商品',
-      );
-    }
-    await _apiClient.post(
-      _routes.purchaseVipWithGiftCoins,
-      body: <String, Object?>{'vipId': _numericId(planId)},
-    );
-    return fetchMembershipSnapshot();
   }
 
   @override
@@ -259,8 +199,8 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       _routes.purchaseMallGoods,
       body: <String, Object?>{'goodsId': _numericId(decorationId), 'buyNum': 1},
     );
-    final MembershipSnapshot snapshot = await fetchMembershipSnapshot();
-    for (final DecorationItem item in snapshot.decorations) {
+    final List<DecorationItem> decorations = await fetchDecorations();
+    for (final DecorationItem item in decorations) {
       if (item.id == decorationId) {
         return item;
       }
@@ -283,8 +223,8 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         'isPutOn': equipped ? 1 : 0,
       },
     );
-    final MembershipSnapshot snapshot = await fetchMembershipSnapshot();
-    for (final DecorationItem item in snapshot.decorations) {
+    final List<DecorationItem> decorations = await fetchDecorations();
+    for (final DecorationItem item in decorations) {
       if (item.id == decorationId) {
         return item;
       }
@@ -317,20 +257,6 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     );
   }
 
-  static BackpackGiftItem _backpackFromMap(Map<String, Object?> item) {
-    final Map<String, Object?> giftData = _asMap(item['gift']);
-    final GiftCatalogItem gift = _giftFromMap(
-      giftData.isEmpty ? item : giftData,
-    );
-    return BackpackGiftItem(
-      id: _string(item['id'] ?? item['packGiftId']),
-      gift: gift,
-      quantity:
-          _asInt(item['quantity'] ?? item['number'] ?? item['giftNum']) ?? 0,
-      expiresAt: _optionalDateTime(item['expireTime'] ?? item['expiresAt']),
-    );
-  }
-
   static DecorationItem _decorationFromMap(Map<String, Object?> item) {
     final int type = _asInt(item['type'] ?? item['decorationType']) ?? 0;
     return DecorationItem(
@@ -353,17 +279,6 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         item['iconUrl'] ?? item['picUrl'] ?? item['resourceUrl'],
       ),
       expiresAt: _optionalDateTime(item['expireTime'] ?? item['expiresAt']),
-    );
-  }
-
-  static MembershipPlan _membershipPlanFromMap(Map<String, Object?> item) {
-    return MembershipPlan(
-      id: _string(item['id'] ?? item['vipId']),
-      name: _string(item['name'] ?? item['vipName'], fallback: '会员'),
-      priceGiftCoins:
-          _asInt(item['price'] ?? item['ncoin'] ?? item['diamond']) ?? 0,
-      durationDays: _asInt(item['days'] ?? item['durationDays']) ?? 0,
-      benefits: _split(item['benefits'] ?? item['privileges']),
     );
   }
 
@@ -391,18 +306,6 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       '情书',
       'love letter',
     ].any(text.contains);
-  }
-
-  static int _balanceFrom(Object? value) {
-    if (value is int) {
-      return value;
-    }
-    if (value is num) {
-      return value.toInt();
-    }
-    final Map<String, Object?> map = _asMap(value);
-    return _asInt(map['balance'] ?? map['ncoin'] ?? map['availableBalance']) ??
-        0;
   }
 
   static List<Map<String, Object?>> _extractList(Object? value) {
@@ -440,17 +343,4 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       value == true || value == 1 || value?.toString() == '1';
   static DateTime? _optionalDateTime(Object? value) =>
       DateTime.tryParse(value?.toString() ?? '');
-  static List<String> _split(Object? value) {
-    if (value is List) {
-      return value
-          .map((Object? item) => item?.toString().trim() ?? '')
-          .where((String item) => item.isNotEmpty)
-          .toList(growable: false);
-    }
-    return (value?.toString() ?? '')
-        .split(',')
-        .map((String item) => item.trim())
-        .where((String item) => item.isNotEmpty)
-        .toList(growable: false);
-  }
 }

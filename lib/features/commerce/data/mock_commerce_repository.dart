@@ -3,109 +3,118 @@ import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catal
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 
 class MockCommerceRepository implements CommerceRepository {
-  MockCommerceRepository()
-    : _orders = <PaymentOrder>[
-        PaymentOrder(
-          orderNo: 'MOCK202608150001',
-          amount: 30,
-          giftCoinAmount: 300,
-          channelName: '微信支付',
-          createdAt: DateTime.now().subtract(const Duration(days: 2)),
-          status: PaymentOrderStatus.succeeded,
-        ),
-        PaymentOrder(
-          orderNo: 'MOCK202608150002',
-          amount: 68,
-          giftCoinAmount: 700,
-          channelName: '支付宝',
-          createdAt: DateTime.now().subtract(const Duration(hours: 3)),
-          status: PaymentOrderStatus.confirming,
-        ),
-      ],
-      _refunds = <String, RefundApplication>{
-        'refund-1': RefundApplication(
-          id: 'refund-1',
-          account: '13800138000',
-          amount: 30,
-          status: RefundStatus.reviewing,
-          statusText: '审核中',
-          rejectedReason: '',
-          createdAt: DateTime.now().subtract(const Duration(days: 1)),
-        ),
-      },
-      _withdrawals = <WithdrawalRecord>[
-        WithdrawalRecord(
-          id: 'withdraw-1',
-          withdrawalNo: 'WD202608120001',
-          amount: 200,
-          fee: 2,
-          receivedAmount: 198,
-          status: WithdrawalStatus.succeeded,
-          statusText: '已到账',
-          createdAt: DateTime.now().subtract(const Duration(days: 3)),
-          rejectedReason: '',
-          bankName: '招商银行',
-          maskedCard: '**** 8812',
-        ),
-      ];
+  MockCommerceRepository({DateTime? now})
+    : this._seeded(seedNow: now ?? DateTime.now(), fixedNow: now);
 
+  MockCommerceRepository._seeded({
+    required DateTime seedNow,
+    required DateTime? fixedNow,
+  }) : _fixedNow = fixedNow,
+       _orders = <PaymentOrder>[
+         PaymentOrder(
+           orderNo: 'MOCK202608150001',
+           amount: 30,
+           giftCoinAmount: 300,
+           channelName: '微信支付',
+           createdAt: seedNow.subtract(const Duration(days: 2)),
+           status: PaymentOrderStatus.succeeded,
+         ),
+         PaymentOrder(
+           orderNo: 'MOCK202608150002',
+           amount: 68,
+           giftCoinAmount: 700,
+           channelName: '支付宝',
+           createdAt: seedNow.subtract(const Duration(hours: 3)),
+           status: PaymentOrderStatus.confirming,
+         ),
+       ],
+       _refunds = <String, RefundApplication>{
+         'refund-1': RefundApplication(
+           id: 'refund-1',
+           account: '13800138000',
+           amount: 30,
+           status: RefundStatus.reviewing,
+           statusText: '审核中',
+           rejectedReason: '',
+           createdAt: seedNow.subtract(const Duration(days: 1)),
+         ),
+       },
+       _withdrawals = <WithdrawalRecord>[
+         WithdrawalRecord(
+           id: 'withdraw-1',
+           withdrawalNo: 'WD202608120001',
+           amount: 200,
+           fee: 2,
+           receivedAmount: 198,
+           status: WithdrawalStatus.succeeded,
+           statusText: '已到账',
+           createdAt: seedNow.subtract(const Duration(days: 3)),
+           rejectedReason: '',
+           bankName: '招商银行',
+           maskedCard: '**** 8812',
+         ),
+       ],
+       _incomeEntries = <LedgerEntry>[
+         LedgerEntry(
+           id: 'income-1',
+           direction: LedgerDirection.income,
+           kind: LedgerKind.giftIncome,
+           title: '普通礼物收益',
+           amount: 68,
+           createdAt: seedNow.subtract(const Duration(hours: 2)),
+           relatedUserName: '鹿屿',
+           businessName: '星河灯',
+           rawSubtype: 'gift_income',
+         ),
+         LedgerEntry(
+           id: 'income-2',
+           direction: LedgerDirection.income,
+           kind: LedgerKind.agentIncome,
+           title: '渠道结算收益',
+           amount: 120,
+           createdAt: seedNow.subtract(const Duration(days: 1)),
+           relatedUserName: '',
+           businessName: '本周渠道结算',
+           rawSubtype: 'agent_income',
+         ),
+       ],
+       _expenseEntries = <LedgerEntry>[
+         LedgerEntry(
+           id: 'expense-1',
+           direction: LedgerDirection.expense,
+           kind: LedgerKind.giftExpense,
+           title: '赠送普通礼物',
+           amount: 12,
+           createdAt: seedNow.subtract(const Duration(hours: 5)),
+           relatedUserName: '南风',
+           businessName: '晚安星光',
+           rawSubtype: 'send_gift',
+         ),
+         LedgerEntry(
+           id: 'expense-2',
+           direction: LedgerDirection.expense,
+           kind: LedgerKind.withdrawal,
+           title: '提现申请',
+           amount: 200,
+           createdAt: seedNow.subtract(const Duration(days: 3)),
+           relatedUserName: '',
+           businessName: '招商银行 **** 8812',
+           rawSubtype: 'withdrawal',
+         ),
+       ];
+
+  final DateTime? _fixedNow;
   final List<PaymentOrder> _orders;
   final Map<String, RefundApplication> _refunds;
   final List<WithdrawalRecord> _withdrawals;
+  final List<LedgerEntry> _incomeEntries;
+  final List<LedgerEntry> _expenseEntries;
   int _refundSequence = 2;
   int _withdrawalSequence = 2;
   double _cashBalance = 1288.50;
   double _frozenBalance = 200;
 
-  static final List<LedgerEntry> _incomeEntries = <LedgerEntry>[
-    LedgerEntry(
-      id: 'income-1',
-      direction: LedgerDirection.income,
-      kind: LedgerKind.giftIncome,
-      title: '普通礼物收益',
-      amount: 68,
-      createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-      relatedUserName: '鹿屿',
-      businessName: '星河灯',
-      rawSubtype: 'gift_income',
-    ),
-    LedgerEntry(
-      id: 'income-2',
-      direction: LedgerDirection.income,
-      kind: LedgerKind.agentIncome,
-      title: '渠道结算收益',
-      amount: 120,
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      relatedUserName: '',
-      businessName: '本周渠道结算',
-      rawSubtype: 'agent_income',
-    ),
-  ];
-
-  static final List<LedgerEntry> _expenseEntries = <LedgerEntry>[
-    LedgerEntry(
-      id: 'expense-1',
-      direction: LedgerDirection.expense,
-      kind: LedgerKind.giftExpense,
-      title: '赠送普通礼物',
-      amount: 12,
-      createdAt: DateTime.now().subtract(const Duration(hours: 5)),
-      relatedUserName: '南风',
-      businessName: '晚安星光',
-      rawSubtype: 'send_gift',
-    ),
-    LedgerEntry(
-      id: 'expense-2',
-      direction: LedgerDirection.expense,
-      kind: LedgerKind.withdrawal,
-      title: '提现申请',
-      amount: 200,
-      createdAt: DateTime.now().subtract(const Duration(days: 3)),
-      relatedUserName: '',
-      businessName: '招商银行 **** 8812',
-      rawSubtype: 'withdrawal',
-    ),
-  ];
+  DateTime get _currentTime => _fixedNow ?? DateTime.now();
 
   @override
   bool get supportsPaymentChannelInvocation => false;
@@ -254,7 +263,7 @@ class MockCommerceRepository implements CommerceRepository {
       status: RefundStatus.reviewing,
       statusText: '审核中',
       rejectedReason: '',
-      createdAt: DateTime.now(),
+      createdAt: _currentTime,
     );
     _refunds[id] = application;
     return application;
@@ -334,15 +343,16 @@ class MockCommerceRepository implements CommerceRepository {
       );
     }
     final double fee = quote.feeFor(amount);
+    final DateTime now = _currentTime;
     final WithdrawalRecord record = WithdrawalRecord(
       id: 'withdraw-${_withdrawalSequence++}',
-      withdrawalNo: 'WD${DateTime.now().millisecondsSinceEpoch}',
+      withdrawalNo: 'WD${now.millisecondsSinceEpoch}',
       amount: amount,
       fee: fee,
       receivedAmount: amount - fee,
       status: WithdrawalStatus.pending,
       statusText: '待审核',
-      createdAt: DateTime.now(),
+      createdAt: now,
       rejectedReason: '',
       bankName: wallet.bankCard!.bankName,
       maskedCard: wallet.bankCard!.maskedNumber,

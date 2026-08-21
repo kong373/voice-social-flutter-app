@@ -42,9 +42,15 @@ void main() {
     expect(find.text('实名认证'), findsOneWidget);
     expect(find.text('登录设备与会话'), findsOneWidget);
     expect(find.text('处罚申诉'), findsOneWidget);
-    expect(find.text('账号注销'), findsOneWidget);
-    expect(find.text('版本升级'), findsOneWidget);
-    expect(find.text('青少年模式'), findsOneWidget);
+    for (final String label in <String>['账号注销', '版本升级', '青少年模式']) {
+      final Finder entry = find.text(label);
+      await tester.scrollUntilVisible(
+        entry,
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(entry, findsOneWidget);
+    }
   });
 
   testWidgets(

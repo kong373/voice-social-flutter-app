@@ -92,7 +92,7 @@ const List<AppPageDefinition> appPageManifest = <AppPageDefinition>[
     name: '礼物目录与赠送面板',
     area: ProductArea.commerce,
   ),
-  AppPageDefinition(id: 'CM-010', name: '会员装扮与背包', area: ProductArea.commerce),
+  AppPageDefinition(id: 'CM-010', name: '装扮中心', area: ProductArea.commerce),
   AppPageDefinition(id: 'CM-011', name: '主播收益', area: ProductArea.commerce),
   AppPageDefinition(id: 'CM-012', name: '结算与提现', area: ProductArea.commerce),
   AppPageDefinition(id: 'SC-001', name: '公会主页', area: ProductArea.community),

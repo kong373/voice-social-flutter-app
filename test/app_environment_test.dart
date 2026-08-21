@@ -86,6 +86,24 @@ void main() {
     );
   });
 
+  test('mobile client never exposes development outbox configuration', () {
+    final AppEnvironment environment = liveEnvironment(
+      deployment: DeploymentEnvironment.staging,
+    );
+    expect(environment.canReadDevelopmentSmsOutbox, isFalse);
+    expect(environment.redactedSummary['developmentOutboxConfigured'], isFalse);
+  });
+
+  test(
+    'development tools are limited to local and development environments',
+    () {
+      expect(DeploymentEnvironment.local.allowsDevelopmentTools, isTrue);
+      expect(DeploymentEnvironment.development.allowsDevelopmentTools, isTrue);
+      expect(DeploymentEnvironment.staging.allowsDevelopmentTools, isFalse);
+      expect(DeploymentEnvironment.production.allowsDevelopmentTools, isFalse);
+    },
+  );
+
   test('probe path must be absolute and timeout must be bounded', () {
     final AppEnvironment invalidPath = liveEnvironment(liveProbePath: 'health');
     expect(

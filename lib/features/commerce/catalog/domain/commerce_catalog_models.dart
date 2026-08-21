@@ -121,20 +121,6 @@ class GiftCatalogItem {
   final bool enabled;
 }
 
-class BackpackGiftItem {
-  const BackpackGiftItem({
-    required this.id,
-    required this.gift,
-    required this.quantity,
-    this.expiresAt,
-  });
-
-  final String id;
-  final GiftCatalogItem gift;
-  final int quantity;
-  final DateTime? expiresAt;
-}
-
 enum DecorationKind { avatarFrame, entrance, nickname, voiceWave, profileCard }
 
 extension DecorationKindLabel on DecorationKind {
@@ -178,62 +164,6 @@ class DecorationItem {
       equipped: equipped ?? this.equipped,
       assetUrl: assetUrl,
       expiresAt: expiresAt ?? this.expiresAt,
-    );
-  }
-}
-
-class MembershipPlan {
-  const MembershipPlan({
-    required this.id,
-    required this.name,
-    required this.priceGiftCoins,
-    required this.durationDays,
-    this.benefits = const <String>[],
-  });
-
-  final String id;
-  final String name;
-  final int priceGiftCoins;
-  final int durationDays;
-  final List<String> benefits;
-}
-
-class MembershipSnapshot {
-  const MembershipSnapshot({
-    required this.giftCoinBalance,
-    required this.active,
-    required this.levelName,
-    required this.plans,
-    required this.decorations,
-    required this.backpack,
-    this.expiresAt,
-  });
-
-  final int giftCoinBalance;
-  final bool active;
-  final String levelName;
-  final DateTime? expiresAt;
-  final List<MembershipPlan> plans;
-  final List<DecorationItem> decorations;
-  final List<BackpackGiftItem> backpack;
-
-  MembershipSnapshot copyWith({
-    int? giftCoinBalance,
-    bool? active,
-    String? levelName,
-    DateTime? expiresAt,
-    List<MembershipPlan>? plans,
-    List<DecorationItem>? decorations,
-    List<BackpackGiftItem>? backpack,
-  }) {
-    return MembershipSnapshot(
-      giftCoinBalance: giftCoinBalance ?? this.giftCoinBalance,
-      active: active ?? this.active,
-      levelName: levelName ?? this.levelName,
-      expiresAt: expiresAt ?? this.expiresAt,
-      plans: plans ?? this.plans,
-      decorations: decorations ?? this.decorations,
-      backpack: backpack ?? this.backpack,
     );
   }
 }

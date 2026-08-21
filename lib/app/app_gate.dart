@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/live_backend_readiness.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
+import 'package:voice_social_app/features/account/presentation/account_oxygen_components.dart';
 import 'package:voice_social_app/features/account/presentation/consent_page.dart';
 import 'package:voice_social_app/features/account/presentation/login_page.dart';
 import 'package:voice_social_app/features/account/presentation/registration_page.dart';
@@ -80,25 +82,42 @@ class SessionRestorePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: <Color>[Color(0xFF21183F), AppColors.background],
-          ),
-        ),
-        child: Center(
+    return SocialPageScaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(30, 52, 30, 36),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              SizedBox.square(
-                dimension: 28,
-                child: CircularProgressIndicator(strokeWidth: 2.5),
+              const AccountBrandMark(size: 76),
+              const SizedBox(height: 22),
+              Text(
+                '正在回到声音世界',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: AccountOxygenColors.ink,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
-              SizedBox(height: 18),
-              Text('正在恢复登录状态…'),
+              const SizedBox(height: 8),
+              Text(
+                '正在安全恢复你的登录状态与房间会话',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: AccountOxygenColors.muted,
+                ),
+              ),
+              const SizedBox(height: 26),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: const SizedBox(
+                  width: 112,
+                  child: LinearProgressIndicator(
+                    minHeight: 3,
+                    backgroundColor: Color(0xFFE7E7F2),
+                    color: AccountOxygenColors.violet,
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -123,60 +142,66 @@ class SessionRecoveryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(28),
+            padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 440),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const Icon(
-                    Icons.cloud_off_rounded,
-                    size: 48,
-                    color: AppColors.warning,
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    '暂时无法恢复登录',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    message ?? '网络或服务暂时不可用，你的本地会话仍被安全保留。',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: AppColors.textSecondary,
+              child: AccountSheet(
+                padding: const EdgeInsets.fromLTRB(22, 26, 22, 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Container(
+                      width: 58,
+                      height: 58,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFFFF2E4),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.cloud_off_rounded,
+                        size: 29,
+                        color: AppColors.warning,
+                      ),
                     ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
+                    const SizedBox(height: 17),
+                    Text(
+                      '暂时无法恢复登录',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: AccountOxygenColors.ink,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      message ?? '网络或服务暂时不可用，你的本地会话仍被安全保留。',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 22),
+                    AccountPrimaryAction(
                       key: const Key('retry-session-recovery'),
-                      onPressed: busy ? null : () => onRetry(),
-                      icon: busy
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.refresh_rounded),
-                      label: const Text('重新连接'),
+                      label: '重新连接',
+                      busy: busy,
+                      icon: Icons.refresh_rounded,
+                      onPressed: () => onRetry(),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: TextButton(
-                      key: const Key('discard-session-and-sign-out'),
-                      onPressed: busy ? null : onSignOut,
-                      child: const Text('退出并重新登录'),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton(
+                        key: const Key('discard-session-and-sign-out'),
+                        onPressed: busy ? null : onSignOut,
+                        child: const Text('退出并重新登录'),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

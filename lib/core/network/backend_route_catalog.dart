@@ -129,9 +129,6 @@ class BackendRouteCatalog {
     this.createAppleRechargeOrder = '/app-economy-api/pay/apple/order',
     this.rechargeOrderStatus = '/app-economy-api/pay/isOrderSuccess',
     this.normalGiftCatalog = '/app-mini-api/mini/v1/gift/list',
-    this.userBackpackGifts = '/app-api/user/userPackGift',
-    this.vipInformation = '/app-api/vip/queryVipInfo',
-    this.purchaseVipWithGiftCoins = '/app-economy-api/pay/ncoin/pay/vip',
     this.userDecorations = '/app-api/user/userDecorations/getList',
     this.equipUserDecoration = '/app-api/user/userDecorations/putOn',
     this.mallIndex = '/app-api/mall/index',
@@ -271,9 +268,6 @@ class BackendRouteCatalog {
   final String createAppleRechargeOrder;
   final String rechargeOrderStatus;
   final String normalGiftCatalog;
-  final String userBackpackGifts;
-  final String vipInformation;
-  final String purchaseVipWithGiftCoins;
   final String userDecorations;
   final String equipUserDecoration;
   final String mallIndex;

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
+import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
+import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
 class RoomTopicPage extends StatefulWidget {
   const RoomTopicPage({required this.roomId, required this.canEdit, super.key});
@@ -109,8 +112,8 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.canEdit ? '编辑房间公告' : '房间公告')),
+    return RoomPageScaffold(
+      appBar: roomOxygenAppBar(title: widget.canEdit ? '编辑房间公告' : '房间公告'),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null && _titleController.text.isEmpty
@@ -118,63 +121,87 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
           : Form(
               key: _formKey,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                 children: <Widget>[
-                  TextFormField(
-                    controller: _titleController,
-                    enabled: widget.canEdit && !_submitting,
-                    maxLength: 64,
-                    decoration: const InputDecoration(labelText: '公告标题'),
-                    validator: (String? value) {
-                      if ((value ?? '').trim().isEmpty) {
-                        return '请输入公告标题';
-                      }
-                      return null;
-                    },
+                  RoomOxygenContextBar(
+                    title: '深夜温柔陪伴',
+                    subtitle: '房间号 ${widget.roomId} · 公告与话题',
+                    seed: widget.roomId,
+                    status: widget.canEdit ? '可编辑' : '只读',
+                    statusColor: widget.canEdit
+                        ? RoomColors.accent
+                        : RoomColors.textSecondary,
                   ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _contentController,
-                    enabled: widget.canEdit && !_submitting,
-                    maxLength: 500,
-                    minLines: 6,
-                    maxLines: 12,
-                    decoration: const InputDecoration(
-                      labelText: '公告内容',
-                      alignLabelWithHint: true,
+                  const SizedBox(height: 18),
+                  RoomOxygenSection(
+                    title: '房间公告',
+                    subtitle: '进房成员会先看到这段说明。',
+                    icon: Icons.campaign_outlined,
+                    child: Column(
+                      children: <Widget>[
+                        TextFormField(
+                          controller: _titleController,
+                          enabled: widget.canEdit && !_submitting,
+                          maxLength: 64,
+                          decoration: const InputDecoration(labelText: '公告标题'),
+                          validator: (String? value) {
+                            if ((value ?? '').trim().isEmpty) {
+                              return '请输入公告标题';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          controller: _contentController,
+                          enabled: widget.canEdit && !_submitting,
+                          maxLength: 500,
+                          minLines: 6,
+                          maxLines: 12,
+                          decoration: const InputDecoration(
+                            labelText: '公告内容',
+                            alignLabelWithHint: true,
+                          ),
+                          validator: (String? value) {
+                            if ((value ?? '').trim().isEmpty) {
+                              return '请输入公告内容';
+                            }
+                            return null;
+                          },
+                        ),
+                      ],
                     ),
-                    validator: (String? value) {
-                      if ((value ?? '').trim().isEmpty) {
-                        return '请输入公告内容';
-                      }
-                      return null;
-                    },
                   ),
                   if (_error != null) ...<Widget>[
                     const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
+                    RoomOxygenNotice(
+                      icon: Icons.error_outline_rounded,
+                      message: _error!,
+                      accent: RoomColors.warning,
                     ),
                   ],
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
                   if (widget.canEdit)
-                    FilledButton.icon(
-                      onPressed: _submitting ? null : _save,
-                      icon: _submitting
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.save_outlined),
-                      label: Text(_submitting ? '正在保存' : '保存公告'),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _submitting ? null : _save,
+                        icon: _submitting
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: Text(_submitting ? '正在保存' : '保存公告'),
+                      ),
                     )
                   else
-                    Text(
-                      '只有房主可以修改公告。',
-                      style: Theme.of(context).textTheme.bodySmall,
+                    const RoomOxygenNotice(
+                      icon: Icons.lock_outline_rounded,
+                      message: '只有房主或房管可以修改公告。',
+                      accent: RoomColors.textSecondary,
                     ),
                 ],
               ),

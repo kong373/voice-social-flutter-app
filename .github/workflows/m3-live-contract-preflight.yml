@@ -20,7 +20,6 @@ jobs:
     env:
       M3_API_BASE_URL: ${{ secrets.M3_API_BASE_URL }}
       M3_OAUTH_CLIENT_ID: ${{ secrets.M3_OAUTH_CLIENT_ID }}
-      M3_OAUTH_CLIENT_SECRET: ${{ secrets.M3_OAUTH_CLIENT_SECRET }}
       M3_CLIENT_TYPE: Android
       M3_CLIENT_INNER_VERSION: "1"
       M3_APP_ENV: development
@@ -29,10 +28,10 @@ jobs:
       M3_ALLOW_INSECURE_HTTP: "false"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Install Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
         with:
           flutter-version: "3.44.7"
           channel: stable
@@ -51,7 +50,7 @@ jobs:
 
       - name: Upload redacted readiness evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: m3-live-preflight-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/m3-preflight/

@@ -37,7 +37,7 @@ class _GuildMembersEntryPageState extends State<GuildMembersEntryPage> {
   @override
   Widget build(BuildContext context) {
     final GuildSummary? guild = _snapshot?.currentGuild;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('公会加入与成员管理')),
       body: _error != null
           ? _StateError(message: _error!, onRetry: _load)
@@ -193,6 +193,219 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
     }
   }
 
+  Widget _memberCard(GuildMember member, bool canManage) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: _CommunitySection(
+        onTap: member.userId > 0
+            ? () => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (BuildContext context) =>
+                      PublicProfilePage(userId: member.userId),
+                ),
+              )
+            : null,
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        child: Row(
+          children: <Widget>[
+            _LetterAvatar(
+              label: member.nickname,
+              prominent: member.role == GuildRole.owner,
+              imagePath: member.role == GuildRole.owner
+                  ? 'assets/runtime/avatar-rose.png'
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Flexible(
+                        child: Text(
+                          member.nickname,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _CommunityPalette.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      _SmallTag(label: member.role.label),
+                      if (member.isMuted) ...<Widget>[
+                        const SizedBox(width: 4),
+                        const _SmallTag(label: '已禁言', tint: AppColors.error),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Row(
+                    children: <Widget>[
+                      Icon(
+                        member.roomId == null
+                            ? Icons.circle_outlined
+                            : Icons.graphic_eq_rounded,
+                        size: 13,
+                        color: member.roomId == null
+                            ? _CommunityPalette.muted
+                            : AppColors.success,
+                      ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          member.roomId == null
+                              ? (member.isSigned ? '今日已签到' : '当前未在公会房')
+                              : '正在公会房间 ${member.roomId}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _CommunityPalette.muted,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (_busyId == member.recordId)
+              const Padding(
+                padding: EdgeInsets.all(10),
+                child: SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else if (canManage && member.role != GuildRole.owner)
+              PopupMenuButton<String>(
+                tooltip: '成员操作',
+                onSelected: (String value) {
+                  if (value == 'mute') {
+                    _operate(
+                      member.recordId,
+                      () => _repository.setGuildMemberMuted(
+                        memberRecordId: member.recordId,
+                        muted: !member.isMuted,
+                      ),
+                    );
+                  } else {
+                    _remove(member);
+                  }
+                },
+                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(
+                    value: 'mute',
+                    child: Text(member.isMuted ? '解除禁言' : '禁言成员'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'remove',
+                    child: Text('移出公会'),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _applicationCard(GuildApplication application) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: _CommunitySection(
+        padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                _LetterAvatar(label: application.nickname),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        application.nickname,
+                        style: const TextStyle(
+                          color: _CommunityPalette.ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        application.appliedAt,
+                        style: const TextStyle(
+                          color: _CommunityPalette.muted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const _SmallTag(label: '待审核', tint: _CommunityPalette.gold),
+              ],
+            ),
+            if (application.message.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 9),
+              Text(
+                application.message,
+                style: const TextStyle(
+                  color: _CommunityPalette.muted,
+                  fontSize: 12,
+                  height: 1.35,
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: _busyId == application.id
+                  ? const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : Wrap(
+                      spacing: 6,
+                      children: <Widget>[
+                        TextButton(
+                          onPressed: () => _operate(
+                            application.id,
+                            () => _repository.resolveGuildApplication(
+                              applicationId: application.id,
+                              accepted: false,
+                            ),
+                          ),
+                          child: const Text('拒绝'),
+                        ),
+                        FilledButton.tonal(
+                          onPressed: () => _operate(
+                            application.id,
+                            () => _repository.resolveGuildApplication(
+                              applicationId: application.id,
+                              accepted: true,
+                            ),
+                          ),
+                          child: const Text('通过'),
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool canManage = _guild?.role.canManage ?? false;
@@ -203,8 +416,23 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
         : RefreshIndicator(
             onRefresh: _load,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: <Widget>[
+                if (_guild != null) ...<Widget>[
+                  _CommunityHero(
+                    eyebrow: 'GUILD OPERATIONS',
+                    title: _guild!.name,
+                    subtitle:
+                        '${_members.length} 位成员  ·  ${_applications.length} 条待审核申请',
+                    icon: Icons.manage_accounts_rounded,
+                    colors: const <Color>[
+                      Color(0xFF477EDB),
+                      Color(0xFF6DBCE7),
+                      Color(0xFFA184EF),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                ],
                 if (canManage)
                   SegmentedButton<int>(
                     showSelectedIcon: false,
@@ -219,7 +447,14 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                     onSelectionChanged: (Set<int> value) =>
                         setState(() => _tab = value.first),
                   ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 18),
+                _SectionHeading(
+                  title: _tab == 0 ? '成员列表' : '加入申请',
+                  subtitle: _tab == 0
+                      ? '点击成员查看主页，管理操作保留权限校验'
+                      : '仅管理员可以处理，结果以服务端为准',
+                ),
+                const SizedBox(height: 10),
                 if (_tab == 0)
                   if (_members.isEmpty)
                     const _InfoCard(
@@ -228,83 +463,7 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                     )
                   else
                     for (final GuildMember member in _members)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Material(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(18),
-                          child: ListTile(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            leading: CircleAvatar(
-                              child: Text(_initial(member.nickname)),
-                            ),
-                            title: Row(
-                              children: <Widget>[
-                                Expanded(child: Text(member.nickname)),
-                                _SmallTag(label: member.role.label),
-                                if (member.isMuted) ...<Widget>[
-                                  const SizedBox(width: 5),
-                                  const _SmallTag(label: '已禁言'),
-                                ],
-                              ],
-                            ),
-                            subtitle: Text(
-                              member.roomId == null
-                                  ? (member.isSigned ? '今日已签到' : '当前未在公会房')
-                                  : '正在公会房间 ${member.roomId}',
-                            ),
-                            trailing: _busyId == member.recordId
-                                ? const SizedBox.square(
-                                    dimension: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : canManage && member.role != GuildRole.owner
-                                ? PopupMenuButton<String>(
-                                    onSelected: (String value) {
-                                      if (value == 'mute') {
-                                        _operate(
-                                          member.recordId,
-                                          () => _repository.setGuildMemberMuted(
-                                            memberRecordId: member.recordId,
-                                            muted: !member.isMuted,
-                                          ),
-                                        );
-                                      } else {
-                                        _remove(member);
-                                      }
-                                    },
-                                    itemBuilder: (BuildContext context) =>
-                                        <PopupMenuEntry<String>>[
-                                          PopupMenuItem<String>(
-                                            value: 'mute',
-                                            child: Text(
-                                              member.isMuted ? '解除禁言' : '禁言成员',
-                                            ),
-                                          ),
-                                          const PopupMenuItem<String>(
-                                            value: 'remove',
-                                            child: Text('移出公会'),
-                                          ),
-                                        ],
-                                  )
-                                : null,
-                            onTap: member.userId > 0
-                                ? () => Navigator.of(context).push<void>(
-                                    MaterialPageRoute<void>(
-                                      builder: (BuildContext context) =>
-                                          PublicProfilePage(
-                                            userId: member.userId,
-                                          ),
-                                    ),
-                                  )
-                                : null,
-                          ),
-                        ),
-                      )
+                      _memberCard(member, canManage)
                 else if (_applications.isEmpty)
                   const _InfoCard(
                     icon: Icons.mark_email_read_outlined,
@@ -312,69 +471,13 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                   )
                 else
                   for (final GuildApplication application in _applications)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Material(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(18),
-                        child: ListTile(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          leading: CircleAvatar(
-                            child: Text(_initial(application.nickname)),
-                          ),
-                          title: Text(application.nickname),
-                          subtitle: Text(
-                            <String>[
-                              application.appliedAt,
-                              if (application.message.isNotEmpty)
-                                application.message,
-                            ].join(' · '),
-                          ),
-                          trailing: _busyId == application.id
-                              ? const SizedBox.square(
-                                  dimension: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : Wrap(
-                                  spacing: 4,
-                                  children: <Widget>[
-                                    TextButton(
-                                      onPressed: () => _operate(
-                                        application.id,
-                                        () =>
-                                            _repository.resolveGuildApplication(
-                                              applicationId: application.id,
-                                              accepted: false,
-                                            ),
-                                      ),
-                                      child: const Text('拒绝'),
-                                    ),
-                                    FilledButton.tonal(
-                                      onPressed: () => _operate(
-                                        application.id,
-                                        () =>
-                                            _repository.resolveGuildApplication(
-                                              applicationId: application.id,
-                                              accepted: true,
-                                            ),
-                                      ),
-                                      child: const Text('通过'),
-                                    ),
-                                  ],
-                                ),
-                        ),
-                      ),
-                    ),
+                    _applicationCard(application),
               ],
             ),
           );
     return widget.embedded
         ? body
-        : Scaffold(
+        : SocialPageScaffold(
             appBar: AppBar(title: const Text('公会成员管理')),
             body: body,
           );

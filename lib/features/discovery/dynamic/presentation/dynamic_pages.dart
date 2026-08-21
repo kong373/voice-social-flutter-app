@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/community/presentation/community_pages.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_models.dart';
@@ -149,7 +150,7 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return Scaffold(
+    return SocialPageScaffold(
       body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
@@ -429,7 +430,7 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
     final DynamicPost? post = _post;
     final int currentUserId =
         AppDependencyScope.of(context).sessionManager.session?.userId ?? 0;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('动态详情'),
         actions: <Widget>[
@@ -494,7 +495,7 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
                   ),
                 ),
                 Material(
-                  color: AppColors.surface,
+                  color: Colors.white.withValues(alpha: 0.94),
                   child: SafeArea(
                     top: false,
                     child: Padding(
@@ -632,7 +633,7 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
     final bool supportsImages = AppDependencyScope.of(
       context,
     ).dynamicRepository.supportsImagePublishing;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('发布动态'),
         actions: <Widget>[
@@ -796,7 +797,7 @@ class _RankingPageState extends State<RankingPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('排行榜')),
       body: RefreshIndicator(
         onRefresh: _load,
@@ -805,37 +806,44 @@ class _RankingPageState extends State<RankingPage> {
           children: <Widget>[
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
-              child: SegmentedButton<RankingBoard>(
-                showSelectedIcon: false,
-                segments: <ButtonSegment<RankingBoard>>[
-                  for (final RankingBoard board in RankingBoard.values)
-                    ButtonSegment<RankingBoard>(
-                      value: board,
-                      label: Text(board.label),
+              child: Row(
+                children: <Widget>[
+                  for (final RankingBoard board
+                      in RankingBoard.values) ...<Widget>[
+                    SocialPill(
+                      label: board.label,
+                      active: _board == board,
+                      onTap: () {
+                        if (_board == board) return;
+                        setState(() => _board = board);
+                        _load();
+                      },
                     ),
+                    const SizedBox(width: 8),
+                  ],
                 ],
-                selected: <RankingBoard>{_board},
-                onSelectionChanged: (Set<RankingBoard> value) {
-                  setState(() => _board = value.first);
-                  _load();
-                },
               ),
             ),
-            const SizedBox(height: 14),
-            SegmentedButton<RankingPeriod>(
-              showSelectedIcon: false,
-              segments: <ButtonSegment<RankingPeriod>>[
-                for (final RankingPeriod period in RankingPeriod.values)
-                  ButtonSegment<RankingPeriod>(
-                    value: period,
-                    label: Text(period.label),
-                  ),
-              ],
-              selected: <RankingPeriod>{_period},
-              onSelectionChanged: (Set<RankingPeriod> value) {
-                setState(() => _period = value.first);
-                _load();
-              },
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  for (final RankingPeriod period
+                      in RankingPeriod.values) ...<Widget>[
+                    SocialPill(
+                      label: period.label,
+                      active: _period == period,
+                      onTap: () {
+                        if (_period == period) return;
+                        setState(() => _period = period);
+                        _load();
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(height: 18),
             if (_loading)
@@ -852,59 +860,150 @@ class _RankingPageState extends State<RankingPage> {
               )
             else ...<Widget>[
               if (_snapshot!.countdownSeconds > 0)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    '本期剩余 ${_duration(_snapshot!.countdownSeconds)}',
-                    style: Theme.of(context).textTheme.bodySmall,
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: <Color>[Color(0xFFE9E5FF), Color(0xFFFFEAF2)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      const Icon(
+                        Icons.auto_awesome_rounded,
+                        color: SocialColors.primary,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          '${_board.label} · 本期剩余 ${_duration(_snapshot!.countdownSeconds)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               for (final RankingEntry entry in _snapshot!.entries)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Material(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(18),
-                    child: ListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      onTap: () => _open(entry),
-                      leading: CircleAvatar(
-                        backgroundColor: entry.rank <= 3
-                            ? AppColors.primary.withValues(alpha: 0.28)
-                            : AppColors.surfaceHigh,
-                        child: Text('${entry.rank}'),
-                      ),
-                      title: Text(entry.name),
-                      subtitle: entry.subtitle.isEmpty
-                          ? null
-                          : Text(entry.subtitle),
-                      trailing: Text(
-                        _compact(entry.value),
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
-                  ),
+                _RankingEntryCard(
+                  entry: entry,
+                  valueLabel: _compact(entry.value),
+                  onTap: () => _open(entry),
                 ),
               if (_snapshot!.selfEntry != null) ...<Widget>[
                 const Divider(height: 28),
                 Text('我的排名', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 10),
-                Material(
-                  color: AppColors.surfaceHigh,
-                  borderRadius: BorderRadius.circular(18),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      child: Text('${_snapshot!.selfEntry!.rank}'),
-                    ),
-                    title: Text(_snapshot!.selfEntry!.name),
-                    subtitle: Text(_snapshot!.selfEntry!.subtitle),
-                    trailing: Text(_compact(_snapshot!.selfEntry!.value)),
-                  ),
+                _RankingEntryCard(
+                  entry: _snapshot!.selfEntry!,
+                  valueLabel: _compact(_snapshot!.selfEntry!.value),
+                  emphasized: true,
+                  onTap: () => _open(_snapshot!.selfEntry!),
                 ),
               ],
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RankingEntryCard extends StatelessWidget {
+  const _RankingEntryCard({
+    required this.entry,
+    required this.valueLabel,
+    required this.onTap,
+    this.emphasized = false,
+  });
+
+  final RankingEntry entry;
+  final String valueLabel;
+  final VoidCallback onTap;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool podium = entry.rank <= 3;
+    final Color accent = switch (entry.rank) {
+      1 => const Color(0xFFFFB74F),
+      2 => const Color(0xFF8BB8D7),
+      3 => const Color(0xFFD79978),
+      _ => SocialColors.primary,
+    };
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: SocialCard(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        radius: podium ? 20 : 17,
+        color: emphasized
+            ? const Color(0xFFF0EDFF)
+            : podium
+            ? accent.withValues(alpha: 0.1)
+            : Colors.white.withValues(alpha: 0.82),
+        onTap: onTap,
+        child: Row(
+          children: <Widget>[
+            SizedBox(
+              width: 30,
+              child: Text(
+                '${entry.rank}',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: podium ? 20 : 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            RuntimeAvatar(
+              seed: '${entry.userId ?? entry.roomId ?? entry.name}',
+              size: podium ? 48 : 42,
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    entry.name,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  if (entry.subtitle.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 2),
+                    Text(
+                      entry.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                valueLabel,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -928,105 +1027,100 @@ class DynamicPostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(22),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onOpen,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  CircleAvatar(child: Text(_initial(post.author.nickname))),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          post.author.nickname,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        Text(
-                          <String>[
-                            post.createdAt,
-                            if (post.location.isNotEmpty) post.location,
-                          ].join(' · '),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (post.tags.isNotEmpty)
-                    Chip(
-                      visualDensity: VisualDensity.compact,
-                      label: Text(post.tags.first),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 13),
-              Text(
-                post.content,
-                maxLines: expanded ? null : 6,
-                overflow: expanded
-                    ? TextOverflow.visible
-                    : TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-              if (post.topics.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: <Widget>[
-                    for (final String topic in post.topics)
+    return SocialCard(
+      padding: EdgeInsets.zero,
+      radius: 22,
+      onTap: onOpen,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                RuntimeAvatar(seed: '${post.author.userId}', size: 42),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
                       Text(
-                        '#$topic',
-                        style: const TextStyle(color: AppColors.accent),
+                        post.author.nickname,
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
-                  ],
+                      Text(
+                        <String>[
+                          post.createdAt,
+                          if (post.location.isNotEmpty) post.location,
+                        ].join(' · '),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
+                if (post.tags.isNotEmpty)
+                  Chip(
+                    visualDensity: VisualDensity.compact,
+                    label: Text(post.tags.first),
+                  ),
               ],
-              if (post.images.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 12),
-                _ImageEvidence(images: post.images),
-              ],
-              const SizedBox(height: 12),
-              Row(
+            ),
+            const SizedBox(height: 13),
+            Text(
+              post.content,
+              maxLines: expanded ? null : 6,
+              overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+            if (post.topics.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
                 children: <Widget>[
-                  TextButton.icon(
-                    onPressed: onLike,
-                    icon: Icon(
-                      post.isLiked
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                      color: post.isLiked ? AppColors.secondary : null,
-                    ),
-                    label: Text('${post.likeCount}'),
-                  ),
-                  TextButton.icon(
-                    onPressed: onOpen,
-                    icon: const Icon(Icons.chat_bubble_outline_rounded),
-                    label: Text('${post.commentCount}'),
-                  ),
-                  const Spacer(),
-                  if (post.unlockChat)
-                    const Tooltip(
-                      message: '互动后可建立后续社交关系',
-                      child: Icon(
-                        Icons.lock_open_rounded,
-                        size: 18,
-                        color: AppColors.success,
-                      ),
+                  for (final String topic in post.topics)
+                    Text(
+                      '#$topic',
+                      style: const TextStyle(color: SocialColors.primary),
                     ),
                 ],
               ),
             ],
-          ),
+            if (post.images.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 12),
+              _ImageEvidence(images: post.images),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: <Widget>[
+                TextButton.icon(
+                  onPressed: onLike,
+                  icon: Icon(
+                    post.isLiked
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded,
+                    color: post.isLiked ? SocialColors.secondary : null,
+                  ),
+                  label: Text('${post.likeCount}'),
+                ),
+                TextButton.icon(
+                  onPressed: onOpen,
+                  icon: const Icon(Icons.chat_bubble_outline_rounded),
+                  label: Text('${post.commentCount}'),
+                ),
+                const Spacer(),
+                if (post.unlockChat)
+                  const Tooltip(
+                    message: '互动后可建立后续社交关系',
+                    child: Icon(
+                      Icons.lock_open_rounded,
+                      size: 18,
+                      color: SocialColors.success,
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -1044,7 +1138,7 @@ class _ImageEvidence extends StatelessWidget {
       height: 120,
       width: double.infinity,
       decoration: BoxDecoration(
-        color: AppColors.surfaceHigh,
+        color: SocialColors.cardSoft,
         borderRadius: BorderRadius.circular(16),
       ),
       alignment: Alignment.center,
@@ -1069,7 +1163,7 @@ class _CommentTile extends StatelessWidget {
       child: ListTile(
         contentPadding: EdgeInsets.zero,
         onTap: onReply,
-        leading: CircleAvatar(child: Text(_initial(comment.author.nickname))),
+        leading: RuntimeAvatar(seed: '${comment.author.userId}', size: 42),
         title: Row(
           children: <Widget>[
             Expanded(child: Text(comment.author.nickname)),
@@ -1168,14 +1262,14 @@ class _InfoPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface,
+      color: SocialColors.card,
       borderRadius: BorderRadius.circular(18),
       child: Padding(
         padding: const EdgeInsets.all(15),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Icon(icon, color: AppColors.accent),
+            Icon(icon, color: SocialColors.accent),
             const SizedBox(width: 12),
             Expanded(child: Text(text)),
           ],
@@ -1183,11 +1277,6 @@ class _InfoPanel extends StatelessWidget {
       ),
     );
   }
-}
-
-String _initial(String source) {
-  final String value = source.trim();
-  return value.isEmpty ? '?' : String.fromCharCode(value.runes.first);
 }
 
 String _messageFor(Object error) =>

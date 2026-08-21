@@ -39,7 +39,7 @@ class _OrdersPageState extends State<OrdersPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return _CommerceScaffold(
       appBar: AppBar(
         title: const Text('订单列表'),
         actions: <Widget>[
@@ -59,26 +59,10 @@ class _OrdersPageState extends State<OrdersPage> {
           : ListView.separated(
               padding: const EdgeInsets.all(16),
               itemCount: _orders!.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              separatorBuilder: (_, __) => const SizedBox(height: 9),
               itemBuilder: (BuildContext context, int index) {
                 final PaymentOrder order = _orders![index];
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(
-                    '¥${order.amount.toStringAsFixed(2)} · ${order.giftCoinAmount} 礼物币',
-                  ),
-                  subtitle: Text(
-                    '${order.channelName} · ${_formatDateTime(order.createdAt)}\n订单号 ${order.orderNo}',
-                  ),
-                  isThreeLine: true,
-                  trailing: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: <Widget>[
-                      Text(_orderStatusLabel(order.status)),
-                      const Icon(Icons.chevron_right_rounded),
-                    ],
-                  ),
+                return _CommercePanel(
                   onTap: () async {
                     await Navigator.of(context).push<void>(
                       MaterialPageRoute<void>(
@@ -90,6 +74,52 @@ class _OrdersPageState extends State<OrdersPage> {
                       await _load();
                     }
                   },
+                  padding: const EdgeInsets.all(13),
+                  child: Row(
+                    children: <Widget>[
+                      const _CommerceAssetOrb(
+                        icon: Icons.receipt_long_rounded,
+                        size: 44,
+                      ),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: Text(
+                                    '¥${order.amount.toStringAsFixed(2)} · ${order.giftCoinAmount} 礼物币',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleSmall,
+                                  ),
+                                ),
+                                _CommercePill(
+                                  label: _orderStatusLabel(order.status),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${order.channelName} · ${_formatDateTime(order.createdAt)}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '订单号 ${order.orderNo}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right_rounded, size: 20),
+                    ],
+                  ),
                 );
               },
             ),
@@ -152,7 +182,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return _CommerceScaffold(
       appBar: AppBar(title: const Text('订单详情与补单')),
       body: ListView(
         padding: const EdgeInsets.all(20),
@@ -164,19 +194,29 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
             title: _orderStatusLabel(_order.status),
             description: '支付结果始终以服务端订单状态为准。',
           ),
-          const SizedBox(height: 18),
-          _CommerceDetail(
-            label: '实付金额',
-            value: '¥${_order.amount.toStringAsFixed(2)}',
+          const SizedBox(height: 14),
+          _CommercePanel(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: <Widget>[
+                _CommerceDetail(
+                  label: '实付金额',
+                  value: '¥${_order.amount.toStringAsFixed(2)}',
+                ),
+                _CommerceDetail(
+                  label: '礼物币',
+                  value: '${_order.giftCoinAmount}',
+                ),
+                _CommerceDetail(label: '支付渠道', value: _order.channelName),
+                _CommerceDetail(
+                  label: '创建时间',
+                  value: _formatDateTime(_order.createdAt),
+                ),
+                _CommerceDetail(label: '订单号', value: _order.orderNo),
+              ],
+            ),
           ),
-          _CommerceDetail(label: '礼物币', value: '${_order.giftCoinAmount}'),
-          _CommerceDetail(label: '支付渠道', value: _order.channelName),
-          _CommerceDetail(
-            label: '创建时间',
-            value: _formatDateTime(_order.createdAt),
-          ),
-          _CommerceDetail(label: '订单号', value: _order.orderNo),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: _copyOrderNo,
             icon: const Icon(Icons.copy_rounded),

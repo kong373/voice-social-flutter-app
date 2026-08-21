@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
@@ -56,6 +57,7 @@ class AppDependencies {
     required this.environment,
     required this.sessionManager,
     required this.authController,
+    required this.currentTime,
     required this.liveReadOnlyRepository,
     required this.accountComplianceRepository,
     required this.discoveryRepository,
@@ -80,16 +82,34 @@ class AppDependencies {
     return _build(environment: environment, store: store);
   }
 
-  factory AppDependencies.mock({Map<String, String>? initialStorage}) {
+  factory AppDependencies.mock({
+    Map<String, String>? initialStorage,
+    DateTime? mockNow,
+  }) {
     return _build(
       environment: AppEnvironment.mock(),
       store: MemoryKeyValueStore(initialStorage),
+      mockNow: mockNow,
+    );
+  }
+
+  @visibleForTesting
+  factory AppDependencies.forTestEnvironment({
+    required AppEnvironment environment,
+    Map<String, String>? initialStorage,
+    DateTime? mockNow,
+  }) {
+    return _build(
+      environment: environment,
+      store: MemoryKeyValueStore(initialStorage),
+      mockNow: mockNow,
     );
   }
 
   static AppDependencies _build({
     required AppEnvironment environment,
     required KeyValueStore store,
+    DateTime? mockNow,
   }) {
     final AuthSessionManager sessionManager = AuthSessionManager(store);
     final ApiClient apiClient = ApiClient(
@@ -157,7 +177,7 @@ class AppDependencies {
       );
     } else {
       final MockCommerceRepository mockCommerceRepository =
-          MockCommerceRepository();
+          MockCommerceRepository(now: mockNow);
       commerceRepository = mockCommerceRepository;
       commerceCatalogRepository = MockCommerceCatalogRepository(
         onRechargeOrderChanged: mockCommerceRepository.syncRechargeOrder,
@@ -169,7 +189,7 @@ class AppDependencies {
             routes: routes,
             currentUserIdProvider: () => sessionManager.session?.userId ?? 0,
           )
-        : MockMessageRepository();
+        : MockMessageRepository(now: mockNow);
     final RoomRepository roomRepository = environment.isLive
         ? BackendRoomRepository(apiClient: apiClient, routes: routes)
         : MockRoomRepository();
@@ -192,7 +212,7 @@ class AppDependencies {
         : MockRoomRealtimeGateway();
     final RoomAudioService roomAudioService = environment.isLive
         ? const UnavailableRoomAudioService()
-        : MockRoomAudioService();
+        : MockRoomAudioService(now: mockNow);
     final DeviceIdentityProvider deviceIdentityProvider =
         DeviceIdentityProvider(
           environment: environment,
@@ -208,6 +228,7 @@ class AppDependencies {
       environment: environment,
       sessionManager: sessionManager,
       authController: authController,
+      currentTime: () => mockNow ?? DateTime.now(),
       liveReadOnlyRepository: liveReadOnlyRepository,
       accountComplianceRepository: accountComplianceRepository,
       discoveryRepository: discoveryRepository,
@@ -230,6 +251,7 @@ class AppDependencies {
   final AppEnvironment environment;
   final AuthSessionManager sessionManager;
   final AuthController authController;
+  final DateTime Function() currentTime;
   final LiveReadOnlyRepository liveReadOnlyRepository;
   final AccountComplianceRepository accountComplianceRepository;
   final DiscoveryRepository discoveryRepository;
@@ -252,14 +274,14 @@ class AppDependencies {
     required String title,
   }) {
     final session = sessionManager.session;
-    if (session == null) {
+    if (session == null && environment.isLive) {
       throw StateError('用户未登录，不能创建房间会话');
     }
     return RoomController(
       roomId: roomId,
       title: title,
-      currentUserId: session.userId,
-      accessToken: session.accessToken,
+      currentUserId: session?.userId ?? 10001,
+      accessToken: session?.accessToken ?? 'mock-local-session',
       repository: roomRepository,
       rtcAdapter: rtcAdapter,
       realtimeGateway: realtimeGateway,

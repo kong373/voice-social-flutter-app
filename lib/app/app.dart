@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
@@ -5,6 +6,14 @@ import 'package:voice_social_app/app/app_gate.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/debug/qa_console/qa_console_host.dart';
 import 'package:voice_social_app/debug/qa_console/qa_gate.dart';
+import 'package:voice_social_app/features/shell/main_shell.dart';
+
+const bool _videoRuntimeDemoRequested = bool.fromEnvironment(
+  'ENABLE_VIDEO_RUNTIME_DEMO',
+  defaultValue: false,
+);
+
+bool get videoRuntimeDemoEnabled => kDebugMode && _videoRuntimeDemoRequested;
 
 class VoiceSocialApp extends StatelessWidget {
   const VoiceSocialApp({required this.dependencies, super.key});
@@ -21,6 +30,8 @@ class VoiceSocialApp extends StatelessWidget {
         theme: AppTheme.dark(),
         home: qaConsoleEnabled
             ? const QaConsoleHost()
+            : videoRuntimeDemoEnabled
+            ? MainShell(dependencies: dependencies, onSignOut: () async {})
             : AppGate(dependencies: dependencies),
       ),
     );

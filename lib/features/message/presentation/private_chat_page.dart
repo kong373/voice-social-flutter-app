@@ -16,6 +16,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   bool _loading = true;
   bool _sending = false;
   String? _error;
+  int _loadRequestId = 0;
 
   MessageRepository get _repository =>
       AppDependencyScope.of(context).messageRepository;
@@ -30,21 +31,27 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
 
   @override
   void dispose() {
+    _loadRequestId += 1;
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
+    if (!mounted) {
+      return;
+    }
+    final int requestId = ++_loadRequestId;
+    final MessageRepository repository = _repository;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final List<ChatMessage> value = await _repository.fetchPrivateMessages(
+      final List<ChatMessage> value = await repository.fetchPrivateMessages(
         widget.conversation,
       );
-      if (!mounted) {
+      if (!mounted || requestId != _loadRequestId) {
         return;
       }
       setState(() {
@@ -55,12 +62,13 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       });
       _scrollToEnd();
     } catch (error) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = _messageFor(error);
-        });
+      if (!mounted || requestId != _loadRequestId) {
+        return;
       }
+      setState(() {
+        _loading = false;
+        _error = _messageFor(error);
+      });
     }
   }
 
@@ -101,7 +109,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
 
   void _scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
+      if (mounted && _scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 180),
@@ -138,15 +146,34 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
         _repository.supportsPrivateSend &&
         widget.conversation.available &&
         !_sending;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        centerTitle: false,
+        titleSpacing: 0,
+        title: Row(
           children: <Widget>[
-            Text(widget.conversation.title),
-            Text(
-              _repository.supportsPrivateSend ? '私聊会话' : '只读历史',
-              style: Theme.of(context).textTheme.bodySmall,
+            RuntimeAvatar(seed: widget.conversation.id, size: 34),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    widget.conversation.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    _repository.supportsPrivateSend ? '在线' : '只读历史',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: _repository.supportsPrivateSend
+                          ? SocialColors.success
+                          : SocialColors.textTertiary,
+                      fontSize: 9,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -206,18 +233,19 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                   ),
           ),
           Material(
-            color: AppColors.surface,
+            color: Colors.white.withValues(alpha: 0.86),
             child: SafeArea(
               top: false,
               child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  12,
-                  8,
-                  12,
-                  10 + MediaQuery.viewInsetsOf(context).bottom,
-                ),
+                padding: EdgeInsets.fromLTRB(12, 8, 12, 10),
                 child: Row(
                   children: <Widget>[
+                    IconButton(
+                      tooltip: '语音功能暂未开放',
+                      onPressed: null,
+                      icon: const Icon(Icons.mic_none_rounded),
+                    ),
+                    const SizedBox(width: 4),
                     Expanded(
                       child: TextField(
                         controller: _controller,
@@ -234,15 +262,25 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    IconButton.filled(
-                      tooltip: '发送消息',
-                      onPressed: canSend ? _send : null,
-                      icon: _sending
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.send_rounded),
+                    Container(
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: SocialColors.brandGradient,
+                      ),
+                      child: IconButton(
+                        tooltip: '发送消息',
+                        onPressed: canSend ? _send : null,
+                        color: Colors.white,
+                        icon: _sending
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.arrow_upward_rounded),
+                      ),
                     ),
                   ],
                 ),
@@ -262,6 +300,7 @@ class _ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final DateTime now = AppDependencyScope.of(context).currentTime();
     return Align(
       alignment: message.isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -269,9 +308,18 @@ class _ChatBubble extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: message.isMine
-              ? AppColors.primary.withValues(alpha: 0.82)
-              : AppColors.surfaceHigh,
+          color: message.isMine ? null : Colors.white.withValues(alpha: 0.86),
+          gradient: message.isMine
+              ? const LinearGradient(
+                  colors: <Color>[Color(0xFF8A70F6), Color(0xFFAF7DE8)],
+                )
+              : null,
+          border: message.isMine
+              ? null
+              : Border.all(color: const Color(0x1417213C)),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(color: Color(0x0A0F1C3D), blurRadius: 8),
+          ],
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(18),
             topRight: const Radius.circular(18),
@@ -282,14 +330,23 @@ class _ChatBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(message.content),
+            Text(
+              message.content,
+              style: TextStyle(
+                color: message.isMine ? Colors.white : SocialColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 4),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 Text(
-                  _formatMessageTime(message.createdAt),
-                  style: Theme.of(context).textTheme.bodySmall,
+                  _formatMessageTime(message.createdAt, now),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: message.isMine
+                        ? Colors.white.withValues(alpha: 0.78)
+                        : SocialColors.textTertiary,
+                  ),
                 ),
                 if (message.status == ChatMessageStatus.failed) ...<Widget>[
                   const SizedBox(width: 5),

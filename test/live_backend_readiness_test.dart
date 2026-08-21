@@ -59,10 +59,10 @@ void main() {
     final _FakeGatewayProbe probe = _FakeGatewayProbe(
       GatewayProbeResult(
         status: LiveBackendReadinessStatus.gatewayReachable,
-        message: 'HTTP 401 still proves the gateway is reachable',
+        message: 'HTTP 200 proves the health endpoint is ready',
         checkedAt: DateTime.utc(2026, 8, 17),
         latency: const Duration(milliseconds: 87),
-        httpStatus: 401,
+        httpStatus: 200,
       ),
     );
     final LiveBackendReadinessSnapshot snapshot =
@@ -72,7 +72,7 @@ void main() {
         ).check();
 
     expect(snapshot.canAttemptAuthentication, isTrue);
-    expect(snapshot.httpStatus, 401);
+    expect(snapshot.httpStatus, 200);
     expect(snapshot.apiOrigin, 'https://dev.example.com');
     expect(probe.callCount, 1);
     expect(snapshot.toRedactedText(), isNot(contains('secret-value')));

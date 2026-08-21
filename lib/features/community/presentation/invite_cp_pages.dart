@@ -37,15 +37,29 @@ class _InviteAttributionPageState extends State<InviteAttributionPage> {
   @override
   Widget build(BuildContext context) {
     final InviteAttribution? data = _data;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('邀请与渠道归属')),
       body: _error != null
           ? _StateError(message: _error!, onRetry: _load)
           : data == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: <Widget>[
+                _CommunityHero(
+                  eyebrow: 'INVITATION RECORD',
+                  title: data.available ? '邀请关系已确认' : '暂未形成邀请归属',
+                  subtitle: data.available
+                      ? '邀请码 ${data.inviteCode}  ·  已邀请 ${data.invitedUsers} 人'
+                      : data.message,
+                  icon: Icons.mark_email_read_rounded,
+                  colors: const <Color>[
+                    Color(0xFF4F83D5),
+                    Color(0xFF73C5DF),
+                    Color(0xFF9D81F0),
+                  ],
+                ),
+                const SizedBox(height: 14),
                 _InfoCard(
                   icon: data.available
                       ? Icons.verified_outlined
@@ -56,14 +70,38 @@ class _InviteAttributionPageState extends State<InviteAttributionPage> {
                 ),
                 const SizedBox(height: 16),
                 if (data.available)
-                  Material(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(20),
+                  _CommunitySection(
                     child: Padding(
-                      padding: const EdgeInsets.all(18),
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
+                          const Row(
+                            children: <Widget>[
+                              _CommunityGlyph(
+                                icon: Icons.link_rounded,
+                                tint: _CommunityPalette.violet,
+                                size: 38,
+                              ),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  '邀请归属凭证',
+                                  style: TextStyle(
+                                    color: _CommunityPalette.ink,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              _SmallTag(
+                                label: '服务端确认',
+                                tint: AppColors.success,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          const Divider(color: _CommunityPalette.line),
                           _KeyValue(label: '邀请码', value: data.inviteCode),
                           _KeyValue(label: '渠道归属', value: data.channelName),
                           _KeyValue(label: '绑定时间', value: data.boundAt),
@@ -85,7 +123,7 @@ class _InviteAttributionPageState extends State<InviteAttributionPage> {
                   ),
                 const SizedBox(height: 16),
                 const _InfoCard(
-                  icon: Icons.info_outline_rounded,
+                  icon: Icons.lock_outline_rounded,
                   text: '本页不提供改绑、抢绑或客户端本地生成归属。历史收益归属也不会被客户端重算。',
                 ),
               ],
@@ -223,9 +261,141 @@ class _CpRelationPageState extends State<CpRelationPage> {
     }
   }
 
+  Widget _relationCard(CpRelation relation) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: _CommunitySection(
+        onTap: () => Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (BuildContext context) =>
+                PublicProfilePage(userId: relation.userId),
+          ),
+        ),
+        tint: const Color(0xFFFFF8FB),
+        padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
+        child: Row(
+          children: <Widget>[
+            const _LetterAvatar(
+              label: '我',
+              prominent: true,
+              imagePath: 'assets/runtime/avatar-silver.png',
+              size: 50,
+            ),
+            Transform.translate(
+              offset: const Offset(-8, 0),
+              child: _LetterAvatar(
+                label: relation.nickname,
+                prominent: true,
+                imagePath: 'assets/runtime/avatar-rose.png',
+                size: 50,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Flexible(
+                        child: Text(
+                          relation.nickname,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _CommunityPalette.ink,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      const Icon(
+                        Icons.favorite_rounded,
+                        color: Color(0xFFFF6C9D),
+                        size: 15,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '已相伴 ${relation.days} 天',
+                    style: const TextStyle(
+                      color: Color(0xFFE25D8A),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (relation.boundAt.isNotEmpty)
+                    Text(
+                      '从 ${relation.boundAt} 开始',
+                      style: const TextStyle(
+                        color: _CommunityPalette.muted,
+                        fontSize: 10,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: _CommunityPalette.muted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _invitationCard(CpInvitation invitation) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: _CommunitySection(
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+        child: Row(
+          children: <Widget>[
+            _LetterAvatar(label: invitation.nickname),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    invitation.nickname,
+                    style: const TextStyle(
+                      color: _CommunityPalette.ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    invitation.createdAt,
+                    style: const TextStyle(
+                      color: _CommunityPalette.muted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: _busy ? null : () => _resolve(invitation, false),
+              child: const Text('拒绝'),
+            ),
+            FilledButton.tonal(
+              onPressed: _busy ? null : () => _resolve(invitation, true),
+              child: const Text('接受'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('CP 关系')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -234,34 +404,53 @@ class _CpRelationPageState extends State<CpRelationPage> {
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                 children: <Widget>[
+                  const _CommunityHero(
+                    eyebrow: 'CP CONNECTION',
+                    title: '把心意交给彼此确认',
+                    subtitle: '发出邀请后，只有对方接受才会建立关系。',
+                    icon: Icons.favorite_rounded,
+                    colors: <Color>[
+                      Color(0xFFB061CE),
+                      Color(0xFFF276A7),
+                      Color(0xFFFFB16C),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
                   const _InfoCard(
                     icon: Icons.favorite_outline_rounded,
                     text: 'CP 关系由双方主动确认。这里不会提供随机配对或自动建立关系。',
                   ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: TextField(
-                          controller: _userIdController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: '对方用户 ID',
-                            prefixIcon: Icon(Icons.person_search_outlined),
+                  const SizedBox(height: 10),
+                  _CommunitySection(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: TextField(
+                            controller: _userIdController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: '对方用户 ID',
+                              prefixIcon: Icon(Icons.person_search_outlined),
+                              fillColor: Color(0xFFF7F5FF),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: _busy ? null : _request,
-                        child: const Text('邀请'),
-                      ),
-                    ],
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _busy ? null : _request,
+                          child: const Text('邀请'),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 22),
-                  Text('当前关系', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 20),
+                  const _SectionHeading(
+                    title: '当前关系',
+                    subtitle: '由双方共同确认的陪伴关系',
+                  ),
                   const SizedBox(height: 10),
                   if (_relations.isEmpty)
                     const _InfoCard(
@@ -270,34 +459,12 @@ class _CpRelationPageState extends State<CpRelationPage> {
                     )
                   else
                     for (final CpRelation relation in _relations)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Material(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(18),
-                          child: ListTile(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            leading: CircleAvatar(
-                              child: Text(_initial(relation.nickname)),
-                            ),
-                            title: Text(relation.nickname),
-                            subtitle: Text(
-                              '已相伴 ${relation.days} 天${relation.boundAt.isEmpty ? '' : ' · ${relation.boundAt}'}',
-                            ),
-                            trailing: const Icon(Icons.chevron_right_rounded),
-                            onTap: () => Navigator.of(context).push<void>(
-                              MaterialPageRoute<void>(
-                                builder: (BuildContext context) =>
-                                    PublicProfilePage(userId: relation.userId),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  const SizedBox(height: 22),
-                  Text('待处理邀请', style: Theme.of(context).textTheme.titleLarge),
+                      _relationCard(relation),
+                  const SizedBox(height: 20),
+                  _SectionHeading(
+                    title: '待处理邀请',
+                    subtitle: '${_invitations.length} 条邀请等待你的决定',
+                  ),
                   const SizedBox(height: 10),
                   if (_invitations.isEmpty)
                     const _InfoCard(
@@ -306,40 +473,7 @@ class _CpRelationPageState extends State<CpRelationPage> {
                     )
                   else
                     for (final CpInvitation invitation in _invitations)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Material(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(18),
-                          child: ListTile(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                            leading: CircleAvatar(
-                              child: Text(_initial(invitation.nickname)),
-                            ),
-                            title: Text(invitation.nickname),
-                            subtitle: Text(invitation.createdAt),
-                            trailing: Wrap(
-                              spacing: 4,
-                              children: <Widget>[
-                                TextButton(
-                                  onPressed: _busy
-                                      ? null
-                                      : () => _resolve(invitation, false),
-                                  child: const Text('拒绝'),
-                                ),
-                                FilledButton.tonal(
-                                  onPressed: _busy
-                                      ? null
-                                      : () => _resolve(invitation, true),
-                                  child: const Text('接受'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
+                      _invitationCard(invitation),
                 ],
               ),
             ),

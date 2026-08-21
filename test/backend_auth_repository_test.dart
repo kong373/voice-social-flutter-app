@@ -33,6 +33,12 @@ void main() {
             HttpHeaders.authorizationHeader,
           ),
           'deviceId': request.headers.value('X-Device-Id'),
+          'developmentClientId': request.headers.value(
+            'X-Development-Client-Id',
+          ),
+          'developmentOutboxKey': request.headers.value(
+            'X-Development-Outbox-Key',
+          ),
           'body': decodedBody,
         });
         request.response.headers.contentType = ContentType.json;
@@ -103,6 +109,12 @@ void main() {
       expect(captured, hasLength(4));
       expect(
         captured.map((Map<String, Object?> item) => item['clientSecretHeader']),
+        everyElement(isNull),
+      );
+      expect(
+        captured.map(
+          (Map<String, Object?> item) => item['developmentOutboxKey'],
+        ),
         everyElement(isNull),
       );
       final String serialized = jsonEncode(captured);

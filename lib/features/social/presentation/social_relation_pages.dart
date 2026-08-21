@@ -61,33 +61,26 @@ class _RelationsPageState extends State<RelationsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('关注、粉丝与好友')),
       body: Column(
         children: <Widget>[
           Padding(
-            padding: const EdgeInsets.all(12),
-            child: SegmentedButton<SocialRelationList>(
-              showSelectedIcon: false,
-              segments: const <ButtonSegment<SocialRelationList>>[
-                ButtonSegment<SocialRelationList>(
-                  value: SocialRelationList.following,
-                  label: Text('关注'),
-                ),
-                ButtonSegment<SocialRelationList>(
-                  value: SocialRelationList.followers,
-                  label: Text('粉丝'),
-                ),
-                ButtonSegment<SocialRelationList>(
-                  value: SocialRelationList.friends,
-                  label: Text('好友'),
-                ),
-              ],
-              selected: <SocialRelationList>{_type},
-              onSelectionChanged: (Set<SocialRelationList> value) {
-                setState(() => _type = value.first);
-                _load();
-              },
+            padding: const EdgeInsets.fromLTRB(14, 2, 14, 8),
+            child: _OxygenPanel(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: _OxygenInlineTabs<SocialRelationList>(
+                items: const <SocialRelationList, String>{
+                  SocialRelationList.following: '关注',
+                  SocialRelationList.followers: '粉丝',
+                  SocialRelationList.friends: '好友',
+                },
+                value: _type,
+                onChanged: (SocialRelationList value) {
+                  setState(() => _type = value);
+                  _load();
+                },
+              ),
             ),
           ),
           Expanded(
@@ -99,28 +92,39 @@ class _RelationsPageState extends State<RelationsPage> {
                 ? const Center(child: Text('当前没有符合条件的用户'))
                 : RefreshIndicator(
                     onRefresh: _load,
-                    child: ListView.separated(
-                      itemCount: _items.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (BuildContext context, int index) {
-                        final SocialUser user = _items[index];
-                        return ListTile(
-                          leading: CircleAvatar(
-                            child: Text(_initial(user.name)),
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(14, 4, 14, 28),
+                      children: <Widget>[
+                        _OxygenPanel(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Column(
+                            children: <Widget>[
+                              for (
+                                int index = 0;
+                                index < _items.length;
+                                index += 1
+                              ) ...<Widget>[
+                                _OxygenUserRow(
+                                  user: _items[index],
+                                  subtitle: _items[index].signature.isEmpty
+                                      ? '对方还没有留下签名'
+                                      : _items[index].signature,
+                                  onTap: () => Navigator.of(context).push<void>(
+                                    MaterialPageRoute<void>(
+                                      builder: (BuildContext context) =>
+                                          PublicProfilePage(
+                                            userId: _items[index].userId,
+                                          ),
+                                    ),
+                                  ),
+                                ),
+                                if (index < _items.length - 1)
+                                  const Divider(height: 1),
+                              ],
+                            ],
                           ),
-                          title: Text(user.name),
-                          subtitle: Text(user.signature),
-                          trailing: user.roomId == null
-                              ? const Icon(Icons.chevron_right_rounded)
-                              : const Icon(Icons.headphones_rounded),
-                          onTap: () => Navigator.of(context).push<void>(
-                            MaterialPageRoute<void>(
-                              builder: (BuildContext context) =>
-                                  PublicProfilePage(userId: user.userId),
-                            ),
-                          ),
-                        );
-                      },
+                        ),
+                      ],
                     ),
                   ),
           ),
@@ -185,7 +189,7 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
     final SocialRepository repository = AppDependencyScope.of(
       context,
     ).socialRepository;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('好友请求')),
       body: !repository.supportsFriendRequestWorkflow
           ? const _Unavailable(
@@ -198,33 +202,84 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
                 : _ErrorState(message: _error!, onRetry: _load)
           : _items!.isEmpty
           ? const Center(child: Text('暂无好友请求'))
-          : ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: _items!.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (BuildContext context, int index) {
-                final FriendRequest request = _items![index];
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(request.user.name),
-                  subtitle: Text(request.message),
-                  trailing: request.status == FriendRequestStatus.pending
-                      ? Wrap(
-                          spacing: 4,
-                          children: <Widget>[
-                            TextButton(
-                              onPressed: () => _resolve(request, false),
-                              child: const Text('拒绝'),
-                            ),
-                            FilledButton.tonal(
-                              onPressed: () => _resolve(request, true),
-                              child: const Text('接受'),
-                            ),
-                          ],
-                        )
-                      : Text(_friendRequestLabel(request.status)),
-                );
-              },
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(14, 6, 14, 28),
+              children: <Widget>[
+                _OxygenPanel(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Column(
+                    children: <Widget>[
+                      for (
+                        int index = 0;
+                        index < _items!.length;
+                        index += 1
+                      ) ...<Widget>[
+                        Builder(
+                          builder: (BuildContext context) {
+                            final FriendRequest request = _items![index];
+                            return _OxygenUserRow(
+                              user: request.user,
+                              subtitle: request.message,
+                              onTap: () => Navigator.of(context).push<void>(
+                                MaterialPageRoute<void>(
+                                  builder: (BuildContext context) =>
+                                      PublicProfilePage(
+                                        userId: request.user.userId,
+                                      ),
+                                ),
+                              ),
+                              trailing:
+                                  request.status == FriendRequestStatus.pending
+                                  ? Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        TextButton(
+                                          onPressed: () =>
+                                              _resolve(request, false),
+                                          style: TextButton.styleFrom(
+                                            minimumSize: const Size(42, 34),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            '拒绝',
+                                            style: TextStyle(fontSize: 11),
+                                          ),
+                                        ),
+                                        FilledButton.tonal(
+                                          onPressed: () =>
+                                              _resolve(request, true),
+                                          style: FilledButton.styleFrom(
+                                            minimumSize: const Size(52, 34),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 9,
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            '接受',
+                                            style: TextStyle(fontSize: 11),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : Text(
+                                      _friendRequestLabel(request.status),
+                                      style: const TextStyle(
+                                        color: SocialColors.textSecondary,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                            );
+                          },
+                        ),
+                        if (index < _items!.length - 1)
+                          const Divider(height: 1),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
             ),
     );
   }
@@ -260,31 +315,28 @@ class _VisitorRecordsPageState extends State<VisitorRecordsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('访客记录')),
       body: Column(
         children: <Widget>[
           Padding(
-            padding: const EdgeInsets.all(12),
-            child: SegmentedButton<VisitorRecordType>(
-              segments: const <ButtonSegment<VisitorRecordType>>[
-                ButtonSegment<VisitorRecordType>(
-                  value: VisitorRecordType.viewedMe,
-                  label: Text('谁看过我'),
-                ),
-                ButtonSegment<VisitorRecordType>(
-                  value: VisitorRecordType.viewedByMe,
-                  label: Text('我看过谁'),
-                ),
-              ],
-              selected: <VisitorRecordType>{_type},
-              onSelectionChanged: (Set<VisitorRecordType> value) {
-                setState(() {
-                  _type = value.first;
-                  _items = null;
-                });
-                _load();
-              },
+            padding: const EdgeInsets.fromLTRB(14, 2, 14, 8),
+            child: _OxygenPanel(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: _OxygenInlineTabs<VisitorRecordType>(
+                items: const <VisitorRecordType, String>{
+                  VisitorRecordType.viewedMe: '谁看过我',
+                  VisitorRecordType.viewedByMe: '我看过谁',
+                },
+                value: _type,
+                onChanged: (VisitorRecordType value) {
+                  setState(() {
+                    _type = value;
+                    _items = null;
+                  });
+                  _load();
+                },
+              ),
             ),
           ),
           Expanded(
@@ -292,22 +344,37 @@ class _VisitorRecordsPageState extends State<VisitorRecordsPage> {
                 ? const Center(child: CircularProgressIndicator())
                 : _items!.isEmpty
                 ? const Center(child: Text('暂无访客记录'))
-                : ListView.builder(
-                    itemCount: _items!.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      final SocialUser user = _items![index];
-                      return ListTile(
-                        leading: CircleAvatar(child: Text(_initial(user.name))),
-                        title: Text(user.name),
-                        subtitle: Text('访问 ${user.visitCount} 次'),
-                        onTap: () => Navigator.of(context).push<void>(
-                          MaterialPageRoute<void>(
-                            builder: (BuildContext context) =>
-                                PublicProfilePage(userId: user.userId),
-                          ),
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(14, 4, 14, 28),
+                    children: <Widget>[
+                      _OxygenPanel(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Column(
+                          children: <Widget>[
+                            for (
+                              int index = 0;
+                              index < _items!.length;
+                              index += 1
+                            ) ...<Widget>[
+                              _OxygenUserRow(
+                                user: _items![index],
+                                subtitle: '访问 ${_items![index].visitCount} 次',
+                                onTap: () => Navigator.of(context).push<void>(
+                                  MaterialPageRoute<void>(
+                                    builder: (BuildContext context) =>
+                                        PublicProfilePage(
+                                          userId: _items![index].userId,
+                                        ),
+                                  ),
+                                ),
+                              ),
+                              if (index < _items!.length - 1)
+                                const Divider(height: 1),
+                            ],
+                          ],
                         ),
-                      );
-                    },
+                      ),
+                    ],
                   ),
           ),
         ],
@@ -371,42 +438,106 @@ class _PrivacyBlacklistPageState extends State<PrivacyBlacklistPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('隐私与黑名单')),
       body: _settings == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.fromLTRB(14, 4, 14, 28),
               children: <Widget>[
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('仅允许我关注的人关注我'),
-                  subtitle: Text(
-                    _settings!.serverValueKnown
-                        ? '当前设置已与服务端同步'
-                        : '服务端未提供读取接口，首次修改后才可确认',
+                _OxygenPanel(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                  child: Row(
+                    children: <Widget>[
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFEAF8FF),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.shield_outlined,
+                          color: SocialColors.accent,
+                          size: 21,
+                        ),
+                      ),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            const Text(
+                              '仅允许我关注的人关注我',
+                              style: TextStyle(
+                                color: SocialColors.textPrimary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              _settings!.serverValueKnown
+                                  ? '已与服务端同步'
+                                  : '首次修改后可确认服务端状态',
+                              style: const TextStyle(
+                                color: SocialColors.textSecondary,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: _settings!.onlyFollowedCanFollow,
+                        onChanged: _togglePrivacy,
+                      ),
+                    ],
                   ),
-                  value: _settings!.onlyFollowedCanFollow,
-                  onChanged: _togglePrivacy,
                 ),
-                const Divider(),
-                Text('黑名单', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 18),
+                const _OxygenSectionLabel(title: '黑名单'),
                 const SizedBox(height: 8),
                 if (_blacklist!.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Text('黑名单为空'),
-                  )
-                else
-                  for (final SocialUser user in _blacklist!)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(user.name),
-                      trailing: TextButton(
-                        onPressed: () => _unblock(user),
-                        child: const Text('移出'),
+                  const _OxygenPanel(
+                    child: Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 18),
+                        child: Text('黑名单为空'),
                       ),
                     ),
+                  )
+                else
+                  _OxygenPanel(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Column(
+                      children: <Widget>[
+                        for (
+                          int index = 0;
+                          index < _blacklist!.length;
+                          index += 1
+                        ) ...<Widget>[
+                          _OxygenUserRow(
+                            user: _blacklist![index],
+                            subtitle: '已屏蔽对方的关系与互动',
+                            onTap: () {},
+                            trailing: TextButton(
+                              onPressed: () => _unblock(_blacklist![index]),
+                              style: TextButton.styleFrom(
+                                minimumSize: const Size(48, 34),
+                              ),
+                              child: const Text(
+                                '移出',
+                                style: TextStyle(fontSize: 11),
+                              ),
+                            ),
+                          ),
+                          if (index < _blacklist!.length - 1)
+                            const Divider(height: 1),
+                        ],
+                      ],
+                    ),
+                  ),
               ],
             ),
     );

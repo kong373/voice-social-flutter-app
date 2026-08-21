@@ -49,7 +49,7 @@ class _EarningsPageState extends State<EarningsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return _CommerceScaffold(
       appBar: AppBar(title: const Text('主播收益')),
       body: _wallet == null || _income == null
           ? _error == null
@@ -60,7 +60,7 @@ class _EarningsPageState extends State<EarningsPage> {
               children: <Widget>[
                 _EarningsSummary(wallet: _wallet!),
                 const SizedBox(height: 18),
-                Text('收益明细', style: Theme.of(context).textTheme.titleMedium),
+                const _CommerceSectionTitle(title: '收益明细'),
                 const SizedBox(height: 8),
                 if (_income!.isEmpty)
                   const Padding(
@@ -69,17 +69,52 @@ class _EarningsPageState extends State<EarningsPage> {
                   )
                 else
                   for (final LedgerEntry entry in _income!)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(entry.title),
-                      subtitle: Text(
-                        '${entry.businessName} · ${_formatDateTime(entry.createdAt)}',
-                      ),
-                      trailing: Text(
-                        '+¥${entry.amount.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          color: AppColors.success,
-                          fontWeight: FontWeight.w700,
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _CommercePanel(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 13,
+                          vertical: 11,
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            const _CommerceAssetOrb(
+                              icon: Icons.auto_graph_rounded,
+                              size: 40,
+                              colors: <Color>[
+                                Color(0xFFDFFFF1),
+                                Color(0xFFE6F6FF),
+                              ],
+                            ),
+                            const SizedBox(width: 11),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: <Widget>[
+                                  Text(
+                                    entry.title,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleSmall,
+                                  ),
+                                  Text(
+                                    '${entry.businessName} · ${_formatDateTime(entry.createdAt)}',
+                                    maxLines: 2,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              '+¥${entry.amount.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                color: AppColors.success,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -206,7 +241,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return _CommerceScaffold(
       appBar: AppBar(title: const Text('结算与提现')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -230,34 +265,48 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                       text: '提交提现前必须完成实名认证并绑定银行卡。缺少条件时客户端会阻止提交。',
                     ),
                   const SizedBox(height: 14),
-                  TextField(
-                    controller: _amountController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
+                  _CommercePanel(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const _CommerceSectionTitle(title: '提现申请'),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _amountController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            labelText: '提现金额',
+                            helperText:
+                                '最低 ¥${_quote!.minimumAmount.toStringAsFixed(0)} · 手续费 ${_quote!.feeRateText}',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            onPressed:
+                                _wallet!.realNameVerified &&
+                                    _wallet!.bankCard != null &&
+                                    !_submitting
+                                ? _apply
+                                : null,
+                            child: _submitting
+                                ? const SizedBox.square(
+                                    dimension: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('申请提现'),
+                          ),
+                        ),
+                      ],
                     ),
-                    decoration: InputDecoration(
-                      labelText: '提现金额',
-                      helperText:
-                          '最低 ¥${_quote!.minimumAmount.toStringAsFixed(0)} · 手续费 ${_quote!.feeRateText}',
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  FilledButton(
-                    onPressed:
-                        _wallet!.realNameVerified &&
-                            _wallet!.bankCard != null &&
-                            !_submitting
-                        ? _apply
-                        : null,
-                    child: _submitting
-                        ? const SizedBox.square(
-                            dimension: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('申请提现'),
                   ),
                   const SizedBox(height: 24),
-                  Text('提现记录', style: Theme.of(context).textTheme.titleMedium),
+                  const _CommerceSectionTitle(title: '提现记录'),
                   const SizedBox(height: 8),
                   if (_records!.isEmpty)
                     const Padding(
@@ -266,17 +315,49 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                     )
                   else
                     for (final WithdrawalRecord record in _records!)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(
-                          '¥${record.amount.toStringAsFixed(2)} · ${record.statusText}',
-                        ),
-                        subtitle: Text(
-                          '${record.bankName} ${record.maskedCard}\n${_formatDateTime(record.createdAt)}',
-                        ),
-                        isThreeLine: true,
-                        trailing: Text(
-                          '到账 ¥${record.receivedAmount.toStringAsFixed(2)}',
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _CommercePanel(
+                          padding: const EdgeInsets.all(13),
+                          child: Row(
+                            children: <Widget>[
+                              const _CommerceAssetOrb(
+                                icon: Icons.account_balance_rounded,
+                                size: 40,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    Text(
+                                      '¥${record.amount.toStringAsFixed(2)} · ${record.statusText}',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleSmall,
+                                    ),
+                                    Text(
+                                      '${record.bankName} ${record.maskedCard}',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                    Text(
+                                      _formatDateTime(record.createdAt),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Text(
+                                '到账\n¥${record.receivedAmount.toStringAsFixed(2)}',
+                                textAlign: TextAlign.end,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                 ],

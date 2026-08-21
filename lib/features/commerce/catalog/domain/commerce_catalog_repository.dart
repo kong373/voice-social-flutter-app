@@ -28,11 +28,7 @@ abstract interface class CommerceCatalogRepository {
 
   Future<List<GiftCatalogItem>> fetchGiftCatalog();
 
-  Future<List<BackpackGiftItem>> fetchBackpackGifts();
-
-  Future<MembershipSnapshot> fetchMembershipSnapshot();
-
-  Future<MembershipSnapshot> purchaseMembership(String planId);
+  Future<List<DecorationItem>> fetchDecorations();
 
   Future<DecorationItem> purchaseDecoration(String decorationId);
 

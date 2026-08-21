@@ -20,12 +20,24 @@ runtime configuration validation
 
 The default debug build remains **mock mode**. Live mode requires authorized non-production configuration and fails closed when values are missing or unsafe.
 
+### Video-runtime UI preview
+
+The current frontend candidate includes the video-referenced lobby, discovery, messages, account, fixed eight-seat room, room composer, original reaction/sticker sheet, gift sheet, room tools, and persistent minimize/restore flow. Run the interactive mock preview with:
+
+```bash
+flutter run --dart-define=ENABLE_VIDEO_RUNTIME_DEMO=true
+```
+
+This switch is debug-only. It uses local repositories and adapters, does not call an RTC, IM, payment, push, SMS, or storage provider, and does not claim a live backend result.
+
 ## Scope boundaries
 
 This public repository contains no APK source package, decompiled proprietary source, backend source archive, production host, credential, signing asset, or copied brand material.
 
 The following capabilities remain excluded even when legacy evidence exists:
 
+- memberships, paid status tiers, and membership privileges;
+- gift inventory or a gift backpack;
 - red packets;
 - KTV, song requests, singing, and chorus;
 - blind boxes, magic balls, dango, and love letters;
@@ -39,6 +51,11 @@ CI pins Flutter to `3.44.7`.
 ./tool/bootstrap_local.sh
 flutter run
 ```
+
+Golden/widget tests now load their checked-in CJK baseline fonts from
+`test/fonts/`. If those files ever need to be regenerated, use
+`python3 tool/qa/build_m33_golden_fonts.py` to rebuild the deterministic
+subset from the pinned Noto Sans SC upstream commit before re-running tests.
 
 The default mock login accepts any valid mainland China mobile number with a six-digit code. `13900000000` exercises the registration-required branch.
 
@@ -54,7 +71,6 @@ flutter run \
   --dart-define=CLIENT_TYPE=Android \
   --dart-define=CLIENT_INNER_VERSION=6 \
   --dart-define=OAUTH_CLIENT_ID=... \
-  --dart-define=OAUTH_CLIENT_SECRET=... \
   --dart-define=API_TIMEOUT_SECONDS=15 \
   --dart-define=LIVE_PROBE_PATH=/
 ```
@@ -62,6 +78,20 @@ flutter run \
 On the live login page, `开发环境联调诊断` performs only a side-effect-free gateway transport probe. It does not request an SMS code or attempt authentication.
 
 The manual workflow `.github/workflows/m3-live-contract-preflight.yml` reads values only from the protected GitHub `development` environment and uploads a redacted readiness artifact.
+
+### Live development launcher
+
+For local first-party integration, use [`tool/live_development.sh`](tool/live_development.sh) instead of hand-writing `--dart-define` values. It requires only `API_BASE_URL` and the public `OAUTH_CLIENT_ID`, fixes `BACKEND_MODE=live` and `APP_ENV=development`, and fails before Flutter when the target address or configuration is unsafe.
+
+```bash
+export API_BASE_URL=http://10.0.2.2:18080/
+export OAUTH_CLIENT_ID=voice-social-mobile-public
+
+./tool/live_development.sh run --target android-emulator --device emulator-5554
+./tool/live_development.sh build-apk --target android-emulator
+```
+
+Use `http://127.0.0.1:18080/` with `--target host` only for `run` when Flutter itself runs on the Mac; `build-apk` accepts only `--target android-emulator`. `127.0.0.1` is not the Mac host from inside an Android Emulator. The launcher rejects OAuth client secrets, vendor secrets, and `--dart-define-from-file` case-insensitively; ordinary token environment variables are stripped before Flutter runs. See [live development](docs/live-development.md).
 
 ## Quality checks
 
@@ -79,5 +109,7 @@ GitHub Actions also generates an isolated Android runner, builds a debug APK, an
 - [Architecture](docs/architecture.md)
 - [M1 backend contract](docs/contracts/m1_backend_contract.md)
 - [M3.1 live readiness](docs/m3-live-backend-readiness.md)
+- [Live development launcher](docs/live-development.md)
+- [M3.3 video-runtime UI design QA](design-qa.md)
 - [Delivery roadmap](docs/roadmap.md)
 - [Security rules](docs/security.md)

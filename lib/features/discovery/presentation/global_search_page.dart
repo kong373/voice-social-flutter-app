@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/discovery/presentation/search_results_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_deep_link_page.dart';
 
@@ -42,7 +43,7 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         titleSpacing: 0,
         title: TextField(
@@ -72,12 +73,16 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: <Widget>[
+          const _SearchDiscoveryHero(),
+          const SizedBox(height: 18),
           if (_canDirectRoom) ...<Widget>[
-            Material(
-              color: AppColors.primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(18),
+            SocialCard(
+              padding: EdgeInsets.zero,
+              radius: 18,
+              onTap: _openRoomDirect,
+              color: const Color(0xFFF0ECFF),
               child: ListTile(
                 leading: const Icon(
                   Icons.meeting_room_outlined,
@@ -86,10 +91,9 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
                 title: Text('直达房间 ${_controller.text.trim()}'),
                 subtitle: const Text('校验成功后直接进入，不展示普通中间页'),
                 trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: _openRoomDirect,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 18),
           ],
           Row(
             children: <Widget>[
@@ -127,8 +131,31 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
                   ),
               ],
             ),
-          const SizedBox(height: 30),
-          Text('搜索说明', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 24),
+          Text('你可能想找', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              for (final String item in const <String>[
+                '深夜陪伴',
+                '音乐点唱',
+                '轻松闲聊',
+                '新朋友',
+              ])
+                SocialPill(
+                  label: item,
+                  icon: Icons.auto_awesome_rounded,
+                  onTap: () {
+                    _controller.text = item;
+                    _search();
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Text('搜索范围', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
           const _SearchGuide(
             icon: Icons.graphic_eq_rounded,
@@ -193,30 +220,107 @@ class _SearchGuide extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.58),
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Container(
-            width: 42,
-            height: 42,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
-              color: AppColors.surfaceHigh,
-              borderRadius: BorderRadius.circular(14),
+              gradient: SocialColors.brandGradient,
+              borderRadius: BorderRadius.circular(13),
             ),
-            child: Icon(icon, color: AppColors.accent),
+            child: Icon(icon, color: Colors.white, size: 20),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(title, style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(description, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchDiscoveryHero extends StatelessWidget {
+  const _SearchDiscoveryHero();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 118,
+      padding: const EdgeInsets.fromLTRB(18, 16, 16, 14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            Color(0xFF7768F4),
+            Color(0xFF9B78F4),
+            Color(0xFFFF99BE),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x305E4ACD),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: const Stack(
+        children: <Widget>[
+          Positioned(
+            right: -4,
+            top: -10,
+            child: Icon(
+              Icons.travel_explore_rounded,
+              size: 92,
+              color: Color(0x29FFFFFF),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                '找到此刻同频的人',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              SizedBox(height: 7),
+              Text(
+                '搜索房间、用户或输入房间号直达',
+                style: TextStyle(color: Color(0xE8FFFFFF), fontSize: 11),
+              ),
+              Spacer(),
+              Row(
+                children: <Widget>[
+                  Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 15),
+                  SizedBox(width: 5),
+                  Text(
+                    '实时房间正在发生',
+                    style: TextStyle(color: Colors.white, fontSize: 10),
+                  ),
+                ],
+              ),
+            ],
           ),
         ],
       ),

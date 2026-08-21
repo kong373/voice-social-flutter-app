@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
@@ -76,34 +77,33 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: Text('“${widget.keyword}”的搜索结果')),
       body: Column(
         children: <Widget>[
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: SegmentedButton<SearchEntityType>(
-              showSelectedIcon: false,
-              segments: const <ButtonSegment<SearchEntityType>>[
-                ButtonSegment<SearchEntityType>(
-                  value: SearchEntityType.all,
-                  label: Text('全部'),
-                ),
-                ButtonSegment<SearchEntityType>(
-                  value: SearchEntityType.rooms,
-                  label: Text('房间'),
-                ),
-                ButtonSegment<SearchEntityType>(
-                  value: SearchEntityType.users,
-                  label: Text('用户'),
-                ),
+            child: Row(
+              children: <Widget>[
+                for (final SearchEntityType type
+                    in SearchEntityType.values) ...<Widget>[
+                  SocialPill(
+                    label: switch (type) {
+                      SearchEntityType.all => '全部',
+                      SearchEntityType.rooms => '房间',
+                      SearchEntityType.users => '用户',
+                    },
+                    active: _type == type,
+                    onTap: () {
+                      if (_type == type) return;
+                      setState(() => _type = type);
+                      _load();
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                ],
               ],
-              selected: <SearchEntityType>{_type},
-              onSelectionChanged: (Set<SearchEntityType> value) {
-                setState(() => _type = value.first);
-                _load();
-              },
             ),
           ),
           Expanded(child: _buildBody()),
@@ -242,30 +242,99 @@ class _RoomResultTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
         onTap: onTap,
-        leading: CircleAvatar(
-          backgroundColor: AppColors.primary.withValues(alpha: 0.18),
-          child: Icon(
-            room.isSpeaking ? Icons.graphic_eq_rounded : Icons.headphones,
-            color: AppColors.primary,
+        borderRadius: BorderRadius.circular(22),
+        child: OriginalRoomArtwork(
+          seed: room.id,
+          height: 116,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.34),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Icon(
+                            room.isSpeaking
+                                ? Icons.graphic_eq_rounded
+                                : Icons.headphones_rounded,
+                            color: Colors.white,
+                            size: 13,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${room.onlineCount} 人在线',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Spacer(),
+                    if (room.isLocked)
+                      const Icon(
+                        Icons.lock_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                  ],
+                ),
+                const Spacer(),
+                Text(
+                  room.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        room.topic,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xDDFFFFFF),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${room.occupiedSeats}/8 麦',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-        title: Text(room.title),
-        subtitle: Text(
-          '${room.topic}\n${room.occupiedSeats}/8 麦 · ${room.onlineCount} 人在线',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        isThreeLine: true,
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            if (room.isLocked) const Icon(Icons.lock_outline_rounded, size: 18),
-            const Icon(Icons.chevron_right_rounded),
-          ],
         ),
       ),
     );
@@ -285,29 +354,53 @@ class _UserResultTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: SocialCard(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        radius: 18,
         onTap: onOpenProfile,
-        leading: CircleAvatar(child: Text(_initial(user.name))),
-        title: Text(user.name),
-        subtitle: Text(
-          user.isInRoom
-              ? '用户号 ${user.loginName} · 正在 ${user.currentRoomTitle ?? '语音房'}'
-              : '用户号 ${user.loginName} · 当前未在房间',
-        ),
-        trailing: onEnterRoom == null
-            ? const Icon(Icons.chevron_right_rounded)
-            : FilledButton.tonal(
-                onPressed: onEnterRoom,
-                child: const Text('进房'),
+        child: Row(
+          children: <Widget>[
+            RuntimeAvatar(seed: '${user.userId}', size: 44),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    user.name,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    user.isInRoom
+                        ? '正在 ${user.currentRoomTitle ?? '语音房'}'
+                        : '用户号 ${user.loginName} · 当前离线',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ),
+            ),
+            if (onEnterRoom != null)
+              SocialPill(
+                label: '进房',
+                active: true,
+                icon: Icons.graphic_eq_rounded,
+                onTap: onEnterRoom,
+              )
+            else
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: SocialColors.textTertiary,
+              ),
+          ],
+        ),
       ),
     );
   }
-
-  static String _initial(String value) =>
-      value.isEmpty ? '?' : String.fromCharCode(value.runes.first);
 }
 
 class _SearchState extends StatelessWidget {

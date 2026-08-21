@@ -50,10 +50,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
       _routes.roomPkSearch,
       query: <String, String>{'roomCode': value},
     );
-    final Object? data = response.data;
-    final List<Map<String, Object?>> raw = data is List
-        ? _asMapList(data)
-        : <Map<String, Object?>>[_asMap(data)];
+    final List<Map<String, Object?>> raw = _extractSearchList(response.data);
     return raw
         .where((Map<String, Object?> item) => item.isNotEmpty)
         .map(_opponentFromMap)
@@ -376,6 +373,28 @@ class BackendRoomPkRepository implements RoomPkRepository {
         map['data'] ??
         value;
     return _asMapList(source);
+  }
+
+  static List<Map<String, Object?>> _extractSearchList(Object? value) {
+    if (value is List) {
+      return _asMapList(value);
+    }
+    final Map<String, Object?> map = _asMap(value);
+    final Object? nested =
+        map['records'] ??
+        map['list'] ??
+        map['rows'] ??
+        map['items'] ??
+        map['data'];
+    if (nested is List) {
+      return _asMapList(nested);
+    }
+    if (nested is Map<String, Object?>) {
+      return <Map<String, Object?>>[nested];
+    }
+    return map.isEmpty
+        ? const <Map<String, Object?>>[]
+        : <Map<String, Object?>>[map];
   }
 
   static Object _numericId(String value) => int.tryParse(value) ?? value;

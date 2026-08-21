@@ -12,14 +12,18 @@ import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
 import 'package:voice_social_app/features/social/data/mock_social_repository.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 
+final DateTime qaReferenceTime = DateTime(2026, 8, 20, 20, 39);
+
 Future<AppDependencies> createQaDependencies() async {
-  final AppDependencies dependencies = AppDependencies.mock();
+  final AppDependencies dependencies = AppDependencies.mock(
+    mockNow: qaReferenceTime,
+  );
   await dependencies.sessionManager.acceptConsent();
   await dependencies.sessionManager.save(
     AuthSession(
       accessToken: 'qa-access-token',
       tokenType: 'Bearer',
-      expiresAt: DateTime.now().add(const Duration(days: 365)),
+      expiresAt: qaReferenceTime.add(const Duration(days: 365)),
       userId: 10001,
       mobile: '13800138000',
       roles: 'ROLE_USER',
@@ -88,7 +92,7 @@ ConversationSummary qaConversation() => ConversationSummary(
   kind: ConversationKind.privateChat,
   title: '晚星',
   lastMessage: '今晚房间的话题很温柔。',
-  updatedAt: DateTime.now().subtract(const Duration(minutes: 8)),
+  updatedAt: qaReferenceTime.subtract(const Duration(minutes: 8)),
   unreadCount: 2,
   targetUserId: 20001,
 );
@@ -100,7 +104,7 @@ SupportTicket qaSupportTicket(AppDependencies dependencies) {
     content: '用于检查工单详情与处理进度页面。',
     status: SupportTicketStatus.processing,
     statusText: '处理中',
-    createdAt: DateTime.now().subtract(const Duration(hours: 2)),
+    createdAt: qaReferenceTime.subtract(const Duration(hours: 2)),
     progressAvailable: true,
   );
   (dependencies.socialRepository as MockSocialRepository)
@@ -128,7 +132,7 @@ RechargeOrder qaRechargeOrder(
     state: succeeded
         ? RechargeOrderState.succeeded
         : RechargeOrderState.confirming,
-    createdAt: DateTime.now().subtract(const Duration(minutes: 2)),
+    createdAt: qaReferenceTime.subtract(const Duration(minutes: 2)),
     message: succeeded ? '服务端已确认到账' : '等待服务端确认',
   );
   (dependencies.commerceCatalogRepository as MockCommerceCatalogRepository)
@@ -142,7 +146,7 @@ PaymentOrder qaPaymentOrder(AppDependencies dependencies) {
     amount: 30,
     giftCoinAmount: 300,
     channelName: '微信支付',
-    createdAt: DateTime.now().subtract(const Duration(days: 1)),
+    createdAt: qaReferenceTime.subtract(const Duration(days: 1)),
     status: PaymentOrderStatus.confirming,
   );
   (dependencies.commerceRepository as MockCommerceRepository)
@@ -158,7 +162,7 @@ RefundApplication qaRefundApplication(AppDependencies dependencies) {
     status: RefundStatus.reviewing,
     statusText: '审核中',
     rejectedReason: '',
-    createdAt: DateTime.now().subtract(const Duration(days: 1)),
+    createdAt: qaReferenceTime.subtract(const Duration(days: 1)),
   );
   (dependencies.commerceRepository as MockCommerceRepository)
       .seedRefundApplicationForQa(application);
@@ -188,7 +192,7 @@ RoomPkBattle qaRoomPkBattle(
     punishmentTheme: '分享今天最开心的事',
     stage: completed ? RoomPkBattleStage.completed : RoomPkBattleStage.fighting,
     result: completed ? RoomPkResult.win : null,
-    updatedAt: DateTime.now(),
+    updatedAt: qaReferenceTime,
   );
   (dependencies.roomPkRepository as MockRoomPkRepository).seedBattleForQa(
     battle,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
+import 'package:voice_social_app/features/account/presentation/account_oxygen_components.dart';
 
 class ConsentPage extends StatelessWidget {
   const ConsentPage({required this.onAccept, super.key});
@@ -8,96 +9,91 @@ class ConsentPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
+      bottomNavigationBar: AccountBottomActionBar(
+        child: AccountPrimaryAction(
+          label: '同意并继续',
+          icon: Icons.arrow_forward_rounded,
+          onPressed: onAccept,
+        ),
+      ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 30, 24, 24),
-          child: ListView(
-            children: <Widget>[
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: const Icon(
-                  Icons.shield_outlined,
-                  color: AppColors.primary,
-                ),
-              ),
-              const SizedBox(height: 28),
-              Text('欢迎使用', style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 12),
-              Text(
-                '在开始使用前，请阅读并同意用户协议与隐私政策。我们会在提供账号、语音房、消息和支付等功能所必需的范围内处理信息。',
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: AppColors.textSecondary,
-                  height: 1.6,
-                ),
-              ),
-              const SizedBox(height: 28),
-              const _ConsentPoint(
-                icon: Icons.mic_none_rounded,
-                title: '麦克风权限',
-                description: '仅在你申请上麦或发送语音时申请。',
-              ),
-              const _ConsentPoint(
-                icon: Icons.notifications_none_rounded,
-                title: '通知权限',
-                description: '用于私聊、好友互动和房间邀请提醒。',
-              ),
-              const _ConsentPoint(
-                icon: Icons.lock_outline_rounded,
-                title: '账号与设备信息',
-                description: '用于登录安全、异常会话识别和账号保护。',
-              ),
-              const SizedBox(height: 28),
-              Wrap(
-                spacing: 4,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(22, 30, 22, 32),
+          children: <Widget>[
+            const AccountMistHero(
+              eyebrow: 'WELCOME',
+              title: '欢迎使用',
+              subtitle: '先确认必要的信息使用边界，之后每项系统权限仍会在实际使用时单独询问。',
+              markSize: 60,
+              centered: false,
+            ),
+            const SizedBox(height: 25),
+            const AccountSectionLabel(text: '我们如何使用权限'),
+            const AccountSheet(
+              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+              child: Column(
                 children: <Widget>[
-                  const Text('点击同意即表示你已阅读并接受'),
-                  TextButton(
-                    onPressed: () => _showDocument(context, '用户协议'),
-                    child: const Text('用户协议'),
+                  _ConsentPoint(
+                    icon: Icons.mic_none_rounded,
+                    title: '麦克风权限',
+                    description: '仅在你申请上麦或发送语音时申请。',
                   ),
-                  const Text('与'),
-                  TextButton(
-                    onPressed: () => _showDocument(context, '隐私政策'),
-                    child: const Text('隐私政策'),
+                  _ConsentPoint(
+                    icon: Icons.notifications_none_rounded,
+                    title: '通知权限',
+                    description: '用于私聊、好友互动和房间邀请提醒。',
+                  ),
+                  _ConsentPoint(
+                    icon: Icons.lock_outline_rounded,
+                    title: '账号与设备信息',
+                    description: '用于登录安全、异常会话识别和账号保护。',
+                    showDivider: false,
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: onAccept,
-                  child: const Text('同意并继续'),
+            ),
+            const SizedBox(height: 18),
+            AccountNoticeStrip(
+              icon: Icons.privacy_tip_outlined,
+              text: '在开始使用前，请阅读并同意用户协议与隐私政策。我们只在账号、语音房、消息与支付等功能所必需的范围内处理信息。',
+              tone: AccountOxygenColors.cyan,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                TextButton(
+                  onPressed: () => _showDocument(context, '用户协议'),
+                  child: const Text('用户协议'),
                 ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () => showDialog<void>(
-                    context: context,
-                    builder: (BuildContext context) => AlertDialog(
-                      title: const Text('暂不使用'),
-                      content: const Text('不同意协议将无法进入应用。你可以关闭应用后再决定。'),
-                      actions: <Widget>[
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('返回'),
-                        ),
-                      ],
-                    ),
+                Text('和', style: Theme.of(context).textTheme.bodySmall),
+                TextButton(
+                  onPressed: () => _showDocument(context, '隐私政策'),
+                  child: const Text('隐私政策'),
+                ),
+              ],
+            ),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => showDialog<void>(
+                  context: context,
+                  builder: (BuildContext context) => AlertDialog(
+                    title: const Text('暂不使用'),
+                    content: const Text('不同意协议将无法进入应用。你可以关闭应用后再决定。'),
+                    actions: <Widget>[
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('返回'),
+                      ),
+                    ],
                   ),
-                  child: const Text('暂不使用'),
                 ),
+                child: const Text('暂不使用'),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -136,33 +132,22 @@ class _ConsentPoint extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.description,
+    this.showDivider = true,
   });
 
   final IconData icon;
   final String title;
   final String description;
+  final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Icon(icon, color: AppColors.accent),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
-                Text(description, style: Theme.of(context).textTheme.bodySmall),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return AccountSettingRow(
+      icon: icon,
+      title: title,
+      subtitle: description,
+      tone: AccountOxygenColors.violet,
+      showDivider: showDivider,
     );
   }
 }

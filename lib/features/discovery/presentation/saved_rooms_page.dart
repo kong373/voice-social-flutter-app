@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
@@ -63,7 +64,7 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('收藏与我的房间'),
         actions: <Widget>[
@@ -78,24 +79,24 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: SegmentedButton<_SavedRoomSection>(
-              showSelectedIcon: false,
-              segments: const <ButtonSegment<_SavedRoomSection>>[
-                ButtonSegment<_SavedRoomSection>(
-                  value: _SavedRoomSection.favorites,
-                  label: Text('收藏房间'),
-                  icon: Icon(Icons.bookmark_outline_rounded),
+            child: Row(
+              children: <Widget>[
+                SocialPill(
+                  label: '收藏房间',
+                  icon: Icons.bookmark_outline_rounded,
+                  active: _section == _SavedRoomSection.favorites,
+                  onTap: () =>
+                      setState(() => _section = _SavedRoomSection.favorites),
                 ),
-                ButtonSegment<_SavedRoomSection>(
-                  value: _SavedRoomSection.owned,
-                  label: Text('我的房间'),
-                  icon: Icon(Icons.meeting_room_outlined),
+                const SizedBox(width: 8),
+                SocialPill(
+                  label: '我的房间',
+                  icon: Icons.meeting_room_outlined,
+                  active: _section == _SavedRoomSection.owned,
+                  onTap: () =>
+                      setState(() => _section = _SavedRoomSection.owned),
                 ),
               ],
-              selected: <_SavedRoomSection>{_section},
-              onSelectionChanged: (Set<_SavedRoomSection> value) {
-                setState(() => _section = value.first);
-              },
             ),
           ),
           Expanded(child: _buildBody()),
@@ -227,61 +228,94 @@ class _SavedRoomCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return OriginalRoomArtwork(
+      seed: room.id,
+      height: 174,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(14, 13, 12, 11),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Row(
               children: <Widget>[
-                Expanded(
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.34),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                   child: Text(
-                    room.title,
-                    style: Theme.of(context).textTheme.titleMedium,
+                    '${room.onlineCount} 人在线 · ${room.occupiedSeats}/8 麦',
+                    style: const TextStyle(color: Colors.white, fontSize: 9),
                   ),
                 ),
+                const Spacer(),
                 if (room.isLocked)
-                  const Padding(
-                    padding: EdgeInsets.only(left: 8),
-                    child: Icon(Icons.lock_outline_rounded, size: 18),
+                  const Icon(
+                    Icons.lock_outline_rounded,
+                    color: Colors.white,
+                    size: 17,
                   ),
               ],
             ),
-            const SizedBox(height: 6),
+            const Spacer(),
+            Text(
+              room.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
             Text(
               room.topic,
-              maxLines: 2,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
+              style: const TextStyle(color: Color(0xDDFFFFFF), fontSize: 10),
             ),
-            const SizedBox(height: 12),
-            Text(
-              '房间号 ${room.code} · ${room.occupiedSeats}/8 麦 · ${room.onlineCount} 人在线',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 9),
             Row(
               children: <Widget>[
                 if (onFavorite != null)
-                  TextButton.icon(
+                  TextButton(
                     onPressed: busy ? null : onFavorite,
-                    icon: busy
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.black.withValues(alpha: 0.24),
+                    ),
+                    child: busy
                         ? const SizedBox.square(
                             dimension: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.bookmark_remove_outlined),
-                    label: const Text('取消收藏'),
+                        : const Text('取消收藏'),
                   ),
                 if (onManage != null)
-                  TextButton.icon(
+                  TextButton(
                     onPressed: onManage,
-                    icon: const Icon(Icons.tune_rounded),
-                    label: const Text('管理'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.black.withValues(alpha: 0.24),
+                    ),
+                    child: const Text('管理'),
                   ),
                 const Spacer(),
-                FilledButton(onPressed: onEnter, child: const Text('进入房间')),
+                FilledButton.icon(
+                  onPressed: onEnter,
+                  icon: const Icon(Icons.graphic_eq_rounded, size: 17),
+                  label: const Text('进入房间'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: SocialColors.primary.withValues(
+                      alpha: 0.9,
+                    ),
+                  ),
+                ),
               ],
             ),
           ],
