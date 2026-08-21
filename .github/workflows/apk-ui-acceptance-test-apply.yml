@@ -1,0 +1,61 @@
+name: Apply APK UI acceptance flow
+
+on:
+  push:
+    branches:
+      - feat/apk-ui-replica
+    paths:
+      - tool/ui/APPLY_APK_UI_ACCEPTANCE
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-ui-acceptance-test-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+
+jobs:
+  apply-and-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/apk-ui-replica
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Apply acceptance flow
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 tool/ui/apply_apk_ui_acceptance_test.py
+          dart format integration_test/m3_2_vendor_readiness_test.dart
+          flutter pub get --enforce-lockfile
+          flutter analyze
+          flutter test --concurrency=1 --timeout=90s
+
+      - name: Commit tested acceptance flow
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add integration_test tool/ui .github
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "test(ui): align two-AVD flow with APK-inspired surfaces"
+          git push origin HEAD:feat/apk-ui-replica

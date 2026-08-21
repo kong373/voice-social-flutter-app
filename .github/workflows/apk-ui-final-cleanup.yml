@@ -1,0 +1,93 @@
+name: Finalize APK UI replica branch
+
+on:
+  push:
+    branches:
+      - feat/apk-ui-replica
+    paths:
+      - tool/ui/FINALIZE_APK_UI_REPLICA
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-ui-final-cleanup
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+
+jobs:
+  cleanup-test-and-commit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/apk-ui-replica
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify both validation gates
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -f docs/ui/APK_UI_VALIDATION_PASS
+          test -f docs/ui/FULL_69_APK_UI_PASS
+          grep -Fxq 'conclusion=success' docs/ui/APK_UI_VALIDATION_PASS
+          grep -Fxq 'evidence_verdict=PASS' docs/ui/FULL_69_APK_UI_PASS
+
+      - name: Remove one-shot migration and publisher machinery
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf tool/ui
+          rm -f \
+            .github/workflows/apk-ui-replica-apply.yml \
+            .github/workflows/apk-ui-phase2-apply.yml \
+            .github/workflows/apk-ui-acceptance-test-apply.yml \
+            .github/workflows/apk-ui-validation-publisher.yml \
+            .github/workflows/apk-ui-status-evaluator.yml \
+            .github/workflows/apk-ui-pass-comment.yml \
+            .github/workflows/apk-ui-full-69-dispatch.yml \
+            .github/workflows/apk-ui-full-69-status-evaluator.yml \
+            .github/workflows/apk-ui-final-cleanup.yml
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Verify final candidate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+          base_sha="$(git merge-base HEAD origin/feat/m3-2a-live-auth-readonly)"
+          mapfile -d '' dart_files < <(
+            git diff --name-only -z --diff-filter=ACMR \
+              "$base_sha" HEAD -- '*.dart'
+          )
+          dart format --output=none --set-exit-if-changed "${dart_files[@]}"
+          flutter analyze
+          flutter test --concurrency=1 --timeout=90s
+          flutter build apk --debug \
+            --dart-define=BACKEND_MODE=live \
+            --dart-define=APP_ENV=development \
+            --dart-define=ALLOW_INSECURE_HTTP=true \
+            --dart-define=API_BASE_URL=http://10.0.2.2:8765/ \
+            --dart-define=OAUTH_CLIENT_ID=voice-social-mobile-public
+
+      - name: Commit clean tested branch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "chore(ui): finalize tested APK UI replica branch"
+          git push origin HEAD:feat/apk-ui-replica

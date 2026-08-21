@@ -1,0 +1,4 @@
+run=1
+avd_a=api36-390x844
+avd_b=api35-360x800
+providers=disabled

@@ -1,0 +1,178 @@
+name: Apply APK-inspired UI replica
+
+on:
+  push:
+    branches:
+      - feat/apk-ui-replica
+    paths:
+      - tool/ui/APPLY_APK_UI_REPLICA
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-ui-replica-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+
+jobs:
+  apply-test-and-commit:
+    name: Apply, format, analyze, test, and commit UI migration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout UI branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/apk-ui-replica
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Verify locked dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -f pubspec.lock
+          flutter pub get --enforce-lockfile
+
+      - name: Apply deterministic visual migration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 tool/ui/apply_apk_ui_replica.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('lib/features/discovery/home_page.dart')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              'final int safeCount = count.clamp(0, 4);',
+              'final int safeCount = count.clamp(0, 4).toInt();',
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Format complete candidate Dart delta
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          base_sha="$(git merge-base HEAD origin/main)"
+          mapfile -d '' dart_files < <(
+            git diff --name-only -z --diff-filter=ACMR \
+              "$base_sha" HEAD -- '*.dart'
+          )
+          if (( ${#dart_files[@]} > 0 )); then
+            dart format "${dart_files[@]}"
+          fi
+          printf 'format_base=%s\n' "$base_sha" > ui-format-summary.txt
+          printf 'changed_dart_files=%s\n' "${#dart_files[@]}" >> ui-format-summary.txt
+
+      - name: Validate QA and migration tooling
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile tool/ui/apply_apk_ui_replica.py
+          python3 -m py_compile tool/qa/m32_contract_server.py
+          python3 -m py_compile tool/qa/m32_review_contract_server.py
+          bash -n tool/qa/run_m32_vendor_avd.sh
+
+      - name: Analyze
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter analyze 2>&1 | tee ui-analyze.log
+
+      - name: Run all Dart and widget tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter test \
+            --coverage \
+            --concurrency=1 \
+            --timeout=90s \
+            --reporter=expanded \
+            2>&1 | tee ui-test.log
+
+      - name: Verify Page ID and retired-feature invariants
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          catalog = Path('lib/app/page_catalog.dart')
+          if not catalog.exists():
+              matches = set()
+              for path in Path('lib').rglob('*.dart'):
+                  text = path.read_text(encoding='utf-8', errors='ignore')
+                  matches.update(re.findall(r"\b(?:AC|DS|US|RM|MS|CM|SC)-\d{3}\b", text))
+          else:
+              text = catalog.read_text(encoding='utf-8')
+              matches = set(re.findall(r"\b(?:AC|DS|US|RM|MS|CM|SC)-\d{3}\b", text))
+          if len(matches) != 69:
+              raise SystemExit(f'PAGE_ID_COUNT={len(matches)} expected=69')
+          forbidden = [
+              'red packet', 'blind box', 'magic ball', 'dango', 'love letter',
+              '红包', '盲盒', '魔法球', '团子', '情书', 'KTV', '点歌', '合唱',
+              '随机遇见', '附近的人',
+          ]
+          hits = []
+          for path in Path('lib').rglob('*.dart'):
+              text = path.read_text(encoding='utf-8', errors='ignore')
+              for token in forbidden:
+                  if token.lower() in text.lower():
+                      hits.append(f'{path}:{token}')
+          if hits:
+              raise SystemExit('FORBIDDEN_FEATURE_HITS=' + ','.join(hits[:20]))
+          print('PAGE_ID_COUNT=69')
+          print('FORBIDDEN_FEATURE_HITS=0')
+          PY
+
+      - name: Build Android debug APK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter build apk --debug \
+            --dart-define=BACKEND_MODE=mock \
+            --dart-define=APP_ENV=development
+          sha256sum build/app/outputs/flutter-apk/app-debug.apk \
+            | tee ui-apk.sha256
+
+      - name: Commit tested UI migration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add lib test integration_test tool docs .github pubspec.yaml pubspec.lock analysis_options.yaml
+          if git diff --cached --quiet; then
+            echo 'No UI changes to commit.'
+            exit 0
+          fi
+          git commit -m "feat(ui): apply APK-inspired full app visual system"
+          git push origin HEAD:feat/apk-ui-replica
+
+      - name: Upload validation diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: apk-ui-migration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ui-format-summary.txt
+            ui-analyze.log
+            ui-test.log
+            ui-apk.sha256
+            coverage/
+            build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: warn
+          retention-days: 14

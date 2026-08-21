@@ -1,0 +1,132 @@
+name: Publish validated APK UI screenshots
+
+on:
+  push:
+    branches:
+      - feat/apk-ui-replica
+    paths:
+      - docs/ui/REQUEST_SCREENSHOT_PUBLISH
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout final branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: feat/apk-ui-replica
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Download full validation evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          run_id="$(awk -F= '$1 == "run_id" {print $2}' docs/ui/FULL_69_APK_UI_PASS)"
+          test -n "$run_id"
+          rm -rf "$RUNNER_TEMP/full-evidence"
+          mkdir -p "$RUNNER_TEMP/full-evidence"
+          gh run download "$run_id" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$RUNNER_TEMP/full-evidence"
+          printf 'source_run_id=%s\n' "$run_id" > "$RUNNER_TEMP/source.txt"
+
+      - name: Select representative current-run screenshots
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m pip install --disable-pip-version-check --quiet pillow
+          python3 - "$RUNNER_TEMP/full-evidence" <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageDraw
+          import shutil
+          import sys
+
+          root = Path(sys.argv[1])
+          destination = Path('docs/ui/validated-screenshots')
+          destination.mkdir(parents=True, exist_ok=True)
+          for old in destination.glob('*'):
+              if old.is_file():
+                  old.unlink()
+
+          pages = [
+              ('AC-003', '登录'),
+              ('DS-001', '首页'),
+              ('DS-004', '发现'),
+              ('US-001', '我的'),
+              ('RM-004', '语音房'),
+              ('MS-001', '消息'),
+              ('CM-001', '钱包'),
+              ('CM-009', '礼物'),
+              ('SC-001', '公会'),
+          ]
+          pngs = sorted(root.rglob('*.png'))
+          selected = []
+          for page_id, label in pages:
+              candidates = [p for p in pngs if page_id.lower() in p.name.lower()]
+              preferred = [
+                  p for p in candidates
+                  if '1.3x' not in p.name.lower()
+                  and ('390x844' in p.name or 'avd-a' in str(p).lower())
+              ]
+              source = (preferred or [
+                  p for p in candidates if '1.3x' not in p.name.lower()
+              ] or candidates)
+              if not source:
+                  continue
+              source_path = source[0]
+              target = destination / f'{page_id}.png'
+              shutil.copy2(source_path, target)
+              selected.append((page_id, label, target, str(source_path.relative_to(root))))
+
+          if len(selected) < 5:
+              raise SystemExit(f'Only {len(selected)} representative page screenshots found')
+
+          thumb_w, thumb_h = 195, 422
+          label_h = 30
+          columns = 3
+          rows = (len(selected) + columns - 1) // columns
+          sheet = Image.new('RGB', (columns * thumb_w, rows * (thumb_h + label_h)), 'white')
+          draw = ImageDraw.Draw(sheet)
+          for index, (page_id, label, path, _) in enumerate(selected):
+              image = Image.open(path).convert('RGB')
+              image.thumbnail((thumb_w, thumb_h))
+              x = (index % columns) * thumb_w + (thumb_w - image.width) // 2
+              y_base = (index // columns) * (thumb_h + label_h)
+              y = y_base + (thumb_h - image.height) // 2
+              sheet.paste(image, (x, y))
+              draw.text((index % columns * thumb_w + 8, y_base + thumb_h + 7), f'{page_id} {label}', fill='black')
+          sheet.save(destination / 'validated-ui-contact-sheet.png', quality=92)
+
+          manifest = destination / 'manifest.txt'
+          with manifest.open('w', encoding='utf-8') as handle:
+              for page_id, label, target, source in selected:
+                  handle.write(f'{page_id}\t{label}\t{target.name}\t{source}\n')
+          PY
+
+      - name: Seal screenshots and remove publisher
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          run_id="$(awk -F= '$1 == "run_id" {print $2}' docs/ui/FULL_69_APK_UI_PASS)"
+          tested_sha="$(awk -F= '$1 == "tested_git_sha" {print $2}' docs/ui/FULL_69_APK_UI_PASS)"
+          {
+            printf 'source_run_id=%s\n' "$run_id"
+            printf 'tested_git_sha=%s\n' "$tested_sha"
+            printf 'screenshots_from_current_run=true\n'
+          } > docs/ui/validated-screenshots/source.txt
+          rm -f docs/ui/REQUEST_SCREENSHOT_PUBLISH
+          rm -f .github/workflows/apk-ui-screenshot-publisher.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "docs(ui): publish validated APK UI screenshots"
+          git push origin HEAD:feat/apk-ui-replica
