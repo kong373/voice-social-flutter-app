@@ -34,6 +34,13 @@ case "${1:-}" in
     exit 0
     ;;
   shell)
+    if [[ "${2:-}" == pm && "${3:-}" == list && "${4:-}" == packages &&
+      "${5:-}" == -U && "${6:-}" == com.kong373.voice_social_app ]]; then
+      printf '%s\n' 'package:com.kong373.voice_social_app uid:10216'
+    elif [[ "${2:-}" == pm && "${3:-}" == path &&
+      "${4:-}" == com.kong373.voice_social_app ]]; then
+      printf '%s\n' 'package:/data/app/com.kong373.voice_social_app/base.apk'
+    fi
     exit 0
     ;;
   pull)
@@ -122,6 +129,11 @@ printf '%s\n' \
       'dpr=3',
       'screenshots=8',
       'videos=1',
+      'app_uid=10216',
+      'app_logcat=logcat-app.txt',
+      'app_hard_errors=0',
+      'global_app_anrs=0',
+      'system_hard_findings=0',
       'hard_errors=0',
       'provider_calls_made=false',
       'provider_dependency_graph=true',
@@ -144,6 +156,9 @@ printf '%s\n' \
       'shell wm size 1170x2532',
       'shell wm density 480',
       'shell screenrecord --size 390x844 --bit-rate 4000000 --time-limit 180 /data/local/tmp/m33-AVD-A.mp4',
+      'shell pm list packages -U com.kong373.voice_social_app',
+      'shell pm path com.kong373.voice_social_app',
+      'logcat --uid=10216 -v threadtime -T 10000',
       'pull /data/local/tmp/m33-AVD-A.mp4 ${evidence.path}/videos/AVD-A.mp4',
     ]) {
       expect(

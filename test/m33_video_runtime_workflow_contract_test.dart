@@ -333,6 +333,59 @@ void main() {
   });
 
   test(
+    'App hard-error gate is UID-scoped and checks exact global App ANRs',
+    () {
+      expect(
+        androidAcceptanceScript,
+        contains(r'''readonly APP_PACKAGE="com.kong373.voice_social_app"'''),
+      );
+      expect(
+        androidAcceptanceScript,
+        contains(
+          r'''readonly APP_LOGCAT_FILE="$EVIDENCE_ROOT/logcat-app.txt"''',
+        ),
+      );
+      expect(androidAcceptanceScript, contains('wait_for_app_uid'));
+      expect(androidAcceptanceScript, contains('start_app_logcat'));
+      expect(androidAcceptanceScript, contains('wait_for_app_logcat_evidence'));
+      expect(androidAcceptanceScript, contains('pm list packages -U'));
+      expect(
+        androidAcceptanceScript,
+        contains(r'''adb logcat --uid="$resolved_uid"'''),
+      );
+      expect(androidAcceptanceScript, contains('-T 10000'));
+      expect(
+        androidAcceptanceScript,
+        contains(r'''test -s "$APP_LOGCAT_FILE"'''),
+      );
+      expect(androidAcceptanceScript, contains('am force-stop'));
+      expect(
+        androidAcceptanceScript,
+        contains(r'''ANR in com\.kong373\.voice_social_app([[:space:]:]|$)'''),
+      );
+      expect(
+        androidAcceptanceScript,
+        contains(
+          r'''cat "$APP_LOGCAT_FILE" "$EVIDENCE_ROOT/flutter-drive.log"''',
+        ),
+      );
+      expect(androidAcceptanceScript, contains('Fatal signal [0-9]+'));
+      expect(
+        androidAcceptanceScript,
+        contains(r'''hard_errors="$((app_hard_errors + global_app_anrs))"'''),
+      );
+      expect(
+        androidAcceptanceScript,
+        contains(r'''echo "system_hard_findings=$system_hard_findings"'''),
+      );
+      expect(
+        androidAcceptanceScript,
+        contains(r'''test "$global_app_anrs" -eq 0'''),
+      );
+    },
+  );
+
+  test(
     'mobile secret scan cannot be bypassed by a missing platform directory',
     () {
       expect(workflow, contains('test -d ci_app/android'));
