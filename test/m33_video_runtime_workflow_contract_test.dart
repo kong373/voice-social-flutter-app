@@ -9,6 +9,14 @@ void main() {
   final String integrationTest = File(
     'integration_test/m3_3_video_runtime_ui_test.dart',
   ).readAsStringSync();
+  final File androidAcceptanceScriptFile = File(
+    'tool/qa/run_m33_android_acceptance.sh',
+  );
+  final String androidAcceptanceScript =
+      androidAcceptanceScriptFile.existsSync()
+      ? androidAcceptanceScriptFile.readAsStringSync()
+      : '';
+  final String acceptanceSources = '$workflow\n$androidAcceptanceScript';
 
   test('quality evidence is required and verified by the verdict job', () {
     expect(workflow, contains('name: m33-final-quality-'));
@@ -72,7 +80,7 @@ void main() {
       contains('(cd ci_app && flutter pub get --enforce-lockfile)'),
     );
     expect(workflow, contains('flutter build apk --debug'));
-    expect(workflow, contains('flutter drive'));
+    expect(acceptanceSources, contains('flutter drive'));
     expect(workflow, contains('secret_roots=(ci_app/lib ci_app/android)'));
     expect(
       workflow,
@@ -185,54 +193,102 @@ void main() {
     expect(workflow, contains(r'''= "$expected_sha"'''));
   });
 
-  test('emulator runner executes the acceptance script with Bash', () {
+  test('emulator runner invokes one checked-in Bash acceptance script', () {
+    expect(androidAcceptanceScriptFile.existsSync(), isTrue);
     expect(
       workflow,
-      contains(
-        'script: |\n'
-        '            bash <<\'BASH\'\n'
-        '            set -Eeuo pipefail',
-      ),
+      contains('script: bash tool/qa/run_m33_android_acceptance.sh'),
     );
     expect(
-      workflow,
-      contains(
-        '            BASH\n'
-        '      - name: Upload AVD evidence',
-      ),
+      'script: bash tool/qa/run_m33_android_acceptance.sh'
+          .allMatches(workflow)
+          .length,
+      1,
+    );
+    expect(workflow, isNot(contains('script: |')));
+    for (final String binding in <String>[
+      r'EVIDENCE_ROOT: ${{ github.workspace }}/artifacts/m3.3/${{ matrix.id }}',
+      r'QA_AVD_ID: ${{ matrix.id }}',
+      r'QA_API_LEVEL: ${{ matrix.api }}',
+      r'QA_VIEWPORT: ${{ matrix.viewport }}',
+      r'QA_WIDTH: ${{ matrix.width }}',
+      r'QA_HEIGHT: ${{ matrix.height }}',
+      r'QA_PHYSICAL: ${{ matrix.physical }}',
+      r'QA_DENSITY: ${{ matrix.density }}',
+      r'QA_DPR: ${{ matrix.dpr }}',
+    ]) {
+      expect(workflow, contains(binding), reason: 'missing $binding');
+    }
+    expect(workflow, contains("- 'tool/qa/run_m33_android_acceptance.sh'"));
+    expect(androidAcceptanceScript, startsWith('#!/usr/bin/env bash\n'));
+    expect(androidAcceptanceScript, contains('set -Eeuo pipefail'));
+    expect(androidAcceptanceScript, contains('stop_logcat'));
+    expect(
+      androidAcceptanceScript,
+      contains(r'''test -s "$EVIDENCE_ROOT/logcat.txt"'''),
     );
     expect(
-      workflow,
-      isNot(
-        contains(
-          'script: |\n'
-          '            set -Eeuo pipefail',
-        ),
-      ),
+      androidAcceptanceScript,
+      contains(r'''test -s "$EVIDENCE_ROOT/flutter-drive.log"'''),
     );
+    expect(
+      androidAcceptanceScript.indexOf(r'''>"$PROGRESS_FILE"'''),
+      inInclusiveRange(
+        0,
+        androidAcceptanceScript.indexOf('adb shell wm size') - 1,
+      ),
+      reason: 'an early device failure must still leave uploadable evidence',
+    );
+    for (final String variable in <String>[
+      'EVIDENCE_ROOT',
+      'QA_AVD_ID',
+      'QA_API_LEVEL',
+      'QA_VIEWPORT',
+      'QA_WIDTH',
+      'QA_HEIGHT',
+      'QA_PHYSICAL',
+      'QA_DENSITY',
+      'QA_DPR',
+      'GITHUB_SHA',
+      'GITHUB_RUN_ID',
+      'GITHUB_RUN_ATTEMPT',
+    ]) {
+      expect(
+        androidAcceptanceScript,
+        contains(': "\${$variable:?'),
+        reason: '$variable must fail closed',
+      );
+    }
   });
 
   test('screenshots are emitted directly into the evidence root', () {
     expect(
-      workflow,
-      contains(r'''QA_SCREENSHOT_DIR="$EVIDENCE_ROOT/screenshots"'''),
+      androidAcceptanceScript,
+      contains(r'''readonly SCREENSHOT_DIR="$EVIDENCE_ROOT/screenshots"'''),
     );
-    expect(workflow, isNot(contains("find . -type f -name 'm33-*.png'")));
-    expect(workflow, contains(r'''find "$EVIDENCE_ROOT/screenshots"'''));
+    expect(
+      androidAcceptanceScript,
+      contains(r'''QA_SCREENSHOT_DIR="$SCREENSHOT_DIR"'''),
+    );
+    expect(
+      androidAcceptanceScript,
+      isNot(contains("find . -type f -name 'm33-*.png'")),
+    );
+    expect(androidAcceptanceScript, contains(r'''find "$SCREENSHOT_DIR"'''));
   });
 
   test('each AVD records and gates a non-empty interaction video', () {
-    expect(workflow, contains('adb shell screenrecord'));
-    expect(workflow, contains(r'''"$EVIDENCE_ROOT/videos"'''));
-    expect(workflow, contains("-name '*.mp4' -size +0c"));
-    expect(workflow, contains(r'''test "$videos" -ge 1'''));
-    expect(workflow, contains(r'''echo "videos=$videos"'''));
+    expect(androidAcceptanceScript, contains('adb shell screenrecord'));
+    expect(androidAcceptanceScript, contains(r'''"$EVIDENCE_ROOT/videos"'''));
+    expect(androidAcceptanceScript, contains("-name '*.mp4' -size +0c"));
+    expect(androidAcceptanceScript, contains(r'''test "$videos" -ge 1'''));
+    expect(androidAcceptanceScript, contains(r'''echo "videos=$videos"'''));
     expect(workflow, contains(r'''sed -n 's/^videos=//p' "$summary"'''));
   });
 
   test('AVD hard-error and forbidden-entry scans fail closed', () {
     expect(
-      workflow,
+      androidAcceptanceScript,
       contains(
         r'''cat "$EVIDENCE_ROOT/logcat.txt" "$EVIDENCE_ROOT/flutter-drive.log"''',
       ),
@@ -245,7 +301,11 @@ void main() {
       'RenderFlex overflow',
       'Unhandled Exception',
     ]) {
-      expect(workflow, contains(marker), reason: 'missing $marker scan');
+      expect(
+        androidAcceptanceScript,
+        contains(marker),
+        reason: 'missing $marker scan',
+      );
     }
     for (final String forbidden in <String>['会员', 'VIP', '礼物背包', '背包']) {
       expect(workflow, contains(forbidden), reason: 'missing $forbidden gate');

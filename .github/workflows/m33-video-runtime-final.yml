@@ -8,6 +8,7 @@ on:
       - 'lib/**'
       - 'test/**'
       - 'integration_test/m3_3_video_runtime_ui_test.dart'
+      - 'tool/qa/run_m33_android_acceptance.sh'
       - '.github/workflows/m33-video-runtime-final.yml'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -203,6 +204,14 @@ jobs:
         uses: ReactiveCircus/android-emulator-runner@324029e2f414c084d8b15ba075288885e74aef9c # v2.34.0
         env:
           EVIDENCE_ROOT: ${{ github.workspace }}/artifacts/m3.3/${{ matrix.id }}
+          QA_AVD_ID: ${{ matrix.id }}
+          QA_API_LEVEL: ${{ matrix.api }}
+          QA_VIEWPORT: ${{ matrix.viewport }}
+          QA_WIDTH: ${{ matrix.width }}
+          QA_HEIGHT: ${{ matrix.height }}
+          QA_PHYSICAL: ${{ matrix.physical }}
+          QA_DENSITY: ${{ matrix.density }}
+          QA_DPR: ${{ matrix.dpr }}
         with:
           api-level: ${{ matrix.api }}
           target: google_apis
@@ -226,124 +235,7 @@ jobs:
             -no-metrics
             -camera-back none
             -camera-front none
-          script: |
-            bash <<'BASH'
-            set -Eeuo pipefail
-            mkdir -p "$EVIDENCE_ROOT/screenshots" "$EVIDENCE_ROOT/videos"
-            adb shell wm size ${{ matrix.physical }}
-            adb shell wm density ${{ matrix.density }}
-            adb shell settings put system font_scale 1.0
-            adb shell settings put global window_animation_scale 0
-            adb shell settings put global transition_animation_scale 0
-            adb shell settings put global animator_duration_scale 0
-            adb logcat -c
-            adb logcat -v threadtime >"$EVIDENCE_ROOT/logcat.txt" &
-            logcat_pid=$!
-            video_remote="/sdcard/m33-${{ matrix.id }}.mp4"
-            video_local="$EVIDENCE_ROOT/videos/${{ matrix.id }}.mp4"
-            screenrecord_pid=''
-            adb shell rm -f "$video_remote"
-            adb shell screenrecord \
-              --size '${{ matrix.width }}x${{ matrix.height }}' \
-              --bit-rate 4000000 \
-              --time-limit 180 \
-              "$video_remote" \
-              >"$EVIDENCE_ROOT/screenrecord.log" 2>&1 &
-            screenrecord_pid=$!
-            stop_recording() {
-              if [[ -n "$screenrecord_pid" ]]; then
-                adb shell pkill -INT screenrecord 2>/dev/null || true
-                wait "$screenrecord_pid" 2>/dev/null || true
-                screenrecord_pid=''
-              fi
-            }
-            cleanup() {
-              stop_recording
-              kill "$logcat_pid" 2>/dev/null || true
-            }
-            trap cleanup EXIT
-            set +e
-            cd ci_app
-            QA_SCREENSHOT_DIR="$EVIDENCE_ROOT/screenshots" \
-              flutter drive \
-              --driver=test_driver/integration_test.dart \
-              --target=integration_test/m3_3_video_runtime_ui_test.dart \
-              -d emulator-5554 \
-              --dart-define=BACKEND_MODE=mock \
-              --dart-define=ENABLE_VIDEO_RUNTIME_DEMO=true \
-              --dart-define=QA_AVD_ID=${{ matrix.id }} \
-              --dart-define=QA_EXPECTED_VIEWPORT_WIDTH=${{ matrix.width }} \
-              --dart-define=QA_EXPECTED_VIEWPORT_HEIGHT=${{ matrix.height }} \
-              --dart-define=QA_EXPECTED_DPR=${{ matrix.dpr }} \
-              2>&1 | tee "$EVIDENCE_ROOT/flutter-drive.log"
-            drive_status="${PIPESTATUS[0]}"
-            set -e
-            stop_recording
-            for attempt in 1 2 3 4 5; do
-              if adb shell test -s "$video_remote"; then
-                break
-              fi
-              sleep 1
-            done
-            adb pull "$video_remote" "$video_local"
-            adb shell rm -f "$video_remote"
-            test "$drive_status" -eq 0
-            screenshots="$(find "$EVIDENCE_ROOT/screenshots" -type f -name '*.png' | wc -l | tr -d ' ')"
-            videos="$(find "$EVIDENCE_ROOT/videos" -type f -name '*.mp4' -size +0c | wc -l | tr -d ' ')"
-            hard_errors="$(
-              cat "$EVIDENCE_ROOT/logcat.txt" "$EVIDENCE_ROOT/flutter-drive.log" |
-                grep -Eci 'FATAL EXCEPTION|AndroidRuntime|ANR in|MissingPluginException|RenderFlex overflow|Unhandled Exception|EXCEPTION CAUGHT BY|Failed assertion|_dependents.isEmpty' || true
-            )"
-            mapfile -t provider_markers < <(
-              grep -Eo 'M33_PROVIDER_CALLS_MADE=(true|false)' \
-                "$EVIDENCE_ROOT/flutter-drive.log" || true
-            )
-            test "${#provider_markers[@]}" -eq 1
-            provider_calls_made="${provider_markers[0]#*=}"
-            test "$provider_calls_made" = false
-            mapfile -t provider_graph_markers < <(
-              grep -Eo 'M33_PROVIDER_GRAPH_PROVEN=(true|false)' \
-                "$EVIDENCE_ROOT/flutter-drive.log" || true
-            )
-            test "${#provider_graph_markers[@]}" -eq 1
-            provider_dependency_graph="${provider_graph_markers[0]#*=}"
-            test "$provider_dependency_graph" = true
-            mapfile -t provider_scope_markers < <(
-              grep -Eo 'M33_PROVIDER_EVIDENCE_SCOPE=[A-Za-z0-9_-]+' \
-                "$EVIDENCE_ROOT/flutter-drive.log" || true
-            )
-            test "${#provider_scope_markers[@]}" -eq 1
-            provider_evidence_scope="${provider_scope_markers[0]#*=}"
-            test "$provider_evidence_scope" = \
-              m33_video_runtime_mock_graph_and_http_outbound_guard
-            mapfile -t provider_guard_markers < <(
-              grep -Eo 'M33_PROVIDER_GUARD_CONNECTION_ATTEMPTS=[0-9]+' \
-                "$EVIDENCE_ROOT/flutter-drive.log" || true
-            )
-            test "${#provider_guard_markers[@]}" -eq 1
-            provider_guard_connection_attempts="${provider_guard_markers[0]#*=}"
-            test "$provider_guard_connection_attempts" -eq 0
-            test "$screenshots" -ge 8
-            test "$videos" -ge 1
-            test "$hard_errors" -eq 0
-            {
-              echo "conclusion=PASS"
-              echo "run_id=${{ github.run_id }}"
-              echo "run_attempt=${{ github.run_attempt }}"
-              echo "git_sha=${{ github.sha }}"
-              echo "avd=${{ matrix.id }}"
-              echo "api=${{ matrix.api }}"
-              echo "viewport=${{ matrix.viewport }}"
-              echo "dpr=${{ matrix.dpr }}"
-              echo "screenshots=$screenshots"
-              echo "videos=$videos"
-              echo "hard_errors=$hard_errors"
-              echo "provider_calls_made=$provider_calls_made"
-              echo "provider_dependency_graph=$provider_dependency_graph"
-              echo "provider_evidence_scope=$provider_evidence_scope"
-              echo "provider_guard_connection_attempts=$provider_guard_connection_attempts"
-            } | tee "$EVIDENCE_ROOT/summary.txt"
-            BASH
+          script: bash tool/qa/run_m33_android_acceptance.sh
       - name: Upload AVD evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
