@@ -391,100 +391,112 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 0, 10, 4),
-      child: Column(
-        children: <Widget>[
-          Row(
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool compactMoodStage = constraints.maxHeight < 420;
+          return Column(
+            key: const Key('video-room-public-screen'),
             children: <Widget>[
-              const Text(
-                '实时公屏',
-                style: TextStyle(
-                  color: RoomColors.textPrimary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                ),
+              Row(
+                children: <Widget>[
+                  const Text(
+                    '实时公屏',
+                    style: TextStyle(
+                      color: RoomColors.textPrimary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const _RoomChannelTab(label: '全部'),
+                  const _RoomChannelTab(label: '房间', selected: true),
+                  const Spacer(),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: RoomColors.secondary.withValues(alpha: 0.74),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 6,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Icon(Icons.forum_outlined, size: 14),
+                          SizedBox(width: 4),
+                          Text(
+                            '房间动态',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 12),
-              const _RoomChannelTab(label: '全部'),
-              const _RoomChannelTab(label: '房间', selected: true),
-              const Spacer(),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: RoomColors.secondary.withValues(alpha: 0.74),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Icon(Icons.forum_outlined, size: 14),
-                      SizedBox(width: 4),
-                      Text(
-                        '房间动态',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
+              const SizedBox(height: 5),
+              _RoomMoodStage(
+                topic: _controller.topic,
+                compact: compactMoodStage,
+              ),
+              const SizedBox(height: 4),
+              Expanded(
+                child: ListView.separated(
+                  controller: _messageScroll,
+                  padding: const EdgeInsets.fromLTRB(0, 7, 0, 10),
+                  itemCount: feedMessages.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 5),
+                  itemBuilder: (BuildContext context, int index) {
+                    final RoomMessage message = feedMessages[index];
+                    return Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 344),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: message.isSystem
+                              ? RoomColors.primary.withValues(alpha: 0.12)
+                              : Colors.black.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Text.rich(
+                          TextSpan(
+                            children: <InlineSpan>[
+                              TextSpan(
+                                text: '${message.sender}  ',
+                                style: TextStyle(
+                                  color: message.isSystem
+                                      ? RoomColors.gold
+                                      : RoomColors.accent,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              TextSpan(text: message.content),
+                            ],
+                          ),
+                          style: const TextStyle(
+                            color: RoomColors.textPrimary,
+                            fontSize: 11,
+                            height: 1.3,
+                          ),
                         ),
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 5),
-          _RoomMoodStage(topic: _controller.topic),
-          const SizedBox(height: 4),
-          Expanded(
-            child: ListView.separated(
-              controller: _messageScroll,
-              padding: const EdgeInsets.fromLTRB(0, 7, 0, 10),
-              itemCount: feedMessages.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 5),
-              itemBuilder: (BuildContext context, int index) {
-                final RoomMessage message = feedMessages[index];
-                return Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    constraints: const BoxConstraints(maxWidth: 344),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: message.isSystem
-                          ? RoomColors.primary.withValues(alpha: 0.12)
-                          : Colors.black.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: Text.rich(
-                      TextSpan(
-                        children: <InlineSpan>[
-                          TextSpan(
-                            text: '${message.sender}  ',
-                            style: TextStyle(
-                              color: message.isSystem
-                                  ? RoomColors.gold
-                                  : RoomColors.accent,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          TextSpan(text: message.content),
-                        ],
-                      ),
-                      style: const TextStyle(
-                        color: RoomColors.textPrimary,
-                        fontSize: 11,
-                        height: 1.3,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -1297,13 +1309,82 @@ class _RoomChannelTab extends StatelessWidget {
 }
 
 class _RoomMoodStage extends StatelessWidget {
-  const _RoomMoodStage({required this.topic});
+  const _RoomMoodStage({required this.topic, this.compact = false});
 
   final String topic;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
+    if (compact) {
+      return Container(
+        key: const Key('video-room-mood-stage-compact'),
+        height: 72,
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: <Color>[Color(0x9E351341), Color(0x6E17132D)],
+          ),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: RoomColors.primary.withValues(alpha: 0.09)),
+        ),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: RoomColors.primary.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.graphic_eq_rounded,
+                color: RoomColors.accent,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    '深夜放映中 · 绿色聊天',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: RoomColors.accent,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    topic.isEmpty ? '把今天的疲惫放在门外' : topic,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: RoomColors.textPrimary,
+                      fontSize: 10,
+                      height: 1.25,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const RuntimeWaveform(width: 30),
+          ],
+        ),
+      );
+    }
     return Column(
+      key: const Key('video-room-mood-stage-standard'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Container(

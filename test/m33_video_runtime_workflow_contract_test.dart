@@ -295,6 +295,11 @@ void main() {
     expect(integrationTest, contains("find.byTooltip('更多').hitTestable()"));
     expect(integrationTest, contains("find.text('互动玩法')"));
     expect(integrationTest, isNot(contains("find.text('互动')")));
+    expect(integrationTest, isNot(contains('tester.pageBack()')));
+    expect(
+      'tester.binding.handlePopRoute()'.allMatches(integrationTest).length,
+      2,
+    );
   });
 
   test('AVD hard-error and forbidden-entry scans fail closed', () {

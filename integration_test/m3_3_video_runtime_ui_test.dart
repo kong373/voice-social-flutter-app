@@ -145,7 +145,7 @@ void main() {
         }
       }
       if (find.byType(GiftSheet).evaluate().isNotEmpty) {
-        await tester.pageBack();
+        await tester.binding.handlePopRoute();
         await tester.pumpAndSettle();
       }
 
@@ -163,7 +163,7 @@ void main() {
         'm33-${qaAvdId.toLowerCase()}-06-room-tools-sheet',
       );
       await announceQaEvidence(tester, 'M33_ROOM_TOOLS_READY');
-      await tester.pageBack();
+      await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
 
       await tester.tap(find.byTooltip('离开房间').hitTestable());

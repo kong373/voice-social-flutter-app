@@ -9,6 +9,8 @@ import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
 import 'package:voice_social_app/features/shell/main_shell.dart';
 
+import 'support/golden_font_gate.dart';
+
 void main() {
   test('video runtime uses separate light lobby and immersive room themes', () {
     expect(AppTheme.social().brightness, Brightness.light);
@@ -54,6 +56,14 @@ void main() {
     expect(find.text('礼物'), findsOneWidget);
     expect(find.text('成员'), findsOneWidget);
     expect(find.byKey(const Key('video-room-composer')), findsOneWidget);
+    expect(
+      find.byKey(const Key('video-room-mood-stage-standard')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('video-room-mood-stage-compact')),
+      findsNothing,
+    );
 
     expect(find.byKey(const Key('room-follow-host')), findsNothing);
     expect(find.text('关注房主'), findsNothing);
@@ -233,4 +243,95 @@ void main() {
     expect(find.byType(GiftSheet), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'room gift to tools remains stable at cloud-constrained 360 width and 1.3x text',
+    (WidgetTester tester) async {
+      await loadGoldenFonts();
+      tester.view.physicalSize = const Size(900, 1910);
+      tester.view.devicePixelRatio = 2.5;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final AppDependencies dependencies = AppDependencies.mock();
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
+          child: AppDependencyScope(
+            dependencies: dependencies,
+            child: MaterialApp(
+              theme: AppTheme.social(fontFamily: kGoldenFontFamily),
+              home: MainShell(
+                dependencies: dependencies,
+                onSignOut: () async {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('live-room-880217')));
+      await tester.pumpAndSettle();
+      final Finder publicScreen = find.byKey(
+        const Key('video-room-public-screen'),
+      );
+      expect(tester.getSize(publicScreen), const Size(340, 395));
+      expect(
+        MediaQuery.textScalerOf(tester.element(publicScreen)).scale(10),
+        13,
+      );
+      expect(
+        find.byKey(const Key('video-room-mood-stage-compact')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('video-room-mood-stage-standard')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+
+      final Finder composer = find.byKey(const Key('video-room-composer'));
+      await tester.tap(composer.hitTestable());
+      await tester.enterText(composer, '晚上好，刚刚进来听听');
+      await tester.pump(const Duration(milliseconds: 400));
+      FocusManager.instance.primaryFocus?.unfocus();
+      tester.testTextInput.hide();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('room-expression-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('room-expression-晚安')));
+      await tester.pumpAndSettle();
+      FocusManager.instance.primaryFocus?.unfocus();
+      tester.testTextInput.hide();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('礼物').hitTestable());
+      await tester.pumpAndSettle();
+      final Finder sendGift = find.textContaining('赠送').hitTestable();
+      expect(sendGift, findsWidgets);
+      await tester.tap(sendGift.first);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byKey(const Key('gift-celebration-overlay')), findsOneWidget);
+      for (int attempt = 0; attempt < 10; attempt += 1) {
+        if (find.byType(GiftSheet).evaluate().isEmpty) {
+          break;
+        }
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.byType(GiftSheet), findsNothing);
+
+      expect(find.byTooltip('更多'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byTooltip('更多').hitTestable());
+      await tester.pumpAndSettle();
+      expect(find.text('互动玩法'), findsOneWidget);
+      expect(find.text('工具'), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('互动玩法'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
