@@ -43,6 +43,10 @@ google-services.json
 
 # M2.4 emulator QA evidence (uploaded by CI, never committed)
 artifacts/qa/m2.4-emulator/
+
+# Local render, golden-diff, and device-acceptance evidence
+artifacts/
+test/failures/
 *.apk
 *.mp4
 *.webm

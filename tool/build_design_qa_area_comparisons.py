@@ -19,15 +19,23 @@ AREAS: dict[str, tuple[str, tuple[str, ...]]] = {
         ),
     ),
     "discovery": (
-        "frame-79s.png",
+        "frame-7s.png",
         (
-            "ds-001_390x844.png",
-            "ds-004_390x844.png",
-            "ds-005_390x844.png",
+            "ds-002_390x844.png",
+            "ds-007_390x844.png",
+            "ds-008_390x844.png",
+        ),
+    ),
+    "social": (
+        "frame-58s.png",
+        (
+            "us-001_390x844.png",
+            "us-003_390x844.png",
+            "us-004_390x844.png",
         ),
     ),
     "room": (
-        "frame-43s.png",
+        "frame-10s.png",
         (
             "rm-004_390x844.png",
             "rm-007_390x844.png",
@@ -48,6 +56,14 @@ AREAS: dict[str, tuple[str, tuple[str, ...]]] = {
             "cm-001_390x844.png",
             "cm-002_390x844.png",
             "cm-010_390x844.png",
+        ),
+    ),
+    "community": (
+        "frame-64s.png",
+        (
+            "sc-001_390x844.png",
+            "sc-002_390x844.png",
+            "sc-007_390x844.png",
         ),
     ),
 }
