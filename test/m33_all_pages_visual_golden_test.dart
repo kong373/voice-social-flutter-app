@@ -11,6 +11,7 @@ import 'package:voice_social_app/debug/qa_console/qa_models.dart';
 import 'package:voice_social_app/debug/qa_console/qa_page_catalog.dart';
 
 import 'support/golden_font_gate.dart';
+import 'support/golden_baseline_path.dart';
 
 void main() {
   late GoldenFileComparator originalGoldenComparator;
@@ -64,7 +65,9 @@ void main() {
       await expectLater(
         find.byKey(captureKey),
         matchesGoldenFile(
-          'goldens/m3_3_all/${entry.id.toLowerCase()}_390x844.png',
+          m33GoldenPath(
+            'goldens/m3_3_all/${entry.id.toLowerCase()}_390x844.png',
+          ),
         ),
       );
       await tester.pumpWidget(const SizedBox.shrink());

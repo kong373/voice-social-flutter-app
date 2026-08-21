@@ -47,6 +47,8 @@ artifacts/qa/m2.4-emulator/
 # Local render, golden-diff, and device-acceptance evidence
 artifacts/
 test/failures/
+!test/goldens/linux/
+!test/goldens/linux/**
 *.apk
 *.mp4
 *.webm

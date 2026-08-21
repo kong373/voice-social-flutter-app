@@ -18,6 +18,7 @@ import 'package:voice_social_app/features/shell/main_shell.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 import 'support/golden_font_gate.dart';
+import 'support/golden_baseline_path.dart';
 
 void main() {
   late GoldenFileComparator originalGoldenComparator;
@@ -53,21 +54,21 @@ void main() {
 
     await expectLater(
       find.byKey(captureKey),
-      matchesGoldenFile('goldens/m3_3_home_390x844.png'),
+      matchesGoldenFile(m33GoldenPath('goldens/m3_3_home_390x844.png')),
     );
 
     await tester.tap(find.byKey(const Key('live-room-880217')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byKey(captureKey),
-      matchesGoldenFile('goldens/m3_3_room_390x844.png'),
+      matchesGoldenFile(m33GoldenPath('goldens/m3_3_room_390x844.png')),
     );
 
     await tester.tap(find.byKey(const Key('room-expression-button')));
     await tester.pumpAndSettle();
     await expectLater(
       find.byKey(captureKey),
-      matchesGoldenFile('goldens/m3_3_expression_390x844.png'),
+      matchesGoldenFile(m33GoldenPath('goldens/m3_3_expression_390x844.png')),
     );
     Navigator.of(
       tester.element(find.byKey(const Key('room-expression-sheet'))),
@@ -80,7 +81,7 @@ void main() {
     expect(find.text('背包'), findsNothing);
     await expectLater(
       find.byKey(captureKey),
-      matchesGoldenFile('goldens/m3_3_gift_390x844.png'),
+      matchesGoldenFile(m33GoldenPath('goldens/m3_3_gift_390x844.png')),
     );
   });
 
@@ -102,14 +103,14 @@ void main() {
     await tester.pumpAndSettle();
     await expectLater(
       find.byKey(captureKey),
-      matchesGoldenFile('goldens/m3_3_discovery_390x844.png'),
+      matchesGoldenFile(m33GoldenPath('goldens/m3_3_discovery_390x844.png')),
     );
 
     await tester.tap(find.text('消息').last);
     await tester.pumpAndSettle();
     await expectLater(
       find.byKey(captureKey),
-      matchesGoldenFile('goldens/m3_3_messages_390x844.png'),
+      matchesGoldenFile(m33GoldenPath('goldens/m3_3_messages_390x844.png')),
     );
 
     await tester.tap(find.text('我的').last);
@@ -119,7 +120,7 @@ void main() {
     expect(find.textContaining('背包'), findsNothing);
     await expectLater(
       find.byKey(captureKey),
-      matchesGoldenFile('goldens/m3_3_account_390x844.png'),
+      matchesGoldenFile(m33GoldenPath('goldens/m3_3_account_390x844.png')),
     );
 
     await tester.tap(find.text('装扮'));
@@ -130,7 +131,7 @@ void main() {
     expect(find.textContaining('背包'), findsNothing);
     await expectLater(
       find.byKey(captureKey),
-      matchesGoldenFile('goldens/m3_3_decoration_390x844.png'),
+      matchesGoldenFile(m33GoldenPath('goldens/m3_3_decoration_390x844.png')),
     );
   });
 
@@ -147,7 +148,10 @@ void main() {
       await tester.pumpAndSettle();
       await _precacheGoldenAssets(tester, captureKey);
       await tester.pumpAndSettle();
-      await expectLater(find.byKey(captureKey), matchesGoldenFile(golden));
+      await expectLater(
+        find.byKey(captureKey),
+        matchesGoldenFile(m33GoldenPath(golden)),
+      );
     }
 
     await capture(
