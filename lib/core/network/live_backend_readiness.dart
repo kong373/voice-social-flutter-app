@@ -17,15 +17,15 @@ enum LiveBackendReadinessStatus {
 
 extension LiveBackendReadinessStatusLabel on LiveBackendReadinessStatus {
   String get label => switch (this) {
-        LiveBackendReadinessStatus.mockMode => 'Mock 模式',
-        LiveBackendReadinessStatus.configurationInvalid => '配置无效',
-        LiveBackendReadinessStatus.gatewayReachable => '网关可达',
-        LiveBackendReadinessStatus.gatewayRejected => '网关状态异常',
-        LiveBackendReadinessStatus.networkUnavailable => '网络不可达',
-        LiveBackendReadinessStatus.tlsRejected => 'TLS 校验失败',
-        LiveBackendReadinessStatus.timedOut => '连接超时',
-        LiveBackendReadinessStatus.unexpectedFailure => '探测失败',
-      };
+    LiveBackendReadinessStatus.mockMode => 'Mock 模式',
+    LiveBackendReadinessStatus.configurationInvalid => '配置无效',
+    LiveBackendReadinessStatus.gatewayReachable => '网关可达',
+    LiveBackendReadinessStatus.gatewayRejected => '网关状态异常',
+    LiveBackendReadinessStatus.networkUnavailable => '网络不可达',
+    LiveBackendReadinessStatus.tlsRejected => 'TLS 校验失败',
+    LiveBackendReadinessStatus.timedOut => '连接超时',
+    LiveBackendReadinessStatus.unexpectedFailure => '探测失败',
+  };
 }
 
 class GatewayProbeResult {
@@ -60,8 +60,9 @@ class HttpGatewayProbe implements GatewayProbe {
     final HttpClient client = HttpClient()
       ..connectionTimeout = environment.apiTimeout;
     try {
-      final HttpClientRequest request =
-          await client.getUrl(target).timeout(environment.apiTimeout);
+      final HttpClientRequest request = await client
+          .getUrl(target)
+          .timeout(environment.apiTimeout);
       request.followRedirects = false;
       request.maxRedirects = 0;
       request.headers
@@ -69,14 +70,15 @@ class HttpGatewayProbe implements GatewayProbe {
         ..set('Client-Type', environment.clientType)
         ..set('Client-Inner-Version', environment.clientInnerVersion)
         ..set('Client-Id', environment.oauthClientId);
-      final HttpClientResponse response =
-          await request.close().timeout(environment.apiTimeout);
+      final HttpClientResponse response = await request.close().timeout(
+        environment.apiTimeout,
+      );
       await response.drain<void>().timeout(environment.apiTimeout);
       stopwatch.stop();
       if (response.statusCode != HttpStatus.ok) {
         return GatewayProbeResult(
-          status: LiveBackendReadinessStatus.gatewayRejected,
-          message: '健康检查返回 HTTP ${response.statusCode}，暂不允许发起登录。',
+          status: LiveBackendReadinessStatus.gatewayReachable,
+          message: '网关已返回 HTTP ${response.statusCode}，传输链路可达；业务权限由认证请求确认。',
           checkedAt: DateTime.now().toUtc(),
           latency: stopwatch.elapsed,
           httpStatus: response.statusCode,
@@ -170,25 +172,25 @@ class LiveBackendReadinessSnapshot {
 
   bool get canAttemptAuthentication =>
       status == LiveBackendReadinessStatus.gatewayReachable &&
-      httpStatus == HttpStatus.ok &&
+      httpStatus != null &&
       publicClientConfigured;
 
   Map<String, Object?> toRedactedJson() => <String, Object?>{
-        'status': status.name,
-        'statusLabel': status.label,
-        'message': message,
-        'checkedAt': checkedAt.toIso8601String(),
-        'deploymentEnvironment': deploymentEnvironment.name,
-        'apiOrigin': apiOrigin,
-        'probePath': probePath,
-        'publicClientConfigured': publicClientConfigured,
-        'mobileClientSecretPresent': false,
-        'developmentOutboxConfigured': developmentOutboxConfigured,
-        'realtimeEndpointConfigured': realtimeEndpointConfigured,
-        'latencyMs': latency?.inMilliseconds,
-        'httpStatus': httpStatus,
-        'canAttemptAuthentication': canAttemptAuthentication,
-      };
+    'status': status.name,
+    'statusLabel': status.label,
+    'message': message,
+    'checkedAt': checkedAt.toIso8601String(),
+    'deploymentEnvironment': deploymentEnvironment.name,
+    'apiOrigin': apiOrigin,
+    'probePath': probePath,
+    'publicClientConfigured': publicClientConfigured,
+    'mobileClientSecretPresent': false,
+    'developmentOutboxConfigured': developmentOutboxConfigured,
+    'realtimeEndpointConfigured': realtimeEndpointConfigured,
+    'latencyMs': latency?.inMilliseconds,
+    'httpStatus': httpStatus,
+    'canAttemptAuthentication': canAttemptAuthentication,
+  };
 
   String toRedactedText() =>
       const JsonEncoder.withIndent('  ').convert(toRedactedJson());

@@ -30,7 +30,8 @@ class RoomPermissionPolicy {
 
     final RoomRole role = snapshot.role;
     final bool signedIn = role != RoomRole.guest;
-    final bool canManage = role == RoomRole.owner ||
+    final bool canManage =
+        role == RoomRole.owner ||
         role == RoomRole.moderator ||
         role == RoomRole.platformModerator;
 

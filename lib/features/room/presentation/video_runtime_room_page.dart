@@ -47,6 +47,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   Timer? _giftTimer;
   bool _showGiftCelebration = false;
   bool _ending = false;
+  bool _allowPop = false;
   bool _followingHost = false;
   String? _presentedError;
 
@@ -58,7 +59,11 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     _composerFocus.addListener(_onComposerFocusChanged);
     _controller.addListener(_onControllerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (!mounted) {
+        return;
+      }
+      if (_controller.status == RoomSessionStatus.idle ||
+          _controller.status == RoomSessionStatus.failed) {
         _controller.join(source: widget.entrySource);
       }
     });
@@ -117,7 +122,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     return Theme(
       data: AppTheme.room(fontFamily: inheritedFontFamily),
       child: PopScope<Object?>(
-        canPop: false,
+        canPop: _allowPop,
         onPopInvokedWithResult: (bool didPop, Object? result) {
           if (!didPop) {
             _showExitChoices();
@@ -178,8 +183,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
               children: <Widget>[
                 IconButton(
                   tooltip: '返回',
-                  onPressed: () =>
-                      Navigator.of(context).pop(VideoRoomExit.ended),
+                  onPressed: () => _popRoom(VideoRoomExit.ended),
                   icon: const Icon(Icons.arrow_back_rounded),
                 ),
                 const Spacer(),
@@ -1117,8 +1121,20 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
 
   void _minimize() {
     if (widget.allowMinimize) {
-      Navigator.of(context).pop(VideoRoomExit.minimized);
+      _popRoom(VideoRoomExit.minimized);
     }
+  }
+
+  void _popRoom(VideoRoomExit result) {
+    if (_allowPop || !mounted) {
+      return;
+    }
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Navigator.of(context).pop(result);
+      }
+    });
   }
 
   Future<RoomPkBattle?> _fetchActivePk() async {
@@ -1184,7 +1200,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
       ).showSnackBar(const SnackBar(content: Text('离开房间失败，请重试')));
       return;
     }
-    Navigator.of(context).pop(VideoRoomExit.ended);
+    _popRoom(VideoRoomExit.ended);
   }
 }
 

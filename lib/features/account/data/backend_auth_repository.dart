@@ -10,23 +10,22 @@ class BackendAuthRepository implements AuthRepository {
     required ApiClient apiClient,
     required AppEnvironment environment,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
-  })  : _apiClient = apiClient,
-        _environment = environment,
-        _routes = routes;
+  }) : _apiClient = apiClient,
+       _environment = environment,
+       _routes = routes;
 
   static const int _mobileNotRegisteredCode = 10201;
   static const String _refreshPath =
       '/app-register-api/userAccount/v1/refreshSession';
-  static const String _logoutPath =
-      '/app-register-api/userAccount/v1/logout';
+  static const String _logoutPath = '/app-register-api/userAccount/v1/logout';
 
   final ApiClient _apiClient;
   final AppEnvironment _environment;
   final BackendRouteCatalog _routes;
 
   Map<String, String> get _publicClientHeaders => <String, String>{
-        'Client-Id': _environment.oauthClientId,
-      };
+    'Client-Id': _environment.oauthClientId,
+  };
 
   @override
   Future<SmsChallenge> sendSmsCode({
@@ -57,10 +56,9 @@ class BackendAuthRepository implements AuthRepository {
       challengeId: challengeId,
       expiresAt: DateTime.now().add(Duration(seconds: expiresIn)),
       retryAfter: retryAfter < 1 ? 1 : retryAfter,
-      developmentCode:
-          RegExp(r'^\d{6}$').hasMatch(developmentCode)
-              ? developmentCode
-              : null,
+      developmentCode: RegExp(r'^\d{6}$').hasMatch(developmentCode)
+          ? developmentCode
+          : null,
     );
   }
 
@@ -74,11 +72,7 @@ class BackendAuthRepository implements AuthRepository {
       final ApiResponse response = await _apiClient.put(
         _routes.loginBySms,
         headers: _publicClientHeaders,
-        body: _loginPayload(
-          phone: phone,
-          smsCode: smsCode,
-          device: device,
-        ),
+        body: _loginPayload(phone: phone, smsCode: smsCode, device: device),
         authenticated: false,
       );
       return AuthOutcome.authenticated(
@@ -162,24 +156,20 @@ class BackendAuthRepository implements AuthRepository {
     required String phone,
     required String smsCode,
     required ClientDevice device,
-  }) =>
-      <String, Object?>{
-        'phone': phone,
-        'smsCode': smsCode,
-        'deviceType': device.deviceType,
-        'deviceId': device.deviceId,
-        'mobileKind': device.mobileKind,
-        'clientId': _environment.oauthClientId,
-        'isEmulator': device.isEmulator,
-        'isSSO': true,
-        'smDeviceId': device.smDeviceId,
-        'sensorsAnonymousId': device.deviceId,
-      };
+  }) => <String, Object?>{
+    'phone': phone,
+    'smsCode': smsCode,
+    'deviceType': device.deviceType,
+    'deviceId': device.deviceId,
+    'mobileKind': device.mobileKind,
+    'clientId': _environment.oauthClientId,
+    'isEmulator': device.isEmulator,
+    'isSSO': true,
+    'smDeviceId': device.smDeviceId,
+    'sensorsAnonymousId': device.deviceId,
+  };
 
-  AuthSession _parseSession(
-    Object? data, {
-    required String deviceId,
-  }) {
+  AuthSession _parseSession(Object? data, {required String deviceId}) {
     final Map<String, Object?> map = _asMap(data);
     final String accessToken = _string(map['access_token']);
     final int expiresIn = _asInt(map['expires_in']) ?? 0;

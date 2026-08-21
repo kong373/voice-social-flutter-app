@@ -1,11 +1,4 @@
-enum RoomRole {
-  guest,
-  listener,
-  speaker,
-  moderator,
-  owner,
-  platformModerator,
-}
+enum RoomRole { guest, listener, speaker, moderator, owner, platformModerator }
 
 enum RoomSessionStatus {
   idle,
@@ -19,13 +12,7 @@ enum RoomSessionStatus {
   failed,
 }
 
-enum MicSeatState {
-  available,
-  locked,
-  mutedAvailable,
-  occupied,
-  occupiedMuted,
-}
+enum MicSeatState { available, locked, mutedAvailable, occupied, occupiedMuted }
 
 enum RtcSolution { agora, zego, unknown }
 
@@ -205,8 +192,7 @@ class RoomSnapshot {
       pictureMessagesAllowed:
           pictureMessagesAllowed ?? this.pictureMessagesAllowed,
       autoLockMic: autoLockMic ?? this.autoLockMic,
-      giftCatalogAvailable:
-          giftCatalogAvailable ?? this.giftCatalogAvailable,
+      giftCatalogAvailable: giftCatalogAvailable ?? this.giftCatalogAvailable,
       giftBalance: giftBalance ?? this.giftBalance,
       onlineCount: onlineCount ?? this.onlineCount,
       coverUrl: coverUrl ?? this.coverUrl,
@@ -216,10 +202,7 @@ class RoomSnapshot {
 }
 
 class GiftReceipt {
-  const GiftReceipt({
-    required this.success,
-    required this.remainingBalance,
-  });
+  const GiftReceipt({required this.success, required this.remainingBalance});
 
   final bool success;
   final int? remainingBalance;
