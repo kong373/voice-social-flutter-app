@@ -202,10 +202,11 @@ class _VendorCapabilityCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              Row(
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
                 children: <Widget>[
                   Text('运行时：${readiness.runtimeStatus}'),
-                  const Spacer(),
                   Text('Provider：${readiness.provider}'),
                 ],
               ),
