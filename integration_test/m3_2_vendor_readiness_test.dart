@@ -76,8 +76,11 @@ void main() {
       await tester.tap(find.text('登录 / 注册').hitTestable());
       await _waitFor(
         tester,
-        () => find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty,
-        description: 'live read-only home',
+        () =>
+            find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty &&
+            find.byKey(const Key('live-room-880217')).evaluate().isNotEmpty &&
+            find.text('深夜陪伴电台').evaluate().isNotEmpty,
+        description: 'loaded live read-only home contract',
       );
       _expectExactViewport(tester);
       expect(find.text('此刻适合你的房间'), findsOneWidget);
@@ -98,15 +101,21 @@ void main() {
         () => find.text('最近搜索').evaluate().isNotEmpty,
         description: 'global search page',
       );
-      final Finder searchField = find.widgetWithText(TextField, '搜索房间、用户或房间号');
+      final Finder searchField = find.widgetWithText(
+        TextField,
+        '搜索房间、用户或房间号',
+      );
       await tester.enterText(searchField, '深夜');
       await dismissQaImeAndWait(tester);
       final Finder searchAction = find.widgetWithText(TextButton, '搜索');
       await tester.tap(searchAction.hitTestable());
       await _waitFor(
         tester,
-        () => find.text('“深夜”的搜索结果').evaluate().isNotEmpty,
-        description: 'search results',
+        () =>
+            find.text('“深夜”的搜索结果').evaluate().isNotEmpty &&
+            find.text('深夜陪伴电台').evaluate().isNotEmpty &&
+            find.text('南风').evaluate().isNotEmpty,
+        description: 'loaded search contract results',
       );
       expect(find.text('深夜陪伴电台'), findsOneWidget);
       expect(find.text('南风'), findsWidgets);
@@ -121,7 +130,9 @@ void main() {
       await tester.pageBack();
       await _waitFor(
         tester,
-        () => find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty,
+        () =>
+            find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty &&
+            find.byKey(const Key('live-room-880217')).evaluate().isNotEmpty,
         description: 'home after search',
       );
 
@@ -151,17 +162,24 @@ void main() {
       await tester.tap(find.text('确认离开').hitTestable());
       await _waitFor(
         tester,
-        () => find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty,
+        () =>
+            find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty &&
+            find.byKey(const Key('live-room-880217')).evaluate().isNotEmpty,
         description: 'home after room snapshot',
       );
 
       await tester.tap(find.text('我的').hitTestable());
       await _waitFor(
         tester,
-        () => find
-            .byKey(const Key('live-account-overview'))
-            .evaluate()
-            .isNotEmpty,
+        () =>
+            find
+                .byKey(const Key('live-account-overview'))
+                .evaluate()
+                .isNotEmpty &&
+            find
+                .byKey(const Key('open-vendor-diagnostics'))
+                .evaluate()
+                .isNotEmpty,
         description: 'account overview before developer diagnostics',
       );
       final Finder vendorDiagnostics = find.byKey(
@@ -242,13 +260,25 @@ void main() {
       await tester.tap(find.text('我的').hitTestable());
       await _waitFor(
         tester,
-        () => find
-            .byKey(const Key('current-user-contract-ready'))
-            .evaluate()
-            .isNotEmpty,
+        () =>
+            find
+                .byKey(const Key('current-user-contract-ready'))
+                .evaluate()
+                .isNotEmpty &&
+            find
+                .byKey(const Key('wallet-contract-ready'))
+                .evaluate()
+                .isNotEmpty,
         description: 'current-user wallet and order overview',
       );
       expect(find.byKey(const Key('wallet-contract-ready')), findsOneWidget);
+      final Finder order = find.text('P202608180001');
+      await tester.scrollUntilVisible(
+        order,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(order, findsOneWidget);
       final Finder paymentBlocked = find.byKey(
         const Key('payment-initiation-blocked'),
       );
@@ -258,7 +288,6 @@ void main() {
         scrollable: find.byType(Scrollable).first,
       );
       expect(paymentBlocked, findsOneWidget);
-      expect(find.text('P202608180001'), findsOneWidget);
       await captureQaScreenshot(
         tester,
         binding,
