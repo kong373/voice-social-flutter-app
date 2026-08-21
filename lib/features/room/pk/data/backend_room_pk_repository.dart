@@ -8,8 +8,8 @@ class BackendRoomPkRepository implements RoomPkRepository {
   BackendRoomPkRepository({
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
-  })  : _apiClient = apiClient,
-        _routes = routes;
+  }) : _apiClient = apiClient,
+       _routes = routes;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
@@ -30,8 +30,10 @@ class BackendRoomPkRepository implements RoomPkRepository {
     );
     return _extractList(response.data)
         .map(_opponentFromMap)
-        .where((RoomPkOpponent item) =>
-            item.roomId.isNotEmpty && item.roomId != roomId)
+        .where(
+          (RoomPkOpponent item) =>
+              item.roomId.isNotEmpty && item.roomId != roomId,
+        )
         .toList(growable: false);
   }
 
@@ -48,15 +50,14 @@ class BackendRoomPkRepository implements RoomPkRepository {
       _routes.roomPkSearch,
       query: <String, String>{'roomCode': value},
     );
-    final Object? data = response.data;
-    final List<Map<String, Object?>> raw = data is List
-        ? _asMapList(data)
-        : <Map<String, Object?>>[_asMap(data)];
+    final List<Map<String, Object?>> raw = _extractSearchList(response.data);
     return raw
         .where((Map<String, Object?> item) => item.isNotEmpty)
         .map(_opponentFromMap)
-        .where((RoomPkOpponent item) =>
-            item.roomId.isNotEmpty && item.roomId != roomId)
+        .where(
+          (RoomPkOpponent item) =>
+              item.roomId.isNotEmpty && item.roomId != roomId,
+        )
         .toList(growable: false);
   }
 
@@ -79,7 +80,9 @@ class BackendRoomPkRepository implements RoomPkRepository {
     required int durationMinutes,
   }) async {
     final String punishment = punishmentTheme.trim();
-    if (inviterUserId <= 0 || opponent.roomId.isEmpty || opponent.roomId == roomId) {
+    if (inviterUserId <= 0 ||
+        opponent.roomId.isEmpty ||
+        opponent.roomId == roomId) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
         message: 'PK 对手或邀请人信息无效',
@@ -135,8 +138,9 @@ class BackendRoomPkRepository implements RoomPkRepository {
     if (invitation.expiresAt?.isBefore(DateTime.now()) ?? false) {
       return invitation.copyWith(status: RoomPkInvitationStatus.expired);
     }
-    final RoomPkBattle? battle =
-        await fetchActiveBattle(roomId: invitation.currentRoomId);
+    final RoomPkBattle? battle = await fetchActiveBattle(
+      roomId: invitation.currentRoomId,
+    );
     if (battle != null) {
       return invitation.copyWith(status: RoomPkInvitationStatus.accepted);
     }
@@ -149,8 +153,9 @@ class BackendRoomPkRepository implements RoomPkRepository {
       _routes.roomPkAccept,
       query: <String, String>{'id': invitation.id},
     );
-    final RoomPkBattle? battle =
-        await fetchActiveBattle(roomId: invitation.currentRoomId);
+    final RoomPkBattle? battle = await fetchActiveBattle(
+      roomId: invitation.currentRoomId,
+    );
     if (battle == null) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -254,17 +259,15 @@ class BackendRoomPkRepository implements RoomPkRepository {
     final RoomPkBattleStage stage = result != null
         ? RoomPkBattleStage.completed
         : remaining > 0
-            ? RoomPkBattleStage.fighting
-            : RoomPkBattleStage.settling;
+        ? RoomPkBattleStage.fighting
+        : RoomPkBattleStage.settling;
     return RoomPkBattle(
       id: _string(data['pkId'] ?? data['id']),
       currentRoomId: currentRoomId,
       sender: sender,
       receiver: receiver,
       remainingSeconds: remaining,
-      punishmentTheme: _string(
-        data['punishment'] ?? data['punishmentTheme'],
-      ),
+      punishmentTheme: _string(data['punishment'] ?? data['punishmentTheme']),
       stage: stage,
       result: result,
       updatedAt: DateTime.now(),
@@ -277,10 +280,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
       roomCode: _string(item['code'] ?? item['roomCode']),
       roomName: _string(item['name'] ?? item['roomName'], fallback: '语音房'),
       coverUrl: _optionalString(item['headImgUrl'] ?? item['coverUrl']),
-      score: _asInt(
-            item['popularity'] ?? item['score'] ?? item['theVal'],
-          ) ??
-          0,
+      score: _asInt(item['popularity'] ?? item['score'] ?? item['theVal']) ?? 0,
       supporters: _asMapList(
         item['sendUsers'] ?? item['receiveUsers'] ?? item['supporters'],
       ).map(_supporterFromMap).toList(growable: false),
@@ -290,10 +290,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
   static RoomPkSupporter _supporterFromMap(Map<String, Object?> item) {
     return RoomPkSupporter(
       userId: _asInt(item['userId']) ?? 0,
-      nickname: _string(
-        item['nickname'] ?? item['nickName'],
-        fallback: '支持者',
-      ),
+      nickname: _string(item['nickname'] ?? item['nickName'], fallback: '支持者'),
       avatarUrl: _optionalString(item['headImgUrl'] ?? item['avatarUrl']),
       value: _asNum(item['value'] ?? item['theVal'] ?? item['score']) ?? 0,
     );
@@ -308,7 +305,8 @@ class BackendRoomPkRepository implements RoomPkRepository {
         item['roomHeadImgUrl'] ?? item['coverUrl'] ?? item['headImgUrl'],
       ),
       label: _string(item['label'] ?? item['tag']),
-      onlineUsers: _asInt(
+      onlineUsers:
+          _asInt(
             item['roomOnlinePersonnelNumber'] ??
                 item['onlineCount'] ??
                 item['onlineUsers'],
@@ -340,9 +338,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
     return RoomPkRecord(
       id: _string(item['id'] ?? item['pkId']),
       opponentRoomName: _string(
-        currentIsSender
-            ? item['receiverRoomName']
-            : item['senderRoomName'],
+        currentIsSender ? item['receiverRoomName'] : item['senderRoomName'],
         fallback: '对方房间',
       ),
       opponentCoverUrl: _optionalString(
@@ -354,11 +350,13 @@ class BackendRoomPkRepository implements RoomPkRepository {
         item['pkDate'] ?? item['createTime'] ?? item['completedAt'],
       ),
       result: result,
-      currentScore: _asInt(
+      currentScore:
+          _asInt(
             currentIsSender ? item['senderScore'] : item['receiverScore'],
           ) ??
           0,
-      opponentScore: _asInt(
+      opponentScore:
+          _asInt(
             currentIsSender ? item['receiverScore'] : item['senderScore'],
           ) ??
           0,
@@ -367,13 +365,36 @@ class BackendRoomPkRepository implements RoomPkRepository {
 
   static List<Map<String, Object?>> _extractList(Object? value) {
     final Map<String, Object?> map = _asMap(value);
-    final Object? source = map['records'] ??
+    final Object? source =
+        map['records'] ??
         map['list'] ??
         map['rows'] ??
         map['items'] ??
         map['data'] ??
         value;
     return _asMapList(source);
+  }
+
+  static List<Map<String, Object?>> _extractSearchList(Object? value) {
+    if (value is List) {
+      return _asMapList(value);
+    }
+    final Map<String, Object?> map = _asMap(value);
+    final Object? nested =
+        map['records'] ??
+        map['list'] ??
+        map['rows'] ??
+        map['items'] ??
+        map['data'];
+    if (nested is List) {
+      return _asMapList(nested);
+    }
+    if (nested is Map<String, Object?>) {
+      return <Map<String, Object?>>[nested];
+    }
+    return map.isEmpty
+        ? const <Map<String, Object?>>[]
+        : <Map<String, Object?>>[map];
   }
 
   static Object _numericId(String value) => int.tryParse(value) ?? value;
@@ -386,10 +407,12 @@ class BackendRoomPkRepository implements RoomPkRepository {
     final String text = value?.toString().trim() ?? '';
     return text.isEmpty ? fallback : text;
   }
+
   static String? _optionalString(Object? value) {
     final String text = value?.toString().trim() ?? '';
     return text.isEmpty ? null : text;
   }
+
   static int? _asInt(Object? value) =>
       value is int ? value : int.tryParse(value?.toString() ?? '');
   static num? _asNum(Object? value) =>
