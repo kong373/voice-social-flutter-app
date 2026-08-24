@@ -7,6 +7,9 @@ void main() {
   final File aggregateScript = File(
     'tool/qa/aggregate_m4_authoritative_live_avd.sh',
   ).absolute;
+  final File dbEvidenceHelper = File(
+    'tool/qa/m4_db_evidence_server.py',
+  ).absolute;
   final String runnerSource = File(
     'tool/qa/run_m4_authoritative_live_avd.sh',
   ).readAsStringSync();
@@ -202,13 +205,31 @@ void main() {
     },
   );
 
+  test(
+    'bundled DB evidence helper is self-contained and passes its self-test',
+    () {
+      expect(dbEvidenceHelper.existsSync(), isTrue);
+      final ProcessResult result = Process.runSync('python3', <String>[
+        dbEvidenceHelper.path,
+        '--self-test',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(result.stdout, contains('self-test=PASS'));
+      expect(runnerSource, contains('m4_db_evidence_server.py'));
+      expect(runnerSource, contains('--self-test'));
+    },
+  );
+
   test('DB evidence is bound to run, AVD, nonce, and fixed mutation keys', () {
     expect(runnerSource, contains('X-M4-Run-ID'));
     expect(runnerSource, contains('X-M4-AVD'));
     expect(runnerSource, contains('X-M4-Start-Nonce'));
     expect(runnerSource, contains('required_counter_keys'));
     expect(runnerSource, contains('social_user_reports'));
-    expect(runnerSource, contains('payload["writeCounters"]["social_user_reports"] <= 0'));
+    expect(
+      runnerSource,
+      contains('payload["writeCounters"]["social_user_reports"] <= 0'),
+    );
     expect(runnerSource, contains('mutationKeys'));
     expect(runnerSource, contains('evidenceBinding'));
   });

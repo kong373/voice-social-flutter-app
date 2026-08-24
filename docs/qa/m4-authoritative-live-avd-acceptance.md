@@ -183,6 +183,18 @@ Required for collected DB evidence and an aggregate pass:
 Both DB values are mandatory for a final `ANDROID_EMULATOR_PASS`; if either is
 missing, the runner must fail the AVD with missing DB write evidence.
 
+The controlled read-only endpoint implementation is tracked at
+`tool/qa/m4_db_evidence_server.py`. The runner verifies that file and runs its
+local self-test before touching an AVD; an untracked `/private/tmp` copy is not
+an accepted substitute. Start the helper in the protected operator process
+with its loopback/container settings, then point `QA_DB_EVIDENCE_URL` at the
+announced ephemeral listener. The helper's self-test is safe to run without
+Docker:
+
+```bash
+python3 tool/qa/m4_db_evidence_server.py --self-test
+```
+
 The runner refuses `DEVELOPMENT_OUTBOX_KEY`,
 `QA_DEVELOPMENT_OUTBOX_KEY`, `QA_API_BASE_URL`, and contract-server variables.
 It strips OAuth/client-secret aliases and all protected values before starting
@@ -212,6 +224,8 @@ export QA_M4_FIXTURE_ID="m4-fresh-YYYYMMDD"
 export QA_M4_FIXTURE_STATUS="fresh_dedicated"
 # QA_LIVE_PHONE, QA_OAUTH_CLIENT_ID, QA_DB_EVIDENCE_URL, and
 # QA_DB_EVIDENCE_TOKEN come from the protected runner environment.
+
+python3 tool/qa/m4_db_evidence_server.py --self-test
 
 ./tool/qa/run_m4_authoritative_live_avd.sh
 

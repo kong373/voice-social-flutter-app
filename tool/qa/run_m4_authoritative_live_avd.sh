@@ -9,6 +9,7 @@ umask 077
 # never enter a dart-define.
 
 readonly PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
+readonly DB_EVIDENCE_HELPER="$PROJECT_ROOT/tool/qa/m4_db_evidence_server.py"
 required() {
   local name="$1"
   local value
@@ -129,6 +130,7 @@ for command_name in adb flutter git python3 curl find sort awk grep unzip date s
   command -v "$command_name" >/dev/null 2>&1 || fail "missing command: $command_name"
 done
 [[ -f "$PROJECT_ROOT/pubspec.yaml" ]] || fail 'not a Flutter checkout'
+[[ -f "$DB_EVIDENCE_HELPER" ]] || fail 'bundled DB evidence helper is missing'
 [[ -d "$BACKEND_REPO/.git" || -f "$BACKEND_REPO/.git" ]] || fail 'QA_BACKEND_REPO is not Git'
 [[ "$LIVE_PHONE" =~ ^1[3-9][0-9]{9}$ ]] || fail 'QA_LIVE_PHONE is invalid'
 [[ -n "$OAUTH_CLIENT_ID" ]] || fail 'QA_OAUTH_CLIENT_ID is empty'
@@ -156,6 +158,7 @@ readonly BACKEND_SHA_ACTUAL="$(git -C "$BACKEND_REPO" rev-parse --verify HEAD)"
 [[ "$ARTIFACT_ROOT" != *':8765'* && "$ARTIFACT_ROOT" != *'contract-server'* && "$ARTIFACT_ROOT" != *'.env.local'* ]] || fail 'artifact path names a forbidden source'
 [[ "$ARTIFACT_ROOT" != *"$LIVE_PHONE"* && "$ARTIFACT_ROOT" != *"$OAUTH_CLIENT_ID"* ]] || fail 'artifact path contains a runtime secret'
 [[ -z "$DB_TOKEN" || "$ARTIFACT_ROOT" != *"$DB_TOKEN"* ]] || fail 'artifact path contains the DB token'
+python3 "$DB_EVIDENCE_HELPER" --self-test >/dev/null 2>&1 || fail 'bundled DB evidence helper self-test failed'
 
 run_with_timeout() {
   local timeout_seconds="$1"
