@@ -25,6 +25,11 @@ class BackendRouteCatalog {
     this.roomOffMicMembers = '/app-api/rooms/getRoomMicDownOnlinePersonnel',
     this.roomManagers = '/app-api/roomUsers/getRoomManagers',
     this.roomMutedUsers = '/app-api/roomUsers/getRoomMuteds',
+    this.roomJoinRequests = '/app-mini-api/mini/v1/rooms/join-requests',
+    this.resolveRoomJoinRequest =
+        '/app-mini-api/mini/v1/rooms/join-requests/resolve',
+    this.roomBannedUsers = '/app-mini-api/mini/v1/rooms/banned-users',
+    this.unbanRoomUser = '/app-mini-api/mini/v1/rooms/unban',
     this.setRoomUserMuted = '/app-api/roomUsers/setMuted',
     this.setRoomUserRole = '/app-api/roomUsers/setRole',
     this.kickRoomUser = '/app-api/room/com/kickout',
@@ -201,6 +206,10 @@ class BackendRouteCatalog {
   final String roomOffMicMembers;
   final String roomManagers;
   final String roomMutedUsers;
+  final String roomJoinRequests;
+  final String resolveRoomJoinRequest;
+  final String roomBannedUsers;
+  final String unbanRoomUser;
   final String setRoomUserMuted;
   final String setRoomUserRole;
   final String kickRoomUser;

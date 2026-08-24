@@ -72,3 +72,48 @@ abstract interface class RoomOperationsRepository {
     required int seatNumber,
   });
 }
+
+/// Optional first-party approval-room capability.
+///
+/// It is deliberately not part of [RoomOperationsRepository], so legacy
+/// doubles and backends that only expose direct microphone coordination stay
+/// source-compatible.  A live repository implements this capability only
+/// when the corresponding HTTP contract is available.
+abstract interface class RoomJoinRequestRepository {
+  Future<RoomJoinRequestPage> fetchJoinRequests({
+    required String roomId,
+    int page = 1,
+    int pageSize = 20,
+  });
+
+  Future<void> resolveJoinRequest({
+    required String joinRequestId,
+    required bool approved,
+    String? requestId,
+  });
+}
+
+/// Optional first-party room-ban capability used by RM-007.
+abstract interface class RoomBanRepository {
+  Future<RoomBannedUserPage> fetchBannedUsers({
+    required String roomId,
+    int page = 1,
+    int pageSize = 20,
+  });
+
+  Future<void> unbanUser({
+    required String roomId,
+    required int userId,
+    String? requestId,
+  });
+}
+
+extension RoomJoinRequestRepositoryAccess on RoomOperationsRepository {
+  RoomJoinRequestRepository? get roomJoinRequestCapability =>
+      this is RoomJoinRequestRepository
+      ? this as RoomJoinRequestRepository
+      : null;
+
+  RoomBanRepository? get roomBanCapability =>
+      this is RoomBanRepository ? this as RoomBanRepository : null;
+}

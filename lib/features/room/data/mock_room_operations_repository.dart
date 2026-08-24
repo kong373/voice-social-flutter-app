@@ -3,7 +3,11 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 
-class MockRoomOperationsRepository implements RoomOperationsRepository {
+class MockRoomOperationsRepository
+    implements
+        RoomOperationsRepository,
+        RoomJoinRequestRepository,
+        RoomBanRepository {
   MockRoomOperationsRepository({
     this.micCoordinationMode = MicCoordinationMode.approval,
   });
@@ -75,6 +79,22 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
   ];
 
   final List<MicAccessRequest> _requests = <MicAccessRequest>[];
+  final List<RoomJoinRequest> _joinRequests = <RoomJoinRequest>[];
+  final List<RoomBannedUser> _bannedUsers = <RoomBannedUser>[];
+
+  void seedJoinRequestForQa(RoomJoinRequest request) {
+    _joinRequests
+      ..removeWhere((RoomJoinRequest item) => item.id == request.id)
+      ..add(request);
+  }
+
+  void seedBannedUserForQa(RoomBannedUser user) {
+    _bannedUsers
+      ..removeWhere(
+        (RoomBannedUser item) => item.member.userId == user.member.userId,
+      )
+      ..add(user);
+  }
 
   @override
   Future<RoomMemberPage> fetchOnlineMembers({
@@ -209,6 +229,108 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
   @override
   Future<List<MicAccessRequest>> fetchMicRequests(String roomId) async =>
       List<MicAccessRequest>.unmodifiable(_requests);
+
+  @override
+  Future<RoomJoinRequestPage> fetchJoinRequests({
+    required String roomId,
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    if (page < 1 || pageSize < 1) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '入房申请分页参数无效',
+      );
+    }
+    final int start = (page - 1) * pageSize;
+    final int end = (start + pageSize).clamp(0, _joinRequests.length).toInt();
+    final List<RoomJoinRequest> items = start >= _joinRequests.length
+        ? const <RoomJoinRequest>[]
+        : _joinRequests.sublist(start, end);
+    final int pages = _joinRequests.isEmpty
+        ? 0
+        : (_joinRequests.length / pageSize).ceil();
+    return RoomJoinRequestPage(
+      items: List<RoomJoinRequest>.unmodifiable(items),
+      page: page,
+      total: _joinRequests.length,
+      pages: pages,
+    );
+  }
+
+  @override
+  Future<void> resolveJoinRequest({
+    required String joinRequestId,
+    required bool approved,
+    String? requestId,
+  }) async {
+    final int index = _joinRequests.indexWhere(
+      (RoomJoinRequest request) => request.id == joinRequestId,
+    );
+    if (index < 0 || !_joinRequests[index].isPending) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '入房申请状态已变化，请刷新后重试',
+      );
+    }
+    final RoomJoinRequest current = _joinRequests[index];
+    _joinRequests[index] = RoomJoinRequest(
+      id: current.id,
+      member: current.member,
+      status: approved
+          ? RoomJoinRequestStatus.approved
+          : RoomJoinRequestStatus.rejected,
+      message: current.message,
+      createdAt: current.createdAt,
+      resolvedAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<RoomBannedUserPage> fetchBannedUsers({
+    required String roomId,
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    if (page < 1 || pageSize < 1) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '房间限制分页参数无效',
+      );
+    }
+    final int start = (page - 1) * pageSize;
+    final int end = (start + pageSize).clamp(0, _bannedUsers.length).toInt();
+    final List<RoomBannedUser> items = start >= _bannedUsers.length
+        ? const <RoomBannedUser>[]
+        : _bannedUsers.sublist(start, end);
+    final int pages = _bannedUsers.isEmpty
+        ? 0
+        : (_bannedUsers.length / pageSize).ceil();
+    return RoomBannedUserPage(
+      items: List<RoomBannedUser>.unmodifiable(items),
+      page: page,
+      total: _bannedUsers.length,
+      pages: pages,
+    );
+  }
+
+  @override
+  Future<void> unbanUser({
+    required String roomId,
+    required int userId,
+    String? requestId,
+  }) async {
+    final int before = _bannedUsers.length;
+    _bannedUsers.removeWhere(
+      (RoomBannedUser banned) => banned.member.userId == userId,
+    );
+    if (_bannedUsers.length == before) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '该用户当前不在房间限制列表中',
+      );
+    }
+  }
 
   @override
   Future<void> submitMicRequest({

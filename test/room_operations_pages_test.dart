@@ -12,7 +12,9 @@ import 'package:voice_social_app/features/room/domain/room_operations_repository
 import 'package:voice_social_app/features/room/presentation/room_audio_page.dart';
 import 'package:voice_social_app/features/room/presentation/edit_room_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_members_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_topic_page.dart';
+import 'package:voice_social_app/features/room/data/mock_room_operations_repository.dart';
 
 void main() {
   testWidgets('RM-006 member filters retain on-mic and listener context', (
@@ -313,6 +315,87 @@ void main() {
       find.widgetWithText(ListTile, '有线耳机'),
     );
     expect(wired.enabled, isFalse);
+  });
+
+  testWidgets('RM-007 exposes first-party approval and ban recovery actions', (
+    WidgetTester tester,
+  ) async {
+    final AppDependencies dependencies = AppDependencies.mock();
+    final MockRoomOperationsRepository repository =
+        dependencies.roomOperationsRepository as MockRoomOperationsRepository;
+    repository.seedJoinRequestForQa(
+      RoomJoinRequest(
+        id: 'join-request-1',
+        member: const RoomMember(
+          userId: 30001,
+          name: '申请用户',
+          role: RoomRole.listener,
+          presence: RoomMemberPresence.listener,
+        ),
+        status: RoomJoinRequestStatus.pending,
+        message: '想加入房间聊天',
+        createdAt: DateTime.utc(2026, 8, 25),
+      ),
+    );
+    repository.seedBannedUserForQa(
+      const RoomBannedUser(
+        member: RoomMember(
+          userId: 30002,
+          name: '受限用户',
+          role: RoomRole.listener,
+          presence: RoomMemberPresence.listener,
+        ),
+        reason: '重复刷屏',
+      ),
+    );
+
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: dependencies,
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: const RoomManagementPage(
+            roomId: '9527',
+            currentUserId: 20001,
+            currentRole: RoomRole.owner,
+            seats: <MicSeat>[],
+            roomTitle: '夜聊房',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('入房申请 1'), findsOneWidget);
+    expect(find.text('房间限制 1'), findsOneWidget);
+
+    await tester.tap(find.text('入房申请 1'));
+    await tester.pumpAndSettle();
+    expect(find.text('申请用户'), findsOneWidget);
+    expect(find.text('同意'), findsOneWidget);
+    await tester.tap(find.text('同意'));
+    await tester.pumpAndSettle();
+    final RoomJoinRequestPage resolved = await repository.fetchJoinRequests(
+      roomId: '9527',
+    );
+    expect(resolved.items.single.status, RoomJoinRequestStatus.approved);
+
+    await tester.drag(
+      find.byType(SingleChildScrollView).first,
+      const Offset(-320, 0),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('房间限制 1'));
+    await tester.pumpAndSettle();
+    expect(find.text('受限用户'), findsOneWidget);
+    await tester.tap(find.text('解除限制'));
+    await tester.pumpAndSettle();
+    expect(find.text('确认解除'), findsOneWidget);
+    await tester.tap(find.text('确认解除'));
+    await tester.pumpAndSettle();
+    expect(find.text('受限用户'), findsNothing);
   });
 }
 

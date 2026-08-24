@@ -98,6 +98,79 @@ class MicAccessRequest {
   final DateTime createdAt;
 }
 
+/// A persisted request to enter an approval-only room.
+///
+/// This is intentionally separate from [MicAccessRequest].  Approval-room
+/// membership is a first-party HTTP workflow, while microphone coordination
+/// is a different room capability and may remain direct or vendor-blocked.
+enum RoomJoinRequestStatus { pending, approved, rejected }
+
+class RoomJoinRequest {
+  const RoomJoinRequest({
+    required this.id,
+    required this.member,
+    required this.status,
+    this.message,
+    this.createdAt,
+    this.resolvedAt,
+  });
+
+  final String id;
+  final RoomMember member;
+  final RoomJoinRequestStatus status;
+  final String? message;
+  final DateTime? createdAt;
+  final DateTime? resolvedAt;
+
+  bool get isPending => status == RoomJoinRequestStatus.pending;
+}
+
+class RoomJoinRequestPage {
+  const RoomJoinRequestPage({
+    required this.items,
+    required this.page,
+    required this.total,
+    required this.pages,
+  });
+
+  final List<RoomJoinRequest> items;
+  final int page;
+  final int total;
+  final int pages;
+
+  bool get hasMore => page < pages;
+}
+
+class RoomBannedUser {
+  const RoomBannedUser({
+    required this.member,
+    this.reason,
+    this.bannedAt,
+    this.expiresAt,
+  });
+
+  final RoomMember member;
+  final String? reason;
+  final DateTime? bannedAt;
+  final DateTime? expiresAt;
+}
+
+class RoomBannedUserPage {
+  const RoomBannedUserPage({
+    required this.items,
+    required this.page,
+    required this.total,
+    required this.pages,
+  });
+
+  final List<RoomBannedUser> items;
+  final int page;
+  final int total;
+  final int pages;
+
+  bool get hasMore => page < pages;
+}
+
 enum RoomAudioRoute { speaker, earpiece, bluetooth, wiredHeadset }
 
 enum RoomConnectionGrade { excellent, good, fair, poor, unknown }

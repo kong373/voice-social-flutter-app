@@ -338,7 +338,11 @@ class RoomController extends ChangeNotifier {
         );
       }
       _snapshot = refreshed;
-      await _rtcAdapter.setLocalAudioEnabled(true);
+      // A live HTTP_STATE_ONLY room can persist the seat transition without
+      // claiming that an RTC engine joined. Audio remains vendor-blocked.
+      if (!_snapshot!.isSnapshotOnly) {
+        await _rtcAdapter.setLocalAudioEnabled(true);
+      }
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
@@ -377,7 +381,9 @@ class RoomController extends ChangeNotifier {
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
-      await _rtcAdapter.setLocalAudioEnabled(false);
+      if (!_snapshot!.isSnapshotOnly) {
+        await _rtcAdapter.setLocalAudioEnabled(false);
+      }
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }

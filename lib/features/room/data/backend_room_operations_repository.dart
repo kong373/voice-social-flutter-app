@@ -6,7 +6,11 @@ import 'package:voice_social_app/features/room/domain/room_operations_models.dar
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/data/room_write_guard.dart';
 
-class BackendRoomOperationsRepository implements RoomOperationsRepository {
+class BackendRoomOperationsRepository
+    implements
+        RoomOperationsRepository,
+        RoomJoinRequestRepository,
+        RoomBanRepository {
   static const int _memberPageSize = 50;
   static const int _maximumMemberPages = 100;
 
@@ -133,6 +137,153 @@ class BackendRoomOperationsRepository implements RoomOperationsRepository {
           ),
         )
         .toList(growable: false);
+  }
+
+  @override
+  Future<RoomJoinRequestPage> fetchJoinRequests({
+    required String roomId,
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    _validatePageRequest(page: page, pageSize: pageSize);
+    final ApiResponse response = await _apiClient.get(
+      _routes.roomJoinRequests,
+      query: <String, String>{
+        'roomId': roomId,
+        'pageNum': '$page',
+        'pageSize': '$pageSize',
+      },
+    );
+    final _MemberPageEnvelope envelope = _memberPageEnvelope(
+      response.data,
+      requestedPage: page,
+      requestedPageSize: pageSize,
+    );
+    return RoomJoinRequestPage(
+      items: envelope.items.map(_joinRequestFrom).toList(growable: false),
+      page: envelope.current,
+      total: envelope.total,
+      pages: envelope.pages,
+    );
+  }
+
+  @override
+  Future<void> resolveJoinRequest({
+    required String joinRequestId,
+    required bool approved,
+    String? requestId,
+  }) async {
+    final String normalizedId = joinRequestId.trim();
+    if (normalizedId.isEmpty || normalizedId.length > 64) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '入房申请 ID 无效',
+      );
+    }
+    await _writeGuard.run<void>(
+      intent: 'room-join-request:$normalizedId:$approved',
+      action: (Map<String, String> headers) async {
+        if (requestId != null && requestId.trim().isNotEmpty) {
+          headers['X-Request-Id'] = requestId.trim();
+        }
+        final ApiResponse response = await _apiClient.post(
+          _routes.resolveRoomJoinRequest,
+          headers: headers,
+          body: <String, Object?>{
+            'joinRequestId': normalizedId,
+            'approved': approved,
+          },
+        );
+        final Map<String, Object?> data = _requiredMutationMap(
+          response,
+          operation: approved ? '同意入房申请' : '拒绝入房申请',
+          requiredFields: <String>['joinRequestId', 'status'],
+        );
+        if (_requiredExactNonEmptyString(data, 'joinRequestId') !=
+            normalizedId) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '入房申请审核响应与请求 ID 不一致',
+          );
+        }
+        final String expected = approved ? 'APPROVED' : 'REJECTED';
+        if (_string(data['status'], fallback: '').toUpperCase() != expected) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '入房申请审核响应状态不一致',
+          );
+        }
+      },
+    );
+  }
+
+  @override
+  Future<RoomBannedUserPage> fetchBannedUsers({
+    required String roomId,
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    _validatePageRequest(page: page, pageSize: pageSize);
+    final ApiResponse response = await _apiClient.get(
+      _routes.roomBannedUsers,
+      query: <String, String>{
+        'roomId': roomId,
+        'pageNum': '$page',
+        'pageSize': '$pageSize',
+      },
+    );
+    final _MemberPageEnvelope envelope = _memberPageEnvelope(
+      response.data,
+      requestedPage: page,
+      requestedPageSize: pageSize,
+    );
+    return RoomBannedUserPage(
+      items: envelope.items.map(_bannedUserFrom).toList(growable: false),
+      page: envelope.current,
+      total: envelope.total,
+      pages: envelope.pages,
+    );
+  }
+
+  @override
+  Future<void> unbanUser({
+    required String roomId,
+    required int userId,
+    String? requestId,
+  }) async {
+    final String normalizedRoomId = roomId.trim();
+    if (normalizedRoomId.isEmpty || userId <= 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '解封目标无效',
+      );
+    }
+    await _writeGuard.run<void>(
+      intent: 'room-unban:$normalizedRoomId:$userId',
+      action: (Map<String, String> headers) async {
+        if (requestId != null && requestId.trim().isNotEmpty) {
+          headers['X-Request-Id'] = requestId.trim();
+        }
+        final ApiResponse response = await _apiClient.post(
+          _routes.unbanRoomUser,
+          headers: headers,
+          body: <String, Object?>{'roomId': normalizedRoomId, 'userId': userId},
+        );
+        final Map<String, Object?> data = _requiredMutationMap(
+          response,
+          operation: '解除房间限制',
+          requiredFields: <String>['roomId', 'userId', 'banned'],
+        );
+        _assertRoom(data, normalizedRoomId, operation: '解除房间限制');
+        _assertUser(data, userId, operation: '解除房间限制');
+        if (_asBool(data['banned'])) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '解除房间限制响应仍为 banned=true',
+          );
+        }
+      },
+    );
   }
 
   @override
@@ -554,6 +705,53 @@ class BackendRoomOperationsRepository implements RoomOperationsRepository {
     );
   }
 
+  static RoomJoinRequest _joinRequestFrom(Map<String, Object?> item) {
+    final String id = _requiredExactNonEmptyString(item, 'joinRequestId');
+    final RoomJoinRequestStatus status = switch (_string(
+      item['status'],
+      fallback: '',
+    ).toUpperCase()) {
+      'PENDING' => RoomJoinRequestStatus.pending,
+      'APPROVED' => RoomJoinRequestStatus.approved,
+      'REJECTED' => RoomJoinRequestStatus.rejected,
+      _ => throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '入房申请包含未知状态',
+      ),
+    };
+    final int userId = _requiredMemberId(item);
+    return RoomJoinRequest(
+      id: id,
+      member: RoomMember(
+        userId: userId,
+        name: _string(item['nickName'] ?? item['name'], fallback: '申请用户'),
+        avatarUrl: _optionalString(item['headImgUrl'] ?? item['avatarUrl']),
+        role: RoomRole.listener,
+        presence: RoomMemberPresence.listener,
+      ),
+      status: status,
+      message: _optionalString(item['message']),
+      createdAt: _optionalDateTime(item['createdAt']),
+      resolvedAt: _optionalDateTime(item['resolvedAt']),
+    );
+  }
+
+  static RoomBannedUser _bannedUserFrom(Map<String, Object?> item) {
+    final int userId = _requiredMemberId(item);
+    return RoomBannedUser(
+      member: RoomMember(
+        userId: userId,
+        name: _string(item['nickName'] ?? item['name'], fallback: '受限用户'),
+        avatarUrl: _optionalString(item['headImgUrl'] ?? item['avatarUrl']),
+        role: RoomRole.listener,
+        presence: RoomMemberPresence.listener,
+      ),
+      reason: _optionalString(item['reason']),
+      bannedAt: _optionalDateTime(item['bannedAt']),
+      expiresAt: _optionalDateTime(item['expiresAt']),
+    );
+  }
+
   static RoomRole _roleFromServer(Object? role) {
     final int? numeric = _asInt(role);
     if (numeric != null) {
@@ -916,6 +1114,33 @@ class BackendRoomOperationsRepository implements RoomOperationsRepository {
   static String? _optionalString(Object? value) {
     final String text = value?.toString().trim() ?? '';
     return text.isEmpty ? null : text;
+  }
+
+  static DateTime? _optionalDateTime(Object? value) {
+    if (value == null) {
+      return null;
+    }
+    final String text = value.toString().trim();
+    if (text.isEmpty) {
+      return null;
+    }
+    final DateTime? parsed = DateTime.tryParse(text);
+    if (parsed == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '房间运营时间字段无法解析',
+      );
+    }
+    return parsed;
+  }
+
+  static void _validatePageRequest({required int page, required int pageSize}) {
+    if (page < 1 || pageSize < 1 || pageSize > _memberPageSize) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '房间运营分页请求参数无效',
+      );
+    }
   }
 }
 

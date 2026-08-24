@@ -87,17 +87,58 @@ void main() {
     );
   });
 
-  test('snapshot-only room denies every interactive capability', () {
+  test('snapshot-only room keeps HTTP capabilities and blocks RTC mute', () {
     final RoomSnapshot room = snapshot(
       RoomRole.owner,
       transportMode: RoomTransportMode.snapshotOnly,
     );
-    for (final RoomCapability capability in RoomCapability.values) {
-      expect(
-        policy.allows(snapshot: room, capability: capability, isOnMic: true),
-        isFalse,
-        reason: '$capability must remain fail-closed in snapshot-only mode',
-      );
-    }
+    expect(
+      policy.allows(
+        snapshot: room,
+        capability: RoomCapability.sendPublicMessage,
+        isOnMic: false,
+      ),
+      isTrue,
+    );
+    expect(
+      policy.allows(
+        snapshot: room,
+        capability: RoomCapability.requestMic,
+        isOnMic: false,
+      ),
+      isTrue,
+    );
+    expect(
+      policy.allows(
+        snapshot: room,
+        capability: RoomCapability.leaveMic,
+        isOnMic: true,
+      ),
+      isTrue,
+    );
+    expect(
+      policy.allows(
+        snapshot: room,
+        capability: RoomCapability.toggleMicrophone,
+        isOnMic: true,
+      ),
+      isFalse,
+    );
+    expect(
+      policy.allows(
+        snapshot: room,
+        capability: RoomCapability.manageMembers,
+        isOnMic: true,
+      ),
+      isTrue,
+    );
+    expect(
+      policy.allows(
+        snapshot: room,
+        capability: RoomCapability.startPk,
+        isOnMic: true,
+      ),
+      isTrue,
+    );
   });
 }

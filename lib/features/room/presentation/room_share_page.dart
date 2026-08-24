@@ -16,6 +16,11 @@ class RoomSharePage extends StatelessWidget {
   final String roomCode;
   final String roomTitle;
 
+  /// Native system sharing is intentionally outside the first-party scope.
+  /// Keep this boundary explicit so this page never reports a vendor action as
+  /// successful before a reviewed platform/share adapter is configured.
+  static const String nativeShareStatus = 'VENDOR_BLOCKED';
+
   String get _shareText =>
       '$roomTitle\n房间号：$roomCode\nvoice-social://room/$roomId';
 
@@ -77,6 +82,7 @@ class RoomSharePage extends StatelessWidget {
             child: Column(
               children: <Widget>[
                 ListTile(
+                  key: const Key('rm-009-copy-room-code'),
                   leading: const Icon(Icons.tag_rounded),
                   title: const Text('复制房间号'),
                   subtitle: Text(roomCode),
@@ -85,6 +91,7 @@ class RoomSharePage extends StatelessWidget {
                 ),
                 const Divider(height: 1, indent: 54),
                 ListTile(
+                  key: const Key('rm-009-copy-room-invite'),
                   leading: const Icon(Icons.link_rounded),
                   title: const Text('复制房间邀请'),
                   subtitle: const Text('包含房间标题、房间号和深链'),
@@ -96,9 +103,10 @@ class RoomSharePage extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           const RoomOxygenNotice(
+            key: Key('rm-009-native-share-status'),
             icon: Icons.info_outline_rounded,
-            title: '系统分享暂不可用',
-            message: '当前不会伪造分享成功，可先复制房间邀请。',
+            title: '系统分享：$nativeShareStatus',
+            message: '原生系统分享属于未接入的厂商/平台能力，当前不会伪造分享成功。复制房间号和房间邀请仍可用。',
           ),
         ],
       ),
