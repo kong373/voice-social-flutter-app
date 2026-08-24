@@ -172,6 +172,7 @@ class BackendRouteCatalog {
     this.messageConversations = '/app-mini-api/mini/v1/message/conversations',
     this.markPrivateMessageRead = '/app-mini-api/mini/v1/message/read',
     this.systemNotifications = '/app-mini-api/mini/v1/notifications',
+    this.syncNotifications = '/app-mini-api/mini/v1/notifications/sync',
     this.markSystemNotificationRead =
         '/app-mini-api/mini/v1/notifications/read',
   });
@@ -342,5 +343,6 @@ class BackendRouteCatalog {
   final String messageConversations;
   final String markPrivateMessageRead;
   final String systemNotifications;
+  final String syncNotifications;
   final String markSystemNotificationRead;
 }

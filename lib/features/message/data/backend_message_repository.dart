@@ -347,6 +347,7 @@ class BackendMessageRepository implements MessageRepository {
   ) async {
     final int requestVersion = (_notificationFetchVersions[category] ?? 0) + 1;
     _notificationFetchVersions[category] = requestVersion;
+    await _syncNotifications();
     final List<AppNotification> notifications = <AppNotification>[];
     final Set<String> seenCursors = <String>{};
     String? cursor;
@@ -418,6 +419,68 @@ class BackendMessageRepository implements MessageRepository {
       _lastSyncAt = DateTime.now();
     }
     return notifications;
+  }
+
+  Future<void> _syncNotifications() async {
+    await _runStableMessageWrite<void>(
+      intent: 'notifications-sync',
+      action: (Map<String, String> headers) async {
+        final ApiResponse response = await _apiClient.post(
+          _routes.syncNotifications,
+          headers: headers,
+        );
+        final Map<String, Object?> data = _asMap(response.data);
+        final bool synced = _requiredStrictBool(
+          data['synced'],
+          field: 'synced',
+        );
+        final String projectionStatus = _requiredString(
+          data['projectionStatus'],
+          '通知同步响应缺少 projectionStatus',
+        );
+        final String pushStatus = _requiredString(
+          data['pushStatus'],
+          '通知同步响应缺少 pushStatus',
+        );
+        final String imStatus = _requiredString(
+          data['imStatus'],
+          '通知同步响应缺少 imStatus',
+        );
+        final bool providerInvocation = _requiredStrictBool(
+          data['providerInvocation'],
+          field: 'providerInvocation',
+        );
+        final int dynamicUnread = _requiredNonNegativeInt(
+          data['dynamicUnread'],
+          field: 'dynamicUnread',
+        );
+        final int notificationUnread = _requiredNonNegativeInt(
+          data['notificationUnread'],
+          field: 'notificationUnread',
+        );
+        final int messageUnread = _requiredNonNegativeInt(
+          data['messageUnread'],
+          field: 'messageUnread',
+        );
+        final int totalUnread = _requiredNonNegativeInt(
+          data['totalUnread'],
+          field: 'totalUnread',
+        );
+        if (!synced ||
+            projectionStatus != 'FIRST_PARTY_MATERIALIZED' ||
+            pushStatus != 'VENDOR_BLOCKED' ||
+            imStatus != 'VENDOR_BLOCKED' ||
+            providerInvocation ||
+            dynamicUnread > notificationUnread ||
+            totalUnread != notificationUnread + messageUnread) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '通知同步响应未确认第一方投影或权威未读计数',
+          );
+        }
+        _lastSyncAt = DateTime.now();
+      },
+    );
   }
 
   @override
@@ -1296,6 +1359,16 @@ class BackendMessageRepository implements MessageRepository {
     throw ApiException(
       kind: ApiFailureKind.protocol,
       message: '消息会话分页 $field 不是明确布尔值',
+    );
+  }
+
+  static bool _requiredStrictBool(Object? value, {required String field}) {
+    if (value is bool) {
+      return value;
+    }
+    throw ApiException(
+      kind: ApiFailureKind.protocol,
+      message: '消息同步响应的 $field 必须为布尔值',
     );
   }
 

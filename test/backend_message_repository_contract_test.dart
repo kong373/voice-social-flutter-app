@@ -1136,13 +1136,18 @@ void main() {
       expect(system.single.id, 'system-1');
       expect(system.single.unread, isTrue);
       expect(interaction.single.id, 'interaction-1');
+      expect(interaction.single.category, NotificationCategory.interaction);
       expect(interaction.single.targetType, NotificationTargetType.dynamicPost);
       expect(interaction.single.targetId, 'dynamic-1');
+      expect(
+        interaction.single.createdAt,
+        DateTime.parse('2026-08-21T10:01:00Z'),
+      );
       final AppNotification detail = await harness.repository.fetchNotification(
         'interaction-1',
       );
       expect(detail.id, 'interaction-1');
-      expect(harness.requests, hasLength(3));
+      expect(harness.requests, hasLength(5));
     },
   );
 
@@ -1435,9 +1440,12 @@ void main() {
         'notification-SYSTEM-1',
       ]);
       expect(
-        harness.requests.map(
-          (RequestRecord request) => request.query['cursor'],
-        ),
+        harness.requests
+            .where(
+              (RequestRecord request) =>
+                  request.path == '/app-mini-api/mini/v1/notifications',
+            )
+            .map((RequestRecord request) => request.query['cursor']),
         <String?>[null, 'cursor-1'],
       );
       final MessageRecoverySnapshot snapshot = await harness.repository
@@ -1445,6 +1453,175 @@ void main() {
       expect(snapshot.lastNotificationSyncAt, isNotNull);
     },
   );
+
+  test(
+    'notification sync retries an ambiguous result with one ID then refreshes',
+    () async {
+      int syncAttempts = 0;
+      final _Harness harness = await _Harness.start(
+        (RequestRecord request) {
+          expect(request.method, 'GET');
+          expect(request.path, '/app-mini-api/mini/v1/notifications');
+          return _Response.ok(
+            _notificationPage(
+              page: 1,
+              hasMore: false,
+              category: 'SYSTEM',
+              nextCursor: '',
+            ),
+          );
+        },
+        notificationSyncHandler: (RequestRecord request) {
+          syncAttempts += 1;
+          expect(request.method, 'POST');
+          expect(request.body, isNull);
+          expect(request.requestId, isNotEmpty);
+          if (syncAttempts == 1) {
+            return _Response.empty();
+          }
+          return _Response.ok(_notificationSyncResponse());
+        },
+      );
+      addTearDown(harness.close);
+
+      await expectLater(
+        harness.repository.fetchNotifications(NotificationCategory.system),
+        throwsA(isA<ApiException>()),
+      );
+      final List<String> firstAttemptIds = harness.requests
+          .where(
+            (RequestRecord request) =>
+                request.path == '/app-mini-api/mini/v1/notifications/sync',
+          )
+          .map((RequestRecord request) => request.requestId)
+          .toList();
+      expect(firstAttemptIds, hasLength(1));
+      expect(
+        harness.requests.where(
+          (RequestRecord request) =>
+              request.path == '/app-mini-api/mini/v1/notifications',
+        ),
+        isEmpty,
+      );
+
+      await harness.repository.fetchNotifications(NotificationCategory.system);
+      await harness.repository.fetchNotifications(NotificationCategory.system);
+      final List<String> syncIds = harness.requests
+          .where(
+            (RequestRecord request) =>
+                request.path == '/app-mini-api/mini/v1/notifications/sync',
+          )
+          .map((RequestRecord request) => request.requestId)
+          .toList();
+      expect(syncAttempts, 3);
+      expect(syncIds[0], syncIds[1]);
+      expect(syncIds[2], isNot(syncIds[1]));
+    },
+  );
+
+  test('notification sync fails closed before making a list GET', () async {
+    final List<Map<String, Object?>> invalidResponses = <Map<String, Object?>>[
+      <String, Object?>{..._notificationSyncResponse(), 'synced': false},
+      <String, Object?>{
+        ..._notificationSyncResponse(),
+        'projectionStatus': 'FIRST_PARTY_PENDING',
+      },
+      <String, Object?>{
+        ..._notificationSyncResponse(),
+        'providerInvocation': true,
+      },
+      <String, Object?>{..._notificationSyncResponse(), 'totalUnread': 1},
+    ];
+    for (final Map<String, Object?> invalidResponse in invalidResponses) {
+      final _Harness harness = await _Harness.start(
+        (_) => fail('notification list GET must wait for a valid sync'),
+        notificationSyncHandler: (_) => _Response.ok(invalidResponse),
+      );
+      try {
+        await expectLater(
+          harness.repository.fetchNotifications(NotificationCategory.system),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.protocol,
+            ),
+          ),
+        );
+        expect(
+          harness.requests.where(
+            (RequestRecord request) =>
+                request.path == '/app-mini-api/mini/v1/notifications',
+          ),
+          isEmpty,
+        );
+        expect(
+          (await harness.repository.fetchRecoverySnapshot())
+              .lastNotificationSyncAt,
+          isNull,
+        );
+      } finally {
+        await harness.close();
+      }
+    }
+  });
+
+  test('concurrent notification fetches share one projection sync', () async {
+    final Completer<void> releaseSync = Completer<void>();
+    int syncCalls = 0;
+    final _Harness harness = await _Harness.start(
+      (RequestRecord request) {
+        expect(request.method, 'GET');
+        expect(request.path, '/app-mini-api/mini/v1/notifications');
+        final String category = request.query['category'] == 'SYSTEM'
+            ? 'SYSTEM'
+            : 'DYNAMIC_LIKE';
+        return _Response.ok(
+          _notificationPage(
+            page: 1,
+            hasMore: false,
+            category: category,
+            nextCursor: '',
+          ),
+        );
+      },
+      notificationSyncHandler: (RequestRecord request) async {
+        syncCalls += 1;
+        expect(request.method, 'POST');
+        expect(request.requestId, isNotEmpty);
+        await releaseSync.future;
+        return _Response.ok(_notificationSyncResponse());
+      },
+    );
+    addTearDown(harness.close);
+
+    final Future<List<AppNotification>> first = harness.repository
+        .fetchNotifications(NotificationCategory.system);
+    final Future<List<AppNotification>> second = harness.repository
+        .fetchNotifications(NotificationCategory.interaction);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(syncCalls, 1);
+    releaseSync.complete();
+    final List<List<AppNotification>> values = await Future.wait(
+      <Future<List<AppNotification>>>[first, second],
+    );
+    expect(values[0].single.category, NotificationCategory.system);
+    expect(values[1].single.category, NotificationCategory.interaction);
+    expect(
+      harness.requests.where(
+        (RequestRecord request) =>
+            request.path == '/app-mini-api/mini/v1/notifications/sync',
+      ),
+      hasLength(1),
+    );
+    expect(
+      harness.requests.where(
+        (RequestRecord request) =>
+            request.path == '/app-mini-api/mini/v1/notifications',
+      ),
+      hasLength(2),
+    );
+  });
 
   test(
     'notification list rejects non-map items instead of dropping them',
@@ -1551,11 +1728,11 @@ void main() {
               ),
         ),
       );
-      expect(harness.requests, hasLength(1));
+      expect(harness.requests, hasLength(2));
       expect(
         (await harness.repository.fetchRecoverySnapshot())
             .lastNotificationSyncAt,
-        isNull,
+        isNotNull,
       );
     },
   );
@@ -1592,7 +1769,7 @@ void main() {
               ),
         ),
       );
-      expect(harness.requests, hasLength(1));
+      expect(harness.requests, hasLength(2));
     },
   );
 
@@ -1627,7 +1804,7 @@ void main() {
             ),
       ),
     );
-    expect(harness.requests, hasLength(2));
+    expect(harness.requests, hasLength(3));
   });
 
   test('notification pagination stops at the maximum page limit', () async {
@@ -1671,7 +1848,7 @@ void main() {
             ),
       ),
     );
-    expect(harness.requests, hasLength(100));
+    expect(harness.requests, hasLength(101));
     expect(harness.requests.last.query['cursor'], 'cursor-99');
   });
 
@@ -2370,6 +2547,30 @@ Map<String, Object?> _notificationPage({
   };
 }
 
+Map<String, Object?> _notificationSyncResponse({
+  bool synced = true,
+  String projectionStatus = 'FIRST_PARTY_MATERIALIZED',
+  String pushStatus = 'VENDOR_BLOCKED',
+  String imStatus = 'VENDOR_BLOCKED',
+  bool providerInvocation = false,
+  int dynamicUnread = 0,
+  int notificationUnread = 0,
+  int messageUnread = 0,
+  int totalUnread = 0,
+}) {
+  return <String, Object?>{
+    'synced': synced,
+    'projectionStatus': projectionStatus,
+    'pushStatus': pushStatus,
+    'imStatus': imStatus,
+    'providerInvocation': providerInvocation,
+    'dynamicUnread': dynamicUnread,
+    'notificationUnread': notificationUnread,
+    'messageUnread': messageUnread,
+    'totalUnread': totalUnread,
+  };
+}
+
 class _Harness {
   _Harness._(
     this.server,
@@ -2399,6 +2600,7 @@ class _Harness {
     FutureOr<_Response> Function(RequestRecord) handler, {
     UnauthorizedRecovery? unauthorizedRecovery,
     NativePermissionAdapter? nativePermissionAdapter,
+    FutureOr<_Response> Function(RequestRecord)? notificationSyncHandler,
   }) async {
     final HttpServer server = await HttpServer.bind(
       InternetAddress.loopbackIPv4,
@@ -2427,7 +2629,11 @@ class _Harness {
             : decodedBody,
       );
       requests.add(record);
-      final _Response response = await handler(record);
+      final _Response response =
+          record.path == '/app-mini-api/mini/v1/notifications/sync'
+          ? await (notificationSyncHandler?.call(record) ??
+                _Response.ok(_notificationSyncResponse()))
+          : await handler(record);
       request.response.statusCode = response.statusCode;
       request.response.headers.contentType = ContentType.json;
       if (!response.omitBody) {
