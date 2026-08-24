@@ -342,56 +342,274 @@ void main() {
       );
 
       expect(server.requests, hasLength(13));
-      expect(repository.micCoordinationMode, MicCoordinationMode.direct);
+      // Live capability is unknown until the server returns its authoritative
+      // room/queue projection; the client must not guess DIRECT.
+      expect(repository.micCoordinationMode, MicCoordinationMode.unavailable);
     },
   );
 
   test(
-    'direct-mic backend keeps unsupported approval operations fail-closed',
+    'approval mic queue uses canonical routes and header-only idempotency',
     () async {
-      final _RunningServer server = await _RunningServer.start(
-        (_CapturedRequest request) =>
-            fail('unexpected request: ${request.path}'),
-      );
+      String status = 'PENDING';
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        switch (request.path) {
+          case '/app-mini-api/mini/v1/rooms/mic-requests':
+            if (request.method == 'GET') {
+              final Map<String, Object?> record = _micRequestRecord(
+                id: 'request-1',
+                type: 'REQUEST',
+                status: status,
+                requestedByUserId: 10001,
+                subjectUserId: 10001,
+                seatNumber: 3,
+              );
+              return _Reply(
+                data: <String, Object?>{
+                  'list': <Object?>[record],
+                  'records': <Object?>[record],
+                  'total': 1,
+                  'roomId': '9527',
+                  'coordinationMode': 'APPROVAL',
+                  'providerInvocation': false,
+                },
+              );
+            }
+            expect(request.method, 'POST');
+            expect(request.body, <String, Object?>{
+              'roomId': '9527',
+              'seatNumber': 3,
+            });
+            expect(
+              request.body is Map &&
+                  (request.body! as Map).containsKey('requestId'),
+              isFalse,
+            );
+            status = 'PENDING';
+            return _Reply(
+              data: _micRequestRecord(
+                id: 'request-1',
+                type: 'REQUEST',
+                status: 'PENDING',
+                requestedByUserId: 10001,
+                subjectUserId: 10001,
+                seatNumber: 3,
+              ),
+            );
+          case '/app-mini-api/mini/v1/rooms/mic-requests/cancel':
+            expect(request.method, 'POST');
+            expect(request.body, <String, Object?>{'requestId': 'request-1'});
+            status = 'CANCELLED';
+            return _Reply(
+              data: _micRequestRecord(
+                id: 'request-1',
+                type: 'REQUEST',
+                status: 'CANCELLED',
+                requestedByUserId: 10001,
+                subjectUserId: 10001,
+                seatNumber: 3,
+                resolvedByUserId: 10001,
+              ),
+            );
+          case '/app-mini-api/mini/v1/rooms/mic-requests/resolve':
+            expect(request.method, 'POST');
+            expect(request.body, <String, Object?>{
+              'requestId': 'request-1',
+              'accepted': true,
+            });
+            status = 'APPROVED';
+            return _Reply(
+              data: <String, Object?>{
+                ..._micRequestRecord(
+                  id: 'request-1',
+                  type: 'REQUEST',
+                  status: 'APPROVED',
+                  requestedByUserId: 10001,
+                  subjectUserId: 10001,
+                  seatNumber: 3,
+                  resolvedByUserId: 20001,
+                ),
+                'seatAssigned': true,
+              },
+            );
+          case '/app-mini-api/mini/v1/rooms/mic-requests/invite':
+            expect(request.method, 'POST');
+            expect(request.body, <String, Object?>{
+              'roomId': '9527',
+              'userId': 10002,
+              'seatNumber': 4,
+            });
+            return _Reply(
+              data: _micRequestRecord(
+                id: 'invite-1',
+                type: 'INVITE',
+                status: 'PENDING',
+                requestedByUserId: 20001,
+                subjectUserId: 10002,
+                seatNumber: 4,
+              ),
+            );
+          default:
+            fail('unexpected queue route ${request.method} ${request.path}');
+        }
+      });
       addTearDown(server.close);
       final BackendRoomOperationsRepository repository =
           BackendRoomOperationsRepository(apiClient: server.client);
 
-      Future<void> expectConfiguration(Future<void> operation) async {
-        await expectLater(
-          operation,
-          throwsA(
-            isA<ApiException>().having(
-              (ApiException error) => error.kind,
-              'kind',
-              ApiFailureKind.configuration,
-            ),
-          ),
-        );
-      }
+      expect(repository.micCoordinationMode, MicCoordinationMode.unavailable);
+      expect(
+        (await repository.fetchMicRequests('9527')).single.isRequest,
+        isTrue,
+      );
+      expect(repository.micCoordinationMode, MicCoordinationMode.approval);
+      await repository.submitMicRequest(
+        roomId: '9527',
+        userId: 10001,
+        seatNumber: 3,
+      );
+      await repository.cancelMicRequest(requestId: 'request-1');
+      await repository.resolveMicRequest(
+        requestId: 'request-1',
+        accepted: true,
+      );
+      await repository.inviteUserToMic(
+        roomId: '9527',
+        userId: 10002,
+        seatNumber: 4,
+      );
+      expect(
+        server.requests
+            .where((_CapturedRequest request) => request.method == 'POST')
+            .every((_CapturedRequest request) => request.requestId.isNotEmpty),
+        isTrue,
+      );
+    },
+  );
 
-      expect(await repository.fetchMicRequests('9527'), isEmpty);
-      await expectConfiguration(
-        repository.submitMicRequest(
-          roomId: '9527',
-          userId: 10001,
-          seatNumber: 3,
+  test('approval queue rejects provider invocation', () async {
+    final _RunningServer server = await _RunningServer.start((
+      _CapturedRequest request,
+    ) {
+      final Map<String, Object?> record = _micRequestRecord(
+        id: 'request-1',
+        type: 'REQUEST',
+        status: 'PENDING',
+        requestedByUserId: 10001,
+        subjectUserId: 10001,
+        seatNumber: 3,
+      );
+      return _Reply(
+        data: <String, Object?>{
+          'list': <Object?>[record],
+          'records': <Object?>[record],
+          'total': 1,
+          'roomId': '9527',
+          'coordinationMode': 'APPROVAL',
+          'providerInvocation': true,
+        },
+      );
+    });
+    addTearDown(server.close);
+    final BackendRoomOperationsRepository repository =
+        BackendRoomOperationsRepository(apiClient: server.client);
+    await expectLater(
+      repository.fetchMicRequests('9527'),
+      throwsA(
+        isA<ApiException>().having(
+          (ApiException error) => error.kind,
+          'kind',
+          ApiFailureKind.protocol,
         ),
+      ),
+    );
+  });
+
+  test('approval queue rejects list and records DTO mismatch', () async {
+    final _RunningServer server = await _RunningServer.start((
+      _CapturedRequest request,
+    ) {
+      final Map<String, Object?> first = _micRequestRecord(
+        id: 'request-1',
+        type: 'REQUEST',
+        status: 'PENDING',
+        requestedByUserId: 10001,
+        subjectUserId: 10001,
+        seatNumber: 3,
       );
-      await expectConfiguration(
-        repository.cancelMicRequest(requestId: 'request-1'),
+      final Map<String, Object?> second = _micRequestRecord(
+        id: 'request-2',
+        type: 'REQUEST',
+        status: 'PENDING',
+        requestedByUserId: 10001,
+        subjectUserId: 10001,
+        seatNumber: 4,
       );
-      await expectConfiguration(
-        repository.resolveMicRequest(requestId: 'request-1', accepted: true),
+      return _Reply(
+        data: <String, Object?>{
+          'list': <Object?>[first],
+          'records': <Object?>[second],
+          'total': 1,
+          'roomId': '9527',
+          'coordinationMode': 'APPROVAL',
+          'providerInvocation': false,
+        },
       );
-      await expectConfiguration(
-        repository.inviteUserToMic(
-          roomId: '9527',
-          userId: 10002,
-          seatNumber: 3,
+    });
+    addTearDown(server.close);
+    final BackendRoomOperationsRepository repository =
+        BackendRoomOperationsRepository(apiClient: server.client);
+    await expectLater(
+      repository.fetchMicRequests('9527'),
+      throwsA(
+        isA<ApiException>().having(
+          (ApiException error) => error.kind,
+          'kind',
+          ApiFailureKind.protocol,
         ),
+      ),
+    );
+  });
+
+  test(
+    'approval queue accepts naturally expired records without a resolver',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        final Map<String, Object?> record = _micRequestRecord(
+          id: 'expired-1',
+          type: 'REQUEST',
+          status: 'EXPIRED',
+          requestedByUserId: 10001,
+          subjectUserId: 10001,
+          seatNumber: 3,
+        );
+        record['resolvedAt'] = '';
+        record['resolvedByUserId'] = 0;
+        return _Reply(
+          data: <String, Object?>{
+            'list': <Object?>[record],
+            'records': <Object?>[record],
+            'total': 1,
+            'roomId': '9527',
+            'coordinationMode': 'APPROVAL',
+            'providerInvocation': false,
+          },
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomOperationsRepository repository =
+          BackendRoomOperationsRepository(apiClient: server.client);
+
+      final List<MicAccessRequest> requests = await repository.fetchMicRequests(
+        '9527',
       );
-      expect(server.requests, isEmpty);
+      expect(requests.single.status, MicRequestStatus.expired);
+      expect(requests.single.resolvedAt, isNull);
+      expect(requests.single.resolvedByUserId, isNull);
     },
   );
 
@@ -1224,6 +1442,52 @@ Map<String, Object?> _memberRecord(int userId) => <String, Object?>{
   'userId': userId,
   'nickName': '成员$userId',
 };
+
+Map<String, Object?> _micRequestRecord({
+  required String id,
+  required String type,
+  required String status,
+  required int requestedByUserId,
+  required int subjectUserId,
+  required int seatNumber,
+  int? resolvedByUserId,
+}) {
+  final bool onMic = status == 'APPROVED';
+  final String now = DateTime.utc(2026, 1, 1).toIso8601String();
+  final String? resolvedAt = status == 'PENDING' ? '' : now;
+  final int resolver = status == 'PENDING' ? 0 : (resolvedByUserId ?? 20001);
+  final Map<String, Object?> member = <String, Object?>{
+    'userId': subjectUserId,
+    'nickName': '成员$subjectUserId',
+    'name': '成员$subjectUserId',
+    'headImgUrl': '',
+    'role': 'MEMBER',
+    'presence': onMic ? 'ON_MIC' : 'LISTENER',
+    'seatNumber': onMic ? seatNumber : 0,
+    'muted': false,
+  };
+  return <String, Object?>{
+    'id': id,
+    'requestId': id,
+    'roomId': '9527',
+    'requestedByUserId': requestedByUserId,
+    'requesterUserId': requestedByUserId,
+    'subjectUserId': subjectUserId,
+    'targetUserId': subjectUserId,
+    'userId': subjectUserId,
+    'inviterUserId': type == 'INVITE' ? requestedByUserId : 0,
+    'requestType': type,
+    'type': type,
+    'seatNumber': seatNumber,
+    'status': status,
+    'createdAt': now,
+    'expiresAt': DateTime.utc(2026, 1, 1, 1).toIso8601String(),
+    'resolvedAt': resolvedAt,
+    'resolvedByUserId': resolver,
+    'member': member,
+    'providerInvocation': false,
+  };
+}
 
 Future<void> _primeSeatOccupant(
   BackendRoomOperationsRepository repository,

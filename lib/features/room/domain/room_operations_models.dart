@@ -4,7 +4,25 @@ enum RoomMemberPresence { onMic, listener }
 
 enum MicCoordinationMode { direct, approval, unavailable }
 
-enum MicRequestStatus { pending, accepted, rejected, expired, cancelled }
+/// The persisted first-party microphone queue distinguishes a member's
+/// REQUEST from a manager-created INVITE. Keep [accepted] as a source
+/// compatible legacy value for mocks; live APPROVED responses map to
+/// [approved].
+enum MicRequestType { request, invite }
+
+enum MicRequestStatus {
+  pending,
+  approved,
+  accepted,
+  rejected,
+  expired,
+  cancelled,
+}
+
+/// Action available to the authenticated target after the server returned a
+/// queue record. Management code must still gate REQUEST resolution by role;
+/// an INVITE is always accepted/rejected by its subject.
+enum MicRequestTargetAction { none, cancel, resolve, accept, reject }
 
 class RoomMember {
   const RoomMember({
@@ -89,13 +107,44 @@ class MicAccessRequest {
     required this.seatNumber,
     required this.status,
     required this.createdAt,
+    this.roomId,
+    this.type = MicRequestType.request,
+    this.requestedByUserId,
+    this.subjectUserId,
+    this.expiresAt,
+    this.resolvedAt,
+    this.resolvedByUserId,
+    this.targetAction = MicRequestTargetAction.none,
   });
 
   final String id;
+  final String? roomId;
   final RoomMember member;
   final int seatNumber;
   final MicRequestStatus status;
   final DateTime createdAt;
+  final MicRequestType type;
+  final int? requestedByUserId;
+  final int? subjectUserId;
+  final DateTime? expiresAt;
+  final DateTime? resolvedAt;
+  final int? resolvedByUserId;
+  final MicRequestTargetAction targetAction;
+
+  /// Compatibility aliases used by older presentation code and fixtures.
+  MicRequestType get requestType => type;
+  String get requestTypeValue =>
+      type == MicRequestType.invite ? 'INVITE' : 'REQUEST';
+  String get requestId => id;
+  bool get isRequest => type == MicRequestType.request;
+  bool get isInvite => type == MicRequestType.invite;
+  bool get isPending => status == MicRequestStatus.pending;
+  bool get isApproved =>
+      status == MicRequestStatus.approved ||
+      status == MicRequestStatus.accepted;
+  bool get canCancel => targetAction == MicRequestTargetAction.cancel;
+  bool get canAccept => targetAction == MicRequestTargetAction.accept;
+  bool get canReject => targetAction == MicRequestTargetAction.reject;
 }
 
 /// A persisted request to enter an approval-only room.

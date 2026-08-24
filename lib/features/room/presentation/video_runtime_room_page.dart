@@ -824,6 +824,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Future<void> _showMicSheet() async {
+    if (_controller.micCoordinationMode == MicCoordinationMode.approval) {
+      await _showApprovalMicSheet();
+      return;
+    }
     final List<MicSeat> available = _controller.seats
         .where((MicSeat seat) => seat.isAvailable)
         .toList(growable: false);
@@ -872,6 +876,185 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _showApprovalMicSheet() async {
+    await _controller.refreshMicRequests();
+    if (!mounted) {
+      return;
+    }
+    // The queue endpoint is room-scoped.  A member-facing sheet may only
+    // expose records whose target is the authenticated member; manager tools
+    // handle the full REQUEST queue separately.  Without this filter a room
+    // owner could see another member's pending REQUEST and receive a 403 when
+    // pressing the applicant-only cancel action.
+    final List<MicAccessRequest> requests = _controller.micRequests
+        .where(
+          (MicAccessRequest request) =>
+              request.subjectUserId == _controller.currentUserId,
+        )
+        .toList(growable: false);
+    final MicAccessRequest? pending = requests
+        .where((MicAccessRequest request) => request.isPending)
+        .firstOrNull;
+    final List<MicSeat> available = _controller.seats
+        .where((MicSeat seat) => seat.isAvailable)
+        .toList(growable: false);
+    final MicAccessRequest? latest = requests.isEmpty ? null : requests.first;
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: const Color(0xFF14152E),
+      builder: (BuildContext sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text('审批上麦', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 6),
+            const Text('只有服务端确认第一方麦位后才会显示麦上状态；RTC 仍未连接。'),
+            const SizedBox(height: 14),
+            if (pending?.isInvite == true) ...<Widget>[
+              Text(
+                '房管邀请你使用 ${pending!.seatNumber} 号麦',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: OutlinedButton(
+                      key: const Key('approval-mic-invite-reject'),
+                      onPressed: _controller.micRequestPending
+                          ? null
+                          : () async {
+                              Navigator.of(sheetContext).pop();
+                              final bool resolved = await _controller
+                                  .resolveMicInvite(
+                                    requestId: pending.id,
+                                    accepted: false,
+                                  );
+                              if (mounted && resolved) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('已拒绝上麦邀请')),
+                                );
+                              }
+                            },
+                      child: const Text('拒绝邀请'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      key: const Key('approval-mic-invite-accept'),
+                      onPressed: _controller.micRequestPending
+                          ? null
+                          : () async {
+                              Navigator.of(sheetContext).pop();
+                              final bool resolved = await _controller
+                                  .resolveMicInvite(
+                                    requestId: pending.id,
+                                    accepted: true,
+                                  );
+                              if (mounted && resolved) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('已接受邀请，第一方麦位状态已确认（RTC 未连接）'),
+                                  ),
+                                );
+                              }
+                            },
+                      child: const Text('接受邀请'),
+                    ),
+                  ),
+                ],
+              ),
+            ] else if (pending?.isRequest == true) ...<Widget>[
+              Text(
+                '你正在等待 ${pending!.seatNumber} 号麦审批',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  key: const Key('approval-mic-request-cancel'),
+                  onPressed: _controller.micRequestPending
+                      ? null
+                      : () async {
+                          Navigator.of(sheetContext).pop();
+                          final bool cancelled = await _controller
+                              .cancelMicRequest(pending.id);
+                          if (mounted && cancelled) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('已撤回上麦申请')),
+                            );
+                          }
+                        },
+                  icon: const Icon(Icons.undo_rounded),
+                  label: const Text('撤回申请'),
+                ),
+              ),
+            ] else ...<Widget>[
+              if (latest != null) ...<Widget>[
+                Text(
+                  '最近状态：${_micRequestStatusLabel(latest.status)}',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 8),
+              ],
+              if (available.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: Text('当前没有可用空麦位')),
+                )
+              else ...<Widget>[
+                const Text('选择一个空麦位提交申请'),
+                const SizedBox(height: 10),
+                GridView.count(
+                  shrinkWrap: true,
+                  crossAxisCount: 4,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  children: <Widget>[
+                    for (final MicSeat seat in available)
+                      FilledButton.tonal(
+                        key: Key('approval-mic-seat-${seat.number}'),
+                        onPressed: _controller.micRequestPending
+                            ? null
+                            : () async {
+                                Navigator.of(sheetContext).pop();
+                                final bool submitted = await _controller
+                                    .requestMic(seat.number);
+                                if (mounted && submitted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('申请已提交，等待房主或房管审批'),
+                                    ),
+                                  );
+                                }
+                              },
+                        child: Text('${seat.number} 号麦'),
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _micRequestStatusLabel(MicRequestStatus status) {
+    return switch (status) {
+      MicRequestStatus.pending => '待处理',
+      MicRequestStatus.approved || MicRequestStatus.accepted => '已同意',
+      MicRequestStatus.rejected => '已拒绝',
+      MicRequestStatus.expired => '已过期',
+      MicRequestStatus.cancelled => '已撤回',
+    };
   }
 
   Future<void> _showGiftSheet() async {
@@ -1034,6 +1217,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           currentRole: snapshot.role,
           seats: snapshot.seats,
           roomTitle: snapshot.title,
+          coordinationMode: _controller.micCoordinationMode,
         ),
       ),
     );

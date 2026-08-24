@@ -25,9 +25,12 @@ class BackendRoomOperationsRepository
   final RoomWriteGuard _writeGuard = RoomWriteGuard(scope: 'room-operations');
   final Map<String, Map<int, int>> _seatOccupantsByRoom =
       <String, Map<int, int>>{};
+  final Map<String, MicAccessRequest> _micRequestsById =
+      <String, MicAccessRequest>{};
+  MicCoordinationMode _micCoordinationMode = MicCoordinationMode.unavailable;
 
   @override
-  MicCoordinationMode get micCoordinationMode => MicCoordinationMode.direct;
+  MicCoordinationMode get micCoordinationMode => _micCoordinationMode;
 
   @override
   Future<RoomMemberPage> fetchOnlineMembers({
@@ -734,8 +737,70 @@ class BackendRoomOperationsRepository
   }
 
   @override
-  Future<List<MicAccessRequest>> fetchMicRequests(String roomId) async =>
-      const <MicAccessRequest>[];
+  Future<List<MicAccessRequest>> fetchMicRequests(String roomId) async {
+    final String normalizedRoomId = _requiredIdentifier(roomId, '房间 ID');
+    final ApiResponse response = await _apiClient.get(
+      _routes.roomMicRequests,
+      query: <String, String>{'roomId': normalizedRoomId},
+    );
+    final Map<String, Object?> data = _requiredResponseMap(
+      response,
+      operation: '查询上麦申请队列',
+      requiredFields: const <String>[
+        'list',
+        'records',
+        'total',
+        'roomId',
+        'coordinationMode',
+        'providerInvocation',
+      ],
+    );
+    _assertRoom(data, normalizedRoomId, operation: '查询上麦申请队列');
+    final Object? mode = data['coordinationMode'];
+    if (mode is! String || mode != 'APPROVAL') {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请队列未确认 APPROVAL 协调模式',
+      );
+    }
+    if (data['providerInvocation'] is! bool ||
+        data['providerInvocation'] != false) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请队列不允许调用音频或 RTC provider',
+      );
+    }
+    final List<Object?> list = _requiredObjectList(data['list']);
+    final List<Object?> records = _requiredObjectList(data['records']);
+    if (!_sameValue(list, records)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请队列 list 与 records 不一致',
+      );
+    }
+    final int? total = _strictInt(data['total']);
+    if (total == null || total < 0 || total != list.length) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请队列 total 与记录数量不一致',
+      );
+    }
+    final List<MicAccessRequest> requests = <MicAccessRequest>[
+      for (final Object? raw in list)
+        _micRequestFromMap(
+          _requiredObjectMap(raw),
+          expectedRoomId: normalizedRoomId,
+        ),
+    ];
+    _micCoordinationMode = MicCoordinationMode.approval;
+    _micRequestsById.addEntries(
+      requests.map(
+        (MicAccessRequest request) =>
+            MapEntry<String, MicAccessRequest>(request.id, request),
+      ),
+    );
+    return List<MicAccessRequest>.unmodifiable(requests);
+  }
 
   @override
   Future<void> submitMicRequest({
@@ -743,17 +808,111 @@ class BackendRoomOperationsRepository
     required int userId,
     required int seatNumber,
   }) async {
-    throw const ApiException(
-      kind: ApiFailureKind.configuration,
-      message: '当前后端普通房为直接上麦模式，不存在申请队列',
+    final String normalizedRoomId = _requiredIdentifier(roomId, '房间 ID');
+    if (userId <= 0 || seatNumber < 1 || seatNumber > 8) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '上麦申请成员或麦位无效',
+      );
+    }
+    await _writeGuard.run<void>(
+      intent: 'mic-request-submit:$normalizedRoomId:$userId:$seatNumber',
+      fingerprint:
+          'ROOM_MIC_REQUEST_SUBMIT|$normalizedRoomId|$userId|$seatNumber',
+      action: (Map<String, String> headers) async {
+        final ApiResponse response = await _apiClient.post(
+          _routes.roomMicRequests,
+          headers: headers,
+          // X-Request-Id is transport-only. The JSON requestId field is
+          // reserved for the persisted entity ID on cancel/resolve.
+          body: <String, Object?>{
+            'roomId': normalizedRoomId,
+            'seatNumber': seatNumber,
+          },
+        );
+        final Map<String, Object?> data = _requiredMicMutationMap(
+          response,
+          operation: '提交上麦申请',
+          requiredFields: const <String>[
+            'requestId',
+            'id',
+            'roomId',
+            'requestType',
+            'type',
+            'requestedByUserId',
+            'subjectUserId',
+            'seatNumber',
+            'status',
+            'providerInvocation',
+          ],
+        );
+        final MicAccessRequest request = _micRequestFromMap(
+          data,
+          expectedRoomId: normalizedRoomId,
+        );
+        if (!request.isRequest ||
+            request.requestedByUserId != userId ||
+            request.subjectUserId != userId ||
+            request.seatNumber != seatNumber ||
+            request.status != MicRequestStatus.pending) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '提交上麦申请响应与请求意图不一致',
+          );
+        }
+        _micCoordinationMode = MicCoordinationMode.approval;
+        _micRequestsById[request.id] = request;
+      },
     );
   }
 
   @override
   Future<void> cancelMicRequest({required String requestId}) async {
-    throw const ApiException(
-      kind: ApiFailureKind.configuration,
-      message: '当前后端普通房为直接上麦模式，不存在申请队列',
+    final String normalizedRequestId = _requiredIdentifier(
+      requestId,
+      '上麦申请 ID',
+    );
+    await _writeGuard.run<void>(
+      intent: 'mic-request-cancel:$normalizedRequestId',
+      fingerprint: 'ROOM_MIC_REQUEST_CANCEL|$normalizedRequestId',
+      action: (Map<String, String> headers) async {
+        final ApiResponse response = await _apiClient.post(
+          _routes.cancelRoomMicRequest,
+          headers: headers,
+          body: <String, Object?>{'requestId': normalizedRequestId},
+        );
+        final Map<String, Object?> data = _requiredMicMutationMap(
+          response,
+          operation: '撤回上麦申请',
+          requiredFields: const <String>[
+            'requestId',
+            'id',
+            'roomId',
+            'requestType',
+            'type',
+            'status',
+            'providerInvocation',
+          ],
+        );
+        final MicAccessRequest? known = _micRequestsById[normalizedRequestId];
+        final MicAccessRequest request = _micRequestFromMap(
+          data,
+          expectedRoomId: known?.roomId,
+        );
+        if (request.id != normalizedRequestId ||
+            !request.isRequest ||
+            (known != null &&
+                (request.type != known.type ||
+                    request.subjectUserId != known.subjectUserId ||
+                    request.seatNumber != known.seatNumber)) ||
+            request.status != MicRequestStatus.cancelled) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '撤回上麦申请响应与请求不一致',
+          );
+        }
+        _micRequestsById[request.id] = request;
+      },
     );
   }
 
@@ -762,9 +921,75 @@ class BackendRoomOperationsRepository
     required String requestId,
     required bool accepted,
   }) async {
-    throw const ApiException(
-      kind: ApiFailureKind.configuration,
-      message: '当前后端未提供普通房上麦申请审批协议',
+    final String normalizedRequestId = _requiredIdentifier(
+      requestId,
+      '上麦申请 ID',
+    );
+    await _writeGuard.run<void>(
+      intent: 'mic-request-resolve:$normalizedRequestId:$accepted',
+      fingerprint: 'ROOM_MIC_REQUEST_RESOLVE|$normalizedRequestId|$accepted',
+      action: (Map<String, String> headers) async {
+        final ApiResponse response = await _apiClient.post(
+          _routes.resolveRoomMicRequest,
+          headers: headers,
+          // The backend accepts one strict boolean decision. Do not send both
+          // accepted and approved aliases and never place the transport id in
+          // this entity-id body field.
+          body: <String, Object?>{
+            'requestId': normalizedRequestId,
+            'accepted': accepted,
+          },
+        );
+        final Map<String, Object?> data = _requiredMicMutationMap(
+          response,
+          operation: accepted ? '接受上麦邀请/申请' : '拒绝上麦邀请/申请',
+          requiredFields: const <String>[
+            'requestId',
+            'id',
+            'roomId',
+            'requestType',
+            'type',
+            'status',
+            'providerInvocation',
+          ],
+        );
+        _assertStrictDecisionAliases(data);
+        final MicAccessRequest? known = _micRequestsById[normalizedRequestId];
+        final MicAccessRequest request = _micRequestFromMap(
+          data,
+          expectedRoomId: known?.roomId,
+        );
+        final MicRequestStatus expected = accepted
+            ? MicRequestStatus.approved
+            : MicRequestStatus.rejected;
+        if (request.id != normalizedRequestId ||
+            (known != null &&
+                (request.type != known.type ||
+                    request.subjectUserId != known.subjectUserId ||
+                    request.seatNumber != known.seatNumber)) ||
+            request.status != expected) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '处理上麦申请响应状态与请求意图不一致',
+          );
+        }
+        if (accepted) {
+          final Object? assigned = data['seatAssigned'];
+          if (assigned is! bool || !assigned) {
+            throw const ApiException(
+              kind: ApiFailureKind.protocol,
+              message: '接受上麦申请响应未确认第一方麦位状态',
+            );
+          }
+        } else if (data.containsKey('seatAssigned') &&
+            data['seatAssigned'] is! bool) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '拒绝上麦申请响应 seatAssigned 类型无效',
+          );
+        }
+        _micRequestsById[request.id] = request;
+      },
     );
   }
 
@@ -774,10 +999,454 @@ class BackendRoomOperationsRepository
     required int userId,
     required int seatNumber,
   }) async {
-    throw const ApiException(
-      kind: ApiFailureKind.configuration,
-      message: '当前后端只存在强制抱麦接口，客户端不会将其作为邀请上麦使用',
+    final String normalizedRoomId = _requiredIdentifier(roomId, '房间 ID');
+    if (userId <= 0 || seatNumber < 1 || seatNumber > 8) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '邀请成员或麦位无效',
+      );
+    }
+    await _writeGuard.run<void>(
+      intent: 'mic-invite:$normalizedRoomId:$userId:$seatNumber',
+      fingerprint: 'ROOM_MIC_INVITE|$normalizedRoomId|$userId|$seatNumber',
+      action: (Map<String, String> headers) async {
+        final ApiResponse response = await _apiClient.post(
+          _routes.inviteRoomMicRequest,
+          headers: headers,
+          body: <String, Object?>{
+            'roomId': normalizedRoomId,
+            'userId': userId,
+            'seatNumber': seatNumber,
+          },
+        );
+        final Map<String, Object?> data = _requiredMicMutationMap(
+          response,
+          operation: '邀请成员上麦',
+          requiredFields: const <String>[
+            'requestId',
+            'id',
+            'roomId',
+            'requestType',
+            'type',
+            'requestedByUserId',
+            'subjectUserId',
+            'seatNumber',
+            'status',
+            'providerInvocation',
+          ],
+        );
+        final MicAccessRequest request = _micRequestFromMap(
+          data,
+          expectedRoomId: normalizedRoomId,
+        );
+        if (!request.isInvite ||
+            request.subjectUserId != userId ||
+            request.seatNumber != seatNumber ||
+            request.status != MicRequestStatus.pending) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '邀请上麦响应与请求意图不一致',
+          );
+        }
+        _micCoordinationMode = MicCoordinationMode.approval;
+        _micRequestsById[request.id] = request;
+      },
     );
+  }
+
+  static Map<String, Object?> _requiredMicMutationMap(
+    ApiResponse response, {
+    required String operation,
+    required Iterable<String> requiredFields,
+  }) => _requiredResponseMap(
+    response,
+    operation: operation,
+    requiredFields: requiredFields,
+  );
+
+  static MicAccessRequest _micRequestFromMap(
+    Map<String, Object?> data, {
+    String? expectedRoomId,
+  }) {
+    final String id = _requiredStrictString(data, 'requestId');
+    final String legacyId = _requiredStrictString(data, 'id');
+    if (id != legacyId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请 requestId 与 id 不一致',
+      );
+    }
+    final String roomId = _requiredStrictString(data, 'roomId');
+    if (expectedRoomId != null && roomId != expectedRoomId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请响应房间 ID 不一致',
+      );
+    }
+    final String requestTypeValue = _requiredStrictString(data, 'requestType');
+    final String typeAlias = _requiredStrictString(data, 'type');
+    if (requestTypeValue != typeAlias) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请类型别名不一致',
+      );
+    }
+    final MicRequestType type = switch (requestTypeValue) {
+      'REQUEST' => MicRequestType.request,
+      'INVITE' => MicRequestType.invite,
+      _ => throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请包含未知 requestType',
+      ),
+    };
+    final int requestedByUserId = _requiredAliasInt(
+      data,
+      const <String>['requestedByUserId', 'requesterUserId'],
+      label: 'requestedByUserId',
+      allowZero: false,
+    );
+    final int subjectUserId = _requiredAliasInt(
+      data,
+      const <String>['subjectUserId', 'targetUserId', 'userId'],
+      label: 'subjectUserId',
+      allowZero: false,
+    );
+    final int? inviterUserId = data.containsKey('inviterUserId')
+        ? _requiredAliasInt(
+            data,
+            const <String>['inviterUserId'],
+            label: 'inviterUserId',
+            allowZero: true,
+          )
+        : null;
+    if (type == MicRequestType.request && requestedByUserId != subjectUserId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'REQUEST 的申请人与目标成员不一致',
+      );
+    }
+    if (type == MicRequestType.invite &&
+        (inviterUserId == null || inviterUserId != requestedByUserId)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'INVITE 的邀请人身份不一致',
+      );
+    }
+    if (type == MicRequestType.request &&
+        inviterUserId != null &&
+        inviterUserId != 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'REQUEST 不应包含邀请人身份',
+      );
+    }
+    final int seatNumber = _requiredStrictInt(data, 'seatNumber');
+    if (seatNumber < 1 || seatNumber > 8) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请 seatNumber 超出 1 至 8',
+      );
+    }
+    final String statusValue = _requiredStrictString(data, 'status');
+    final MicRequestStatus status = switch (statusValue) {
+      'PENDING' => MicRequestStatus.pending,
+      'APPROVED' => MicRequestStatus.approved,
+      'REJECTED' => MicRequestStatus.rejected,
+      'EXPIRED' => MicRequestStatus.expired,
+      'CANCELLED' => MicRequestStatus.cancelled,
+      _ => throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请包含未知 status',
+      ),
+    };
+    final Object? providerInvocation = data['providerInvocation'];
+    if (providerInvocation is! bool || providerInvocation) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请 providerInvocation 必须严格为 false',
+      );
+    }
+    final DateTime createdAt = _requiredStrictDateTime(data, 'createdAt');
+    final DateTime expiresAt = _requiredStrictDateTime(data, 'expiresAt');
+    if (!expiresAt.isAfter(createdAt)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请 expiresAt 不晚于 createdAt',
+      );
+    }
+    final DateTime? resolvedAt = _optionalStrictDateTime(data, 'resolvedAt');
+    final int? resolvedByUserId = _optionalStrictInt(data, 'resolvedByUserId');
+    if (resolvedByUserId != null && resolvedByUserId < 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请 resolvedByUserId 不能为负数',
+      );
+    }
+    if (status == MicRequestStatus.pending &&
+        (resolvedAt != null || (resolvedByUserId ?? 0) != 0)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'PENDING 上麦申请不应包含处理时间或处理人',
+      );
+    }
+    if ((status == MicRequestStatus.approved ||
+            status == MicRequestStatus.rejected ||
+            status == MicRequestStatus.cancelled) &&
+        (resolvedAt == null || (resolvedByUserId ?? 0) <= 0)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '已处理上麦申请缺少权威处理时间或处理人',
+      );
+    }
+    final Map<String, Object?> memberData = _requiredObjectMap(data['member']);
+    final int memberUserId = _requiredStrictInt(memberData, 'userId');
+    if (memberUserId != subjectUserId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请 member 身份与 subjectUserId 不一致',
+      );
+    }
+    final String nickname = _requiredStrictString(memberData, 'nickName');
+    final String name = _requiredStrictString(memberData, 'name');
+    if (nickname != name) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请 member 名称别名不一致',
+      );
+    }
+    final String avatarUrl = _requiredStrictString(memberData, 'headImgUrl');
+    final String roleValue = _requiredStrictString(memberData, 'role');
+    if (!_knownMicMemberRoles.contains(roleValue)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请 member role 无法识别',
+      );
+    }
+    final String presenceValue = _requiredStrictString(memberData, 'presence');
+    final RoomMemberPresence presence = switch (presenceValue) {
+      'ON_MIC' => RoomMemberPresence.onMic,
+      'LISTENER' => RoomMemberPresence.listener,
+      _ => throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请 member presence 无法识别',
+      ),
+    };
+    final int memberSeatNumber = _requiredStrictInt(memberData, 'seatNumber');
+    if (memberSeatNumber < 0 ||
+        memberSeatNumber > 8 ||
+        (presence == RoomMemberPresence.onMic && memberSeatNumber < 1) ||
+        (presence == RoomMemberPresence.listener && memberSeatNumber != 0)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请 member seatNumber 与 presence 不一致',
+      );
+    }
+    final Object? mutedValue = memberData['muted'];
+    if (mutedValue is! bool) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请 member muted 必须为布尔值',
+      );
+    }
+    final MicRequestTargetAction action = status != MicRequestStatus.pending
+        ? MicRequestTargetAction.none
+        : type == MicRequestType.invite
+        ? MicRequestTargetAction.accept
+        : MicRequestTargetAction.cancel;
+    return MicAccessRequest(
+      id: id,
+      roomId: roomId,
+      member: RoomMember(
+        userId: memberUserId,
+        name: nickname,
+        avatarUrl: avatarUrl.isEmpty ? null : avatarUrl,
+        role: _roleFromServer(roleValue),
+        presence: presence,
+        seatNumber: memberSeatNumber == 0 ? null : memberSeatNumber,
+        isMuted: mutedValue,
+      ),
+      seatNumber: seatNumber,
+      status: status,
+      createdAt: createdAt,
+      type: type,
+      requestedByUserId: requestedByUserId,
+      subjectUserId: subjectUserId,
+      expiresAt: expiresAt,
+      resolvedAt: resolvedAt,
+      resolvedByUserId: resolvedByUserId == null || resolvedByUserId == 0
+          ? null
+          : resolvedByUserId,
+      targetAction: action,
+    );
+  }
+
+  static const Set<String> _knownMicMemberRoles = <String>{
+    'OWNER',
+    'MANAGER',
+    'MODERATOR',
+    'PLATFORM_MODERATOR',
+    'SPEAKER',
+    'MEMBER',
+    'LISTENER',
+  };
+
+  static String _requiredStrictString(Map<String, Object?> data, String field) {
+    final Object? value = data[field];
+    if (value is! String || value.trim() != value) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请字段 $field 必须为字符串',
+      );
+    }
+    return value;
+  }
+
+  static int _requiredStrictInt(Map<String, Object?> data, String field) {
+    final Object? value = data[field];
+    if (value is! int) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请字段 $field 必须为整数',
+      );
+    }
+    return value;
+  }
+
+  static int? _strictInt(Object? value) => value is int ? value : null;
+
+  static int _requiredAliasInt(
+    Map<String, Object?> data,
+    Iterable<String> fields, {
+    required String label,
+    required bool allowZero,
+  }) {
+    int? resolved;
+    for (final String field in fields) {
+      if (!data.containsKey(field)) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '上麦申请缺少权威字段 $field',
+        );
+      }
+      final int value = _requiredStrictInt(data, field);
+      if (value < (allowZero ? 0 : 1) ||
+          (resolved != null && resolved != value)) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '上麦申请 $label 身份别名不一致',
+        );
+      }
+      resolved = value;
+    }
+    return resolved!;
+  }
+
+  static DateTime _requiredStrictDateTime(
+    Map<String, Object?> data,
+    String field,
+  ) {
+    final String text = _requiredStrictString(data, field);
+    if (text.isEmpty) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请字段 $field 不能为空',
+      );
+    }
+    final DateTime? value = DateTime.tryParse(text);
+    if (value == null) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请字段 $field 无法解析',
+      );
+    }
+    return value;
+  }
+
+  static DateTime? _optionalStrictDateTime(
+    Map<String, Object?> data,
+    String field,
+  ) {
+    if (!data.containsKey(field)) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请缺少权威字段 $field',
+      );
+    }
+    final Object? raw = data[field];
+    if (raw == null) {
+      return null;
+    }
+    if (raw is! String || raw.trim() != raw) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请字段 $field 必须为字符串',
+      );
+    }
+    if (raw.isEmpty) {
+      return null;
+    }
+    final DateTime? value = DateTime.tryParse(raw);
+    if (value == null) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请字段 $field 无法解析',
+      );
+    }
+    return value;
+  }
+
+  static int? _optionalStrictInt(Map<String, Object?> data, String field) {
+    if (!data.containsKey(field)) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请缺少权威字段 $field',
+      );
+    }
+    final Object? raw = data[field];
+    if (raw == null) {
+      return null;
+    }
+    if (raw is! int) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请字段 $field 必须为整数',
+      );
+    }
+    return raw;
+  }
+
+  static void _assertStrictDecisionAliases(Map<String, Object?> data) {
+    final bool hasAccepted = data.containsKey('accepted');
+    final bool hasApproved = data.containsKey('approved');
+    if (!hasAccepted && !hasApproved) {
+      return;
+    }
+    bool? accepted;
+    bool? approved;
+    if (hasAccepted) {
+      if (data['accepted'] is! bool) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '响应 accepted 必须为严格 JSON 布尔值',
+        );
+      }
+      accepted = data['accepted'] as bool;
+    }
+    if (hasApproved) {
+      if (data['approved'] is! bool) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '响应 approved 必须为严格 JSON 布尔值',
+        );
+      }
+      approved = data['approved'] as bool;
+    }
+    if (accepted != null && approved != null && accepted != approved) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '响应 accepted 与 approved 决策不一致',
+      );
+    }
   }
 
   Future<List<Map<String, Object?>>> _fetchAllMemberPages({

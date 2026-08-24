@@ -445,7 +445,10 @@ void main() {
       addTearDown(server.close);
       final BackendRoomOperationsRepository repository =
           BackendRoomOperationsRepository(apiClient: server.client);
-      expect(repository.micCoordinationMode, MicCoordinationMode.direct);
+      // The live repository cannot infer direct microphone coordination from
+      // the legacy moderation endpoints.  Only the approval queue response is
+      // allowed to authorize the queue capability.
+      expect(repository.micCoordinationMode, MicCoordinationMode.unavailable);
       await repository.fetchOnlineMembers(
         roomId: 'room-1',
         page: 1,
@@ -499,7 +502,7 @@ void main() {
           isA<ApiException>().having(
             (ApiException error) => error.kind,
             'kind',
-            ApiFailureKind.configuration,
+            ApiFailureKind.protocol,
           ),
         ),
       );

@@ -7,6 +7,8 @@ import 'package:voice_social_app/features/room/domain/room_intent_digest.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_permission_policy.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
+import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
+import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
@@ -27,6 +29,7 @@ class RoomController extends ChangeNotifier {
     required RoomRepository repository,
     required RtcAdapter rtcAdapter,
     required RoomRealtimeGateway realtimeGateway,
+    RoomOperationsRepository? roomOperationsRepository,
     RoomPermissionPolicy permissionPolicy = const RoomPermissionPolicy(),
     bool allowSyntheticPublicMessages = true,
     String Function(String prefix)? requestIdGenerator,
@@ -35,6 +38,7 @@ class RoomController extends ChangeNotifier {
        _repository = repository,
        _rtcAdapter = rtcAdapter,
        _realtimeGateway = realtimeGateway,
+       _roomOperationsRepository = roomOperationsRepository,
        _permissionPolicy = permissionPolicy,
        _allowSyntheticPublicMessages = allowSyntheticPublicMessages,
        _requestIdGenerator = requestIdGenerator ?? _secureRequestId;
@@ -46,6 +50,7 @@ class RoomController extends ChangeNotifier {
   final RoomRepository _repository;
   final RtcAdapter _rtcAdapter;
   final RoomRealtimeGateway _realtimeGateway;
+  final RoomOperationsRepository? _roomOperationsRepository;
   final RoomPermissionPolicy _permissionPolicy;
   final bool _allowSyntheticPublicMessages;
   final String Function(String prefix) _requestIdGenerator;
@@ -55,6 +60,9 @@ class RoomController extends ChangeNotifier {
   RoomSessionStatus _status = RoomSessionStatus.idle;
   StreamSubscription<RoomRealtimeEvent>? _realtimeSubscription;
   bool _micRequestPending = false;
+  bool _micQueueLoading = false;
+  final List<MicAccessRequest> _micRequests = <MicAccessRequest>[];
+  int _micQueueEpoch = 0;
   bool _giftSubmitting = false;
   bool _realtimeDegraded = false;
   bool _mutedInRoom = false;
@@ -87,6 +95,21 @@ class RoomController extends ChangeNotifier {
   RoomRole get role => _snapshot?.role ?? RoomRole.listener;
   int? get giftBalance => _snapshot?.giftBalance;
   bool get micRequestPending => _micRequestPending;
+  bool get micQueueLoading => _micQueueLoading;
+  List<MicAccessRequest> get micRequests =>
+      List<MicAccessRequest>.unmodifiable(_micRequests);
+  MicCoordinationMode get micCoordinationMode {
+    final String mode = _snapshot?.accessMode.trim().toUpperCase() ?? '';
+    if (mode == 'APPROVAL') {
+      return MicCoordinationMode.approval;
+    }
+    if (mode == 'PUBLIC' || mode == 'PASSWORD' || mode == 'DIRECT') {
+      return MicCoordinationMode.direct;
+    }
+    return _roomOperationsRepository?.micCoordinationMode ??
+        MicCoordinationMode.unavailable;
+  }
+
   bool get giftSubmitting => _giftSubmitting;
   bool get realtimeDegraded => _realtimeDegraded;
   bool get isSnapshotOnly => _snapshot?.isSnapshotOnly ?? false;
@@ -228,6 +251,9 @@ class RoomController extends ChangeNotifier {
         ]);
       _status = RoomSessionStatus.joined;
       await _loadPublicHistory(snapshot, sessionEpoch: sessionEpoch);
+      if (micCoordinationMode == MicCoordinationMode.approval) {
+        await _loadMicRequests(sessionEpoch: sessionEpoch);
+      }
     } catch (error) {
       if (!_isCurrent(sessionEpoch) || _joinCancelled) {
         final RoomSnapshot? snapshot = enteredSnapshot;
@@ -324,10 +350,48 @@ class RoomController extends ChangeNotifier {
       _notify();
       return false;
     }
+    if (micCoordinationMode == MicCoordinationMode.approval) {
+      _invalidateMicQueueReads();
+    }
     _micRequestPending = true;
     _errorMessage = null;
     _notify();
     try {
+      if (micCoordinationMode == MicCoordinationMode.approval) {
+        final RoomOperationsRepository? operations = _roomOperationsRepository;
+        if (operations == null) {
+          throw const ApiException(
+            kind: ApiFailureKind.configuration,
+            message: '审批房缺少上麦申请能力',
+          );
+        }
+        await operations.submitMicRequest(
+          roomId: roomId,
+          userId: _currentUserId,
+          seatNumber: seat.backendIndex,
+        );
+        if (!_isJoinedEpoch(sessionEpoch)) {
+          return false;
+        }
+        await _loadMicRequests(sessionEpoch: sessionEpoch);
+        if (allowsSyntheticPublicMessages) {
+          _messages.add(
+            RoomMessage(
+              sender: '系统',
+              content: '已提交 $seatNumber 号麦申请，等待房主或房管审批。',
+              isSystem: true,
+            ),
+          );
+        }
+        return true;
+      }
+      if (micCoordinationMode == MicCoordinationMode.unavailable &&
+          _roomOperationsRepository != null) {
+        throw const ApiException(
+          kind: ApiFailureKind.configuration,
+          message: '房间未返回权威上麦协调能力',
+        );
+      }
       await _repository.requestMic(seat.backendIndex);
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
@@ -378,6 +442,138 @@ class RoomController extends ChangeNotifier {
         _notify();
       }
     }
+  }
+
+  /// Reloads the authenticated member's queue projection. The backend
+  /// intentionally scopes regular members to their own REQUEST/INVITE rows,
+  /// so this is safe to call on every foreground refresh.
+  Future<void> refreshMicRequests() async {
+    if (_status != RoomSessionStatus.joined) {
+      return;
+    }
+    await _loadMicRequests(sessionEpoch: _sessionEpoch);
+  }
+
+  Future<bool> cancelMicRequest(String requestId) async {
+    if (_micRequestPending || _status != RoomSessionStatus.joined) {
+      return false;
+    }
+    final RoomOperationsRepository? operations = _roomOperationsRepository;
+    if (operations == null ||
+        micCoordinationMode != MicCoordinationMode.approval) {
+      return false;
+    }
+    final int sessionEpoch = _sessionEpoch;
+    _invalidateMicQueueReads();
+    _micRequestPending = true;
+    _errorMessage = null;
+    _notify();
+    try {
+      await operations.cancelMicRequest(requestId: requestId);
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
+      await _loadMicRequests(sessionEpoch: sessionEpoch);
+      return true;
+    } catch (error) {
+      if (_isJoinedEpoch(sessionEpoch)) {
+        _errorMessage = _messageFor(error, fallback: '撤回上麦申请失败');
+      }
+      return false;
+    } finally {
+      if (_isCurrent(sessionEpoch)) {
+        _micRequestPending = false;
+        _notify();
+      }
+    }
+  }
+
+  Future<bool> resolveMicInvite({
+    required String requestId,
+    required bool accepted,
+  }) async {
+    if (_micRequestPending || _status != RoomSessionStatus.joined) {
+      return false;
+    }
+    final RoomOperationsRepository? operations = _roomOperationsRepository;
+    if (operations == null ||
+        micCoordinationMode != MicCoordinationMode.approval) {
+      return false;
+    }
+    final int sessionEpoch = _sessionEpoch;
+    _invalidateMicQueueReads();
+    _micRequestPending = true;
+    _errorMessage = null;
+    _notify();
+    try {
+      await operations.resolveMicRequest(
+        requestId: requestId,
+        accepted: accepted,
+      );
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
+      // Accept confirms only the first-party seat row. No RTC/provider call
+      // is made here; the live adapter remains VENDOR_BLOCKED.
+      if (accepted) {
+        final RoomSnapshot refreshed = await _repository.reconnectRoom(
+          roomId: roomId,
+          currentUserId: _currentUserId,
+        );
+        if (!_isJoinedEpoch(sessionEpoch)) {
+          return false;
+        }
+        _snapshot = refreshed;
+      }
+      await _loadMicRequests(sessionEpoch: sessionEpoch);
+      return true;
+    } catch (error) {
+      if (_isJoinedEpoch(sessionEpoch)) {
+        _errorMessage = _messageFor(error, fallback: '处理上麦邀请失败');
+      }
+      return false;
+    } finally {
+      if (_isCurrent(sessionEpoch)) {
+        _micRequestPending = false;
+        _notify();
+      }
+    }
+  }
+
+  Future<void> _loadMicRequests({required int sessionEpoch}) async {
+    final RoomOperationsRepository? operations = _roomOperationsRepository;
+    if (operations == null ||
+        !_isJoinedEpoch(sessionEpoch) ||
+        micCoordinationMode != MicCoordinationMode.approval) {
+      return;
+    }
+    final int queueEpoch = ++_micQueueEpoch;
+    _micQueueLoading = true;
+    _notify();
+    try {
+      final List<MicAccessRequest> requests = await operations.fetchMicRequests(
+        roomId,
+      );
+      if (_isJoinedEpoch(sessionEpoch) && queueEpoch == _micQueueEpoch) {
+        _micRequests
+          ..clear()
+          ..addAll(requests);
+      }
+    } catch (error) {
+      if (_isJoinedEpoch(sessionEpoch) && queueEpoch == _micQueueEpoch) {
+        _errorMessage = _messageFor(error, fallback: '上麦申请状态暂时不可用');
+      }
+    } finally {
+      if (_isCurrent(sessionEpoch) && queueEpoch == _micQueueEpoch) {
+        _micQueueLoading = false;
+        _notify();
+      }
+    }
+  }
+
+  void _invalidateMicQueueReads() {
+    _micQueueEpoch += 1;
+    _micQueueLoading = false;
   }
 
   Future<bool> leaveMic() async {
@@ -984,8 +1180,11 @@ class RoomController extends ChangeNotifier {
 
   int _invalidateSession() {
     _sessionEpoch += 1;
+    _micQueueEpoch += 1;
     _joinCancelled = true;
     _micRequestPending = false;
+    _micQueueLoading = false;
+    _micRequests.clear();
     _giftSubmitting = false;
     _publicMessageRetryIds.clear();
     _publicMessageInFlight.clear();
@@ -1237,6 +1436,7 @@ class RoomController extends ChangeNotifier {
       return;
     }
     _sessionEpoch += 1;
+    _micQueueEpoch += 1;
     _disposed = true;
     _joinCancelled = true;
     _micRequestPending = false;

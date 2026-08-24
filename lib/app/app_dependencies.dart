@@ -327,6 +327,7 @@ class AppDependencies {
       currentUserId: session?.userId ?? 10001,
       accessToken: session?.accessToken ?? 'mock-local-session',
       repository: roomRepository,
+      roomOperationsRepository: roomOperationsRepository,
       rtcAdapter: rtcAdapter,
       realtimeGateway: realtimeGateway,
       allowSyntheticPublicMessages: !environment.isLive,

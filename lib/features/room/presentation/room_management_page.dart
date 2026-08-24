@@ -19,6 +19,8 @@ class RoomManagementPage extends StatefulWidget {
     required this.seats,
     this.roomTitle,
     this.initialMemberId,
+    this.coordinationMode,
+    this.repositoryOverride,
     super.key,
   });
 
@@ -28,6 +30,8 @@ class RoomManagementPage extends StatefulWidget {
   final List<MicSeat> seats;
   final String? roomTitle;
   final int? initialMemberId;
+  final MicCoordinationMode? coordinationMode;
+  final RoomOperationsRepository? repositoryOverride;
 
   @override
   State<RoomManagementPage> createState() => _RoomManagementPageState();
@@ -49,8 +53,18 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
   String? _error;
   int? _busyUserId;
   int? _busySeatNumber;
+  String? _busyMicRequestId;
 
   bool get _isOwner => widget.currentRole == RoomRole.owner;
+  bool get _supportsMicRequests {
+    final MicCoordinationMode? explicitMode = widget.coordinationMode;
+    if (explicitMode != null) {
+      // A page is scoped to one room. Never reuse a repository's last queue
+      // response when the current authoritative room says DIRECT/unknown.
+      return explicitMode == MicCoordinationMode.approval;
+    }
+    return _repository.micCoordinationMode == MicCoordinationMode.approval;
+  }
 
   @override
   void initState() {
@@ -64,9 +78,9 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     if (_repositoryInstance != null) {
       return;
     }
-    _repositoryInstance = AppDependencyScope.of(
-      context,
-    ).roomOperationsRepository;
+    _repositoryInstance =
+        widget.repositoryOverride ??
+        AppDependencyScope.of(context).roomOperationsRepository;
     _joinRequestRepository = _repositoryInstance!.roomJoinRequestCapability;
     _banRepository = _repositoryInstance!.roomBanCapability;
     _load();
@@ -87,8 +101,10 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
         ),
         _repository.fetchMutedUsers(widget.roomId),
         _repository.fetchManagers(widget.roomId),
-        _repository.fetchMicRequests(widget.roomId),
       ];
+      if (_supportsMicRequests) {
+        futures.add(_repository.fetchMicRequests(widget.roomId));
+      }
       if (_joinRequestRepository != null) {
         futures.add(
           _joinRequestRepository!.fetchJoinRequests(
@@ -111,9 +127,10 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       final RoomMemberPage page = results[0] as RoomMemberPage;
       final List<RoomMember> muted = results[1] as List<RoomMember>;
       final List<RoomMember> managers = results[2] as List<RoomMember>;
-      final List<MicAccessRequest> requests =
-          results[3] as List<MicAccessRequest>;
-      int resultIndex = 4;
+      final List<MicAccessRequest> requests = _supportsMicRequests
+          ? results[3] as List<MicAccessRequest>
+          : const <MicAccessRequest>[];
+      int resultIndex = _supportsMicRequests ? 4 : 3;
       final RoomJoinRequestPage? joinRequestPage =
           _joinRequestRepository == null
           ? null
@@ -189,7 +206,8 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
           ..addAll(
             requests.where(
               (MicAccessRequest request) =>
-                  request.status == MicRequestStatus.pending,
+                  request.status == MicRequestStatus.pending &&
+                  request.isRequest,
             ),
           );
         _joinRequests
@@ -254,8 +272,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
   }
 
   Widget _buildSectionPicker() {
-    final bool supportsRequests =
-        _repository.micCoordinationMode == MicCoordinationMode.approval;
+    final bool supportsRequests = _supportsMicRequests;
     final bool supportsJoinRequests = _joinRequestRepository != null;
     final bool supportsBannedUsers = _banRepository != null;
     return SingleChildScrollView(
@@ -477,6 +494,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (BuildContext context, int index) {
         final MicAccessRequest request = _requests[index];
+        final bool busy = _busyMicRequestId == request.id;
         return RoomGlassCard(
           padding: EdgeInsets.zero,
           radius: 16,
@@ -489,19 +507,28 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
             ),
             title: Text(request.member.name),
             subtitle: Text('申请 ${request.seatNumber} 号麦'),
-            trailing: Wrap(
-              spacing: 6,
-              children: <Widget>[
-                TextButton(
-                  onPressed: () => _resolveRequest(request, false),
-                  child: const Text('拒绝'),
-                ),
-                FilledButton.tonal(
-                  onPressed: () => _resolveRequest(request, true),
-                  child: const Text('同意'),
-                ),
-              ],
-            ),
+            trailing: busy
+                ? const SizedBox.square(
+                    dimension: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Wrap(
+                    spacing: 6,
+                    children: <Widget>[
+                      TextButton(
+                        onPressed: _busyMicRequestId == null
+                            ? () => _resolveRequest(request, false)
+                            : null,
+                        child: const Text('拒绝'),
+                      ),
+                      FilledButton.tonal(
+                        onPressed: _busyMicRequestId == null
+                            ? () => _resolveRequest(request, true)
+                            : null,
+                        child: const Text('同意'),
+                      ),
+                    ],
+                  ),
           ),
         );
       },
@@ -663,9 +690,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
                   _takeOffMic(member);
                 },
               ),
-            if (_repository.micCoordinationMode ==
-                    MicCoordinationMode.approval &&
-                !member.isOnMic)
+            if (_supportsMicRequests && !member.isOnMic)
               ListTile(
                 leading: const Icon(Icons.mic_external_on_outlined),
                 title: const Text('邀请上麦'),
@@ -939,6 +964,10 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
   }
 
   Future<void> _resolveRequest(MicAccessRequest request, bool accepted) async {
+    if (!request.isRequest || !request.isPending || _busyMicRequestId != null) {
+      return;
+    }
+    setState(() => _busyMicRequestId = request.id);
     try {
       await _repository.resolveMicRequest(
         requestId: request.id,
@@ -953,6 +982,10 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     } catch (error) {
       if (mounted) {
         _showMessage(_messageFor(error));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busyMicRequestId = null);
       }
     }
   }

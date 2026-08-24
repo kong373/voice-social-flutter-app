@@ -307,6 +307,7 @@ class BackendRoomRepository implements RoomRepository, GiftReceiptRepository {
       autoLockMic: _strictCapabilityBool(data['autoLockMic']),
       giftCatalogAvailable: _strictCapabilityBool(data['giftCatalogAvailable']),
       giftBalance: null,
+      accessMode: _nonEmptyString(data['accessMode'])?.toUpperCase() ?? '',
       onlineCount: _asInt(data['onlineNum']) ?? _asInt(data['liveCount']),
       coverUrl:
           _nonEmptyString(data['coverImgUrl']) ??

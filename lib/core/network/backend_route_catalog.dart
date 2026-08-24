@@ -32,6 +32,13 @@ class BackendRouteCatalog {
         '/app-mini-api/mini/v1/rooms/join-requests/status',
     this.cancelRoomJoinRequest =
         '/app-mini-api/mini/v1/rooms/join-requests/cancel',
+    this.roomMicRequests = '/app-mini-api/mini/v1/rooms/mic-requests',
+    this.cancelRoomMicRequest =
+        '/app-mini-api/mini/v1/rooms/mic-requests/cancel',
+    this.resolveRoomMicRequest =
+        '/app-mini-api/mini/v1/rooms/mic-requests/resolve',
+    this.inviteRoomMicRequest =
+        '/app-mini-api/mini/v1/rooms/mic-requests/invite',
     this.roomBannedUsers = '/app-mini-api/mini/v1/rooms/banned-users',
     this.unbanRoomUser = '/app-mini-api/mini/v1/rooms/unban',
     this.setRoomUserMuted = '/app-api/roomUsers/setMuted',
@@ -214,6 +221,21 @@ class BackendRouteCatalog {
   final String resolveRoomJoinRequest;
   final String roomJoinRequestStatus;
   final String cancelRoomJoinRequest;
+
+  /// First-party approval-mode microphone queue. GET and submit POST share
+  /// this canonical resource; mutations use the explicit child routes below.
+  final String roomMicRequests;
+  final String cancelRoomMicRequest;
+  final String resolveRoomMicRequest;
+  final String inviteRoomMicRequest;
+
+  // Readable aliases for callers that describe the operation rather than the
+  // room resource. They intentionally point to the same canonical paths.
+  String get micRequests => roomMicRequests;
+  String get submitRoomMicRequest => roomMicRequests;
+  String get cancelMicRequest => cancelRoomMicRequest;
+  String get resolveMicRequest => resolveRoomMicRequest;
+  String get inviteMicRequest => inviteRoomMicRequest;
   final String roomBannedUsers;
   final String unbanRoomUser;
   final String setRoomUserMuted;

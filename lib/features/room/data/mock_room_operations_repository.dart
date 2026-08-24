@@ -113,6 +113,15 @@ class MockRoomOperationsRepository
       ..add(user);
   }
 
+  /// Seeds an authoritative queue projection for widget and lifecycle tests.
+  /// Keeping this hook on the mock preserves the same REQUEST/INVITE shape
+  /// used by the live repository without exposing its private storage.
+  void seedMicRequestForQa(MicAccessRequest request) {
+    _requests
+      ..removeWhere((MicAccessRequest item) => item.id == request.id)
+      ..add(request);
+  }
+
   @override
   Future<RoomMemberPage> fetchOnlineMembers({
     required String roomId,
@@ -467,10 +476,15 @@ class MockRoomOperationsRepository
     _requests.add(
       MicAccessRequest(
         id: 'request-$userId-$seatNumber',
+        roomId: roomId,
         member: member,
         seatNumber: seatNumber,
         status: MicRequestStatus.pending,
         createdAt: DateTime.now(),
+        type: MicRequestType.request,
+        requestedByUserId: userId,
+        subjectUserId: userId,
+        targetAction: MicRequestTargetAction.cancel,
       ),
     );
   }
@@ -489,10 +503,15 @@ class MockRoomOperationsRepository
     final MicAccessRequest request = _requests[index];
     _requests[index] = MicAccessRequest(
       id: request.id,
+      roomId: request.roomId,
       member: request.member,
       seatNumber: request.seatNumber,
       status: MicRequestStatus.cancelled,
       createdAt: request.createdAt,
+      type: request.type,
+      requestedByUserId: request.requestedByUserId,
+      subjectUserId: request.subjectUserId,
+      targetAction: MicRequestTargetAction.none,
     );
   }
 
@@ -513,10 +532,15 @@ class MockRoomOperationsRepository
     final MicAccessRequest request = _requests[index];
     _requests[index] = MicAccessRequest(
       id: request.id,
+      roomId: request.roomId,
       member: request.member,
       seatNumber: request.seatNumber,
       status: accepted ? MicRequestStatus.accepted : MicRequestStatus.rejected,
       createdAt: request.createdAt,
+      type: request.type,
+      requestedByUserId: request.requestedByUserId,
+      subjectUserId: request.subjectUserId,
+      targetAction: MicRequestTargetAction.none,
     );
   }
 
@@ -536,10 +560,15 @@ class MockRoomOperationsRepository
     _requests.add(
       MicAccessRequest(
         id: 'invite-$userId-$seatNumber',
+        roomId: roomId,
         member: member,
         seatNumber: seatNumber,
         status: MicRequestStatus.pending,
         createdAt: DateTime.now(),
+        type: MicRequestType.invite,
+        requestedByUserId: 20001,
+        subjectUserId: userId,
+        targetAction: MicRequestTargetAction.accept,
       ),
     );
   }

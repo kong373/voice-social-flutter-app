@@ -148,6 +148,7 @@ class RoomSnapshot {
     required this.autoLockMic,
     required this.giftCatalogAvailable,
     required this.giftBalance,
+    this.accessMode = '',
     this.transportMode = RoomTransportMode.interactive,
     this.onlineCount,
     this.coverUrl,
@@ -168,6 +169,11 @@ class RoomSnapshot {
   final bool autoLockMic;
   final bool giftCatalogAvailable;
   final int? giftBalance;
+
+  /// Server-authoritative room access mode. APPROVAL is the only mode that
+  /// may use the first-party microphone queue; an empty value is unknown and
+  /// must not be guessed as direct or approval by callers.
+  final String accessMode;
   final int? onlineCount;
   final String? coverUrl;
   final String? backgroundUrl;
@@ -186,6 +192,7 @@ class RoomSnapshot {
     bool? autoLockMic,
     bool? giftCatalogAvailable,
     int? giftBalance,
+    String? accessMode,
     int? onlineCount,
   }) {
     return RoomSnapshot(
@@ -204,6 +211,7 @@ class RoomSnapshot {
       autoLockMic: autoLockMic ?? this.autoLockMic,
       giftCatalogAvailable: giftCatalogAvailable ?? this.giftCatalogAvailable,
       giftBalance: giftBalance ?? this.giftBalance,
+      accessMode: accessMode ?? this.accessMode,
       onlineCount: onlineCount ?? this.onlineCount,
       coverUrl: coverUrl ?? this.coverUrl,
       backgroundUrl: backgroundUrl ?? this.backgroundUrl,
