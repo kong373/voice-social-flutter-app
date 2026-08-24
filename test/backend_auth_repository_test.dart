@@ -5,7 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/core/storage/key_value_store.dart';
 import 'package:voice_social_app/features/account/data/backend_auth_repository.dart';
+import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 
 void main() {
@@ -73,6 +75,7 @@ void main() {
       final BackendAuthRepository repository = BackendAuthRepository(
         apiClient: client,
         environment: environment,
+        sessionManager: AuthSessionManager(MemoryKeyValueStore()),
       );
       const ClientDevice device = ClientDevice(
         deviceType: 1,
@@ -178,6 +181,7 @@ void main() {
       final BackendAuthRepository repository = BackendAuthRepository(
         apiClient: client,
         environment: environment,
+        sessionManager: AuthSessionManager(MemoryKeyValueStore()),
       );
 
       ApiException? failure;
@@ -550,7 +554,11 @@ BackendAuthRepository _testRepository(AppEnvironment environment) {
     clientInnerVersion: environment.clientInnerVersion,
     authorizationProvider: () => null,
   );
-  return BackendAuthRepository(apiClient: client, environment: environment);
+  return BackendAuthRepository(
+    apiClient: client,
+    environment: environment,
+    sessionManager: AuthSessionManager(MemoryKeyValueStore()),
+  );
 }
 
 const ClientDevice _testDevice = ClientDevice(

@@ -4,16 +4,20 @@ import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
+import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
+import 'package:voice_social_app/features/account/domain/auth_refresh_recovery.dart';
 import 'package:voice_social_app/features/account/domain/auth_repository.dart';
 
 class BackendAuthRepository implements AuthRepository {
   BackendAuthRepository({
     required ApiClient apiClient,
     required AppEnvironment environment,
+    required AuthSessionManager sessionManager,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
   }) : _apiClient = apiClient,
        _environment = environment,
+       _sessionManager = sessionManager,
        _routes = routes;
 
   static const int _mobileNotRegisteredCode = 10201;
@@ -23,12 +27,11 @@ class BackendAuthRepository implements AuthRepository {
   static const Duration _refreshRecoveryWindow = Duration(seconds: 30);
   static final Random _requestIdRandom = Random.secure();
   static const int _requestIdEntropyLength = 32;
-  static final RegExp _requestIdPattern = RegExp(
-    r'^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$',
-  );
+  static final RegExp _requestIdPattern = RegExp(r'^[A-Za-z0-9._-]{1,80}$');
 
   final ApiClient _apiClient;
   final AppEnvironment _environment;
+  final AuthSessionManager _sessionManager;
   final BackendRouteCatalog _routes;
 
   Map<String, String> get _publicClientHeaders => <String, String>{
@@ -130,6 +133,7 @@ class BackendAuthRepository implements AuthRepository {
   @override
   Future<AuthSession> refreshSession(AuthSession session) async {
     if (!session.canRefresh || session.deviceId.isEmpty) {
+      await _sessionManager.clearPendingRefresh();
       throw const ApiException(
         kind: ApiFailureKind.unauthorized,
         code: 401,
@@ -137,7 +141,23 @@ class BackendAuthRepository implements AuthRepository {
         message: '刷新会话已失效，请重新登录',
       );
     }
-    final String requestId = _newRefreshRequestId();
+    final String clientId = _refreshClientHeaders(session)['Client-Id']!;
+    final PendingAuthRefresh pending;
+    try {
+      pending = await _sessionManager.prepareRefreshRequest(
+        session: session,
+        clientId: clientId,
+        requestIdFactory: _newRefreshRequestId,
+      );
+    } on AuthRefreshRecoveryException catch (error) {
+      throw ApiException(
+        kind: ApiFailureKind.unauthorized,
+        code: 401,
+        httpStatus: 401,
+        message: error.message,
+      );
+    }
+    final String requestId = pending.requestId;
     final Stopwatch stopwatch = Stopwatch()..start();
     ApiException? firstAmbiguousFailure;
     for (int attempt = 0; attempt < 2; attempt += 1) {
@@ -163,6 +183,9 @@ class BackendAuthRepository implements AuthRepository {
         if (attempt != 0 ||
             !_isRefreshRecoveryCandidate(error) ||
             stopwatch.elapsed >= _refreshRecoveryWindow) {
+          if (!_isRefreshRecoveryCandidate(error)) {
+            await _sessionManager.clearPendingRefresh();
+          }
           rethrow;
         }
         firstAmbiguousFailure = error;

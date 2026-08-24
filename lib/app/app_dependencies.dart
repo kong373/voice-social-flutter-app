@@ -143,6 +143,7 @@ class AppDependencies {
         ? BackendAuthRepository(
             apiClient: apiClient,
             environment: environment,
+            sessionManager: sessionManager,
             routes: routes,
           )
         : const MockAuthRepository();

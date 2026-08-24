@@ -13,6 +13,7 @@ This repository is public. Never commit:
 
 - Gateway host and OAuth configuration are injected with dart defines or the deployment secret store.
 - Access tokens and the install identifier are persisted through platform secure storage in application builds.
+- In-flight refresh recovery metadata uses the same secure store and contains only the opaque request id, a session fingerprint hash, and its bounded recovery window; refresh tokens are never copied into the pending record.
 - Tests use an in-memory store and fake tokens.
 - Logs, tests, screenshots, and crash reports must never print authorization headers, SMS codes, device identifiers, or raw payment data.
 
