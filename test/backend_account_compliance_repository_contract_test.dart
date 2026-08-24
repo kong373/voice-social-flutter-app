@@ -101,8 +101,10 @@ void main() {
               data: <String, Object?>{
                 'status': realNameStatus,
                 'statusCode': realNameStatusCode,
-                'providerStatus': 'VENDOR_BLOCKED',
+                'providerStatus': 'FIRST_PARTY_REVIEW',
+                'reviewStatus': 'FIRST_PARTY_REVIEW',
                 'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+                'providerInvocation': false,
               },
             );
           case '/app-mini-api/mini/v1/account/sessions':
@@ -245,8 +247,10 @@ void main() {
               data: <String, Object?>{
                 'status': 'UNVERIFIED',
                 'statusCode': 0,
-                'providerStatus': 'VENDOR_BLOCKED',
+                'providerStatus': 'FIRST_PARTY_REVIEW',
+                'reviewStatus': 'FIRST_PARTY_REVIEW',
                 'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+                'providerInvocation': false,
               },
             );
           case '/app-mini-api/mini/v1/account/sessions':
@@ -348,8 +352,10 @@ void main() {
             data: <String, Object?>{
               'status': 'UNVERIFIED',
               'statusCode': 0,
-              'providerStatus': 'VENDOR_BLOCKED',
+              'providerStatus': 'FIRST_PARTY_REVIEW',
+              'reviewStatus': 'FIRST_PARTY_REVIEW',
               'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+              'providerInvocation': false,
             },
           );
         case '/app-mini-api/mini/v1/account/sessions':
@@ -439,8 +445,10 @@ void main() {
         '/app-mini-api/mini/v1/account/real-name' => <String, Object?>{
           'status': 'UNVERIFIED',
           'statusCode': 0,
-          'providerStatus': 'VENDOR_BLOCKED',
+          'providerStatus': 'FIRST_PARTY_REVIEW',
+          'reviewStatus': 'FIRST_PARTY_REVIEW',
           'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+          'providerInvocation': false,
         },
         '/app-mini-api/mini/v1/account/sessions' => <String, Object?>{
           'total': 0,
@@ -499,8 +507,10 @@ void main() {
           <String, Object?>{
             'status': 'VERIFIED',
             'statusCode': 1,
-            'providerStatus': 'VENDOR_BLOCKED',
+            'providerStatus': 'FIRST_PARTY_REVIEW',
+            'reviewStatus': 'FIRST_PARTY_REVIEW',
             'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+            'providerInvocation': false,
           },
         ),
         (
@@ -551,8 +561,10 @@ void main() {
               data: <String, Object?>{
                 'status': 'PENDING',
                 'statusCode': 1,
-                'providerStatus': 'VENDOR_BLOCKED',
+                'providerStatus': 'FIRST_PARTY_REVIEW',
+                'reviewStatus': 'FIRST_PARTY_REVIEW',
                 'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+                'providerInvocation': false,
               },
             );
           case '/app-mini-api/mini/v1/account/sessions/$oldSessionId':

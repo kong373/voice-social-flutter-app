@@ -4,6 +4,7 @@ import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/data/mock_account_compliance_repository.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
 import 'package:voice_social_app/features/account/compliance/presentation/system_permission_pages.dart';
@@ -70,6 +71,38 @@ void main() {
       await tester.tap(find.text('打开设置'));
       await tester.pumpAndSettle();
       expect(repository.openSettingsCalls, 1);
+    },
+  );
+
+  testWidgets(
+    'settings recovery surfaces a native failure instead of implying success',
+    (WidgetTester tester) async {
+      final _SettingsFailurePermissionRepository repository =
+          _SettingsFailurePermissionRepository();
+      final AppDependencies dependencies = AppDependencies.forTestEnvironment(
+        environment: AppEnvironment.mock(),
+        accountComplianceRepository: repository,
+      );
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            theme: AppTheme.social(),
+            home: const SystemPermissionCenterPage(
+              account: 'user-1',
+              currentVersion: 6,
+              platformType: 1,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('打开设置'));
+      await tester.pumpAndSettle();
+
+      expect(repository.openSettingsCalls, 1);
+      expect(find.text('原生平台未明确确认已打开系统设置'), findsOneWidget);
     },
   );
 }
@@ -188,5 +221,19 @@ class _PermanentPermissionRepository extends _UnavailablePermissionRepository {
   @override
   Future<void> openPermissionSettings() async {
     openSettingsCalls++;
+  }
+}
+
+class _SettingsFailurePermissionRepository
+    extends _PermanentPermissionRepository {
+  @override
+  Future<void> openPermissionSettings() {
+    openSettingsCalls++;
+    return Future<void>.error(
+      const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '原生平台未明确确认已打开系统设置',
+      ),
+    );
   }
 }

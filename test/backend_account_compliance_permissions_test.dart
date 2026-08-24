@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/data/backend_account_compliance_repository.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
 import 'package:voice_social_app/features/account/compliance/infrastructure/native_permission_adapter.dart';
@@ -60,6 +61,33 @@ void main() {
   });
 
   test(
+    'repository propagates native settings failure as an ApiException',
+    () async {
+      final HttpServer server = await _startServer(_validSnapshotHandler);
+      addTearDown(() => server.close(force: true));
+      final BackendAccountComplianceRepository repository =
+          BackendAccountComplianceRepository(
+            apiClient: _client(server),
+            nativePermissionAdapter: MethodChannelNativePermissionAdapter(
+              invoker: (String method, Map<String, Object?> arguments) async =>
+                  false,
+            ),
+          );
+
+      await expectLater(
+        repository.openPermissionSettings(),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.configuration,
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
     'live snapshot reads real native states and request refreshes through adapter',
     () async {
       final HttpServer server = await _startServer(_validSnapshotHandler);
@@ -115,13 +143,15 @@ void main() {
   );
 
   test(
-    'live real-name parser accepts first-party review statuses without vendor blocking',
+    'live real-name parser accepts the exact first-party review tuple',
     () async {
       final Map<String, Object?> realName = <String, Object?>{
         'status': 'PENDING',
         'statusCode': 1,
         'providerStatus': 'FIRST_PARTY_REVIEW',
-        'reviewMode': 'FIRST_PARTY_REVIEW',
+        'reviewStatus': 'FIRST_PARTY_REVIEW',
+        'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+        'providerInvocation': false,
       };
       final HttpServer server = await _startServer(
         (HttpRequest request) =>
@@ -163,6 +193,69 @@ void main() {
         )).verificationState,
         VerificationState.rejected,
       );
+    },
+  );
+
+  test(
+    'live real-name parser rejects vendor and legacy review tuples',
+    () async {
+      final List<Map<String, Object?>> invalidTuples = <Map<String, Object?>>[
+        <String, Object?>{
+          'providerStatus': 'VENDOR_BLOCKED',
+          'reviewStatus': 'FIRST_PARTY_REVIEW',
+          'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+          'providerInvocation': false,
+        },
+        <String, Object?>{
+          'providerStatus': 'FIRST_PARTY_REVIEWED',
+          'reviewStatus': 'FIRST_PARTY_REVIEWED',
+          'reviewMode': 'FIRST_PARTY_REVIEW',
+          'providerInvocation': false,
+        },
+        <String, Object?>{
+          'providerStatus': 'FIRST_PARTY_REVIEW',
+          'reviewStatus': 'FIRST_PARTY_REVIEW',
+          'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+          'providerInvocation': true,
+        },
+        <String, Object?>{
+          'providerStatus': ' FIRST_PARTY_REVIEW',
+          'reviewStatus': 'FIRST_PARTY_REVIEW',
+          'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+          'providerInvocation': false,
+        },
+      ];
+
+      for (final Map<String, Object?> tuple in invalidTuples) {
+        final Map<String, Object?> realName = <String, Object?>{
+          'status': 'PENDING',
+          'statusCode': 1,
+          ...tuple,
+        };
+        final HttpServer server = await _startServer(
+          (HttpRequest request) =>
+              _validSnapshotHandler(request, realNamePayload: realName),
+        );
+        addTearDown(() => server.close(force: true));
+        final BackendAccountComplianceRepository repository =
+            BackendAccountComplianceRepository(apiClient: _client(server));
+
+        await expectLater(
+          repository.fetchSnapshot(
+            account: 'user-1',
+            currentVersion: 6,
+            platformType: 1,
+          ),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.protocol,
+            ),
+          ),
+        );
+        await server.close(force: true);
+      }
     },
   );
 }
@@ -223,8 +316,10 @@ Future<void> _validSnapshotHandler(
           <String, Object?>{
             'status': 'UNVERIFIED',
             'statusCode': 0,
-            'providerStatus': 'VENDOR_BLOCKED',
+            'providerStatus': 'FIRST_PARTY_REVIEW',
+            'reviewStatus': 'FIRST_PARTY_REVIEW',
             'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+            'providerInvocation': false,
           },
     '/app-mini-api/mini/v1/account/sessions' => <String, Object?>{
       'total': 0,

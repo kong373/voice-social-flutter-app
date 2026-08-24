@@ -34,8 +34,10 @@ void main() {
           data: <String, Object?>{
             'status': 'PENDING',
             'statusCode': 1,
-            'providerStatus': 'VENDOR_BLOCKED',
+            'providerStatus': 'FIRST_PARTY_REVIEW',
+            'reviewStatus': 'FIRST_PARTY_REVIEW',
             'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+            'providerInvocation': false,
           },
         );
       });
@@ -76,8 +78,10 @@ void main() {
         data: <String, Object?>{
           'status': 'PENDING',
           'statusCode': 1,
-          'providerStatus': 'VENDOR_BLOCKED',
+          'providerStatus': 'FIRST_PARTY_REVIEW',
+          'reviewStatus': 'FIRST_PARTY_REVIEW',
           'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+          'providerInvocation': false,
         },
       );
     });
@@ -115,8 +119,10 @@ void main() {
               data: <String, Object?>{
                 'status': 'PENDING',
                 'statusCode': 1,
-                'providerStatus': 'VENDOR_BLOCKED',
+                'providerStatus': 'FIRST_PARTY_REVIEW',
+                'reviewStatus': 'FIRST_PARTY_REVIEW',
                 'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+                'providerInvocation': false,
               },
             );
           case '/app-mini-api/mini/v1/account/sessions/$_sessionId':
@@ -189,8 +195,10 @@ void main() {
             'status': 'PENDING',
             // statusCode is intentionally absent: the response must not be
             // treated as a successful real-name transition.
-            'providerStatus': 'VENDOR_BLOCKED',
+            'providerStatus': 'FIRST_PARTY_REVIEW',
+            'reviewStatus': 'FIRST_PARTY_REVIEW',
             'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
+            'providerInvocation': false,
           },
         );
       });

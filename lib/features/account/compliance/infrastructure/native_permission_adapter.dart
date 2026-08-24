@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
 
 /// The small first-party boundary between Flutter and the operating system.
@@ -54,7 +55,16 @@ class MethodChannelNativePermissionAdapter implements NativePermissionAdapter {
 
   @override
   Future<void> openAppSettings() async {
-    await _invoke('openAppSettings', const <String, Object?>{});
+    final Object? result = await _invoke(
+      'openAppSettings',
+      const <String, Object?>{},
+    );
+    if (result != true) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '原生平台未明确确认已打开系统设置，不会伪造设置导航结果',
+      );
+    }
   }
 
   Future<Object?> _invoke(String method, Map<String, Object?> arguments) async {

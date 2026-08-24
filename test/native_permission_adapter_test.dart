@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
 import 'package:voice_social_app/features/account/compliance/infrastructure/native_permission_adapter.dart';
 
@@ -18,6 +19,9 @@ void main() {
               }
               if (method == 'request') {
                 return 'granted';
+              }
+              if (method == 'openAppSettings') {
+                return true;
               }
               return null;
             },
@@ -44,6 +48,31 @@ void main() {
         ),
         const NativePermissionCall(method: 'openAppSettings'),
       ]);
+    },
+  );
+
+  test(
+    'method-channel adapter rejects any settings result except explicit true',
+    () async {
+      for (final Object? nativeResult in <Object?>[false, null, 'true']) {
+        final MethodChannelNativePermissionAdapter adapter =
+            MethodChannelNativePermissionAdapter(
+              invoker: (String method, Map<String, Object?> arguments) async =>
+                  nativeResult,
+            );
+
+        await expectLater(
+          adapter.openAppSettings(),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.configuration,
+            ),
+          ),
+          reason: 'native result: $nativeResult',
+        );
+      }
     },
   );
 

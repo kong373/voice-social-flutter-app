@@ -1040,10 +1040,7 @@ class BackendAccountComplianceRepository
 
   static int _parseVerificationCode(Map<String, Object?> data) {
     final String status = _requiredString(data, 'status', '实名认证').toUpperCase();
-    final Object? rawCode = data['statusCode'];
-    final int? code = rawCode == null
-        ? null
-        : _requiredNonNegativeInt(data, 'statusCode', '实名认证');
+    final int code = _requiredNonNegativeInt(data, 'statusCode', '实名认证');
     final int expected = switch (status) {
       'NOT_SUBMITTED' || 'UNVERIFIED' => 0,
       'PENDING' => 1,
@@ -1051,46 +1048,38 @@ class BackendAccountComplianceRepository
       'REJECTED' => 3,
       _ => -1,
     };
-    if (expected < 0 || (code != null && code != expected)) {
+    if (expected < 0 || code != expected) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '实名认证响应中的状态字段无效或互相矛盾',
       );
     }
-    final String providerStatus = _string(data['providerStatus']).toUpperCase();
-    final String reviewMode = _string(data['reviewMode']).toUpperCase();
-    const Set<String> allowedProviderStatuses = <String>{
-      'VENDOR_BLOCKED',
-      'FIRST_PARTY_REVIEW',
-      'FIRST_PARTY_REVIEWED',
-    };
-    const Set<String> allowedReviewModes = <String>{
-      'FIRST_PARTY_MANUAL_REVIEW',
-      'FIRST_PARTY_REVIEW',
-    };
-    final bool providerStatusAllowed =
-        providerStatus.isEmpty ||
-        allowedProviderStatuses.contains(providerStatus);
-    final bool reviewModeAllowed =
-        reviewMode.isEmpty || allowedReviewModes.contains(reviewMode);
-    if (!providerStatusAllowed ||
-        !reviewModeAllowed ||
-        (providerStatus.isEmpty && reviewMode.isEmpty)) {
+    final String providerStatus = _requiredExactString(
+      data,
+      'providerStatus',
+      '实名认证',
+    );
+    final String reviewStatus = _requiredExactString(
+      data,
+      'reviewStatus',
+      '实名认证',
+    );
+    final String reviewMode = _requiredExactString(data, 'reviewMode', '实名认证');
+    final bool providerInvocation = _requiredBool(
+      data,
+      'providerInvocation',
+      '实名认证',
+    );
+    if (providerStatus != 'FIRST_PARTY_REVIEW' ||
+        reviewStatus != 'FIRST_PARTY_REVIEW' ||
+        reviewMode != 'FIRST_PARTY_MANUAL_REVIEW' ||
+        providerInvocation) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
-        message: '实名认证响应违反第一方审核边界',
+        message: '实名认证响应必须满足第一方人工审核契约',
       );
     }
-    final bool isFirstPartyReview =
-        providerStatus == 'FIRST_PARTY_REVIEW' ||
-        reviewMode == 'FIRST_PARTY_REVIEW';
-    if (code == null && !isFirstPartyReview) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '实名认证响应缺少有效 statusCode',
-      );
-    }
-    return expected;
+    return code;
   }
 
   static Map<String, Object?> _parseRestriction(Object? value) {
@@ -1167,6 +1156,21 @@ class BackendAccountComplianceRepository
       );
     }
     return raw.trim();
+  }
+
+  static String _requiredExactString(
+    Map<String, Object?> data,
+    String key,
+    String field,
+  ) {
+    final Object? raw = data[key];
+    if (raw is! String || raw.isEmpty || raw.trim() != raw) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field 响应缺少有效 $key',
+      );
+    }
+    return raw;
   }
 
   static bool _requiredBool(
