@@ -431,6 +431,14 @@ if not isinstance(payload["writeCounters"], dict) or not payload["writeCounters"
     raise SystemExit(1)
 if not isinstance(payload["authorityInvariants"], dict) or not payload["authorityInvariants"]:
     raise SystemExit(1)
+if any(type(value) is not int or value < 0 for value in payload["writeCounters"].values()):
+    raise SystemExit(1)
+if sum(payload["writeCounters"].values()) <= 0:
+    raise SystemExit(1)
+if payload["authorityInvariants"].get("first_party_writes_observed_since_start") is not True:
+    raise SystemExit(1)
+if any(value is not True for value in payload["authorityInvariants"].values()):
+    raise SystemExit(1)
 if payload["providerCalls"] not in (0, False, "0"):
     raise SystemExit(1)
 if payload.get("secrets") is not False:

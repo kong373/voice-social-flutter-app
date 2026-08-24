@@ -19,6 +19,7 @@ void main() {
     bool providerCall = false,
     bool avdBPass = true,
     bool invalidAvdBRouteStatus = false,
+    bool zeroWriteDelta = false,
   }) {
     final Directory root = Directory.systemTemp.createTempSync(
       'm4-aggregate-contract-',
@@ -83,9 +84,12 @@ void main() {
         File('${dir.path}/db-evidence.json').writeAsStringSync(
           jsonEncode(<String, Object?>{
             'status': 'OK',
-            'writeCounters': <String, Object?>{'auth_session': 1},
+            'writeCounters': <String, Object?>{
+              'auth_session': zeroWriteDelta ? 0 : 1,
+            },
             'authorityInvariants': <String, Object?>{
               'session_owner_matches_account': true,
+              'first_party_writes_observed_since_start': !zeroWriteDelta,
             },
             'providerCalls': 0,
             'secrets': false,
@@ -184,6 +188,16 @@ void main() {
     expect(
       File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
       contains('AVD-B=FAIL'),
+    );
+  });
+
+  test('aggregate rejects database evidence without current-run writes', () {
+    final Directory root = makeEvidence(zeroWriteDelta: true);
+    final ProcessResult result = runAggregate(root);
+    expect(result.exitCode, isNot(0));
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('ANDROID_EMULATOR_FAIL'),
     );
   });
 }
