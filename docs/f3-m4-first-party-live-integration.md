@@ -10,6 +10,7 @@ accepted against a live backend and two Android emulators.
 | --- | --- | --- |
 | C-end UI | `UI_SCOPE=COMPLETE_69_PAGE_C_END` | The approved 69 Page IDs have implemented UI and scoped interactions. |
 | First-party reads | `FIRST_PARTY_READS=READY` | The F3 live graph can use approved first-party HTTP/read contracts. |
+| First-party mutations | `FIRST_PARTY_LIVE_MUTATIONS=READY_FOR_RUN` | The M4 runner now exercises only safe, authoritative first-party writes and recovery reads. A real AVD run is still required. |
 | Live AVD acceptance | `LIVE_DUAL_AVD_ACCEPTANCE=PENDING` | A real first-party run on both AVD-A and AVD-B is still required. |
 | B7 ops frontend | `C_END_B7_SCOPE=INTENTIONALLY_OUT_OF_SCOPE` | B7 is a backend capability; no operator route is added to the 69-page C-end. |
 | Canonical audit review | `VERIFIED` | This is the canonical review state for the B7/C-end scope boundary. |
@@ -27,6 +28,35 @@ Recharge order creation (`CM-003`), payment-channel invocation, and provider
 success remain `VENDOR_BLOCKED` and fail closed. An order/status read may still
 be used when the first-party endpoint provides it; reading an order is not the
 same as creating or paying one.
+
+## M4 first-party mutation acceptance
+
+The live integration test performs a mutation only after it has discovered the
+authoritative ID, role, balance, account, or other domain precondition. Each
+write uses the repository's idempotent request handling and is followed by an
+authoritative recovery read. The current safe probes are:
+
+- daily check-in and a claimable first-party task, with an explicit
+  `already_authoritative` result when another AVD has already completed the
+  business-day operation;
+- one ordinary gift and receipt recovery, using a catalog UUID, an online room
+  member, quantity one, and no provider invocation;
+- a manual-review withdrawal with a masked, selectable payout account, or an
+  explicit precondition block when the account, balance, or real-name status is
+  not eligible;
+- an eligible refund submission and result recovery, with a rejected-result
+  retry only when the backend says retry is allowed;
+- room moderation mute/restore, seat up/down compensation, and a PK invitation
+  with rejection recovery (or accept/end recovery when an invitation is
+  already authoritative);
+- private first-party message storage/history recovery and notification
+  read/interaction-clear operations.
+
+No route is marked successful from a missing fixture, a UI transition, or an
+inferred response. Network, protocol, configuration, and server failures fail
+the run; only explicit domain/precondition states are recorded as blocked.
+The probes never invoke formal SMS, RTC, IM delivery, payment, push, object
+storage, media upload, or native vendor-share providers.
 
 ## Formal provider matrix
 

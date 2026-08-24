@@ -121,6 +121,38 @@ void main() {
     expect(integrationSource, isNot(contains("'result': 'PASS',")));
   });
 
+  test(
+    'live integration covers first-party mutations without vendor success',
+    () {
+      for (final String capability in <String>[
+        'community.checkin',
+        'community.task.claim',
+        'room.moderation.mute',
+        'room.seat.up',
+        'room.pk.invite',
+        'commerce.gift.send',
+        'commerce.withdraw.apply',
+        'commerce.refund.submit',
+        'message.private.send',
+        'message.notifications.clear',
+      ]) {
+        expect(integrationSource, contains(capability));
+      }
+      expect(integrationSource, contains('requireCapability'));
+      expect(integrationSource, contains('already_authoritative'));
+      expect(integrationSource, contains('providerInvocation != false'));
+      expect(integrationSource, contains('M4_PROVIDER_CALLS::0'));
+      expect(
+        integrationSource,
+        isNot(contains('gift_send_and_payment_invocation_not_attempted')),
+      );
+      expect(
+        integrationSource,
+        isNot(contains('withdraw_and_refund_mutations_not_attempted')),
+      );
+    },
+  );
+
   test('aggregate passes only with complete matching A/B evidence', () {
     final Directory root = makeEvidence();
     final ProcessResult result = runAggregate(root);

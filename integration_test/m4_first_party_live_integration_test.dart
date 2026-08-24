@@ -15,9 +15,14 @@ import 'package:voice_social_app/features/account/application/auth_controller.da
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
+import 'package:voice_social_app/features/community/domain/community_models.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
+import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
+import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
+import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
+import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
 import 'package:voice_social_app/features/shell/live_read_only_repository.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
@@ -293,14 +298,20 @@ void main() {
         evidence,
         currentUserId: currentUserId,
       );
-      await _runRoomFlow(
+      final _LiveRoomContext? liveRoom = await _runRoomFlow(
         tester,
         dependencies,
         evidence,
         room: homeRooms!.isEmpty ? null : homeRooms.first,
         currentUserId: currentUserId,
       );
-      await _runMessagesFlow(tester, dependencies, evidence);
+      await _runMessagesFlow(
+        tester,
+        dependencies,
+        evidence,
+        fallbackTargetUserId: liveRoom?.targetUserId,
+        currentUserId: currentUserId,
+      );
       await _runCommerceFlow(tester, dependencies, evidence);
       await _runComplianceAndSupportFlow(
         tester,
@@ -308,6 +319,7 @@ void main() {
         evidence,
         account,
       );
+      evidence.invariant('first_party_mutations_stay_vendor_free');
 
       // The final UI action is a real logout. It is safe and idempotent; no
       // vendor call is made by AuthController.signOut.
@@ -543,7 +555,7 @@ Future<void> _runDynamicSocialCommunityFlow(
       status: 200,
     );
   }
-  final Object? taskCenterProbe = await _probe(
+  final TaskCenterSnapshot? taskCenterProbe = await _probe<TaskCenterSnapshot>(
     evidence,
     capability: 'community.tasks',
     method: 'GET',
@@ -563,6 +575,84 @@ Future<void> _runDynamicSocialCommunityFlow(
       route: const BackendRouteCatalog().todaySignStatus,
       status: 200,
     );
+
+    // A daily sign or a claimable task is a small, first-party-only mutation.
+    // The authoritative status read decides which one is safe. If an earlier
+    // AVD already performed today's idempotent operation, keep that state
+    // explicit in evidence rather than pretending that this AVD issued a
+    // second write.
+    if (!taskCenterProbe.signedToday) {
+      evidence.requireCapability('community.checkin');
+      final TaskCenterSnapshot? signed = await _probe(
+        evidence,
+        capability: 'community.checkin',
+        method: 'POST',
+        route: const BackendRouteCatalog().completeSignIn,
+        operation: () =>
+            dependencies.communityRepository.completeDailyCheckIn(),
+        requiredSuccess: true,
+      );
+      if (signed == null || !signed.signedToday) {
+        throw TestFailure('Daily sign response did not confirm signedToday.');
+      }
+      evidence.invariant('community_checkin_authority_confirmed');
+    } else {
+      evidence.preexisting(
+        'community.checkin',
+        const BackendRouteCatalog().todaySignStatus,
+        'already_authoritative',
+      );
+    }
+
+    TaskItem? claimableTask;
+    for (final TaskItem task in taskCenterProbe.tasks) {
+      if (task.state == TaskState.claimable) {
+        claimableTask = task;
+        break;
+      }
+    }
+    if (claimableTask != null) {
+      final TaskItem selectedTask = claimableTask;
+      evidence.requireCapability('community.task.claim');
+      final TaskCenterSnapshot? claimed = await _probe(
+        evidence,
+        capability: 'community.task.claim',
+        method: 'POST',
+        route: const BackendRouteCatalog().claimTaskReward,
+        operation: () =>
+            dependencies.communityRepository.claimTask(selectedTask.id),
+        requiredSuccess: true,
+      );
+      if (claimed == null ||
+          claimed.tasks.any(
+            (TaskItem task) =>
+                task.id == selectedTask.id && task.state != TaskState.claimed,
+          )) {
+        throw TestFailure('Task claim response did not confirm claimed state.');
+      }
+      evidence.invariant('community_task_claim_authority_confirmed');
+    } else {
+      bool hasClaimedTask = false;
+      for (final TaskItem task in taskCenterProbe.tasks) {
+        if (task.state == TaskState.claimed) {
+          hasClaimedTask = true;
+          break;
+        }
+      }
+      if (hasClaimedTask) {
+        evidence.preexisting(
+          'community.task.claim',
+          const BackendRouteCatalog().taskRecords,
+          'already_authoritative',
+        );
+      } else {
+        evidence.local(
+          'community.task.claim',
+          const BackendRouteCatalog().taskRecords,
+          'no_claimable_authoritative_task',
+        );
+      }
+    }
   }
   await _probe(
     evidence,
@@ -642,7 +732,7 @@ Future<void> _runDynamicSocialCommunityFlow(
   );
 }
 
-Future<void> _runRoomFlow(
+Future<_LiveRoomContext?> _runRoomFlow(
   WidgetTester tester,
   AppDependencies dependencies,
   _M4Evidence evidence, {
@@ -664,9 +754,10 @@ Future<void> _runRoomFlow(
       'no_authoritative_room_available',
     );
     evidence.local('room.pk.ui', '/room/pk', 'no_authoritative_room_available');
-    return;
+    return null;
   }
   final String roomId = room.id;
+  int? targetUserId;
   final RoomRepositoryProbeResult? entered = await _probe(
     evidence,
     capability: 'room.enter',
@@ -703,7 +794,7 @@ Future<void> _runRoomFlow(
         currentUserId: currentUserId,
       ),
     );
-    await _probe(
+    final RoomMemberPage? onlineMembers = await _probe<RoomMemberPage>(
       evidence,
       capability: 'room.seats',
       method: 'POST',
@@ -770,27 +861,46 @@ Future<void> _runRoomFlow(
           dependencies.roomPkRepository.fetchActiveBattle(roomId: roomId),
     );
     evidence.invariant('room_read_probes_do_not_start_pk_or_change_seats');
+
+    final List<RoomMember> members =
+        onlineMembers?.items ?? const <RoomMember>[];
+    for (final RoomMember member in members) {
+      if (member.userId > 0 && member.userId != currentUserId) {
+        targetUserId = member.userId;
+        break;
+      }
+    }
     try {
-      await dependencies.roomRepository.exitRoom(roomId);
-      evidence.http(
-        capability: 'room.exit.cleanup',
-        method: 'POST',
-        route: const BackendRouteCatalog().exitRoom,
-        status: 200,
-        state: 'success',
+      await _runRoomMutationFlow(
+        dependencies,
+        evidence,
+        snapshot: snapshot,
+        currentUserId: currentUserId,
+        targetUserId: targetUserId,
       );
-      evidence.invariant('room_enter_is_compensated_by_exit');
-    } on ApiException catch (error) {
-      evidence.http(
-        capability: 'room.exit.cleanup',
-        method: 'POST',
-        route: const BackendRouteCatalog().exitRoom,
-        status: error.httpStatus ?? 0,
-        state: _stateFor(error),
-      );
-      throw TestFailure(
-        'Room cleanup failed with status ${error.httpStatus ?? 0}.',
-      );
+    } finally {
+      try {
+        await dependencies.roomRepository.exitRoom(roomId);
+        evidence.http(
+          capability: 'room.exit.cleanup',
+          method: 'POST',
+          route: const BackendRouteCatalog().exitRoom,
+          status: 200,
+          state: 'success',
+        );
+        evidence.invariant('room_enter_is_compensated_by_exit');
+      } on ApiException catch (error) {
+        evidence.http(
+          capability: 'room.exit.cleanup',
+          method: 'POST',
+          route: const BackendRouteCatalog().exitRoom,
+          status: error.httpStatus ?? 0,
+          state: _stateFor(error),
+        );
+        throw TestFailure(
+          'Room cleanup failed with status ${error.httpStatus ?? 0}.',
+        );
+      }
     }
   }
 
@@ -921,22 +1031,826 @@ Future<void> _runRoomFlow(
     );
     evidence.local('room.pk.ui', '/room/pk', 'room_ui_unavailable');
   }
+  return _LiveRoomContext(roomId: roomId, targetUserId: targetUserId);
+}
+
+Future<void> _runRoomMutationFlow(
+  AppDependencies dependencies,
+  _M4Evidence evidence, {
+  required RoomSnapshot snapshot,
+  required int currentUserId,
+  required int? targetUserId,
+}) async {
+  final BackendRouteCatalog routes = const BackendRouteCatalog();
+  final bool canModerate =
+      snapshot.ownerId == currentUserId ||
+      snapshot.role == RoomRole.owner ||
+      snapshot.role == RoomRole.moderator ||
+      snapshot.role == RoomRole.platformModerator;
+
+  if (!canModerate || targetUserId == null) {
+    evidence.local(
+      'room.moderation.mute',
+      routes.setRoomUserMuted,
+      canModerate ? 'no_authoritative_target_member' : 'authority_not_granted',
+    );
+    evidence.local(
+      'room.moderation.restore',
+      routes.setRoomUserMuted,
+      'mutation_not_attempted_without_safe_target',
+    );
+  } else {
+    evidence.requireCapability('room.moderation.mute');
+    final bool? muted = await _probe<bool>(
+      evidence,
+      capability: 'room.moderation.mute',
+      method: 'POST',
+      route: routes.setRoomUserMuted,
+      operation: () async {
+        await dependencies.roomOperationsRepository.setUserMuted(
+          roomId: snapshot.roomId,
+          userId: targetUserId,
+          muted: true,
+        );
+        return true;
+      },
+      requiredSuccess: true,
+    );
+    if (muted != true) {
+      throw TestFailure('Room mute write did not return a success result.');
+    }
+    final List<RoomMember>? mutedAfter = await _probe<List<RoomMember>>(
+      evidence,
+      capability: 'room.moderation.mute.verify',
+      method: 'GET',
+      route: routes.roomMutedUsers,
+      operation: () => dependencies.roomOperationsRepository.fetchMutedUsers(
+        snapshot.roomId,
+      ),
+      requiredSuccess: true,
+    );
+    if (mutedAfter == null ||
+        !mutedAfter.any((RoomMember member) => member.userId == targetUserId)) {
+      throw TestFailure(
+        'Room mute write was not visible in authoritative read.',
+      );
+    }
+    evidence.invariant('room_moderation_mute_authority_confirmed');
+
+    evidence.requireCapability('room.moderation.restore');
+    final bool? restored = await _probe<bool>(
+      evidence,
+      capability: 'room.moderation.restore',
+      method: 'POST',
+      route: routes.setRoomUserMuted,
+      operation: () async {
+        await dependencies.roomOperationsRepository.setUserMuted(
+          roomId: snapshot.roomId,
+          userId: targetUserId,
+          muted: false,
+        );
+        return true;
+      },
+      requiredSuccess: true,
+    );
+    if (restored != true) {
+      throw TestFailure('Room mute restore did not return a success result.');
+    }
+    final List<RoomMember>? mutedAfterRestore = await _probe<List<RoomMember>>(
+      evidence,
+      capability: 'room.moderation.restore.verify',
+      method: 'GET',
+      route: routes.roomMutedUsers,
+      operation: () => dependencies.roomOperationsRepository.fetchMutedUsers(
+        snapshot.roomId,
+      ),
+      requiredSuccess: true,
+    );
+    if (mutedAfterRestore == null ||
+        mutedAfterRestore.any(
+          (RoomMember member) => member.userId == targetUserId,
+        )) {
+      throw TestFailure(
+        'Room mute restore was not visible in authoritative read.',
+      );
+    }
+    evidence.invariant('room_moderation_restore_authority_confirmed');
+  }
+
+  MicSeat? availableSeat;
+  for (final MicSeat seat in snapshot.seats) {
+    if (seat.isAvailable) {
+      availableSeat = seat;
+      break;
+    }
+  }
+  if (availableSeat == null) {
+    MicSeat? occupiedByCurrentUser;
+    for (final MicSeat seat in snapshot.seats) {
+      if (seat.userId == currentUserId && seat.isOccupied) {
+        occupiedByCurrentUser = seat;
+        break;
+      }
+    }
+    if (occupiedByCurrentUser == null) {
+      evidence.local(
+        'room.seat.up',
+        routes.userUpMic,
+        'no_available_authoritative_seat',
+      );
+      evidence.local(
+        'room.seat.down',
+        routes.userLeaveMic,
+        'seat_up_not_attempted_without_available_seat',
+      );
+    } else {
+      evidence.preexisting(
+        'room.seat.up',
+        routes.roomOnlineMembers,
+        'already_authoritative',
+      );
+      evidence.requireCapability('room.seat.down');
+      final bool? seatDown = await _probe<bool>(
+        evidence,
+        capability: 'room.seat.down',
+        method: 'POST',
+        route: routes.userLeaveMic,
+        operation: () async {
+          await dependencies.roomRepository.leaveMic();
+          return true;
+        },
+        requiredSuccess: true,
+      );
+      if (seatDown != true) {
+        throw TestFailure('Existing room seat could not be released.');
+      }
+      evidence.invariant('room_seat_up_down_compensated');
+    }
+  } else {
+    final MicSeat selectedSeat = availableSeat;
+    evidence.requireCapability('room.seat.up');
+    final bool? seatUp = await _probe<bool>(
+      evidence,
+      capability: 'room.seat.up',
+      method: 'POST',
+      route: routes.userUpMic,
+      operation: () async {
+        await dependencies.roomRepository.requestMic(selectedSeat.backendIndex);
+        return true;
+      },
+      requiredSuccess: true,
+    );
+    if (seatUp != true) {
+      throw TestFailure('Room seat up did not return a success result.');
+    }
+    evidence.requireCapability('room.seat.down');
+    final bool? seatDown = await _probe<bool>(
+      evidence,
+      capability: 'room.seat.down',
+      method: 'POST',
+      route: routes.userLeaveMic,
+      operation: () async {
+        await dependencies.roomRepository.leaveMic();
+        return true;
+      },
+      requiredSuccess: true,
+    );
+    if (seatDown != true) {
+      throw TestFailure('Room seat down did not return a success result.');
+    }
+    evidence.invariant('room_seat_up_down_compensated');
+  }
+
+  await _runGiftMutation(
+    dependencies,
+    evidence,
+    snapshot: snapshot,
+    currentUserId: currentUserId,
+    targetUserId: targetUserId,
+  );
+  await _runRoomPkMutation(
+    dependencies,
+    evidence,
+    snapshot: snapshot,
+    currentUserId: currentUserId,
+  );
+}
+
+Future<void> _runGiftMutation(
+  AppDependencies dependencies,
+  _M4Evidence evidence, {
+  required RoomSnapshot snapshot,
+  required int currentUserId,
+  required int? targetUserId,
+}) async {
+  final BackendRouteCatalog routes = const BackendRouteCatalog();
+  if (targetUserId == null || targetUserId == currentUserId) {
+    evidence.local(
+      'commerce.gift.send',
+      routes.sendGift,
+      'no_authoritative_receiver_member',
+    );
+    evidence.local(
+      'commerce.gift.receipt',
+      routes.giftReceipt,
+      'gift_send_not_attempted_without_receiver',
+    );
+    return;
+  }
+  final WalletSummary? wallet = await _probe<WalletSummary>(
+    evidence,
+    capability: 'commerce.wallet.mutation-precondition',
+    method: 'GET',
+    route: routes.walletOverview,
+    operation: () => dependencies.commerceRepository.fetchWalletSummary(),
+    requiredSuccess: true,
+  );
+  final List<GiftCatalogItem>? gifts = await _probe<List<GiftCatalogItem>>(
+    evidence,
+    capability: 'commerce.gift.mutation-catalog',
+    method: 'GET',
+    route: routes.normalGiftCatalog,
+    operation: () => dependencies.commerceCatalogRepository.fetchGiftCatalog(),
+    requiredSuccess: true,
+  );
+  GiftCatalogItem? gift;
+  for (final GiftCatalogItem item in gifts ?? const <GiftCatalogItem>[]) {
+    if (item.enabled && item.price > 0) {
+      gift = item;
+      break;
+    }
+  }
+  if (wallet == null ||
+      gift == null ||
+      wallet.giftCoinBalance == null ||
+      wallet.giftCoinBalance! < gift.price) {
+    evidence.local(
+      'commerce.gift.send',
+      routes.sendGift,
+      'wallet_or_gift_fixture_not_sufficient',
+    );
+    evidence.local(
+      'commerce.gift.receipt',
+      routes.giftReceipt,
+      'gift_send_not_attempted_without_sufficient_wallet',
+    );
+    return;
+  }
+  final GiftCatalogItem selectedGift = gift;
+  final String requestId = _m4RequestId('gift');
+  evidence.requireCapability('commerce.gift.send');
+  final GiftReceipt? sent = await _probe<GiftReceipt>(
+    evidence,
+    capability: 'commerce.gift.send',
+    method: 'POST',
+    route: routes.sendGift,
+    operation: () => dependencies.roomRepository.sendGift(
+      roomId: snapshot.roomId,
+      giftId: selectedGift.id,
+      receiverUserIds: <int>[targetUserId],
+      quantity: 1,
+      giftFrom: 0,
+      requestId: requestId,
+    ),
+    requiredSuccess: true,
+  );
+  if (sent == null ||
+      !sent.success ||
+      sent.providerInvocation != false ||
+      sent.transferId == null ||
+      sent.transferId!.isEmpty ||
+      sent.senderUserId != currentUserId ||
+      sent.receiverUserId != targetUserId ||
+      sent.quantity != 1) {
+    throw TestFailure(
+      'Gift send response did not confirm a first-party receipt.',
+    );
+  }
+  evidence.requireCapability('commerce.gift.receipt');
+  final GiftReceipt? recovered = await _probe<GiftReceipt>(
+    evidence,
+    capability: 'commerce.gift.receipt',
+    method: 'GET',
+    route: routes.giftReceipt,
+    operation: () => dependencies.roomRepository.fetchGiftReceipt(
+      transferId: sent.transferId,
+      currentUserId: currentUserId,
+      senderUserId: currentUserId,
+      receiverUserId: targetUserId,
+    ),
+    requiredSuccess: true,
+  );
+  if (recovered == null ||
+      recovered.transferId != sent.transferId ||
+      recovered.requestId != requestId ||
+      recovered.providerInvocation != false ||
+      !recovered.success) {
+    throw TestFailure('Gift receipt recovery did not match the sent transfer.');
+  }
+  evidence.invariant('gift_send_recovered_by_authoritative_receipt');
+}
+
+Future<void> _runRoomPkMutation(
+  AppDependencies dependencies,
+  _M4Evidence evidence, {
+  required RoomSnapshot snapshot,
+  required int currentUserId,
+}) async {
+  final BackendRouteCatalog routes = const BackendRouteCatalog();
+  const String surrenderRoute = '/app-api/activityPk/surrenderRoomPk';
+  final RoomPkInvitation? incoming = await _probe<RoomPkInvitation?>(
+    evidence,
+    capability: 'room.pk.incoming',
+    method: 'GET',
+    route: routes.roomPkProgress,
+    operation: () => dependencies.roomPkRepository.fetchIncomingInvitation(
+      roomId: snapshot.roomId,
+    ),
+    requiredSuccess: true,
+  );
+  if (incoming != null) {
+    evidence.requireCapability('room.pk.accept');
+    final RoomPkBattle? battle = await _probe<RoomPkBattle>(
+      evidence,
+      capability: 'room.pk.accept',
+      method: 'POST',
+      route: routes.roomPkAccept,
+      operation: () => dependencies.roomPkRepository.acceptInvitation(incoming),
+      requiredSuccess: true,
+    );
+    if (battle == null || battle.currentRoomId != snapshot.roomId) {
+      throw TestFailure(
+        'PK accept response did not identify the current room.',
+      );
+    }
+    evidence.requireCapability('room.pk.end');
+    final RoomPkBattle? ended = await _probe<RoomPkBattle>(
+      evidence,
+      capability: 'room.pk.end',
+      method: 'POST',
+      route: surrenderRoute,
+      operation: () => dependencies.roomPkRepository.surrender(
+        roomId: snapshot.roomId,
+        battleId: battle.id,
+      ),
+      requiredSuccess: true,
+    );
+    if (ended == null || ended.isActive) {
+      throw TestFailure('PK compensation did not close the accepted battle.');
+    }
+    evidence.invariant('pk_accept_and_end_compensated');
+    evidence.invariant('pk_mutation_path_confirmed');
+    return;
+  }
+
+  final bool canInvite =
+      snapshot.ownerId == currentUserId || snapshot.role == RoomRole.owner;
+  if (!canInvite) {
+    evidence.local(
+      'room.pk.invite',
+      routes.roomPkInvite,
+      'authority_not_granted',
+    );
+    evidence.local(
+      'room.pk.recovery',
+      routes.roomPkReject,
+      'invite_not_attempted_without_owner_authority',
+    );
+    return;
+  }
+  final List<RoomPkOpponent>? opponents = await _probe<List<RoomPkOpponent>>(
+    evidence,
+    capability: 'room.pk.opponents',
+    method: 'GET',
+    route: routes.roomPkHotRooms,
+    operation: () => dependencies.roomPkRepository.fetchHotOpponents(
+      roomId: snapshot.roomId,
+    ),
+    requiredSuccess: true,
+  );
+  RoomPkOpponent? opponent;
+  for (final RoomPkOpponent item in opponents ?? const <RoomPkOpponent>[]) {
+    if (item.roomId != snapshot.roomId && !item.isInPk) {
+      opponent = item;
+      break;
+    }
+  }
+  if (opponent == null) {
+    evidence.local(
+      'room.pk.invite',
+      routes.roomPkInvite,
+      'no_authoritative_opponent_room',
+    );
+    evidence.local(
+      'room.pk.recovery',
+      routes.roomPkReject,
+      'invite_not_attempted_without_opponent',
+    );
+    return;
+  }
+  final RoomPkOpponent selectedOpponent = opponent;
+  evidence.requireCapability('room.pk.invite');
+  final RoomPkInvitation? invitation = await _probe<RoomPkInvitation>(
+    evidence,
+    capability: 'room.pk.invite',
+    method: 'POST',
+    route: routes.roomPkInvite,
+    operation: () => dependencies.roomPkRepository.sendInvitation(
+      roomId: snapshot.roomId,
+      inviterUserId: currentUserId,
+      opponent: selectedOpponent,
+      punishmentTheme: 'M4测试',
+      durationMinutes: 5,
+    ),
+    requiredSuccess: true,
+  );
+  if (invitation == null) {
+    throw TestFailure('PK invitation did not return authoritative invitation.');
+  }
+  if (invitation.status == RoomPkInvitationStatus.pending) {
+    evidence.requireCapability('room.pk.recovery');
+    final bool? rejected = await _probe<bool>(
+      evidence,
+      capability: 'room.pk.recovery',
+      method: 'POST',
+      route: routes.roomPkReject,
+      operation: () async {
+        await dependencies.roomPkRepository.rejectInvitation(invitation);
+        return true;
+      },
+      requiredSuccess: true,
+    );
+    if (rejected != true) {
+      throw TestFailure(
+        'PK invitation rejection did not return a success result.',
+      );
+    }
+    evidence.invariant('pk_invite_rejected_as_safe_recovery');
+    evidence.invariant('pk_mutation_path_confirmed');
+  } else if (invitation.status == RoomPkInvitationStatus.accepted) {
+    final RoomPkBattle? battle = await _probe<RoomPkBattle>(
+      evidence,
+      capability: 'room.pk.accept',
+      method: 'POST',
+      route: routes.roomPkAccept,
+      operation: () =>
+          dependencies.roomPkRepository.acceptInvitation(invitation),
+      requiredSuccess: true,
+    );
+    if (battle == null) {
+      throw TestFailure('Accepted PK invitation did not return a battle.');
+    }
+    evidence.requireCapability('room.pk.end');
+    final RoomPkBattle? ended = await _probe<RoomPkBattle>(
+      evidence,
+      capability: 'room.pk.end',
+      method: 'POST',
+      route: surrenderRoute,
+      operation: () => dependencies.roomPkRepository.surrender(
+        roomId: snapshot.roomId,
+        battleId: battle.id,
+      ),
+      requiredSuccess: true,
+    );
+    if (ended == null || ended.isActive) {
+      throw TestFailure('PK compensation did not close the accepted battle.');
+    }
+    evidence.invariant('pk_accept_and_end_compensated');
+    evidence.invariant('pk_mutation_path_confirmed');
+  } else {
+    evidence.preexisting(
+      'room.pk.recovery',
+      routes.roomPkProgress,
+      'already_authoritative',
+    );
+    evidence.invariant('pk_mutation_path_confirmed');
+  }
+}
+
+String _m4RequestId(String scope) {
+  final String avd = qaAvdId.toLowerCase().replaceAll(
+    RegExp(r'[^a-z0-9._-]'),
+    '-',
+  );
+  return 'm4-$avd-$scope-${DateTime.now().microsecondsSinceEpoch}';
+}
+
+Future<void> _runRefundMutation(
+  AppDependencies dependencies,
+  _M4Evidence evidence, {
+  required BackendRouteCatalog routes,
+  required PaymentOrder order,
+  required RefundEligibility eligibility,
+}) async {
+  String? existingApplicationId = eligibility.existingApplicationId?.trim();
+  RefundApplication? application;
+
+  if (eligibility.allowed) {
+    evidence.requireCapability('commerce.refund.submit');
+    application = await _probe<RefundApplication>(
+      evidence,
+      capability: 'commerce.refund.submit',
+      method: 'POST',
+      route: routes.refundApplication,
+      operation: () => dependencies.commerceRepository.submitRefund(
+        RefundRequest(
+          account: order.orderNo,
+          realName: '',
+          age: 0,
+          amount: order.amount,
+          reason: 'M4 first-party review',
+          receivingAccount: '',
+          receivingName: '',
+          guardianName: '',
+          guardianPhone: '',
+        ),
+      ),
+      requiredSuccess: true,
+    );
+    if (application == null ||
+        application.id.trim().isEmpty ||
+        application.account != order.orderNo ||
+        application.status == RefundStatus.unavailable) {
+      throw TestFailure(
+        'Refund submission did not return an authoritative application.',
+      );
+    }
+    existingApplicationId = application.id;
+  } else if (existingApplicationId == null || existingApplicationId.isEmpty) {
+    evidence.local(
+      'commerce.refund.submit',
+      routes.refundApplication,
+      'refund_not_eligible_authoritative',
+    );
+    evidence.local(
+      'commerce.refund.result',
+      routes.refundResult,
+      'refund_result_not_attempted_without_application',
+    );
+    return;
+  } else {
+    // An earlier AVD may already have submitted this order. Preserve that
+    // server state explicitly; do not issue a second application.
+    evidence.preexisting(
+      'commerce.refund.submit',
+      routes.refundResult,
+      'existing_authoritative_application',
+    );
+  }
+
+  final String? applicationId = existingApplicationId;
+  if (applicationId == null || applicationId.isEmpty) {
+    throw TestFailure('Refund application identity was lost before recovery.');
+  }
+  evidence.requireCapability('commerce.refund.result');
+  final RefundApplication? recovered = await _probe<RefundApplication>(
+    evidence,
+    capability: 'commerce.refund.result',
+    method: 'GET',
+    route: routes.refundResult,
+    operation: () => dependencies.commerceRepository.fetchRefundResult(
+      applicationId,
+      expectedOrderNo: order.orderNo,
+    ),
+    requiredSuccess: true,
+  );
+  if (recovered == null ||
+      recovered.id != applicationId ||
+      recovered.account != order.orderNo ||
+      recovered.status == RefundStatus.unavailable) {
+    throw TestFailure('Refund result did not match the authoritative order.');
+  }
+  application = recovered;
+  if (application.status == RefundStatus.rejected) {
+    evidence.requireCapability('commerce.refund.retry');
+    final RefundApplication? retried = await _probe<RefundApplication>(
+      evidence,
+      capability: 'commerce.refund.retry',
+      method: 'POST',
+      route: routes.refundRepeat,
+      operation: () => dependencies.commerceRepository.resubmitRefund(
+        applicationId,
+        expectedOrderNo: order.orderNo,
+      ),
+      requiredSuccess: true,
+    );
+    if (retried == null ||
+        retried.id != applicationId ||
+        retried.account != order.orderNo ||
+        retried.status == RefundStatus.rejected) {
+      throw TestFailure('Refund retry did not return a new review state.');
+    }
+    evidence.invariant('refund_retry_authority_confirmed');
+  } else {
+    evidence.local(
+      'commerce.refund.retry',
+      routes.refundRepeat,
+      'retry_not_required_authoritative_state',
+    );
+  }
+  evidence.invariant('refund_submit_result_recovered_without_provider');
+}
+
+class _LiveRoomContext {
+  const _LiveRoomContext({required this.roomId, this.targetUserId});
+
+  final String roomId;
+  final int? targetUserId;
 }
 
 Future<void> _runMessagesFlow(
   WidgetTester tester,
   AppDependencies dependencies,
-  _M4Evidence evidence,
-) async {
-  await _probe(
+  _M4Evidence evidence, {
+  required int currentUserId,
+  int? fallbackTargetUserId,
+}) async {
+  final BackendRouteCatalog routes = const BackendRouteCatalog();
+  final List<ConversationSummary>? conversations = await _probe(
     evidence,
     capability: 'message.conversations',
     method: 'GET',
-    route: const BackendRouteCatalog().messageConversations,
+    route: routes.messageConversations,
     operation: () => dependencies.messageRepository.fetchConversations(),
   );
-  // Recovery is intentionally a local first-party status object: the live
-  // repository does not call the system notification or IM provider here.
+
+  ConversationSummary? conversation;
+  for (final ConversationSummary candidate
+      in conversations ?? const <ConversationSummary>[]) {
+    if (candidate.available &&
+        candidate.targetUserId > 0 &&
+        candidate.targetUserId != currentUserId) {
+      conversation = candidate;
+      break;
+    }
+  }
+  if (conversation == null &&
+      fallbackTargetUserId != null &&
+      fallbackTargetUserId > 0 &&
+      fallbackTargetUserId != currentUserId) {
+    conversation = ConversationSummary.draft(
+      kind: ConversationKind.privateChat,
+      title: 'M4 first-party test peer',
+      lastMessage: '',
+      unreadCount: 0,
+      targetUserId: fallbackTargetUserId,
+    );
+  }
+  if (conversation == null) {
+    evidence.local(
+      'message.private.send',
+      routes.sendPrivateMessage,
+      'no_authoritative_private_message_target',
+    );
+    evidence.local(
+      'message.private.history',
+      routes.privateChatHistory,
+      'private_send_not_attempted_without_target',
+    );
+  } else {
+    final ConversationSummary selectedConversation = conversation;
+    final String content = 'M4 first-party ${qaAvdId.toLowerCase()}';
+    final String requestId = _m4RequestId('message');
+    evidence.requireCapability('message.private.send');
+    final ChatMessage? sent = await _probe<ChatMessage>(
+      evidence,
+      capability: 'message.private.send',
+      method: 'POST',
+      route: routes.sendPrivateMessage,
+      operation: () => dependencies.messageRepository.sendPrivateMessage(
+        conversation: selectedConversation,
+        content: content,
+        requestId: requestId,
+      ),
+      requiredSuccess: true,
+    );
+    if (sent == null ||
+        !sent.isMine ||
+        sent.senderUserId != currentUserId ||
+        sent.content != content ||
+        (sent.status != ChatMessageStatus.sent &&
+            sent.status != ChatMessageStatus.storedPendingDelivery) ||
+        sent.id.trim().isEmpty) {
+      throw TestFailure(
+        'Private message response did not confirm first-party storage.',
+      );
+    }
+    evidence.requireCapability('message.private.history');
+    final List<ChatMessage>? history = await _probe<List<ChatMessage>>(
+      evidence,
+      capability: 'message.private.history',
+      method: 'GET',
+      route: routes.privateChatHistory,
+      operation: () => dependencies.messageRepository.fetchPrivateMessages(
+        selectedConversation,
+      ),
+      requiredSuccess: true,
+    );
+    if (history == null ||
+        !history.any((ChatMessage item) => item.id == sent.id)) {
+      throw TestFailure(
+        'Private message history did not recover the sent message.',
+      );
+    }
+    evidence.invariant('private_message_send_recovered_by_history');
+  }
+
+  final List<AppNotification>? systemNotifications = await _probe(
+    evidence,
+    capability: 'message.notifications.system',
+    method: 'GET',
+    route: routes.systemNotifications,
+    operation: () => dependencies.messageRepository.fetchNotifications(
+      NotificationCategory.system,
+    ),
+  );
+  final List<AppNotification>? interactionNotifications = await _probe(
+    evidence,
+    capability: 'message.notifications.interaction',
+    method: 'GET',
+    route: routes.systemNotifications,
+    operation: () => dependencies.messageRepository.fetchNotifications(
+      NotificationCategory.interaction,
+    ),
+  );
+  AppNotification? unreadNotification;
+  for (final AppNotification notification
+      in systemNotifications ?? const <AppNotification>[]) {
+    if (notification.unread) {
+      unreadNotification = notification;
+      break;
+    }
+  }
+  if (unreadNotification == null) {
+    for (final AppNotification notification
+        in interactionNotifications ?? const <AppNotification>[]) {
+      if (notification.unread) {
+        unreadNotification = notification;
+        break;
+      }
+    }
+  }
+  if (unreadNotification == null) {
+    evidence.local(
+      'message.notifications.read',
+      routes.markSystemNotificationRead,
+      'no_unread_authoritative_notification',
+    );
+  } else {
+    final String notificationId = unreadNotification.id;
+    evidence.requireCapability('message.notifications.read');
+    final AppNotification? detail = await _probe<AppNotification>(
+      evidence,
+      capability: 'message.notifications.read.detail',
+      method: 'GET',
+      route: routes.pushNotificationDetail,
+      operation: () =>
+          dependencies.messageRepository.fetchNotification(notificationId),
+      requiredSuccess: true,
+    );
+    if (detail == null || detail.id != notificationId) {
+      throw TestFailure(
+        'Notification detail did not match its authoritative ID.',
+      );
+    }
+    final bool? read = await _probe<bool>(
+      evidence,
+      capability: 'message.notifications.read',
+      method: 'POST',
+      route: routes.markSystemNotificationRead,
+      operation: () async {
+        await dependencies.messageRepository.markNotificationRead(
+          notificationId,
+        );
+        return true;
+      },
+      requiredSuccess: true,
+    );
+    if (read != true) {
+      throw TestFailure('Notification read did not return a success result.');
+    }
+    evidence.invariant('notification_read_authority_confirmed');
+  }
+
+  // Clearing the first-party interaction projection is idempotent and safe
+  // even when the authoritative list is empty. It never invokes push or IM.
+  evidence.requireCapability('message.notifications.clear');
+  final bool? cleared = await _probe<bool>(
+    evidence,
+    capability: 'message.notifications.clear',
+    method: 'POST',
+    route: routes.clearDynamicNotifications,
+    operation: () async {
+      await dependencies.messageRepository.clearInteractionNotifications();
+      return true;
+    },
+    requiredSuccess: true,
+  );
+  if (cleared != true) {
+    throw TestFailure('Notification clear did not return a success result.');
+  }
+  evidence.invariant('notification_clear_is_first_party_and_vendor_free');
+
   evidence.local(
     'message.recovery',
     '/message/recovery',
@@ -962,7 +1876,7 @@ Future<void> _runCommerceFlow(
   _M4Evidence evidence,
 ) async {
   final BackendRouteCatalog routes = const BackendRouteCatalog();
-  final Object? walletProbe = await _probe(
+  final WalletSummary? walletProbe = await _probe<WalletSummary>(
     evidence,
     capability: 'commerce.wallet',
     method: 'GET',
@@ -989,17 +1903,19 @@ Future<void> _runCommerceFlow(
       pageSize: 20,
     ),
   );
-  final CommercePage<PaymentOrder>? orders = await _probe(
-    evidence,
-    capability: 'commerce.orders',
-    method: 'POST',
-    route: routes.paymentOrders,
-    operation: () =>
-        dependencies.commerceRepository.fetchOrders(page: 1, pageSize: 20),
-  );
+  final CommercePage<PaymentOrder>? orders =
+      await _probe<CommercePage<PaymentOrder>>(
+        evidence,
+        capability: 'commerce.orders',
+        method: 'POST',
+        route: routes.paymentOrders,
+        operation: () =>
+            dependencies.commerceRepository.fetchOrders(page: 1, pageSize: 20),
+      );
   final PaymentOrder? firstOrder = orders == null || orders.items.isEmpty
       ? null
       : orders.items.first;
+  RefundEligibility? refundEligibility;
   if (firstOrder == null) {
     evidence.local(
       'commerce.refund.eligibility',
@@ -1007,7 +1923,7 @@ Future<void> _runCommerceFlow(
       'no_authoritative_order_available',
     );
   } else {
-    await _probe(
+    refundEligibility = await _probe<RefundEligibility>(
       evidence,
       capability: 'commerce.refund.eligibility',
       method: 'GET',
@@ -1015,6 +1931,7 @@ Future<void> _runCommerceFlow(
       operation: () => dependencies.commerceRepository.checkRefundEligibility(
         firstOrder.orderNo,
       ),
+      requiredSuccess: true,
     );
   }
   await _probe(
@@ -1033,18 +1950,20 @@ Future<void> _runCommerceFlow(
     method: 'GET',
     route: routes.withdrawalFeeRate,
     operation: () =>
-        dependencies.commerceRepository.fetchWithdrawalQuote(amount: 1),
+        dependencies.commerceRepository.fetchWithdrawalQuote(amount: 10),
+    requiredSuccess: true,
   );
-  await _probe(
-    evidence,
-    capability: 'commerce.withdraw.records',
-    method: 'GET',
-    route: routes.withdrawalRecords,
-    operation: () => dependencies.commerceRepository.fetchWithdrawalRecords(
-      page: 1,
-      pageSize: 20,
-    ),
-  );
+  final CommercePage<WithdrawalRecord>? withdrawalRecords =
+      await _probe<CommercePage<WithdrawalRecord>>(
+        evidence,
+        capability: 'commerce.withdraw.records',
+        method: 'GET',
+        route: routes.withdrawalRecords,
+        operation: () => dependencies.commerceRepository.fetchWithdrawalRecords(
+          page: 1,
+          pageSize: 20,
+        ),
+      );
   await _probe(
     evidence,
     capability: 'commerce.recharge.catalog',
@@ -1067,11 +1986,144 @@ Future<void> _runCommerceFlow(
     route: routes.userDecorations,
     operation: () => dependencies.commerceCatalogRepository.fetchDecorations(),
   );
-  evidence.invariant('wallet_gift_withdraw_refund_reads_are_first_party_only');
-  evidence.invariant('gift_send_and_payment_invocation_not_attempted');
-  evidence.invariant(
-    'withdraw_and_refund_mutations_not_attempted_without_explicit_fixture',
+
+  if (firstOrder != null && refundEligibility != null) {
+    await _runRefundMutation(
+      dependencies,
+      evidence,
+      routes: routes,
+      order: firstOrder,
+      eligibility: refundEligibility,
+    );
+  } else {
+    evidence.local(
+      'commerce.refund.submit',
+      routes.refundApplication,
+      'no_authoritative_order_available',
+    );
+    evidence.local(
+      'commerce.refund.result',
+      routes.refundResult,
+      'refund_submit_not_attempted_without_order',
+    );
+  }
+
+  final PayoutAccountSelection? payoutAccounts =
+      await _probe<PayoutAccountSelection>(
+        evidence,
+        capability: 'commerce.withdraw.accounts',
+        method: 'GET',
+        route: routes.payoutAccounts,
+        operation: () => dependencies.commerceRepository.fetchPayoutAccounts(),
+        requiredSuccess: true,
+      );
+  final WithdrawalQuote? withdrawalQuote = await _probe<WithdrawalQuote>(
+    evidence,
+    capability: 'commerce.withdraw.quote.mutation',
+    method: 'GET',
+    route: routes.withdrawalFeeRate,
+    operation: () =>
+        dependencies.commerceRepository.fetchWithdrawalQuote(amount: 10),
+    requiredSuccess: true,
   );
+  PayoutAccount? payoutAccount;
+  if (payoutAccounts != null) {
+    for (final PayoutAccount account in payoutAccounts.selectableAccounts) {
+      payoutAccount = account;
+      break;
+    }
+  }
+  WithdrawalRecord? existingPendingWithdrawal;
+  for (final WithdrawalRecord record
+      in withdrawalRecords?.items ?? const <WithdrawalRecord>[]) {
+    if (record.status == WithdrawalStatus.pending) {
+      existingPendingWithdrawal = record;
+      break;
+    }
+  }
+  if (existingPendingWithdrawal != null) {
+    final WithdrawalRecord existingWithdrawal = existingPendingWithdrawal;
+    evidence.preexisting(
+      'commerce.withdraw.apply',
+      routes.withdrawalRecords,
+      'already_authoritative',
+    );
+    evidence.requireCapability('commerce.withdraw.result');
+    final WithdrawalRecord? recoveredWithdrawal =
+        await _probe<WithdrawalRecord>(
+          evidence,
+          capability: 'commerce.withdraw.result',
+          method: 'GET',
+          route: routes.withdrawalRecords,
+          operation: () => dependencies.commerceRepository
+              .fetchWithdrawalRecord(existingWithdrawal.id),
+          requiredSuccess: true,
+        );
+    if (recoveredWithdrawal == null ||
+        recoveredWithdrawal.id != existingWithdrawal.id ||
+        recoveredWithdrawal.status != WithdrawalStatus.pending) {
+      throw TestFailure(
+        'Existing withdrawal record did not recover as pending manual review.',
+      );
+    }
+    evidence.invariant('withdrawal_manual_review_recovered_without_provider');
+  } else if (walletProbe == null ||
+      withdrawalQuote == null ||
+      payoutAccount == null ||
+      !walletProbe.realNameVerified ||
+      walletProbe.cashBalance < withdrawalQuote.quotedAmount) {
+    evidence.local(
+      'commerce.withdraw.apply',
+      routes.withdrawalApply,
+      'manual_review_precondition_not_satisfied',
+    );
+    evidence.local(
+      'commerce.withdraw.result',
+      routes.withdrawalRecords,
+      'withdrawal_apply_not_attempted_without_safe_account_or_balance',
+    );
+  } else {
+    evidence.requireCapability('commerce.withdraw.apply');
+    final WithdrawalRecord? withdrawal = await _probe<WithdrawalRecord>(
+      evidence,
+      capability: 'commerce.withdraw.apply',
+      method: 'POST',
+      route: routes.withdrawalApply,
+      operation: () => dependencies.commerceRepository.applyWithdrawal(
+        amount: withdrawalQuote.quotedAmount,
+        payoutAccountId: payoutAccount!.payoutAccountId,
+      ),
+      requiredSuccess: true,
+    );
+    if (withdrawal == null ||
+        withdrawal.id.trim().isEmpty ||
+        withdrawal.payoutAccountId != payoutAccount.payoutAccountId ||
+        withdrawal.status != WithdrawalStatus.pending) {
+      throw TestFailure(
+        'Withdrawal response did not confirm first-party manual review.',
+      );
+    }
+    evidence.requireCapability('commerce.withdraw.result');
+    final WithdrawalRecord? recoveredWithdrawal =
+        await _probe<WithdrawalRecord>(
+          evidence,
+          capability: 'commerce.withdraw.result',
+          method: 'GET',
+          route: routes.withdrawalRecords,
+          operation: () => dependencies.commerceRepository
+              .fetchWithdrawalRecord(withdrawal.id),
+          requiredSuccess: true,
+        );
+    if (recoveredWithdrawal == null ||
+        recoveredWithdrawal.id != withdrawal.id ||
+        recoveredWithdrawal.payoutAccountId != payoutAccount.payoutAccountId ||
+        recoveredWithdrawal.status != WithdrawalStatus.pending) {
+      throw TestFailure('Withdrawal record recovery did not match the apply.');
+    }
+    evidence.invariant('withdrawal_manual_review_recovered_without_provider');
+  }
+
+  evidence.invariant('wallet_gift_withdraw_refund_reads_are_first_party_only');
 
   await tester.tap(find.text('我的').last.hitTestable());
   await _waitFor(
@@ -1592,10 +2644,29 @@ class _M4Evidence {
   final Set<String> _violations = <String>{};
 
   // These are the minimum live operations that must have a successful,
-  // explicit route outcome before an AVD may be reported as PASS.  UI-only
-  // screenshots and a route-marker count are not substitutes for these
-  // first-party reads/writes.
-  static const Set<String> _requiredCapabilities = <String>{
+  // explicit route outcome before an AVD may be reported as PASS. A mutation
+  // already committed by an earlier AVD is accepted only through an explicit
+  // `already_authoritative` marker. UI-only screenshots and route counts are
+  // never substitutes for these first-party reads/writes.
+  static const Set<String> _requiredMutationCapabilities = <String>{
+    'community.checkin',
+    'community.task.claim',
+    'room.moderation.mute',
+    'room.moderation.restore',
+    'room.seat.up',
+    'room.seat.down',
+    'message.private.send',
+    'message.private.history',
+    'message.notifications.clear',
+    'commerce.gift.send',
+    'commerce.gift.receipt',
+    'commerce.withdraw.apply',
+    'commerce.withdraw.result',
+    'commerce.refund.submit',
+    'commerce.refund.result',
+  };
+
+  static const Set<String> _baseRequiredCapabilities = <String>{
     'auth.send_code',
     'auth.login',
     'auth.refresh',
@@ -1613,6 +2684,7 @@ class _M4Evidence {
     'community.sign_rewards',
     'community.today_sign_status',
     'community.activities',
+    ..._requiredMutationCapabilities,
     'room.enter',
     'room.public_messages',
     'room.reconnect',
@@ -1645,6 +2717,11 @@ class _M4Evidence {
     'support.channel',
   };
 
+  final Set<String> _requiredCapabilities = <String>{
+    ..._baseRequiredCapabilities,
+  };
+  final Set<String> _preexistingCapabilities = <String>{};
+
   static const Set<String> _requiredInvariants = <String>{
     'authoritative_backend_target_10_0_2_2_18080',
     'development_otp_consumed_in_memory_only',
@@ -1657,9 +2734,26 @@ class _M4Evidence {
     'dynamic_page_reachable_from_primary_navigation',
     'message_records_page_reachable',
     'wallet_gift_withdraw_refund_reads_are_first_party_only',
-    'gift_send_and_payment_invocation_not_attempted',
+    'pk_mutation_path_confirmed',
+    'first_party_mutations_stay_vendor_free',
     'logout_clears_local_session',
   };
+
+  void requireCapability(String capability) {
+    _requiredCapabilities.add(capability);
+  }
+
+  void preexisting(String capability, String route, String state) {
+    requireCapability(capability);
+    _preexistingCapabilities.add(capability);
+    http(
+      capability: capability,
+      method: 'GET',
+      route: route,
+      status: 200,
+      state: state,
+    );
+  }
 
   void http({
     required String capability,
@@ -1710,6 +2804,10 @@ class _M4Evidence {
 
   void local(String capability, String route, String state) {
     _local.add('$capability:$state');
+    if (_requiredCapabilities.contains(capability) &&
+        !_preexistingCapabilities.contains(capability)) {
+      _violations.add('$capability:required_mutation_not_executed');
+    }
     http(
       capability: capability,
       method: 'LOCAL',
@@ -1746,7 +2844,9 @@ class _M4Evidence {
           int.parse(parts[4]) >= 300 ||
           (parts[5] != 'success' &&
               parts[5] != 'composite_success' &&
-              parts[5] != 'registration_required')) {
+              parts[5] != 'registration_required' &&
+              !(_preexistingCapabilities.contains(parts[1]) &&
+                  parts[5] == 'already_authoritative'))) {
         if (parts.length >= 2 && _requiredCapabilities.contains(parts[1])) {
           nonSuccessCapabilities.add(parts[1]);
         }
@@ -1774,13 +2874,19 @@ class _M4Evidence {
       _violations.add('insufficient_authority_evidence');
     }
     final bool pass = _violations.isEmpty;
+    final Set<String> mutationCapabilities = <String>{
+      ..._requiredMutationCapabilities,
+      ..._requiredCapabilities.difference(_baseRequiredCapabilities),
+    };
     final Map<String, Object?> result = <String, Object?>{
       'avd': avd,
       'routeMarkerCount': uniqueRoutes.length,
       'authorityInvariantCount': uniqueInvariants.length,
       'requiredCapabilityCount': _requiredCapabilities.length,
+      'requiredMutationCapabilities': mutationCapabilities.toList()..sort(),
       'missingRequiredCapabilities': missingCapabilities.toList()..sort(),
       'nonSuccessRequiredCapabilities': nonSuccessCapabilities.toList()..sort(),
+      'preexistingCapabilities': _preexistingCapabilities.toList()..sort(),
       'missingRequiredInvariants': missingInvariants.toList()..sort(),
       'tested_git_sha': _expectedTestedFlutterSha,
       'backend_sha': _expectedTestedBackendSha,
