@@ -1089,7 +1089,10 @@ void main() {
         }
         expect(request.method, 'GET');
         expect(request.path, '/app-mini-api/mini/v1/notifications');
-        if (request.query['category'] == 'SYSTEM') {
+        expect(request.query['pageSize'], '100');
+        final String category = request.query['category']!;
+        expect(category, anyOf('SYSTEM', 'INTERACTION'));
+        if (category == 'SYSTEM') {
           return _Response.ok(<String, Object?>{
             'list': <Object?>[
               <String, Object?>{
@@ -1451,6 +1454,65 @@ void main() {
       final MessageRecoverySnapshot snapshot = await harness.repository
           .fetchRecoverySnapshot();
       expect(snapshot.lastNotificationSyncAt, isNotNull);
+    },
+  );
+
+  test(
+    'notification list sends explicit category filters on every page',
+    () async {
+      final Map<String, int> pagesByCategory = <String, int>{};
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        expect(request.method, 'GET');
+        expect(request.path, '/app-mini-api/mini/v1/notifications');
+        expect(request.query['pageSize'], '100');
+        final String category = request.query['category']!;
+        expect(category, anyOf('SYSTEM', 'INTERACTION'));
+        final int page = request.query['cursor'] == null
+            ? 1
+            : int.parse(request.query['cursor']!.split('-').last) + 1;
+        pagesByCategory[category] = page;
+        final String responseCategory = category == 'SYSTEM'
+            ? 'SYSTEM'
+            : 'DYNAMIC_LIKE';
+        return _Response.ok(
+          _notificationPage(
+            page: page,
+            hasMore: page == 1,
+            category: responseCategory,
+            nextCursor: page == 1 ? 'cursor-$category-1' : '',
+          ),
+        );
+      });
+      addTearDown(harness.close);
+
+      final List<AppNotification> system = await harness.repository
+          .fetchNotifications(NotificationCategory.system);
+      final List<AppNotification> interaction = await harness.repository
+          .fetchNotifications(NotificationCategory.interaction);
+
+      expect(system.map((AppNotification item) => item.id), <String>[
+        'notification-SYSTEM-2',
+        'notification-SYSTEM-1',
+      ]);
+      expect(interaction.map((AppNotification item) => item.id), <String>[
+        'notification-DYNAMIC_LIKE-2',
+        'notification-DYNAMIC_LIKE-1',
+      ]);
+      expect(pagesByCategory, <String, int>{'SYSTEM': 2, 'INTERACTION': 2});
+      final List<RequestRecord> listRequests = harness.requests
+          .where(
+            (RequestRecord request) =>
+                request.path == '/app-mini-api/mini/v1/notifications',
+          )
+          .toList();
+      expect(
+        listRequests.map((RequestRecord request) => request.query['category']),
+        <String?>['SYSTEM', 'SYSTEM', 'INTERACTION', 'INTERACTION'],
+      );
+      expect(
+        listRequests.map((RequestRecord request) => request.query['cursor']),
+        <String?>[null, 'cursor-SYSTEM-1', null, 'cursor-INTERACTION-1'],
+      );
     },
   );
 

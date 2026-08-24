@@ -357,7 +357,9 @@ class BackendMessageRepository implements MessageRepository {
       fetchedPages += 1;
       final Map<String, String> query = <String, String>{
         'pageSize': '$_maximumPageSize',
-        if (category == NotificationCategory.system) 'category': 'SYSTEM',
+        'category': category == NotificationCategory.system
+            ? 'SYSTEM'
+            : 'INTERACTION',
         if (cursor != null) 'cursor': cursor,
       };
       final ApiResponse response = await _apiClient.get(
