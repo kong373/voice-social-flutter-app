@@ -399,7 +399,9 @@ class AuthController extends ChangeNotifier {
 
   static bool _isCredentialFailure(Object error) =>
       error is ApiException &&
-      (error.isAuthenticationFailure || error.kind == ApiFailureKind.forbidden);
+      (error.isAuthenticationFailure ||
+          error.kind == ApiFailureKind.forbidden ||
+          error.kind == ApiFailureKind.conflict);
 
   static bool _isRefreshOutcomeAmbiguous(Object error) {
     if (error is! ApiException) {

@@ -19,9 +19,8 @@ class GuildRoom {
   final String roomId;
   final String name;
 
-  /// Null means the first-party guild payload did not provide a live count.
-  /// It must not be rendered as zero: zero is a real count, not an absence
-  /// marker.
+  /// The first-party guild payload provides the authoritative live count.
+  /// Null is reserved for mock/offline models that have no server row.
   final int? onlineUsers;
 }
 
@@ -46,10 +45,8 @@ class GuildSummary {
 
   final String id;
 
-  /// The frozen first-party guild payload does not expose a guild code.
-  ///
-  /// A room code is a different identifier and must not be substituted here.
-  /// Mock repositories may still provide a deliberate mock guild code.
+  /// First-party guild code. A room code is a different identifier and must
+  /// not be substituted here.
   final String? code;
   final String name;
   final GuildStatus status;
@@ -61,9 +58,9 @@ class GuildSummary {
   final GuildRole role;
   final bool joined;
 
-  /// These states are only present on the first-party guild homepage payload.
-  /// Recommendation/search rows must keep them unknown instead of pretending
-  /// that an omitted value means false.
+  /// `applicationPending` and `hasSignedToday` are homepage-only fields;
+  /// recommendation/search rows keep them unknown. `hasNewApplications` is
+  /// part of every first-party guild projection.
   final bool? applicationPending;
   final bool? hasNewApplications;
   final bool? hasSignedToday;
@@ -134,8 +131,8 @@ class GuildMember {
   final GuildRole role;
   final bool isMuted;
 
-  /// The current first-party member endpoint does not expose sign-in state.
-  /// Keep that distinction instead of presenting a fabricated "not signed".
+  /// The current first-party member endpoint exposes the authoritative
+  /// current-business-day sign-in state.
   final bool? isSigned;
   final String? roomId;
 

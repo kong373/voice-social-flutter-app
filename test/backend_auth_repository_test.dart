@@ -193,6 +193,129 @@ void main() {
   );
 
   test(
+    'refresh rotation reuses one request id to recover a lost response',
+    () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => server.close(force: true));
+      final List<String> requestIds = <String>[];
+      var attempts = 0;
+      server.listen((HttpRequest request) async {
+        if (request.uri.path !=
+            '/app-register-api/userAccount/v1/refreshSession') {
+          request.response.statusCode = HttpStatus.notFound;
+          await request.response.close();
+          return;
+        }
+        requestIds.add(request.headers.value('X-Request-Id') ?? '');
+        attempts += 1;
+        if (attempts == 1) {
+          // Simulate a committed refresh whose response was lost in transit.
+          await request.response.close();
+          return;
+        }
+        request.response
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode(<String, Object?>{
+              'code': 200,
+              'message': 'OK',
+              'data': _token('recovered-access', 'recovered-refresh'),
+            }),
+          );
+        await request.response.close();
+      });
+
+      final BackendAuthRepository repository = _testRepository(
+        _testEnvironment(server),
+      );
+      final AuthSession refreshed = await repository.refreshSession(
+        AuthSession(
+          accessToken: 'expired-access',
+          tokenType: 'Bearer',
+          expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
+          refreshToken: 'one-time-refresh',
+          refreshExpiresAt: DateTime.now().add(const Duration(days: 1)),
+          deviceId: _testDevice.deviceId,
+          userId: 10001,
+          mobile: '13800138000',
+          roles: 'USER',
+        ),
+      );
+
+      expect(refreshed.accessToken, 'recovered-access');
+      expect(refreshed.refreshToken, 'recovered-refresh');
+      expect(requestIds, hasLength(2));
+      expect(requestIds.first, isNotEmpty);
+      expect(requestIds[1], requestIds.first);
+    },
+  );
+
+  test(
+    'refresh 401 and 409 fail closed without replaying the old token',
+    () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => server.close(force: true));
+      final List<int> statuses = <int>[
+        HttpStatus.unauthorized,
+        HttpStatus.conflict,
+      ];
+      final List<String> requestIds = <String>[];
+      server.listen((HttpRequest request) async {
+        requestIds.add(request.headers.value('X-Request-Id') ?? '');
+        final int status = statuses.removeAt(0);
+        request.response
+          ..statusCode = status
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode(<String, Object?>{
+              'code': status,
+              'message': 'refresh rejected',
+              'data': null,
+            }),
+          );
+        await request.response.close();
+      });
+      final BackendAuthRepository repository = _testRepository(
+        _testEnvironment(server),
+      );
+
+      for (final ApiFailureKind expectedKind in <ApiFailureKind>[
+        ApiFailureKind.unauthorized,
+        ApiFailureKind.conflict,
+      ]) {
+        ApiException? failure;
+        try {
+          await repository.refreshSession(
+            AuthSession(
+              accessToken: 'expired-access',
+              tokenType: 'Bearer',
+              expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
+              refreshToken: 'one-time-refresh',
+              refreshExpiresAt: DateTime.now().add(const Duration(days: 1)),
+              deviceId: _testDevice.deviceId,
+              userId: 10001,
+              mobile: '13800138000',
+              roles: 'USER',
+            ),
+          );
+        } on ApiException catch (error) {
+          failure = error;
+        }
+        expect(failure?.kind, expectedKind);
+      }
+      expect(requestIds, hasLength(2));
+      expect(requestIds.every((String value) => value.isNotEmpty), isTrue);
+      expect(requestIds[0], isNot(requestIds[1]));
+    },
+  );
+
+  test(
     'registerWithSms sends the canonical first-party request body',
     () async {
       final HttpServer server = await HttpServer.bind(

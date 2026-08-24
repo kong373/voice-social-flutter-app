@@ -184,6 +184,9 @@ void main() {
     () async {
       int attempts = 0;
       final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/guild/sign/status')) {
+          return _Reply.ok(_availableGuildSignStatus());
+        }
         if (request.path.endsWith('/guild/sign')) {
           attempts += 1;
           if (attempts == 1) {
@@ -205,9 +208,14 @@ void main() {
           return _Reply.ok(<String, Object?>{
             'guildId': 'guild-1',
             'signed': true,
+            'signedToday': true,
+            'isSign': true,
             'alreadySigned': false,
             'signDate': '2026-08-23',
+            'businessDate': '2026-08-23',
             'rewardPoints': 1,
+            'status': 'SIGNED',
+            'providerInvocation': false,
           });
         }
         return const _Reply.ok(<String, Object?>{});
@@ -239,6 +247,13 @@ void main() {
       DateTime now = DateTime(2026, 8, 23, 23, 59);
       int attempts = 0;
       final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/guild/sign/status')) {
+          final String date =
+              '${now.year.toString().padLeft(4, '0')}-'
+              '${now.month.toString().padLeft(2, '0')}-'
+              '${now.day.toString().padLeft(2, '0')}';
+          return _Reply.ok(_availableGuildSignStatus(businessDate: date));
+        }
         if (request.path.endsWith('/guild/sign')) {
           attempts += 1;
           if (attempts == 1) {
@@ -252,12 +267,20 @@ void main() {
           return _Reply.ok(<String, Object?>{
             'guildId': 'guild-1',
             'signed': true,
+            'signedToday': true,
+            'isSign': true,
             'alreadySigned': false,
             'signDate':
                 '${now.year.toString().padLeft(4, '0')}-'
                 '${now.month.toString().padLeft(2, '0')}-'
                 '${now.day.toString().padLeft(2, '0')}',
+            'businessDate':
+                '${now.year.toString().padLeft(4, '0')}-'
+                '${now.month.toString().padLeft(2, '0')}-'
+                '${now.day.toString().padLeft(2, '0')}',
             'rewardPoints': 1,
+            'status': 'SIGNED',
+            'providerInvocation': false,
           });
         }
         return const _Reply.ok(<String, Object?>{});
@@ -281,13 +304,21 @@ void main() {
 
   test('guild sign rejects a stale signDate response', () async {
     final _Harness harness = await _Harness.start((RequestRecord request) {
+      if (request.path.endsWith('/guild/sign/status')) {
+        return _Reply.ok(_availableGuildSignStatus());
+      }
       if (request.path.endsWith('/guild/sign')) {
         return _Reply.ok(<String, Object?>{
           'guildId': 'guild-1',
           'signed': true,
+          'signedToday': true,
+          'isSign': true,
           'alreadySigned': false,
           'signDate': '2026-08-22',
+          'businessDate': '2026-08-23',
           'rewardPoints': 1,
+          'status': 'SIGNED',
+          'providerInvocation': false,
         });
       }
       return const _Reply.ok(<String, Object?>{});
@@ -598,6 +629,23 @@ class _Reply {
   final String message;
   final Object? data;
 }
+
+Map<String, Object?> _availableGuildSignStatus({
+  String businessDate = '2026-08-23',
+}) => <String, Object?>{
+  'guildId': 'guild-1',
+  'hasGuild': true,
+  'member': true,
+  'signed': false,
+  'signedToday': false,
+  'isSign': false,
+  'alreadySigned': false,
+  'businessDate': businessDate,
+  'signDate': '',
+  'rewardPoints': 0,
+  'status': 'AVAILABLE',
+  'providerInvocation': false,
+};
 
 _Reply _dailyTaskCenterReply(RequestRecord request, DateTime now) {
   final String date =

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -18,6 +20,12 @@ class BackendAuthRepository implements AuthRepository {
   static const String _refreshPath =
       '/app-register-api/userAccount/v1/refreshSession';
   static const String _logoutPath = '/app-register-api/userAccount/v1/logout';
+  static const Duration _refreshRecoveryWindow = Duration(seconds: 30);
+  static final Random _requestIdRandom = Random.secure();
+  static const int _requestIdEntropyLength = 32;
+  static final RegExp _requestIdPattern = RegExp(
+    r'^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$',
+  );
 
   final ApiClient _apiClient;
   final AppEnvironment _environment;
@@ -129,16 +137,41 @@ class BackendAuthRepository implements AuthRepository {
         message: '刷新会话已失效，请重新登录',
       );
     }
-    final ApiResponse response = await _apiClient.post(
-      _refreshPath,
-      headers: _publicClientHeaders,
-      body: <String, Object?>{
-        'refreshToken': session.refreshToken,
-        'deviceId': session.deviceId,
-      },
-      authenticated: false,
-    );
-    return _parseSession(response.data, deviceId: session.deviceId);
+    final String requestId = _newRefreshRequestId();
+    final Stopwatch stopwatch = Stopwatch()..start();
+    ApiException? firstAmbiguousFailure;
+    for (int attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        final ApiResponse response = await _apiClient.post(
+          _refreshPath,
+          headers: <String, String>{
+            ..._refreshClientHeaders(session),
+            'X-Request-Id': requestId,
+          },
+          body: <String, Object?>{
+            'refreshToken': session.refreshToken,
+            'deviceId': session.deviceId,
+          },
+          authenticated: false,
+        );
+        return _parseSession(
+          response.data,
+          deviceId: session.deviceId,
+          clientId: _refreshClientHeaders(session)['Client-Id'],
+        );
+      } on ApiException catch (error) {
+        if (attempt != 0 ||
+            !_isRefreshRecoveryCandidate(error) ||
+            stopwatch.elapsed >= _refreshRecoveryWindow) {
+          rethrow;
+        }
+        firstAmbiguousFailure = error;
+      }
+    }
+    // The loop either returns or rethrows. This guard keeps the method total
+    // if the retry policy changes without accidentally returning a fake token.
+    throw firstAmbiguousFailure ??
+        const ApiException(kind: ApiFailureKind.protocol, message: '刷新响应无法确认');
   }
 
   @override
@@ -169,7 +202,11 @@ class BackendAuthRepository implements AuthRepository {
     'sensorsAnonymousId': device.deviceId,
   };
 
-  AuthSession _parseSession(Object? data, {required String deviceId}) {
+  AuthSession _parseSession(
+    Object? data, {
+    required String deviceId,
+    String? clientId,
+  }) {
     final Map<String, Object?> map = _asMap(data);
     final String accessToken = _string(map['access_token']);
     final int expiresIn = _asInt(map['expires_in']) ?? 0;
@@ -194,7 +231,7 @@ class BackendAuthRepository implements AuthRepository {
       refreshToken: refreshToken,
       refreshExpiresAt: now.add(Duration(seconds: refreshExpiresIn)),
       deviceId: deviceId,
-      clientId: _environment.oauthClientId,
+      clientId: clientId ?? _environment.oauthClientId,
       userId: userId,
       mobile: _string(map['mobile']),
       roles: _string(map['roles']),
@@ -216,6 +253,40 @@ class BackendAuthRepository implements AuthRepository {
     final String normalized = value?.toString().trim() ?? '';
     return normalized.isEmpty ? fallback : normalized;
   }
+
+  Map<String, String> _refreshClientHeaders(AuthSession session) {
+    final String clientId = session.clientId.trim();
+    return <String, String>{
+      'Client-Id': clientId.isEmpty ? _environment.oauthClientId : clientId,
+    };
+  }
+
+  static String _newRefreshRequestId() {
+    final String entropy = List<String>.generate(
+      _requestIdEntropyLength,
+      (_) => _requestIdRandom.nextInt(16).toRadixString(16),
+      growable: false,
+    ).join();
+    final String requestId = 'flutter-auth-refresh-$entropy';
+    if (!_requestIdPattern.hasMatch(requestId)) {
+      throw StateError('刷新请求幂等 ID 格式无效');
+    }
+    return requestId;
+  }
+
+  static bool _isRefreshRecoveryCandidate(ApiException error) =>
+      switch (error.kind) {
+        ApiFailureKind.network ||
+        ApiFailureKind.timeout ||
+        ApiFailureKind.protocol ||
+        ApiFailureKind.server => true,
+        ApiFailureKind.unauthorized ||
+        ApiFailureKind.forbidden ||
+        ApiFailureKind.conflict ||
+        ApiFailureKind.validation ||
+        ApiFailureKind.configuration ||
+        ApiFailureKind.business => false,
+      };
 
   static String? _nullableString(Object? value) {
     final String normalized = value?.toString().trim() ?? '';

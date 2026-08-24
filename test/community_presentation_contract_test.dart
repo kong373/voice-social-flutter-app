@@ -107,8 +107,8 @@ void main() {
       expect(find.text('尚未加入公会'), findsNothing);
 
       await pumpPage(const CpRelationPage());
-      expect(find.text('相伴天数未知'), findsOneWidget);
-      expect(find.textContaining('已相伴 0 天'), findsNothing);
+      expect(find.text('已相伴 2 天'), findsOneWidget);
+      expect(find.text('相伴天数未知'), findsNothing);
       expect(find.text('建立于 2026-08-22T00:00:00Z'), findsOneWidget);
     }, createHttpClient: overrides.createHttpClient);
   });
@@ -296,6 +296,15 @@ class _ContractHttpClientResponse extends StreamView<List<int>>
 }
 
 Object? _communityResponseData(Uri url) => switch (url.path) {
+  '/app-api/guild/getCurrentGuild' => <String, Object?>{
+    'currentGuildAuthority': 'UNAVAILABLE',
+    'authority': 'UNAVAILABLE',
+    'available': false,
+    'fabricated': false,
+    'membershipStatus': 'UNAVAILABLE',
+    'currentGuild': null,
+    'currentGuildId': '',
+  },
   '/app-api/guild/getGuildHomepageDetails' => _closedGuildDetail(
     url.queryParameters['guildId'] ?? '',
   ),
@@ -308,6 +317,8 @@ Object? _communityResponseData(Uri url) => switch (url.path) {
         'signature': '',
         'role': 'MEMBER',
         'muted': false,
+        'isSigned': false,
+        'roomId': '',
         'joinedAt': '2026-08-01T00:00:00Z',
       },
     ],
@@ -319,6 +330,8 @@ Object? _communityResponseData(Uri url) => switch (url.path) {
         'signature': '',
         'role': 'MEMBER',
         'muted': false,
+        'isSigned': false,
+        'roomId': '',
         'joinedAt': '2026-08-01T00:00:00Z',
       },
     ],
@@ -331,14 +344,18 @@ Object? _communityResponseData(Uri url) => switch (url.path) {
     'list': <Object?>[
       <String, Object?>{
         'guildId': 'guild-live-1',
+        'code': '',
         'guildName': '星河公会',
         'name': '星河公会',
         'introduction': '真实公会简介',
         'ownerUserId': 7,
         'ownerName': '会长',
         'ownerAvatar': '',
+        'artwork': '',
         'status': 'ACTIVE',
         'memberCount': 12,
+        'onlineUsers': 0,
+        'hasNewApplications': false,
         'viewerRole': 'NONE',
         'joined': false,
         'roomId': 'room-live-1',
@@ -351,14 +368,18 @@ Object? _communityResponseData(Uri url) => switch (url.path) {
     'records': <Object?>[
       <String, Object?>{
         'guildId': 'guild-live-1',
+        'code': '',
         'guildName': '星河公会',
         'name': '星河公会',
         'introduction': '真实公会简介',
         'ownerUserId': 7,
         'ownerName': '会长',
         'ownerAvatar': '',
+        'artwork': '',
         'status': 'ACTIVE',
         'memberCount': 12,
+        'onlineUsers': 0,
+        'hasNewApplications': false,
         'viewerRole': 'NONE',
         'joined': false,
         'roomId': 'room-live-1',
@@ -381,6 +402,7 @@ Object? _communityResponseData(Uri url) => switch (url.path) {
         'nickName': '星河',
         'headImgUrl': '',
         'status': 'ACTIVE',
+        'days': 2,
         'createdAt': '2026-08-22T00:00:00Z',
       },
     ],
@@ -391,6 +413,7 @@ Object? _communityResponseData(Uri url) => switch (url.path) {
         'nickName': '星河',
         'headImgUrl': '',
         'status': 'ACTIVE',
+        'days': 2,
         'createdAt': '2026-08-22T00:00:00Z',
       },
     ],
@@ -412,14 +435,18 @@ Object? _communityResponseData(Uri url) => switch (url.path) {
 
 Map<String, Object?> _closedGuildDetail(String guildId) => <String, Object?>{
   'guildId': guildId,
+  'code': 'CLOSED001',
   'guildName': '已关闭公会',
   'name': '已关闭公会',
   'introduction': '历史公会资料仅供查看',
   'ownerUserId': 7,
   'ownerName': '原会长',
   'ownerAvatar': '',
+  'artwork': '',
   'status': 'CLOSED',
   'memberCount': 12,
+  'onlineUsers': 0,
+  'hasNewApplications': false,
   'viewerRole': guildId.endsWith('admin') ? 'ADMIN' : 'NONE',
   'joined': guildId.endsWith('admin'),
   'roomId': 'closed-room-1',
@@ -429,4 +456,5 @@ Map<String, Object?> _closedGuildDetail(String guildId) => <String, Object?>{
   'updatedAt': '2026-08-20T00:00:00Z',
   'signedToday': false,
   'applicationPending': false,
+  'businessDate': '2026-08-24',
 };

@@ -94,8 +94,8 @@ void main() {
       expect(home.currentGuild, isNull);
       expect(home.currentGuildAuthority, GuildCurrentAuthority.unavailable);
       expect(home.recommended.first.role, GuildRole.owner);
-      expect(home.recommended.first.rooms.single.onlineUsers, isNull);
-      expect(home.recommended.first.code, isNull);
+      expect(home.recommended.first.rooms.single.onlineUsers, 0);
+      expect(home.recommended.first.code, 'guild-code-1');
       expect(home.recommended, hasLength(2));
       expect(home.recommended[1].name, '推荐公会');
 
@@ -128,7 +128,7 @@ void main() {
   );
 
   test(
-    'community does not infer current-guild authority from uncontracted fields',
+    'community rejects current-guild responses without authority schema',
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {
         return _Response.ok(<String, Object?>{
@@ -143,9 +143,162 @@ void main() {
       });
       addTearDown(harness.close);
 
+      await expectLater(
+        harness.repository.fetchGuildHome(),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'community keeps authoritative no-guild state distinct from unavailable',
+    () async {
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        return switch (request.path) {
+          '/app-api/guild/getCurrentGuild' => _Response.ok(<String, Object?>{
+            'currentGuildAuthority': 'AUTHORITATIVE',
+            'authority': 'AUTHORITATIVE',
+            'available': true,
+            'fabricated': false,
+            'membershipStatus': 'NONE',
+            'currentGuild': null,
+            'currentGuildId': '',
+          }),
+          '/app-api/guild/getRecommendGuildPage' =>
+            _Response.ok(<String, Object?>{
+              'list': <Object?>[],
+              'records': <Object?>[],
+              'current': 1,
+              'pageSize': 50,
+              'total': 0,
+              'pages': 0,
+            }),
+          _ => _Response.ok(<String, Object?>{}),
+        };
+      });
+      addTearDown(harness.close);
+
       final GuildHomeSnapshot home = await harness.repository.fetchGuildHome();
+
       expect(home.currentGuild, isNull);
-      expect(home.currentGuildAuthority, GuildCurrentAuthority.unavailable);
+      expect(home.currentGuildAuthority, GuildCurrentAuthority.authoritative);
+      expect(
+        harness.requests.where(
+          (RequestRecord request) =>
+              request.path == '/app-api/guild/getCurrentGuild',
+        ),
+        hasLength(1),
+      );
+    },
+  );
+
+  test(
+    'guild sign checks status and recovers a committed write after lost response',
+    () async {
+      int signAttempts = 0;
+      int statusReads = 0;
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path == '/app-api/guild/sign/status') {
+          statusReads += 1;
+          expect(request.method, 'GET');
+          expect(request.query, <String, String>{'guildId': 'g-7'});
+          final bool signed = statusReads > 1;
+          return _Response.ok(<String, Object?>{
+            'guildId': 'g-7',
+            'hasGuild': true,
+            'member': true,
+            'signed': signed,
+            'signedToday': signed,
+            'isSign': signed,
+            'alreadySigned': signed,
+            'businessDate': '2026-08-23',
+            'signDate': signed ? '2026-08-23' : '',
+            'rewardPoints': signed ? 1 : 0,
+            'status': signed ? 'SIGNED' : 'AVAILABLE',
+            'providerInvocation': false,
+          });
+        }
+        if (request.path == '/app-api/guild/sign') {
+          signAttempts += 1;
+          expect(request.method, 'POST');
+          expect(request.body, <String, Object?>{'guildId': 'g-7'});
+          return const _Response(
+            statusCode: 500,
+            code: 50001,
+            message: 'response lost after commit',
+            data: null,
+          );
+        }
+        return _Response.ok(<String, Object?>{});
+      });
+      addTearDown(harness.close);
+
+      await harness.repository.signGuild('g-7');
+
+      expect(signAttempts, 1);
+      expect(statusReads, 2);
+      final List<RequestRecord> signRequests = harness.requests
+          .where(
+            (RequestRecord request) => request.path == '/app-api/guild/sign',
+          )
+          .toList();
+      expect(signRequests.single.requestId, startsWith('flutter-'));
+    },
+  );
+
+  test(
+    'community preserves authoritative member sign state and CP days',
+    () async {
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path == '/app-api/guild/getGuildMembers') {
+          final Map<String, Object?> row = <String, Object?>{
+            ..._b709GuildMemberRow(),
+            'userId': 21,
+            'isSigned': true,
+            'roomId': 'room-21',
+          };
+          return _Response.ok(<String, Object?>{
+            'list': <Object?>[row],
+            'records': <Object?>[row],
+            'current': 1,
+            'pageSize': 50,
+            'total': 1,
+            'pages': 1,
+          });
+        }
+        if (request.path == '/app-mini-api/mini/v1/cp/my-list') {
+          final Map<String, Object?> row = <String, Object?>{
+            ..._b709CpRelationRow(),
+            'cpRelationId': 'cp-21',
+            'days': 12,
+          };
+          return _Response.ok(<String, Object?>{
+            'list': <Object?>[row],
+            'records': <Object?>[row],
+            'current': 1,
+            'pageSize': 20,
+            'total': 1,
+            'pages': 1,
+          });
+        }
+        return _Response.ok(<String, Object?>{});
+      });
+      addTearDown(harness.close);
+
+      final List<GuildMember> members = await harness.repository
+          .fetchGuildMembers('guild-1');
+      final List<CpRelation> relations = await harness.repository
+          .fetchCpRelations();
+
+      expect(members.single.isSigned, isTrue);
+      expect(members.single.roomId, 'room-21');
+      expect(relations.single.days, 12);
     },
   );
 
@@ -200,6 +353,7 @@ void main() {
             ...closed,
             'signedToday': false,
             'applicationPending': false,
+            'businessDate': '2026-08-23',
           });
         }
         return _Response.ok(<String, Object?>{});
@@ -224,7 +378,7 @@ void main() {
         'guild-closed',
       );
       expect(detail.id, 'guild-closed');
-      expect(detail.code, isNull);
+      expect(detail.code, 'guild-code-1');
       expect(detail.status, GuildStatus.closed);
     },
   );
@@ -253,12 +407,31 @@ void main() {
           '/app-api/guildManagement/quitGuild' => _Response.ok(
             <String, Object?>{'guildId': 'g-7', 'status': 'LEFT', 'left': true},
           ),
+          '/app-api/guild/sign/status' => _Response.ok(<String, Object?>{
+            'guildId': 'g-7',
+            'hasGuild': true,
+            'member': true,
+            'signed': false,
+            'signedToday': false,
+            'isSign': false,
+            'alreadySigned': false,
+            'businessDate': '2026-08-23',
+            'signDate': '',
+            'rewardPoints': 0,
+            'status': 'AVAILABLE',
+            'providerInvocation': false,
+          }),
           '/app-api/guild/sign' => _Response.ok(<String, Object?>{
             'guildId': 'g-7',
             'signed': true,
+            'signedToday': true,
+            'isSign': true,
             'alreadySigned': false,
             'signDate': '2026-08-23',
+            'businessDate': '2026-08-23',
             'rewardPoints': 1,
+            'status': 'SIGNED',
+            'providerInvocation': false,
           }),
           '/app-api/guildManagement/approvalMembershipApplication' =>
             _Response.ok(<String, Object?>{
@@ -1024,7 +1197,7 @@ void main() {
   );
 
   test(
-    'community preserves unknown live counts and member presence fields',
+    'community preserves authoritative live counts and member presence fields',
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {
         if (request.path == '/app-api/guild/getRecommendGuildPage') {
@@ -1100,19 +1273,19 @@ void main() {
       final GuildHomeSnapshot home = await harness.repository.fetchGuildHome();
       expect(home.currentGuild, isNull);
       expect(home.currentGuildAuthority, GuildCurrentAuthority.unavailable);
-      expect(home.recommended.single.rooms.single.onlineUsers, isNull);
+      expect(home.recommended.single.rooms.single.onlineUsers, 0);
       expect(home.recommended.single.applicationPending, isNull);
       expect(home.recommended.single.hasSignedToday, isNull);
-      expect(home.recommended.single.hasNewApplications, isNull);
+      expect(home.recommended.single.hasNewApplications, isFalse);
       final List<GuildMember> members = await harness.repository
           .fetchGuildMembers('g-unknown');
       expect(members.single.roomId, isNull);
-      expect(members.single.isSigned, isNull);
+      expect(members.single.isSigned, isFalse);
       expect(
         (await harness.repository.fetchInviteAttribution()).invitedUsers,
         isNull,
       );
-      expect((await harness.repository.fetchCpRelations()).single.days, isNull);
+      expect((await harness.repository.fetchCpRelations()).single.days, 1);
     },
   );
 
@@ -1430,7 +1603,7 @@ void main() {
       expect(harness.requests[0].path, '/app-api/room/radio/v1/becomeGuard');
       expect(harness.requests[0].body, <String, Object?>{
         'anchorUserId': 88,
-        'guardianLevelId': 2,
+        'guardianLevelId': '2',
       });
       expect(harness.requests[1].path, '/app-api/room/radio/v1/joinFansTeam');
       expect(harness.requests[1].body, <String, Object?>{'anchorUserId': 88});
@@ -2689,6 +2862,7 @@ void main() {
 Map<String, Object?> _b709GuildRow({bool includeHomepageState = false}) {
   return <String, Object?>{
     'guildId': 'guild-1',
+    'code': 'guild-code-1',
     'guildName': '星河公会',
     'name': '星河公会',
     'introduction': '',
@@ -2697,6 +2871,9 @@ Map<String, Object?> _b709GuildRow({bool includeHomepageState = false}) {
     'ownerAvatar': '',
     'status': 'ACTIVE',
     'memberCount': 12,
+    'onlineUsers': 0,
+    'artwork': 'https://example.test/guild-artwork.png',
+    'hasNewApplications': false,
     'viewerRole': 'NONE',
     'joined': false,
     'roomId': '',
@@ -2707,6 +2884,7 @@ Map<String, Object?> _b709GuildRow({bool includeHomepageState = false}) {
     if (includeHomepageState) ...<String, Object?>{
       'signedToday': false,
       'applicationPending': false,
+      'businessDate': '2026-08-23',
     },
   };
 }
@@ -2718,6 +2896,8 @@ Map<String, Object?> _b709GuildMemberRow() => <String, Object?>{
   'signature': '',
   'role': 'MEMBER',
   'muted': false,
+  'isSigned': false,
+  'roomId': '',
   'joinedAt': '2026-08-01T00:00:00Z',
 };
 
@@ -2738,6 +2918,7 @@ Map<String, Object?> _b709CpRelationRow() => <String, Object?>{
   'nickName': 'CP 用户',
   'headImgUrl': '',
   'status': 'ACTIVE',
+  'days': 1,
   'createdAt': '2026-08-10T00:00:00Z',
 };
 
@@ -2858,7 +3039,20 @@ class _Harness {
             : decodedBody,
       );
       requests.add(record);
-      final _Response response = await handler(record);
+      _Response response = await handler(record);
+      if (record.path == '/app-api/guild/getCurrentGuild' &&
+          response.data is Map &&
+          (response.data! as Map).isEmpty) {
+        response = _Response.ok(<String, Object?>{
+          'currentGuildAuthority': 'UNAVAILABLE',
+          'authority': 'UNAVAILABLE',
+          'available': false,
+          'fabricated': false,
+          'membershipStatus': 'UNAVAILABLE',
+          'currentGuild': null,
+          'currentGuildId': '',
+        });
+      }
       request.response.statusCode = response.statusCode;
       request.response.headers.contentType = ContentType.json;
       request.response.write(

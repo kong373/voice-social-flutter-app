@@ -208,7 +208,10 @@ void main() {
             message: 'response lost after commit',
           );
         }
-        final bool following = request.uri.queryParameters['type'] == '1';
+        final Map<String, Object?> requestBody = body! as Map<String, Object?>;
+        expect(request.method, 'POST');
+        expect(requestBody['userId'], 20001);
+        final bool following = requestBody['type'] == 1;
         return _reply(
           request,
           data: <String, Object?>{
@@ -419,11 +422,8 @@ void main() {
               },
             );
           case '/app-api/user/relation/buildFriendRelation':
-            expect(request.method, 'GET');
-            expect(request.uri.queryParameters, <String, String>{
-              'userId': '20001',
-              'type': '1',
-            });
+            expect(request.method, 'POST');
+            expect(body, <String, Object?>{'userId': 20001, 'type': 1});
             return _reply(
               request,
               data: <String, Object?>{
@@ -435,23 +435,20 @@ void main() {
               },
             );
           case '/app-api/user/relation/blackUserRelation':
-            expect(request.method, 'GET');
-            expect(request.uri.queryParameters, <String, String>{
-              'userId': '20002',
-              'type': '1',
-            });
+            expect(request.method, 'POST');
+            expect(body, <String, Object?>{'userId': 20002, 'type': 1});
             return _reply(
               request,
               data: <String, Object?>{'userId': 20002, 'blocked': true},
             );
           case '/app-api/user/onlyFollowedCanFollow/set':
-            expect(request.method, 'GET');
-            expect(request.uri.queryParameters, isEmpty);
-            return _reply(
-              request,
-              data: <String, Object?>{'onlyFollowedCanFollow': false},
-            );
-          case '/app-mini-api/mini/v1/social/privacy':
+            if (request.method == 'GET') {
+              expect(request.uri.queryParameters, isEmpty);
+              return _reply(
+                request,
+                data: <String, Object?>{'onlyFollowedCanFollow': false},
+              );
+            }
             expect(request.method, 'PATCH');
             expect(body, <String, Object?>{'onlyFollowedCanFollow': true});
             return _reply(

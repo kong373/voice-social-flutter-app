@@ -104,9 +104,11 @@ class BackendRouteCatalog {
     this.createGuild = '/app-mini-api/mini/v1/guild/create',
     this.searchGuilds = '/app-api/guild/searchGuild',
     this.guildHomepage = '/app-api/guild/getGuildHomepageDetails',
+    this.currentGuild = '/app-api/guild/getCurrentGuild',
     this.guildMembers = '/app-api/guild/getGuildMembers',
     this.guildApplications = '/app-api/guild/getMembershipApplications',
     this.guildSign = '/app-api/guild/sign',
+    this.guildSignStatus = '/app-api/guild/sign/status',
     this.applyGuildMembership = '/app-api/guildManagement/applyForMembership',
     this.quitGuild = '/app-api/guildManagement/quitGuild',
     this.resolveGuildApplication =
@@ -273,9 +275,11 @@ class BackendRouteCatalog {
   final String createGuild;
   final String searchGuilds;
   final String guildHomepage;
+  final String currentGuild;
   final String guildMembers;
   final String guildApplications;
   final String guildSign;
+  final String guildSignStatus;
   final String applyGuildMembership;
   final String quitGuild;
   final String resolveGuildApplication;

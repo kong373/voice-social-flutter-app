@@ -261,6 +261,12 @@ class BackendSocialRepository implements SocialRepository {
 
   @override
   Future<void> setFollowing({required int userId, required bool following}) {
+    if (userId <= 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '关注目标用户无效',
+      );
+    }
     final int actorUserId = _currentUserIdProvider();
     return _runSocialWrite<void>(
       operation: 'set-following',
@@ -268,13 +274,10 @@ class BackendSocialRepository implements SocialRepository {
       serialKey: 'relationship:$actorUserId:$userId',
       requestIdPrefix: 'social-following',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.get(
+        final ApiResponse response = await _apiClient.post(
           _routes.setFollowing,
           headers: headers,
-          query: <String, String>{
-            'userId': '$userId',
-            'type': following ? '1' : '0',
-          },
+          body: <String, Object?>{'userId': userId, 'type': following ? 1 : 0},
         );
         final Map<String, Object?> data = _requiredSocialMap(response.data);
         final int responseUserId = _requiredPositiveInt(data, 'userId');
@@ -505,7 +508,7 @@ class BackendSocialRepository implements SocialRepository {
       requestIdPrefix: 'social-privacy',
       action: (Map<String, String> headers) async {
         final ApiResponse response = await _apiClient.patch(
-          _routes.socialPrivacy,
+          _routes.onlyFollowedCanFollow,
           headers: headers,
           body: <String, Object?>{
             'onlyFollowedCanFollow': onlyFollowedCanFollow,
@@ -549,6 +552,12 @@ class BackendSocialRepository implements SocialRepository {
 
   @override
   Future<void> setBlocked({required int userId, required bool blocked}) {
+    if (userId <= 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '黑名单目标用户无效',
+      );
+    }
     final int actorUserId = _currentUserIdProvider();
     return _runSocialWrite<void>(
       operation: 'set-blocked',
@@ -556,13 +565,10 @@ class BackendSocialRepository implements SocialRepository {
       serialKey: 'relationship:$actorUserId:$userId',
       requestIdPrefix: 'social-blocked',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.get(
+        final ApiResponse response = await _apiClient.post(
           _routes.setBlocked,
           headers: headers,
-          query: <String, String>{
-            'userId': '$userId',
-            'type': blocked ? '1' : '0',
-          },
+          body: <String, Object?>{'userId': userId, 'type': blocked ? 1 : 0},
         );
         final Map<String, Object?> data = _requiredSocialMap(response.data);
         final int responseUserId = _requiredPositiveInt(data, 'userId');

@@ -144,6 +144,39 @@ void main() {
   );
 
   test(
+    'refresh conflict is fail-closed and clears the local session',
+    () async {
+      final AuthSessionManager sessionManager = AuthSessionManager(
+        MemoryKeyValueStore(),
+      );
+      await sessionManager.acceptConsent();
+      await sessionManager.save(_expiredRefreshableSession());
+      final AuthController controller = AuthController(
+        repository: _RefreshFailureAuthRepository(
+          const ApiException(
+            kind: ApiFailureKind.conflict,
+            httpStatus: 409,
+            code: 40901,
+            message: 'refresh request already committed',
+          ),
+        ),
+        sessionManager: sessionManager,
+        deviceIdentityProvider: DeviceIdentityProvider(
+          environment: AppEnvironment.mock(),
+          sessionManager: sessionManager,
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.initialize();
+
+      expect(controller.stage, AuthFlowStage.signedOut);
+      expect(controller.session, isNull);
+      expect(await sessionManager.restore(), isNull);
+    },
+  );
+
+  test(
     'preflight configuration failure preserves a refreshable local session',
     () async {
       final AuthSessionManager sessionManager = AuthSessionManager(

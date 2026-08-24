@@ -35,15 +35,25 @@ class BackendCommunityRepository implements CommunityRepository {
 
   @override
   Future<GuildHomeSnapshot> fetchGuildHome() async {
-    final List<Map<String, Object?>> raw = await _fetchAllPages(
-      pageSize: _guildPageSize,
-      authoritativeId: (Map<String, Object?> item) =>
-          _requiredNonEmptyStringField(item, 'guildId'),
-      fetchPage: (int page, int pageSize) => _apiClient.post(
-        _routes.recommendedGuilds,
-        body: <String, Object?>{'pageNum': page, 'pageSize': pageSize},
+    final List<Object?> results = await Future.wait<Object?>(<Future<Object?>>[
+      _apiClient
+          .get(_routes.currentGuild)
+          .then((ApiResponse value) => value.data),
+      _fetchAllPages(
+        pageSize: _guildPageSize,
+        authoritativeId: (Map<String, Object?> item) =>
+            _requiredNonEmptyStringField(item, 'guildId'),
+        fetchPage: (int page, int pageSize) => _apiClient.post(
+          _routes.recommendedGuilds,
+          body: <String, Object?>{'pageNum': page, 'pageSize': pageSize},
+        ),
       ),
+    ]);
+    final _CurrentGuildResult current = _currentGuildFromMap(
+      _requiredMap(results[0]),
     );
+    final List<Map<String, Object?>> raw =
+        results[1] as List<Map<String, Object?>>;
     final List<GuildSummary> recommended = raw
         .map(
           (Map<String, Object?> item) =>
@@ -52,8 +62,8 @@ class BackendCommunityRepository implements CommunityRepository {
         .where((GuildSummary value) => value.id.isNotEmpty)
         .toList(growable: false);
     return GuildHomeSnapshot(
-      currentGuild: null,
-      currentGuildAuthority: GuildCurrentAuthority.unavailable,
+      currentGuild: current.guild,
+      currentGuildAuthority: current.authority,
       recommended: recommended,
     );
   }
@@ -102,6 +112,7 @@ class BackendCommunityRepository implements CommunityRepository {
         message: '服务端公会详情缺少申请或签到权威状态',
       );
     }
+    _requiredDateField(data, 'businessDate');
     return guild;
   }
 
@@ -167,25 +178,49 @@ class BackendCommunityRepository implements CommunityRepository {
       serialKey: _writeKey('guild', <Object?>[guildId]),
       requestIdPrefix: 'flutter-community-guild-sign',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
-          _routes.guildSign,
-          headers: headers,
-          body: <String, Object?>{'guildId': guildId},
-        );
-        final Map<String, Object?> data = _requiredMap(response.data);
-        _rejectProviderInvocation(data);
-        if (data['guildId'] != guildId ||
-            data['signed'] is! bool ||
-            data['signed'] != true ||
-            data['alreadySigned'] is! bool ||
-            !_isIsoDate(data['signDate']) ||
-            data['signDate'] != expectedBusinessDate ||
-            data['rewardPoints'] is! int ||
-            data['rewardPoints'] != 1) {
+        final _GuildSignStatus initial = await _fetchGuildSignStatus(guildId);
+        if ((initial.hasGuild && initial.guildId != guildId) ||
+            initial.businessDate != expectedBusinessDate) {
           throw const ApiException(
             kind: ApiFailureKind.protocol,
-            message: '服务端未返回当前业务日的有效公会签到确认',
+            message: '公会签到状态业务日期与本地不一致',
           );
+        }
+        if (!initial.hasGuild || !initial.member) {
+          throw const ApiException(
+            kind: ApiFailureKind.conflict,
+            message: '当前没有可签到的公会',
+          );
+        }
+        if (initial.signed) {
+          return;
+        }
+        try {
+          final ApiResponse response = await _apiClient.post(
+            _routes.guildSign,
+            headers: headers,
+            body: <String, Object?>{'guildId': guildId},
+          );
+          _validateGuildSignResponse(
+            _requiredMap(response.data),
+            guildId: guildId,
+            expectedBusinessDate: expectedBusinessDate,
+          );
+        } on ApiException catch (error) {
+          if (!_isAmbiguousCommunityWrite(error)) {
+            rethrow;
+          }
+          final _GuildSignStatus recovered = await _fetchGuildSignStatus(
+            guildId,
+          );
+          if (recovered.guildId == guildId &&
+              recovered.businessDate == expectedBusinessDate &&
+              recovered.hasGuild &&
+              recovered.member &&
+              recovered.signed) {
+            return;
+          }
+          rethrow;
         }
       },
     );
@@ -718,36 +753,48 @@ class BackendCommunityRepository implements CommunityRepository {
   Future<void> becomeGuardian({
     required int anchorUserId,
     required String levelId,
-  }) => _runCommunityWrite<void>(
-    intentKey: _writeKey('guardian', <Object?>[anchorUserId, levelId]),
-    serialKey: _writeKey('anchor', <Object?>[anchorUserId]),
-    requestIdPrefix: 'flutter-community-guardian',
-    action: (Map<String, String> headers) async {
-      final ApiResponse response = await _apiClient.post(
-        _routes.becomeGuardian,
-        headers: headers,
-        body: <String, Object?>{
-          'anchorUserId': anchorUserId,
-          'guardianLevelId': _numericId(levelId),
-        },
+  }) {
+    final String normalizedLevelId = levelId.trim();
+    if (anchorUserId <= 0 || normalizedLevelId.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '守护主播或等级无效',
       );
-      final Map<String, Object?> data = _requiredMap(response.data);
-      if (data['anchorUserId'] is! int ||
-          data['anchorUserId'] != anchorUserId ||
-          data['active'] is! bool ||
-          data['active'] != true ||
-          data['guardianLevelId'] is! String ||
-          (data['guardianLevelId']! as String).toUpperCase() !=
-              levelId.trim().toUpperCase() ||
-          data['providerInvocation'] is! bool ||
-          data['providerInvocation'] != false) {
-        throw const ApiException(
-          kind: ApiFailureKind.protocol,
-          message: '服务端未确认守护关系已生效',
+    }
+    return _runCommunityWrite<void>(
+      intentKey: _writeKey('guardian', <Object?>[
+        anchorUserId,
+        normalizedLevelId,
+      ]),
+      serialKey: _writeKey('anchor', <Object?>[anchorUserId]),
+      requestIdPrefix: 'flutter-community-guardian',
+      action: (Map<String, String> headers) async {
+        final ApiResponse response = await _apiClient.post(
+          _routes.becomeGuardian,
+          headers: headers,
+          body: <String, Object?>{
+            'anchorUserId': anchorUserId,
+            'guardianLevelId': normalizedLevelId,
+          },
         );
-      }
-    },
-  );
+        final Map<String, Object?> data = _requiredMap(response.data);
+        if (data['anchorUserId'] is! int ||
+            data['anchorUserId'] != anchorUserId ||
+            data['active'] is! bool ||
+            data['active'] != true ||
+            data['guardianLevelId'] is! String ||
+            (data['guardianLevelId']! as String).toUpperCase() !=
+                normalizedLevelId.toUpperCase() ||
+            data['providerInvocation'] is! bool ||
+            data['providerInvocation'] != false) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '服务端未确认守护关系已生效',
+          );
+        }
+      },
+    );
+  }
 
   @override
   Future<void> joinFansTeam(int anchorUserId) => _runCommunityWrite<void>(
@@ -1003,6 +1050,197 @@ class BackendCommunityRepository implements CommunityRepository {
     return raw.map(_activityFromMap).toList(growable: false);
   }
 
+  Future<_GuildSignStatus> _fetchGuildSignStatus(String guildId) async {
+    final ApiResponse response = await _apiClient.get(
+      _routes.guildSignStatus,
+      query: <String, String>{'guildId': guildId},
+    );
+    final Map<String, Object?> data = _requiredMap(response.data);
+    _requireProviderNotInvoked(data);
+    final bool hasGuild = _requiredBoolField(data, 'hasGuild');
+    final bool member = _requiredBoolField(data, 'member');
+    final String responseGuildId = _requiredStringField(data, 'guildId');
+    final bool signed = _requiredBoolField(data, 'signed');
+    final bool signedToday = _requiredBoolField(data, 'signedToday');
+    final bool isSign = _requiredBoolField(data, 'isSign');
+    final bool alreadySigned = _requiredBoolField(data, 'alreadySigned');
+    final String businessDate = _requiredDateField(data, 'businessDate');
+    final String signDate = _requiredStringField(data, 'signDate');
+    final int rewardPoints = _requiredNonNegativeIntField(data, 'rewardPoints');
+    final String status = _requiredNonEmptyStringField(data, 'status');
+    if (!hasGuild || !member) {
+      if (hasGuild ||
+          member ||
+          responseGuildId.isNotEmpty ||
+          signed ||
+          signedToday ||
+          isSign ||
+          alreadySigned ||
+          signDate.isNotEmpty ||
+          rewardPoints != 0 ||
+          status != 'NO_GUILD') {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '无公会签到空态字段不一致',
+        );
+      }
+      return _GuildSignStatus(
+        guildId: '',
+        hasGuild: false,
+        member: false,
+        signed: false,
+        businessDate: businessDate,
+      );
+    }
+    if (responseGuildId != guildId ||
+        signed != signedToday ||
+        signed != isSign ||
+        signed != alreadySigned ||
+        (signed ? status != 'SIGNED' : status != 'AVAILABLE') ||
+        (signed ? rewardPoints != 1 : rewardPoints != 0) ||
+        (signed ? signDate != businessDate : signDate.isNotEmpty)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '公会签到状态与请求或业务日不一致',
+      );
+    }
+    if (signDate.isNotEmpty && !_isIsoDate(signDate)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '公会签到日期无效',
+      );
+    }
+    return _GuildSignStatus(
+      guildId: responseGuildId,
+      hasGuild: hasGuild,
+      member: member,
+      signed: signed,
+      businessDate: businessDate,
+    );
+  }
+
+  static void _validateGuildSignResponse(
+    Map<String, Object?> data, {
+    required String guildId,
+    required String expectedBusinessDate,
+  }) {
+    _requireProviderNotInvoked(data);
+    final bool signed = _requiredBoolField(data, 'signed');
+    final bool signedToday = _requiredBoolField(data, 'signedToday');
+    final bool isSign = _requiredBoolField(data, 'isSign');
+    _requiredBoolField(data, 'alreadySigned');
+    final String signDate = _requiredDateField(data, 'signDate');
+    final String businessDate = _requiredDateField(data, 'businessDate');
+    if (_requiredNonEmptyStringField(data, 'guildId') != guildId ||
+        !signed ||
+        !signedToday ||
+        !isSign ||
+        signDate != expectedBusinessDate ||
+        businessDate != expectedBusinessDate ||
+        _requiredNonNegativeIntField(data, 'rewardPoints') != 1 ||
+        _requiredNonEmptyStringField(data, 'status') != 'SIGNED') {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '服务端未返回当前业务日的有效公会签到确认',
+      );
+    }
+  }
+
+  static bool _isAmbiguousCommunityWrite(ApiException error) =>
+      switch (error.kind) {
+        ApiFailureKind.network ||
+        ApiFailureKind.timeout ||
+        ApiFailureKind.protocol ||
+        ApiFailureKind.server => true,
+        ApiFailureKind.unauthorized ||
+        ApiFailureKind.forbidden ||
+        ApiFailureKind.conflict ||
+        ApiFailureKind.validation ||
+        ApiFailureKind.configuration ||
+        ApiFailureKind.business => false,
+      };
+
+  static _CurrentGuildResult _currentGuildFromMap(Map<String, Object?> data) {
+    final String currentAuthority = _requiredNonEmptyStringField(
+      data,
+      'currentGuildAuthority',
+    );
+    final String authority = _requiredNonEmptyStringField(data, 'authority');
+    final bool available = _requiredBoolField(data, 'available');
+    final bool fabricated = _requiredBoolField(data, 'fabricated');
+    final String membershipStatus = _requiredNonEmptyStringField(
+      data,
+      'membershipStatus',
+    );
+    final String currentGuildId = _requiredStringField(data, 'currentGuildId');
+    if (!data.containsKey('currentGuild')) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '当前公会响应缺少 currentGuild 字段',
+      );
+    }
+    final Object? rawGuild = data['currentGuild'];
+    if (currentAuthority != authority || fabricated) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '当前公会权威标记不一致',
+      );
+    }
+    if (membershipStatus == 'NONE') {
+      if (currentAuthority != 'AUTHORITATIVE' ||
+          !available ||
+          currentGuildId.isNotEmpty ||
+          rawGuild != null) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '当前公会无公会空态字段不一致',
+        );
+      }
+      return const _CurrentGuildResult(
+        guild: null,
+        authority: GuildCurrentAuthority.authoritative,
+      );
+    }
+    if (membershipStatus == 'UNAVAILABLE') {
+      if (currentAuthority != 'UNAVAILABLE' ||
+          available ||
+          currentGuildId.isNotEmpty ||
+          rawGuild != null) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '当前公会不可用空态字段不一致',
+        );
+      }
+      return const _CurrentGuildResult(
+        guild: null,
+        authority: GuildCurrentAuthority.unavailable,
+      );
+    }
+    if (membershipStatus != 'ACTIVE' ||
+        currentAuthority != 'AUTHORITATIVE' ||
+        !available ||
+        rawGuild is! Map) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '当前公会会员状态结构无效',
+      );
+    }
+    final GuildSummary guild = _guildFromMap(
+      _requiredMap(rawGuild),
+      requireActive: true,
+    );
+    if (currentGuildId != guild.id || !guild.joined) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '当前公会身份与会员状态不一致',
+      );
+    }
+    return _CurrentGuildResult(
+      guild: guild,
+      authority: GuildCurrentAuthority.authoritative,
+    );
+  }
+
   Future<T> _runCommunityWrite<T>({
     required String intentKey,
     required String serialKey,
@@ -1236,6 +1474,13 @@ class BackendCommunityRepository implements CommunityRepository {
     final String roomId = _requiredStringField(item, 'roomId');
     final String roomCode = _requiredStringField(item, 'roomCode');
     final String roomName = _requiredStringField(item, 'roomName');
+    final int onlineUsers = _requiredNonNegativeIntField(item, 'onlineUsers');
+    final String codeValue = _requiredStringField(item, 'code');
+    final String artwork = _requiredStringField(item, 'artwork');
+    final bool hasNewApplications = _requiredBoolField(
+      item,
+      'hasNewApplications',
+    );
     if (roomId.isEmpty && (roomCode.isNotEmpty || roomName.isNotEmpty)) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -1245,24 +1490,17 @@ class BackendCommunityRepository implements CommunityRepository {
     final List<GuildRoom> rooms = roomId.isEmpty
         ? const <GuildRoom>[]
         : <GuildRoom>[
-            GuildRoom(
-              roomId: roomId,
-              name: roomName,
-              // b709 does not expose an online-member count.
-              onlineUsers: null,
-            ),
+            GuildRoom(roomId: roomId, name: roomName, onlineUsers: onlineUsers),
           ];
     _requiredStringField(item, 'ownerAvatar');
     _requiredDateTimeField(item, 'createdAt');
     _requiredDateTimeField(item, 'updatedAt');
     return GuildSummary(
       id: id,
-      code: null,
+      code: codeValue.isEmpty ? null : codeValue,
       name: name,
       status: status,
-      // The endpoint exposes the owner's avatar, not a guild avatar. Do not
-      // relabel it as guild artwork.
-      avatarUrl: null,
+      avatarUrl: artwork.isEmpty ? null : artwork,
       description: _requiredStringField(item, 'introduction'),
       memberCount: _requiredNonNegativeIntField(item, 'memberCount'),
       ownerUserId: _requiredPositiveIntField(item, 'ownerUserId'),
@@ -1272,7 +1510,7 @@ class BackendCommunityRepository implements CommunityRepository {
       applicationPending: item.containsKey('applicationPending')
           ? _requiredBoolField(item, 'applicationPending')
           : null,
-      hasNewApplications: null,
+      hasNewApplications: hasNewApplications,
       hasSignedToday: item.containsKey('signedToday')
           ? _requiredBoolField(item, 'signedToday')
           : null,
@@ -1292,9 +1530,8 @@ class BackendCommunityRepository implements CommunityRepository {
       avatarUrl: avatarUrl.isEmpty ? null : avatarUrl,
       role: _memberRoleFromValue(_requiredNonEmptyStringField(item, 'role')),
       isMuted: _requiredBoolField(item, 'muted'),
-      // Neither field exists in the frozen b709 member row.
-      isSigned: null,
-      roomId: null,
+      isSigned: _requiredBoolField(item, 'isSigned'),
+      roomId: _nullableString(_requiredStringField(item, 'roomId')),
     );
   }
 
@@ -1337,13 +1574,13 @@ class BackendCommunityRepository implements CommunityRepository {
       );
     }
     final String avatarUrl = _requiredStringField(item, 'headImgUrl');
+    final int days = _requiredNonNegativeIntField(item, 'days');
     return CpRelation(
       relationId: _requiredNonEmptyStringField(item, 'cpRelationId'),
       userId: _requiredPositiveIntField(item, 'userId'),
       nickname: _requiredNonEmptyStringField(item, 'nickName'),
       avatarUrl: avatarUrl.isEmpty ? null : avatarUrl,
-      // b709 exposes createdAt but no authoritative day count.
-      days: null,
+      days: days,
       boundAt: _requiredDateTimeField(item, 'createdAt'),
     );
   }
@@ -1731,6 +1968,9 @@ class BackendCommunityRepository implements CommunityRepository {
     bool expected,
   ) => data[field] is bool && data[field] == expected;
 
+  static String? _nullableString(String value) =>
+      value.trim().isEmpty ? null : value.trim();
+
   static bool _requiredBoolField(Map<String, Object?> data, String field) {
     final Object? value = data[field];
     if (value is! bool) {
@@ -1836,8 +2076,6 @@ class BackendCommunityRepository implements CommunityRepository {
     return parsed != null && value.contains('T');
   }
 
-  static Object _numericId(String value) => int.tryParse(value) ?? value;
-
   static Map<String, Object?> _requiredMap(Object? value) {
     if (value is! Map) {
       throw const ApiException(
@@ -1932,6 +2170,29 @@ class _CommunityPageEnvelope {
   final int pageSize;
   final int total;
   final int pages;
+}
+
+class _CurrentGuildResult {
+  const _CurrentGuildResult({required this.guild, required this.authority});
+
+  final GuildSummary? guild;
+  final GuildCurrentAuthority authority;
+}
+
+class _GuildSignStatus {
+  const _GuildSignStatus({
+    required this.guildId,
+    required this.hasGuild,
+    required this.member,
+    required this.signed,
+    required this.businessDate,
+  });
+
+  final String guildId;
+  final bool hasGuild;
+  final bool member;
+  final bool signed;
+  final String businessDate;
 }
 
 class _ParsedTask {
