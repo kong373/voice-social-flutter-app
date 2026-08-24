@@ -982,13 +982,15 @@ Future<void> _runCommerceFlow(
       ),
     );
   }
-  // The order-scoped live contract intentionally has no account-level refund
-  // history endpoint. Keep this capability explicit without claiming an HTTP
-  // request that the repository does not make.
-  evidence.local(
-    'commerce.refund.records',
-    '/commerce/refund-history',
-    'backend_not_supported_use_order_result',
+  await _probe(
+    evidence,
+    capability: 'commerce.refund.records',
+    method: 'GET',
+    route: routes.refundHistory,
+    operation: () => dependencies.commerceRepository.fetchRefundApplications(
+      'authenticated-account',
+    ),
+    requiredSuccess: true,
   );
   await _probe(
     evidence,

@@ -19,7 +19,8 @@ class _RefundListPageState extends State<RefundListPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_repository.refundScope == RefundScope.order) {
+    if (_repository.refundScope == RefundScope.order &&
+        !_repository.supportsRefundHistory) {
       return;
     }
     if (_applications == null && _error == null) {
@@ -46,7 +47,8 @@ class _RefundListPageState extends State<RefundListPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_repository.refundScope == RefundScope.order) {
+    if (_repository.refundScope == RefundScope.order &&
+        !_repository.supportsRefundHistory) {
       return _CommerceScaffold(
         appBar: AppBar(title: const Text('订单退款')),
         body: ListView(
@@ -86,7 +88,9 @@ class _RefundListPageState extends State<RefundListPage> {
           await Navigator.of(context).push<void>(
             MaterialPageRoute<void>(
               builder: (BuildContext context) =>
-                  RefundApplicationPage(account: widget.account),
+                  _repository.refundScope == RefundScope.order
+                  ? const OrdersPage()
+                  : RefundApplicationPage(account: widget.account),
             ),
           );
           if (mounted) {
@@ -94,7 +98,9 @@ class _RefundListPageState extends State<RefundListPage> {
           }
         },
         icon: const Icon(Icons.add_rounded),
-        label: const Text('申请退款'),
+        label: Text(
+          _repository.refundScope == RefundScope.order ? '选择充值订单' : '申请退款',
+        ),
       ),
       body: _applications == null
           ? _error == null
@@ -103,8 +109,10 @@ class _RefundListPageState extends State<RefundListPage> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
               children: <Widget>[
-                const _CommerceInfoBanner(
-                  text: '当前后端是账户级历史退款流程，不是按单个充值订单发起的标准退款。页面不会把两种业务混为一谈。',
+                _CommerceInfoBanner(
+                  text: _repository.refundScope == RefundScope.order
+                      ? '退款申请严格绑定具体充值订单；这里展示当前账号的完整退款历史，新申请请先选择充值订单。'
+                      : '当前后端是账户级历史退款流程，不是按单个充值订单发起的标准退款。页面不会把两种业务混为一谈。',
                 ),
                 if (!_repository.supportsRefundHistory) ...<Widget>[
                   const SizedBox(height: 10),
@@ -116,7 +124,7 @@ class _RefundListPageState extends State<RefundListPage> {
                 if (_applications!.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 40),
-                    child: Center(child: Text('暂无正在处理的退款申请')),
+                    child: Center(child: Text('暂无退款申请记录')),
                   )
                 else
                   for (final RefundApplication application in _applications!)

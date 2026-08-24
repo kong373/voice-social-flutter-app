@@ -48,7 +48,7 @@ class BackendCommerceRepository implements CommerceRepository {
   bool get supportsPaymentChannelInvocation => false;
 
   @override
-  bool get supportsRefundHistory => false;
+  bool get supportsRefundHistory => true;
 
   @override
   bool get supportsWithdrawalApplication => _payoutAccountsEndpointAvailable;
@@ -831,10 +831,77 @@ class BackendCommerceRepository implements CommerceRepository {
   Future<List<RefundApplication>> fetchRefundApplications(
     String account,
   ) async {
-    throw const ApiException(
-      kind: ApiFailureKind.configuration,
-      message: '当前第一方后端未提供退款历史列表接口，请从具体充值订单查询退款结果',
-    );
+    final List<RefundApplication> applications = <RefundApplication>[];
+    final Set<String> seenRefundIds = <String>{};
+    _PageMetadata? expectedMetadata;
+    var backendPage = 1;
+    var hasMore = true;
+    while (hasMore && backendPage <= _maximumCommerceBackendPages) {
+      const int backendPageSize = 100;
+      final ApiResponse response = await _apiClient.get(
+        _routes.refundHistory,
+        query: <String, String>{
+          'pageNum': '$backendPage',
+          'pageSize': '$backendPageSize',
+        },
+      );
+      final Map<String, Object?> data = _asMap(response.data);
+      _requireVendorBlocked(data, field: 'providerStatus', label: '退款历史');
+      if (data['providerInvocation'] != false) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '退款历史不得触发正式支付厂商',
+        );
+      }
+      final List<Object?> rawApplications = _requiredList(
+        data,
+        field: '退款历史列表',
+      );
+      final _PageMetadata metadata = _requiredPageMetadata(
+        data,
+        requestedPage: backendPage,
+        requestedPageSize: backendPageSize,
+      );
+      expectedMetadata = _validateStablePageMetadata(
+        expected: expectedMetadata,
+        actual: metadata,
+      );
+      _validatePageItemCount(rawApplications, metadata, field: '退款历史');
+      for (final Object? raw in rawApplications) {
+        if (raw is! Map<String, Object?>) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '退款历史记录结构无法识别',
+          );
+        }
+        final RefundApplication application = _refundFromMap(
+          raw,
+          currency: LedgerCurrency.cashCny,
+        );
+        if (!seenRefundIds.add(application.id)) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '多页退款历史包含重复的权威退款 ID',
+          );
+        }
+        applications.add(application);
+      }
+      hasMore = metadata.current < metadata.pages;
+      if (hasMore && rawApplications.isEmpty) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '退款历史分页为空但仍声明存在下一页',
+        );
+      }
+      backendPage += 1;
+    }
+    if (hasMore) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '退款历史超过客户端安全分页上限',
+      );
+    }
+    return List<RefundApplication>.unmodifiable(applications);
   }
 
   @override

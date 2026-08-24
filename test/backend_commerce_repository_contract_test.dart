@@ -515,7 +515,7 @@ void main() {
       final BackendCommerceRepository repository = harness.repository;
 
       expect(repository.refundScope, RefundScope.order);
-      expect(repository.supportsRefundHistory, isFalse);
+      expect(repository.supportsRefundHistory, isTrue);
       final RefundEligibility eligibility = await repository
           .checkRefundEligibility('order-1');
       expect(eligibility.allowed, isTrue);
@@ -644,29 +644,60 @@ void main() {
   );
 
   test(
-    'refund history is explicit unsupported empty-state error without network',
+    'refund history reads the complete account-scoped authoritative page',
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {
-        return _Response.ok(<String, Object?>{});
+        expect(request.path, '/app-api/refund/history');
+        expect(request.query, <String, String>{
+          'pageNum': '1',
+          'pageSize': '100',
+        });
+        final List<Object?> records = <Object?>[
+          <String, Object?>{
+            'refundId': 'refund-history-2',
+            'orderNo': 'order-history-2',
+            'amountMinor': 200,
+            'reason': '重复充值',
+            'status': 'REJECTED',
+            'resultMessage': '资料不足',
+            'submittedAt': '2026-08-22T10:02:00Z',
+            'providerStatus': 'VENDOR_BLOCKED',
+            'completed': false,
+          },
+          <String, Object?>{
+            'refundId': 'refund-history-1',
+            'orderNo': 'order-history-1',
+            'amountMinor': 100,
+            'reason': '误操作',
+            'status': 'SUBMITTED',
+            'resultMessage': '',
+            'submittedAt': '2026-08-22T10:01:00Z',
+            'providerStatus': 'VENDOR_BLOCKED',
+            'completed': false,
+          },
+        ];
+        return _Response.ok(<String, Object?>{
+          'records': records,
+          'list': records,
+          'current': 1,
+          'pageSize': 100,
+          'total': 2,
+          'pages': 1,
+          'hasMore': false,
+          'providerStatus': 'VENDOR_BLOCKED',
+          'providerInvocation': false,
+        });
       });
       addTearDown(harness.close);
-      await expectLater(
-        harness.repository.fetchRefundApplications('order-1'),
-        throwsA(
-          isA<ApiException>()
-              .having(
-                (ApiException error) => error.kind,
-                'kind',
-                ApiFailureKind.configuration,
-              )
-              .having(
-                (ApiException error) => error.message,
-                'message',
-                contains('历史'),
-              ),
-        ),
-      );
-      expect(harness.requests, isEmpty);
+      final List<RefundApplication> applications = await harness.repository
+          .fetchRefundApplications('authenticated-account');
+      expect(applications.map((RefundApplication item) => item.id), <String>[
+        'refund-history-2',
+        'refund-history-1',
+      ]);
+      expect(applications.first.account, 'order-history-2');
+      expect(applications.first.status, RefundStatus.rejected);
+      expect(harness.requests, hasLength(1));
     },
   );
 
@@ -700,7 +731,7 @@ void main() {
       });
       addTearDown(harness.close);
 
-      expect(harness.repository.supportsRefundHistory, isFalse);
+      expect(harness.repository.supportsRefundHistory, isTrue);
       expect(harness.repository.supportsWithdrawalApplication, isFalse);
 
       final RefundApplication result = await harness.repository

@@ -81,6 +81,7 @@ class BackendRouteCatalog {
     this.refundCheck = '/app-api/refund/check',
     this.refundApplication = '/app-api/refund/application',
     this.refundResult = '/app-api/refund/result',
+    this.refundHistory = '/app-api/refund/history',
     this.refundRepeat = '/app-api/refund/repeat',
     this.walletOverview = '/app-mini-api/mini/v1/wallet/overview',
     this.walletAccountDetails = '/app-mini-api/mini/v1/wallet/account-details',
@@ -253,6 +254,7 @@ class BackendRouteCatalog {
   final String refundCheck;
   final String refundApplication;
   final String refundResult;
+  final String refundHistory;
   final String refundRepeat;
   final String walletOverview;
   final String walletAccountDetails;
