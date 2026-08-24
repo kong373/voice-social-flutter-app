@@ -285,6 +285,7 @@ void main() {
             'netAmountMinor': 99,
             'feeRateBasisPoints': 100,
             'minimumAmountMinor': 1,
+            'settlementMode': 'FIRST_PARTY_REVIEW_PROVIDER_BLOCKED',
           }),
         '/app-mini-api/mini/v1/withdrawal/records' => _Response.ok(
           <String, Object?>{
@@ -975,6 +976,8 @@ void main() {
               'payoutStatus': 'MANUAL_REVIEW_PENDING',
               'providerInvocation': false,
               'submittedAt': '2026-08-24T10:00:00Z',
+              'accountMasked': '****8002',
+              'holderNameMasked': 'F*2',
             });
           }(),
           _ => _Response.ok(<String, Object?>{}),
@@ -1057,6 +1060,109 @@ void main() {
   );
 
   test(
+    'F3-B2 payout accounts require an explicit no-provider marker',
+    () async {
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        expect(request.path, '/app-mini-api/mini/v1/withdrawal/accounts');
+        return _Response.ok(<String, Object?>{
+          'list': <Object?>[],
+          'total': 0,
+          'selectedPayoutAccountId': '',
+          'defaultPayoutAccountId': '',
+          'selectionRequired': true,
+        });
+      });
+      addTearDown(harness.close);
+
+      await expectLater(
+        harness.repository.fetchPayoutAccounts(),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+    },
+  );
+
+  test('F3-B2 withdrawal quote requires the blocked settlement mode', () async {
+    final _Harness harness = await _Harness.start((RequestRecord request) {
+      expect(request.path, '/app-mini-api/mini/v1/withdrawal/fee-rate');
+      return _Response.ok(<String, Object?>{
+        'amountMinor': 1000,
+        'feeMinor': 10,
+        'netAmountMinor': 990,
+        'feeRateBasisPoints': 100,
+        'minimumAmountMinor': 1000,
+      });
+    });
+    addTearDown(harness.close);
+
+    await expectLater(
+      harness.repository.fetchWithdrawalQuote(amount: 10),
+      throwsA(
+        isA<ApiException>().having(
+          (ApiException error) => error.kind,
+          'kind',
+          ApiFailureKind.protocol,
+        ),
+      ),
+    );
+  });
+
+  test(
+    'F3-B2 withdrawal apply rejects incomplete provider and record authority',
+    () async {
+      const String accountId = '00000000-0000-0000-0000-00000000a151';
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/withdrawal/accounts')) {
+          return _Response.ok(<String, Object?>{
+            'list': <Object?>[
+              <String, Object?>{
+                'payoutAccountId': accountId,
+                'accountType': 'BANK_REFERENCE',
+                'accountMasked': '****8151',
+                'holderNameMasked': 'F*1',
+                'status': 'VERIFIED',
+                'selectable': true,
+              },
+            ],
+            'total': 1,
+            'selectedPayoutAccountId': accountId,
+            'selectionRequired': false,
+            'providerInvocation': false,
+          });
+        }
+        expect(request.path, '/app-mini-api/mini/v1/withdrawal/apply');
+        return _Response.ok(<String, Object?>{
+          'withdrawalId': '00000000-0000-0000-0000-00000000a152',
+          'amountMinor': 1000,
+          'feeMinor': 10,
+          'netAmountMinor': 990,
+          'status': 'SUBMITTED',
+        });
+      });
+      addTearDown(harness.close);
+
+      await expectLater(
+        harness.repository.applyWithdrawal(
+          amount: 10,
+          payoutAccountId: accountId,
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
     'F3-B2 concurrent withdrawal submissions share one write and request id',
     () async {
       const String accountId = '00000000-0000-0000-0000-00000000a201';
@@ -1091,8 +1197,11 @@ void main() {
           'feeMinor': 10,
           'netAmountMinor': 990,
           'status': 'SUBMITTED',
+          'payoutStatus': 'MANUAL_REVIEW_PENDING',
           'providerInvocation': false,
           'submittedAt': '2026-08-24T10:00:00Z',
+          'accountMasked': '****8202',
+          'holderNameMasked': 'F*2',
         });
       });
       addTearDown(harness.close);
@@ -1158,7 +1267,11 @@ void main() {
           'feeMinor': 10,
           'netAmountMinor': 990,
           'status': 'SUBMITTED',
+          'payoutStatus': 'MANUAL_REVIEW_PENDING',
           'providerInvocation': false,
+          'submittedAt': '2026-08-24T10:00:00Z',
+          'accountMasked': '****8252',
+          'holderNameMasked': 'F*2',
         });
       });
       addTearDown(harness.close);

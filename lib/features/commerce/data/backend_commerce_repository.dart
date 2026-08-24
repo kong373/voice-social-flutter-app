@@ -542,8 +542,7 @@ class BackendCommerceRepository implements CommerceRepository {
         ),
       );
     }
-    if (data.containsKey('providerInvocation') &&
-        _requiredBool(data, 'providerInvocation')) {
+    if (_requiredBool(data, 'providerInvocation')) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
         message: '收款账户响应声明了不允许的厂商调用',
@@ -883,6 +882,17 @@ class BackendCommerceRepository implements CommerceRepository {
     final int basisPoints = _requiredInt(data, <String>[
       'feeRateBasisPoints',
     ], field: '提现费率');
+    final String settlementMode = _requiredString(
+      data,
+      'settlementMode',
+      field: '提现结算模式',
+    );
+    if (settlementMode != 'FIRST_PARTY_REVIEW_PROVIDER_BLOCKED') {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '提现结算模式未保持第一方人工审核与厂商关闭状态',
+      );
+    }
     if (feeMinor < 0 || netMinor < 0 || minimumMinor < 0 || basisPoints < 0) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -998,17 +1008,29 @@ class BackendCommerceRepository implements CommerceRepository {
       },
     );
     final Map<String, Object?> data = _asMap(response.data);
-    final bool providerInvocation = data.containsKey('providerInvocation')
-        ? _requiredBool(data, 'providerInvocation')
-        : false;
+    final bool providerInvocation = _requiredBool(data, 'providerInvocation');
     if (providerInvocation) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
         message: '提现厂商状态被阻断，不能当作已提交',
       );
     }
-    final String responsePayoutAccountId =
-        _optionalTrimmedString(data['payoutAccountId']) ?? payoutAccountId;
+    final String payoutStatus = _requiredString(
+      data,
+      'payoutStatus',
+      field: '提现打款状态',
+    );
+    if (payoutStatus != 'MANUAL_REVIEW_PENDING') {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '提现打款状态未保持人工审核等待状态',
+      );
+    }
+    final String responsePayoutAccountId = _requiredString(
+      data,
+      'payoutAccountId',
+      field: '提现收款账户 ID',
+    );
     if (responsePayoutAccountId != payoutAccountId) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -1036,13 +1058,37 @@ class BackendCommerceRepository implements CommerceRepository {
         message: '提现申请金额不一致',
       );
     }
-    final String status = _requiredString(data, 'status', field: '提现申请状态');
+    final String status = _requiredString(
+      data,
+      'status',
+      field: '提现申请状态',
+    ).toUpperCase();
+    if (status != 'SUBMITTED') {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现申请响应不是服务端已提交状态',
+      );
+    }
     final String withdrawalId = _requiredString(
       data,
       'withdrawalId',
       field: '提现申请 ID',
     );
-    final Object? submittedAt = data['submittedAt'];
+    final DateTime submittedAt = _requiredDateTime(
+      data,
+      'submittedAt',
+      field: '提现申请时间',
+    );
+    final String holderNameMasked = _requiredString(
+      data,
+      'holderNameMasked',
+      field: '提现收款人脱敏姓名',
+    );
+    final String accountMasked = _requiredString(
+      data,
+      'accountMasked',
+      field: '提现收款账户脱敏账号',
+    );
     return WithdrawalRecord(
       id: withdrawalId,
       withdrawalNo: withdrawalId,
@@ -1051,13 +1097,11 @@ class BackendCommerceRepository implements CommerceRepository {
       receivedAmount: _minorToMajor(netMinor),
       status: _requiredWithdrawalStatus(status),
       statusText: _withdrawalStatusText(_requiredWithdrawalStatus(status)),
-      createdAt: submittedAt == null
-          ? DateTime.now().toUtc()
-          : _requiredDateTime(data, 'submittedAt', field: '提现申请时间'),
+      createdAt: submittedAt,
       rejectedReason: _string(data['resultMessage']),
       payoutAccountId: responsePayoutAccountId,
-      holderNameMasked: _string(data['holderNameMasked']),
-      maskedCard: _string(data['accountMasked']),
+      holderNameMasked: holderNameMasked,
+      maskedCard: accountMasked,
       currency: LedgerCurrency.cashCny,
     );
   }
