@@ -419,7 +419,7 @@ if not isinstance(payload, dict):
 allowed = {"status", "writeCounters", "authorityInvariants", "providerCalls", "secrets"}
 if set(payload) - allowed:
     raise SystemExit(1)
-if payload.get("status") in ("FAIL", "NOT_CONFIGURED"):
+if payload.get("status") != "OK":
     raise SystemExit(1)
 if (
     "writeCounters" not in payload
@@ -501,12 +501,14 @@ PY
 apk_scan() {
   local dir="$1"
   local output="$dir/apk-secret-scan.txt"
-  local bad=0 apk
+  local bad=0 apk apk_count=0
   : >"$output"
   while IFS= read -r -d '' apk; do
+    apk_count=$((apk_count + 1))
     unzip -p "$apk" 2>/dev/null | grep -aFq "$LIVE_PHONE" && { printf 'apk_phone_value_found=true\n' >>"$output"; bad=1; } || true
     unzip -p "$apk" 2>/dev/null | grep -aFq "$OAUTH_CLIENT_ID" && { printf 'apk_oauth_client_value_found=true\n' >>"$output"; bad=1; } || true
   done < <(find "$PROJECT_ROOT/build/app/outputs" -type f -name '*.apk' -print0 2>/dev/null || true)
+  [[ "$apk_count" -gt 0 ]] || { printf 'apk_missing=true\n' >>"$output"; bad=1; }
   [[ "$bad" -eq 0 ]] && { printf 'apk_secret_scan=0\n' >>"$output"; return 0; }
   printf 'apk_secret_scan=FAIL\n' >>"$output"
   return 1
@@ -550,6 +552,8 @@ run_one() {
       --dart-define=ALLOW_INSECURE_HTTP=true --dart-define=API_BASE_URL="$BACKEND_BASE_URL" \
       --dart-define=API_TIMEOUT_SECONDS=15 \
       --dart-define=M4_RUNTIME_CONFIG_PORT="$RELAY_PORT" \
+      --dart-define=M4_EXPECTED_FLUTTER_SHA="$FLUTTER_SHA_EXPECTED" \
+      --dart-define=M4_EXPECTED_BACKEND_SHA="$BACKEND_SHA_EXPECTED" \
       --dart-define=QA_AVD_ID="$avd" \
       --dart-define=QA_EXPECTED_VIEWPORT_WIDTH="$width" \
       --dart-define=QA_EXPECTED_VIEWPORT_HEIGHT="$height" \
@@ -567,8 +571,10 @@ run_one() {
   fi
   local screenshot_count marker_count provider_count invariant_count hard_count crash_count
   screenshot_count="$(find "$dir/screenshots" -type f -name '*.png' -size +0c | wc -l | tr -d ' ')"
-  marker_count="$(grep -Ec 'M4_ROUTE_STATUS::' "$dir/logs/flutter-drive.log" || true)"
-  provider_count="$(grep -Ec 'M4_PROVIDER_CALLS::0($|[[:space:]])' "$dir/logs/flutter-drive.log" || true)"
+  marker_count="$(awk -F '::' '/M4_ROUTE_STATUS::/ {print $2 "::" $3 "::" $4 "::" $5 "::" $6}' "$dir/logs/flutter-drive.log" | sort -u | wc -l | tr -d ' ')"
+  provider_marker_count="$(grep -Ec 'M4_PROVIDER_CALLS::' "$dir/logs/flutter-drive.log" || true)"
+  provider_count="$(grep -Ec '^M4_PROVIDER_CALLS::0($|[[:space:]])' "$dir/logs/flutter-drive.log" || true)"
+  provider_nonzero_count="$(awk '/^M4_PROVIDER_CALLS::/ && $0 !~ /^M4_PROVIDER_CALLS::0([[:space:]]|$)/ {count += 1} END {print count + 0}' "$dir/logs/flutter-drive.log")"
   invariant_count="$(grep -Ec 'M4_AUTHORITY_INVARIANT::' "$dir/logs/flutter-drive.log" || true)"
   hard_count="$(cat "$dir/logs/logcat-full.txt" "$dir/logs/flutter-drive.log" | grep -Eci 'FATAL EXCEPTION|AndroidRuntime|Fatal signal [0-9]+|ANR in com\.kong373\.voice_social_app|MissingPluginException|RenderFlex overflow|Unhandled Exception|EXCEPTION CAUGHT BY|Failed assertion' || true)"
   crash_count="$(grep -Eci 'FATAL EXCEPTION|Fatal signal [0-9]+|ANR in com\.kong373\.voice_social_app' "$dir/logs/logcat-full.txt" "$dir/logs/flutter-drive.log" || true)"
@@ -577,7 +583,9 @@ run_one() {
 
   local expected_marker="M4_VIEWPORT::$avd::"$width"x"$height"::$dpr"
   local acceptance_marker
-  acceptance_marker="$(grep -Ec 'M4_ACCEPTANCE::PASS($|[[:space:]])' "$dir/logs/flutter-drive.log" || true)"
+  acceptance_marker="$(grep -Ec '^M4_ACCEPTANCE::PASS($|[[:space:]])' "$dir/logs/flutter-drive.log" || true)"
+  acceptance_failure_marker="$(grep -Ec '^M4_ACCEPTANCE::FAIL($|[[:space:]])' "$dir/logs/flutter-drive.log" || true)"
+  bad_route_status_count="$(awk -F '::' '/M4_ROUTE_STATUS::/ {if ($5 !~ /^[2-4][0-9][0-9]$/) count += 1} END {print count + 0}' "$dir/logs/flutter-drive.log")"
   local secret_status='PASS'
   local apk_status='PASS'
   secret_scan "$dir" || secret_status='FAIL'
@@ -586,10 +594,11 @@ run_one() {
   local reason='complete'
   if [[ "$drive_status" -ne 0 ]]; then result='FAIL'; reason="flutter_drive_exit_$drive_status"
   elif [[ "$marker_count" -lt 10 ]]; then result='FAIL'; reason='insufficient_http_route_markers'
-  elif [[ "$provider_count" -ne 1 ]]; then result='FAIL'; reason='provider_calls_marker_missing_or_nonzero'
+  elif [[ "$provider_marker_count" -ne 1 || "$provider_count" -ne 1 || "$provider_nonzero_count" -ne 0 ]]; then result='FAIL'; reason='provider_calls_marker_missing_or_nonzero'
   elif [[ "$invariant_count" -lt 5 ]]; then result='FAIL'; reason='insufficient_authority_invariants'
   elif [[ "$screenshot_count" -lt 4 ]]; then result='FAIL'; reason='insufficient_screenshots'
-  elif [[ "$acceptance_marker" -ne 1 ]]; then result='FAIL'; reason='acceptance_marker_missing'
+  elif [[ "$acceptance_marker" -ne 1 || "$acceptance_failure_marker" -ne 0 ]]; then result='FAIL'; reason='acceptance_marker_missing_or_failed'
+  elif [[ "$bad_route_status_count" -ne 0 ]]; then result='FAIL'; reason='route_status_missing_or_failed'
   elif ! grep -Fq "$expected_marker" "$dir/logs/flutter-drive.log"; then result='FAIL'; reason='viewport_marker_missing'
   elif [[ "$hard_count" -ne 0 || "$crash_count" -ne 0 ]]; then result='FAIL'; reason='hard_flutter_or_android_finding'
   elif [[ "$db_status" != 'COLLECTED' ]]; then result='FAIL'; reason='db_write_evidence_missing_or_failed'
@@ -597,9 +606,9 @@ run_one() {
   fi
   {
     printf 'result=%s\nreason=%s\navd=%s\napi_level=%s\nprofile=%s\nserial=%s\n' "$result" "$reason" "$avd" "$api" "$profile" "$serial"
-    printf 'flutter_sha=%s\nbackend_sha=%s\nhttp_route_marker_count=%s\nauthority_invariant_count=%s\n' "$FLUTTER_SHA_ACTUAL" "$BACKEND_SHA_ACTUAL" "$marker_count" "$invariant_count"
+    printf 'run_id=%s\ntested_git_sha=%s\nflutter_sha=%s\nbackend_sha=%s\nhttp_route_marker_count=%s\nauthority_invariant_count=%s\n' "$RUN_ID" "$FLUTTER_SHA_ACTUAL" "$FLUTTER_SHA_ACTUAL" "$BACKEND_SHA_ACTUAL" "$marker_count" "$invariant_count"
     printf 'screenshot_count=%s\nhard_finding_count=%s\ncrash_anr_count=%s\n' "$screenshot_count" "$hard_count" "$crash_count"
-    printf 'provider_calls_made=false\ndb_evidence=%s\nsecret_scan=%s\napk_secret_scan=%s\n' "$db_status" "$secret_status" "$apk_status"
+    printf 'acceptance_status=%s\nprovider_calls_made=false\ndb_evidence=%s\nsecret_scan=%s\napk_secret_scan=%s\n' "$([[ "$result" == PASS ]] && printf PASS || printf FAIL)" "$db_status" "$secret_status" "$apk_status"
   } >"$dir/result.txt"
   [[ "$result" == PASS ]] || { OVERALL_RESULT='FAIL'; return 1; }
   return 0

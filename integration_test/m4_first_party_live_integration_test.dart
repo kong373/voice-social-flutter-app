@@ -36,6 +36,19 @@ final int _runtimeConfigPort = int.tryParse(_runtimeConfigPortValue) ?? 0;
 const String _authoritativeApiBaseUrl = 'http://10.0.2.2:18080/';
 const String _runtimeConfigPath = '/m4/config';
 
+// These are non-secret immutable candidate identities supplied by the
+// acceptance runner.  A live test must not be able to claim PASS when it is
+// running a different checkout (or when the runner forgot to bind the
+// candidate identity at all).
+const String _expectedTestedFlutterSha = String.fromEnvironment(
+  'M4_EXPECTED_FLUTTER_SHA',
+  defaultValue: '',
+);
+const String _expectedTestedBackendSha = String.fromEnvironment(
+  'M4_EXPECTED_BACKEND_SHA',
+  defaultValue: '',
+);
+
 const String _expectedWidthValue = String.fromEnvironment(
   'QA_EXPECTED_VIEWPORT_WIDTH',
   defaultValue: '390',
@@ -273,7 +286,12 @@ void main() {
       evidence.invariant('home_uses_authoritative_room_ids');
 
       await _runSearchFlow(tester, dependencies, evidence);
-      await _runDynamicSocialCommunityFlow(tester, dependencies, evidence);
+      await _runDynamicSocialCommunityFlow(
+        tester,
+        dependencies,
+        evidence,
+        currentUserId: currentUserId,
+      );
       await _runRoomFlow(
         tester,
         dependencies,
@@ -477,8 +495,9 @@ Future<void> _runSearchFlow(
 Future<void> _runDynamicSocialCommunityFlow(
   WidgetTester tester,
   AppDependencies dependencies,
-  _M4Evidence evidence,
-) async {
+  _M4Evidence evidence, {
+  required int currentUserId,
+}) async {
   await _probe(
     evidence,
     capability: 'dynamic.feed',
@@ -486,22 +505,25 @@ Future<void> _runDynamicSocialCommunityFlow(
     route: const BackendRouteCatalog().dynamicList,
     operation: () => dependencies.dynamicRepository.fetchFeed(),
   );
-  final Object? socialProfileProbe = await _probe(
+  await _probe(
     evidence,
     capability: 'social.profile',
     method: 'GET',
     route: const BackendRouteCatalog().personalData,
     operation: () => dependencies.socialRepository.fetchMyProfile(),
   );
-  if (socialProfileProbe != null) {
-    evidence.http(
-      capability: 'social.homepage',
-      method: 'GET',
-      route: const BackendRouteCatalog().personalHomepage,
-      status: 200,
-      state: 'success',
-    );
-  }
+  // fetchMyProfile tolerates a documented 404 for an empty personal
+  // homepage.  The acceptance gate must not turn that tolerated branch into
+  // an invented homepage success, so probe the homepage route directly.
+  await _probe(
+    evidence,
+    capability: 'social.homepage',
+    method: 'GET',
+    route: const BackendRouteCatalog().personalHomepage,
+    operation: () =>
+        dependencies.socialRepository.fetchPublicProfile(currentUserId),
+    requiredSuccess: true,
+  );
   final Object? communityHomeProbe = await _probe(
     evidence,
     capability: 'community.home',
@@ -510,12 +532,11 @@ Future<void> _runDynamicSocialCommunityFlow(
     operation: () => dependencies.communityRepository.fetchGuildHome(),
   );
   if (communityHomeProbe != null) {
-    evidence.http(
+    evidence.composite(
       capability: 'community.recommended_guilds',
       method: 'POST',
       route: const BackendRouteCatalog().recommendedGuilds,
       status: 200,
-      state: 'success',
     );
   }
   final Object? taskCenterProbe = await _probe(
@@ -526,19 +547,17 @@ Future<void> _runDynamicSocialCommunityFlow(
     operation: () => dependencies.communityRepository.fetchTaskCenter(),
   );
   if (taskCenterProbe != null) {
-    evidence.http(
+    evidence.composite(
       capability: 'community.sign_rewards',
       method: 'GET',
       route: const BackendRouteCatalog().signRewards,
       status: 200,
-      state: 'success',
     );
-    evidence.http(
+    evidence.composite(
       capability: 'community.today_sign_status',
       method: 'GET',
       route: const BackendRouteCatalog().todaySignStatus,
       status: 200,
-      state: 'success',
     );
   }
   await _probe(
@@ -947,12 +966,11 @@ Future<void> _runCommerceFlow(
     operation: () => dependencies.commerceRepository.fetchWalletSummary(),
   );
   if (walletProbe != null) {
-    evidence.http(
+    evidence.composite(
       capability: 'commerce.wallet.gift_coin',
       method: 'GET',
       route: routes.ncoinBalance,
       status: 200,
-      state: 'success',
     );
   }
   await _probe(
@@ -1284,12 +1302,11 @@ Future<void> _runComplianceAndSupportFlow(
       ('compliance.real_name', routes.accountRealName),
       ('compliance.sessions', routes.accountSessions),
     ]) {
-      evidence.http(
+      evidence.composite(
         capability: capability,
         method: 'GET',
         route: route,
         status: 200,
-        state: 'success',
       );
     }
   }
@@ -1568,6 +1585,76 @@ class _M4Evidence {
   final List<String> _routes = <String>[];
   final List<String> _invariants = <String>[];
   final List<String> _local = <String>[];
+  final Set<String> _violations = <String>{};
+
+  // These are the minimum live operations that must have a successful,
+  // explicit route outcome before an AVD may be reported as PASS.  UI-only
+  // screenshots and a route-marker count are not substitutes for these
+  // first-party reads/writes.
+  static const Set<String> _requiredCapabilities = <String>{
+    'auth.send_code',
+    'auth.login',
+    'auth.refresh',
+    'vendor.readiness',
+    'home.recommendations',
+    'search.suggestions',
+    'search.results',
+    'dynamic.feed',
+    'social.profile',
+    'social.homepage',
+    'community.home',
+    'community.recommended_guilds',
+    'community.tasks',
+    'community.sign_rewards',
+    'community.today_sign_status',
+    'community.activities',
+    'room.enter',
+    'room.public_messages',
+    'room.reconnect',
+    'room.seats',
+    'room.off_mic_listeners',
+    'room.moderation',
+    'room.muted_users',
+    'room.topic',
+    'room.pk.history',
+    'room.pk.active',
+    'room.exit.cleanup',
+    'message.conversations',
+    'commerce.wallet',
+    'commerce.wallet.gift_coin',
+    'commerce.ledger',
+    'commerce.orders',
+    'commerce.refund.records',
+    'commerce.withdraw.quote',
+    'commerce.withdraw.records',
+    'commerce.recharge.catalog',
+    'commerce.gift.catalog',
+    'commerce.decorations',
+    'compliance.snapshot',
+    'compliance.youth_mode',
+    'compliance.restrictions',
+    'compliance.cancellation',
+    'compliance.version',
+    'compliance.real_name',
+    'compliance.sessions',
+    'support.channel',
+  };
+
+  static const Set<String> _requiredInvariants = <String>{
+    'authoritative_backend_target_10_0_2_2_18080',
+    'development_otp_consumed_in_memory_only',
+    'vendor_readiness_observed_without_client_provider',
+    'vendor_runtime_adapters_are_fail_closed',
+    'home_uses_authoritative_room_ids',
+    'session_refresh_persists_rotated_session',
+    'restart_restores_consent_and_session',
+    'search_route_is_reachable_from_home',
+    'dynamic_page_reachable_from_primary_navigation',
+    'message_records_page_reachable',
+    'wallet_gift_withdraw_refund_reads_are_first_party_only',
+    'gift_send_and_payment_invocation_not_attempted',
+    'logout_clears_local_session',
+  };
 
   void http({
     required String capability,
@@ -1584,7 +1671,36 @@ class _M4Evidence {
     final String marker =
         'M4_ROUTE_STATUS::$safeCapability::$method::$route::$status::$safeState';
     _routes.add(marker);
+    if (status < 200 || status >= 600) {
+      _violations.add('$safeCapability:invalid_http_status');
+    }
+    if (status >= 500 ||
+        safeState == 'unavailable' ||
+        safeState == 'contract_failure' ||
+        safeState == 'configuration_failure') {
+      _violations.add('$safeCapability:unsafe_http_outcome');
+    }
     debugPrint(marker);
+  }
+
+  /// Marks a route that is part of an atomic repository read.  For example,
+  /// `fetchTaskCenter` completes only after the task, reward, and today-status
+  /// requests all complete and validate.  The marker is deliberately called
+  /// `composite_success` so downstream evidence cannot mistake it for a
+  /// separately observed request.
+  void composite({
+    required String capability,
+    required String method,
+    required String route,
+    required int status,
+  }) {
+    http(
+      capability: capability,
+      method: method,
+      route: route,
+      status: status,
+      state: 'composite_success',
+    );
   }
 
   void local(String capability, String route, String state) {
@@ -1607,14 +1723,67 @@ class _M4Evidence {
   void finish() {
     final Set<String> uniqueRoutes = _routes.toSet();
     final Set<String> uniqueInvariants = _invariants.toSet();
+    final Set<String> observedCapabilities = _routes
+        .map((String marker) => marker.split('::'))
+        .where((List<String> parts) => parts.length >= 6)
+        .map((List<String> parts) => parts[1])
+        .toSet();
+    final Set<String> missingCapabilities = _requiredCapabilities.difference(
+      observedCapabilities,
+    );
+    final Set<String> nonSuccessCapabilities = <String>{};
+    for (final String marker in uniqueRoutes) {
+      final List<String> parts = marker.split('::');
+      if (parts.length < 6 ||
+          !_requiredCapabilities.contains(parts[1]) ||
+          int.tryParse(parts[4]) == null ||
+          int.parse(parts[4]) < 200 ||
+          int.parse(parts[4]) >= 300 ||
+          (parts[5] != 'success' &&
+              parts[5] != 'composite_success' &&
+              parts[5] != 'registration_required')) {
+        if (parts.length >= 2 && _requiredCapabilities.contains(parts[1])) {
+          nonSuccessCapabilities.add(parts[1]);
+        }
+      }
+    }
+    final Set<String> missingInvariants = _requiredInvariants.difference(
+      uniqueInvariants,
+    );
+    final bool candidateShaValid =
+        RegExp(r'^[0-9a-f]{40}$').hasMatch(_expectedTestedFlutterSha) &&
+        RegExp(r'^[0-9a-f]{40}$').hasMatch(_expectedTestedBackendSha);
+    if (!candidateShaValid) {
+      _violations.add('candidate_sha_missing_or_invalid');
+    }
+    if (missingCapabilities.isNotEmpty) {
+      _violations.add('required_route_outcome_missing');
+    }
+    if (nonSuccessCapabilities.isNotEmpty) {
+      _violations.add('required_route_outcome_not_successful');
+    }
+    if (missingInvariants.isNotEmpty) {
+      _violations.add('required_authority_invariant_missing');
+    }
+    if (_invariants.length < 5) {
+      _violations.add('insufficient_authority_evidence');
+    }
+    final bool pass = _violations.isEmpty;
     final Map<String, Object?> result = <String, Object?>{
       'avd': avd,
       'routeMarkerCount': uniqueRoutes.length,
       'authorityInvariantCount': uniqueInvariants.length,
+      'requiredCapabilityCount': _requiredCapabilities.length,
+      'missingRequiredCapabilities': missingCapabilities.toList()..sort(),
+      'nonSuccessRequiredCapabilities': nonSuccessCapabilities.toList()..sort(),
+      'missingRequiredInvariants': missingInvariants.toList()..sort(),
+      'tested_git_sha': _expectedTestedFlutterSha,
+      'backend_sha': _expectedTestedBackendSha,
       'providerCalls': 0,
       'providerCallEvidence': 'none',
       'secretsInClient': false,
-      'result': 'PASS',
+      'acceptance': pass ? 'PASS' : 'FAIL',
+      'result': pass ? 'PASS' : 'FAIL',
     };
     binding.reportData ??= <String, dynamic>{};
     binding.reportData!['m4Acceptance'] = result;
@@ -1622,7 +1791,12 @@ class _M4Evidence {
     debugPrint('M4_AUTHORITY_EVIDENCE::${uniqueInvariants.length}');
     debugPrint('M4_ROUTE_MARKERS::${uniqueRoutes.length}');
     debugPrint('M4_SECRETS_IN_CLIENT::0');
-    debugPrint('M4_ACCEPTANCE::PASS');
+    debugPrint('M4_ACCEPTANCE::${pass ? 'PASS' : 'FAIL'}');
+    if (!pass) {
+      throw TestFailure(
+        'M4 acceptance evidence incomplete: ${_violations.toList()..sort()}',
+      );
+    }
   }
 }
 
