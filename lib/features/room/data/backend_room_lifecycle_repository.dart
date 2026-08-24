@@ -23,9 +23,9 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
   final RoomLifecycleCapabilities capabilities =
       const RoomLifecycleCapabilities(
         supportsApprovalAccessMode: true,
-        supportsTopicTitle: false,
-        supportsAutoLockMic: false,
-        supportsReopen: false,
+        supportsTopicTitle: true,
+        supportsAutoLockMic: true,
+        supportsReopen: true,
       );
 
   static const int _ownedPageSize = 50;
@@ -87,13 +87,17 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
       );
     }
     final String topicContent = _requiredStringField(topic, 'topic');
+    final String topicTitle = _requiredStringField(topic, 'topicTitle');
     final String welcomeMessage = _requiredStringField(topic, 'welcomeText');
-    if (!_requiredBool(topic, 'canEdit')) {
+    final bool canEdit = _requiredBool(topic, 'canEdit');
+    final bool expectedCanEdit = availability == RoomAvailability.open;
+    if (canEdit != expectedCanEdit) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
-        message: '房间话题响应 canEdit 必须为 true',
+        message: '房间话题响应 canEdit 与房间状态不一致',
       );
     }
+    final bool autoLockMic = _requiredBool(topic, 'autoLockMic');
     _requiredNonNegativeInt(topic, 'version');
     final String roomCode = _requiredOwnerText(ownerRow, 'roomCode');
     final String title = _requiredOwnerText(ownerRow, 'roomName');
@@ -101,8 +105,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
       roomId: id,
       roomCode: roomCode,
       title: title,
-      // b709 persists one topic string; there is no topicTitle column.
-      topicTitle: '',
+      topicTitle: topicTitle,
       topicContent: topicContent,
       welcomeMessage: welcomeMessage,
       accessMode: _roomAccessMode(accessMode),
@@ -110,8 +113,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
       password: '',
       passwordConfigured: accessMode == 'PASSWORD',
       showInHall: showInHall,
-      // b709 has no auto-lock-mic field or behavior.
-      autoLockMic: false,
+      autoLockMic: autoLockMic,
       availability: availability,
       coverUrl: _nonEmptyString(ownerRow['coverImgUrl']),
     );
@@ -166,13 +168,13 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
           _nonEmptyString(info['roomName']) ??
           _nonEmptyString(info['name']) ??
           '语音房',
-      topicTitle: '',
+      topicTitle: _requiredStringField(topic, 'topicTitle'),
       topicContent: _nonEmptyString(topic['topic']) ?? '',
       welcomeMessage: _nonEmptyString(topic['welcomeText']) ?? '',
       accessMode: accessMode,
       password: '',
       showInHall: _asBool(info['hallVisible']),
-      autoLockMic: false,
+      autoLockMic: _requiredBool(topic, 'autoLockMic'),
       availability: _availability(info),
       coverUrl: _nonEmptyString(info['coverImgUrl']),
     );
@@ -291,14 +293,6 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
     RoomConfiguration configuration,
   ) async {
     _validate(configuration);
-    if (configuration.hasExistingRoom &&
-        configuration.availability == RoomAvailability.closed &&
-        !capabilities.supportsReopen) {
-      throw const ApiException(
-        kind: ApiFailureKind.business,
-        message: '当前 development 后端尚未提供重新开放房间接口',
-      );
-    }
     final String intent = _saveIntent(configuration);
     return _writeGuard.run<RoomLifecycleSaveResult>(
       intent: intent,
@@ -317,6 +311,9 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
             requested: configuration,
           );
         }
+        if (configuration.availability == RoomAvailability.closed) {
+          await _reopenRoom(roomId, headers);
+        }
         // updateRoomInformation is authoritative for the complete editable
         // room configuration, including topic and welcomeText. Do not follow
         // it with the legacy setRoomTopics write: that second request could
@@ -329,10 +326,40 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
             'roomId': roomId,
           },
         );
-        RoomWriteGuard.validateMutationResponse(response, operation: '更新房间信息');
+        RoomWriteGuard.validateMutationResponse(
+          response,
+          operation: '更新房间信息',
+          requiredFields: <String>[
+            'roomId',
+            'topicTitle',
+            'autoLockMic',
+            'status',
+            'rtcStatus',
+            'imStatus',
+            'providerInvocation',
+          ],
+        );
+        final Map<String, Object?> updateData = _asMap(response.data);
+        if (_requiredExactNonEmptyString(updateData, 'roomId') != roomId ||
+            _requiredExactNonEmptyString(updateData, 'status') != 'OPEN' ||
+            _requiredStringField(updateData, 'topicTitle') !=
+                configuration.topicTitle.trim() ||
+            _requiredBool(updateData, 'autoLockMic') !=
+                configuration.autoLockMic ||
+            _requiredExactNonEmptyString(updateData, 'rtcStatus') !=
+                'VENDOR_BLOCKED' ||
+            _requiredExactNonEmptyString(updateData, 'imStatus') !=
+                'VENDOR_BLOCKED' ||
+            _requiredBool(updateData, 'providerInvocation')) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '更新房间响应与请求配置不一致',
+          );
+        }
         final RoomConfiguration authoritative = await fetchRoom(roomId);
         if (authoritative.title != configuration.title.trim() ||
             authoritative.topicContent != configuration.topicContent.trim() ||
+            authoritative.topicTitle != configuration.topicTitle.trim() ||
             authoritative.welcomeMessage !=
                 configuration.welcomeMessage.trim() ||
             authoritative.accessMode != configuration.accessMode ||
@@ -342,6 +369,13 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
             message: '房间信息已被其他操作更新，请刷新后重新确认',
           );
         }
+        if (authoritative.autoLockMic != configuration.autoLockMic ||
+            authoritative.availability != RoomAvailability.open) {
+          throw const ApiException(
+            kind: ApiFailureKind.business,
+            message: '房间麦位或开放状态已变化，请刷新后重试',
+          );
+        }
         return RoomLifecycleSaveResult(
           roomId: roomId,
           roomCode: authoritative.roomCode ?? roomId,
@@ -349,6 +383,34 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
         );
       },
     );
+  }
+
+  Future<void> _reopenRoom(String roomId, Map<String, String> headers) async {
+    final ApiResponse response = await _apiClient.post(
+      _routes.reopenRoom,
+      headers: headers,
+      body: <String, Object?>{'roomId': roomId},
+    );
+    RoomWriteGuard.validateMutationResponse(
+      response,
+      operation: '重新开放房间',
+      requiredFields: <String>[
+        'roomId',
+        'status',
+        'reopened',
+        'providerInvocation',
+      ],
+    );
+    final Map<String, Object?> data = _asMap(response.data);
+    if (_requiredExactNonEmptyString(data, 'roomId') != roomId ||
+        _requiredExactNonEmptyString(data, 'status') != 'OPEN' ||
+        !_requiredBool(data, 'reopened') ||
+        _requiredBool(data, 'providerInvocation')) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '重新开放房间响应与请求不一致',
+      );
+    }
   }
 
   @override
@@ -656,10 +718,12 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
     };
     return <String, Object?>{
       'roomName': configuration.title.trim(),
+      'topicTitle': configuration.topicTitle.trim(),
       'topic': configuration.topicContent.trim(),
       'welcomeText': configuration.welcomeMessage.trim(),
       'accessMode': accessMode,
       'hallVisible': configuration.showInHall,
+      'autoLockMic': configuration.autoLockMic,
       if (accessMode == 'PASSWORD' && configuration.password.isNotEmpty)
         'password': configuration.password,
     };
@@ -672,6 +736,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
     final String roomId = _requiredExactNonEmptyString(data, 'roomId');
     final String roomCode = _requiredExactNonEmptyString(data, 'roomCode');
     final String roomName = _requiredExactNonEmptyString(data, 'roomName');
+    final String topicTitle = _requiredStringField(data, 'topicTitle');
     final String topic = _requiredStringField(data, 'topic');
     final String welcomeText = _requiredStringField(data, 'welcomeText');
     final String status = _requiredExactNonEmptyString(data, 'status');
@@ -684,6 +749,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
     final String accessMode = _requiredExactNonEmptyString(data, 'accessMode');
     _strictRoomAccessMode(accessMode);
     final bool hallVisible = _requiredBool(data, 'hallVisible');
+    final bool autoLockMic = _requiredBool(data, 'autoLockMic');
     final bool created = _requiredBool(data, 'created');
     final bool reused = _requiredBool(data, 'reused');
     if (created == reused) {
@@ -713,9 +779,11 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
     if (created &&
         (roomName != requested.title.trim() ||
             topic != requested.topicContent.trim() ||
+            topicTitle != requested.topicTitle.trim() ||
             welcomeText != requested.welcomeMessage.trim() ||
             accessMode != _accessModeValue(requested.accessMode) ||
-            hallVisible != requested.showInHall)) {
+            hallVisible != requested.showInHall ||
+            autoLockMic != requested.autoLockMic)) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '创建房间响应与提交配置不一致',

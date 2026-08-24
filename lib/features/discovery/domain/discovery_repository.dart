@@ -10,6 +10,10 @@ abstract interface class DiscoveryRepository {
     int pageSize = 20,
   });
 
+  Future<List<DiscoverySearchSuggestion>> fetchSearchSuggestions({
+    int limit = 10,
+  });
+
   Future<RoomCollectionSnapshot> fetchRoomCollections({
     int page = 1,
     int pageSize = 30,

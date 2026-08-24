@@ -180,6 +180,38 @@ class MockDiscoveryRepository implements DiscoveryRepository {
   }
 
   @override
+  Future<List<DiscoverySearchSuggestion>> fetchSearchSuggestions({
+    int limit = 10,
+  }) async {
+    if (limit < 1 || limit > 20) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '搜索建议数量必须为 1 至 20',
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    const List<DiscoverySearchSuggestion> values = <DiscoverySearchSuggestion>[
+      DiscoverySearchSuggestion(
+        keyword: '深夜陪伴',
+        source: DiscoverySuggestionSource.roomHotTitle,
+      ),
+      DiscoverySearchSuggestion(
+        keyword: '音乐点唱',
+        source: DiscoverySuggestionSource.roomHotTopic,
+      ),
+      DiscoverySearchSuggestion(
+        keyword: '轻松闲聊',
+        source: DiscoverySuggestionSource.curatedSeed,
+      ),
+      DiscoverySearchSuggestion(
+        keyword: '新朋友',
+        source: DiscoverySuggestionSource.curatedSeed,
+      ),
+    ];
+    return values.take(limit).toList(growable: false);
+  }
+
+  @override
   Future<RoomCollectionSnapshot> fetchRoomCollections({
     int page = 1,
     int pageSize = 30,

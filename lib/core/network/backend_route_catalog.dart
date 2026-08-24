@@ -7,6 +7,7 @@ class BackendRouteCatalog {
     this.enterRoom = '/app-room-api/room/com/v1/enterRoom',
     this.createRoom = '/app-mini-api/mini/v1/rooms',
     this.closeRoom = '/app-mini-api/mini/v1/rooms/close',
+    this.reopenRoom = '/app-mini-api/mini/v1/rooms/reopen',
     this.queryRoomInfo = '/app-room-api/room/com/v1/queryRoomInfo',
     this.reconnectRoom = '/app-room-api/room/com/v1/reConnectRoomInfo',
     this.queryRoomOtherInfo = '/app-room-api/room/com/v1/queryRoomOtherInfo',
@@ -33,6 +34,7 @@ class BackendRouteCatalog {
     this.updateRoomTopic = '/app-api/rooms/setRoomTopics',
     this.homeRecommendedRooms = '/app-api/rooms/v1/getRecommendRooms',
     this.globalSearch = '/app-api/es/getSearchESResult',
+    this.searchSuggestions = '/app-api/es/getSearchSuggestions',
     this.favoriteRooms = '/app-api/user/favorite/getFvoriteRooms',
     this.starRoom = '/app-api/user/favorite/starRoom',
     this.ownedRooms = '/app-api/rooms/getRoomSelectByUserId',
@@ -176,6 +178,7 @@ class BackendRouteCatalog {
   final String enterRoom;
   final String createRoom;
   final String closeRoom;
+  final String reopenRoom;
   final String queryRoomInfo;
   final String reconnectRoom;
   final String queryRoomOtherInfo;
@@ -202,6 +205,7 @@ class BackendRouteCatalog {
   final String updateRoomTopic;
   final String homeRecommendedRooms;
   final String globalSearch;
+  final String searchSuggestions;
   final String favoriteRooms;
   final String starRoom;
   final String ownedRooms;

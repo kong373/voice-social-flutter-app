@@ -8,6 +8,18 @@ enum SearchEntityType {
   final int backendCode;
 }
 
+enum DiscoverySuggestionSource { roomHotTitle, roomHotTopic, curatedSeed }
+
+class DiscoverySearchSuggestion {
+  const DiscoverySearchSuggestion({
+    required this.keyword,
+    required this.source,
+  });
+
+  final String keyword;
+  final DiscoverySuggestionSource source;
+}
+
 /// Formats a server-authoritative online count without treating unavailable
 /// data as zero.
 String discoveryOnlineCountLabel(int? onlineCount, {String suffix = '人在线'}) {

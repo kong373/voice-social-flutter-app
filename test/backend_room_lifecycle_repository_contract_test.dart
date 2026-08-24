@@ -33,6 +33,8 @@ void main() {
                   'accessMode': 'APPROVAL',
                   'hallVisible': false,
                   'status': 'OPEN',
+                  'topicTitle': '电影夜',
+                  'autoLockMic': true,
                   'coverImgUrl': 'https://cdn.example/room.png',
                 },
               ],
@@ -46,6 +48,8 @@ void main() {
                   'accessMode': 'APPROVAL',
                   'hallVisible': false,
                   'status': 'OPEN',
+                  'topicTitle': '电影夜',
+                  'autoLockMic': true,
                   'coverImgUrl': 'https://cdn.example/room.png',
                 },
               ],
@@ -62,7 +66,9 @@ void main() {
           return _Reply(
             data: <String, Object?>{
               'topic': '聊聊最近的电影',
+              'topicTitle': '电影夜',
               'welcomeText': '欢迎来到夜航电台',
+              'autoLockMic': true,
               'roomId': '9527',
               'canEdit': true,
               'version': 4,
@@ -80,13 +86,13 @@ void main() {
     expect(room.roomId, '9527');
     expect(room.roomCode, 'R9527');
     expect(room.title, '夜航电台');
-    expect(room.topicTitle, isEmpty);
+    expect(room.topicTitle, '电影夜');
     expect(room.topicContent, '聊聊最近的电影');
     expect(room.welcomeMessage, '欢迎来到夜航电台');
     expect(room.accessMode, RoomAccessMode.approval);
     expect(room.password, isEmpty);
     expect(room.showInHall, isFalse);
-    expect(room.autoLockMic, isFalse);
+    expect(room.autoLockMic, isTrue);
     expect(room.availability, RoomAvailability.open);
     expect(room.coverUrl, 'https://cdn.example/room.png');
     expect(server.requests, hasLength(2));
@@ -122,6 +128,52 @@ void main() {
 
       expect(await repository.fetchOwnedRoom(), isNull);
       expect(server.requests, hasLength(1));
+    },
+  );
+
+  test(
+    'closed owner room is read-only and preserves lifecycle controls',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        if (request.path == '/app-api/rooms/getRoomSelectByUserId') {
+          return _Reply(
+            data: _ownerPage(
+              row: const <String, Object?>{
+                'roomId': '9527',
+                'roomCode': 'R9527',
+                'roomName': '已关闭房间',
+                'accessMode': 'PUBLIC',
+                'hallVisible': false,
+                'status': 'CLOSED',
+                'topicTitle': '保留标题',
+                'autoLockMic': true,
+              },
+            ),
+          );
+        }
+        return const _Reply(
+          data: <String, Object?>{
+            'roomId': '9527',
+            'topicTitle': '保留标题',
+            'topic': '保留内容',
+            'welcomeText': '',
+            'autoLockMic': true,
+            'canEdit': false,
+            'version': 9,
+          },
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+
+      final RoomConfiguration room = await repository.fetchRoom('9527');
+
+      expect(room.availability, RoomAvailability.closed);
+      expect(room.topicTitle, '保留标题');
+      expect(room.autoLockMic, isTrue);
     },
   );
 
@@ -572,13 +624,25 @@ void main() {
             expect(request.body, <String, Object?>{
               'roomId': '9527',
               'roomName': '新房间',
+              'topicTitle': '新话题',
               'topic': '新的内容',
               'welcomeText': '欢迎新朋友',
               'accessMode': 'PASSWORD',
               'hallVisible': true,
+              'autoLockMic': false,
               'password': '1357',
             });
-            return const _Reply(data: null);
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'topicTitle': '新话题',
+                'autoLockMic': false,
+                'status': 'OPEN',
+                'rtcStatus': 'VENDOR_BLOCKED',
+                'imStatus': 'VENDOR_BLOCKED',
+                'providerInvocation': false,
+              },
+            );
           case '/app-api/rooms/getRoomSelectByUserId':
             expect(request.method, 'GET');
             expect(request.query, <String, String>{
@@ -595,6 +659,8 @@ void main() {
                     'accessMode': 'PASSWORD',
                     'hallVisible': true,
                     'status': 'OPEN',
+                    'topicTitle': '新话题',
+                    'autoLockMic': false,
                   },
                 ],
                 'records': <Object?>[
@@ -605,6 +671,8 @@ void main() {
                     'accessMode': 'PASSWORD',
                     'hallVisible': true,
                     'status': 'OPEN',
+                    'topicTitle': '新话题',
+                    'autoLockMic': false,
                   },
                 ],
                 'current': 1,
@@ -620,8 +688,10 @@ void main() {
             return _Reply(
               data: <String, Object?>{
                 'roomId': '9527',
+                'topicTitle': '新话题',
                 'topic': '新的内容',
                 'welcomeText': '欢迎新朋友',
+                'autoLockMic': false,
                 'canEdit': true,
                 'version': 4,
               },
@@ -677,9 +747,14 @@ void main() {
                 'roomId': '9527',
                 'roomCode': 'R9527',
                 'roomName': '服务端已改名',
+                'topicTitle': '新话题',
+                'autoLockMic': false,
                 'hallVisible': true,
                 'accessMode': 'PUBLIC',
                 'status': 'OPEN',
+                'rtcStatus': 'VENDOR_BLOCKED',
+                'imStatus': 'VENDOR_BLOCKED',
+                'providerInvocation': false,
               },
             );
           case '/app-api/rooms/getRoomSelectByUserId':
@@ -697,6 +772,8 @@ void main() {
                     'accessMode': 'PUBLIC',
                     'hallVisible': true,
                     'status': 'OPEN',
+                    'topicTitle': '新话题',
+                    'autoLockMic': false,
                   },
                 ],
                 'records': <Object?>[
@@ -707,6 +784,8 @@ void main() {
                     'accessMode': 'PUBLIC',
                     'hallVisible': true,
                     'status': 'OPEN',
+                    'topicTitle': '新话题',
+                    'autoLockMic': false,
                   },
                 ],
                 'current': 1,
@@ -720,8 +799,10 @@ void main() {
             return const _Reply(
               data: <String, Object?>{
                 'roomId': '9527',
+                'topicTitle': '新话题',
                 'topic': '新的内容',
                 'welcomeText': '欢迎',
+                'autoLockMic': false,
                 'canEdit': true,
                 'version': 4,
               },
@@ -786,7 +867,17 @@ void main() {
       ) {
         switch (request.path) {
           case '/app-api/rooms/updateRoomInformation':
-            return const _Reply(data: null);
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'topicTitle': '',
+                'autoLockMic': false,
+                'status': 'OPEN',
+                'rtcStatus': 'VENDOR_BLOCKED',
+                'imStatus': 'VENDOR_BLOCKED',
+                'providerInvocation': false,
+              },
+            );
           case '/app-api/rooms/getRoomSelectByUserId':
             return _Reply(
               data: _ownerPage(
@@ -797,6 +888,8 @@ void main() {
                   'accessMode': 'PUBLIC',
                   'hallVisible': true,
                   'status': 'OPEN',
+                  'topicTitle': '',
+                  'autoLockMic': false,
                 },
               ),
             );
@@ -804,8 +897,10 @@ void main() {
             return const _Reply(
               data: <String, Object?>{
                 'roomId': '9527',
+                'topicTitle': '',
                 'topic': '',
                 'welcomeText': '',
+                'autoLockMic': false,
                 'canEdit': true,
                 'version': 1,
               },
@@ -853,7 +948,17 @@ void main() {
       ) {
         switch (request.path) {
           case '/app-api/rooms/updateRoomInformation':
-            return const _Reply(data: null);
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'topicTitle': '',
+                'autoLockMic': false,
+                'status': 'OPEN',
+                'rtcStatus': 'VENDOR_BLOCKED',
+                'imStatus': 'VENDOR_BLOCKED',
+                'providerInvocation': false,
+              },
+            );
           case '/app-api/rooms/getRoomSelectByUserId':
             return _Reply(
               data: _ownerPage(
@@ -864,6 +969,8 @@ void main() {
                   'accessMode': 'PUBLIC',
                   'hallVisible': false,
                   'status': 'OPEN',
+                  'topicTitle': '',
+                  'autoLockMic': false,
                 },
               ),
             );
@@ -871,8 +978,10 @@ void main() {
             return const _Reply(
               data: <String, Object?>{
                 'roomId': '9527',
+                'topicTitle': '',
                 'topic': '',
                 'welcomeText': '',
+                'autoLockMic': false,
                 'canEdit': true,
                 'version': 1,
               },
@@ -931,8 +1040,10 @@ void main() {
         return _Reply(
           data: <String, Object?>{
             'roomId': request.query['roomId']!,
+            'topicTitle': '',
             'topic': '',
             'welcomeText': '',
+            'autoLockMic': false,
           },
         );
       }
@@ -1168,20 +1279,24 @@ void main() {
           expect(request.method, 'POST');
           expect(request.body, <String, Object?>{
             'roomName': '新房间',
+            'topicTitle': '',
             'topic': '',
             'welcomeText': '',
             'accessMode': 'PUBLIC',
             'hallVisible': true,
+            'autoLockMic': false,
           });
           return const _Reply(
             data: <String, Object?>{
               'roomId': 'room-created',
               'roomCode': '9527',
               'roomName': '新房间',
+              'topicTitle': '',
               'topic': '',
               'welcomeText': '',
               'accessMode': 'PUBLIC',
               'hallVisible': true,
+              'autoLockMic': false,
               'status': 'OPEN',
               'created': true,
               'reused': false,
@@ -1238,10 +1353,12 @@ void main() {
         expect(request.method, 'POST');
         expect(request.body, <String, Object?>{
           'roomName': '幂等房间',
+          'topicTitle': '',
           'topic': '',
           'welcomeText': '',
           'accessMode': 'PUBLIC',
           'hallVisible': true,
+          'autoLockMic': false,
         });
         createCalls += 1;
         return _Reply(
@@ -1249,10 +1366,12 @@ void main() {
             'roomId': 'room-replayed',
             'roomCode': '9528',
             'roomName': '幂等房间',
+            'topicTitle': '',
             'topic': '',
             'welcomeText': '',
             'accessMode': 'PUBLIC',
             'hallVisible': true,
+            'autoLockMic': false,
             'status': 'OPEN',
             'created': createCalls == 1,
             'reused': createCalls > 1,
@@ -1297,20 +1416,24 @@ void main() {
         expect(request.method, 'POST');
         expect(request.body, <String, Object?>{
           'roomName': '审批房',
+          'topicTitle': '入房规则',
           'topic': '先申请再进入',
           'welcomeText': '请等待房主批准',
           'accessMode': 'APPROVAL',
           'hallVisible': true,
+          'autoLockMic': true,
         });
         return const _Reply(
           data: <String, Object?>{
             'roomId': 'approval-room',
             'roomCode': '9529',
             'roomName': '审批房',
+            'topicTitle': '入房规则',
             'topic': '先申请再进入',
             'welcomeText': '请等待房主批准',
             'accessMode': 'APPROVAL',
             'hallVisible': true,
+            'autoLockMic': true,
             'status': 'OPEN',
             'created': true,
             'reused': false,
@@ -1326,60 +1449,134 @@ void main() {
       final RoomLifecycleSaveResult result = await repository.saveRoom(
         const RoomConfiguration(
           title: '审批房',
-          topicTitle: '',
+          topicTitle: '入房规则',
           topicContent: '先申请再进入',
           welcomeMessage: '请等待房主批准',
           accessMode: RoomAccessMode.approval,
           password: '',
           showInHall: true,
-          autoLockMic: false,
+          autoLockMic: true,
           availability: RoomAvailability.open,
         ),
       );
 
       expect(result.roomId, 'approval-room');
       expect(repository.capabilities.supportsApprovalAccessMode, isTrue);
-      expect(repository.capabilities.supportsTopicTitle, isFalse);
-      expect(repository.capabilities.supportsAutoLockMic, isFalse);
-      expect(repository.capabilities.supportsReopen, isFalse);
+      expect(repository.capabilities.supportsTopicTitle, isTrue);
+      expect(repository.capabilities.supportsAutoLockMic, isTrue);
+      expect(repository.capabilities.supportsReopen, isTrue);
     },
   );
 
-  test('closed live room cannot be mistaken for a reopen write', () async {
-    final _RunningServer server = await _RunningServer.start(
-      (_CapturedRequest request) =>
-          fail('closed room must not write: ${request.path}'),
-    );
-    addTearDown(server.close);
-    final BackendRoomLifecycleRepository repository =
-        BackendRoomLifecycleRepository(apiClient: server.client);
+  test(
+    'closed live room reopens then persists the requested configuration',
+    () async {
+      String? reopenRequestId;
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        switch (request.path) {
+          case '/app-mini-api/mini/v1/rooms/reopen':
+            expect(request.method, 'POST');
+            expect(request.body, <String, Object?>{'roomId': '9527'});
+            reopenRequestId = request.requestId;
+            expect(reopenRequestId, isNotEmpty);
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'status': 'OPEN',
+                'reopened': true,
+                'providerInvocation': false,
+              },
+            );
+          case '/app-api/rooms/updateRoomInformation':
+            expect(request.method, 'PATCH');
+            expect(request.body, <String, Object?>{
+              'roomName': '重新开放房间',
+              'topicTitle': '新标题',
+              'topic': '新内容',
+              'welcomeText': '新欢迎语',
+              'accessMode': 'APPROVAL',
+              'hallVisible': true,
+              'autoLockMic': true,
+              'roomId': '9527',
+            });
+            expect(request.requestId, reopenRequestId);
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'topicTitle': '新标题',
+                'autoLockMic': true,
+                'status': 'OPEN',
+                'rtcStatus': 'VENDOR_BLOCKED',
+                'imStatus': 'VENDOR_BLOCKED',
+                'providerInvocation': false,
+              },
+            );
+          case '/app-api/rooms/getRoomSelectByUserId':
+            return _Reply(
+              data: _ownerPage(
+                row: const <String, Object?>{
+                  'roomId': '9527',
+                  'roomCode': 'R9527',
+                  'roomName': '重新开放房间',
+                  'topic': '新内容',
+                  'topicTitle': '新标题',
+                  'autoLockMic': true,
+                  'accessMode': 'APPROVAL',
+                  'hallVisible': true,
+                  'status': 'OPEN',
+                },
+              ),
+            );
+          case '/app-api/rooms/getRoomTopics':
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'topicTitle': '新标题',
+                'topic': '新内容',
+                'welcomeText': '新欢迎语',
+                'autoLockMic': true,
+                'canEdit': true,
+                'version': 5,
+              },
+            );
+          default:
+            fail('unexpected lifecycle route: ${request.path}');
+        }
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
 
-    await expectLater(
-      repository.saveRoom(
+      final RoomLifecycleSaveResult result = await repository.saveRoom(
         const RoomConfiguration(
           roomId: '9527',
           roomCode: 'R9527',
-          title: '已关闭房间',
-          topicTitle: '',
-          topicContent: '',
-          welcomeMessage: '',
+          title: '重新开放房间',
+          topicTitle: '新标题',
+          topicContent: '新内容',
+          welcomeMessage: '新欢迎语',
           accessMode: RoomAccessMode.approval,
           password: '',
           showInHall: true,
-          autoLockMic: false,
+          autoLockMic: true,
           availability: RoomAvailability.closed,
         ),
-      ),
-      throwsA(
-        isA<ApiException>().having(
-          (ApiException error) => error.kind,
-          'kind',
-          ApiFailureKind.business,
-        ),
-      ),
-    );
-    expect(server.requests, isEmpty);
-  });
+      );
+      expect(result.roomId, '9527');
+      expect(result.created, isFalse);
+      expect(
+        server.requests.map((_CapturedRequest item) => item.path),
+        <String>[
+          '/app-mini-api/mini/v1/rooms/reopen',
+          '/app-api/rooms/updateRoomInformation',
+          '/app-api/rooms/getRoomSelectByUserId',
+          '/app-api/rooms/getRoomTopics',
+        ],
+      );
+    },
+  );
 }
 
 RoomConfiguration _newPublicRoom() => const RoomConfiguration(
@@ -1412,11 +1609,13 @@ Map<String, Object?> _createSnapshot({
   String roomId = 'room-created',
   String roomCode = '9527',
   String roomName = '新房间',
+  String topicTitle = '',
   String topic = '',
   String welcomeText = '',
   String status = 'OPEN',
   String accessMode = 'PUBLIC',
   Object? hallVisible = true,
+  Object? autoLockMic = false,
   required bool created,
   required bool reused,
   Object? rtcStatus = 'VENDOR_BLOCKED',
@@ -1426,11 +1625,13 @@ Map<String, Object?> _createSnapshot({
   'roomId': roomId,
   'roomCode': roomCode,
   'roomName': roomName,
+  'topicTitle': topicTitle,
   'topic': topic,
   'welcomeText': welcomeText,
   'status': status,
   'accessMode': accessMode,
   'hallVisible': hallVisible,
+  'autoLockMic': autoLockMic,
   'created': created,
   'reused': reused,
   'rtcStatus': rtcStatus,

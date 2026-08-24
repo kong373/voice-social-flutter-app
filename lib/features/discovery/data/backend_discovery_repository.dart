@@ -122,6 +122,56 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
   }
 
   @override
+  Future<List<DiscoverySearchSuggestion>> fetchSearchSuggestions({
+    int limit = 10,
+  }) async {
+    if (limit < 1 || limit > 20) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '搜索建议数量必须为 1 至 20',
+      );
+    }
+    final ApiResponse response = await _apiClient.get(
+      _routes.searchSuggestions,
+      query: <String, String>{'limit': '$limit'},
+    );
+    final Map<String, Object?> data = _requiredMap(
+      response.data,
+      context: '搜索建议响应',
+    );
+    final List<Object?> list = _requiredList(data, 'list', context: '搜索建议响应');
+    final List<Object?> records = _requiredList(
+      data,
+      'records',
+      context: '搜索建议响应',
+    );
+    if (jsonEncode(list) != jsonEncode(records)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '搜索建议 list 与 records 不一致',
+      );
+    }
+    final int total = _requiredPageInt(data, field: 'total', allowZero: true);
+    if (total != list.length || list.length > limit) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '搜索建议 total 或数量与请求不一致',
+      );
+    }
+    if (data['providerInvocation'] is! bool ||
+        data['providerInvocation'] != false) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '搜索建议必须明确不调用第三方',
+      );
+    }
+    final Set<String> seen = <String>{};
+    return <DiscoverySearchSuggestion>[
+      for (final Object? raw in list) _searchSuggestionFrom(raw, seen: seen),
+    ];
+  }
+
+  @override
   Future<RoomCollectionSnapshot> fetchRoomCollections({
     int page = 1,
     int pageSize = 30,
@@ -330,6 +380,45 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
       rooms.add(_roomFromMap(value, favorite: favorite));
     }
     return rooms;
+  }
+
+  static DiscoverySearchSuggestion _searchSuggestionFrom(
+    Object? raw, {
+    required Set<String> seen,
+  }) {
+    if (raw is! Map<String, Object?>) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '搜索建议条目不是对象',
+      );
+    }
+    final Object? keywordValue = raw['keyword'];
+    if (keywordValue is! String ||
+        keywordValue.isEmpty ||
+        keywordValue.trim() != keywordValue ||
+        keywordValue.length > 64 ||
+        !seen.add(keywordValue)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '搜索建议 keyword 无效或重复',
+      );
+    }
+    if (raw['moderationStatus'] != 'FIRST_PARTY_REVIEWED') {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '搜索建议未经第一方审核',
+      );
+    }
+    final DiscoverySuggestionSource source = switch (raw['source']) {
+      'ROOM_HOT_TITLE' => DiscoverySuggestionSource.roomHotTitle,
+      'ROOM_HOT_TOPIC' => DiscoverySuggestionSource.roomHotTopic,
+      'CURATED_SEED' => DiscoverySuggestionSource.curatedSeed,
+      _ => throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '搜索建议 source 无法识别',
+      ),
+    };
+    return DiscoverySearchSuggestion(keyword: keywordValue, source: source);
   }
 
   static DiscoveryRoom _roomFromMap(

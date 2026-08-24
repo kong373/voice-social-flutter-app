@@ -1,9 +1,8 @@
 enum RoomAccessMode { publicRoom, password, approval }
 
 /// Declares which room-configuration operations the selected repository can
-/// actually persist.  The live first-party backend intentionally exposes a
-/// smaller surface than the local mock, so presentation code can hide or
-/// disable unsupported controls instead of claiming a setting was saved.
+/// actually persist, so presentation code can hide or disable unsupported
+/// controls instead of claiming a setting was saved.
 class RoomLifecycleCapabilities {
   const RoomLifecycleCapabilities({
     required this.supportsApprovalAccessMode,

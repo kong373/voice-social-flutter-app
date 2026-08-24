@@ -1081,6 +1081,68 @@ void main() {
       await server.close(force: true);
     }
   });
+
+  test(
+    'search suggestions use the reviewed read-only authority contract',
+    () async {
+      final HttpServer server = await _startServer((
+        HttpRequest request,
+        Object? body,
+      ) async {
+        expect(request.method, 'GET');
+        expect(request.uri.path, '/app-api/es/getSearchSuggestions');
+        expect(request.uri.queryParameters, <String, String>{'limit': '5'});
+        expect(captureContractAuthorization(request), 'Bearer contract-test');
+        expect(body, isNull);
+        await _reply(
+          request,
+          data: <String, Object?>{
+            'list': <Object?>[
+              <String, Object?>{
+                'keyword': '深夜陪伴',
+                'source': 'ROOM_HOT_TITLE',
+                'moderationStatus': 'FIRST_PARTY_REVIEWED',
+              },
+              <String, Object?>{
+                'keyword': '音乐点唱',
+                'source': 'CURATED_SEED',
+                'moderationStatus': 'FIRST_PARTY_REVIEWED',
+              },
+            ],
+            'records': <Object?>[
+              <String, Object?>{
+                'keyword': '深夜陪伴',
+                'source': 'ROOM_HOT_TITLE',
+                'moderationStatus': 'FIRST_PARTY_REVIEWED',
+              },
+              <String, Object?>{
+                'keyword': '音乐点唱',
+                'source': 'CURATED_SEED',
+                'moderationStatus': 'FIRST_PARTY_REVIEWED',
+              },
+            ],
+            'total': 2,
+            'providerInvocation': false,
+          },
+        );
+      });
+      addTearDown(() => server.close(force: true));
+      final BackendDiscoveryRepository repository = BackendDiscoveryRepository(
+        apiClient: _client(server),
+        clientType: 'Android',
+      );
+
+      final List<DiscoverySearchSuggestion> suggestions = await repository
+          .fetchSearchSuggestions(limit: 5);
+
+      expect(
+        suggestions.map((DiscoverySearchSuggestion item) => item.keyword),
+        <String>['深夜陪伴', '音乐点唱'],
+      );
+      expect(suggestions.first.source, DiscoverySuggestionSource.roomHotTitle);
+      expect(suggestions.last.source, DiscoverySuggestionSource.curatedSeed);
+    },
+  );
 }
 
 class _RequestRecord {

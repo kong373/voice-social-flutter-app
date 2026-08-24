@@ -261,7 +261,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
       passwordConfigured: _existing?.passwordConfigured ?? false,
       showInHall: _showInHall,
       autoLockMic: _capabilities.supportsAutoLockMic ? _autoLockMic : false,
-      availability: RoomAvailability.open,
+      availability: _existing?.availability ?? RoomAvailability.open,
       coverUrl: _existing?.coverUrl,
     );
     try {

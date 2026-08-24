@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
+import 'package:voice_social_app/app/app_dependency_scope.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
+import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
 import 'package:voice_social_app/features/discovery/presentation/search_results_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_deep_link_page.dart';
 
@@ -9,6 +13,7 @@ class GlobalSearchPage extends StatefulWidget {
     super.key,
     this.initialRecent = const <String>[],
     this.suggestions = const <String>[],
+    this.repository,
   });
 
   /// Mock/QA callers may provide an explicit fixture. Production and live
@@ -19,6 +24,7 @@ class GlobalSearchPage extends StatefulWidget {
   /// this empty until the backend supplies an approved list; QA may pass a
   /// visual fixture explicitly.
   final List<String> suggestions;
+  final DiscoveryRepository? repository;
 
   @override
   State<GlobalSearchPage> createState() => _GlobalSearchPageState();
@@ -28,6 +34,12 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final List<String> _recent = <String>[];
+  List<String> _suggestions = const <String>[];
+  DiscoveryRepository? _repository;
+  bool _suggestionsStarted = false;
+  bool _suggestionsLoading = false;
+  String? _suggestionsError;
+  int _suggestionsGeneration = 0;
 
   bool get _canDirectRoom =>
       RegExp(r'^\d{4,18}$').hasMatch(_controller.text.trim());
@@ -36,6 +48,7 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
   void initState() {
     super.initState();
     _recent.addAll(widget.initialRecent);
+    _suggestions = List<String>.unmodifiable(widget.suggestions);
     _controller.addListener(_handleTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -45,7 +58,27 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_suggestionsStarted || widget.suggestions.isNotEmpty) {
+      return;
+    }
+    _suggestionsStarted = true;
+    _repository = widget.repository;
+    if (_repository == null) {
+      try {
+        _repository = AppDependencyScope.of(context).discoveryRepository;
+      } on StateError {
+        // Standalone visual/widget hosts intentionally have no runtime scope.
+        return;
+      }
+    }
+    Future<void>.microtask(_loadSuggestions);
+  }
+
+  @override
   void dispose() {
+    _suggestionsGeneration++;
     _controller
       ..removeListener(_handleTextChanged)
       ..dispose();
@@ -54,6 +87,37 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
   }
 
   void _handleTextChanged() => setState(() {});
+
+  Future<void> _loadSuggestions() async {
+    final DiscoveryRepository? repository = _repository;
+    if (repository == null) return;
+    final int generation = ++_suggestionsGeneration;
+    if (mounted) {
+      setState(() {
+        _suggestionsLoading = true;
+        _suggestionsError = null;
+      });
+    }
+    try {
+      final List<DiscoverySearchSuggestion> values = await repository
+          .fetchSearchSuggestions();
+      if (!mounted || generation != _suggestionsGeneration) return;
+      setState(() {
+        _suggestions = List<String>.unmodifiable(
+          values.map((DiscoverySearchSuggestion item) => item.keyword),
+        );
+        _suggestionsLoading = false;
+      });
+    } catch (error) {
+      if (!mounted || generation != _suggestionsGeneration) return;
+      setState(() {
+        _suggestionsLoading = false;
+        _suggestionsError = error is ApiException
+            ? error.message
+            : '搜索建议暂时无法加载';
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +209,27 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
                   ),
               ],
             ),
-          if (widget.suggestions.isNotEmpty) ...<Widget>[
+          if (_suggestionsLoading) ...<Widget>[
+            const SizedBox(height: 24),
+            const LinearProgressIndicator(minHeight: 2),
+          ],
+          if (_suggestionsError != null) ...<Widget>[
+            const SizedBox(height: 24),
+            SocialCard(
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.cloud_off_rounded),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(_suggestionsError!)),
+                  TextButton(
+                    onPressed: _loadSuggestions,
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (_suggestions.isNotEmpty) ...<Widget>[
             const SizedBox(height: 24),
             Text('你可能想找', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 10),
@@ -153,7 +237,7 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
               spacing: 8,
               runSpacing: 8,
               children: <Widget>[
-                for (final String item in widget.suggestions)
+                for (final String item in _suggestions)
                   SocialPill(
                     label: item,
                     icon: Icons.auto_awesome_rounded,
