@@ -242,7 +242,10 @@ PY
 
 device_for_api() {
   local serial sdk
-  while read -r serial _state; do
+  # The script-wide IFS intentionally excludes spaces, but `adb devices`
+  # separates its serial and state with horizontal whitespace. Restore that
+  # delimiter only for this parser so a cold-started emulator is discoverable.
+  while IFS=$' \t' read -r serial _state; do
     [[ "$serial" == emulator-* ]] || continue
     sdk="$(adb -s "$serial" shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
     [[ "$sdk" == "$1" ]] && { printf '%s\n' "$serial"; return 0; }

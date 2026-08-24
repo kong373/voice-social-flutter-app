@@ -7,6 +7,9 @@ void main() {
   final File aggregateScript = File(
     'tool/qa/aggregate_m4_authoritative_live_avd.sh',
   ).absolute;
+  final String runnerSource = File(
+    'tool/qa/run_m4_authoritative_live_avd.sh',
+  ).readAsStringSync();
   final String integrationSource = File(
     'integration_test/m4_first_party_live_integration_test.dart',
   ).readAsStringSync();
@@ -119,6 +122,11 @@ void main() {
     expect(integrationSource, contains('if (!pass)'));
     expect(integrationSource, contains("state: 'composite_success'"));
     expect(integrationSource, isNot(contains("'result': 'PASS',")));
+  });
+
+  test('cold-start emulator discovery restores adb whitespace parsing', () {
+    expect(runnerSource, contains("while IFS=\$' \\t' read -r serial _state"));
+    expect(runnerSource, isNot(contains('while read -r serial _state; do')));
   });
 
   test(
