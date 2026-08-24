@@ -325,7 +325,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
       _error = null;
     });
     try {
-      await _repository.closeRoom(widget.roomId);
+      await _repository.closeRoom(widget.roomId, expectedVersion: room.version);
       if (!mounted) {
         return;
       }

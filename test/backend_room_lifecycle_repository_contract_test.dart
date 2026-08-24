@@ -95,6 +95,7 @@ void main() {
     expect(room.autoLockMic, isTrue);
     expect(room.availability, RoomAvailability.open);
     expect(room.coverUrl, 'https://cdn.example/room.png');
+    expect(room.version, 4);
     expect(server.requests, hasLength(2));
   });
 
@@ -631,6 +632,7 @@ void main() {
               'hallVisible': true,
               'autoLockMic': false,
               'password': '1357',
+              'expectedVersion': 3,
             });
             return const _Reply(
               data: <String, Object?>{
@@ -641,6 +643,7 @@ void main() {
                 'rtcStatus': 'VENDOR_BLOCKED',
                 'imStatus': 'VENDOR_BLOCKED',
                 'providerInvocation': false,
+                'version': 4,
               },
             );
           case '/app-api/rooms/getRoomSelectByUserId':
@@ -717,6 +720,7 @@ void main() {
           showInHall: true,
           autoLockMic: false,
           availability: RoomAvailability.open,
+          version: 3,
         ),
       );
 
@@ -755,6 +759,7 @@ void main() {
                 'rtcStatus': 'VENDOR_BLOCKED',
                 'imStatus': 'VENDOR_BLOCKED',
                 'providerInvocation': false,
+                'version': 1,
               },
             );
           case '/app-api/rooms/getRoomSelectByUserId':
@@ -804,7 +809,7 @@ void main() {
                 'welcomeText': '欢迎',
                 'autoLockMic': false,
                 'canEdit': true,
-                'version': 4,
+                'version': 1,
               },
             );
           default:
@@ -826,6 +831,7 @@ void main() {
         showInHall: true,
         autoLockMic: false,
         availability: RoomAvailability.open,
+        version: 0,
       );
 
       await expectLater(
@@ -876,6 +882,7 @@ void main() {
                 'rtcStatus': 'VENDOR_BLOCKED',
                 'imStatus': 'VENDOR_BLOCKED',
                 'providerInvocation': false,
+                'version': 1,
               },
             );
           case '/app-api/rooms/getRoomSelectByUserId':
@@ -927,6 +934,7 @@ void main() {
             showInHall: true,
             autoLockMic: false,
             availability: RoomAvailability.open,
+            version: 0,
           ),
         ),
         throwsA(
@@ -957,6 +965,7 @@ void main() {
                 'rtcStatus': 'VENDOR_BLOCKED',
                 'imStatus': 'VENDOR_BLOCKED',
                 'providerInvocation': false,
+                'version': 1,
               },
             );
           case '/app-api/rooms/getRoomSelectByUserId':
@@ -1008,6 +1017,7 @@ void main() {
             showInHall: true,
             autoLockMic: false,
             availability: RoomAvailability.open,
+            version: 0,
           ),
         ),
         throwsA(
@@ -1044,6 +1054,7 @@ void main() {
             'topic': '',
             'welcomeText': '',
             'autoLockMic': false,
+            'version': 0,
           },
         );
       }
@@ -1117,7 +1128,7 @@ void main() {
               name: 'close',
               path: '/app-mini-api/mini/v1/rooms/close',
               invoke: (BackendRoomLifecycleRepository repository) async {
-                await repository.closeRoom('9527');
+                await repository.closeRoom('9527', expectedVersion: 0);
               },
             ),
           ];
@@ -1254,7 +1265,7 @@ void main() {
             BackendRoomLifecycleRepository(apiClient: server.client);
 
         await expectLater(
-          repository.closeRoom('9527'),
+          repository.closeRoom('9527', expectedVersion: 0),
           throwsA(
             isA<ApiException>().having(
               (ApiException error) => error.kind,
@@ -1303,16 +1314,21 @@ void main() {
               'rtcStatus': 'VENDOR_BLOCKED',
               'imStatus': 'VENDOR_BLOCKED',
               'providerInvocation': false,
+              'version': 0,
             },
           );
         case '/app-mini-api/mini/v1/rooms/close':
           expect(request.method, 'POST');
-          expect(request.body, <String, Object?>{'roomId': 'room-created'});
+          expect(request.body, <String, Object?>{
+            'roomId': 'room-created',
+            'expectedVersion': 0,
+          });
           return const _Reply(
             data: <String, Object?>{
               'roomId': 'room-created',
               'closed': true,
               'status': 'CLOSED',
+              'version': 1,
             },
           );
         default:
@@ -1338,7 +1354,7 @@ void main() {
     expect(result.roomId, 'room-created');
     expect(result.roomCode, '9527');
     expect(result.created, isTrue);
-    await repository.closeRoom('room-created');
+    await repository.closeRoom('room-created', expectedVersion: 0);
     expect(server.requests, hasLength(2));
   });
 
@@ -1378,6 +1394,7 @@ void main() {
             'rtcStatus': 'VENDOR_BLOCKED',
             'imStatus': 'VENDOR_BLOCKED',
             'providerInvocation': false,
+            'version': 0,
           },
         );
       });
@@ -1440,6 +1457,7 @@ void main() {
             'rtcStatus': 'VENDOR_BLOCKED',
             'imStatus': 'VENDOR_BLOCKED',
             'providerInvocation': false,
+            'version': 0,
           },
         );
       });
@@ -1478,7 +1496,10 @@ void main() {
         switch (request.path) {
           case '/app-mini-api/mini/v1/rooms/reopen':
             expect(request.method, 'POST');
-            expect(request.body, <String, Object?>{'roomId': '9527'});
+            expect(request.body, <String, Object?>{
+              'roomId': '9527',
+              'expectedVersion': 4,
+            });
             reopenRequestId = request.requestId;
             expect(reopenRequestId, isNotEmpty);
             return const _Reply(
@@ -1487,6 +1508,7 @@ void main() {
                 'status': 'OPEN',
                 'reopened': true,
                 'providerInvocation': false,
+                'version': 5,
               },
             );
           case '/app-api/rooms/updateRoomInformation':
@@ -1500,6 +1522,7 @@ void main() {
               'hallVisible': true,
               'autoLockMic': true,
               'roomId': '9527',
+              'expectedVersion': 5,
             });
             expect(request.requestId, reopenRequestId);
             return const _Reply(
@@ -1511,6 +1534,7 @@ void main() {
                 'rtcStatus': 'VENDOR_BLOCKED',
                 'imStatus': 'VENDOR_BLOCKED',
                 'providerInvocation': false,
+                'version': 6,
               },
             );
           case '/app-api/rooms/getRoomSelectByUserId':
@@ -1538,7 +1562,7 @@ void main() {
                 'welcomeText': '新欢迎语',
                 'autoLockMic': true,
                 'canEdit': true,
-                'version': 5,
+                'version': 6,
               },
             );
           default:
@@ -1562,6 +1586,7 @@ void main() {
           showInHall: true,
           autoLockMic: true,
           availability: RoomAvailability.closed,
+          version: 4,
         ),
       );
       expect(result.roomId, '9527');
@@ -1579,7 +1604,7 @@ void main() {
   );
 
   test(
-    'closed live room recovers when reopen committed before update failed',
+    'closed live room does not overwrite after reopen committed before update failed',
     () async {
       int reopenCalls = 0;
       int updateCalls = 0;
@@ -1596,16 +1621,19 @@ void main() {
                   'status': 'OPEN',
                   'reopened': true,
                   'providerInvocation': false,
+                  'version': 5,
                 },
               );
             }
             return const _Reply(
-              code: 40933,
-              message: '房间当前已开放，不能重复开放',
+              code: 40945,
+              message: 'ROOM_VERSION_CONFLICT',
+              data: <String, Object?>{'currentVersion': 5},
               httpStatus: 409,
             );
           case '/app-api/rooms/updateRoomInformation':
             updateCalls += 1;
+            expect(request.body, containsPair('expectedVersion', 5));
             if (updateCalls == 1) {
               return const _Reply(
                 code: 42201,
@@ -1622,6 +1650,7 @@ void main() {
                 'rtcStatus': 'VENDOR_BLOCKED',
                 'imStatus': 'VENDOR_BLOCKED',
                 'providerInvocation': false,
+                'version': 6,
               },
             );
           case '/app-api/rooms/getRoomSelectByUserId':
@@ -1671,6 +1700,7 @@ void main() {
         showInHall: true,
         autoLockMic: true,
         availability: RoomAvailability.closed,
+        version: 4,
       );
 
       await expectLater(
@@ -1684,13 +1714,218 @@ void main() {
         ),
       );
 
-      final RoomLifecycleSaveResult recovered = await repository.saveRoom(
-        configuration,
+      await expectLater(
+        repository.saveRoom(configuration),
+        throwsA(
+          isA<ApiException>()
+              .having((ApiException error) => error.code, 'code', 40945)
+              .having(
+                (ApiException error) => error.kind,
+                'kind',
+                ApiFailureKind.conflict,
+              ),
+        ),
       );
-      expect(recovered.roomId, '9527');
-      expect(recovered.created, isFalse);
       expect(reopenCalls, 2);
+      expect(updateCalls, 1);
+    },
+  );
+
+  test(
+    'room version conflict is surfaced without an authority overwrite',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        expect(request.path, '/app-api/rooms/updateRoomInformation');
+        expect(request.method, 'PATCH');
+        expect(request.body, containsPair('expectedVersion', 3));
+        return const _Reply(
+          code: 40945,
+          message: 'ROOM_VERSION_CONFLICT',
+          data: <String, Object?>{'currentVersion': 4},
+          httpStatus: 409,
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+
+      await expectLater(
+        repository.saveRoom(
+          _existingPublicRoom().copyWith(title: '不会覆盖服务端内容', version: 3),
+        ),
+        throwsA(
+          isA<ApiException>()
+              .having((ApiException error) => error.code, 'code', 40945)
+              .having(
+                (ApiException error) => error.kind,
+                'kind',
+                ApiFailureKind.conflict,
+              ),
+        ),
+      );
+      expect(server.requests, hasLength(1));
+    },
+  );
+
+  test(
+    'live lifecycle writes reject missing or invalid versions before network',
+    () async {
+      final _RunningServer server = await _RunningServer.start(
+        (_CapturedRequest request) =>
+            fail('unexpected unversioned lifecycle request: ${request.path}'),
+      );
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+      const RoomConfiguration missingVersion = RoomConfiguration(
+        roomId: '9527',
+        roomCode: 'R9527',
+        title: '现有房间',
+        topicTitle: '',
+        topicContent: '',
+        welcomeMessage: '',
+        accessMode: RoomAccessMode.publicRoom,
+        password: '',
+        showInHall: true,
+        autoLockMic: false,
+        availability: RoomAvailability.open,
+      );
+
+      for (final RoomConfiguration configuration in <RoomConfiguration>[
+        missingVersion,
+        missingVersion.copyWith(version: -1),
+      ]) {
+        await expectLater(
+          repository.saveRoom(configuration),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.validation,
+            ),
+          ),
+        );
+      }
+      for (final int? version in <int?>[null, -1]) {
+        await expectLater(
+          repository.closeRoom('9527', expectedVersion: version),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.validation,
+            ),
+          ),
+        );
+      }
+      expect(server.requests, isEmpty);
+    },
+  );
+
+  test(
+    'concurrent saves with one snapshot version reject the stale loser',
+    () async {
+      int updateCalls = 0;
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        switch (request.path) {
+          case '/app-api/rooms/updateRoomInformation':
+            updateCalls += 1;
+            expect(request.body, containsPair('expectedVersion', 0));
+            if (updateCalls == 1) {
+              return const _Reply(
+                data: <String, Object?>{
+                  'roomId': '9527',
+                  'topicTitle': '',
+                  'autoLockMic': false,
+                  'status': 'OPEN',
+                  'rtcStatus': 'VENDOR_BLOCKED',
+                  'imStatus': 'VENDOR_BLOCKED',
+                  'providerInvocation': false,
+                  'version': 1,
+                },
+              );
+            }
+            return const _Reply(
+              code: 40945,
+              message: 'ROOM_VERSION_CONFLICT',
+              data: <String, Object?>{'currentVersion': 1},
+              httpStatus: 409,
+            );
+          case '/app-api/rooms/getRoomSelectByUserId':
+            return _Reply(
+              data: _ownerPage(
+                row: const <String, Object?>{
+                  'roomId': '9527',
+                  'roomCode': 'R9527',
+                  'roomName': '第一个写入',
+                  'accessMode': 'PUBLIC',
+                  'hallVisible': true,
+                  'status': 'OPEN',
+                  'topicTitle': '',
+                  'autoLockMic': false,
+                },
+              ),
+            );
+          case '/app-api/rooms/getRoomTopics':
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'topicTitle': '',
+                'topic': '',
+                'welcomeText': '',
+                'autoLockMic': false,
+                'canEdit': true,
+                'version': 1,
+              },
+            );
+          default:
+            fail('unexpected concurrent lifecycle route: ${request.path}');
+        }
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+      final RoomConfiguration first = _existingPublicRoom().copyWith(
+        title: '第一个写入',
+        version: 0,
+      );
+      final RoomConfiguration second = _existingPublicRoom().copyWith(
+        title: '第二个写入',
+        version: 0,
+      );
+
+      final Future<RoomLifecycleSaveResult> firstWrite = repository.saveRoom(
+        first,
+      );
+      final Future<RoomLifecycleSaveResult> secondWrite = repository.saveRoom(
+        second,
+      );
+
+      await firstWrite;
+      await expectLater(
+        secondWrite,
+        throwsA(
+          isA<ApiException>()
+              .having((ApiException error) => error.code, 'code', 40945)
+              .having(
+                (ApiException error) => error.kind,
+                'kind',
+                ApiFailureKind.conflict,
+              ),
+        ),
+      );
       expect(updateCalls, 2);
+      expect(
+        server.requests.where(
+          (_CapturedRequest request) =>
+              request.path == '/app-api/rooms/getRoomSelectByUserId',
+        ),
+        hasLength(1),
+      );
     },
   );
 }
@@ -1719,6 +1954,7 @@ RoomConfiguration _existingPublicRoom() => const RoomConfiguration(
   showInHall: true,
   autoLockMic: false,
   availability: RoomAvailability.open,
+  version: 0,
 );
 
 Map<String, Object?> _createSnapshot({
@@ -1737,6 +1973,7 @@ Map<String, Object?> _createSnapshot({
   Object? rtcStatus = 'VENDOR_BLOCKED',
   Object? imStatus = 'VENDOR_BLOCKED',
   Object? providerInvocation = false,
+  int version = 0,
 }) => <String, Object?>{
   'roomId': roomId,
   'roomCode': roomCode,
@@ -1753,6 +1990,7 @@ Map<String, Object?> _createSnapshot({
   'rtcStatus': rtcStatus,
   'imStatus': imStatus,
   'providerInvocation': providerInvocation,
+  'version': version,
 };
 
 Map<String, Object?> _ownerPage({

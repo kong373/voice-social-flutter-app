@@ -30,6 +30,7 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
   final TextEditingController _contentController = TextEditingController();
   RoomOperationsRepository? _repositoryInstance;
   RoomOperationsRepository get _repository => _repositoryInstance!;
+  RoomTopic? _topic;
   bool _loading = true;
   bool _submitting = false;
   String? _error;
@@ -65,6 +66,7 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
       }
       _titleController.text = topic.title;
       _contentController.text = topic.content;
+      _topic = topic;
       setState(() => _loading = false);
     } catch (error) {
       if (!mounted) {
@@ -89,6 +91,7 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
     final RoomTopic requested = RoomTopic(
       title: _titleController.text.trim(),
       content: _contentController.text.trim(),
+      version: _topic?.version,
     );
     try {
       await _repository.updateTopic(roomId: widget.roomId, topic: requested);

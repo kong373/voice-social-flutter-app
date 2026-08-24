@@ -34,6 +34,10 @@ class RoomConfiguration {
     this.roomId,
     this.roomCode,
     this.coverUrl,
+    // Null is retained for fixture/mocked configurations created before the
+    // first-party room version contract. Live backend reads always populate
+    // this field, and live writes reject a missing version for existing rooms.
+    this.version,
   });
 
   final String? roomId;
@@ -52,6 +56,7 @@ class RoomConfiguration {
   final bool autoLockMic;
   final RoomAvailability availability;
   final String? coverUrl;
+  final int? version;
 
   bool get hasExistingRoom => roomId != null && roomId!.isNotEmpty;
   bool get isOpen => availability == RoomAvailability.open;
@@ -70,6 +75,7 @@ class RoomConfiguration {
     bool? autoLockMic,
     RoomAvailability? availability,
     String? coverUrl,
+    int? version,
   }) {
     return RoomConfiguration(
       roomId: roomId ?? this.roomId,
@@ -85,6 +91,7 @@ class RoomConfiguration {
       autoLockMic: autoLockMic ?? this.autoLockMic,
       availability: availability ?? this.availability,
       coverUrl: coverUrl ?? this.coverUrl,
+      version: version ?? this.version,
     );
   }
 }

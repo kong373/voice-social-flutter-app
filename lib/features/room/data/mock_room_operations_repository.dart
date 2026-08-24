@@ -11,7 +11,11 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
   @override
   final MicCoordinationMode micCoordinationMode;
 
-  RoomTopic _topic = const RoomTopic(title: '今晚话题', content: '最近让你觉得被治愈的一件小事');
+  RoomTopic _topic = const RoomTopic(
+    title: '今晚话题',
+    content: '最近让你觉得被治愈的一件小事',
+    version: 0,
+  );
 
   final List<RoomMember> _members = <RoomMember>[
     const RoomMember(
@@ -127,7 +131,11 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
     required String roomId,
     required RoomTopic topic,
   }) async {
-    _topic = topic;
+    _topic = RoomTopic(
+      title: topic.title,
+      content: topic.content,
+      version: (topic.version ?? _topic.version ?? 0) + 1,
+    );
   }
 
   @override

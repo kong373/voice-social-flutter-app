@@ -9,7 +9,10 @@ abstract interface class RoomLifecycleRepository {
 
   Future<RoomLifecycleSaveResult> saveRoom(RoomConfiguration configuration);
 
-  Future<void> closeRoom(String roomId);
+  /// Closes an existing room using the version from its authoritative
+  /// [RoomConfiguration] snapshot. Implementations backed by the live API
+  /// reject a missing version instead of silently falling back to a read.
+  Future<void> closeRoom(String roomId, {int? expectedVersion});
 
   Future<RoomLinkResolution> resolveRoomLink(String input);
 }

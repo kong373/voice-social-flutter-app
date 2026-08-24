@@ -26,6 +26,7 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
     showInHall: true,
     autoLockMic: false,
     availability: RoomAvailability.open,
+    version: 0,
   );
 
   @override
@@ -60,6 +61,9 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
       roomId: roomId,
       roomCode: roomCode,
       availability: RoomAvailability.open,
+      version: created
+          ? (configuration.version ?? 0)
+          : (configuration.version ?? 0) + 1,
     );
     return RoomLifecycleSaveResult(
       roomId: roomId,
@@ -69,7 +73,7 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
   }
 
   @override
-  Future<void> closeRoom(String roomId) async {
+  Future<void> closeRoom(String roomId, {int? expectedVersion}) async {
     final RoomConfiguration? room = _ownedRoom;
     if (room == null || room.roomId != roomId) {
       throw const ApiException(
@@ -78,7 +82,10 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
       );
     }
     await Future<void>.delayed(const Duration(milliseconds: 200));
-    _ownedRoom = room.copyWith(availability: RoomAvailability.closed);
+    _ownedRoom = room.copyWith(
+      availability: RoomAvailability.closed,
+      version: (expectedVersion ?? room.version ?? 0) + 1,
+    );
   }
 
   @override
@@ -125,6 +132,7 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
           showInHall: true,
           autoLockMic: false,
           availability: RoomAvailability.open,
+          version: 0,
         ),
       );
     }

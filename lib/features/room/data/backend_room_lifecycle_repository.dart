@@ -98,7 +98,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
       );
     }
     final bool autoLockMic = _requiredBool(topic, 'autoLockMic');
-    _requiredNonNegativeInt(topic, 'version');
+    final int version = _requiredNonNegativeInt(topic, 'version');
     final String roomCode = _requiredOwnerText(ownerRow, 'roomCode');
     final String title = _requiredOwnerText(ownerRow, 'roomName');
     return RoomConfiguration(
@@ -116,6 +116,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
       autoLockMic: autoLockMic,
       availability: availability,
       coverUrl: _nonEmptyString(ownerRow['coverImgUrl']),
+      version: version,
     );
   }
 
@@ -158,6 +159,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
     final RoomAccessMode accessMode = explicitAccessMode == null
         ? RoomAccessMode.publicRoom
         : _roomAccessMode(explicitAccessMode.toUpperCase());
+    final int version = _requiredNonNegativeInt(topic, 'version');
     return RoomConfiguration(
       roomId: id,
       roomCode:
@@ -177,6 +179,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
       autoLockMic: _requiredBool(topic, 'autoLockMic'),
       availability: _availability(info),
       coverUrl: _nonEmptyString(info['coverImgUrl']),
+      version: version,
     );
   }
 
@@ -293,11 +296,15 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
     RoomConfiguration configuration,
   ) async {
     _validate(configuration);
+    final String? configuredRoomId = configuration.roomId?.trim();
+    if (configuredRoomId != null && configuredRoomId.isNotEmpty) {
+      _requireExpectedVersion(configuration.version, operation: '保存房间');
+    }
     final String intent = _saveIntent(configuration);
     return _writeGuard.run<RoomLifecycleSaveResult>(
       intent: intent,
       action: (Map<String, String> headers) async {
-        final String? roomId = configuration.roomId;
+        final String? roomId = configuration.roomId?.trim();
         if (roomId == null || roomId.isEmpty) {
           final ApiResponse response = await _apiClient.post(
             _routes.createRoom,
@@ -311,8 +318,16 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
             requested: configuration,
           );
         }
+        int expectedVersion = _requireExpectedVersion(
+          configuration.version,
+          operation: '保存房间',
+        );
         if (configuration.availability == RoomAvailability.closed) {
-          await _ensureRoomOpenForUpdate(roomId, headers);
+          expectedVersion = await _ensureRoomOpenForUpdate(
+            roomId,
+            expectedVersion,
+            headers,
+          );
         }
         // updateRoomInformation is authoritative for the complete editable
         // room configuration, including topic and welcomeText. Do not follow
@@ -324,6 +339,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
           body: <String, Object?>{
             ..._writeBody(configuration),
             'roomId': roomId,
+            'expectedVersion': expectedVersion,
           },
         );
         RoomWriteGuard.validateMutationResponse(
@@ -337,9 +353,14 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
             'rtcStatus',
             'imStatus',
             'providerInvocation',
+            'version',
           ],
         );
         final Map<String, Object?> updateData = _asMap(response.data);
+        final int updateVersion = _requiredNonNegativeInt(
+          updateData,
+          'version',
+        );
         if (_requiredExactNonEmptyString(updateData, 'roomId') != roomId ||
             _requiredExactNonEmptyString(updateData, 'status') != 'OPEN' ||
             _requiredStringField(updateData, 'topicTitle') !=
@@ -350,13 +371,20 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
                 'VENDOR_BLOCKED' ||
             _requiredExactNonEmptyString(updateData, 'imStatus') !=
                 'VENDOR_BLOCKED' ||
-            _requiredBool(updateData, 'providerInvocation')) {
+            _requiredBool(updateData, 'providerInvocation') ||
+            updateVersion != _nextVersion(expectedVersion)) {
           throw const ApiException(
             kind: ApiFailureKind.protocol,
             message: '更新房间响应与请求配置不一致',
           );
         }
         final RoomConfiguration authoritative = await fetchRoom(roomId);
+        if (authoritative.version != updateVersion) {
+          throw const ApiException(
+            kind: ApiFailureKind.conflict,
+            message: '房间版本在保存后发生变化，请刷新后重新确认',
+          );
+        }
         if (authoritative.title != configuration.title.trim() ||
             authoritative.topicContent != configuration.topicContent.trim() ||
             authoritative.topicTitle != configuration.topicTitle.trim() ||
@@ -385,11 +413,18 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
     );
   }
 
-  Future<void> _reopenRoom(String roomId, Map<String, String> headers) async {
+  Future<int> _reopenRoom(
+    String roomId,
+    int expectedVersion,
+    Map<String, String> headers,
+  ) async {
     final ApiResponse response = await _apiClient.post(
       _routes.reopenRoom,
       headers: headers,
-      body: <String, Object?>{'roomId': roomId},
+      body: <String, Object?>{
+        'roomId': roomId,
+        'expectedVersion': expectedVersion,
+      },
     );
     RoomWriteGuard.validateMutationResponse(
       response,
@@ -399,26 +434,31 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
         'status',
         'reopened',
         'providerInvocation',
+        'version',
       ],
     );
     final Map<String, Object?> data = _asMap(response.data);
+    final int version = _requiredNonNegativeInt(data, 'version');
     if (_requiredExactNonEmptyString(data, 'roomId') != roomId ||
         _requiredExactNonEmptyString(data, 'status') != 'OPEN' ||
         !_requiredBool(data, 'reopened') ||
-        _requiredBool(data, 'providerInvocation')) {
+        _requiredBool(data, 'providerInvocation') ||
+        version != _nextVersion(expectedVersion)) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '重新开放房间响应与请求不一致',
       );
     }
+    return version;
   }
 
-  Future<void> _ensureRoomOpenForUpdate(
+  Future<int> _ensureRoomOpenForUpdate(
     String roomId,
+    int expectedVersion,
     Map<String, String> headers,
   ) async {
     try {
-      await _reopenRoom(roomId, headers);
+      return await _reopenRoom(roomId, expectedVersion, headers);
     } on ApiException catch (error, stackTrace) {
       if (error.code != 40933) {
         rethrow;
@@ -431,11 +471,15 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
       if (authoritative.availability != RoomAvailability.open) {
         Error.throwWithStackTrace(error, stackTrace);
       }
+      return _requireExpectedVersion(
+        authoritative.version,
+        operation: '重新开放房间',
+      );
     }
   }
 
   @override
-  Future<void> closeRoom(String roomId) async {
+  Future<void> closeRoom(String roomId, {int? expectedVersion}) async {
     final String normalizedRoomId = roomId.trim();
     if (normalizedRoomId.isEmpty) {
       throw const ApiException(
@@ -443,23 +487,33 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
         message: '房间 ID 不能为空',
       );
     }
+    final int version = _requireExpectedVersion(
+      expectedVersion,
+      operation: '关闭房间',
+    );
     await _writeGuard.run<void>(
-      intent: 'close:$normalizedRoomId',
+      intent: 'close:$normalizedRoomId:$version',
       action: (Map<String, String> headers) async {
         final ApiResponse response = await _apiClient.post(
           _routes.closeRoom,
           headers: headers,
-          body: <String, Object?>{'roomId': normalizedRoomId},
+          body: <String, Object?>{
+            'roomId': normalizedRoomId,
+            'expectedVersion': version,
+          },
         );
         RoomWriteGuard.validateMutationResponse(
           response,
           operation: '关闭房间',
-          requiredFields: <String>['roomId', 'status', 'closed'],
+          requiredFields: <String>['roomId', 'status', 'closed', 'version'],
         );
         final Map<String, Object?> data = _asMap(response.data);
+        final int responseVersion = _requiredNonNegativeInt(data, 'version');
         if (_requiredExactNonEmptyString(data, 'roomId') != normalizedRoomId ||
             _nonEmptyString(data['status'])?.toUpperCase() != 'CLOSED' ||
-            !_asBool(data['closed'])) {
+            !_asBool(data['closed']) ||
+            (responseVersion != version &&
+                responseVersion != _nextVersion(version))) {
           throw const ApiException(
             kind: ApiFailureKind.protocol,
             message: '关闭房间响应与请求状态不一致',
@@ -484,6 +538,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
         configuration.showInHall.toString(),
         configuration.autoLockMic.toString(),
         configuration.availability.name,
+        configuration.version?.toString() ?? 'missing',
       ],
     );
   }
@@ -723,6 +778,21 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
     return value;
   }
 
+  static int _requireExpectedVersion(
+    int? version, {
+    required String operation,
+  }) {
+    if (version == null || version < 0) {
+      throw ApiException(
+        kind: ApiFailureKind.validation,
+        message: '$operation 缺少有效的房间版本，请刷新后重试',
+      );
+    }
+    return version;
+  }
+
+  static int _nextVersion(int version) => version + 1;
+
   static bool _sameValue(Object? left, Object? right) {
     try {
       return jsonEncode(left) == jsonEncode(right);
@@ -771,6 +841,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
     _strictRoomAccessMode(accessMode);
     final bool hallVisible = _requiredBool(data, 'hallVisible');
     final bool autoLockMic = _requiredBool(data, 'autoLockMic');
+    _requiredNonNegativeInt(data, 'version');
     final bool created = _requiredBool(data, 'created');
     final bool reused = _requiredBool(data, 'reused');
     if (created == reused) {

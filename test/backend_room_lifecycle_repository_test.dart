@@ -131,7 +131,7 @@ void main() {
         BackendRoomLifecycleRepository(apiClient: server.client);
 
     await expectLater(
-      repository.closeRoom('9527'),
+      repository.closeRoom('9527', expectedVersion: 0),
       throwsA(
         isA<ApiException>().having(
           (ApiException error) => error.kind,
@@ -221,6 +221,7 @@ class _CloseServer {
               'roomId': responseRoomId,
               'status': 'CLOSED',
               'closed': true,
+              'version': 1,
             },
           }),
         );

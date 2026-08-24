@@ -263,6 +263,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
       autoLockMic: _capabilities.supportsAutoLockMic ? _autoLockMic : false,
       availability: _existing?.availability ?? RoomAvailability.open,
       coverUrl: _existing?.coverUrl,
+      version: _existing?.version,
     );
     try {
       final RoomLifecycleSaveResult result = await _repository.saveRoom(

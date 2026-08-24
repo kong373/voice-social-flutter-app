@@ -73,10 +73,13 @@ class RoomMemberPage {
 }
 
 class RoomTopic {
-  const RoomTopic({required this.title, required this.content});
+  const RoomTopic({required this.title, required this.content, this.version});
 
   final String title;
   final String content;
+  // Null remains source-compatible with old mocks. The live backend fills it
+  // from the topic snapshot and rejects writes that do not carry it.
+  final int? version;
 }
 
 class MicAccessRequest {

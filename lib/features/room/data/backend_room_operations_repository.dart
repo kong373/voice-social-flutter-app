@@ -142,9 +142,16 @@ class BackendRoomOperationsRepository implements RoomOperationsRepository {
       query: <String, String>{'roomId': roomId},
     );
     final Map<String, Object?> data = _asMap(response.data);
+    if (_requiredExactNonEmptyString(data, 'roomId') != roomId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '房间话题响应与请求房间 ID 不一致',
+      );
+    }
     return RoomTopic(
       title: _string(data['topicTitle'], fallback: ''),
       content: _string(data['topic'] ?? data['topicContent'], fallback: ''),
+      version: _requiredNonNegativeInt(data, 'version'),
     );
   }
 
@@ -156,13 +163,21 @@ class BackendRoomOperationsRepository implements RoomOperationsRepository {
     final String normalizedTopic = topic.content.trim().isEmpty
         ? topic.title.trim()
         : topic.content.trim();
+    final int expectedVersion = _requireExpectedVersion(
+      topic.version,
+      operation: '更新房间话题',
+    );
     await _writeGuard.run<void>(
-      intent: 'topic:$roomId:$normalizedTopic',
+      intent: 'topic:$roomId:$normalizedTopic:$expectedVersion',
       action: (Map<String, String> headers) async {
         final ApiResponse response = await _apiClient.post(
           _routes.updateRoomTopic,
           headers: headers,
-          body: <String, Object?>{'roomId': roomId, 'topic': normalizedTopic},
+          body: <String, Object?>{
+            'roomId': roomId,
+            'topic': normalizedTopic,
+            'expectedVersion': expectedVersion,
+          },
         );
         final Map<String, Object?> data = _requiredMutationMap(
           response,
@@ -170,7 +185,9 @@ class BackendRoomOperationsRepository implements RoomOperationsRepository {
           requiredFields: <String>['roomId', 'topic', 'welcomeText', 'version'],
         );
         _assertRoom(data, roomId, operation: '更新房间话题');
-        if (_string(data['topic'], fallback: '') != normalizedTopic) {
+        final int responseVersion = _requiredNonNegativeInt(data, 'version');
+        if (_string(data['topic'], fallback: '') != normalizedTopic ||
+            responseVersion != _nextVersion(expectedVersion)) {
           throw const ApiException(
             kind: ApiFailureKind.protocol,
             message: '更新房间话题响应与请求不一致',
@@ -558,6 +575,46 @@ class BackendRoomOperationsRepository implements RoomOperationsRepository {
 
   static Map<String, Object?> _asMap(Object? value) =>
       value is Map<String, Object?> ? value : const <String, Object?>{};
+
+  static String _requiredExactNonEmptyString(
+    Map<String, Object?> data,
+    String field,
+  ) {
+    final Object? value = data[field];
+    if (value is! String || value.isEmpty || value.trim() != value) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '响应字段 $field 必须为无空白非空字符串',
+      );
+    }
+    return value;
+  }
+
+  static int _requiredNonNegativeInt(Map<String, Object?> data, String field) {
+    final Object? value = data[field];
+    if (value is! int || value < 0) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '响应字段 $field 必须为非负整数',
+      );
+    }
+    return value;
+  }
+
+  static int _requireExpectedVersion(
+    int? version, {
+    required String operation,
+  }) {
+    if (version == null || version < 0) {
+      throw ApiException(
+        kind: ApiFailureKind.validation,
+        message: '$operation 缺少有效的房间版本，请刷新后重试',
+      );
+    }
+    return version;
+  }
+
+  static int _nextVersion(int version) => version + 1;
 
   static Map<String, Object?> _requiredMutationMap(
     ApiResponse response, {

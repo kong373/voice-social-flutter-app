@@ -124,8 +124,10 @@ void main() {
             expect(request.query, <String, String>{'roomId': '9527'});
             return _Reply(
               data: <String, Object?>{
+                'roomId': '9527',
                 'topicTitle': '今晚话题',
                 'topic': '聊聊最近看的电影',
+                'version': 1,
               },
             );
           case '/app-api/rooms/setRoomTopics':
@@ -133,6 +135,7 @@ void main() {
             expect(request.body, <String, Object?>{
               'roomId': '9527',
               'topic': '新内容',
+              'expectedVersion': 1,
             });
             return const _Reply(
               data: <String, Object?>{
@@ -305,9 +308,10 @@ void main() {
       final RoomTopic topic = await repository.fetchTopic('9527');
       expect(topic.title, '今晚话题');
       expect(topic.content, '聊聊最近看的电影');
+      expect(topic.version, 1);
       await repository.updateTopic(
         roomId: '9527',
-        topic: const RoomTopic(title: '新标题', content: '新内容'),
+        topic: const RoomTopic(title: '新标题', content: '新内容', version: 1),
       );
       await repository.setUserMuted(roomId: '9527', userId: 10002, muted: true);
       await repository.setUserRole(
@@ -591,7 +595,11 @@ void main() {
               invoke: (BackendRoomOperationsRepository repository) async {
                 await repository.updateTopic(
                   roomId: '9527',
-                  topic: const RoomTopic(title: '标题', content: '内容'),
+                  topic: const RoomTopic(
+                    title: '标题',
+                    content: '内容',
+                    version: 1,
+                  ),
                 );
               },
             ),
@@ -697,7 +705,12 @@ void main() {
           ) {
             if (request.path == '/app-api/rooms/getRoomTopics') {
               return const _Reply(
-                data: <String, Object?>{'topicTitle': '标题', 'topic': '内容'},
+                data: <String, Object?>{
+                  'roomId': '9527',
+                  'topicTitle': '标题',
+                  'topic': '内容',
+                  'version': 1,
+                },
               );
             }
             if (request.path == '/app-api/rooms/getRoomOnlinePersonnel') {
@@ -1112,6 +1125,79 @@ void main() {
       expect(page.items, isEmpty);
       expect(page.total, 0);
       expect(page.hasMore, isFalse);
+    },
+  );
+
+  test(
+    'topic version conflict is surfaced without an automatic overwrite',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        expect(request.path, '/app-api/rooms/setRoomTopics');
+        expect(request.method, 'POST');
+        expect(request.body, <String, Object?>{
+          'roomId': '9527',
+          'topic': '新内容',
+          'expectedVersion': 4,
+        });
+        return const _Reply(
+          code: 40945,
+          message: 'ROOM_VERSION_CONFLICT',
+          data: <String, Object?>{'currentVersion': 5},
+          httpStatus: 409,
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomOperationsRepository repository =
+          BackendRoomOperationsRepository(apiClient: server.client);
+
+      await expectLater(
+        repository.updateTopic(
+          roomId: '9527',
+          topic: const RoomTopic(title: '标题', content: '新内容', version: 4),
+        ),
+        throwsA(
+          isA<ApiException>()
+              .having((ApiException error) => error.code, 'code', 40945)
+              .having(
+                (ApiException error) => error.kind,
+                'kind',
+                ApiFailureKind.conflict,
+              ),
+        ),
+      );
+      expect(server.requests, hasLength(1));
+    },
+  );
+
+  test(
+    'topic writes reject a missing or negative snapshot version locally',
+    () async {
+      final _RunningServer server = await _RunningServer.start(
+        (_CapturedRequest request) =>
+            fail('unexpected topic write: ${request.path}'),
+      );
+      addTearDown(server.close);
+      final BackendRoomOperationsRepository repository =
+          BackendRoomOperationsRepository(apiClient: server.client);
+
+      for (final int? version in <int?>[null, -1]) {
+        await expectLater(
+          repository.updateTopic(
+            roomId: '9527',
+            topic: RoomTopic(title: '标题', content: '内容', version: version),
+          ),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.validation,
+            ),
+          ),
+        );
+      }
+      expect(server.requests, isEmpty);
     },
   );
 }
