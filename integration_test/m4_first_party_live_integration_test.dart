@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -42,6 +43,15 @@ final int _runtimeConfigPort = int.tryParse(_runtimeConfigPortValue) ?? 0;
 
 const String _authoritativeApiBaseUrl = 'http://10.0.2.2:18080/';
 const String _runtimeConfigPath = '/m4/config';
+const String _runtimeRelayTokenPath =
+    '/data/user/0/com.kong373.voice_social_app/cache/m4-runtime-relay-token';
+const String _runtimeRelayTokenFallbackPath =
+    '/data/data/com.kong373.voice_social_app/cache/m4-runtime-relay-token';
+const String _fixtureId = String.fromEnvironment(
+  'QA_M4_FIXTURE_ID',
+  defaultValue: '',
+);
+final RegExp _fixtureIdPattern = RegExp(r'^m4-fresh-[A-Za-z0-9_.:-]{1,64}$');
 final RegExp _canonicalRoomUuidPattern = RegExp(
   r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
 );
@@ -83,6 +93,8 @@ void main() {
     'M4 first-party live authoritative backend flow',
     (WidgetTester tester) async {
       final _M4Evidence evidence = _M4Evidence(avd: qaAvdId, binding: binding);
+      final String fixtureNickname = _fixtureNickname();
+      expect(fixtureNickname, matches(RegExp(r'^m4-[0-9a-f]{16}$')));
       final _RuntimeConfig config = await _fetchRuntimeConfig();
       final AppEnvironment environment = _liveEnvironment(config.oauthClientId);
       environment.validateLiveConfiguration();
@@ -421,13 +433,21 @@ AppEnvironment _liveEnvironment(String oauthClientId) => AppEnvironment(
   apiTimeout: const Duration(seconds: 15),
 );
 
-String _registrationNickname() =>
-    'm4-${qaAvdId.toLowerCase()}-${DateTime.now().millisecondsSinceEpoch % 100000}';
+String _registrationNickname() => _fixtureNickname();
+
+String _fixtureNickname() {
+  if (!_fixtureIdPattern.hasMatch(_fixtureId)) {
+    throw TestFailure('M4 fixture identity is missing or invalid.');
+  }
+  final String digest = sha256.convert(utf8.encode(_fixtureId)).toString();
+  return 'm4-${digest.substring(0, 16)}';
+}
 
 Future<_RuntimeConfig> _fetchRuntimeConfig() async {
   if (_runtimeConfigPort < 1) {
     throw TestFailure('M4 runtime config relay is not configured.');
   }
+  final String relayToken = await _readRuntimeRelayToken();
   final HttpClient client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 5)
     ..idleTimeout = const Duration(seconds: 5);
@@ -435,6 +455,7 @@ Future<_RuntimeConfig> _fetchRuntimeConfig() async {
     final HttpClientRequest request = await client
         .get('10.0.2.2', _runtimeConfigPort, _runtimeConfigPath)
         .timeout(const Duration(seconds: 5));
+    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $relayToken');
     final HttpClientResponse response = await request.close().timeout(
       const Duration(seconds: 5),
     );
@@ -460,6 +481,36 @@ Future<_RuntimeConfig> _fetchRuntimeConfig() async {
   } finally {
     client.close(force: true);
   }
+}
+
+Future<String> _readRuntimeRelayToken() async {
+  for (int attempt = 0; attempt < 80; attempt += 1) {
+    for (final String path in <String>[
+      _runtimeRelayTokenPath,
+      _runtimeRelayTokenFallbackPath,
+    ]) {
+      final File file = File(path);
+      try {
+        if (!await file.exists()) {
+          continue;
+        }
+        final String token = (await file.readAsString()).trim();
+        try {
+          await file.delete();
+        } on FileSystemException {
+          // The token is already held in memory; an install race may remove it.
+        }
+        if (RegExp(r'^[A-Za-z0-9_-]{64,256}$').hasMatch(token)) {
+          return token;
+        }
+      } on FileSystemException {
+        // The runner may be replacing the 0600 rendezvous file between
+        // emulator install and the first frame. Retry without logging data.
+      }
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 125));
+  }
+  throw TestFailure('M4 runtime config relay credential was unavailable.');
 }
 
 class _RuntimeConfig {

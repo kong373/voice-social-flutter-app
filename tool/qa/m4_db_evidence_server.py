@@ -6,13 +6,15 @@ password is expanded there and is never a host subprocess argument or response
 field. The HTTP response contains aggregate counters and boolean invariants
 only. A read-only aggregate baseline is captured before the loopback listener
 binds; successful responses expose only non-negative first-party write deltas
-from that baseline. Use --self-test to run local tests without Docker or
-runtime settings.
+from the exact per-AVD snapshot. Fixture-scoped counters are resolved through
+the independently derived nickname and never expose a user id or phone.
+Use --self-test to run local tests without Docker or runtime settings.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import hmac
 import http.server
 import json
@@ -20,6 +22,7 @@ import os
 import re
 import secrets as secrets_module
 import shutil
+import shlex
 import subprocess
 import sys
 import threading
@@ -68,6 +71,7 @@ RESPONSE_KEYS = frozenset(
         "providerCalls",
         "secrets",
         "evidenceBinding",
+        "scopedCounters",
     }
 )
 CONTAINER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -76,7 +80,7 @@ COUNT_RE = re.compile(r"^[0-9]+$")
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
 AVD_RE = re.compile(r"^AVD-[AB]$")
 START_NONCE_RE = re.compile(r"^[A-Za-z0-9_.~=-]{16,256}$")
-MARKER_RE = re.compile(r"^[CIOPS](?:\|[A-Za-z0-9_.-]+|\|[0-9]+){1,6}$")
+MARKER_RE = re.compile(r"^[CFIOPS](?:\|[A-Za-z0-9_.-]+|\|[0-9]+){1,6}$")
 WRITE_COUNTER_KEYS = (
     "auth_sessions",
     "room_activity",
@@ -85,6 +89,13 @@ WRITE_COUNTER_KEYS = (
     "social_user_reports",
     "idempotency_audit",
 )
+SCOPED_COUNTER_KEYS = (
+    "refresh_session_user",
+    "user_report_reporter",
+    "operation_idempotency_actor",
+)
+FIXTURE_ID_RE = re.compile(r"^m4-fresh-[A-Za-z0-9_.:-]{1,64}$")
+FIXTURE_NICKNAME_RE = re.compile(r"^m4-[0-9a-f]{16}$")
 REQUIRED_INVARIANT_KEYS = frozenset(
     {
         "core_schema_present",
@@ -128,6 +139,16 @@ def _constant_time_equal(left: str, right: str) -> bool:
     return hmac.compare_digest(left_bytes, right_bytes)
 
 
+def _fixture_nickname(fixture_id: str) -> str:
+    if not FIXTURE_ID_RE.fullmatch(fixture_id):
+        raise EvidenceError("invalid fixture id")
+    digest = hashlib.sha256(fixture_id.encode("utf-8")).hexdigest()
+    nickname = "m4-" + digest[:16]
+    if not FIXTURE_NICKNAME_RE.fullmatch(nickname):
+        raise EvidenceError("fixture nickname derivation failed")
+    return nickname
+
+
 def _valid_bearer_header(values: Sequence[str], token: str) -> bool:
     if len(values) != 1:
         return False
@@ -147,7 +168,7 @@ class Config:
     docker_env: Mapping[str, str]
     backend_container: str
     mysql_container: str
-    expected_backend_sha: str | None
+    expected_backend_sha: str
 
 
 def read_config(environment: Mapping[str, str] | None = None) -> Config:
@@ -186,6 +207,9 @@ def read_config(environment: Mapping[str, str] | None = None) -> Config:
         docker_socket.startswith("unix://") or docker_socket.startswith("/")
     ):
         raise ConfigurationError("docker socket must be local unix socket")
+    expected_sha = _first_value(env, EXPECTED_SHA_ENV_NAMES)
+    if not SHA_RE.fullmatch(expected_sha or ""):
+        raise ConfigurationError("invalid expected backend SHA")
     docker_path = shutil.which("docker")
     if not docker_path:
         raise ConfigurationError("docker command is unavailable")
@@ -195,10 +219,6 @@ def read_config(environment: Mapping[str, str] | None = None) -> Config:
     if docker_socket:
         docker_env["DOCKER_HOST"] = docker_socket
 
-    expected_sha = _first_value(env, EXPECTED_SHA_ENV_NAMES) or None
-    if expected_sha is not None and not SHA_RE.fullmatch(expected_sha):
-        raise ConfigurationError("invalid expected backend SHA")
-
     return Config(
         host=LOOPBACK_HOST,
         port=port,
@@ -207,7 +227,7 @@ def read_config(environment: Mapping[str, str] | None = None) -> Config:
         docker_env=docker_env,
         backend_container=backend_container,
         mysql_container=mysql_container,
-        expected_backend_sha=expected_sha.lower() if expected_sha else None,
+        expected_backend_sha=expected_sha.lower(),
     )
 
 
@@ -288,6 +308,13 @@ valid_name() {
   esac
 }
 
+fixture_nickname="\${M4_FIXTURE_NICKNAME:-m4-no-fixture}"
+case "\$fixture_nickname" in
+  m4-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+  m4-no-fixture) ;;
+  *) exit 29 ;;
+esac
+
 table_exists() {
   valid_name "\$1" || exit 21
   value="\$(mysql_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '\$1'")"
@@ -311,6 +338,32 @@ table_count() {
   value="\$(mysql_query "SELECT COUNT(*) FROM \$table")"
   case "\$value" in *[!0-9]*|"") exit 26 ;; *) printf '%s' "\$value" ;; esac
 }
+
+fixture_account_count=0
+if [ "\$(table_exists m4_development_fixture_user)" = 1 ] && [ "\$(table_exists app_user)" = 1 ]; then
+  value="\$(mysql_query "SELECT COUNT(*) FROM m4_development_fixture_user f JOIN app_user u ON u.id = f.user_id WHERE u.nickname = '\$fixture_nickname'")"
+  case "\$value" in *[!0-9]*|"") exit 34 ;; *) fixture_account_count="\$value" ;; esac
+fi
+printf 'F|%s\n' "\$fixture_account_count"
+
+scoped_count() {
+  label="\$1"
+  table="\$2"
+  column="\$3"
+  value=0
+  if [ "\$fixture_account_count" -gt 0 ] && [ "\$(table_exists "\$table")" = 1 ] && column_exists "\$table" "\$column" && [ "\$(table_exists m4_development_fixture_user)" = 1 ] && [ "\$(table_exists app_user)" = 1 ]; then
+    value="\$(mysql_query "SELECT COUNT(*) FROM \$table WHERE \$column IN (SELECT f.user_id FROM m4_development_fixture_user f JOIN app_user u ON u.id = f.user_id WHERE u.nickname = '\$fixture_nickname'")"
+    case "\$value" in *[!0-9]*|"") exit 35 ;; esac
+  fi
+  printf 'S|%s|%s\n' "\$label" "\$value"
+}
+
+# These counters are deliberately scoped through the fixture account. Global
+# table deltas are retained as context only; they can never satisfy the live
+# evidence gate on their own.
+scoped_count refresh_session_user refresh_session user_id
+scoped_count user_report_reporter user_report reporter_user_id
+scoped_count operation_idempotency_actor operation_idempotency actor_user_id
 
 sum_tables() {
   label="\$1"
@@ -435,17 +488,17 @@ flag_disabled() {
 
 dev_or_empty() {
   value="$(printenv SMS_DELIVERY_MODE 2>/dev/null || true)"
-  [ -z "$value" ] || [ "$value" = development_outbox ]
+  [ "$value" = development_outbox ]
 }
 
 development_environment() {
   value="$(printenv APP_ENV 2>/dev/null || true)"
-  [ -z "$value" ] || [ "$value" = development ]
+  [ "$value" = development ]
 }
 
 development_profile() {
   value="$(printenv SPRING_PROFILES_ACTIVE 2>/dev/null || true)"
-  [ -z "$value" ] || [ "$value" = development ]
+  [ "$value" = development ]
 }
 
 if development_environment; then printf 'I|backend_environment|1\n'; else printf 'I|backend_environment|0\n'; fi
@@ -517,7 +570,13 @@ def _parse_mysql_evidence(output: str) -> dict[str, int]:
     counters: dict[str, int] = {}
     for fields in _parse_marker_lines(output):
         marker = fields[0]
-        if marker == "C" and len(fields) == 3:
+        if marker == "F" and len(fields) == 2 and COUNT_RE.fullmatch(fields[1]):
+            counters["fixture_account_count"] = int(fields[1])
+        elif marker == "S" and len(fields) == 3:
+            if fields[1] not in SCOPED_COUNTER_KEYS or not COUNT_RE.fullmatch(fields[2]):
+                raise EvidenceError("invalid scoped fixture counter evidence")
+            counters[fields[1]] = int(fields[2])
+        elif marker == "C" and len(fields) == 3:
             if fields[1] not in {
                 "auth_sessions",
                 "room_activity",
@@ -550,6 +609,8 @@ def _parse_mysql_evidence(output: str) -> dict[str, int]:
             raise EvidenceError("invalid database evidence")
 
     required = {
+        "fixture_account_count",
+        *SCOPED_COUNTER_KEYS,
         "auth_sessions",
         "room_activity",
         "commerce_activity",
@@ -575,6 +636,8 @@ def _parse_mysql_evidence(output: str) -> dict[str, int]:
 class EvidenceSnapshot:
     backend_states: Mapping[str, bool]
     counters: Mapping[str, int]
+    scoped_counters: Mapping[str, int]
+    fixture_account_count: int
     database_invariants: Mapping[str, bool]
     provider_evidence: int
     backend_sha_ok: bool
@@ -583,11 +646,12 @@ class EvidenceSnapshot:
 def _counter_delta(
     current: Mapping[str, int],
     baseline: Mapping[str, int],
+    keys: Sequence[str] = WRITE_COUNTER_KEYS,
 ) -> dict[str, int]:
-    if set(current) != set(WRITE_COUNTER_KEYS) or set(baseline) != set(WRITE_COUNTER_KEYS):
+    if set(current) != set(keys) or set(baseline) != set(keys):
         raise EvidenceError("incomplete write counter snapshot")
     delta: dict[str, int] = {}
-    for key in WRITE_COUNTER_KEYS:
+    for key in keys:
         current_value = current[key]
         baseline_value = baseline[key]
         if current_value < baseline_value:
@@ -607,14 +671,22 @@ def _require_new_writes(delta: Mapping[str, int]) -> int:
     return total
 
 
+def _require_scoped_writes(delta: Mapping[str, int]) -> int:
+    if set(delta) != set(SCOPED_COUNTER_KEYS) or any(
+        value < 0 for value in delta.values()
+    ):
+        raise EvidenceError("invalid scoped fixture counter delta")
+    if any(delta[key] <= 0 for key in SCOPED_COUNTER_KEYS):
+        raise EvidenceError("fixture-scoped mutation evidence is missing")
+    return sum(delta.values())
+
+
 def _backend_sha_matches(
     runner: DockerRunner,
     config: Config,
     backend_shas: Sequence[str],
 ) -> bool:
     expected = config.expected_backend_sha
-    if expected is None:
-        return True
     labels = runner.inspect_labels(config.backend_container)
     candidates = list(backend_shas)
     for key in (
@@ -644,10 +716,15 @@ def _validate_payload(payload: Mapping[str, object]) -> None:
         raise EvidenceError("write counter delta is invalid")
     if sum(counters.values()) <= 0:
         raise EvidenceError("write counter delta is empty")
+    scoped = payload.get("scopedCounters")
+    if not isinstance(scoped, dict) or set(scoped) != set(SCOPED_COUNTER_KEYS):
+        raise EvidenceError("scoped fixture counter keys are not fixed")
+    if any(type(value) is not int or value <= 0 for value in scoped.values()):
+        raise EvidenceError("scoped fixture mutation evidence is missing")
     invariants = payload.get("authorityInvariants")
-    allowed_invariants = REQUIRED_INVARIANT_KEYS | {"expected_backend_sha_matches"}
     actual_invariant_keys = set(invariants) if isinstance(invariants, dict) else set()
-    if actual_invariant_keys != REQUIRED_INVARIANT_KEYS and actual_invariant_keys != allowed_invariants:
+    required_invariants = REQUIRED_INVARIANT_KEYS | {"expected_backend_sha_matches"}
+    if actual_invariant_keys != required_invariants:
         raise EvidenceError("authority invariant keys are not fixed")
     if any(value is not True for value in invariants.values()):
         raise EvidenceError("first-party write evidence is missing")
@@ -655,7 +732,7 @@ def _validate_payload(payload: Mapping[str, object]) -> None:
         raise EvidenceError("provider calls are not zero")
     binding = payload.get("evidenceBinding")
     if not isinstance(binding, dict) or set(binding) != {
-        "runId", "avd", "startNonce", "mutationKeys"
+        "runId", "avd", "startNonce", "fixtureId", "fixtureAccountState", "mutationKeys"
     }:
         raise EvidenceError("evidence binding is missing")
     if (
@@ -665,6 +742,12 @@ def _validate_payload(payload: Mapping[str, object]) -> None:
         or not AVD_RE.fullmatch(binding["avd"])
         or not isinstance(binding["startNonce"], str)
         or not START_NONCE_RE.fullmatch(binding["startNonce"])
+        or not isinstance(binding["fixtureId"], str)
+        or not FIXTURE_ID_RE.fullmatch(binding["fixtureId"])
+        or binding["fixtureAccountState"] not in {
+            "created_during_run",
+            "preexisting_fixture",
+        }
         or binding["mutationKeys"] != list(WRITE_COUNTER_KEYS)
     ):
         raise EvidenceError("evidence binding is invalid")
@@ -680,6 +763,7 @@ def _validate_payload(payload: Mapping[str, object]) -> None:
 class EvidenceStart:
     run_id: str
     avd: str
+    fixture_id: str
     start_nonce: str
     snapshot: EvidenceSnapshot
     consumed: bool = False
@@ -693,7 +777,10 @@ class EvidenceCollector:
         self._baseline: EvidenceSnapshot | None = None
         self._starts: dict[tuple[str, str], EvidenceStart] = {}
 
-    def _capture_snapshot(self) -> EvidenceSnapshot:
+    def _capture_snapshot(self, fixture_id: str | None = None) -> EvidenceSnapshot:
+        fixture_nickname = "m4-no-fixture"
+        if fixture_id is not None:
+            fixture_nickname = _fixture_nickname(fixture_id)
         backend_output = self._docker.exec_shell(
             self._config.backend_container,
             BACKEND_EVIDENCE_SCRIPT,
@@ -704,9 +791,15 @@ class EvidenceCollector:
         if not backend_sha_ok:
             raise EvidenceError("backend SHA mismatch")
 
+        mysql_script = (
+            "M4_FIXTURE_NICKNAME="
+            + shlex.quote(fixture_nickname)
+            + "\nexport M4_FIXTURE_NICKNAME\n"
+            + MYSQL_EVIDENCE_SCRIPT
+        )
         mysql_output = self._docker.exec_shell(
             self._config.mysql_container,
-            MYSQL_EVIDENCE_SCRIPT,
+            mysql_script,
             timeout=30.0,
         )
         database = _parse_mysql_evidence(mysql_output)
@@ -727,6 +820,7 @@ class EvidenceCollector:
             raise EvidenceError("core schema evidence is incomplete")
 
         counters = {key: database[key] for key in WRITE_COUNTER_KEYS}
+        scoped_counters = {key: database[key] for key in SCOPED_COUNTER_KEYS}
         database_invariants = {
             "core_schema_present": database["schema_core"] == 1,
             "provider_outbox_allowed_states": database["outbox_bad_status"] == 0
@@ -738,6 +832,8 @@ class EvidenceCollector:
         return EvidenceSnapshot(
             backend_states=dict(backend_states),
             counters=counters,
+            scoped_counters=scoped_counters,
+            fixture_account_count=database["fixture_account_count"],
             database_invariants=database_invariants,
             provider_evidence=provider_evidence,
             backend_sha_ok=backend_sha_ok,
@@ -750,20 +846,25 @@ class EvidenceCollector:
             # This runs before the HTTP socket is bound.
             self._baseline = self._capture_snapshot()
 
-    def start(self, run_id: str, avd: str) -> Mapping[str, object]:
+    def start(self, run_id: str, avd: str, fixture_id: str) -> Mapping[str, object]:
         with self._lock:
             if not RUN_ID_RE.fullmatch(run_id) or not AVD_RE.fullmatch(avd):
                 raise EvidenceError("evidence context is invalid")
+            _fixture_nickname(fixture_id)
             key = (run_id, avd)
             if key in self._starts:
                 raise EvidenceError("evidence context already started")
-            snapshot = self._capture_snapshot()
+            snapshot = self._capture_snapshot(fixture_id)
+            expected_count = 0 if avd == "AVD-A" else 1
+            if snapshot.fixture_account_count != expected_count:
+                raise EvidenceError("fixture account start state is invalid")
             start_nonce = secrets_module.token_urlsafe(24)
             if not START_NONCE_RE.fullmatch(start_nonce):
                 raise EvidenceError("evidence nonce generation failed")
             self._starts[key] = EvidenceStart(
                 run_id=run_id,
                 avd=avd,
+                fixture_id=fixture_id,
                 start_nonce=start_nonce,
                 snapshot=snapshot,
             )
@@ -771,6 +872,10 @@ class EvidenceCollector:
                 "status": "STARTED",
                 "runId": run_id,
                 "avd": avd,
+                "fixtureId": fixture_id,
+                "fixtureAccountState": (
+                    "absent_at_start" if avd == "AVD-A" else "present_at_start"
+                ),
                 "startNonce": start_nonce,
             }
 
@@ -779,20 +884,37 @@ class EvidenceCollector:
         run_id: str,
         avd: str,
         start_nonce: str,
+        fixture_id: str,
     ) -> Mapping[str, object]:
         with self._lock:
             if not RUN_ID_RE.fullmatch(run_id) or not AVD_RE.fullmatch(avd):
                 raise EvidenceError("evidence context is invalid")
             if not START_NONCE_RE.fullmatch(start_nonce):
                 raise EvidenceError("evidence nonce is invalid")
+            _fixture_nickname(fixture_id)
             start = self._starts.get((run_id, avd))
             if start is None or start.consumed or not hmac.compare_digest(
                 start.start_nonce, start_nonce
             ):
                 raise EvidenceError("evidence context is stale or unrelated")
-            current = self._capture_snapshot()
+            if not _constant_time_equal(start.fixture_id, fixture_id):
+                raise EvidenceError("fixture binding is stale or unrelated")
+            current = self._capture_snapshot(fixture_id)
+            if current.fixture_account_count != 1:
+                raise EvidenceError("fixture account collect state is invalid")
+            expected_start_count = 0 if avd == "AVD-A" else 1
+            if start.snapshot.fixture_account_count != expected_start_count:
+                raise EvidenceError("fixture account start state changed")
+            if avd == "AVD-A" and current.fixture_account_count != 1:
+                raise EvidenceError("new fixture account was not established")
             delta = _counter_delta(current.counters, start.snapshot.counters)
             write_total = _require_new_writes(delta)
+            scoped_delta = _counter_delta(
+                current.scoped_counters,
+                start.snapshot.scoped_counters,
+                SCOPED_COUNTER_KEYS,
+            )
+            _require_scoped_writes(scoped_delta)
 
             invariants = dict(current.database_invariants)
             invariants.update(
@@ -803,13 +925,13 @@ class EvidenceCollector:
                     "formal_vendor_adapters_blocked": current.backend_states["formal_vendor_adapters_disabled"],
                     "provider_invocation_rows_zero": current.provider_evidence == 0,
                     "first_party_writes_observed_since_start": write_total > 0,
+                    "expected_backend_sha_matches": current.backend_sha_ok,
                 }
             )
-            if self._config.expected_backend_sha is not None:
-                invariants["expected_backend_sha_matches"] = current.backend_sha_ok
             payload: Mapping[str, object] = {
                 "status": "OK",
                 "writeCounters": delta,
+                "scopedCounters": scoped_delta,
                 "authorityInvariants": invariants,
                 "providerCalls": current.provider_evidence,
                 "secrets": False,
@@ -817,6 +939,12 @@ class EvidenceCollector:
                     "runId": run_id,
                     "avd": avd,
                     "startNonce": start_nonce,
+                    "fixtureId": fixture_id,
+                    "fixtureAccountState": (
+                        "created_during_run"
+                        if avd == "AVD-A"
+                        else "preexisting_fixture"
+                    ),
                     "mutationKeys": list(WRITE_COUNTER_KEYS),
                 },
             }
@@ -880,17 +1008,24 @@ class EvidenceHandler(http.server.BaseHTTPRequestHandler):
         phase = self._single_header("X-M4-Evidence-Phase")
         run_id = self._single_header("X-M4-Run-ID")
         avd = self._single_header("X-M4-AVD")
+        fixture_id = self._single_header("X-M4-Fixture-ID")
         start_nonce = self._single_header("X-M4-Start-Nonce")
-        if not RUN_ID_RE.fullmatch(run_id) or not AVD_RE.fullmatch(avd):
+        if (
+            not RUN_ID_RE.fullmatch(run_id)
+            or not AVD_RE.fullmatch(avd)
+            or not FIXTURE_ID_RE.fullmatch(fixture_id)
+        ):
             self._json(400, {"status": "BAD_REQUEST"})
             return
         try:
             if phase == "start" and not start_nonce:
-                payload = self.server.collector.start(run_id, avd)
+                payload = self.server.collector.start(run_id, avd, fixture_id)
                 self._json(201, payload)
                 return
             if phase == "collect" and START_NONCE_RE.fullmatch(start_nonce):
-                payload = self.server.collector.collect(run_id, avd, start_nonce)
+                payload = self.server.collector.collect(
+                    run_id, avd, start_nonce, fixture_id
+                )
                 self._json(200, payload)
                 return
             self._json(400, {"status": "BAD_REQUEST"})
@@ -950,6 +1085,19 @@ def _self_test() -> int:
         raise AssertionError("wrong bearer token accepted")
     if _valid_bearer_header(["Bearer " + token, "Bearer " + token], token):
         raise AssertionError("duplicate bearer token accepted")
+    try:
+        read_config(
+            {
+                "M4_DB_EVIDENCE_TOKEN": token,
+                "M4_DB_EVIDENCE_BACKEND_CONTAINER": "backend",
+                "M4_DB_EVIDENCE_MYSQL_CONTAINER": "mysql",
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            }
+        )
+    except ConfigurationError:
+        pass
+    else:
+        raise AssertionError("missing expected backend SHA was accepted")
 
     backend_output = "\n".join(
         [
@@ -971,6 +1119,10 @@ def _self_test() -> int:
             "C|social_community_messages|5",
             "C|social_user_reports|1",
             "C|idempotency_audit|3",
+            "F|1",
+            "S|refresh_session_user|1",
+            "S|user_report_reporter|1",
+            "S|operation_idempotency_actor|1",
             "I|schema_core|1",
             "O|1|0|0|0|1",
             "I|delivery_status_bad|0",
@@ -1024,6 +1176,7 @@ def _self_test() -> int:
     payload = {
         "status": "OK",
         "writeCounters": delta,
+        "scopedCounters": {key: 1 for key in SCOPED_COUNTER_KEYS},
         "authorityInvariants": {
             "core_schema_present": True,
             "provider_outbox_allowed_states": True,
@@ -1036,6 +1189,7 @@ def _self_test() -> int:
             "formal_vendor_adapters_blocked": True,
             "provider_invocation_rows_zero": True,
             "first_party_writes_observed_since_start": True,
+            "expected_backend_sha_matches": True,
         },
         "providerCalls": 0,
         "secrets": False,
@@ -1043,6 +1197,8 @@ def _self_test() -> int:
             "runId": "m4-self-test",
             "avd": "AVD-A",
             "startNonce": "N" * 32,
+            "fixtureId": "m4-fresh-self-test",
+            "fixtureAccountState": "created_during_run",
             "mutationKeys": list(WRITE_COUNTER_KEYS),
         },
     }
@@ -1066,6 +1222,8 @@ def _self_test() -> int:
             "formal_vendor_adapters_disabled": True,
         },
         counters={key: 10 for key in WRITE_COUNTER_KEYS},
+        scoped_counters={key: 10 for key in SCOPED_COUNTER_KEYS},
+        fixture_account_count=0,
         database_invariants={key: True for key in REQUIRED_INVARIANT_KEYS if key in {
             "core_schema_present",
             "provider_outbox_allowed_states",
@@ -1096,22 +1254,34 @@ def _self_test() -> int:
                     docker_env={},
                     backend_container="backend",
                     mysql_container="mysql",
-                    expected_backend_sha=None,
+                    expected_backend_sha="2" * 40,
                 )
             )
             self._snapshots = [base_snapshot, next_snapshot]
 
-        def _capture_snapshot(self) -> EvidenceSnapshot:
+        def _capture_snapshot(self, _fixture_id: str | None = None) -> EvidenceSnapshot:
             return self._snapshots.pop(0)
 
     fake_collector = FakeCollector()
-    started = fake_collector.start("m4-self-test", "AVD-A")
+    fake_collector._snapshots[0] = dataclasses.replace(
+        fake_collector._snapshots[0], fixture_account_count=0
+    )
+    fake_collector._snapshots[1] = dataclasses.replace(
+        fake_collector._snapshots[1],
+        fixture_account_count=1,
+        scoped_counters={key: 11 for key in SCOPED_COUNTER_KEYS},
+    )
+    started = fake_collector.start("m4-self-test", "AVD-A", "m4-fresh-self-test")
     nonce = started["startNonce"]
-    collected = fake_collector.collect("m4-self-test", "AVD-A", nonce)
+    collected = fake_collector.collect(
+        "m4-self-test", "AVD-A", nonce, "m4-fresh-self-test"
+    )
     if collected["evidenceBinding"]["runId"] != "m4-self-test":
         raise AssertionError("run binding was not echoed")
     try:
-        fake_collector.collect("m4-self-test", "AVD-A", nonce)
+        fake_collector.collect(
+            "m4-self-test", "AVD-A", nonce, "m4-fresh-self-test"
+        )
     except EvidenceError:
         pass
     else:

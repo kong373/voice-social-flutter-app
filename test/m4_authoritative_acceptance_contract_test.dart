@@ -92,6 +92,11 @@ void main() {
         'social_user_reports': zeroWriteDelta ? 0 : 1,
         'idempotency_audit': 0,
       };
+      final Map<String, Object?> scopedCounters = <String, Object?>{
+        'refresh_session_user': zeroWriteDelta ? 0 : 1,
+        'user_report_reporter': zeroWriteDelta ? 0 : 1,
+        'operation_idempotency_actor': zeroWriteDelta ? 0 : 1,
+      };
       if (extraMutationKey) {
         writeCounters['unexpected_mutation'] = 1;
       }
@@ -136,6 +141,7 @@ void main() {
           jsonEncode(<String, Object?>{
             'status': 'OK',
             'writeCounters': writeCounters,
+            'scopedCounters': scopedCounters,
             'authorityInvariants': <String, Object?>{
               'core_schema_present': true,
               'provider_outbox_allowed_states': true,
@@ -148,6 +154,7 @@ void main() {
               'formal_vendor_adapters_blocked': true,
               'provider_invocation_rows_zero': true,
               'first_party_writes_observed_since_start': !zeroWriteDelta,
+              'expected_backend_sha_matches': true,
             },
             'providerCalls': 0,
             'secrets': false,
@@ -155,6 +162,10 @@ void main() {
               'runId': bindingRunId,
               'avd': bindingAvd,
               'startNonce': dbStartNonce,
+              'fixtureId': fixtureId,
+              'fixtureAccountState': avd == 'AVD-A'
+                  ? 'created_during_run'
+                  : 'preexisting_fixture',
               'mutationKeys': mutationKeys,
             },
           }),
@@ -185,6 +196,10 @@ void main() {
     expect(integrationSource, contains('if (!pass)'));
     expect(integrationSource, contains("state: 'composite_success'"));
     expect(integrationSource, isNot(contains("'result': 'PASS',")));
+    expect(integrationSource, contains('QA_M4_FIXTURE_ID'));
+    expect(integrationSource, contains('sha256.convert'));
+    expect(integrationSource, contains('m4-runtime-relay-token'));
+    expect(integrationSource, contains('HttpHeaders.authorizationHeader'));
   });
 
   test('cold-start emulator discovery restores adb whitespace parsing', () {
@@ -202,6 +217,11 @@ void main() {
       expect(runnerSource, contains('wait_for_sms_cooldown'));
       expect(runnerSource, contains('sleep "\$nap"'));
       expect(runnerSource, isNot(contains('sleep 65')));
+      expect(runnerSource, contains('feed_runtime_relay_token'));
+      expect(runnerSource, contains('run-as "\$APP_PACKAGE"'));
+      expect(runnerSource, contains('RELAY_TOKEN_A'));
+      expect(runnerSource, contains('RELAY_TOKEN_B'));
+      expect(runnerSource, contains('--dart-define=QA_M4_FIXTURE_ID'));
     },
   );
 
@@ -232,6 +252,22 @@ void main() {
     );
     expect(runnerSource, contains('mutationKeys'));
     expect(runnerSource, contains('evidenceBinding'));
+    expect(runnerSource, contains('X-M4-Fixture-ID'));
+    expect(runnerSource, contains('scopedCounters'));
+    expect(runnerSource, contains('refresh_session_user'));
+    expect(runnerSource, contains('expected_backend_sha_matches'));
+    expect(
+      dbEvidenceHelper.readAsStringSync(),
+      contains('M4_FIXTURE_NICKNAME'),
+    );
+    expect(
+      dbEvidenceHelper.readAsStringSync(),
+      contains('m4_development_fixture_user'),
+    );
+    expect(
+      dbEvidenceHelper.readAsStringSync(),
+      contains('fixture-scoped mutation evidence'),
+    );
   });
 
   test('logcat capture is bounded and cannot block after Flutter exits', () {

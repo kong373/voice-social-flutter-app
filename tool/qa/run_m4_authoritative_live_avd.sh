@@ -51,6 +51,8 @@ readonly B_HEIGHT='800'
 readonly B_DPR='2.40'
 readonly SMS_COOLDOWN_SECONDS='60'
 readonly SMS_COOLDOWN_BUFFER_SECONDS='5'
+readonly APP_PACKAGE='com.kong373.voice_social_app'
+readonly RUNTIME_TOKEN_FILE='cache/m4-runtime-relay-token'
 
 readonly SUMMARY_FILE="$ARTIFACT_ROOT/summary.txt"
 readonly MANIFEST_FILE="$ARTIFACT_ROOT/evidence-manifest.sha256"
@@ -64,6 +66,9 @@ RELAY_PID=''
 RELAY_PORT=''
 DB_START_NONCE=''
 SMS_COOLDOWN_STARTED_AT=''
+RELAY_TOKEN_A=''
+RELAY_TOKEN_B=''
+RUNTIME_TOKEN_FEEDER_PID=''
 OVERALL_RESULT='PASS'
 
 fail() {
@@ -75,10 +80,15 @@ fail() {
 cleanup() {
   set +e
   [[ -z "$RELAY_PID" ]] || { kill "$RELAY_PID" 2>/dev/null || true; wait "$RELAY_PID" 2>/dev/null || true; }
+  [[ -z "$RUNTIME_TOKEN_FEEDER_PID" ]] || {
+    kill "$RUNTIME_TOKEN_FEEDER_PID" 2>/dev/null || true
+    wait "$RUNTIME_TOKEN_FEEDER_PID" 2>/dev/null || true
+  }
   local started_serial
   if [[ -f "$STARTED_SERIALS_FILE" ]]; then
     while IFS= read -r started_serial; do
       [[ -n "$started_serial" ]] || continue
+      adb -s "$started_serial" shell run-as "$APP_PACKAGE" rm -f "$RUNTIME_TOKEN_FILE" >/dev/null 2>&1 || true
       adb -s "$started_serial" emu kill >/dev/null 2>&1 || true
     done <"$STARTED_SERIALS_FILE"
     rm -f "$STARTED_SERIALS_FILE"
@@ -213,9 +223,7 @@ wait_for_sms_cooldown() {
 record_sms_cooldown_start() {
   local avd="$1"
   SMS_COOLDOWN_STARTED_AT="$(date +%s)"
-  local output_mode='>>'
-  [[ "$avd" == 'AVD-A' ]] && output_mode='>'
-  if [[ "$output_mode" == '>' ]]; then
+  if [[ "$avd" == 'AVD-A' ]]; then
     {
       printf 'run_id=%s\nfixture_id=%s\n' "$RUN_ID" "$FIXTURE_ID"
       printf 'sms_cooldown_seconds=%s\nbuffer_seconds=%s\n' \
@@ -226,9 +234,6 @@ record_sms_cooldown_start() {
     return 0
   fi
   {
-    printf 'run_id=%s\nfixture_id=%s\n' "$RUN_ID" "$FIXTURE_ID"
-    printf 'sms_cooldown_seconds=%s\nbuffer_seconds=%s\n' \
-      "$SMS_COOLDOWN_SECONDS" "$SMS_COOLDOWN_BUFFER_SECONDS"
     printf 'last_challenge_window_avd=%s\nlast_challenge_window_started_at=%s\n' \
       "$avd" "$SMS_COOLDOWN_STARTED_AT"
   } >>"$ARTIFACT_ROOT/sms-cooldown.txt"
@@ -241,7 +246,7 @@ db_evidence_start() {
   nonce=''
   set +e
   nonce="$(QA_M4_DB_TOKEN="$DB_TOKEN" QA_M4_DB_URL="$DB_URL" \
-    QA_M4_RUN_ID="$RUN_ID" QA_M4_AVD="$avd" python3 -u - <<'PY'
+    QA_M4_RUN_ID="$RUN_ID" QA_M4_AVD="$avd" QA_M4_FIXTURE_ID="$FIXTURE_ID" python3 -u - <<'PY'
 import json
 import os
 import urllib.error
@@ -255,6 +260,7 @@ request = urllib.request.Request(
         "X-M4-Evidence-Phase": "start",
         "X-M4-Run-ID": os.environ["QA_M4_RUN_ID"],
         "X-M4-AVD": os.environ["QA_M4_AVD"],
+        "X-M4-Fixture-ID": os.environ["QA_M4_FIXTURE_ID"],
     },
 )
 try:
@@ -267,6 +273,9 @@ try:
         or payload.get("status") != "STARTED"
         or payload.get("runId") != os.environ["QA_M4_RUN_ID"]
         or payload.get("avd") != os.environ["QA_M4_AVD"]
+        or payload.get("fixtureId") != os.environ["QA_M4_FIXTURE_ID"]
+        or payload.get("fixtureAccountState")
+        != ("absent_at_start" if os.environ["QA_M4_AVD"] == "AVD-A" else "present_at_start")
         or not isinstance(payload.get("startNonce"), str)
     ):
         raise RuntimeError("db evidence start contract invalid")
@@ -289,11 +298,13 @@ sanitize() {
   QA_M4_SECRET_PHONE="$LIVE_PHONE" \
     QA_M4_SECRET_CLIENT="$OAUTH_CLIENT_ID" \
     QA_M4_SECRET_DB_TOKEN="$DB_TOKEN" \
+    QA_M4_SECRET_RELAY_A="$RELAY_TOKEN_A" \
+    QA_M4_SECRET_RELAY_B="$RELAY_TOKEN_B" \
     python3 -u -c '
 import os
 import re
 import sys
-values = [os.environ.get("QA_M4_SECRET_PHONE", ""), os.environ.get("QA_M4_SECRET_CLIENT", ""), os.environ.get("QA_M4_SECRET_DB_TOKEN", "")]
+values = [os.environ.get("QA_M4_SECRET_PHONE", ""), os.environ.get("QA_M4_SECRET_CLIENT", ""), os.environ.get("QA_M4_SECRET_DB_TOKEN", ""), os.environ.get("QA_M4_SECRET_RELAY_A", ""), os.environ.get("QA_M4_SECRET_RELAY_B", "")]
 for line in sys.stdin:
     for value in values:
         if value:
@@ -311,6 +322,17 @@ for line in sys.stdin:
 start_relay() {
   local relay_dir="$ARTIFACT_ROOT/config-relay"
   mkdir -p "$relay_dir"
+  RELAY_TOKEN_A="$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(48))
+PY
+)"
+  RELAY_TOKEN_B="$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(48))
+PY
+)"
+  [[ "${#RELAY_TOKEN_A}" -ge 64 && "${#RELAY_TOKEN_B}" -ge 64 ]] || fail 'runtime relay token generation failed'
   RELAY_PORT="$(python3 - <<'PY'
 import socket
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -319,20 +341,43 @@ print(s.getsockname()[1])
 s.close()
 PY
 )"
-  python3 -u - "$RELAY_PORT" >"$relay_dir/relay.log" 2>&1 <<'PY' &
+  QA_RELAY_TOKEN_A="$RELAY_TOKEN_A" QA_RELAY_TOKEN_B="$RELAY_TOKEN_B" \
+    python3 -u - "$RELAY_PORT" >"$relay_dir/relay.log" 2>&1 <<'PY' &
 import http.server
+import hmac
 import json
 import os
 import sys
+import threading
 port = int(sys.argv[1])
 phone = os.environ["QA_LIVE_PHONE"]
 client_id = os.environ["QA_OAUTH_CLIENT_ID"]
+tokens = {
+    os.environ["QA_RELAY_TOKEN_A"]: False,
+    os.environ["QA_RELAY_TOKEN_B"]: False,
+}
+token_lock = threading.Lock()
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path != "/m4/config":
             self.send_response(404)
             self.end_headers()
             return
+        values = self.headers.get_all("Authorization") or []
+        prefix = "Bearer "
+        token = values[0][len(prefix):] if len(values) == 1 and values[0].startswith(prefix) else ""
+        matched = None
+        with token_lock:
+            for expected, consumed in tokens.items():
+                if hmac.compare_digest(token, expected) and not consumed:
+                    matched = expected
+                    break
+            if matched is None:
+                self.send_response(401)
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return
+            tokens[matched] = True
         body = json.dumps({"phone": phone, "oauthClientId": client_id}, separators=(",", ":")).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -347,13 +392,55 @@ PY
   RELAY_PID=$!
   for _ in {1..60}; do
     kill -0 "$RELAY_PID" 2>/dev/null || fail 'runtime config relay exited'
-    if curl --fail --silent --show-error \
-      "http://127.0.0.1:$RELAY_PORT/m4/config" >/dev/null; then
+    if python3 - "$RELAY_PORT" <<'PY'
+import socket
+import sys
+try:
+    with socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=1):
+        pass
+except OSError:
+    raise SystemExit(1)
+PY
+    then
       return 0
     fi
     sleep 0.1
   done
   fail 'runtime config relay did not become ready'
+}
+
+feed_runtime_relay_token() {
+  local serial="$1"
+  local token="$2"
+  [[ "$serial" =~ ^[A-Za-z0-9_.:-]{1,80}$ ]] || fail 'runtime token feeder serial is invalid'
+  [[ "${#token}" -ge 64 ]] || fail 'runtime token feeder token is invalid'
+  (
+    # Flutter drive installs a debug APK after this feeder starts. Repeating
+    # the 0600 cache-file write bridges that install window without passing the
+    # bearer through dart-define, process arguments, logs, or artifacts.
+    for _ in {1..240}; do
+      printf '%s' "$token" |
+        adb -s "$serial" shell run-as "$APP_PACKAGE" sh -c \
+          "umask 077; cat > '$RUNTIME_TOKEN_FILE'; chmod 600 '$RUNTIME_TOKEN_FILE'" \
+          >/dev/null 2>&1 || true
+      sleep 0.25
+    done
+  ) &
+  RUNTIME_TOKEN_FEEDER_PID=$!
+}
+
+stop_runtime_relay_token_feeder() {
+  [[ -z "$RUNTIME_TOKEN_FEEDER_PID" ]] || {
+    kill "$RUNTIME_TOKEN_FEEDER_PID" 2>/dev/null || true
+    wait "$RUNTIME_TOKEN_FEEDER_PID" 2>/dev/null || true
+  }
+  RUNTIME_TOKEN_FEEDER_PID=''
+}
+
+clear_runtime_relay_token() {
+  local serial="$1"
+  adb -s "$serial" shell run-as "$APP_PACKAGE" rm -f "$RUNTIME_TOKEN_FILE" \
+    >/dev/null 2>&1 || true
 }
 
 device_for_api() {
@@ -508,7 +595,8 @@ db_evidence() {
   }
   set +e
   QA_M4_DB_TOKEN="$DB_TOKEN" QA_M4_DB_URL="$DB_URL" \
-    QA_M4_RUN_ID="$RUN_ID" QA_M4_AVD="$avd" QA_M4_START_NONCE="$nonce" \
+    QA_M4_RUN_ID="$RUN_ID" QA_M4_AVD="$avd" QA_M4_FIXTURE_ID="$FIXTURE_ID" \
+    QA_M4_START_NONCE="$nonce" \
     python3 -u - 2>"$dir/db-evidence-curl.stderr" <<'PY' | sanitize >"$dir/db-evidence.json"
 import os
 import sys
@@ -523,6 +611,7 @@ request = urllib.request.Request(
         "X-M4-Evidence-Phase": "collect",
         "X-M4-Run-ID": os.environ["QA_M4_RUN_ID"],
         "X-M4-AVD": os.environ["QA_M4_AVD"],
+        "X-M4-Fixture-ID": os.environ["QA_M4_FIXTURE_ID"],
         "X-M4-Start-Nonce": os.environ["QA_M4_START_NONCE"],
     },
 )
@@ -541,12 +630,12 @@ PY
     printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"
     return 1
   }
-  if ! python3 - "$dir/db-evidence.json" "$avd" "$nonce" "$RUN_ID" \
+  if ! python3 - "$dir/db-evidence.json" "$avd" "$nonce" "$RUN_ID" "$FIXTURE_ID" \
     2>"$dir/db-evidence-validation.stderr" <<'PY'
 import json
 import sys
 
-path, expected_avd, expected_nonce, expected_run_id = sys.argv[1:]
+path, expected_avd, expected_nonce, expected_run_id, expected_fixture_id = sys.argv[1:]
 with open(path, encoding="utf-8") as stream:
     payload = json.load(stream)
 if not isinstance(payload, dict):
@@ -558,6 +647,11 @@ required_counter_keys = {
     "social_community_messages",
     "social_user_reports",
     "idempotency_audit",
+}
+required_scoped_counter_keys = {
+    "refresh_session_user",
+    "user_report_reporter",
+    "operation_idempotency_actor",
 }
 required_invariant_keys = {
     "core_schema_present",
@@ -571,6 +665,7 @@ required_invariant_keys = {
     "formal_vendor_adapters_blocked",
     "provider_invocation_rows_zero",
     "first_party_writes_observed_since_start",
+    "expected_backend_sha_matches",
 }
 if set(payload) != {
     "status",
@@ -579,6 +674,7 @@ if set(payload) != {
     "providerCalls",
     "secrets",
     "evidenceBinding",
+    "scopedCounters",
 }:
     raise SystemExit(1)
 if payload.get("status") != "OK":
@@ -594,10 +690,12 @@ if sum(payload["writeCounters"].values()) <= 0:
     raise SystemExit(1)
 if payload["writeCounters"]["social_user_reports"] <= 0:
     raise SystemExit(1)
+if set(payload["scopedCounters"]) != required_scoped_counter_keys:
+    raise SystemExit(1)
+if any(type(value) is not int or value <= 0 for value in payload["scopedCounters"].values()):
+    raise SystemExit(1)
 actual_invariant_keys = set(payload["authorityInvariants"])
-if actual_invariant_keys != required_invariant_keys and actual_invariant_keys != (
-    required_invariant_keys | {"expected_backend_sha_matches"}
-):
+if actual_invariant_keys != required_invariant_keys:
     raise SystemExit(1)
 if any(value is not True for value in payload["authorityInvariants"].values()):
     raise SystemExit(1)
@@ -607,12 +705,19 @@ if payload.get("secrets") is not False:
     raise SystemExit(1)
 binding = payload.get("evidenceBinding")
 if not isinstance(binding, dict) or set(binding) != {
-    "runId", "avd", "startNonce", "mutationKeys"
+    "runId", "avd", "startNonce", "fixtureId", "fixtureAccountState", "mutationKeys"
 }:
     raise SystemExit(1)
 if binding["runId"] != expected_run_id or binding["avd"] != expected_avd:
     raise SystemExit(1)
 if binding["startNonce"] != expected_nonce:
+    raise SystemExit(1)
+if binding["fixtureId"] != expected_fixture_id:
+    raise SystemExit(1)
+expected_fixture_state = (
+    "created_during_run" if expected_avd == "AVD-A" else "preexisting_fixture"
+)
+if binding["fixtureAccountState"] != expected_fixture_state:
     raise SystemExit(1)
 if binding["mutationKeys"] != [
     "auth_sessions",
@@ -644,7 +749,9 @@ secret_scan() {
     fi
     if grep -aFq "$LIVE_PHONE" "$path" 2>/dev/null ||
       grep -aFq "$OAUTH_CLIENT_ID" "$path" 2>/dev/null ||
-      { [[ -n "$DB_TOKEN" ]] && grep -aFq "$DB_TOKEN" "$path" 2>/dev/null; }; then
+      { [[ -n "$DB_TOKEN" ]] && grep -aFq "$DB_TOKEN" "$path" 2>/dev/null; } ||
+      { [[ -n "$RELAY_TOKEN_A" ]] && grep -aFq "$RELAY_TOKEN_A" "$path" 2>/dev/null; } ||
+      { [[ -n "$RELAY_TOKEN_B" ]] && grep -aFq "$RELAY_TOKEN_B" "$path" 2>/dev/null; }; then
       printf 'runtime_secret_value_found=true\n' >>"$output"; bad=1
     fi
     if grep -aEiq '1[3-9][0-9]{9}|Bearer[[:space:]]+[A-Za-z0-9._~+/=-]{12,}' "$path" 2>/dev/null; then
@@ -691,6 +798,8 @@ apk_scan() {
     apk_count=$((apk_count + 1))
     unzip -p "$apk" 2>/dev/null | grep -aFq "$LIVE_PHONE" && { printf 'apk_phone_value_found=true\n' >>"$output"; bad=1; } || true
     unzip -p "$apk" 2>/dev/null | grep -aFq "$OAUTH_CLIENT_ID" && { printf 'apk_oauth_client_value_found=true\n' >>"$output"; bad=1; } || true
+    unzip -p "$apk" 2>/dev/null | grep -aFq "$RELAY_TOKEN_A" && { printf 'apk_relay_token_a_value_found=true\n' >>"$output"; bad=1; } || true
+    unzip -p "$apk" 2>/dev/null | grep -aFq "$RELAY_TOKEN_B" && { printf 'apk_relay_token_b_value_found=true\n' >>"$output"; bad=1; } || true
   done < <(find "$PROJECT_ROOT/build/app/outputs" -type f -name '*.apk' -print0 2>/dev/null || true)
   [[ "$apk_count" -gt 0 ]] || { printf 'apk_missing=true\n' >>"$output"; bad=1; }
   [[ "$bad" -eq 0 ]] && { printf 'apk_secret_scan=0\n' >>"$output"; return 0; }
@@ -731,6 +840,9 @@ run_one() {
   # that can ignore TERM and block the evidence lane after Flutter exits.
   adb -s "$serial" logcat -G 16M >/dev/null 2>&1 || true
   adb -s "$serial" logcat -c >/dev/null 2>&1 || true
+  local relay_token="$RELAY_TOKEN_A"
+  [[ "$avd" == 'AVD-B' ]] && relay_token="$RELAY_TOKEN_B"
+  feed_runtime_relay_token "$serial" "$relay_token"
   set +e
   run_with_timeout 1500 30 \
     env -u QA_LIVE_PHONE -u QA_OAUTH_CLIENT_ID \
@@ -745,6 +857,7 @@ run_one() {
       --dart-define=ALLOW_INSECURE_HTTP=true --dart-define=API_BASE_URL="$BACKEND_BASE_URL" \
       --dart-define=API_TIMEOUT_SECONDS=15 \
       --dart-define=M4_RUNTIME_CONFIG_PORT="$RELAY_PORT" \
+      --dart-define=QA_M4_FIXTURE_ID="$FIXTURE_ID" \
       --dart-define=M4_EXPECTED_FLUTTER_SHA="$FLUTTER_SHA_EXPECTED" \
       --dart-define=M4_EXPECTED_BACKEND_SHA="$BACKEND_SHA_EXPECTED" \
       --dart-define=QA_AVD_ID="$avd" \
@@ -752,6 +865,8 @@ run_one() {
       --dart-define=QA_EXPECTED_VIEWPORT_HEIGHT="$height" \
       --dart-define=QA_EXPECTED_DPR="$dpr" 2>&1 | sanitize >"$dir/logs/flutter-drive.log"
   local drive_status=${PIPESTATUS[0]}
+  stop_runtime_relay_token_feeder
+  clear_runtime_relay_token "$serial"
   adb -s "$serial" logcat -d -v threadtime \
     2>"$dir/logs/logcat-adb.stderr" | \
     sanitize >"$dir/logs/logcat-full.txt" \

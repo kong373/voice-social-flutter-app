@@ -70,11 +70,11 @@ validate_db_evidence() {
   local avd="$2"
   local expected_nonce="$3"
   [[ -s "$file" ]] || return 1
-  python3 - "$file" "$avd" "$expected_nonce" "$EXPECTED_RUN_ID" <<'PY'
+  python3 - "$file" "$avd" "$expected_nonce" "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" <<'PY'
 import json
 import sys
 
-path, expected_avd, expected_nonce, expected_run_id = sys.argv[1:]
+path, expected_avd, expected_nonce, expected_run_id, expected_fixture_id = sys.argv[1:]
 with open(path, encoding="utf-8") as stream:
     payload = json.load(stream)
 if not isinstance(payload, dict):
@@ -86,6 +86,11 @@ required_counter_keys = {
     "social_community_messages",
     "social_user_reports",
     "idempotency_audit",
+}
+required_scoped_counter_keys = {
+    "refresh_session_user",
+    "user_report_reporter",
+    "operation_idempotency_actor",
 }
 required_invariant_keys = {
     "core_schema_present",
@@ -99,6 +104,7 @@ required_invariant_keys = {
     "formal_vendor_adapters_blocked",
     "provider_invocation_rows_zero",
     "first_party_writes_observed_since_start",
+    "expected_backend_sha_matches",
 }
 if set(payload) != {
     "status",
@@ -107,6 +113,7 @@ if set(payload) != {
     "providerCalls",
     "secrets",
     "evidenceBinding",
+    "scopedCounters",
 }:
     raise SystemExit(1)
 if payload.get("status") != "OK":
@@ -121,12 +128,14 @@ if sum(payload["writeCounters"].values()) <= 0:
     raise SystemExit(1)
 if payload["writeCounters"]["social_user_reports"] <= 0:
     raise SystemExit(1)
+if set(payload["scopedCounters"]) != required_scoped_counter_keys:
+    raise SystemExit(1)
+if any(type(value) is not int or value <= 0 for value in payload["scopedCounters"].values()):
+    raise SystemExit(1)
 if not isinstance(payload.get("authorityInvariants"), dict):
     raise SystemExit(1)
 actual_invariant_keys = set(payload["authorityInvariants"])
-if actual_invariant_keys != required_invariant_keys and actual_invariant_keys != (
-    required_invariant_keys | {"expected_backend_sha_matches"}
-):
+if actual_invariant_keys != required_invariant_keys:
     raise SystemExit(1)
 if payload["authorityInvariants"].get("first_party_writes_observed_since_start") is not True:
     raise SystemExit(1)
@@ -138,12 +147,19 @@ if payload.get("secrets") is not False:
     raise SystemExit(1)
 binding = payload.get("evidenceBinding")
 if not isinstance(binding, dict) or set(binding) != {
-    "runId", "avd", "startNonce", "mutationKeys"
+    "runId", "avd", "startNonce", "fixtureId", "fixtureAccountState", "mutationKeys"
 }:
     raise SystemExit(1)
 if binding["runId"] != expected_run_id or binding["avd"] != expected_avd:
     raise SystemExit(1)
 if binding["startNonce"] != expected_nonce:
+    raise SystemExit(1)
+if binding["fixtureId"] != expected_fixture_id:
+    raise SystemExit(1)
+expected_fixture_state = (
+    "created_during_run" if expected_avd == "AVD-A" else "preexisting_fixture"
+)
+if binding["fixtureAccountState"] != expected_fixture_state:
     raise SystemExit(1)
 if binding["mutationKeys"] != [
     "auth_sessions",

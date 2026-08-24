@@ -200,9 +200,13 @@ The runner refuses `DEVELOPMENT_OUTBOX_KEY`,
 It strips OAuth/client-secret aliases and all protected values before starting
 Flutter, starts only an ephemeral loopback relay for the phone and public
 client ID, and redacts Flutter/logcat/DB output before writing artifacts. The
-relay's ephemeral port is the only relay value passed as a `dart-define`; the
-phone, OTP, OAuth value, and DB token do not enter the APK, test source,
-markers, screenshot names, or evidence metadata.
+relay requires a distinct high-entropy one-time bearer for each AVD. The bearer
+is delivered through a mode-0600 file in the debug app's private cache using
+`adb shell run-as`, then deleted after the test; it is never a `dart-define`,
+APK value, process argument, log, or artifact. The relay's ephemeral port is
+the only relay value passed as a `dart-define`; the phone, OTP, OAuth value,
+and DB token do not enter the APK, test source, markers, screenshot names, or
+evidence metadata.
 
 ## Invocation
 
@@ -222,6 +226,8 @@ export QA_BACKEND_REPO="/secure/path/to/authoritative-backend"
 export QA_BACKEND_SHA="$(git -C "$QA_BACKEND_REPO" rev-parse HEAD)"
 export QA_M4_FIXTURE_ID="m4-fresh-YYYYMMDD"
 export QA_M4_FIXTURE_STATUS="fresh_dedicated"
+# QA_M4_FIXTURE_ID is passed as a non-secret dart-define only. The integration
+# test derives nickname m4-<first-16-lowercase-hex-of-sha256(fixture-id)>.
 # QA_LIVE_PHONE, QA_OAUTH_CLIENT_ID, QA_DB_EVIDENCE_URL, and
 # QA_DB_EVIDENCE_TOKEN come from the protected runner environment.
 
@@ -266,6 +272,11 @@ The accepted shape is exactly:
     "social_user_reports": 1,
     "idempotency_audit": 1
   },
+  "scopedCounters": {
+    "refresh_session_user": 1,
+    "user_report_reporter": 1,
+    "operation_idempotency_actor": 1
+  },
   "authorityInvariants": {
     "core_schema_present": true,
     "provider_outbox_allowed_states": true,
@@ -277,7 +288,8 @@ The accepted shape is exactly:
     "development_outbox_or_blocked_sms": true,
     "formal_vendor_adapters_blocked": true,
     "provider_invocation_rows_zero": true,
-    "first_party_writes_observed_since_start": true
+    "first_party_writes_observed_since_start": true,
+    "expected_backend_sha_matches": true
   },
   "providerCalls": 0,
   "secrets": false,
@@ -285,6 +297,8 @@ The accepted shape is exactly:
     "runId": "m4-YYYYMMDDHHMMSS",
     "avd": "AVD-A",
     "startNonce": "opaque-per-AVD-start-nonce",
+    "fixtureId": "m4-fresh-YYYYMMDD",
+    "fixtureAccountState": "created_during_run",
     "mutationKeys": [
       "auth_sessions",
       "room_activity",
@@ -297,21 +311,28 @@ The accepted shape is exactly:
 }
 ```
 
-The runner first sends an authenticated `GET` with
-`X-M4-Evidence-Phase: start`, `X-M4-Run-ID`, and `X-M4-AVD`. The helper takes a
-read-only snapshot and returns a one-shot opaque `startNonce`. After that AVD's
-Flutter run, the runner sends the nonce back with
+The helper configuration requires the exact expected backend image SHA; a
+missing or non-attested SHA is a hard failure. The runner first sends an
+authenticated `GET` with `X-M4-Evidence-Phase: start`, `X-M4-Run-ID`,
+`X-M4-AVD`, and `X-M4-Fixture-ID`. The helper independently derives the
+fixture nickname, joins `m4_development_fixture_user` to `app_user`, and
+requires AVD-A to have zero matching accounts at start while AVD-B has exactly
+one. It takes a read-only snapshot and returns a one-shot opaque `startNonce`.
+After that AVD's Flutter run, the runner sends the nonce back with
 `X-M4-Evidence-Phase: collect`; the helper computes the delta from that exact
-start snapshot and echoes `evidenceBinding`. A nonce can be collected only
-once for its exact run/AVD pair. Missing, duplicate, stale, cross-AVD, or
-cross-run contexts return unavailable and cannot produce a pass.
+start snapshot, requires exactly one matching account, and echoes
+`evidenceBinding`. A nonce can be collected only once for its exact run/AVD
+pair. Missing, duplicate, stale, cross-AVD, or cross-run contexts return
+unavailable and cannot produce a pass.
 
 The names and counts in the example are illustrative only; the endpoint must
 return current-run counters. The runner and aggregate gate require exactly the
 six fixed `writeCounters` keys above, non-negative integer deltas with a
 positive total, and a positive `social_user_reports` delta for the required
-current-run room-report mutation, the fixed invariant set (plus the optional
-backend-SHA attestation), the exact binding fields and mutation-key list,
+current-run room-report mutation. They also require exactly the three fixed
+fixture-scoped counters above, each positive for the same account (so global
+unrelated writes cannot satisfy the gate), the fixed invariant set including
+`expected_backend_sha_matches`, the exact binding fields and mutation-key list,
 `status=OK`,
 `providerCalls=0`, and `secrets=false`. A missing URL/token pair, failed
 endpoint, invalid response, or `NOT_CONFIGURED` file is a failed AVD, never a
