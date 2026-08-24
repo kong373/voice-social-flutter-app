@@ -454,6 +454,61 @@ void main() {
   );
 
   test(
+    'refund check recovers the existing authoritative application UUID',
+    () async {
+      const String refundId = '00000000-0000-4000-8000-000000005001';
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        expect(request.path, '/app-api/refund/check');
+        return _Response.ok(<String, Object?>{
+          'orderNo': 'order-existing-refund',
+          'eligible': false,
+          'reason': 'REFUND_ALREADY_EXISTS',
+          'amountMinor': 600,
+          'giftCoinAmount': 60,
+          'providerStatus': 'VENDOR_BLOCKED',
+          'existingApplicationId': refundId,
+        });
+      });
+      addTearDown(harness.close);
+
+      final RefundEligibility eligibility = await harness.repository
+          .checkRefundEligibility('order-existing-refund');
+
+      expect(eligibility.allowed, isFalse);
+      expect(eligibility.existingApplicationId, refundId);
+    },
+  );
+
+  test(
+    'refund check rejects an already-existing result without a canonical UUID',
+    () async {
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        expect(request.path, '/app-api/refund/check');
+        return _Response.ok(<String, Object?>{
+          'orderNo': 'order-missing-refund-id',
+          'eligible': false,
+          'reason': 'REFUND_ALREADY_EXISTS',
+          'amountMinor': 600,
+          'giftCoinAmount': 60,
+          'providerStatus': 'VENDOR_BLOCKED',
+        });
+      });
+      addTearDown(harness.close);
+
+      await expectLater(
+        harness.repository.checkRefundEligibility('order-missing-refund-id'),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
     'order-scoped refund uses exact check, submit, result, repeat contracts',
     () async {
       const String refundId = '00000000-0000-0000-0000-000000005001';

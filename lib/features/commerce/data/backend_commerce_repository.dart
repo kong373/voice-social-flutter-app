@@ -43,6 +43,9 @@ class BackendCommerceRepository implements CommerceRepository {
   };
 
   static const int _maximumCommerceBackendPages = 100;
+  static final RegExp _canonicalUuidPattern = RegExp(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+  );
 
   @override
   bool get supportsPaymentChannelInvocation => false;
@@ -441,18 +444,26 @@ class BackendCommerceRepository implements CommerceRepository {
       'reason',
       field: '退款资格原因',
     ).toUpperCase();
+    final String? existingApplicationId = _optionalTrimmedString(
+      data['existingApplicationId'],
+    );
     if (amountMinor <= 0 ||
         giftCoinAmount <= 0 ||
         (allowed && reason != 'ELIGIBLE') ||
-        (!allowed && reason == 'ELIGIBLE')) {
+        (!allowed && reason == 'ELIGIBLE') ||
+        (allowed && existingApplicationId != null) ||
+        (reason == 'REFUND_ALREADY_EXISTS' &&
+            (existingApplicationId == null ||
+                !_canonicalUuidPattern.hasMatch(existingApplicationId))) ||
+        (reason != 'REFUND_ALREADY_EXISTS' && existingApplicationId != null)) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
-        message: '退款资格响应的金额、结论或原因相互矛盾',
+        message: '退款资格响应的金额、结论、原因或既有申请相互矛盾',
       );
     }
     return RefundEligibility(
       allowed: allowed,
-      existingApplicationId: null,
+      existingApplicationId: existingApplicationId,
       message: _refundEligibilityMessage(reason, allowed: allowed),
     );
   }
