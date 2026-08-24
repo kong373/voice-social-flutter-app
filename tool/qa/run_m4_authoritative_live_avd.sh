@@ -142,13 +142,32 @@ readonly BACKEND_SHA_ACTUAL="$(git -C "$BACKEND_REPO" rev-parse --verify HEAD)"
 [[ "$ARTIFACT_ROOT" != *"$LIVE_PHONE"* && "$ARTIFACT_ROOT" != *"$OAUTH_CLIENT_ID"* ]] || fail 'artifact path contains a runtime secret'
 [[ -z "$DB_TOKEN" || "$ARTIFACT_ROOT" != *"$DB_TOKEN"* ]] || fail 'artifact path contains the DB token'
 
-if command -v gtimeout >/dev/null 2>&1; then
-  readonly TIMEOUT_BIN='gtimeout'
-elif command -v timeout >/dev/null 2>&1; then
-  readonly TIMEOUT_BIN='timeout'
-else
-  fail 'timeout or gtimeout is required'
-fi
+run_with_timeout() {
+  local timeout_seconds="$1"
+  local kill_after_seconds="$2"
+  shift 2
+  python3 - "$timeout_seconds" "$kill_after_seconds" "$@" <<'PY'
+import os
+import signal
+import subprocess
+import sys
+
+timeout_seconds = int(sys.argv[1])
+kill_after_seconds = int(sys.argv[2])
+command = sys.argv[3:]
+process = subprocess.Popen(command, start_new_session=True)
+try:
+    raise SystemExit(process.wait(timeout=timeout_seconds))
+except subprocess.TimeoutExpired:
+    os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=kill_after_seconds)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+    raise SystemExit(124)
+PY
+}
 
 sanitize() {
   QA_M4_SECRET_PHONE="$LIVE_PHONE" \
@@ -518,13 +537,13 @@ run_one() {
   LOGCAT_PID=$!
   set -e
   set +e
-  env -u QA_LIVE_PHONE -u QA_OAUTH_CLIENT_ID \
-    -u QA_DB_EVIDENCE_URL -u QA_DB_EVIDENCE_TOKEN \
-    -u DEVELOPMENT_OUTBOX_KEY -u QA_DEVELOPMENT_OUTBOX_KEY \
-    -u OAUTH_CLIENT_ID -u M3_OAUTH_CLIENT_ID -u M3_API_BASE_URL -u QA_API_BASE_URL \
-    QA_SCREENSHOT_DIR="$dir/screenshots" \
-    "$TIMEOUT_BIN" --signal=TERM --kill-after=30s 25m \
-    flutter drive --driver=test_driver/integration_test.dart \
+  run_with_timeout 1500 30 \
+    env -u QA_LIVE_PHONE -u QA_OAUTH_CLIENT_ID \
+      -u QA_DB_EVIDENCE_URL -u QA_DB_EVIDENCE_TOKEN \
+      -u DEVELOPMENT_OUTBOX_KEY -u QA_DEVELOPMENT_OUTBOX_KEY \
+      -u OAUTH_CLIENT_ID -u M3_OAUTH_CLIENT_ID -u M3_API_BASE_URL -u QA_API_BASE_URL \
+      QA_SCREENSHOT_DIR="$dir/screenshots" \
+      flutter drive --driver=test_driver/integration_test.dart \
       --target=integration_test/m4_first_party_live_integration_test.dart \
       --device-id="$serial" --debug --no-pub \
       --dart-define=BACKEND_MODE=live --dart-define=APP_ENV=development \
