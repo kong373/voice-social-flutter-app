@@ -1736,6 +1736,51 @@ void main() {
   );
 
   test(
+    'wallet accepts explicit unavailable commission authority and masked payout summary',
+    () async {
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        return switch (request.path) {
+          '/app-economy-api/ncoin' => _Response.ok(<String, Object?>{
+            'integer': 0,
+          }),
+          '/app-mini-api/mini/v1/wallet/overview' => _Response.ok(
+            <String, Object?>{
+              'balance': 0,
+              'frozenBalance': 0,
+              'totalEarnings': 0,
+              'yesterdayEarnings': 0,
+              'totalWithdraw': 0,
+              'isRealName': 1,
+              'agentEarnings': null,
+              'agentEarningsStatus': 'UNAVAILABLE',
+              'superAgentEarnings': null,
+              'superAgentEarningsStatus': 'UNAVAILABLE',
+              'defaultBankCard': <String, Object?>{
+                'payoutAccountId': 'account-authoritative-1',
+                'accountId': 'account-authoritative-1',
+                'accountType': 'BANK_CARD',
+                'accountMasked': '**** 8812',
+                'holderNameMasked': '晚*',
+              },
+            },
+          ),
+          _ => _Response.ok(<String, Object?>{}),
+        };
+      });
+      addTearDown(harness.close);
+
+      final WalletSummary wallet = await harness.repository
+          .fetchWalletSummary();
+      expect(wallet.agentEarnings, isNull);
+      expect(wallet.superAgentEarnings, isNull);
+      expect(wallet.bankCard?.id, 'account-authoritative-1');
+      expect(wallet.bankCard?.accountType, 'BANK_CARD');
+      expect(wallet.bankCard?.maskedAccount, '**** 8812');
+      expect(wallet.bankCard?.holderNameMasked, '晚*');
+    },
+  );
+
+  test(
     'ledger rejects missing currency, ID, amount, and time authority',
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {

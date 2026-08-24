@@ -426,7 +426,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                       title: '可提现 ¥${_wallet!.cashBalance.toStringAsFixed(2)}',
                       description: _wallet!.bankCard == null
                           ? '尚未绑定银行卡'
-                          : '${_wallet!.bankCard!.bankName} ${_wallet!.bankCard!.maskedNumber}',
+                          : '${_wallet!.bankCard!.accountType} ${_wallet!.bankCard!.maskedAccount}',
                     ),
                     const SizedBox(height: 14),
                     if (!_wallet!.realNameVerified || _wallet!.bankCard == null)

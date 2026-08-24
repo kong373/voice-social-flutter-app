@@ -87,19 +87,30 @@ class BackendCommerceRepository implements CommerceRepository {
       bankCard: card.isEmpty
           ? null
           : BankCardSummary(
-              id: _requiredString(card, 'id', field: '银行卡 ID'),
-              bankName: _requiredString(card, 'bankName', field: '银行名称'),
-              maskedNumber: _requiredString(
-                card,
-                'cardNumberMasked',
-                field: '银行卡号',
-              ),
-              holderName: _requiredString(card, 'cardHolderName', field: '持卡人'),
+              id: _requiredAliasedString(card, <String>[
+                'payoutAccountId',
+                'accountId',
+                'id',
+              ], field: '收款账户 ID'),
+              accountType: card.containsKey('accountType')
+                  ? _requiredString(card, 'accountType', field: '收款账户类型')
+                  : _requiredString(card, 'bankName', field: '收款账户类型'),
+              maskedAccount: card.containsKey('accountMasked')
+                  ? _requiredString(card, 'accountMasked', field: '脱敏收款账户')
+                  : _requiredString(card, 'cardNumberMasked', field: '脱敏收款账户'),
+              holderNameMasked: card.containsKey('holderNameMasked')
+                  ? _requiredString(card, 'holderNameMasked', field: '脱敏持有人')
+                  : _requiredString(card, 'cardHolderName', field: '脱敏持有人'),
             ),
-      agentEarnings: _requiredNonNegativeDouble(wallet, 'agentEarnings'),
-      superAgentEarnings: _requiredNonNegativeDouble(
+      agentEarnings: _optionalAuthoritativeAmount(
+        wallet,
+        'agentEarnings',
+        'agentEarningsStatus',
+      ),
+      superAgentEarnings: _optionalAuthoritativeAmount(
         wallet,
         'superAgentEarnings',
+        'superAgentEarningsStatus',
       ),
     );
   }
@@ -2152,6 +2163,30 @@ class BackendCommerceRepository implements CommerceRepository {
       throw ApiException(kind: ApiFailureKind.protocol, message: '$key不能为负数');
     }
     return value;
+  }
+
+  static double? _optionalAuthoritativeAmount(
+    Map<String, Object?> data,
+    String key,
+    String statusKey,
+  ) {
+    if (!data.containsKey(key)) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$key 缺少权威金额或明确不可用状态',
+      );
+    }
+    if (data[key] != null) {
+      return _requiredNonNegativeDouble(data, key);
+    }
+    final String status = _string(data[statusKey]).toUpperCase();
+    if (status != 'UNAVAILABLE') {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$key 缺少明确的 UNAVAILABLE 权威状态',
+      );
+    }
+    return null;
   }
 
   static bool _requiredBool(Map<String, Object?> data, String key) {

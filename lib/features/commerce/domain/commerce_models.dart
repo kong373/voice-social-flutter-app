@@ -33,15 +33,15 @@ enum WithdrawalStatus { pending, approved, rejected, paying, succeeded, failed }
 class BankCardSummary {
   const BankCardSummary({
     required this.id,
-    required this.bankName,
-    required this.maskedNumber,
-    required this.holderName,
+    required this.accountType,
+    required this.maskedAccount,
+    required this.holderNameMasked,
   });
 
   final String id;
-  final String bankName;
-  final String maskedNumber;
-  final String holderName;
+  final String accountType;
+  final String maskedAccount;
+  final String holderNameMasked;
 }
 
 enum PayoutAccountStatus { verified, pending, disabled, unknown }
@@ -129,8 +129,11 @@ class WalletSummary {
   final double totalWithdrawn;
   final bool realNameVerified;
   final BankCardSummary? bankCard;
-  final double agentEarnings;
-  final double superAgentEarnings;
+
+  /// Null means the first-party backend explicitly reported that no
+  /// authoritative commission ledger exists for this amount.
+  final double? agentEarnings;
+  final double? superAgentEarnings;
 }
 
 class LedgerEntry {

@@ -192,9 +192,9 @@ class MockCommerceRepository implements CommerceRepository {
     realNameVerified: true,
     bankCard: const BankCardSummary(
       id: 'card-1',
-      bankName: '招商银行',
-      maskedNumber: '6225 **** **** 8812',
-      holderName: '晚星',
+      accountType: '银行卡',
+      maskedAccount: '6225 **** **** 8812',
+      holderNameMasked: '晚*',
     ),
     agentEarnings: 500,
     superAgentEarnings: 300,
