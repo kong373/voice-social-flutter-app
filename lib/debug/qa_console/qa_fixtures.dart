@@ -83,6 +83,7 @@ Future<AppDependencies> createQaDependencies() async {
   );
   await dependencies.accountComplianceRepository.fetchSnapshot(
     account: '13800138000',
+    expectedUserId: dependencies.sessionManager.session?.userId,
     currentVersion: 5,
     platformType: 1,
   );

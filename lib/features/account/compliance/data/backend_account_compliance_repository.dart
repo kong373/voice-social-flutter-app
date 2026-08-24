@@ -21,7 +21,7 @@ class BackendAccountComplianceRepository
     BackendRouteCatalog routes = const BackendRouteCatalog(),
     String Function()? currentDeviceIdProvider,
     NativePermissionAdapter? nativePermissionAdapter,
-    bool supportsRealNameSubmission = false,
+    bool supportsRealNameSubmission = true,
   }) : _apiClient = apiClient,
        _routes = routes,
        _currentDeviceIdProvider = currentDeviceIdProvider ?? (() => ''),
@@ -62,12 +62,32 @@ class BackendAccountComplianceRepository
   @override
   Future<AccountComplianceSnapshot> fetchSnapshot({
     required String account,
+    int? expectedUserId,
     required int currentVersion,
     required int platformType,
   }) async {
     final ApiResponse profileResponse = await _apiClient.get(
       _routes.personalData,
     );
+    final Map<String, Object?> profile = _requireMap(
+      profileResponse.data,
+      '个人资料',
+    );
+    final String loginName = _requiredString(profile, 'loginName', '个人资料');
+    final String nickName = _requiredString(profile, 'nickName', '个人资料');
+    if (expectedUserId != null) {
+      final int responseUserId = _requiredPositiveInt(
+        profile,
+        'userId',
+        '个人资料',
+      );
+      if (responseUserId != expectedUserId) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '个人资料响应主体与当前会话不一致',
+        );
+      }
+    }
     final ApiResponse youthResponse = await _apiClient.get(
       _routes.youthModeStatus,
     );
@@ -87,10 +107,6 @@ class BackendAccountComplianceRepository
       _routes.accountSessions,
     );
 
-    final Map<String, Object?> profile = _requireMap(
-      profileResponse.data,
-      '个人资料',
-    );
     final Map<String, Object?> youth = _requireMap(youthResponse.data, '青少年模式');
     final Map<String, Object?> restrictions = _requireMap(
       restrictionsResponse.data,
@@ -104,8 +120,6 @@ class BackendAccountComplianceRepository
       sessionsResponse.data,
       '设备会话',
     );
-    final String loginName = _requiredString(profile, 'loginName', '个人资料');
-    final String nickName = _requiredString(profile, 'nickName', '个人资料');
     final int verificationCode = _parseVerificationCode(realName);
     final bool youthModeEnabled = _requiredBool(
       youth,
@@ -333,8 +347,7 @@ class BackendAccountComplianceRepository
       },
     );
     final Map<String, Object?> submitted = _requireMap(response.data, '实名认证提交');
-    if (_requiredString(submitted, 'status', '实名认证提交') != 'PENDING' ||
-        _parseVerificationCode(submitted) != 1) {
+    if (_parseVerificationCode(submitted) != 1) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '实名认证提交响应未进入待审核状态',
@@ -1214,6 +1227,21 @@ class BackendAccountComplianceRepository
       throw ApiException(
         kind: ApiFailureKind.protocol,
         message: '$field 响应缺少有效 $key 整数',
+      );
+    }
+    return raw;
+  }
+
+  static int _requiredPositiveInt(
+    Map<String, Object?> data,
+    String key,
+    String field,
+  ) {
+    final Object? raw = data[key];
+    if (raw is! int || raw <= 0) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field 响应缺少有效 $key 正整数',
       );
     }
     return raw;

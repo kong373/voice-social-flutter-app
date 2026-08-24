@@ -75,6 +75,7 @@ class AppDependencies {
     required this.rtcAdapter,
     required this.realtimeGateway,
     required this.roomAudioService,
+    required this.externalUrlOpener,
   });
 
   factory AppDependencies.fromEnvironment() {
@@ -101,7 +102,9 @@ class AppDependencies {
     DateTime? mockNow,
     AccountComplianceRepository? accountComplianceRepository,
     DiscoveryRepository? discoveryRepository,
+    DynamicRepository? dynamicRepository,
     MessageRepository? messageRepository,
+    ExternalUrlOpener? externalUrlOpener,
   }) {
     return _build(
       environment: environment,
@@ -109,7 +112,9 @@ class AppDependencies {
       mockNow: mockNow,
       accountComplianceRepositoryOverride: accountComplianceRepository,
       discoveryRepositoryOverride: discoveryRepository,
+      dynamicRepositoryOverride: dynamicRepository,
       messageRepositoryOverride: messageRepository,
+      externalUrlOpenerOverride: externalUrlOpener,
     );
   }
 
@@ -119,7 +124,9 @@ class AppDependencies {
     DateTime? mockNow,
     AccountComplianceRepository? accountComplianceRepositoryOverride,
     DiscoveryRepository? discoveryRepositoryOverride,
+    DynamicRepository? dynamicRepositoryOverride,
     MessageRepository? messageRepositoryOverride,
+    ExternalUrlOpener? externalUrlOpenerOverride,
   }) {
     final AuthSessionManager sessionManager = AuthSessionManager(store);
     final ApiClient apiClient = ApiClient(
@@ -156,10 +163,10 @@ class AppDependencies {
                 currentDeviceIdProvider: () =>
                     sessionManager.session?.deviceId ?? '',
                 nativePermissionAdapter: nativePermissionAdapter,
-                // Formal identity-vendor submission is not wired in this
-                // client. Live must expose status only and never upload an
-                // ID number through the repository.
-                supportsRealNameSubmission: false,
+                // AC-006 is first-party manual review. It does not invoke a
+                // formal identity vendor; the backend owns redaction and
+                // persists only its first-party review result.
+                supportsRealNameSubmission: true,
               )
             : MockAccountComplianceRepository());
     final DiscoveryRepository discoveryRepository =
@@ -171,13 +178,16 @@ class AppDependencies {
                 routes: routes,
               )
             : MockDiscoveryRepository());
-    final DynamicRepository dynamicRepository = environment.isLive
-        ? BackendDynamicRepository(
-            apiClient: apiClient,
-            routes: routes,
-            currentUserIdProvider: () => sessionManager.session?.userId ?? 0,
-          )
-        : MockDynamicRepository();
+    final DynamicRepository dynamicRepository =
+        dynamicRepositoryOverride ??
+        (environment.isLive
+            ? BackendDynamicRepository(
+                apiClient: apiClient,
+                routes: routes,
+                currentUserIdProvider: () =>
+                    sessionManager.session?.userId ?? 0,
+              )
+            : MockDynamicRepository());
     final SocialRepository socialRepository = environment.isLive
         ? BackendSocialRepository(
             apiClient: apiClient,
@@ -253,6 +263,8 @@ class AppDependencies {
       allowsDevelopmentTools:
           environment.deploymentEnvironment.allowsDevelopmentTools,
     );
+    final ExternalUrlOpener externalUrlOpener =
+        externalUrlOpenerOverride ?? MethodChannelExternalUrlOpener();
     apiClient.setUnauthorizedRecovery(authController.refreshSession);
     return AppDependencies._(
       environment: environment,
@@ -275,6 +287,7 @@ class AppDependencies {
       rtcAdapter: rtcAdapter,
       realtimeGateway: realtimeGateway,
       roomAudioService: roomAudioService,
+      externalUrlOpener: externalUrlOpener,
     );
   }
 
@@ -298,6 +311,7 @@ class AppDependencies {
   final RtcAdapter rtcAdapter;
   final RoomRealtimeGateway realtimeGateway;
   final RoomAudioService roomAudioService;
+  final ExternalUrlOpener externalUrlOpener;
 
   RoomController createRoomController({
     required String roomId,

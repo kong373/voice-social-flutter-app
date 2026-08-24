@@ -23,6 +23,10 @@ void main() {
       ) async {
         expect(request.path, '/app-mini-api/mini/v1/account/real-name');
         expect(request.method, 'POST');
+        expect(jsonDecode(request.body), <String, Object?>{
+          'legalName': '张三',
+          'identityNumber': '42010619960820123X',
+        });
         requestIds.add(request.requestId);
         attempts++;
         if (attempts == 1) {

@@ -129,6 +129,7 @@ class _FailingAccountRepository extends MockAccountComplianceRepository {
   @override
   Future<AccountComplianceSnapshot> fetchSnapshot({
     required String account,
+    int? expectedUserId,
     required int currentVersion,
     required int platformType,
   }) => Future<AccountComplianceSnapshot>.error(_failure);

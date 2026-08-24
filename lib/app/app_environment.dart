@@ -37,6 +37,7 @@ class AppEnvironment {
     required this.oauthClientId,
     required this.realtimeEndpoint,
     this.deploymentEnvironment = DeploymentEnvironment.local,
+    this.deploymentEnvironmentConfigured = true,
     this.apiTimeout = const Duration(seconds: 15),
     this.liveProbePath = '/',
     this.allowInsecureHttp = false,
@@ -49,10 +50,7 @@ class AppEnvironment {
       'BACKEND_MODE',
       defaultValue: 'mock',
     );
-    const String deploymentValue = String.fromEnvironment(
-      'APP_ENV',
-      defaultValue: 'local',
-    );
+    const String deploymentValue = String.fromEnvironment('APP_ENV');
     const String timeoutValue = String.fromEnvironment(
       'API_TIMEOUT_SECONDS',
       defaultValue: '15',
@@ -72,6 +70,9 @@ class AppEnvironment {
       oauthClientId: const String.fromEnvironment('OAUTH_CLIENT_ID'),
       realtimeEndpoint: const String.fromEnvironment('ROOM_REALTIME_ENDPOINT'),
       deploymentEnvironment: _parseDeploymentEnvironment(deploymentValue),
+      deploymentEnvironmentConfigured: _isValidDeploymentEnvironment(
+        deploymentValue,
+      ),
       apiTimeout: Duration(seconds: timeoutSeconds),
       liveProbePath: const String.fromEnvironment(
         'LIVE_PROBE_PATH',
@@ -97,6 +98,12 @@ class AppEnvironment {
   final String oauthClientId;
   final String realtimeEndpoint;
   final DeploymentEnvironment deploymentEnvironment;
+
+  /// Whether APP_ENV was explicitly present and recognized by the build.
+  /// Directly constructed test environments default to configured for
+  /// backwards compatibility; compile-time live builds set this from the raw
+  /// define and therefore fail closed when it is missing or misspelled.
+  final bool deploymentEnvironmentConfigured;
   final Duration apiTimeout;
   final String liveProbePath;
   final bool allowInsecureHttp;
@@ -137,6 +144,7 @@ class AppEnvironment {
   Map<String, Object?> get redactedSummary => <String, Object?>{
     'backendMode': backendMode.name,
     'deploymentEnvironment': deploymentEnvironment.name,
+    'deploymentEnvironmentConfigured': deploymentEnvironmentConfigured,
     'apiOrigin': redactedApiOrigin,
     'clientType': clientType,
     'clientInnerVersion': clientInnerVersion,
@@ -157,7 +165,12 @@ class AppEnvironment {
       if (apiBaseUrl.trim().isEmpty) '缺少 API_BASE_URL',
       if (clientType.trim().isEmpty) '缺少 CLIENT_TYPE',
       if (clientInnerVersion.trim().isEmpty) '缺少 CLIENT_INNER_VERSION',
+      if (clientInnerVersion.trim().isNotEmpty &&
+          (int.tryParse(clientInnerVersion.trim()) == null ||
+              int.parse(clientInnerVersion.trim()) <= 0))
+        'CLIENT_INNER_VERSION 必须为正整数',
       if (oauthClientId.trim().isEmpty) '缺少 OAUTH_CLIENT_ID',
+      if (!deploymentEnvironmentConfigured) 'APP_ENV 必须显式配置为合法环境',
     ];
 
     final Uri? uri = apiBaseUri;
@@ -204,5 +217,19 @@ DeploymentEnvironment _parseDeploymentEnvironment(String value) {
     'staging' || 'stage' || 'preproduction' => DeploymentEnvironment.staging,
     'production' || 'prod' => DeploymentEnvironment.production,
     _ => DeploymentEnvironment.local,
+  };
+}
+
+bool _isValidDeploymentEnvironment(String value) {
+  return switch (value.trim().toLowerCase()) {
+    'local' ||
+    'development' ||
+    'dev' ||
+    'staging' ||
+    'stage' ||
+    'preproduction' ||
+    'production' ||
+    'prod' => true,
+    _ => false,
   };
 }

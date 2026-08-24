@@ -42,6 +42,7 @@ class AuthController extends ChangeNotifier {
   Future<bool>? _refreshInFlight;
   Future<void>? _signOutInFlight;
   int _sessionGeneration = 0;
+  bool _signOutRecovery = false;
 
   AuthFlowStage get stage => _stage;
   bool get busy => _busy;
@@ -78,16 +79,36 @@ class AuthController extends ChangeNotifier {
       }
     } on FormatException {
       _sessionGeneration += 1;
-      await _sessionManager.clear();
-      _errorMessage = '本地登录信息损坏，请重新登录';
-      _stage = AuthFlowStage.signedOut;
+      try {
+        await _sessionManager.clear();
+        _errorMessage = '本地登录信息损坏，请重新登录';
+        _stage = AuthFlowStage.signedOut;
+        _signOutRecovery = false;
+      } catch (clearError) {
+        _errorMessage = _messageFor(
+          clearError,
+          fallback: '本地会话清理失败，请重试或退出应用后重新登录',
+        );
+        _stage = AuthFlowStage.recoveryRequired;
+        _signOutRecovery = true;
+      }
     } catch (error) {
       // A secure-storage failure makes the local session state unverifiable.
       // It is safer to clear it than to continue with unknown credentials.
       _sessionGeneration += 1;
-      await _sessionManager.clear();
-      _errorMessage = _messageFor(error, fallback: '登录状态无法恢复，请重新登录');
-      _stage = AuthFlowStage.signedOut;
+      try {
+        await _sessionManager.clear();
+        _errorMessage = _messageFor(error, fallback: '登录状态无法恢复，请重新登录');
+        _stage = AuthFlowStage.signedOut;
+        _signOutRecovery = false;
+      } catch (clearError) {
+        _errorMessage = _messageFor(
+          clearError,
+          fallback: '本地会话清理失败，请重试或退出应用后重新登录',
+        );
+        _stage = AuthFlowStage.recoveryRequired;
+        _signOutRecovery = true;
+      }
     }
     notifyListeners();
   }
@@ -248,9 +269,19 @@ class AuthController extends ChangeNotifier {
     final AuthSession? current = _sessionManager.session;
     if (current == null || !current.canRefresh) {
       _sessionGeneration += 1;
-      await _sessionManager.clear();
-      _stage = AuthFlowStage.signedOut;
-      _errorMessage = '刷新会话已失效，请重新登录';
+      try {
+        await _sessionManager.clear();
+        _stage = AuthFlowStage.signedOut;
+        _errorMessage = '刷新会话已失效，请重新登录';
+        _signOutRecovery = false;
+      } catch (clearError) {
+        _stage = AuthFlowStage.recoveryRequired;
+        _errorMessage = _messageFor(
+          clearError,
+          fallback: '本地会话清理失败，请重试或退出应用后重新登录',
+        );
+        _signOutRecovery = true;
+      }
       notifyListeners();
       return false;
     }
@@ -283,8 +314,23 @@ class AuthController extends ChangeNotifier {
         // Never offer a retry with that uncertain credential: erase it and
         // require a fresh login instead of risking family-wide revocation.
         _sessionGeneration += 1;
-        await _sessionManager.clear();
-        _stage = AuthFlowStage.signedOut;
+        bool clearFailed = false;
+        try {
+          await _sessionManager.clear();
+          _stage = AuthFlowStage.signedOut;
+          _signOutRecovery = false;
+        } catch (clearError) {
+          _stage = AuthFlowStage.recoveryRequired;
+          _signOutRecovery = true;
+          clearFailed = true;
+          _errorMessage = _messageFor(
+            clearError,
+            fallback: '本地会话清理失败，请重试或退出应用后重新登录',
+          );
+        }
+        if (clearFailed) {
+          return false;
+        }
       } else {
         // Configuration/validation and other definitive pre-commit failures
         // leave the one-time refresh credential safe to use after the local
@@ -303,13 +349,26 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  Future<bool> retrySessionRecovery() => refreshSession();
+  Future<bool> retrySessionRecovery() async {
+    if (_signOutRecovery) {
+      await signOut();
+      return _stage == AuthFlowStage.signedOut;
+    }
+    return refreshSession();
+  }
 
   Future<void> discardSessionAndSignOut() async {
     _sessionGeneration += 1;
-    await _sessionManager.clear();
-    _stage = AuthFlowStage.signedOut;
-    _errorMessage = null;
+    try {
+      await _sessionManager.clear();
+      _stage = AuthFlowStage.signedOut;
+      _errorMessage = null;
+      _signOutRecovery = false;
+    } catch (error) {
+      _stage = AuthFlowStage.recoveryRequired;
+      _errorMessage = _messageFor(error, fallback: '退出登录未完成，本地会话仍可能存在，请重试');
+      _signOutRecovery = true;
+    }
     notifyListeners();
   }
 
@@ -362,9 +421,17 @@ class AuthController extends ChangeNotifier {
           // be reached. Server-side refresh tokens remain bounded and rotated.
         }
       }
-      await _sessionManager.clear();
-      _clearPendingChallenge();
-      _stage = AuthFlowStage.signedOut;
+      try {
+        await _sessionManager.clear();
+        _clearPendingChallenge();
+        _stage = AuthFlowStage.signedOut;
+        _errorMessage = null;
+        _signOutRecovery = false;
+      } catch (error) {
+        _stage = AuthFlowStage.recoveryRequired;
+        _errorMessage = _messageFor(error, fallback: '退出登录未完成，本地会话仍可能存在，请重试');
+        _signOutRecovery = true;
+      }
     } finally {
       _busy = false;
       notifyListeners();

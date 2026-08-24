@@ -113,6 +113,7 @@ class _UnavailablePermissionRepository extends MockAccountComplianceRepository {
   @override
   Future<AccountComplianceSnapshot> fetchSnapshot({
     required String account,
+    int? expectedUserId,
     required int currentVersion,
     required int platformType,
   }) async {
@@ -181,6 +182,7 @@ class _PermanentPermissionRepository extends _UnavailablePermissionRepository {
   @override
   Future<AccountComplianceSnapshot> fetchSnapshot({
     required String account,
+    int? expectedUserId,
     required int currentVersion,
     required int platformType,
   }) async {

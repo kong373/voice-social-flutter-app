@@ -53,6 +53,7 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
         dependencies.commerceRepository.fetchWalletSummary(),
         dependencies.accountComplianceRepository.fetchSnapshot(
           account: account,
+          expectedUserId: dependencies.sessionManager.session?.userId,
           currentVersion: currentVersion,
           platformType: platformType,
         ),

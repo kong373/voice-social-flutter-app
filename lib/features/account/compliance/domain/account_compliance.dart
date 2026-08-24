@@ -217,6 +217,7 @@ abstract interface class AccountComplianceRepository {
 
   Future<AccountComplianceSnapshot> fetchSnapshot({
     required String account,
+    int? expectedUserId,
     required int currentVersion,
     required int platformType,
   });

@@ -31,6 +31,7 @@ void main() {
             return reply(
               request,
               data: <String, Object?>{
+                'userId': 10001,
                 'loginName': 'user-public-1',
                 'nickName': '晚星',
                 'forbiddenState': 2,
@@ -142,12 +143,13 @@ void main() {
           );
       final AccountComplianceSnapshot snapshot = await repository.fetchSnapshot(
         account: 'fallback-account',
+        expectedUserId: 10001,
         currentVersion: 6,
         platformType: 1,
       );
 
       expect(repository.supportsDeviceSessionManagement, isTrue);
-      expect(repository.supportsRealNameSubmission, isFalse);
+      expect(repository.supportsRealNameSubmission, isTrue);
       expect(snapshot.account, 'user-public-1');
       expect(snapshot.nickname, '晚星');
       expect(snapshot.verificationState, VerificationState.verified);
@@ -165,6 +167,22 @@ void main() {
       expect(snapshot.sessions.first.canRevoke, isFalse);
       expect(snapshot.sessions.last.isCurrent, isFalse);
       expect(snapshot.sessions.last.canRevoke, isTrue);
+
+      await expectLater(
+        repository.fetchSnapshot(
+          account: 'fallback-account',
+          expectedUserId: 10002,
+          currentVersion: 6,
+          platformType: 1,
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
 
       realNameStatus = 'NOT_SUBMITTED';
       realNameStatusCode = 0;

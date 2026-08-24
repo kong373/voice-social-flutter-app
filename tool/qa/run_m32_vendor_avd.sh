@@ -3,6 +3,9 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
 
+echo 'Deprecated M3.2 vendor AVD flow: use tool/qa/run_m32_review_flow.sh with the review contract server.' >&2
+exit 64
+
 readonly ARTIFACT_ROOT="${QA_ARTIFACT_ROOT:?QA_ARTIFACT_ROOT is required}"
 readonly AVD_ID="${QA_AVD_ID:?QA_AVD_ID is required}"
 readonly API_LEVEL="${QA_API_LEVEL:?QA_API_LEVEL is required}"

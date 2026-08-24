@@ -46,8 +46,10 @@ class _AccountComplianceHubPageState extends State<AccountComplianceHubPage> {
 
   Future<void> _load() async {
     try {
+      final scope = AppDependencyScope.of(context);
       final AccountComplianceSnapshot value = await _repository.fetchSnapshot(
         account: widget.account,
+        expectedUserId: scope.sessionManager.session?.userId,
         currentVersion: widget.currentVersion,
         platformType: widget.platformType,
       );

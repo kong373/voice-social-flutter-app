@@ -96,7 +96,8 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
     sourcePath:
         'lib/features/account/presentation/third_party_authorization_page.dart',
     userEntry: '我的 → 账号与安全 → 第三方账号绑定与分享授权',
-    vendorBoundary: '第三方账号及原生分享 SDK 未接入',
+    vendorBoundary:
+        'account-vendor-boundary-v1：SOCIAL_ACCOUNT_BINDING 与 NATIVE_SHARE 均 VENDOR_BLOCKED，providerInvocation=false',
     builder: (_, __) => const ThirdPartyAuthorizationPage(),
   ),
   QaPageEntry(

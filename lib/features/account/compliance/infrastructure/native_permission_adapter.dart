@@ -19,6 +19,59 @@ abstract interface class NativePermissionAdapter {
 typedef NativePermissionInvoker =
     Future<Object?> Function(String method, Map<String, Object?> arguments);
 
+/// Controlled external navigation used by the live version policy gate.
+///
+/// Opening a package URL only hands navigation to the host operating system;
+/// it never claims that an APK/IPA was downloaded or installed. The adapter
+/// rejects every non-HTTPS URL before crossing the platform boundary and
+/// treats an unavailable host as a failed action.
+abstract interface class ExternalUrlOpener {
+  Future<bool> open(Uri uri);
+}
+
+class MethodChannelExternalUrlOpener implements ExternalUrlOpener {
+  MethodChannelExternalUrlOpener({
+    MethodChannel? channel,
+    NativePermissionInvoker? invoker,
+  }) : _channel = channel ?? _defaultChannel,
+       _invoker = invoker;
+
+  static const MethodChannel _defaultChannel = MethodChannel(
+    'voice_social_app/system_permissions',
+  );
+
+  final MethodChannel _channel;
+  final NativePermissionInvoker? _invoker;
+
+  @override
+  Future<bool> open(Uri uri) async {
+    if (uri.scheme.toLowerCase() != 'https' ||
+        uri.host.trim().isEmpty ||
+        uri.userInfo.isNotEmpty) {
+      return false;
+    }
+    final Map<String, Object?> arguments = <String, Object?>{
+      'url': uri.toString(),
+    };
+    if (_invoker != null) {
+      try {
+        final Object? result = await _invoker('openExternalUrl', arguments);
+        return result == true;
+      } on Object {
+        return false;
+      }
+    }
+    try {
+      final Object? result = await _channel
+          .invokeMethod<Object?>('openExternalUrl', arguments)
+          .timeout(const Duration(seconds: 5), onTimeout: () => false);
+      return result == true;
+    } on Object {
+      return false;
+    }
+  }
+}
+
 /// Method-channel implementation used by live mode.
 ///
 /// The optional invoker is intentionally injectable for unit tests. Production

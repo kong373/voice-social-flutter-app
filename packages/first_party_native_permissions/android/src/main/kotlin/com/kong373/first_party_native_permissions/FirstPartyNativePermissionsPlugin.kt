@@ -3,6 +3,7 @@ package com.kong373.first_party_native_permissions
 import android.Manifest
 import android.app.Activity
 import android.app.NotificationManager
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -90,6 +91,7 @@ class FirstPartyNativePermissionsPlugin :
                 }
             }
             "openAppSettings" -> openAppSettings(result)
+            "openExternalUrl" -> openExternalUrl(call, result)
             else -> result.notImplemented()
         }
     }
@@ -205,5 +207,32 @@ class FirstPartyNativePermissionsPlugin :
         )
         currentActivity.startActivity(intent)
         result.success(true)
+    }
+
+    private fun openExternalUrl(call: MethodCall, result: MethodChannel.Result) {
+        val rawUrl = (call.arguments as? Map<*, *>)?.get("url")?.toString()?.trim()
+        val uri = rawUrl?.let { Uri.parse(it) }
+        if (uri == null || uri.scheme?.lowercase() != "https" || uri.host.isNullOrBlank() ||
+            !uri.userInfo.isNullOrEmpty()
+        ) {
+            result.success(false)
+            return
+        }
+        val currentActivity = activity
+        if (currentActivity == null) {
+            result.success(false)
+            return
+        }
+        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+        }
+        try {
+            currentActivity.startActivity(intent)
+            result.success(true)
+        } catch (_: ActivityNotFoundException) {
+            result.success(false)
+        } catch (_: RuntimeException) {
+            result.success(false)
+        }
     }
 }

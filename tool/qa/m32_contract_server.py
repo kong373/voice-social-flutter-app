@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Deterministic M3.2 contract server for Android acceptance runs.
+"""Retired M3.2 contract server.
 
-The server models only first-party development endpoints. It never contacts a
-real SMS, RTC, IM, payment, push, or storage provider. Every request is checked
-for the OAuth public-client boundary and recorded as redacted JSONL evidence.
+Use ``m32_review_contract_server.py`` for the current first-party account and
+version contract. This legacy server is retained only so old imports fail with
+an explicit deprecation signal instead of silently accepting stale routes.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import signal
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -566,6 +567,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    print(
+        "m32_contract_server.py is retired; use m32_review_contract_server.py",
+        file=sys.stderr,
+    )
+    return 64
+
+    # Kept below the explicit retirement guard for source archaeology only.
     args = parse_args()
     state = ServerState(args.request_log, args.summary_file)
     state.summary_file.parent.mkdir(parents=True, exist_ok=True)

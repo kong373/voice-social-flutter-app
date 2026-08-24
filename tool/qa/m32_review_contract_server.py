@@ -315,6 +315,45 @@ class ContractHandler(BaseHTTPRequestHandler):
             return "BEARER_TOKEN_REQUIRED"
         if path in {SEND_SMS, LOGIN, REGISTER, REFRESH} and authorization:
             return "PUBLIC_AUTH_ENDPOINT_MUST_NOT_SEND_BEARER"
+
+        expected_method = {
+            PERSONAL_DATA: "GET",
+            YOUTH_MODE: "GET",
+            ACCOUNT_CANCELLATION: "GET",
+            VERSION_INFORMATION: "GET",
+            ACCOUNT_SESSIONS: "GET",
+            ACCOUNT_RESTRICTIONS: "GET",
+        }.get(path)
+        if expected_method is not None and self.command != expected_method:
+            return f"{path}_REQUIRES_{expected_method}"
+        if path == ACCOUNT_REAL_NAME:
+            if self.command not in {"GET", "POST"}:
+                return "ACCOUNT_REAL_NAME_REQUIRES_GET_OR_POST"
+            if self.command == "POST":
+                if not isinstance(body, dict):
+                    return "ACCOUNT_REAL_NAME_POST_REQUIRES_JSON_OBJECT"
+                if set(body) != {"legalName", "identityNumber"}:
+                    return "ACCOUNT_REAL_NAME_POST_FIELDS_INVALID"
+                if not str(body.get("legalName", "")).strip() or not str(
+                    body.get("identityNumber", "")
+                ).strip():
+                    return "ACCOUNT_REAL_NAME_POST_FIELDS_EMPTY"
+                if not headers.get("x-request-id"):
+                    return "ACCOUNT_REAL_NAME_POST_REQUEST_ID_REQUIRED"
+
+        if path == VERSION_INFORMATION:
+            query = parse_qs(urlparse(self.path).query)
+            version_type = query.get("type", [])
+            version_code = query.get("versionCode", [])
+            if len(version_type) != 1 or version_type[0] not in {"1", "2"}:
+                return "VERSION_INFORMATION_TYPE_REQUIRED"
+            if len(version_code) != 1:
+                return "VERSION_INFORMATION_VERSION_CODE_REQUIRED"
+            try:
+                if int(version_code[0]) <= 0:
+                    raise ValueError
+            except ValueError:
+                return "VERSION_INFORMATION_VERSION_CODE_MUST_BE_POSITIVE_INTEGER"
         return None
 
     def _data_for(self, path: str, raw_query: str, body: Any) -> Any:
@@ -458,6 +497,7 @@ class ContractHandler(BaseHTTPRequestHandler):
             }
         if path == PERSONAL_DATA:
             return {
+                "userId": 30001,
                 "loginName": "13800138000",
                 "nickName": "岛民小新",
             }
@@ -482,6 +522,15 @@ class ContractHandler(BaseHTTPRequestHandler):
                 "providerInvocation": False,
             }
         if path == ACCOUNT_REAL_NAME:
+            if self.command == "POST":
+                return {
+                    "status": "PENDING",
+                    "statusCode": 1,
+                    "providerStatus": "FIRST_PARTY_REVIEW",
+                    "reviewStatus": "FIRST_PARTY_REVIEW",
+                    "reviewMode": "FIRST_PARTY_MANUAL_REVIEW",
+                    "providerInvocation": False,
+                }
             return {
                 "status": "UNVERIFIED",
                 "statusCode": 0,

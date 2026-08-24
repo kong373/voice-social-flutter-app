@@ -9,6 +9,12 @@ void main() {
   final String iosPatchScript = File(
     'tool/apply_native_permissions.sh',
   ).readAsStringSync();
+  final String androidPlugin = File(
+    'packages/first_party_native_permissions/android/src/main/kotlin/com/kong373/first_party_native_permissions/FirstPartyNativePermissionsPlugin.kt',
+  ).readAsStringSync();
+  final String iosPlugin = File(
+    'packages/first_party_native_permissions/ios/first_party_native_permissions/Sources/first_party_native_permissions/FirstPartyNativePermissionsPlugin.swift',
+  ).readAsStringSync();
 
   test(
     'native permission host declares only the three product capabilities',
@@ -42,4 +48,16 @@ void main() {
       isNot(contains('NSLocationWhenInUseUsageDescription')),
     );
   });
+
+  test(
+    'external upgrade navigation stays a strict HTTPS first-party bridge',
+    () {
+      expect(androidPlugin, contains('openExternalUrl'));
+      expect(androidPlugin, contains('Intent.ACTION_VIEW'));
+      expect(androidPlugin, contains('scheme?.lowercase() != "https"'));
+      expect(iosPlugin, contains('case "openExternalUrl"'));
+      expect(iosPlugin, contains('UIApplication.shared.open'));
+      expect(iosPlugin, contains('url.scheme?.lowercased() == "https"'));
+    },
+  );
 }

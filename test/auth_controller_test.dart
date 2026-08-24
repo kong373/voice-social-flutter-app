@@ -326,6 +326,36 @@ void main() {
       expect(await sessionManager.restore(), isNull);
     },
   );
+
+  test(
+    'signOut exposes secure-storage cleanup failure and can retry',
+    () async {
+      final _FlakyEraseStore store = _FlakyEraseStore();
+      final AuthSessionManager sessionManager = AuthSessionManager(store);
+      await sessionManager.save(_expiredRefreshableSession());
+      store.failErase = true;
+      final AuthController controller = AuthController(
+        repository: const MockAuthRepository(),
+        sessionManager: sessionManager,
+        deviceIdentityProvider: DeviceIdentityProvider(
+          environment: AppEnvironment.mock(),
+          sessionManager: sessionManager,
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.signOut();
+
+      expect(controller.stage, AuthFlowStage.recoveryRequired);
+      expect(controller.errorMessage, contains('退出登录未完成'));
+      expect(controller.busy, isFalse);
+
+      store.failErase = false;
+      expect(await controller.retrySessionRecovery(), isTrue);
+      expect(controller.stage, AuthFlowStage.signedOut);
+      expect(controller.session, isNull);
+    },
+  );
 }
 
 AuthSession _expiredRefreshableSession() => AuthSession(
@@ -379,5 +409,29 @@ class _DelayedRefreshAuthRepository extends MockAuthRepository {
       started.complete();
     }
     return result.future;
+  }
+}
+
+class _FlakyEraseStore implements KeyValueStore {
+  final Map<String, String> values = <String, String>{};
+  bool failErase = false;
+
+  @override
+  Future<String?> read(String key) async => values[key];
+
+  @override
+  Future<void> write(String key, String value) async {
+    if (failErase && value.isEmpty) {
+      throw StateError('secure write unavailable');
+    }
+    values[key] = value;
+  }
+
+  @override
+  Future<void> delete(String key) async {
+    if (failErase) {
+      throw StateError('secure delete unavailable');
+    }
+    values.remove(key);
   }
 }

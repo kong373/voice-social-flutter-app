@@ -58,11 +58,12 @@ class _SystemPermissionCenterPageState extends State<SystemPermissionCenterPage>
 
   Future<void> _load() async {
     try {
-      final AccountComplianceSnapshot value =
-          await AppDependencyScope.of(
-            context,
-          ).accountComplianceRepository.fetchSnapshot(
+      final scope = AppDependencyScope.of(context);
+      final AccountComplianceSnapshot value = await scope
+          .accountComplianceRepository
+          .fetchSnapshot(
             account: widget.account,
+            expectedUserId: scope.sessionManager.session?.userId,
             currentVersion: widget.currentVersion,
             platformType: widget.platformType,
           );
@@ -302,11 +303,12 @@ class _RealNamePageState extends State<RealNamePage> {
       setState(() => _error = null);
     }
     try {
-      final AccountComplianceSnapshot snapshot =
-          await AppDependencyScope.of(
-            context,
-          ).accountComplianceRepository.fetchSnapshot(
+      final scope = AppDependencyScope.of(context);
+      final AccountComplianceSnapshot snapshot = await scope
+          .accountComplianceRepository
+          .fetchSnapshot(
             account: widget.account,
+            expectedUserId: scope.sessionManager.session?.userId,
             currentVersion: widget.currentVersion,
             platformType: widget.platformType,
           );
@@ -371,13 +373,13 @@ class _RealNamePageState extends State<RealNamePage> {
                   icon: Icons.badge_outlined,
                   title: _verificationLabel(_state!),
                   description: repository.supportsRealNameSubmission
-                      ? '认证信息只用于法定实名和资金安全校验。'
+                      ? '第一方人工审核（FIRST_PARTY_MANUAL_REVIEW）只由平台处理，不调用第三方实名厂商；服务端只返回脱敏审核状态。'
                       : 'VENDOR_BLOCKED：正式实名厂商尚未接入。Live 模式仅展示服务端状态，不会收集或上传身份证号。',
                   tone: _state == VerificationState.verified
                       ? AppColors.success
                       : AccountOxygenColors.violet,
                   badge: repository.supportsRealNameSubmission
-                      ? '安全提交'
+                      ? '第一方人工审核'
                       : 'VENDOR_BLOCKED',
                 ),
                 if (_state == VerificationState.unverified &&
@@ -470,11 +472,12 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
       setState(() => _error = null);
     }
     try {
-      final AccountComplianceSnapshot value =
-          await AppDependencyScope.of(
-            context,
-          ).accountComplianceRepository.fetchSnapshot(
+      final scope = AppDependencyScope.of(context);
+      final AccountComplianceSnapshot value = await scope
+          .accountComplianceRepository
+          .fetchSnapshot(
             account: widget.account,
+            expectedUserId: scope.sessionManager.session?.userId,
             currentVersion: widget.currentVersion,
             platformType: widget.platformType,
           );

@@ -1270,6 +1270,7 @@ Future<void> _runComplianceAndSupportFlow(
     route: routes.personalData,
     operation: () => dependencies.accountComplianceRepository.fetchSnapshot(
       account: account,
+      expectedUserId: dependencies.sessionManager.session?.userId,
       currentVersion: 1,
       platformType: 1,
     ),

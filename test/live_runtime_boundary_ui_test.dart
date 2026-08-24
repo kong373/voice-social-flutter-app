@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
@@ -13,6 +17,7 @@ import 'package:voice_social_app/features/room/presentation/room_recovery_page.d
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
 import 'package:voice_social_app/features/discovery/data/mock_discovery_repository.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
+import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/shell/video_runtime_pages.dart';
 import 'package:voice_social_app/features/social/data/mock_social_repository.dart';
 
@@ -115,6 +120,45 @@ void main() {
     expect(find.byKey(const Key('recent-room-880217')), findsNothing);
   });
 
+  testWidgets('live discovery renders the backend dynamic feed', (
+    WidgetTester tester,
+  ) async {
+    await HttpOverrides.runZoned(() async {
+      final AppDependencies dependencies = AppDependencies.forTestEnvironment(
+        environment: liveTestEnvironment,
+      );
+      await dependencies.sessionManager.save(
+        AuthSession(
+          accessToken: 'dynamic-feed-token',
+          tokenType: 'Bearer',
+          expiresAt: DateTime.now().add(const Duration(hours: 1)),
+          userId: 10001,
+          mobile: '13800138000',
+          roles: 'USER',
+        ),
+      );
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            theme: AppTheme.social(),
+            home: VideoRuntimeDiscoveryPage(dependencies: dependencies),
+          ),
+        ),
+      );
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 1)),
+      );
+      for (int index = 0; index < 10; index += 1) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.text('服务端真实动态'), findsOneWidget);
+      expect(find.text('这条内容来自 live dynamic backend feed'), findsOneWidget);
+      expect(find.text('深夜轻聊'), findsNothing);
+      expect(find.text('云朵和晚星'), findsNothing);
+    }, createHttpClient: (_) => _DynamicFeedHttpClient());
+  });
+
   testWidgets(
     'snapshot-only recovery names unavailable realtime and room hides unknown heat',
     (WidgetTester tester) async {
@@ -169,6 +213,88 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+}
+
+class _DynamicFeedHttpClient implements HttpClient {
+  @override
+  Future<HttpClientRequest> openUrl(String method, Uri url) async {
+    expect(method, 'GET');
+    expect(url.path, '/app-mini-api/mini/v1/dynamic/list');
+    expect(url.queryParameters['pageNum'], '1');
+    expect(url.queryParameters['pageSize'], '20');
+    return _DynamicFeedHttpClientRequest();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _DynamicFeedHttpClientRequest implements HttpClientRequest {
+  @override
+  final HttpHeaders headers = _DynamicFeedHttpHeaders();
+
+  @override
+  Future<HttpClientResponse> close() async => _DynamicFeedHttpClientResponse();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _DynamicFeedHttpHeaders implements HttpHeaders {
+  @override
+  void set(String name, Object value, {bool preserveHeaderCase = false}) {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _DynamicFeedHttpClientResponse extends StreamView<List<int>>
+    implements HttpClientResponse {
+  _DynamicFeedHttpClientResponse()
+    : super(
+        Stream<List<int>>.value(
+          utf8.encode(
+            jsonEncode(<String, Object?>{
+              'code': 200,
+              'message': 'OK',
+              'data': <String, Object?>{
+                'current': 1,
+                'pageSize': 20,
+                'size': 20,
+                'total': 1,
+                'pages': 1,
+                'records': <Object?>[_dynamicFeedPost],
+                'list': <Object?>[_dynamicFeedPost],
+              },
+            }),
+          ),
+        ),
+      );
+
+  static const Map<String, Object?> _dynamicFeedPost = <String, Object?>{
+    'dynamicId': 'server-post-1',
+    'userId': 20001,
+    'nickName': '服务端真实动态',
+    'content': '这条内容来自 live dynamic backend feed',
+    'createdAt': '2026-08-25T08:00:00Z',
+    'likeCount': 3,
+    'commentCount': 1,
+    'liked': false,
+    'category': 'CHAT',
+    'images': <Object?>[],
+  };
+
+  @override
+  int get statusCode => HttpStatus.ok;
+
+  @override
+  final HttpHeaders headers = _DynamicFeedHttpHeaders();
+
+  @override
+  bool get isRedirect => false;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _UnknownCountDiscoveryRepository extends MockDiscoveryRepository {

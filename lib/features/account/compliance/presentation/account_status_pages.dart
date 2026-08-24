@@ -41,11 +41,12 @@ class _AccountRestrictionPageState extends State<AccountRestrictionPage> {
       setState(() => _error = null);
     }
     try {
-      final AccountComplianceSnapshot value =
-          await AppDependencyScope.of(
-            context,
-          ).accountComplianceRepository.fetchSnapshot(
+      final scope = AppDependencyScope.of(context);
+      final AccountComplianceSnapshot value = await scope
+          .accountComplianceRepository
+          .fetchSnapshot(
             account: widget.account,
+            expectedUserId: scope.sessionManager.session?.userId,
             currentVersion: widget.currentVersion,
             platformType: widget.platformType,
           );
@@ -739,11 +740,12 @@ class _YouthModePageState extends State<YouthModePage> {
       setState(() => _error = null);
     }
     try {
-      final AccountComplianceSnapshot value =
-          await AppDependencyScope.of(
-            context,
-          ).accountComplianceRepository.fetchSnapshot(
+      final scope = AppDependencyScope.of(context);
+      final AccountComplianceSnapshot value = await scope
+          .accountComplianceRepository
+          .fetchSnapshot(
             account: widget.account,
+            expectedUserId: scope.sessionManager.session?.userId,
             currentVersion: widget.currentVersion,
             platformType: widget.platformType,
           );

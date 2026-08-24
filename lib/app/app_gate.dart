@@ -55,6 +55,15 @@ class _AppGateState extends State<AppGate> {
   }
 
   void _handleAuthChanged() {
+    // AuthController can notify while a previous live snapshot is still in
+    // memory. Clear it before the rebuild that observes a new principal so a
+    // stale account can never briefly reach MainShell.
+    if (!identical(_preflightSession, _controller.session)) {
+      _liveCompliance = null;
+      _livePreflightError = null;
+      _versionDeferred = false;
+      _preflightSession = null;
+    }
     if (mounted) {
       setState(() {});
     }
@@ -119,6 +128,7 @@ class _AppGateState extends State<AppGate> {
           .accountComplianceRepository
           .fetchSnapshot(
             account: session.mobile,
+            expectedUserId: session.userId,
             currentVersion: widget.dependencies.environment.currentVersion,
             platformType: widget.dependencies.environment.platformType,
           );
@@ -187,6 +197,7 @@ class _AppGateState extends State<AppGate> {
             ? null
             : () => setState(() => _versionDeferred = true),
         onSignOut: _controller.signOut,
+        openPackageUrl: widget.dependencies.externalUrlOpener.open,
       );
     }
     return MainShell(

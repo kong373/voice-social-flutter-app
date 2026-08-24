@@ -4,7 +4,9 @@ import 'package:voice_social_app/app/app_environment.dart';
 void main() {
   AppEnvironment liveEnvironment({
     String apiBaseUrl = 'https://dev.example.com:8443/gateway/',
+    String clientInnerVersion = '6',
     DeploymentEnvironment deployment = DeploymentEnvironment.development,
+    bool deploymentEnvironmentConfigured = true,
     bool allowInsecureHttp = false,
     String liveProbePath = '/',
   }) {
@@ -12,10 +14,11 @@ void main() {
       backendMode: BackendMode.live,
       apiBaseUrl: apiBaseUrl,
       clientType: 'Android',
-      clientInnerVersion: '6',
+      clientInnerVersion: clientInnerVersion,
       oauthClientId: 'client-id-value',
       realtimeEndpoint: '',
       deploymentEnvironment: deployment,
+      deploymentEnvironmentConfigured: deploymentEnvironmentConfigured,
       allowInsecureHttp: allowInsecureHttp,
       liveProbePath: liveProbePath,
     );
@@ -134,6 +137,41 @@ void main() {
           (StateError error) => error.toString(),
           'message',
           contains('5～60'),
+        ),
+      ),
+    );
+  });
+
+  test('live version code must be a positive integer', () {
+    for (final String value in <String>['0', '-1', '6.1', 'six']) {
+      final AppEnvironment environment = liveEnvironment(
+        clientInnerVersion: value,
+      );
+      expect(
+        environment.validateLiveConfiguration,
+        throwsA(
+          isA<StateError>().having(
+            (StateError error) => error.toString(),
+            'message',
+            contains('CLIENT_INNER_VERSION'),
+          ),
+        ),
+        reason: value,
+      );
+    }
+  });
+
+  test('live mode rejects missing or misspelled APP_ENV', () {
+    final AppEnvironment environment = liveEnvironment(
+      deploymentEnvironmentConfigured: false,
+    );
+    expect(
+      environment.validateLiveConfiguration,
+      throwsA(
+        isA<StateError>().having(
+          (StateError error) => error.toString(),
+          'message',
+          contains('APP_ENV'),
         ),
       ),
     );

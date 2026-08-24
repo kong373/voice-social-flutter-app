@@ -38,6 +38,22 @@ public final class FirstPartyNativePermissionsPlugin: NSObject, FlutterPlugin {
         }
         UIApplication.shared.open(url) { opened in result(opened) }
       }
+    case "openExternalUrl":
+      guard let rawUrl = (call.arguments as? [String: Any])?["url"] as? String,
+            let url = URL(string: rawUrl.trimmingCharacters(in: .whitespacesAndNewlines)),
+            url.scheme?.lowercased() == "https",
+            let host = url.host, !host.isEmpty,
+            url.user == nil else {
+        result(false)
+        return
+      }
+      DispatchQueue.main.async {
+        guard UIApplication.shared.canOpenURL(url) else {
+          result(false)
+          return
+        }
+        UIApplication.shared.open(url, options: [:]) { opened in result(opened) }
+      }
     default:
       result(FlutterMethodNotImplemented)
     }

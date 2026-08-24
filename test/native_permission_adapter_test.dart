@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
 import 'package:voice_social_app/features/account/compliance/infrastructure/native_permission_adapter.dart';
@@ -92,6 +93,66 @@ void main() {
       expect(
         await adapter.request(PermissionKind.photos),
         PermissionState.unavailable,
+      );
+    },
+  );
+
+  test('external URL opener only sends strict HTTPS URLs', () async {
+    final List<NativePermissionCall> calls = <NativePermissionCall>[];
+    final MethodChannelExternalUrlOpener opener =
+        MethodChannelExternalUrlOpener(
+          invoker: (String method, Map<String, Object?> arguments) async {
+            calls.add(
+              NativePermissionCall(method: method, arguments: arguments),
+            );
+            return true;
+          },
+        );
+
+    expect(
+      await opener.open(Uri.parse('http://updates.example/app.apk')),
+      isFalse,
+    );
+    expect(await opener.open(Uri.parse('https:///app.apk')), isFalse);
+    expect(
+      await opener.open(
+        Uri.parse('https://user:password@updates.example/app.apk'),
+      ),
+      isFalse,
+    );
+    expect(
+      await opener.open(Uri.parse('https://updates.example/app.apk')),
+      isTrue,
+    );
+    expect(calls, <NativePermissionCall>[
+      const NativePermissionCall(
+        method: 'openExternalUrl',
+        arguments: <String, Object?>{'url': 'https://updates.example/app.apk'},
+      ),
+    ]);
+  });
+
+  test(
+    'external URL opener treats missing or failed host as not opened',
+    () async {
+      final MethodChannelExternalUrlOpener missing =
+          MethodChannelExternalUrlOpener(
+            invoker: (String _, Map<String, Object?> __) async {
+              throw MissingPluginException();
+            },
+          );
+      final MethodChannelExternalUrlOpener rejected =
+          MethodChannelExternalUrlOpener(
+            invoker: (String _, Map<String, Object?> __) async => false,
+          );
+
+      expect(
+        await missing.open(Uri.parse('https://updates.example/app.apk')),
+        isFalse,
+      );
+      expect(
+        await rejected.open(Uri.parse('https://updates.example/app.apk')),
+        isFalse,
       );
     },
   );
