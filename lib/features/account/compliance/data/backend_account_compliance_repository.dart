@@ -88,24 +88,30 @@ class BackendAccountComplianceRepository
         );
       }
     }
-    final ApiResponse youthResponse = await _apiClient.get(
-      _routes.youthModeStatus,
-    );
-    final ApiResponse restrictionsResponse = await _apiClient.get(
-      _routes.accountRestrictions,
-    );
+    // These authorities are independent once the authenticated principal has
+    // been confirmed by the profile response. Fetch them concurrently so the
+    // live entry gate is bounded by the slowest request instead of the sum of
+    // six network round trips. Future.wait still fails closed if any authority
+    // is unavailable or violates its contract.
+    final List<Object?> authorities =
+        await Future.wait<Object?>(<Future<Object?>>[
+          _apiClient.get(_routes.youthModeStatus),
+          _apiClient.get(_routes.accountRestrictions),
+          queryCancellationEligibility(),
+          checkVersion(
+            currentVersion: currentVersion,
+            platformType: platformType,
+          ),
+          _apiClient.get(_routes.accountRealName),
+          _apiClient.get(_routes.accountSessions),
+        ]);
+    final ApiResponse youthResponse = authorities[0] as ApiResponse;
+    final ApiResponse restrictionsResponse = authorities[1] as ApiResponse;
     final CancellationEligibility cancellation =
-        await queryCancellationEligibility();
-    final VersionUpdateInfo versionInfo = await checkVersion(
-      currentVersion: currentVersion,
-      platformType: platformType,
-    );
-    final ApiResponse realNameResponse = await _apiClient.get(
-      _routes.accountRealName,
-    );
-    final ApiResponse sessionsResponse = await _apiClient.get(
-      _routes.accountSessions,
-    );
+        authorities[2] as CancellationEligibility;
+    final VersionUpdateInfo versionInfo = authorities[3] as VersionUpdateInfo;
+    final ApiResponse realNameResponse = authorities[4] as ApiResponse;
+    final ApiResponse sessionsResponse = authorities[5] as ApiResponse;
 
     final Map<String, Object?> youth = _requireMap(youthResponse.data, '青少年模式');
     final Map<String, Object?> restrictions = _requireMap(
