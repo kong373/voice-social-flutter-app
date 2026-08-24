@@ -328,7 +328,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
     final String currentRoomId = _roomId(roomId, '当前房间 ID');
     final _PageRequest page = _pageRequest(pageNum, pageSize);
     final ApiResponse response = await _apiClient.get(
-      _historyPath,
+      _route(_routes.roomPkHistory, _historyPath),
       query: <String, String>{
         'roomId': currentRoomId,
         'pageNum': '${page.page}',
@@ -382,7 +382,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
 
   Future<Map<String, Object?>> _process({required String roomId}) async {
     final ApiResponse response = await _apiClient.get(
-      _processPath,
+      _route(_routes.roomPkProgress, _processPath),
       query: <String, String>{'roomId': roomId},
     );
     final Map<String, Object?> projection = _requiredMap(
