@@ -11,7 +11,10 @@ void main() {
       final DynamicPost first = feed.items.first;
       final DynamicPost second = feed.items[1];
 
-      final DynamicPost liked = await repository.toggleLike(first.id);
+      final DynamicPost liked = await repository.toggleLike(
+        first.id,
+        liked: !first.isLiked,
+      );
       expect(liked.isLiked, isNot(first.isLiked));
       expect(
         (await repository.fetchPost(second.id)).likeCount,

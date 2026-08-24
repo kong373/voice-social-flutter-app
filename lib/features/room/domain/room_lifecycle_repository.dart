@@ -1,6 +1,8 @@
 import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart';
 
 abstract interface class RoomLifecycleRepository {
+  RoomLifecycleCapabilities get capabilities;
+
   Future<RoomConfiguration?> fetchOwnedRoom();
 
   Future<RoomConfiguration> fetchRoom(String roomId);

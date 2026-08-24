@@ -38,6 +38,88 @@ void main() {
     );
   });
 
+  test('draft histories stay isolated by target user', () async {
+    final MockMessageRepository repository = MockMessageRepository();
+    final ConversationSummary first = ConversationSummary.draft(
+      kind: ConversationKind.privateChat,
+      title: '草稿一',
+      lastMessage: '',
+      unreadCount: 0,
+      targetUserId: 31001,
+    );
+    final ConversationSummary second = ConversationSummary.draft(
+      kind: ConversationKind.privateChat,
+      title: '草稿二',
+      lastMessage: '',
+      unreadCount: 0,
+      targetUserId: 31002,
+    );
+
+    final ChatMessage firstMessage = await repository.sendPrivateMessage(
+      conversation: first,
+      content: '只给草稿一',
+    );
+    final ChatMessage secondMessage = await repository.sendPrivateMessage(
+      conversation: second,
+      content: '只给草稿二',
+    );
+
+    expect(firstMessage.conversationId, isNull);
+    expect(secondMessage.conversationId, isNull);
+    expect(
+      (await repository.fetchPrivateMessages(
+        first,
+      )).map((ChatMessage item) => item.content),
+      <String>['只给草稿一'],
+    );
+    expect(
+      (await repository.fetchPrivateMessages(
+        second,
+      )).map((ChatMessage item) => item.content),
+      <String>['只给草稿二'],
+    );
+  });
+
+  test(
+    'a draft targeting an existing session reads and updates formal history',
+    () async {
+      final MockMessageRepository repository = MockMessageRepository();
+      final ConversationSummary draft = ConversationSummary.draft(
+        kind: ConversationKind.privateChat,
+        title: '晚星',
+        lastMessage: '',
+        unreadCount: 0,
+        targetUserId: 20001,
+      );
+
+      final ChatMessage sent = await repository.sendPrivateMessage(
+        conversation: draft,
+        content: '从草稿进入正式会话',
+      );
+      expect(sent.conversationId, 'conversation-20001');
+
+      final List<ChatMessage> formalHistory = await repository
+          .fetchPrivateMessages(
+            (await repository.fetchConversations()).firstWhere(
+              (ConversationSummary item) => item.id == 'conversation-20001',
+            ),
+          );
+      expect(formalHistory.last.content, '从草稿进入正式会话');
+      expect(
+        (await repository.fetchPrivateMessages(draft)).last.content,
+        '从草稿进入正式会话',
+      );
+      expect(
+        (await repository.fetchConversations())
+            .firstWhere(
+              (ConversationSummary item) => item.id == 'conversation-20001',
+            )
+            .lastMessage,
+        '从草稿进入正式会话',
+      );
+    },
+  );
+
   test('notification read and clear actions target exact categories', () async {
     final MockMessageRepository repository = MockMessageRepository();
     final List<AppNotification> system = await repository.fetchNotifications(

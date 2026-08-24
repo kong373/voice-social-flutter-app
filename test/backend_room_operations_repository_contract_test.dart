@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -21,65 +22,102 @@ void main() {
             expect(request.method, 'POST');
             expect(request.query, isEmpty);
             expect(request.body, <String, Object?>{
-              'roomId': 9527,
+              'roomId': '9527',
               'pageNum': 2,
               'pageSize': 10,
               'isSearchCount': true,
             });
             return _Reply(
-              data: <String, Object?>{
-                'list': <Map<String, Object?>>[
+              data: _memberPage(
+                current: 2,
+                pageSize: 10,
+                total: 21,
+                pages: 3,
+                items: <Map<String, Object?>>[
                   <String, Object?>{
                     'userId': '10001',
                     'nickName': '晚星',
                     'headImgUrl': 'https://cdn.example/late.png',
                     'userRoomRole': 1,
+                    'seatNumber': 5,
                     'wealthLevel': '9',
                     'charmLevel': 7,
                   },
+                  for (int userId = 10010; userId < 10019; userId++)
+                    <String, Object?>{
+                      'userId': userId,
+                      'nickName': '成员$userId',
+                    },
                 ],
-                'current': '2',
-                'total': '21',
-                'pages': '3',
-              },
+              ),
             );
           case '/app-api/rooms/getRoomMicDownOnlinePersonnel':
             expect(request.method, 'POST');
-            expect(request.body, <String, Object?>{'roomId': 9527});
+            expect(request.body, <String, Object?>{
+              'roomId': '9527',
+              'pageNum': 1,
+              'pageSize': 50,
+            });
             return _Reply(
-              data: <String, Object?>{
-                'users': <Map<String, Object?>>[
+              data: _memberPage(
+                current: 1,
+                pageSize: 50,
+                total: 1,
+                pages: 1,
+                items: <Map<String, Object?>>[
                   <String, Object?>{
                     'userId': 10002,
                     'nickName': '南风',
                     'headImgUrl': 'https://cdn.example/nan.png',
+                    'presence': 'ONLINE',
                   },
                 ],
-              },
+              ),
             );
           case '/app-api/roomUsers/getRoomManagers':
             expect(request.method, 'GET');
-            expect(request.query, <String, String>{'roomId': '9527'});
+            expect(request.query, <String, String>{
+              'roomId': '9527',
+              'pageNum': '1',
+              'pageSize': '50',
+            });
             return _Reply(
-              data: <Map<String, Object?>>[
-                <String, Object?>{
-                  'id': '10003',
-                  'nickName': '青禾',
-                  'userRoomRole': 5,
-                },
-              ],
+              data: _memberPage(
+                current: 1,
+                pageSize: 50,
+                total: 1,
+                pages: 1,
+                items: <Map<String, Object?>>[
+                  <String, Object?>{
+                    'id': '10003',
+                    'nickName': '青禾',
+                    'role': 'MANAGER',
+                  },
+                ],
+              ),
             );
           case '/app-api/roomUsers/getRoomMuteds':
             expect(request.method, 'GET');
-            expect(request.query, <String, String>{'roomId': '9527'});
+            expect(request.query, <String, String>{
+              'roomId': '9527',
+              'pageNum': '1',
+              'pageSize': '50',
+            });
             return _Reply(
-              data: <Map<String, Object?>>[
-                <String, Object?>{
-                  'id': '10004',
-                  'niceName': '白露',
-                  'headImgUrl': 'https://cdn.example/bai.png',
-                },
-              ],
+              data: _memberPage(
+                current: 1,
+                pageSize: 50,
+                total: 1,
+                pages: 1,
+                items: <Map<String, Object?>>[
+                  <String, Object?>{
+                    'id': '10004',
+                    'niceName': '白露',
+                    'headImgUrl': 'https://cdn.example/bai.png',
+                    'muted': true,
+                  },
+                ],
+              ),
             );
           case '/app-api/rooms/getRoomTopics':
             expect(request.method, 'GET');
@@ -87,63 +125,144 @@ void main() {
             return _Reply(
               data: <String, Object?>{
                 'topicTitle': '今晚话题',
-                'topicContent': '聊聊最近看的电影',
+                'topic': '聊聊最近看的电影',
               },
             );
           case '/app-api/rooms/setRoomTopics':
-            expect(request.method, 'PATCH');
+            expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
-              'roomId': 9527,
-              'topicTitle': '新标题',
-              'topicContent': '新内容',
+              'roomId': '9527',
+              'topic': '新内容',
             });
-            return const _Reply(data: null);
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'topic': '新内容',
+                'welcomeText': '',
+                'version': 2,
+              },
+            );
           case '/app-api/roomUsers/setMuted':
-            expect(request.method, 'PATCH');
+            expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
-              'roomId': 9527,
-              'userId': 10002,
-              'isMuted': 1,
+              'roomId': '9527',
+              'targetUserId': 10002,
+              'muted': true,
             });
-            return const _Reply(data: null);
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'userId': 10002,
+                'muted': true,
+              },
+            );
           case '/app-api/roomUsers/setRole':
-            expect(request.method, 'PATCH');
+            expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
-              'roomId': 9527,
-              'userId': 10002,
-              'userRoomRole': 0,
+              'roomId': '9527',
+              'targetUserId': 10002,
+              'role': 'MEMBER',
             });
-            return const _Reply(data: null);
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'userId': 10002,
+                'role': 'MEMBER',
+              },
+            );
           case '/app-api/room/com/kickout':
             expect(request.method, 'POST');
-            expect(request.query, <String, String>{
+            expect(request.body, <String, Object?>{
               'roomId': '9527',
-              'beUserId': '10002',
+              'targetUserId': 10002,
+              'ban': true,
             });
-            return const _Reply(data: null);
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'userId': 10002,
+                'kicked': true,
+                'banned': true,
+              },
+            );
           case '/app-api/micUserBase/hugUserDownMic':
-            expect(request.method, 'PUT');
-            expect(request.query, <String, String>{
-              'micIndex': '3',
-              'beUserId': '10002',
+            expect(request.method, 'POST');
+            expect(request.body, <String, Object?>{
+              'roomId': '9527',
+              'targetUserId': 10002,
+              'seatNumber': 3,
             });
-            return const _Reply(data: null);
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'userId': 10002,
+                'offMic': true,
+              },
+            );
           case '/app-api/micBase/lockMike':
-            expect(request.method, 'PUT');
-            expect(request.query, <String, String>{'micIndex': '4'});
-            return const _Reply(data: null);
+            expect(request.method, 'POST');
+            expect(request.body, <String, Object?>{
+              'roomId': '9527',
+              'seatNumber': 4,
+            });
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'seatNumber': 4,
+                'locked': true,
+                'occupied': false,
+                'userId': '',
+              },
+            );
           case '/app-api/micBase/unlockMike':
-            expect(request.method, 'PUT');
-            expect(request.query, <String, String>{'micIndex': '4'});
-            return const _Reply(data: null);
+            expect(request.method, 'POST');
+            expect(request.body, <String, Object?>{
+              'roomId': '9527',
+              'seatNumber': 4,
+            });
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'seatNumber': 4,
+                'locked': false,
+                'occupied': false,
+                'userId': '',
+              },
+            );
           case '/app-api/micBase/openMike':
-            expect(request.method, 'PUT');
-            expect(request.query, <String, String>{'micIndex': '4'});
-            return const _Reply(data: null);
+            expect(request.method, 'POST');
+            expect(request.body, <String, Object?>{
+              'roomId': '9527',
+              'userId': 10001,
+              'seatNumber': 4,
+              'muted': false,
+            });
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'seatNumber': 4,
+                'userId': 10001,
+                'muted': false,
+                'occupied': true,
+              },
+            );
           case '/app-api/micBase/closedMike':
-            expect(request.method, 'PUT');
-            expect(request.query, <String, String>{'micIndex': '5'});
-            return const _Reply(data: null);
+            expect(request.method, 'POST');
+            expect(request.body, <String, Object?>{
+              'roomId': '9527',
+              'userId': 10001,
+              'seatNumber': 5,
+              'muted': true,
+            });
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'seatNumber': 5,
+                'userId': 10001,
+                'muted': true,
+                'occupied': true,
+              },
+            );
           default:
             fail('unexpected room operation route: ${request.path}');
         }
@@ -161,11 +280,13 @@ void main() {
       expect(online.total, 21);
       expect(online.pages, 3);
       expect(online.hasMore, isTrue);
-      expect(online.items.single.userId, 10001);
-      expect(online.items.single.name, '晚星');
-      expect(online.items.single.role, RoomRole.moderator);
-      expect(online.items.single.wealthLevel, 9);
-      expect(online.items.single.charmLevel, 7);
+      final RoomMember onlineOwner = online.items.firstWhere(
+        (RoomMember member) => member.userId == 10001,
+      );
+      expect(onlineOwner.name, '晚星');
+      expect(onlineOwner.role, RoomRole.moderator);
+      expect(onlineOwner.wealthLevel, 9);
+      expect(onlineOwner.charmLevel, 7);
 
       final List<RoomMember> listeners = await repository.fetchOffMicListeners(
         '9527',
@@ -195,10 +316,26 @@ void main() {
         manager: false,
       );
       await repository.kickUser(roomId: '9527', userId: 10002);
-      await repository.takeUserOffMic(backendMicIndex: 3, userId: 10002);
-      await repository.setSeatLocked(backendMicIndex: 4, locked: true);
-      await repository.setSeatLocked(backendMicIndex: 4, locked: false);
-      await repository.setSeatMuted(backendMicIndex: 5, muted: true);
+      await repository.takeUserOffMic(
+        roomId: '9527',
+        backendMicIndex: 3,
+        userId: 10002,
+      );
+      await repository.setSeatLocked(
+        roomId: '9527',
+        backendMicIndex: 4,
+        locked: true,
+      );
+      await repository.setSeatLocked(
+        roomId: '9527',
+        backendMicIndex: 4,
+        locked: false,
+      );
+      await repository.setSeatMuted(
+        roomId: '9527',
+        backendMicIndex: 5,
+        muted: true,
+      );
 
       expect(server.requests, hasLength(13));
       expect(repository.micCoordinationMode, MicCoordinationMode.direct);
@@ -254,6 +391,105 @@ void main() {
     },
   );
 
+  test('delayed room A reads cannot overwrite room B seat identity', () async {
+    final Completer<void> roomAStarted = Completer<void>();
+    final Completer<void> releaseRoomA = Completer<void>();
+    final _RunningServer server = await _RunningServer.start((
+      _CapturedRequest request,
+    ) async {
+      if (request.path == '/app-api/rooms/getRoomOnlinePersonnel') {
+        final Map<String, Object?> body = request.body! as Map<String, Object?>;
+        final String roomId = body['roomId']! as String;
+        final int userId = roomId == 'room-a' ? 10001 : 20002;
+        if (roomId == 'room-a') {
+          roomAStarted.complete();
+          await releaseRoomA.future;
+        }
+        final Map<String, Object?> member = _memberRecord(userId)
+          ..['seatNumber'] = 4;
+        return _Reply(
+          data: _memberPage(
+            current: 1,
+            pageSize: 20,
+            total: 1,
+            pages: 1,
+            items: <Map<String, Object?>>[member],
+          ),
+        );
+      }
+      if (request.path == '/app-api/micBase/closedMike') {
+        final Map<String, Object?> body = request.body! as Map<String, Object?>;
+        return _Reply(
+          data: <String, Object?>{
+            'roomId': body['roomId'],
+            'seatNumber': body['seatNumber'],
+            'userId': body['userId'],
+            'muted': body['muted'],
+            'occupied': true,
+          },
+        );
+      }
+      fail('unexpected delayed room operation route: ${request.path}');
+    });
+    addTearDown(server.close);
+    final BackendRoomOperationsRepository repository =
+        BackendRoomOperationsRepository(apiClient: server.client);
+
+    final Future<RoomMemberPage> roomARead = repository.fetchOnlineMembers(
+      roomId: 'room-a',
+      page: 1,
+    );
+    await roomAStarted.future;
+
+    try {
+      final RoomMemberPage roomBPage = await repository.fetchOnlineMembers(
+        roomId: 'room-b',
+        page: 1,
+      );
+      expect(roomBPage.items.single.userId, 20002);
+
+      releaseRoomA.complete();
+      final RoomMemberPage roomAPage = await roomARead;
+      expect(roomAPage.items.single.userId, 10001);
+
+      await repository.setSeatMuted(
+        roomId: 'room-a',
+        backendMicIndex: 4,
+        muted: true,
+      );
+      await repository.setSeatMuted(
+        roomId: 'room-b',
+        backendMicIndex: 4,
+        muted: true,
+      );
+
+      final List<_CapturedRequest> writes = server.requests
+          .where(
+            (_CapturedRequest request) =>
+                request.path == '/app-api/micBase/closedMike',
+          )
+          .toList(growable: false);
+      expect(writes, hasLength(2));
+      expect(writes[0].body, <String, Object?>{
+        'roomId': 'room-a',
+        'userId': 10001,
+        'seatNumber': 4,
+        'muted': true,
+      });
+      expect(writes[1].body, <String, Object?>{
+        'roomId': 'room-b',
+        'userId': 20002,
+        'seatNumber': 4,
+        'muted': true,
+      });
+    } finally {
+      if (!releaseRoomA.isCompleted) {
+        releaseRoomA.complete();
+      }
+      await roomARead;
+    }
+  });
+
   test(
     'operation error envelopes preserve server failure classification',
     () async {
@@ -288,6 +524,567 @@ void main() {
     },
   );
 
+  test('HTTP 400/403/409/422/500 errors remain typed and unmodified', () async {
+    final List<({int status, int code, ApiFailureKind kind})> cases =
+        <({int status, int code, ApiFailureKind kind})>[
+          (status: 400, code: 40042, kind: ApiFailureKind.validation),
+          (status: 403, code: 40335, kind: ApiFailureKind.forbidden),
+          (status: 409, code: 40943, kind: ApiFailureKind.conflict),
+          (status: 422, code: 42201, kind: ApiFailureKind.validation),
+          (status: 500, code: 50001, kind: ApiFailureKind.server),
+        ];
+    for (final ({int status, int code, ApiFailureKind kind}) item in cases) {
+      final _RunningServer server = await _RunningServer.start(
+        (_CapturedRequest request) => _Reply(
+          code: item.code,
+          message: 'error-${item.status}',
+          data: null,
+          httpStatus: item.status,
+        ),
+      );
+      final BackendRoomOperationsRepository repository =
+          BackendRoomOperationsRepository(apiClient: server.client);
+      await expectLater(
+        repository.fetchTopic('9527'),
+        throwsA(
+          isA<ApiException>()
+              .having((ApiException error) => error.kind, 'kind', item.kind)
+              .having(
+                (ApiException error) => error.httpStatus,
+                'httpStatus',
+                item.status,
+              )
+              .having(
+                (ApiException error) => error.message,
+                'message',
+                'error-${item.status}',
+              ),
+        ),
+      );
+      await server.close();
+    }
+  });
+
+  test(
+    'room write matrix preserves 403/409/422/500 envelopes and request ids',
+    () async {
+      final List<
+        ({
+          String name,
+          String path,
+          Future<void> Function(BackendRoomOperationsRepository repository)
+          invoke,
+        })
+      >
+      writes =
+          <
+            ({
+              String name,
+              String path,
+              Future<void> Function(BackendRoomOperationsRepository repository)
+              invoke,
+            })
+          >[
+            (
+              name: 'setTopics',
+              path: '/app-api/rooms/setRoomTopics',
+              invoke: (BackendRoomOperationsRepository repository) async {
+                await repository.updateTopic(
+                  roomId: '9527',
+                  topic: const RoomTopic(title: '标题', content: '内容'),
+                );
+              },
+            ),
+            (
+              name: 'setMuted',
+              path: '/app-api/roomUsers/setMuted',
+              invoke: (BackendRoomOperationsRepository repository) async {
+                await repository.setUserMuted(
+                  roomId: '9527',
+                  userId: 10002,
+                  muted: true,
+                );
+              },
+            ),
+            (
+              name: 'setRole',
+              path: '/app-api/roomUsers/setRole',
+              invoke: (BackendRoomOperationsRepository repository) async {
+                await repository.setUserRole(
+                  roomId: '9527',
+                  userId: 10002,
+                  manager: true,
+                );
+              },
+            ),
+            (
+              name: 'kickout',
+              path: '/app-api/room/com/kickout',
+              invoke: (BackendRoomOperationsRepository repository) async {
+                await repository.kickUser(roomId: '9527', userId: 10002);
+              },
+            ),
+            (
+              name: 'hugDownMic',
+              path: '/app-api/micUserBase/hugUserDownMic',
+              invoke: (BackendRoomOperationsRepository repository) async {
+                await repository.takeUserOffMic(
+                  roomId: '9527',
+                  backendMicIndex: 3,
+                  userId: 10002,
+                );
+              },
+            ),
+            (
+              name: 'lockMic',
+              path: '/app-api/micBase/lockMike',
+              invoke: (BackendRoomOperationsRepository repository) async {
+                await repository.setSeatLocked(
+                  roomId: '9527',
+                  backendMicIndex: 4,
+                  locked: true,
+                );
+              },
+            ),
+            (
+              name: 'unlockMic',
+              path: '/app-api/micBase/unlockMike',
+              invoke: (BackendRoomOperationsRepository repository) async {
+                await repository.setSeatLocked(
+                  roomId: '9527',
+                  backendMicIndex: 4,
+                  locked: false,
+                );
+              },
+            ),
+            (
+              name: 'closeMic',
+              path: '/app-api/micBase/closedMike',
+              invoke: (BackendRoomOperationsRepository repository) async {
+                await _primeSeatOccupant(repository);
+                await repository.setSeatMuted(
+                  roomId: '9527',
+                  backendMicIndex: 4,
+                  muted: true,
+                );
+              },
+            ),
+            (
+              name: 'openMic',
+              path: '/app-api/micBase/openMike',
+              invoke: (BackendRoomOperationsRepository repository) async {
+                await _primeSeatOccupant(repository);
+                await repository.setSeatMuted(
+                  roomId: '9527',
+                  backendMicIndex: 4,
+                  muted: false,
+                );
+              },
+            ),
+          ];
+      final List<({int status, int code, ApiFailureKind kind})> failures =
+          <({int status, int code, ApiFailureKind kind})>[
+            (status: 403, code: 40335, kind: ApiFailureKind.forbidden),
+            (status: 409, code: 40943, kind: ApiFailureKind.conflict),
+            (status: 422, code: 42201, kind: ApiFailureKind.validation),
+            (status: 500, code: 50001, kind: ApiFailureKind.server),
+          ];
+
+      for (final write in writes) {
+        for (final failure in failures) {
+          final _RunningServer server = await _RunningServer.start((
+            _CapturedRequest request,
+          ) {
+            if (request.path == '/app-api/rooms/getRoomTopics') {
+              return const _Reply(
+                data: <String, Object?>{'topicTitle': '标题', 'topic': '内容'},
+              );
+            }
+            if (request.path == '/app-api/rooms/getRoomOnlinePersonnel') {
+              return _Reply(
+                data: _memberPage(
+                  current: 1,
+                  pageSize: 20,
+                  total: 1,
+                  pages: 1,
+                  items: <Map<String, Object?>>[
+                    <String, Object?>{
+                      'userId': 10001,
+                      'nickName': '麦上成员',
+                      'seatNumber': 4,
+                    },
+                  ],
+                ),
+              );
+            }
+            expect(request.path, write.path, reason: write.name);
+            expect(request.requestId, isNotEmpty, reason: write.name);
+            expect(
+              request.requestId,
+              matches(RegExp(r'^room-operations-[0-9a-f]{32}$')),
+              reason: write.name,
+            );
+            return _Reply(
+              code: failure.code,
+              message: '${write.name}-${failure.status}',
+              data: null,
+              httpStatus: failure.status,
+            );
+          });
+          final BackendRoomOperationsRepository repository =
+              BackendRoomOperationsRepository(apiClient: server.client);
+
+          await expectLater(
+            write.invoke(repository),
+            throwsA(
+              isA<ApiException>()
+                  .having(
+                    (ApiException error) => error.kind,
+                    'kind',
+                    failure.kind,
+                  )
+                  .having(
+                    (ApiException error) => error.code,
+                    'code',
+                    failure.code,
+                  )
+                  .having(
+                    (ApiException error) => error.httpStatus,
+                    'httpStatus',
+                    failure.status,
+                  )
+                  .having(
+                    (ApiException error) => error.message,
+                    'message',
+                    '${write.name}-${failure.status}',
+                  ),
+            ),
+            reason: '${write.name} HTTP ${failure.status}',
+          );
+          final _CapturedRequest mutation = server.requests.last;
+          expect(mutation.path, write.path);
+          expect(mutation.requestId, isNotEmpty);
+          await server.close();
+        }
+      }
+    },
+  );
+
+  test(
+    'room member pages require authoritative first-party metadata',
+    () async {
+      final List<String> missingFields = <String>[
+        'current',
+        'pageSize',
+        'size',
+        'total',
+        'pages',
+      ];
+      for (final String missingField in missingFields) {
+        final _RunningServer server = await _RunningServer.start((
+          _CapturedRequest request,
+        ) {
+          final Map<String, Object?> payload = _memberPage(
+            current: 1,
+            pageSize: 20,
+            total: 1,
+            pages: 1,
+            items: <Map<String, Object?>>[_memberRecord(10001)],
+          );
+          payload.remove(missingField);
+          return _Reply(data: payload);
+        });
+        final BackendRoomOperationsRepository repository =
+            BackendRoomOperationsRepository(apiClient: server.client);
+
+        await expectLater(
+          repository.fetchOnlineMembers(roomId: '9527', page: 1),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.protocol,
+            ),
+          ),
+        );
+        expect(server.requests, hasLength(1));
+        await server.close();
+      }
+
+      for (final String missingAlias in <String>['list', 'records']) {
+        final _RunningServer missingListServer = await _RunningServer.start((
+          _CapturedRequest request,
+        ) {
+          final Map<String, Object?> payload = _memberPage(
+            current: 1,
+            pageSize: 20,
+            total: 1,
+            pages: 1,
+            items: <Map<String, Object?>>[_memberRecord(10001)],
+          )..remove(missingAlias);
+          return _Reply(data: payload);
+        });
+        final BackendRoomOperationsRepository missingListRepository =
+            BackendRoomOperationsRepository(
+              apiClient: missingListServer.client,
+            );
+        await expectLater(
+          missingListRepository.fetchOnlineMembers(roomId: '9527', page: 1),
+          throwsA(isA<ApiException>()),
+        );
+        await missingListServer.close();
+      }
+    },
+  );
+
+  test(
+    'room member pages reject non-map and malformed member records',
+    () async {
+      final List<Object?> malformedItems = <Object?>[
+        'not-a-member',
+        <String, Object?>{'userId': 0, 'nickName': '缺少有效 ID'},
+      ];
+      for (final Object? malformedItem in malformedItems) {
+        final _RunningServer server = await _RunningServer.start((
+          _CapturedRequest request,
+        ) {
+          final Map<String, Object?> payload = _memberPage(
+            current: 1,
+            pageSize: 20,
+            total: 1,
+            pages: 1,
+            items: <Object?>[malformedItem],
+          );
+          return _Reply(data: payload);
+        });
+        final BackendRoomOperationsRepository repository =
+            BackendRoomOperationsRepository(apiClient: server.client);
+
+        await expectLater(
+          repository.fetchOnlineMembers(roomId: '9527', page: 1),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.protocol,
+            ),
+          ),
+        );
+        await server.close();
+      }
+    },
+  );
+
+  test(
+    'room member pages reject request drift, inconsistent totals, and count gaps',
+    () async {
+      final List<Map<String, Object?>> malformedPages = <Map<String, Object?>>[
+        _memberPage(
+          current: 2,
+          pageSize: 20,
+          total: 1,
+          pages: 1,
+          items: <Map<String, Object?>>[_memberRecord(10001)],
+        ),
+        _memberPage(
+          current: 1,
+          pageSize: 10,
+          total: 1,
+          pages: 1,
+          items: <Map<String, Object?>>[_memberRecord(10001)],
+        ),
+        _memberPage(
+          current: 1,
+          pageSize: 20,
+          total: 3,
+          pages: 1,
+          items: <Map<String, Object?>>[_memberRecord(10001)],
+        ),
+        _memberPage(
+          current: 1,
+          pageSize: 20,
+          total: 3,
+          pages: 2,
+          items: <Map<String, Object?>>[_memberRecord(10001)],
+        ),
+      ];
+      for (final Map<String, Object?> malformedPage in malformedPages) {
+        final _RunningServer server = await _RunningServer.start(
+          (_CapturedRequest request) => _Reply(data: malformedPage),
+        );
+        final BackendRoomOperationsRepository repository =
+            BackendRoomOperationsRepository(apiClient: server.client);
+        await expectLater(
+          repository.fetchOnlineMembers(roomId: '9527', page: 1, pageSize: 20),
+          throwsA(isA<ApiException>()),
+        );
+        await server.close();
+      }
+    },
+  );
+
+  test(
+    'single room member pages allow large totals and an empty page beyond the latest total',
+    () async {
+      int call = 0;
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        call += 1;
+        if (call == 1) {
+          return _Reply(
+            data: _memberPage(
+              current: 1,
+              pageSize: 20,
+              total: 2020,
+              pages: 101,
+              items: <Map<String, Object?>>[
+                for (int userId = 10001; userId <= 10020; userId += 1)
+                  _memberRecord(userId),
+              ],
+            ),
+          );
+        }
+        return _Reply(
+          data: _memberPage(
+            current: 2,
+            pageSize: 20,
+            total: 1,
+            pages: 1,
+            items: const <Map<String, Object?>>[],
+          ),
+        );
+      });
+      final BackendRoomOperationsRepository repository =
+          BackendRoomOperationsRepository(apiClient: server.client);
+
+      final RoomMemberPage first = await repository.fetchOnlineMembers(
+        roomId: '9527',
+        page: 1,
+      );
+      expect(first.items, hasLength(20));
+      expect(first.hasMore, isTrue);
+      final RoomMemberPage stale = await repository.fetchOnlineMembers(
+        roomId: '9527',
+        page: 2,
+      );
+      expect(stale.items, isEmpty);
+      expect(stale.hasMore, isFalse);
+      await server.close();
+    },
+  );
+
+  test(
+    'room member list operations consume bounded authoritative multi-page envelopes',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        expect(request.path, '/app-api/rooms/getRoomMicDownOnlinePersonnel');
+        expect(request.method, 'POST');
+        final int page =
+            (request.body! as Map<String, Object?>)['pageNum']! as int;
+        expect(request.body, <String, Object?>{
+          'roomId': '9527',
+          'pageNum': page,
+          'pageSize': 50,
+        });
+        if (page == 1) {
+          return _Reply(
+            data: _memberPage(
+              current: 1,
+              pageSize: 50,
+              total: 51,
+              pages: 2,
+              items: <Map<String, Object?>>[
+                for (int userId = 20001; userId <= 20050; userId++)
+                  _memberRecord(userId),
+              ],
+            ),
+          );
+        }
+        expect(page, 2);
+        return _Reply(
+          data: _memberPage(
+            current: 2,
+            pageSize: 50,
+            total: 51,
+            pages: 2,
+            items: <Map<String, Object?>>[_memberRecord(20051)],
+          ),
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomOperationsRepository repository =
+          BackendRoomOperationsRepository(apiClient: server.client);
+
+      final List<RoomMember> listeners = await repository.fetchOffMicListeners(
+        '9527',
+      );
+      expect(listeners, hasLength(51));
+      expect(listeners.last.userId, 20051);
+      expect(server.requests, hasLength(2));
+    },
+  );
+
+  test(
+    'room member list operations reject page metadata drift and unsafe bounds',
+    () async {
+      final _RunningServer driftServer = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        final int page =
+            ((request.body! as Map<String, Object?>)['pageNum']! as int);
+        return _Reply(
+          data: _memberPage(
+            current: page,
+            pageSize: 50,
+            total: page == 1 ? 51 : 52,
+            pages: 2,
+            items: <Map<String, Object?>>[
+              if (page == 1)
+                for (int userId = 20001; userId <= 20050; userId++)
+                  _memberRecord(userId)
+              else
+                _memberRecord(20051),
+            ],
+          ),
+        );
+      });
+      final BackendRoomOperationsRepository driftRepository =
+          BackendRoomOperationsRepository(apiClient: driftServer.client);
+      await expectLater(
+        driftRepository.fetchOffMicListeners('9527'),
+        throwsA(isA<ApiException>()),
+      );
+      expect(driftServer.requests, hasLength(2));
+      await driftServer.close();
+
+      final _RunningServer unsafeServer = await _RunningServer.start(
+        (_CapturedRequest request) => _Reply(
+          data: _memberPage(
+            current: 1,
+            pageSize: 50,
+            total: 5050,
+            pages: 101,
+            items: <Map<String, Object?>>[
+              for (int userId = 20001; userId <= 20050; userId++)
+                _memberRecord(userId),
+            ],
+          ),
+        ),
+      );
+      final BackendRoomOperationsRepository unsafeRepository =
+          BackendRoomOperationsRepository(apiClient: unsafeServer.client);
+      await expectLater(
+        unsafeRepository.fetchOffMicListeners('9527'),
+        throwsA(isA<ApiException>()),
+      );
+      expect(unsafeServer.requests, hasLength(1));
+      await unsafeServer.close();
+    },
+  );
+
   test(
     'empty member payloads resolve to empty pages without fake members',
     () async {
@@ -295,9 +1092,12 @@ void main() {
         (_CapturedRequest request) => const _Reply(
           data: <String, Object?>{
             'list': <Object?>[],
+            'records': <Object?>[],
             'current': 1,
+            'pageSize': 20,
+            'size': 20,
             'total': 0,
-            'pages': 1,
+            'pages': 0,
           },
         ),
       );
@@ -316,12 +1116,42 @@ void main() {
   );
 }
 
+Map<String, Object?> _memberPage({
+  required int current,
+  required int pageSize,
+  required int total,
+  required int pages,
+  required List<Object?> items,
+}) {
+  return <String, Object?>{
+    'list': items,
+    'records': <Object?>[...items],
+    'current': current,
+    'pageSize': pageSize,
+    'size': pageSize,
+    'total': total,
+    'pages': pages,
+  };
+}
+
+Map<String, Object?> _memberRecord(int userId) => <String, Object?>{
+  'userId': userId,
+  'nickName': '成员$userId',
+};
+
+Future<void> _primeSeatOccupant(
+  BackendRoomOperationsRepository repository,
+) async {
+  await repository.fetchOnlineMembers(roomId: '9527', page: 1);
+}
+
 class _CapturedRequest {
   const _CapturedRequest({
     required this.method,
     required this.path,
     required this.query,
     required this.authorization,
+    required this.requestId,
     required this.body,
   });
 
@@ -329,6 +1159,7 @@ class _CapturedRequest {
   final String path;
   final Map<String, String> query;
   final String authorization;
+  final String requestId;
   final Object? body;
 }
 
@@ -346,7 +1177,7 @@ class _Reply {
   final int httpStatus;
 }
 
-typedef _Responder = _Reply Function(_CapturedRequest request);
+typedef _Responder = FutureOr<_Reply> Function(_CapturedRequest request);
 
 class _RunningServer {
   _RunningServer._(this.server, this.requests);
@@ -375,10 +1206,11 @@ class _RunningServer {
         path: request.uri.path,
         query: request.uri.queryParameters,
         authorization: captureContractAuthorization(request),
+        requestId: request.headers.value('X-Request-Id') ?? '',
         body: body,
       );
       requests.add(captured);
-      final _Reply reply = responder(captured);
+      final _Reply reply = await responder(captured);
       request.response
         ..statusCode = reply.httpStatus
         ..headers.contentType = ContentType.json

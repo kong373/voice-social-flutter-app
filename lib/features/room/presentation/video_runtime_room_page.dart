@@ -46,6 +46,8 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   final ScrollController _messageScroll = ScrollController();
   Timer? _giftTimer;
   bool _showGiftCelebration = false;
+  String? _giftCelebrationGiftName;
+  String? _giftCelebrationTargetName;
   bool _ending = false;
   bool _allowPop = false;
   String? _presentedError;
@@ -272,8 +274,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 260),
             child: _showGiftCelebration
-                ? const _GiftCelebrationOverlay(
-                    key: Key('gift-celebration-overlay'),
+                ? _GiftCelebrationOverlay(
+                    key: const Key('gift-celebration-overlay'),
+                    giftName: _giftCelebrationGiftName,
+                    targetName: _giftCelebrationTargetName,
                   )
                 : const SizedBox.shrink(),
           ),
@@ -283,6 +287,16 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Widget _header() {
+    final int? onlineCount = _controller.snapshot?.onlineCount;
+    final List<MicSeat> occupiedSeats = _controller.seats
+        .where(
+          (MicSeat seat) =>
+              seat.isOccupied &&
+              seat.userId != null &&
+              (seat.userName?.trim().isNotEmpty ?? false),
+        )
+        .take(2)
+        .toList(growable: false);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 7, 8, 3),
       child: Row(
@@ -304,9 +318,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                   ),
                 ),
                 Text(
-                  _controller.snapshot?.onlineCount == null
+                  onlineCount == null
                       ? '房间号 ${_controller.roomCode}'
-                      : '房间号 ${_controller.roomCode} · ${_controller.snapshot!.onlineCount} 人在线',
+                      : '房间号 ${_controller.roomCode} · $onlineCount 人在线',
                   style: const TextStyle(
                     color: RoomColors.textSecondary,
                     fontSize: 10,
@@ -317,25 +331,35 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           ),
           SizedBox(
             width: 55,
+            height: 30,
             child: Stack(
               children: <Widget>[
-                const RuntimeAvatar(seed: 'room-member-1', size: 30),
-                const Positioned(
-                  left: 19,
-                  child: RuntimeAvatar(seed: 'room-member-2', size: 30),
-                ),
-                Positioned(
-                  right: 0,
-                  top: 9,
-                  child: Text(
-                    '${_controller.snapshot?.onlineCount ?? 0}',
-                    style: const TextStyle(
-                      color: RoomColors.textSecondary,
-                      fontSize: 8,
-                      fontWeight: FontWeight.w700,
+                for (int index = 0; index < occupiedSeats.length; index += 1)
+                  Positioned(
+                    left: index * 19,
+                    child: _RoomMemberAvatar(
+                      avatarUrl: occupiedSeats[index].avatarUrl,
+                      size: 30,
                     ),
                   ),
-                ),
+                if (occupiedSeats.isEmpty)
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: _UnavailableMemberAvatar(size: 30),
+                  ),
+                if (onlineCount != null)
+                  Positioned(
+                    right: 0,
+                    top: 9,
+                    child: Text(
+                      '$onlineCount',
+                      style: const TextStyle(
+                        color: RoomColors.textSecondary,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -351,6 +375,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Widget _announcement() {
+    final int? onlineCount = _controller.snapshot?.onlineCount;
     final String topic = _controller.topic.isEmpty
         ? '欢迎来到房间，请友善交流'
         : _controller.topic;
@@ -366,8 +391,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
               onTap: _openTopic,
             ),
           ),
-          const SizedBox(width: 7),
-          const _RoomHeatChip(),
+          if (onlineCount != null) ...<Widget>[
+            const SizedBox(width: 7),
+            _RoomHeatChip(onlineCount: onlineCount),
+          ],
         ],
       ),
     );
@@ -830,6 +857,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         .toList(growable: false);
     final String account =
         AppDependencyScope.of(context).sessionManager.session?.mobile ?? '';
+    GiftSendRequest? sentRequest;
     final bool? sent = await showModalBottomSheet<bool>(
       context: context,
       useSafeArea: true,
@@ -842,13 +870,19 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           account: account,
           targets: targets,
           balance: _controller.giftBalance,
-          onSend: (GiftSendRequest request) => _controller.sendGift(
-            giftId: request.gift.id,
-            giftName: request.gift.name,
-            receiverUserId: request.target.userId,
-            targetName: request.target.name,
-            quantity: request.quantity,
-          ),
+          onSend: (GiftSendRequest request) async {
+            final bool sent = await _controller.sendGift(
+              giftId: request.gift.id.toString(),
+              giftName: request.gift.name,
+              receiverUserId: request.target.userId,
+              targetName: request.target.name,
+              quantity: request.quantity,
+            );
+            if (sent) {
+              sentRequest = request;
+            }
+            return sent;
+          },
           onRechargeReturn: () async {
             await _controller.reconnect();
             return _controller.giftBalance;
@@ -858,10 +892,18 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     );
     if (sent == true && mounted) {
       _giftTimer?.cancel();
-      setState(() => _showGiftCelebration = true);
+      setState(() {
+        _giftCelebrationGiftName = sentRequest?.gift.name;
+        _giftCelebrationTargetName = sentRequest?.target.name;
+        _showGiftCelebration = true;
+      });
       _giftTimer = Timer(const Duration(seconds: 4), () {
         if (mounted) {
-          setState(() => _showGiftCelebration = false);
+          setState(() {
+            _showGiftCelebration = false;
+            _giftCelebrationGiftName = null;
+            _giftCelebrationTargetName = null;
+          });
         }
       });
     }
@@ -940,6 +982,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           currentUserId: _controller.currentUserId,
           currentRole: snapshot.role,
           seats: snapshot.seats,
+          roomTitle: snapshot.title,
         ),
       ),
     );
@@ -957,6 +1000,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           currentUserId: _controller.currentUserId,
           currentRole: snapshot.role,
           seats: snapshot.seats,
+          roomTitle: snapshot.title,
         ),
       ),
     );
@@ -988,6 +1032,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         builder: (BuildContext context) => RoomTopicPage(
           roomId: snapshot.roomId,
           canEdit: _controller.allows(RoomCapability.editRoom),
+          roomTitle: snapshot.title,
         ),
       ),
     );
@@ -999,8 +1044,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   void _openAudio() {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) =>
-            RoomAudioPage(isOnMic: _controller.isOnMic),
+        builder: (BuildContext context) => RoomAudioPage(
+          isOnMic: _controller.isOnMic,
+          roomTitle: _controller.snapshot?.title,
+        ),
       ),
     );
   }
@@ -1008,8 +1055,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   void _openRecovery() {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) =>
-            RoomRecoveryPage(controller: _controller),
+        builder: (BuildContext context) => RoomRecoveryPage(
+          controller: _controller,
+          roomTitle: _controller.snapshot?.title,
+        ),
       ),
     );
   }
@@ -1017,8 +1066,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   void _openDiagnostics() {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) =>
-            RoomDiagnosticsPage(controller: _controller),
+        builder: (BuildContext context) => RoomDiagnosticsPage(
+          controller: _controller,
+          roomTitle: _controller.snapshot?.title,
+        ),
       ),
     );
   }
@@ -1248,7 +1299,9 @@ class _AnnouncementChip extends StatelessWidget {
 }
 
 class _RoomHeatChip extends StatelessWidget {
-  const _RoomHeatChip();
+  const _RoomHeatChip({required this.onlineCount});
+
+  final int onlineCount;
 
   @override
   Widget build(BuildContext context) {
@@ -1259,17 +1312,13 @@ class _RoomHeatChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(
-            Icons.local_fire_department_rounded,
-            size: 13,
-            color: RoomColors.gold,
-          ),
+          Icon(Icons.people_outline_rounded, size: 13, color: RoomColors.gold),
           SizedBox(width: 3),
           Text(
-            '3.6k',
+            '$onlineCount',
             style: TextStyle(
               color: RoomColors.textSecondary,
               fontSize: 9,
@@ -1544,6 +1593,82 @@ class _VideoRoomBackground extends StatelessWidget {
   }
 }
 
+class _RoomMemberAvatar extends StatelessWidget {
+  const _RoomMemberAvatar({
+    required this.avatarUrl,
+    required this.size,
+    this.ringColor,
+  });
+
+  final String? avatarUrl;
+  final double size;
+  final Color? ringColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final String? normalizedUrl = avatarUrl?.trim();
+    final bool isAllowlistedAsset =
+        normalizedUrl != null &&
+        _allowlistedAvatarAssets.contains(normalizedUrl);
+    return Container(
+      width: size,
+      height: size,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: isAllowlistedAsset ? null : Colors.white.withValues(alpha: 0.08),
+        border: Border.all(
+          color: ringColor ?? Colors.white.withValues(alpha: 0.8),
+          width: 2,
+        ),
+      ),
+      child: ClipOval(
+        child: normalizedUrl == null || normalizedUrl.isEmpty
+            ? const _UnavailableMemberAvatar()
+            : isAllowlistedAsset
+            ? Image.asset(
+                normalizedUrl,
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+                errorBuilder: (_, __, ___) => const _UnavailableMemberAvatar(),
+              )
+            : Image.network(
+                normalizedUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const _UnavailableMemberAvatar(),
+              ),
+      ),
+    );
+  }
+}
+
+const Set<String> _allowlistedAvatarAssets = <String>{
+  'assets/runtime/avatar-copper.png',
+  'assets/runtime/avatar-night.png',
+  'assets/runtime/avatar-rose.png',
+  'assets/runtime/avatar-silver.png',
+};
+
+class _UnavailableMemberAvatar extends StatelessWidget {
+  const _UnavailableMemberAvatar({this.size = 44});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.white.withValues(alpha: 0.08),
+      child: Center(
+        child: Icon(
+          Icons.person_outline_rounded,
+          size: size * 0.52,
+          color: RoomColors.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
 class _VideoMicSeat extends StatelessWidget {
   const _VideoMicSeat({required this.seat});
 
@@ -1598,8 +1723,8 @@ class _VideoMicSeat extends StatelessWidget {
               alignment: Alignment.center,
               children: <Widget>[
                 if (occupied)
-                  RuntimeAvatar(
-                    seed: '${seat.userId}-${seat.number}',
+                  _RoomMemberAvatar(
+                    avatarUrl: seat.avatarUrl,
                     size: dense ? 40 : 52,
                     ringColor: Colors.transparent,
                   )
@@ -1798,7 +1923,14 @@ class _RoomDockAction extends StatelessWidget {
 }
 
 class _GiftCelebrationOverlay extends StatelessWidget {
-  const _GiftCelebrationOverlay({super.key});
+  const _GiftCelebrationOverlay({
+    required this.giftName,
+    required this.targetName,
+    super.key,
+  });
+
+  final String? giftName;
+  final String? targetName;
 
   @override
   Widget build(BuildContext context) {
@@ -1835,14 +1967,16 @@ class _GiftCelebrationOverlay extends StatelessWidget {
                   ),
                 ),
               ),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.fromLTRB(18, 0, 120, 0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: <Widget>[
                     Text(
-                      '晚星 送出星河心意',
+                      giftName == null || giftName!.trim().isEmpty
+                          ? '礼物已送达'
+                          : '${giftName!.trim()} 已送达',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1856,7 +1990,11 @@ class _GiftCelebrationOverlay extends StatelessWidget {
                     ),
                     SizedBox(height: 5),
                     Text(
-                      '礼物已送达 · 为房间点亮一份惊喜',
+                      targetName == null || targetName!.trim().isEmpty
+                          ? '为房间点亮一份惊喜'
+                          : '送给 ${targetName!.trim()} · 为房间点亮一份惊喜',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: Colors.white70, fontSize: 10),
                     ),
                   ],

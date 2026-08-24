@@ -25,6 +25,7 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
   bool _loading = true;
   String? _error;
   String? _busyRoomId;
+  int _loadGeneration = 0;
 
   @override
   void didChangeDependencies() {
@@ -37,6 +38,7 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
   }
 
   Future<void> _load() async {
+    final int generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
@@ -44,7 +46,7 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
     try {
       final RoomCollectionSnapshot snapshot = await _repository
           .fetchRoomCollections();
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -52,7 +54,7 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -70,7 +72,10 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
         actions: <Widget>[
           IconButton(
             tooltip: '刷新',
-            onPressed: _loading ? null : _load,
+            // Refresh remains available while a previous request is pending;
+            // generation checks ensure an older response cannot replace the
+            // newest collection snapshot.
+            onPressed: _load,
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
@@ -248,7 +253,7 @@ class _SavedRoomCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
-                    '${room.onlineCount} 人在线 · ${room.occupiedSeats}/8 麦',
+                    '${discoveryOnlineCountLabel(room.onlineCount)} · ${room.occupiedSeats}/8 麦',
                     style: const TextStyle(color: Colors.white, fontSize: 9),
                   ),
                 ),

@@ -1,20 +1,23 @@
 part of 'community_pages.dart';
 
 class GuardianFanPage extends StatefulWidget {
-  const GuardianFanPage({super.key});
+  const GuardianFanPage({super.key, this.initialAnchorUserId});
+
+  /// A caller may provide a verified anchor context (for example, from a
+  /// room or an anchor profile). Live mode must not invent one on its own.
+  final int? initialAnchorUserId;
 
   @override
   State<GuardianFanPage> createState() => _GuardianFanPageState();
 }
 
 class _GuardianFanPageState extends State<GuardianFanPage> {
-  final TextEditingController _anchorController = TextEditingController(
-    text: '20001',
-  );
+  final TextEditingController _anchorController = TextEditingController();
   GuardianFanSnapshot? _snapshot;
-  bool _loading = true;
+  bool _loading = false;
   bool _busy = false;
   String? _error;
+  bool _initialized = false;
 
   CommunityRepository get _repository =>
       AppDependencyScope.of(context).communityRepository;
@@ -22,7 +25,18 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_snapshot == null && _loading) {
+    if (_initialized) {
+      return;
+    }
+    _initialized = true;
+    final bool isLive = AppDependencyScope.of(context).environment.isLive;
+    if (widget.initialAnchorUserId != null) {
+      _anchorController.text = '${widget.initialAnchorUserId}';
+      _load();
+    } else if (!isLive) {
+      // Mock/QA keeps its explicit fixture behavior. Live mode has no
+      // implicit business identity and waits for a real anchor context.
+      _anchorController.text = '20001';
       _load();
     }
   }
@@ -242,6 +256,7 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
   @override
   Widget build(BuildContext context) {
     final GuardianFanSnapshot? snapshot = _snapshot;
+    final bool isLive = AppDependencyScope.of(context).environment.isLive;
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('守护与粉团')),
       body: ListView(
@@ -260,10 +275,10 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
                 Color(0xFF6953C6),
                 Color(0xFFE17EA8),
               ],
-              trailing: const _LetterAvatar(
-                label: '晚星',
+              trailing: _LetterAvatar(
+                label: snapshot.anchorName,
                 prominent: true,
-                imagePath: 'assets/runtime/avatar-rose.png',
+                imagePath: isLive ? null : 'assets/runtime/avatar-rose.png',
                 size: 66,
               ),
             ),
@@ -300,7 +315,15 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
             )
           else if (_error != null)
             _StateError(message: _error!, onRetry: _load)
-          else if (snapshot != null) ...<Widget>[
+          else if (snapshot == null)
+            KeyedSubtree(
+              key: const Key('guardian-anchor-required'),
+              child: const _InfoCard(
+                icon: Icons.person_search_outlined,
+                text: '请先输入主播用户 ID，再查询服务端确认的守护与粉团信息。',
+              ),
+            )
+          else ...<Widget>[
             const _SectionHeading(title: '守护档位', subtitle: '开通前会再次确认消耗与时长'),
             const SizedBox(height: 10),
             if (snapshot.guardianLevels.isEmpty)

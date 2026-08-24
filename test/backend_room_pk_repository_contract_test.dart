@@ -60,7 +60,12 @@ void main() {
               'pkTime': 5,
             });
             return const _Reply(
-              data: <String, Object?>{'pkInviteId': 'invite-1'},
+              data: <String, Object?>{
+                'pkInviteId': 'invite-1',
+                'status': 'PENDING',
+                'createdAt': '2030-08-21T11:59:00Z',
+                'expiresAt': '2030-08-21T12:04:00Z',
+              },
             );
           case '/app-api/activityPk/getRoomPkProgress':
             expect(request.method, 'GET');
@@ -143,6 +148,14 @@ void main() {
       expect(opponentInvitation.id, 'invite-1');
       expect(opponentInvitation.status, RoomPkInvitationStatus.pending);
       expect(opponentInvitation.direction, RoomPkInvitationDirection.outgoing);
+      expect(
+        opponentInvitation.createdAt.toUtc(),
+        DateTime.utc(2030, 8, 21, 11, 59),
+      );
+      expect(
+        opponentInvitation.expiresAt!.toUtc(),
+        DateTime.utc(2030, 8, 21, 12, 4),
+      );
 
       final RoomPkInvitation acceptedInvitation = await repository
           .refreshInvitation(opponentInvitation);
@@ -157,6 +170,7 @@ void main() {
       expect(active.opponentSide.roomName, '星河房');
       expect(active.remainingSeconds, 120);
       expect(active.stage, RoomPkBattleStage.fighting);
+      expect(active.updatedAt.toUtc(), DateTime.utc(2026, 8, 21, 12, 2));
       expect(active.sender.supporters.single.nickname, '晚星');
       expect(active.sender.supporters.single.value, 12.5);
 
@@ -428,10 +442,204 @@ void main() {
       expect(server.requests, hasLength(1));
     },
   );
+
+  test(
+    'PK invitation rejects HTTP 200 responses without server authority',
+    () async {
+      const RoomPkOpponent opponent = RoomPkOpponent(
+        roomId: '10001',
+        roomCode: 'R10001',
+        roomName: '星河房',
+      );
+      final List<Map<String, Object?>> malformedData = <Map<String, Object?>>[
+        <String, Object?>{},
+        <String, Object?>{'pkInviteId': 'invite-1'},
+        <String, Object?>{
+          'pkInviteId': 'invite-1',
+          'status': 'PENDING',
+          'createdAt': '2026-08-21T11:59:00Z',
+        },
+        <String, Object?>{
+          'pkInviteId': 'invite-1',
+          'status': 'UNKNOWN',
+          'createdAt': '2026-08-21T11:59:00Z',
+          'expiresAt': '2026-08-21T12:04:00Z',
+        },
+      ];
+
+      for (final Map<String, Object?> data in malformedData) {
+        final _RunningServer server = await _RunningServer.start((
+          _CapturedRequest request,
+        ) {
+          expect(request.path, '/app-api/activityPk/inviteRoomPk');
+          return _Reply(data: data);
+        });
+        final BackendRoomPkRepository repository = BackendRoomPkRepository(
+          apiClient: server.client,
+          routes: const BackendRouteCatalog(),
+        );
+        try {
+          await expectLater(
+            repository.sendInvitation(
+              roomId: '9527',
+              inviterUserId: 10001,
+              opponent: opponent,
+              punishmentTheme: '分享今天最开心的事',
+              durationMinutes: 5,
+            ),
+            throwsA(
+              isA<ApiException>().having(
+                (ApiException error) => error.kind,
+                'kind',
+                ApiFailureKind.protocol,
+              ),
+            ),
+          );
+        } finally {
+          await server.close();
+        }
+      }
+    },
+  );
+
+  test(
+    'PK battle rejects HTTP 200 responses without server authority',
+    () async {
+      final List<Map<String, Object?>> malformedData = <Map<String, Object?>>[
+        <String, Object?>{
+          'pkId': 'pk-1',
+          'status': 'FIGHTING',
+          'updatedAt': '2026-08-21T12:02:00Z',
+        },
+        <String, Object?>{
+          'pkId': 'pk-1',
+          'status': 'FIGHTING',
+          'senderRoom': <String, Object?>{'id': '9527'},
+          'receiverRoom': <String, Object?>{'id': '10001'},
+        },
+        <String, Object?>{
+          'pkId': 'pk-1',
+          'status': 'UNKNOWN',
+          'updatedAt': '2026-08-21T12:02:00Z',
+          'senderRoom': <String, Object?>{'id': '9527'},
+          'receiverRoom': <String, Object?>{'id': '10001'},
+        },
+      ];
+
+      for (final Map<String, Object?> data in malformedData) {
+        final _RunningServer server = await _RunningServer.start((
+          _CapturedRequest request,
+        ) {
+          expect(request.path, '/app-api/activityPk/getRoomPkProgress');
+          return _Reply(data: data);
+        });
+        final BackendRoomPkRepository repository = BackendRoomPkRepository(
+          apiClient: server.client,
+          routes: const BackendRouteCatalog(),
+        );
+        try {
+          await expectLater(
+            repository.fetchActiveBattle(roomId: '9527'),
+            throwsA(
+              isA<ApiException>().having(
+                (ApiException error) => error.kind,
+                'kind',
+                ApiFailureKind.protocol,
+              ),
+            ),
+          );
+        } finally {
+          await server.close();
+        }
+      }
+    },
+  );
+
+  test('PK history rejects records without server ID or time', () async {
+    final _RunningServer server = await _RunningServer.start(
+      (_CapturedRequest request) => const _Reply(
+        data: <String, Object?>{
+          'records': <Object?>[
+            <String, Object?>{
+              'senderRoomId': '9527',
+              'receiverRoomName': '星河房',
+              'result': 1,
+            },
+          ],
+        },
+      ),
+    );
+    addTearDown(server.close);
+    final BackendRoomPkRepository repository = BackendRoomPkRepository(
+      apiClient: server.client,
+      routes: const BackendRouteCatalog(),
+    );
+
+    await expectLater(
+      repository.fetchHistory(roomId: '9527'),
+      throwsA(
+        isA<ApiException>().having(
+          (ApiException error) => error.kind,
+          'kind',
+          ApiFailureKind.protocol,
+        ),
+      ),
+    );
+  });
+
+  test(
+    'PK battle rejects missing current room, duplicate sides, and alias conflicts',
+    () async {
+      final List<Map<String, Object?>> malformedBattles =
+          <Map<String, Object?>>[
+            <String, Object?>{
+              ..._battleData(),
+              'senderRoom': <String, Object?>{'id': '1111'},
+              'receiverRoom': <String, Object?>{'id': '10001'},
+            },
+            <String, Object?>{
+              ..._battleData(),
+              'senderRoom': <String, Object?>{'id': '9527'},
+              'receiverRoom': <String, Object?>{'id': '9527'},
+            },
+            <String, Object?>{
+              ..._battleData(),
+              'senderRoom': <String, Object?>{'id': '9527', 'roomId': '1111'},
+              'receiverRoom': <String, Object?>{'id': '10001'},
+            },
+          ];
+
+      for (final Map<String, Object?> data in malformedBattles) {
+        final _RunningServer server = await _RunningServer.start(
+          (_CapturedRequest request) => _Reply(data: data),
+        );
+        final BackendRoomPkRepository repository = BackendRoomPkRepository(
+          apiClient: server.client,
+          routes: const BackendRouteCatalog(),
+        );
+        try {
+          await expectLater(
+            repository.fetchActiveBattle(roomId: '9527'),
+            throwsA(
+              isA<ApiException>().having(
+                (ApiException error) => error.kind,
+                'kind',
+                ApiFailureKind.protocol,
+              ),
+            ),
+          );
+        } finally {
+          await server.close();
+        }
+      }
+    },
+  );
 }
 
 Map<String, Object?> _battleData() => <String, Object?>{
   'pkId': 'pk-1',
+  'status': 'FIGHTING',
+  'updatedAt': '2026-08-21T12:02:00Z',
   'remainingTime': '120',
   'punishmentTheme': '分享今天最开心的事',
   'senderRoom': <String, Object?>{

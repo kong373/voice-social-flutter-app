@@ -7,9 +7,14 @@ class MockRoomRepository implements RoomRepository {
 
   RoomSnapshot? _snapshot;
   RoomRole _entryRole = RoomRole.listener;
+  List<RoomMessage> _publicMessages = const <RoomMessage>[];
 
   void seedEntryRoleForQa(RoomRole role) {
     _entryRole = role;
+  }
+
+  void seedPublicMessagesForQa(Iterable<RoomMessage> messages) {
+    _publicMessages = List<RoomMessage>.unmodifiable(messages);
   }
 
   @override
@@ -34,6 +39,7 @@ class MockRoomRepository implements RoomRepository {
           state: MicSeatState.occupied,
           userId: 20001,
           userName: '房主 · 鹿屿',
+          avatarUrl: 'assets/runtime/avatar-copper.png',
           isSpeaking: true,
           userRole: RoomRole.owner,
         ),
@@ -43,6 +49,7 @@ class MockRoomRepository implements RoomRepository {
           state: MicSeatState.occupiedMuted,
           userId: 20002,
           userName: '南风',
+          avatarUrl: 'assets/runtime/avatar-rose.png',
         ),
         const MicSeat(
           number: 3,
@@ -50,6 +57,7 @@ class MockRoomRepository implements RoomRepository {
           state: MicSeatState.occupied,
           userId: 20003,
           userName: '晚星',
+          avatarUrl: 'assets/runtime/avatar-copper.png',
         ),
         const MicSeat(
           number: 4,
@@ -62,6 +70,7 @@ class MockRoomRepository implements RoomRepository {
           state: MicSeatState.occupied,
           userId: 20005,
           userName: 'Twinkle',
+          avatarUrl: 'assets/runtime/avatar-copper.png',
         ),
         const MicSeat(
           number: 6,
@@ -69,6 +78,7 @@ class MockRoomRepository implements RoomRepository {
           state: MicSeatState.occupied,
           userId: 20006,
           userName: '蓝沙',
+          avatarUrl: 'assets/runtime/avatar-rose.png',
         ),
         const MicSeat(
           number: 7,
@@ -76,6 +86,7 @@ class MockRoomRepository implements RoomRepository {
           state: MicSeatState.occupiedMuted,
           userId: 20007,
           userName: '真理',
+          avatarUrl: 'assets/runtime/avatar-copper.png',
         ),
         const MicSeat(
           number: 8,
@@ -83,6 +94,7 @@ class MockRoomRepository implements RoomRepository {
           state: MicSeatState.occupied,
           userId: 20008,
           userName: '暖光',
+          avatarUrl: 'assets/runtime/avatar-rose.png',
         ),
       ],
       rtc: RtcCredentials(
@@ -180,25 +192,49 @@ class MockRoomRepository implements RoomRepository {
   }
 
   @override
-  Future<void> sendPublicMessage({
+  Future<RoomMessage> sendPublicMessage({
     required String roomId,
     required String content,
+    String? requestId,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 120));
+    final RoomMessage message = RoomMessage(
+      roomId: roomId,
+      messageId: 'mock-message-${_publicMessages.length + 1}',
+      senderId: _snapshot?.rtc.userId,
+      sender: '我',
+      content: content.trim(),
+      createdAt: DateTime.utc(2026, 1, 1),
+      deliveryMode: 'HTTP_PERSISTED_NO_REALTIME',
+      realtimeStatus: 'VENDOR_BLOCKED',
+    );
+    _publicMessages = <RoomMessage>[..._publicMessages, message];
+    return message;
   }
+
+  @override
+  Future<List<RoomMessage>> fetchPublicMessages(String roomId) async =>
+      List<RoomMessage>.unmodifiable(_publicMessages);
 
   @override
   Future<GiftReceipt> sendGift({
     required String roomId,
-    required int giftId,
+    required String giftId,
     required List<int> receiverUserIds,
     required int quantity,
     required int giftFrom,
+    String? requestId,
   }) async {
     final RoomSnapshot snapshot = _requireSnapshot();
-    final int total = giftId == 101
+    if (giftFrom != 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '仅支持礼物币余额送礼',
+      );
+    }
+    final int total = giftId == '101'
         ? 10 * quantity
-        : giftId == 102
+        : giftId == '102'
         ? 66 * quantity
         : 188 * quantity;
     final int balance = snapshot.giftBalance ?? 0;
@@ -211,7 +247,26 @@ class MockRoomRepository implements RoomRepository {
     await Future<void>.delayed(const Duration(milliseconds: 220));
     final int remaining = balance - total;
     _snapshot = snapshot.copyWith(giftBalance: remaining);
-    return GiftReceipt(success: true, remainingBalance: remaining);
+    return GiftReceipt(
+      success: true,
+      remainingBalance: remaining,
+      transferId:
+          'mock-transfer-${DateTime.utc(2026, 1, 1).millisecondsSinceEpoch}',
+      roomId: roomId,
+      senderUserId: snapshot.rtc.userId,
+      receiverUserId: receiverUserIds.single,
+      giftId: giftId,
+      giftName: giftId == '101'
+          ? '玫瑰'
+          : giftId == '102'
+          ? '鲜花'
+          : '礼物',
+      quantity: quantity,
+      source: 'WALLET',
+      deliveryMode: 'FIRST_PARTY_LEDGER_COMMITTED',
+      providerInvocation: false,
+      status: 'SUCCEEDED',
+    );
   }
 
   RoomSnapshot _requireSnapshot() {

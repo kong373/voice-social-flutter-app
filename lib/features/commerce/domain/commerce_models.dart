@@ -1,5 +1,7 @@
 enum LedgerDirection { income, expense }
 
+enum LedgerCurrency { giftCoin, cashCny }
+
 enum LedgerKind {
   giftIncome,
   giftExpense,
@@ -77,6 +79,7 @@ class LedgerEntry {
     required this.relatedUserName,
     required this.businessName,
     required this.rawSubtype,
+    this.currency = LedgerCurrency.giftCoin,
   });
 
   final String id;
@@ -88,6 +91,7 @@ class LedgerEntry {
   final String relatedUserName;
   final String businessName;
   final String rawSubtype;
+  final LedgerCurrency currency;
 }
 
 class PaymentOrder {
@@ -98,6 +102,7 @@ class PaymentOrder {
     required this.channelName,
     required this.createdAt,
     required this.status,
+    this.currency = LedgerCurrency.giftCoin,
   });
 
   final String orderNo;
@@ -106,6 +111,7 @@ class PaymentOrder {
   final String channelName;
   final DateTime createdAt;
   final PaymentOrderStatus status;
+  final LedgerCurrency currency;
 
   PaymentOrder copyWith({PaymentOrderStatus? status}) {
     return PaymentOrder(
@@ -115,6 +121,7 @@ class PaymentOrder {
       channelName: channelName,
       createdAt: createdAt,
       status: status ?? this.status,
+      currency: currency,
     );
   }
 }
@@ -164,6 +171,7 @@ class RefundApplication {
     required this.statusText,
     required this.rejectedReason,
     required this.createdAt,
+    this.currency = LedgerCurrency.cashCny,
   });
 
   final String id;
@@ -173,6 +181,7 @@ class RefundApplication {
   final String statusText;
   final String rejectedReason;
   final DateTime createdAt;
+  final LedgerCurrency currency;
 
   RefundApplication copyWith({
     RefundStatus? status,
@@ -187,23 +196,43 @@ class RefundApplication {
       statusText: statusText ?? this.statusText,
       rejectedReason: rejectedReason ?? this.rejectedReason,
       createdAt: createdAt,
+      currency: currency,
     );
   }
 }
 
 class WithdrawalQuote {
   const WithdrawalQuote({
+    required this.quotedAmount,
+    required this.feeAmount,
+    required this.receivedAmount,
     required this.feeRate,
     required this.feeRateText,
     required this.minimumAmount,
+    this.currency = LedgerCurrency.cashCny,
   });
 
+  final double quotedAmount;
+  final double feeAmount;
+  final double receivedAmount;
   final double feeRate;
   final String feeRateText;
   final double minimumAmount;
+  final LedgerCurrency currency;
 
-  double feeFor(double amount) => amount * feeRate;
-  double receivedFor(double amount) => amount - feeFor(amount);
+  double feeFor(double amount) {
+    if ((amount - quotedAmount).abs() > 0.000001) {
+      throw StateError('提现报价只适用于服务端已确认的金额');
+    }
+    return feeAmount;
+  }
+
+  double receivedFor(double amount) {
+    if ((amount - quotedAmount).abs() > 0.000001) {
+      throw StateError('提现报价只适用于服务端已确认的金额');
+    }
+    return receivedAmount;
+  }
 }
 
 class WithdrawalRecord {
@@ -217,8 +246,10 @@ class WithdrawalRecord {
     required this.statusText,
     required this.createdAt,
     required this.rejectedReason,
-    required this.bankName,
+    this.payoutAccountId = '',
+    required this.holderNameMasked,
     required this.maskedCard,
+    this.currency = LedgerCurrency.cashCny,
   });
 
   final String id;
@@ -230,8 +261,19 @@ class WithdrawalRecord {
   final String statusText;
   final DateTime createdAt;
   final String rejectedReason;
-  final String bankName;
+
+  /// Stable first-party payout-account identity returned with a withdrawal
+  /// record. An empty value is retained only for Mock-mode fixtures; the live
+  /// backend parser requires this authority before accepting a record.
+  final String payoutAccountId;
+
+  /// Masked payout-account holder name from the first-party backend.
+  ///
+  /// This is deliberately not a bank name and must never contain an
+  /// unmasked account holder or account number.
+  final String holderNameMasked;
   final String maskedCard;
+  final LedgerCurrency currency;
 }
 
 class CommercePage<T> {
@@ -265,11 +307,13 @@ class YouthModeCommercePolicy {
 abstract interface class CommerceRepository {
   bool get supportsPaymentChannelInvocation;
   bool get supportsRefundHistory;
+  bool get supportsWithdrawalApplication;
   RefundScope get refundScope;
 
   Future<WalletSummary> fetchWalletSummary();
 
   Future<CommercePage<LedgerEntry>> fetchLedger({
+    required LedgerCurrency currency,
     required LedgerDirection direction,
     required int page,
     required int pageSize,
@@ -286,13 +330,19 @@ abstract interface class CommerceRepository {
 
   Future<RefundApplication> submitRefund(RefundRequest request);
 
-  Future<RefundApplication> fetchRefundResult(String applicationId);
+  Future<RefundApplication> fetchRefundResult(
+    String applicationId, {
+    String? expectedOrderNo,
+  });
 
-  Future<RefundApplication> resubmitRefund(String applicationId);
+  Future<RefundApplication> resubmitRefund(
+    String applicationId, {
+    String? expectedOrderNo,
+  });
 
   Future<List<RefundApplication>> fetchRefundApplications(String account);
 
-  Future<WithdrawalQuote> fetchWithdrawalQuote();
+  Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount});
 
   Future<WithdrawalRecord> applyWithdrawal({required double amount});
 

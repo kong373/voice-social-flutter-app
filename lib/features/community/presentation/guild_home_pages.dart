@@ -175,7 +175,13 @@ class _GuildHomePageState extends State<GuildHomePage> {
                   ] else ...<Widget>[
                     const _SectionHeading(title: '我的公会', subtitle: '常驻社群与当前身份'),
                     const SizedBox(height: 10),
-                    if (_snapshot?.currentGuild == null)
+                    if (_snapshot?.currentGuildAuthority ==
+                        GuildCurrentAuthority.unavailable)
+                      const _InfoCard(
+                        icon: Icons.cloud_off_outlined,
+                        text: '当前公会信息暂不可用',
+                      )
+                    else if (_snapshot?.currentGuild == null)
                       const _InfoCard(
                         icon: Icons.groups_outlined,
                         text: '当前没有加入公会，可从推荐列表选择后提交申请。',
@@ -316,6 +322,7 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
   @override
   Widget build(BuildContext context) {
     final GuildSummary? guild = _guild;
+    final bool isClosed = guild?.status == GuildStatus.closed;
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('公会详情')),
       body: _loading
@@ -330,6 +337,13 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                 children: <Widget>[
                   _GuildHero(guild: guild),
+                  if (isClosed) ...<Widget>[
+                    const SizedBox(height: 12),
+                    const _InfoCard(
+                      icon: Icons.lock_outline_rounded,
+                      text: '公会已关闭',
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   _CommunitySection(
                     padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
@@ -367,69 +381,83 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
                                 ],
                               ),
                             ),
-                            if (guild.joined)
+                            if (guild.joined && !isClosed)
                               _SmallTag(
-                                label: guild.hasSignedToday ? '今日已签到' : '待签到',
-                                tint: guild.hasSignedToday
+                                label: switch (guild.hasSignedToday) {
+                                  true => '今日已签到',
+                                  false => '待签到',
+                                  null => '签到状态未知',
+                                },
+                                tint: guild.hasSignedToday == true
                                     ? AppColors.success
                                     : _CommunityPalette.gold,
                               ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: <Widget>[
-                            if (!guild.joined)
-                              FilledButton(
-                                onPressed: _busy || guild.applicationPending
-                                    ? null
-                                    : () => _run(
-                                        () => _repository.applyToJoinGuild(
-                                          guild.id,
-                                        ),
-                                        '入会申请已提交',
-                                      ),
-                                child: Text(
-                                  guild.applicationPending ? '申请审核中' : '申请加入',
-                                ),
-                              ),
-                            if (guild.joined)
-                              FilledButton.tonal(
-                                onPressed: _busy || guild.hasSignedToday
-                                    ? null
-                                    : () => _run(
-                                        () => _repository.signGuild(guild.id),
-                                        '公会签到成功',
-                                      ),
-                                child: Text(
-                                  guild.hasSignedToday ? '今日已签到' : '公会签到',
-                                ),
-                              ),
-                            if (guild.joined)
-                              OutlinedButton(
-                                onPressed: _busy
-                                    ? null
-                                    : () {
-                                        Navigator.of(context).push<void>(
-                                          MaterialPageRoute<void>(
-                                            builder: (BuildContext context) =>
-                                                GuildMembersPage(
-                                                  guildId: guild.id,
-                                                ),
+                        if (!isClosed) ...<Widget>[
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: <Widget>[
+                              if (!guild.joined)
+                                FilledButton(
+                                  onPressed:
+                                      _busy || guild.applicationPending != false
+                                      ? null
+                                      : () => _run(
+                                          () => _repository.applyToJoinGuild(
+                                            guild.id,
                                           ),
-                                        );
-                                      },
-                                child: const Text('成员与管理'),
-                              ),
-                            if (guild.joined && guild.role != GuildRole.owner)
-                              OutlinedButton(
-                                onPressed: _busy ? null : _quit,
-                                child: const Text('退出公会'),
-                              ),
-                          ],
-                        ),
+                                          '入会申请已提交',
+                                        ),
+                                  child: Text(
+                                    switch (guild.applicationPending) {
+                                      true => '申请审核中',
+                                      false => '申请加入',
+                                      null => '申请状态未知',
+                                    },
+                                  ),
+                                ),
+                              if (guild.joined)
+                                FilledButton.tonal(
+                                  onPressed:
+                                      _busy || guild.hasSignedToday != false
+                                      ? null
+                                      : () => _run(
+                                          () => _repository.signGuild(guild.id),
+                                          '公会签到成功',
+                                        ),
+                                  child: Text(switch (guild.hasSignedToday) {
+                                    true => '今日已签到',
+                                    false => '公会签到',
+                                    null => '签到状态未知',
+                                  }),
+                                ),
+                              if (guild.joined)
+                                OutlinedButton(
+                                  onPressed: _busy
+                                      ? null
+                                      : () {
+                                          Navigator.of(context).push<void>(
+                                            MaterialPageRoute<void>(
+                                              builder: (BuildContext context) =>
+                                                  GuildMembersPage(
+                                                    guildId: guild.id,
+                                                  ),
+                                            ),
+                                          );
+                                        },
+                                  child: const Text('成员与管理'),
+                                ),
+                              if (guild.joined && guild.role != GuildRole.owner)
+                                OutlinedButton(
+                                  onPressed: _busy ? null : _quit,
+                                  child: const Text('退出公会'),
+                                ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -446,12 +474,14 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 9),
                         child: _CommunitySection(
-                          onTap: () => Navigator.of(context).push<void>(
-                            MaterialPageRoute<void>(
-                              builder: (BuildContext context) =>
-                                  RoomDeepLinkPage(input: room.roomId),
-                            ),
-                          ),
+                          onTap: isClosed
+                              ? null
+                              : () => Navigator.of(context).push<void>(
+                                  MaterialPageRoute<void>(
+                                    builder: (BuildContext context) =>
+                                        RoomDeepLinkPage(input: room.roomId),
+                                  ),
+                                ),
                           padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
                           child: Row(
                             children: <Widget>[
@@ -495,7 +525,9 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
                                         ),
                                         const SizedBox(width: 5),
                                         Text(
-                                          '${room.onlineUsers} 人正在房间',
+                                          room.onlineUsers == null
+                                              ? '在线人数未知'
+                                              : '${room.onlineUsers} 人正在房间',
                                           style: const TextStyle(
                                             color: _CommunityPalette.muted,
                                             fontSize: 11,
@@ -506,8 +538,10 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
                                   ],
                                 ),
                               ),
-                              const Icon(
-                                Icons.chevron_right_rounded,
+                              Icon(
+                                isClosed
+                                    ? Icons.lock_outline_rounded
+                                    : Icons.chevron_right_rounded,
                                 color: _CommunityPalette.muted,
                               ),
                             ],

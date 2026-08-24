@@ -1,9 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/debug/qa_console/qa_fixtures.dart';
 import 'package:voice_social_app/features/commerce/catalog/data/mock_commerce_catalog_repository.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
+import 'package:voice_social_app/features/commerce/presentation/commerce_pages.dart';
 
 void main() {
   test(
@@ -115,4 +117,71 @@ void main() {
       expect(updated.equipped, isTrue);
     },
   );
+
+  test(
+    'popular gift tab filters by category without truncating the catalog',
+    () {
+      const List<GiftCatalogItem> gifts = <GiftCatalogItem>[
+        GiftCatalogItem(
+          id: 'normal-1',
+          name: '普通一',
+          price: 1,
+          category: GiftCatalogCategory.companionship,
+        ),
+        GiftCatalogItem(
+          id: 'popular-1',
+          name: '热门一',
+          price: 1,
+          category: GiftCatalogCategory.popular,
+        ),
+        GiftCatalogItem(
+          id: 'popular-2',
+          name: '热门二',
+          price: 2,
+          category: GiftCatalogCategory.popular,
+        ),
+        GiftCatalogItem(
+          id: 'popular-3',
+          name: '热门三',
+          price: 3,
+          category: GiftCatalogCategory.popular,
+        ),
+        GiftCatalogItem(
+          id: 'celebration-1',
+          name: '庆祝一',
+          price: 4,
+          category: GiftCatalogCategory.celebration,
+        ),
+      ];
+
+      final List<GiftCatalogItem> visible = filterGiftCatalogItems(
+        gifts: gifts,
+        category: GiftCatalogCategory.popular,
+      );
+      expect(visible.map((GiftCatalogItem item) => item.id), <String>[
+        'popular-1',
+        'popular-2',
+        'popular-3',
+      ]);
+    },
+  );
+
+  test('QA catalog keeps the reviewed eight-item popular grid explicit', () {
+    final List<GiftCatalogItem> popular = filterGiftCatalogItems(
+      gifts: qaReviewedPopularGiftCatalog,
+      category: GiftCatalogCategory.popular,
+    );
+
+    expect(popular, hasLength(8));
+    expect(popular.map((GiftCatalogItem item) => item.id), <String>[
+      'mock-gift-101',
+      'mock-gift-102',
+      'mock-gift-103',
+      'mock-gift-104',
+      'mock-gift-105',
+      'mock-gift-106',
+      'mock-gift-107',
+      'mock-gift-108',
+    ]);
+  });
 }

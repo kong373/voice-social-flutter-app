@@ -255,7 +255,10 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
     sourcePath: 'lib/features/discovery/presentation/global_search_page.dart',
     userEntry: '首页 → 搜索',
     requiredStates: _formStates,
-    builder: (_, __) => const GlobalSearchPage(),
+    builder: (_, __) => const GlobalSearchPage(
+      initialRecent: <String>['深夜陪伴', '880217', '南风'],
+      suggestions: <String>['深夜陪伴', '音乐点唱', '轻松闲聊', '新朋友'],
+    ),
   ),
   QaPageEntry(
     id: 'DS-003',
@@ -525,6 +528,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
       currentUserId: 10001,
       currentRole: _roomRole(scenario.role),
       seats: qaEightSeats,
+      roomTitle: '深夜温柔陪伴',
     ),
   ),
   QaPageEntry(
@@ -545,6 +549,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
       currentUserId: 10001,
       currentRole: _managementRole(scenario.role),
       seats: qaEightSeats,
+      roomTitle: '深夜温柔陪伴',
     ),
   ),
   QaPageEntry(
@@ -561,6 +566,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
           scenario.role == QaRole.owner ||
           scenario.role == QaRole.moderator ||
           scenario.role == QaRole.platformModerator,
+      roomTitle: '深夜温柔陪伴',
     ),
   ),
   QaPageEntry(
@@ -595,6 +601,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
           scenario.role == QaRole.speaker ||
           scenario.role == QaRole.owner ||
           scenario.role == QaRole.moderator,
+      roomTitle: '深夜温柔陪伴',
     ),
   ),
   QaPageEntry(
@@ -614,7 +621,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
     builder: (AppDependencies dependencies, _) => _QaControllerPage(
       dependencies: dependencies,
       childBuilder: (RoomController controller) =>
-          RoomRecoveryPage(controller: controller),
+          RoomRecoveryPage(controller: controller, roomTitle: '深夜温柔陪伴'),
     ),
   ),
   QaPageEntry(
@@ -633,7 +640,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
     builder: (AppDependencies dependencies, _) => _QaControllerPage(
       dependencies: dependencies,
       childBuilder: (RoomController controller) =>
-          RoomDiagnosticsPage(controller: controller),
+          RoomDiagnosticsPage(controller: controller, roomTitle: '深夜温柔陪伴'),
     ),
   ),
   QaPageEntry(
@@ -873,7 +880,8 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
         'lib/features/commerce/presentation/commerce_catalog_pages.dart',
     userEntry: 'RM-004 → 礼物 Bottom Sheet；钱包 → 礼物目录',
     requiredStates: _repositoryStates,
-    builder: (_, __) => const GiftCatalogPage(),
+    builder: (_, __) =>
+        const GiftCatalogPage(initialGifts: qaReviewedPopularGiftCatalog),
   ),
   QaPageEntry(
     id: 'CM-010',

@@ -143,6 +143,9 @@ class MockMessageRepository implements MessageRepository {
   bool get supportsPrivateSend => true;
 
   @override
+  bool get supportsPrivateRealtime => true;
+
+  @override
   bool get supportsSystemNotificationList => true;
 
   @override
@@ -154,7 +157,7 @@ class MockMessageRepository implements MessageRepository {
     return List<ConversationSummary>.unmodifiable(
       <ConversationSummary>[..._conversations]..sort(
         (ConversationSummary left, ConversationSummary right) =>
-            right.updatedAt.compareTo(left.updatedAt),
+            _compareUpdatedAt(right.updatedAt, left.updatedAt),
       ),
     );
   }
@@ -170,11 +173,12 @@ class MockMessageRepository implements MessageRepository {
         message: conversation.unavailableReason,
       );
     }
+    final ConversationSummary resolvedConversation =
+        _formalConversationForTarget(conversation.targetUserId) ?? conversation;
     final List<ChatMessage> values =
-        _messages[conversation.id] ?? const <ChatMessage>[];
-    final int conversationIndex = _conversations.indexWhere(
-      (ConversationSummary item) => item.id == conversation.id,
-    );
+        _messages[_conversationKey(resolvedConversation)] ??
+        const <ChatMessage>[];
+    final int conversationIndex = _conversationIndex(resolvedConversation);
     if (conversationIndex >= 0) {
       _conversations[conversationIndex] = _conversations[conversationIndex]
           .copyWith(unreadCount: 0);
@@ -186,6 +190,7 @@ class MockMessageRepository implements MessageRepository {
   Future<ChatMessage> sendPrivateMessage({
     required ConversationSummary conversation,
     required String content,
+    String? requestId,
   }) async {
     final String text = content.trim();
     if (text.isEmpty || text.length > 1000) {
@@ -201,9 +206,12 @@ class MockMessageRepository implements MessageRepository {
       );
     }
     await _delay();
+    final ConversationSummary effectiveConversation =
+        _formalConversationForTarget(conversation.targetUserId) ?? conversation;
+    final String? conversationId = effectiveConversation.id;
     final ChatMessage message = ChatMessage(
       id: 'message-${_messageSequence++}',
-      conversationId: conversation.id,
+      conversationId: conversationId,
       senderUserId: 10001,
       senderName: '我',
       content: text,
@@ -211,10 +219,13 @@ class MockMessageRepository implements MessageRepository {
       isMine: true,
       status: ChatMessageStatus.sent,
     );
-    _messages.putIfAbsent(conversation.id, () => <ChatMessage>[]).add(message);
-    final int index = _conversations.indexWhere(
-      (ConversationSummary item) => item.id == conversation.id,
-    );
+    _messages
+        .putIfAbsent(
+          _conversationKey(effectiveConversation),
+          () => <ChatMessage>[],
+        )
+        .add(message);
+    final int index = _conversationIndex(effectiveConversation);
     if (index >= 0) {
       _conversations[index] = _conversations[index].copyWith(
         lastMessage: text,
@@ -223,6 +234,44 @@ class MockMessageRepository implements MessageRepository {
       );
     }
     return message;
+  }
+
+  static String _conversationKey(ConversationSummary conversation) =>
+      conversation.id ?? 'draft-target-${conversation.targetUserId}';
+
+  ConversationSummary? _formalConversationForTarget(int targetUserId) {
+    return _conversations
+        .where(
+          (ConversationSummary item) =>
+              item.targetUserId == targetUserId && !item.isDraft,
+        )
+        .firstOrNull;
+  }
+
+  int _conversationIndex(ConversationSummary conversation) {
+    if (conversation.isDraft) {
+      return _conversations.indexWhere(
+        (ConversationSummary item) =>
+            item.isDraft && item.targetUserId == conversation.targetUserId,
+      );
+    }
+    final String conversationId = conversation.id!;
+    return _conversations.indexWhere(
+      (ConversationSummary item) => item.id == conversationId,
+    );
+  }
+
+  static int _compareUpdatedAt(DateTime? left, DateTime? right) {
+    if (left == null && right == null) {
+      return 0;
+    }
+    if (left == null) {
+      return -1;
+    }
+    if (right == null) {
+      return 1;
+    }
+    return left.compareTo(right);
   }
 
   @override

@@ -5,12 +5,18 @@ import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_audio_service.dart';
+import 'package:voice_social_app/features/room/presentation/room_authority_display.dart';
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
 class RoomDiagnosticsPage extends StatefulWidget {
-  const RoomDiagnosticsPage({required this.controller, super.key});
+  const RoomDiagnosticsPage({
+    required this.controller,
+    this.roomTitle,
+    super.key,
+  });
 
   final RoomController controller;
+  final String? roomTitle;
 
   @override
   State<RoomDiagnosticsPage> createState() => _RoomDiagnosticsPageState();
@@ -55,7 +61,9 @@ class _RoomDiagnosticsPageState extends State<RoomDiagnosticsPage> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: <Widget>[
                 RoomOxygenContextBar(
-                  title: widget.controller.snapshot?.title ?? '深夜温柔陪伴',
+                  title: roomAuthorityTitle(
+                    widget.controller.snapshot?.title ?? widget.roomTitle,
+                  ),
                   subtitle: '只读诊断 · 不改变麦位和权限',
                   seed: widget.controller.roomId,
                   status: snapshot.configured ? '已采样' : '未配置',

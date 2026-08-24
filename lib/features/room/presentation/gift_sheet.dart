@@ -4,6 +4,7 @@ import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
+import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 import 'package:voice_social_app/features/commerce/presentation/commerce_pages.dart';
 
 class GiftTarget {
@@ -55,6 +56,7 @@ class _GiftSheetState extends State<GiftSheet> {
   bool _loading = true;
   bool _submitting = false;
   String? _error;
+  String? _balanceMessage;
 
   @override
   void initState() {
@@ -383,7 +385,8 @@ class _GiftSheetState extends State<GiftSheet> {
                   const SizedBox(width: 5),
                   Flexible(
                     child: Text(
-                      _balance == null ? '余额以服务端为准' : '${_balance!}',
+                      _balanceMessage ??
+                          (_balance == null ? '余额以服务端为准' : '${_balance!}'),
                       maxLines: 1,
                       overflow: TextOverflow.fade,
                       softWrap: false,
@@ -403,7 +406,12 @@ class _GiftSheetState extends State<GiftSheet> {
                         );
                         if (!mounted) return;
                         final int? refreshed = await widget.onRechargeReturn();
-                        if (mounted) setState(() => _balance = refreshed);
+                        if (mounted) {
+                          setState(() {
+                            _balance = refreshed;
+                            if (refreshed != null) _balanceMessage = null;
+                          });
+                        }
                       },
                       borderRadius: BorderRadius.circular(999),
                       child: Padding(
@@ -427,7 +435,7 @@ class _GiftSheetState extends State<GiftSheet> {
             ),
             _QuantityPicker(
               value: _quantity,
-              enabled: !_submitting,
+              enabled: !_submitting && _balanceMessage == null,
               compact: compact,
               onChanged: (int value) => setState(() => _quantity = value),
             ),
@@ -436,12 +444,14 @@ class _GiftSheetState extends State<GiftSheet> {
               button: true,
               enabled:
                   !_submitting &&
+                  _balanceMessage == null &&
                   _selectedTarget != null &&
                   _selectedGift != null,
               label: '赠送礼物',
               child: Material(
                 color:
                     _submitting ||
+                        _balanceMessage != null ||
                         _selectedTarget == null ||
                         _selectedGift == null
                     ? RoomColors.primary.withValues(alpha: 0.42)
@@ -450,6 +460,7 @@ class _GiftSheetState extends State<GiftSheet> {
                 child: InkWell(
                   onTap:
                       _submitting ||
+                          _balanceMessage != null ||
                           _selectedTarget == null ||
                           _selectedGift == null
                       ? null
@@ -490,6 +501,7 @@ class _GiftSheetState extends State<GiftSheet> {
   );
 
   Future<void> _submit(int total) async {
+    if (_balanceMessage != null) return;
     final int? balance = _balance;
     if (balance != null && total > balance) {
       final bool? recharge = await showDialog<bool>(
@@ -532,12 +544,20 @@ class _GiftSheetState extends State<GiftSheet> {
       );
       if (!mounted) return;
       if (sent) {
-        final int? current = _balance;
-        if (current != null) {
-          setState(
-            () => _balance = (current - total).clamp(0, 1 << 31).toInt(),
-          );
+        // A successful transfer does not authorize the client to derive a new
+        // wallet balance from the old one. Read the first-party wallet after
+        // the transfer; if that read is unavailable, keep the amount hidden
+        // and leave an explicit pending-refresh state instead.
+        final int? authoritativeBalance = await _readAuthoritativeBalance();
+        if (!mounted) return;
+        if (authoritativeBalance == null) {
+          setState(() => _balanceMessage = '已送出，余额待刷新');
+          return;
         }
+        setState(() {
+          _balance = authoritativeBalance;
+          _balanceMessage = null;
+        });
         Navigator.of(context).pop(true);
       } else {
         ScaffoldMessenger.of(
@@ -546,6 +566,17 @@ class _GiftSheetState extends State<GiftSheet> {
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<int?> _readAuthoritativeBalance() async {
+    try {
+      final WalletSummary wallet = await AppDependencyScope.of(
+        context,
+      ).commerceRepository.fetchWalletSummary();
+      return wallet.giftCoinBalance;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -586,12 +617,21 @@ class _GiftSheetState extends State<GiftSheet> {
     );
   }
 
-  static String _assetForGift(GiftCatalogItem item) => switch (item.id % 4) {
-    0 => 'assets/runtime/gift-whale.png',
-    1 => 'assets/runtime/gift-blossom.png',
-    2 => 'assets/runtime/gift-ticket.png',
-    _ => 'assets/runtime/gift-celebration-banner.png',
-  };
+  static String _assetForGift(GiftCatalogItem item) {
+    // Gift IDs are server-owned UUIDs. Keep asset selection deterministic
+    // without pretending the UUID is a numeric catalog index.
+    final String id = item.id.toString();
+    int bucket = 17;
+    for (final int codeUnit in id.codeUnits) {
+      bucket = (bucket * 31 + codeUnit) & 0x7fffffff;
+    }
+    return switch (bucket % 4) {
+      0 => 'assets/runtime/gift-whale.png',
+      1 => 'assets/runtime/gift-blossom.png',
+      2 => 'assets/runtime/gift-ticket.png',
+      _ => 'assets/runtime/gift-celebration-banner.png',
+    };
+  }
 }
 
 class _GiftCampaignBanner extends StatelessWidget {

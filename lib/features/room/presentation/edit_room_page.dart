@@ -27,6 +27,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
 
   RoomLifecycleRepository? _repositoryInstance;
   RoomLifecycleRepository get _repository => _repositoryInstance!;
+  RoomLifecycleCapabilities get _capabilities => _repository.capabilities;
   RoomConfiguration? _room;
   RoomAccessMode _accessMode = RoomAccessMode.publicRoom;
   bool _showInHall = true;
@@ -130,7 +131,8 @@ class _EditRoomPageState extends State<EditRoomPage> {
 
   Widget _buildForm() {
     final RoomConfiguration room = _room!;
-    final bool enabled = !_saving && !_closing;
+    final bool enabled =
+        !_saving && !_closing && (room.isOpen || _capabilities.supportsReopen);
     return SafeArea(
       child: Column(
         children: <Widget>[
@@ -164,9 +166,14 @@ class _EditRoomPageState extends State<EditRoomPage> {
                   topicContentController: _topicContentController,
                   welcomeController: _welcomeController,
                   passwordController: _passwordController,
+                  allowExistingPassword: room.passwordConfigured,
                   accessMode: _accessMode,
                   showInHall: _showInHall,
                   autoLockMic: _autoLockMic,
+                  supportsApprovalAccessMode:
+                      _capabilities.supportsApprovalAccessMode,
+                  supportsTopicTitle: _capabilities.supportsTopicTitle,
+                  supportsAutoLockMic: _capabilities.supportsAutoLockMic,
                   enabled: enabled,
                   onAccessModeChanged: (RoomAccessMode value) {
                     setState(() => _accessMode = value);
@@ -179,6 +186,13 @@ class _EditRoomPageState extends State<EditRoomPage> {
                   },
                 ),
                 const SizedBox(height: 18),
+                if (!room.isOpen && !_capabilities.supportsReopen)
+                  const RoomOxygenNotice(
+                    icon: Icons.info_outline_rounded,
+                    message: '当前 development 后端尚未提供重新开放接口，已关闭房间仅可查看。',
+                  ),
+                if (!room.isOpen && !_capabilities.supportsReopen)
+                  const SizedBox(height: 18),
                 RoomOxygenSection(
                   title: '关闭房间',
                   subtitle: '关闭会结束当前会话，但不会删除账号或房间配置。',
@@ -237,25 +251,34 @@ class _EditRoomPageState extends State<EditRoomPage> {
   }
 
   Future<void> _save() async {
+    final RoomConfiguration current = _room!;
+    if (!current.isOpen && !_capabilities.supportsReopen) {
+      setState(() {
+        _error = '当前 development 后端尚未提供重新开放房间接口。';
+      });
+      return;
+    }
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
-    final RoomConfiguration current = _room!;
     setState(() {
       _saving = true;
       _error = null;
     });
     final RoomConfiguration configuration = current.copyWith(
       title: _titleController.text.trim(),
-      topicTitle: _topicTitleController.text.trim(),
+      topicTitle: _capabilities.supportsTopicTitle
+          ? _topicTitleController.text.trim()
+          : '',
       topicContent: _topicContentController.text.trim(),
       welcomeMessage: _welcomeController.text.trim(),
       accessMode: _accessMode,
       password: _accessMode == RoomAccessMode.password
           ? _passwordController.text
           : '',
+      passwordConfigured: current.passwordConfigured,
       showInHall: _showInHall,
-      autoLockMic: _autoLockMic,
+      autoLockMic: _capabilities.supportsAutoLockMic ? _autoLockMic : false,
       availability: current.availability,
     );
     try {

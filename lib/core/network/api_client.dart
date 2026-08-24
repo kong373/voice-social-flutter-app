@@ -50,9 +50,40 @@ class ApiClient {
   final Duration timeout;
   final int maximumResponseBytes;
   UnauthorizedRecovery? _unauthorizedRecovery;
+  Future<bool>? _unauthorizedRecoveryInFlight;
+  int _unauthorizedRecoveryGeneration = 0;
 
   void setUnauthorizedRecovery(UnauthorizedRecovery? recovery) {
     _unauthorizedRecovery = recovery;
+  }
+
+  Future<bool> _recoverUnauthorized() {
+    final Future<bool>? inFlight = _unauthorizedRecoveryInFlight;
+    if (inFlight != null) {
+      return inFlight;
+    }
+    final UnauthorizedRecovery? recovery = _unauthorizedRecovery;
+    if (recovery == null) {
+      return Future<bool>.value(false);
+    }
+    final Future<bool> recoveryFlight = Future<bool>.sync(recovery);
+    _unauthorizedRecoveryInFlight = recoveryFlight;
+    recoveryFlight.then<void>(
+      (bool recovered) {
+        if (recovered) {
+          _unauthorizedRecoveryGeneration += 1;
+        }
+        if (identical(_unauthorizedRecoveryInFlight, recoveryFlight)) {
+          _unauthorizedRecoveryInFlight = null;
+        }
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_unauthorizedRecoveryInFlight, recoveryFlight)) {
+          _unauthorizedRecoveryInFlight = null;
+        }
+      },
+    );
+    return recoveryFlight;
   }
 
   Future<ApiResponse> get(
@@ -136,6 +167,7 @@ class ApiClient {
     Map<String, String>? headers,
     Map<String, Object?>? body,
     bool allowUnauthorizedRecovery = true,
+    String? requestId,
   }) async {
     if (!_baseUri.hasScheme || _baseUri.host.isEmpty) {
       throw const ApiException(
@@ -149,21 +181,24 @@ class ApiClient {
         .replace(
           queryParameters: query == null || query.isEmpty ? null : query,
         );
+    final String stableRequestId = requestId ?? _newRequestId();
     try {
       final HttpClientRequest request = await _httpClient
           .openUrl(method, uri)
           .timeout(timeout);
+      var requestRecoveryGeneration = _unauthorizedRecoveryGeneration;
       request.headers
         ..set(HttpHeaders.acceptHeader, 'application/json')
         ..set(HttpHeaders.contentTypeHeader, 'application/json; charset=utf-8')
         ..set('Client-Type', clientType)
         ..set('Client-Inner-Version', clientInnerVersion)
-        ..set('X-Request-Id', _newRequestId());
+        ..set('X-Request-Id', stableRequestId);
 
       _applyHeaders(request, _requestHeadersProvider?.call());
       _applyHeaders(request, headers);
 
       if (authenticated) {
+        requestRecoveryGeneration = _unauthorizedRecoveryGeneration;
         final String? authorization = _authorizationProvider();
         if (authorization == null || authorization.isEmpty) {
           throw const ApiException(
@@ -221,10 +256,8 @@ class ApiClient {
       );
       if (authenticated &&
           allowUnauthorizedRecovery &&
-          kind == ApiFailureKind.unauthorized &&
-          _unauthorizedRecovery != null) {
-        final bool recovered = await _unauthorizedRecovery!.call();
-        if (recovered) {
+          kind == ApiFailureKind.unauthorized) {
+        if (_unauthorizedRecoveryGeneration > requestRecoveryGeneration) {
           return _request(
             method: method,
             path: path,
@@ -233,7 +266,23 @@ class ApiClient {
             headers: headers,
             body: body,
             allowUnauthorizedRecovery: false,
+            requestId: stableRequestId,
           );
+        }
+        if (_unauthorizedRecovery != null) {
+          final bool recovered = await _recoverUnauthorized();
+          if (recovered) {
+            return _request(
+              method: method,
+              path: path,
+              authenticated: authenticated,
+              query: query,
+              headers: headers,
+              body: body,
+              allowUnauthorizedRecovery: false,
+              requestId: stableRequestId,
+            );
+          }
         }
       }
 

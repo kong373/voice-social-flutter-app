@@ -5,7 +5,20 @@ import 'package:voice_social_app/features/discovery/presentation/search_results_
 import 'package:voice_social_app/features/room/presentation/room_deep_link_page.dart';
 
 class GlobalSearchPage extends StatefulWidget {
-  const GlobalSearchPage({super.key});
+  const GlobalSearchPage({
+    super.key,
+    this.initialRecent = const <String>[],
+    this.suggestions = const <String>[],
+  });
+
+  /// Mock/QA callers may provide an explicit fixture. Production and live
+  /// callers default to an empty list and only retain searches made this run.
+  final List<String> initialRecent;
+
+  /// Suggestions are server-owned content. Production and live callers keep
+  /// this empty until the backend supplies an approved list; QA may pass a
+  /// visual fixture explicitly.
+  final List<String> suggestions;
 
   @override
   State<GlobalSearchPage> createState() => _GlobalSearchPageState();
@@ -14,7 +27,7 @@ class GlobalSearchPage extends StatefulWidget {
 class _GlobalSearchPageState extends State<GlobalSearchPage> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-  final List<String> _recent = <String>['深夜陪伴', '880217', '南风'];
+  final List<String> _recent = <String>[];
 
   bool get _canDirectRoom =>
       RegExp(r'^\d{4,18}$').hasMatch(_controller.text.trim());
@@ -22,6 +35,7 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
   @override
   void initState() {
     super.initState();
+    _recent.addAll(widget.initialRecent);
     _controller.addListener(_handleTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -131,29 +145,26 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
                   ),
               ],
             ),
-          const SizedBox(height: 24),
-          Text('你可能想找', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: <Widget>[
-              for (final String item in const <String>[
-                '深夜陪伴',
-                '音乐点唱',
-                '轻松闲聊',
-                '新朋友',
-              ])
-                SocialPill(
-                  label: item,
-                  icon: Icons.auto_awesome_rounded,
-                  onTap: () {
-                    _controller.text = item;
-                    _search();
-                  },
-                ),
-            ],
-          ),
+          if (widget.suggestions.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 24),
+            Text('你可能想找', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                for (final String item in widget.suggestions)
+                  SocialPill(
+                    label: item,
+                    icon: Icons.auto_awesome_rounded,
+                    onTap: () {
+                      _controller.text = item;
+                      _search();
+                    },
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 24),
           Text('搜索范围', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),

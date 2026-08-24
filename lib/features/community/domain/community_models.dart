@@ -1,5 +1,7 @@
 enum GuildRole { visitor, member, manager, owner }
 
+enum GuildStatus { active, closed }
+
 extension GuildRoleLabel on GuildRole {
   String get label => switch (this) {
     GuildRole.visitor => '未加入',
@@ -12,15 +14,15 @@ extension GuildRoleLabel on GuildRole {
 }
 
 class GuildRoom {
-  const GuildRoom({
-    required this.roomId,
-    required this.name,
-    this.onlineUsers = 0,
-  });
+  const GuildRoom({required this.roomId, required this.name, this.onlineUsers});
 
   final String roomId;
   final String name;
-  final int onlineUsers;
+
+  /// Null means the first-party guild payload did not provide a live count.
+  /// It must not be rendered as zero: zero is a real count, not an absence
+  /// marker.
+  final int? onlineUsers;
 }
 
 class GuildSummary {
@@ -28,6 +30,7 @@ class GuildSummary {
     required this.id,
     required this.code,
     required this.name,
+    required this.status,
     this.avatarUrl,
     this.description = '',
     this.memberCount = 0,
@@ -35,15 +38,21 @@ class GuildSummary {
     this.ownerName = '',
     this.role = GuildRole.visitor,
     this.joined = false,
-    this.applicationPending = false,
-    this.hasNewApplications = false,
-    this.hasSignedToday = false,
+    this.applicationPending,
+    this.hasNewApplications,
+    this.hasSignedToday,
     this.rooms = const <GuildRoom>[],
   });
 
   final String id;
-  final String code;
+
+  /// The frozen first-party guild payload does not expose a guild code.
+  ///
+  /// A room code is a different identifier and must not be substituted here.
+  /// Mock repositories may still provide a deliberate mock guild code.
+  final String? code;
   final String name;
+  final GuildStatus status;
   final String? avatarUrl;
   final String description;
   final int memberCount;
@@ -51,12 +60,17 @@ class GuildSummary {
   final String ownerName;
   final GuildRole role;
   final bool joined;
-  final bool applicationPending;
-  final bool hasNewApplications;
-  final bool hasSignedToday;
+
+  /// These states are only present on the first-party guild homepage payload.
+  /// Recommendation/search rows must keep them unknown instead of pretending
+  /// that an omitted value means false.
+  final bool? applicationPending;
+  final bool? hasNewApplications;
+  final bool? hasSignedToday;
   final List<GuildRoom> rooms;
 
   GuildSummary copyWith({
+    GuildStatus? status,
     GuildRole? role,
     bool? joined,
     bool? applicationPending,
@@ -68,6 +82,7 @@ class GuildSummary {
       id: id,
       code: code,
       name: name,
+      status: status ?? this.status,
       avatarUrl: avatarUrl,
       description: description,
       memberCount: memberCount ?? this.memberCount,
@@ -83,13 +98,20 @@ class GuildSummary {
   }
 }
 
+enum GuildCurrentAuthority { unavailable, authoritative }
+
 class GuildHomeSnapshot {
   const GuildHomeSnapshot({
     this.currentGuild,
+    this.currentGuildAuthority = GuildCurrentAuthority.unavailable,
     this.recommended = const <GuildSummary>[],
-  });
+  }) : assert(
+         currentGuild == null ||
+             currentGuildAuthority == GuildCurrentAuthority.authoritative,
+       );
 
   final GuildSummary? currentGuild;
+  final GuildCurrentAuthority currentGuildAuthority;
   final List<GuildSummary> recommended;
 }
 
@@ -101,7 +123,7 @@ class GuildMember {
     this.avatarUrl,
     this.role = GuildRole.member,
     this.isMuted = false,
-    this.isSigned = false,
+    this.isSigned,
     this.roomId,
   });
 
@@ -111,7 +133,10 @@ class GuildMember {
   final String? avatarUrl;
   final GuildRole role;
   final bool isMuted;
-  final bool isSigned;
+
+  /// The current first-party member endpoint does not expose sign-in state.
+  /// Keep that distinction instead of presenting a fabricated "not signed".
+  final bool? isSigned;
   final String? roomId;
 
   GuildMember copyWith({GuildRole? role, bool? isMuted}) {
@@ -154,7 +179,7 @@ class InviteAttribution {
     this.inviteCode = '',
     this.channelName = '',
     this.boundAt = '',
-    this.invitedUsers = 0,
+    this.invitedUsers,
     this.message = '',
   });
 
@@ -162,7 +187,9 @@ class InviteAttribution {
   final String inviteCode;
   final String channelName;
   final String boundAt;
-  final int invitedUsers;
+
+  /// Null means the attribution endpoint did not expose an invitation count.
+  final int? invitedUsers;
   final String message;
 }
 
@@ -171,7 +198,7 @@ class CpRelation {
     required this.relationId,
     required this.userId,
     required this.nickname,
-    required this.days,
+    this.days,
     this.avatarUrl,
     this.boundAt = '',
   });
@@ -180,7 +207,7 @@ class CpRelation {
   final int userId;
   final String nickname;
   final String? avatarUrl;
-  final int days;
+  final int? days;
   final String boundAt;
 }
 

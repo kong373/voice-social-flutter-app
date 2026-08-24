@@ -5,6 +5,7 @@ import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
+import 'package:voice_social_app/features/account/compliance/presentation/account_compliance_error.dart';
 import 'package:voice_social_app/features/account/presentation/account_oxygen_components.dart';
 
 class AccountRestrictionPage extends StatefulWidget {
@@ -25,25 +26,39 @@ class AccountRestrictionPage extends StatefulWidget {
 
 class _AccountRestrictionPageState extends State<AccountRestrictionPage> {
   AccountRestriction? _restriction;
+  String? _error;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_restriction == null) {
+    if (_restriction == null && _error == null) {
       _load();
     }
   }
 
   Future<void> _load() async {
-    final AccountComplianceSnapshot value = await AppDependencyScope.of(context)
-        .accountComplianceRepository
-        .fetchSnapshot(
-          account: widget.account,
-          currentVersion: widget.currentVersion,
-          platformType: widget.platformType,
-        );
     if (mounted) {
-      setState(() => _restriction = value.restriction);
+      setState(() => _error = null);
+    }
+    try {
+      final AccountComplianceSnapshot value =
+          await AppDependencyScope.of(
+            context,
+          ).accountComplianceRepository.fetchSnapshot(
+            account: widget.account,
+            currentVersion: widget.currentVersion,
+            platformType: widget.platformType,
+          );
+      if (mounted) {
+        setState(() {
+          _restriction = value.restriction;
+          _error = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = _messageFor(error));
+      }
     }
   }
 
@@ -53,7 +68,9 @@ class _AccountRestrictionPageState extends State<AccountRestrictionPage> {
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('账号状态')),
       body: restriction == null
-          ? const AccountCompactProgress(label: '正在检查账号状态')
+          ? _error == null
+                ? const AccountCompactProgress(label: '正在检查账号状态')
+                : AccountComplianceError(message: _error!, onRetry: _load)
           : ListView(
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
               children: <Widget>[
@@ -129,6 +146,7 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
   final TextEditingController _explanationController = TextEditingController();
   String _reasonType = '1';
   AppealCase? _appeal;
+  String? _error;
   bool _busy = false;
 
   @override
@@ -146,11 +164,26 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
   }
 
   Future<void> _query() async {
-    final AppealCase value = await AppDependencyScope.of(context)
-        .accountComplianceRepository
-        .queryAppeal(account: widget.account, reasonType: _reasonType);
     if (mounted) {
-      setState(() => _appeal = value);
+      setState(() {
+        _appeal = null;
+        _error = null;
+      });
+    }
+    try {
+      final AppealCase value = await AppDependencyScope.of(context)
+          .accountComplianceRepository
+          .queryAppeal(account: widget.account, reasonType: _reasonType);
+      if (mounted) {
+        setState(() {
+          _appeal = value;
+          _error = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = _messageFor(error));
+      }
     }
   }
 
@@ -177,9 +210,11 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        showAccountComplianceRetrySnackBar(
           context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+          message: _messageFor(error),
+          onRetry: _submit,
+        );
       }
     } finally {
       if (mounted) {
@@ -194,7 +229,9 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('处罚申诉')),
       body: appeal == null
-          ? const Center(child: CircularProgressIndicator())
+          ? _error == null
+                ? const Center(child: CircularProgressIndicator())
+                : AccountComplianceError(message: _error!, onRetry: _query)
           : ListView(
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
@@ -297,6 +334,7 @@ class AccountCancellationPage extends StatefulWidget {
 class _AccountCancellationPageState extends State<AccountCancellationPage> {
   final TextEditingController _codeController = TextEditingController();
   CancellationEligibility? _eligibility;
+  String? _error;
   bool _busy = false;
 
   @override
@@ -314,26 +352,51 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
   }
 
   Future<void> _load() async {
-    final CancellationEligibility value = await AppDependencyScope.of(
-      context,
-    ).accountComplianceRepository.queryCancellationEligibility();
     if (mounted) {
-      setState(() => _eligibility = value);
+      setState(() => _error = null);
+    }
+    try {
+      final CancellationEligibility value = await AppDependencyScope.of(
+        context,
+      ).accountComplianceRepository.queryCancellationEligibility();
+      if (mounted) {
+        setState(() {
+          _eligibility = value;
+          _error = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = _messageFor(error));
+      }
     }
   }
 
   Future<void> _sendCode() async {
-    final bool sent = await AppDependencyScope.of(
-      context,
-    ).authController.sendSmsCode(widget.account);
-    if (mounted) {
-      ScaffoldMessenger.of(
+    try {
+      final bool sent = await AppDependencyScope.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(sent ? '验证码已发送' : '验证码发送失败')));
+      ).authController.sendSmsCode(widget.account);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(sent ? '验证码已发送' : '验证码发送失败')));
+      }
+    } catch (error) {
+      if (mounted) {
+        showAccountComplianceRetrySnackBar(
+          context,
+          message: _messageFor(error),
+          onRetry: _sendCode,
+        );
+      }
     }
   }
 
   Future<void> _submit() async {
+    if (_busy) {
+      return;
+    }
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
@@ -363,9 +426,41 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
       }
     } catch (error) {
       if (mounted) {
+        showAccountComplianceRetrySnackBar(
+          context,
+          message: _messageFor(error),
+          onRetry: _submit,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  Future<void> _cancelDeletion() async {
+    if (_busy) {
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final CancellationEligibility value = await AppDependencyScope.of(
+        context,
+      ).accountComplianceRepository.cancelDeletion();
+      if (mounted) {
+        setState(() => _eligibility = value);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+        ).showSnackBar(const SnackBar(content: Text('注销申请已撤销')));
+      }
+    } catch (error) {
+      if (mounted) {
+        showAccountComplianceRetrySnackBar(
+          context,
+          message: _messageFor(error),
+          onRetry: _cancelDeletion,
+        );
       }
     } finally {
       if (mounted) {
@@ -380,19 +475,31 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('账号注销')),
       body: eligibility == null
-          ? const Center(child: CircularProgressIndicator())
+          ? _error == null
+                ? const Center(child: CircularProgressIndicator())
+                : AccountComplianceError(message: _error!, onRetry: _load)
           : ListView(
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
               children: <Widget>[
                 AccountStatusHero(
                   icon: Icons.person_remove_alt_1_outlined,
-                  title: eligibility.allowed ? '可以申请注销' : '暂不能申请注销',
+                  title: eligibility.canCancel
+                      ? '注销冷静期中'
+                      : eligibility.allowed
+                      ? '可以申请注销'
+                      : '暂不能申请注销',
                   description: eligibility.message,
-                  tone: eligibility.allowed
+                  tone: eligibility.canCancel
+                      ? AppColors.warning
+                      : eligibility.allowed
                       ? AppColors.warning
                       : AccountOxygenColors.violet,
-                  badge: eligibility.allowed ? '高风险操作' : '条件未满足',
+                  badge: eligibility.canCancel
+                      ? '可撤销'
+                      : eligibility.allowed
+                      ? '高风险操作'
+                      : '条件未满足',
                 ),
                 const SizedBox(height: 14),
                 const AccountNoticeStrip(
@@ -400,30 +507,63 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
                   text: '注销会影响资料、关系与账号访问，请先确认钱包和其他未完成事项。',
                   tone: AppColors.warning,
                 ),
-                if (eligibility.allowed &&
-                    eligibility.requiresSmsCode) ...<Widget>[
+                if (eligibility.canCancel) ...<Widget>[
                   const SizedBox(height: 18),
-                  const AccountSectionLabel(text: '验证当前手机号'),
+                  const AccountSectionLabel(text: '注销冷静期'),
                   AccountSheet(
                     padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
                     child: Column(
                       children: <Widget>[
-                        TextField(
-                          controller: _codeController,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: <TextInputFormatter>[
-                            FilteringTextInputFormatter.digitsOnly,
-                            LengthLimitingTextInputFormatter(6),
-                          ],
-                          decoration: InputDecoration(
-                            labelText: '短信验证码',
-                            prefixIcon: const Icon(Icons.sms_outlined),
-                            suffixIcon: TextButton(
-                              onPressed: _sendCode,
-                              child: const Text('获取'),
-                            ),
-                          ),
+                        AccountNoticeStrip(
+                          icon: Icons.schedule_rounded,
+                          text: eligibility.coolingEndsAt.isEmpty
+                              ? '服务端确认账号正在注销冷静期内，可撤销本次注销申请。'
+                              : '服务端确认账号正在注销冷静期内，预计截止 ${eligibility.coolingEndsAt}。',
+                          tone: AppColors.warning,
                         ),
+                        const SizedBox(height: 14),
+                        AccountPrimaryAction(
+                          label: '撤销注销',
+                          icon: Icons.undo_rounded,
+                          busy: _busy,
+                          onPressed: _cancelDeletion,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (eligibility.allowed && !eligibility.canCancel) ...<Widget>[
+                  const SizedBox(height: 18),
+                  AccountSectionLabel(
+                    text: eligibility.requiresSmsCode ? '验证当前手机号' : '确认注销申请',
+                  ),
+                  AccountSheet(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+                    child: Column(
+                      children: <Widget>[
+                        if (eligibility.requiresSmsCode)
+                          TextField(
+                            controller: _codeController,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: <TextInputFormatter>[
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(6),
+                            ],
+                            decoration: InputDecoration(
+                              labelText: '短信验证码',
+                              prefixIcon: const Icon(Icons.sms_outlined),
+                              suffixIcon: TextButton(
+                                onPressed: _sendCode,
+                                child: const Text('获取'),
+                              ),
+                            ),
+                          )
+                        else
+                          const AccountNoticeStrip(
+                            icon: Icons.verified_user_outlined,
+                            text: '当前第一方流程采用服务端明确确认并进入 7 天冷静期，不伪造短信验证。',
+                            tone: AccountOxygenColors.violet,
+                          ),
                         const SizedBox(height: 14),
                         AccountPrimaryAction(
                           label: '申请注销',
@@ -456,24 +596,37 @@ class VersionUpgradePage extends StatefulWidget {
 
 class _VersionUpgradePageState extends State<VersionUpgradePage> {
   VersionUpdateInfo? _info;
+  String? _error;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_info == null) {
+    if (_info == null && _error == null) {
       _load();
     }
   }
 
   Future<void> _load() async {
-    final VersionUpdateInfo value = await AppDependencyScope.of(context)
-        .accountComplianceRepository
-        .checkVersion(
-          currentVersion: widget.currentVersion,
-          platformType: widget.platformType,
-        );
     if (mounted) {
-      setState(() => _info = value);
+      setState(() => _error = null);
+    }
+    try {
+      final VersionUpdateInfo value = await AppDependencyScope.of(context)
+          .accountComplianceRepository
+          .checkVersion(
+            currentVersion: widget.currentVersion,
+            platformType: widget.platformType,
+          );
+      if (mounted) {
+        setState(() {
+          _info = value;
+          _error = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = _messageFor(error));
+      }
     }
   }
 
@@ -483,7 +636,9 @@ class _VersionUpgradePageState extends State<VersionUpgradePage> {
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('版本升级')),
       body: info == null
-          ? const Center(child: CircularProgressIndicator())
+          ? _error == null
+                ? const Center(child: CircularProgressIndicator())
+                : AccountComplianceError(message: _error!, onRetry: _load)
           : ListView(
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
               children: <Widget>[
@@ -562,12 +717,13 @@ class YouthModePage extends StatefulWidget {
 class _YouthModePageState extends State<YouthModePage> {
   final TextEditingController _pinController = TextEditingController();
   AccountComplianceSnapshot? _snapshot;
+  String? _error;
   bool _busy = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_snapshot == null) {
+    if (_snapshot == null && _error == null) {
       _load();
     }
   }
@@ -579,15 +735,28 @@ class _YouthModePageState extends State<YouthModePage> {
   }
 
   Future<void> _load() async {
-    final AccountComplianceSnapshot value = await AppDependencyScope.of(context)
-        .accountComplianceRepository
-        .fetchSnapshot(
-          account: widget.account,
-          currentVersion: widget.currentVersion,
-          platformType: widget.platformType,
-        );
     if (mounted) {
-      setState(() => _snapshot = value);
+      setState(() => _error = null);
+    }
+    try {
+      final AccountComplianceSnapshot value =
+          await AppDependencyScope.of(
+            context,
+          ).accountComplianceRepository.fetchSnapshot(
+            account: widget.account,
+            currentVersion: widget.currentVersion,
+            platformType: widget.platformType,
+          );
+      if (mounted) {
+        setState(() {
+          _snapshot = value;
+          _error = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = _messageFor(error));
+      }
     }
   }
 
@@ -612,9 +781,11 @@ class _YouthModePageState extends State<YouthModePage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        showAccountComplianceRetrySnackBar(
           context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+          message: _messageFor(error),
+          onRetry: _toggle,
+        );
       }
     } finally {
       if (mounted) {
@@ -629,7 +800,9 @@ class _YouthModePageState extends State<YouthModePage> {
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('青少年模式')),
       body: snapshot == null
-          ? const Center(child: CircularProgressIndicator())
+          ? _error == null
+                ? const Center(child: CircularProgressIndicator())
+                : AccountComplianceError(message: _error!, onRetry: _load)
           : ListView(
               keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),

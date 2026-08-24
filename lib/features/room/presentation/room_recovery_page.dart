@@ -3,12 +3,14 @@ import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
+import 'package:voice_social_app/features/room/presentation/room_authority_display.dart';
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
 class RoomRecoveryPage extends StatefulWidget {
-  const RoomRecoveryPage({required this.controller, super.key});
+  const RoomRecoveryPage({required this.controller, this.roomTitle, super.key});
 
   final RoomController controller;
+  final String? roomTitle;
 
   @override
   State<RoomRecoveryPage> createState() => _RoomRecoveryPageState();
@@ -43,7 +45,9 @@ class _RoomRecoveryPageState extends State<RoomRecoveryPage> {
     }
     setState(() {
       _resultMessage = widget.controller.status == RoomSessionStatus.joined
-          ? '房间状态已刷新。断线期间公屏消息可能未显示。'
+          ? widget.controller.isSnapshotOnly
+                ? '房间快照已刷新。实时能力尚未接入。'
+                : '房间状态已刷新。断线期间公屏消息可能未显示。'
           : widget.controller.errorMessage ?? '房间恢复失败，请重试';
     });
   }
@@ -53,35 +57,53 @@ class _RoomRecoveryPageState extends State<RoomRecoveryPage> {
     final RoomController controller = widget.controller;
     final bool reconnecting =
         controller.status == RoomSessionStatus.reconnecting;
+    final bool snapshotOnly = controller.isSnapshotOnly;
+    final bool realtimeDegraded = controller.realtimeDegraded;
     return RoomPageScaffold(
       appBar: roomOxygenAppBar(title: '弱网重连与会话恢复'),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: <Widget>[
           RoomOxygenContextBar(
-            title: controller.snapshot?.title ?? '深夜温柔陪伴',
-            subtitle: '房间会话保留 · 不自动上麦',
+            title: roomAuthorityTitle(
+              controller.snapshot?.title ?? widget.roomTitle,
+            ),
+            subtitle: snapshotOnly ? '快照模式 · 实时能力未接入' : '房间会话保留 · 不自动上麦',
             seed: controller.roomId,
-            status: reconnecting ? '恢复中' : '会话保留',
-            statusColor: reconnecting ? RoomColors.warning : RoomColors.success,
+            status: snapshotOnly
+                ? '快照模式'
+                : reconnecting
+                ? '恢复中'
+                : '会话保留',
+            statusColor: snapshotOnly || reconnecting
+                ? RoomColors.warning
+                : RoomColors.success,
           ),
           const SizedBox(height: 16),
           RoomOxygenSection(
             title: '恢复顺序',
-            subtitle: '房间上下文保持在当前页面，逐项恢复连接。',
+            subtitle: snapshotOnly
+                ? '房间上下文保持在当前页面，仅刷新服务端快照。'
+                : '房间上下文保持在当前页面，逐项恢复连接。',
             icon: Icons.sync_rounded,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: Column(
               children: <Widget>[
                 _RecoveryStatusCard(
-                  icon: controller.realtimeDegraded
+                  icon: snapshotOnly || realtimeDegraded
                       ? Icons.wifi_off_rounded
                       : Icons.wifi_rounded,
-                  title: controller.realtimeDegraded ? '实时通道状态异常' : '实时通道已连接',
-                  description: controller.realtimeDegraded
+                  title: snapshotOnly
+                      ? '快照模式：实时能力未接入'
+                      : realtimeDegraded
+                      ? '实时通道状态异常'
+                      : '实时通道已连接',
+                  description: snapshotOnly
+                      ? '当前仅展示服务端快照，不提供实时消息、麦位或成员状态更新。'
+                      : realtimeDegraded
                       ? '麦位和操作区保持显示；状态可能延迟。'
                       : '麦位、公屏和成员状态正在正常更新。',
-                  warning: controller.realtimeDegraded,
+                  warning: snapshotOnly || realtimeDegraded,
                 ),
                 const Divider(height: 1, indent: 40),
                 _RecoveryStatusCard(
@@ -92,10 +114,13 @@ class _RoomRecoveryPageState extends State<RoomRecoveryPage> {
                       : '当前为听众状态，恢复时不会自动上麦。',
                 ),
                 const Divider(height: 1, indent: 40),
-                const _RecoveryStatusCard(
+                _RecoveryStatusCard(
                   icon: Icons.chat_bubble_outline_rounded,
-                  title: '实时公屏',
-                  description: '只展示进房后的实时消息，不伪造断线期间历史正文。',
+                  title: snapshotOnly ? '快照公屏' : '实时公屏',
+                  description: snapshotOnly
+                      ? '当前只展示已确认的快照或历史，不提供实时消息。'
+                      : '只展示进房后的实时消息，不伪造断线期间历史正文。',
+                  warning: snapshotOnly,
                 ),
               ],
             ),
@@ -121,7 +146,13 @@ class _RoomRecoveryPageState extends State<RoomRecoveryPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.refresh_rounded),
-              label: Text(reconnecting ? '正在恢复' : '重新连接房间'),
+              label: Text(
+                snapshotOnly
+                    ? '刷新房间快照'
+                    : reconnecting
+                    ? '正在恢复'
+                    : '重新连接房间',
+              ),
             ),
           ),
           const SizedBox(height: 12),

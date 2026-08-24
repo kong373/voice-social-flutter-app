@@ -4,6 +4,7 @@ import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
+import 'package:voice_social_app/features/account/compliance/presentation/account_compliance_error.dart';
 import 'package:voice_social_app/features/account/presentation/account_oxygen_components.dart';
 
 class SystemPermissionCenterPage extends StatefulWidget {
@@ -72,9 +73,11 @@ class _SystemPermissionCenterPageState
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        showAccountComplianceRetrySnackBar(
           context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+          message: _messageFor(error),
+          onRetry: () => _request(setting),
+        );
       }
     }
   }
@@ -87,7 +90,7 @@ class _SystemPermissionCenterPageState
       body: snapshot == null
           ? _error == null
                 ? const Center(child: CircularProgressIndicator())
-                : _PageError(message: _error!, onRetry: _load)
+                : AccountComplianceError(message: _error!, onRetry: _load)
           : ListView(
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
               children: <Widget>[
@@ -99,9 +102,15 @@ class _SystemPermissionCenterPageState
                   badge: '隐私保护',
                 ),
                 const SizedBox(height: 16),
-                const AccountNoticeStrip(
+                AccountNoticeStrip(
                   icon: Icons.info_outline_rounded,
-                  text: '权限只在具体功能需要时请求。Live 模式必须由原生系统适配器返回真实状态。',
+                  text:
+                      snapshot.permissions.every(
+                        (PermissionSetting item) =>
+                            item.managedByPlatform == null,
+                      )
+                      ? '当前版本原生权限适配器尚未接入，状态显示为“适配器未接入”。不会把未知状态伪装成尚未请求，也不会发起授权请求。'
+                      : '权限只在具体功能需要时请求。Live 模式必须由原生系统适配器返回真实状态。',
                   tone: AccountOxygenColors.violet,
                 ),
                 const SizedBox(height: 18),
@@ -152,7 +161,11 @@ class _SystemPermissionCenterPageState
                           ),
                           onTap:
                               snapshot.permissions[index].state ==
-                                  PermissionState.granted
+                                      PermissionState.granted ||
+                                  snapshot
+                                          .permissions[index]
+                                          .managedByPlatform !=
+                                      true
                               ? null
                               : () => _request(snapshot.permissions[index]),
                         ),
@@ -195,12 +208,13 @@ class _RealNamePageState extends State<RealNamePage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _idController = TextEditingController();
   VerificationState? _state;
+  String? _error;
   bool _busy = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_state == null) {
+    if (_state == null && _error == null) {
       _load();
     }
   }
@@ -213,16 +227,28 @@ class _RealNamePageState extends State<RealNamePage> {
   }
 
   Future<void> _load() async {
-    final AccountComplianceSnapshot snapshot =
-        await AppDependencyScope.of(
-          context,
-        ).accountComplianceRepository.fetchSnapshot(
-          account: widget.account,
-          currentVersion: widget.currentVersion,
-          platformType: widget.platformType,
-        );
     if (mounted) {
-      setState(() => _state = snapshot.verificationState);
+      setState(() => _error = null);
+    }
+    try {
+      final AccountComplianceSnapshot snapshot =
+          await AppDependencyScope.of(
+            context,
+          ).accountComplianceRepository.fetchSnapshot(
+            account: widget.account,
+            currentVersion: widget.currentVersion,
+            platformType: widget.platformType,
+          );
+      if (mounted) {
+        setState(() {
+          _state = snapshot.verificationState;
+          _error = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = _messageFor(error));
+      }
     }
   }
 
@@ -243,9 +269,11 @@ class _RealNamePageState extends State<RealNamePage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        showAccountComplianceRetrySnackBar(
           context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+          message: _messageFor(error),
+          onRetry: _submit,
+        );
       }
     } finally {
       if (mounted) {
@@ -262,7 +290,9 @@ class _RealNamePageState extends State<RealNamePage> {
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('实名认证')),
       body: _state == null
-          ? const Center(child: CircularProgressIndicator())
+          ? _error == null
+                ? const Center(child: CircularProgressIndicator())
+                : AccountComplianceError(message: _error!, onRetry: _load)
           : ListView(
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
               children: <Widget>[
@@ -354,25 +384,39 @@ class DeviceSessionsPage extends StatefulWidget {
 
 class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
   AccountComplianceSnapshot? _snapshot;
+  String? _error;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_snapshot == null) {
+    if (_snapshot == null && _error == null) {
       _load();
     }
   }
 
   Future<void> _load() async {
-    final AccountComplianceSnapshot value = await AppDependencyScope.of(context)
-        .accountComplianceRepository
-        .fetchSnapshot(
-          account: widget.account,
-          currentVersion: widget.currentVersion,
-          platformType: widget.platformType,
-        );
     if (mounted) {
-      setState(() => _snapshot = value);
+      setState(() => _error = null);
+    }
+    try {
+      final AccountComplianceSnapshot value =
+          await AppDependencyScope.of(
+            context,
+          ).accountComplianceRepository.fetchSnapshot(
+            account: widget.account,
+            currentVersion: widget.currentVersion,
+            platformType: widget.platformType,
+          );
+      if (mounted) {
+        setState(() {
+          _snapshot = value;
+          _error = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = _messageFor(error));
+      }
     }
   }
 
@@ -386,9 +430,11 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
+        showAccountComplianceRetrySnackBar(
           context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+          message: _messageFor(error),
+          onRetry: () => _revoke(session),
+        );
       }
     }
   }
@@ -402,7 +448,9 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('登录设备与会话')),
       body: snapshot == null
-          ? const Center(child: CircularProgressIndicator())
+          ? _error == null
+                ? const Center(child: CircularProgressIndicator())
+                : AccountComplianceError(message: _error!, onRetry: _load)
           : ListView(
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
               children: <Widget>[
@@ -465,20 +513,6 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
   }
 }
 
-class _PageError extends StatelessWidget {
-  const _PageError({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: FilledButton.tonal(onPressed: onRetry, child: Text(message)),
-    );
-  }
-}
-
 IconData _permissionIcon(PermissionKind kind) => switch (kind) {
   PermissionKind.microphone => Icons.mic_none_rounded,
   PermissionKind.notifications => Icons.notifications_none_rounded,
@@ -490,6 +524,7 @@ String _permissionStateLabel(PermissionState state) => switch (state) {
   PermissionState.granted => '已允许',
   PermissionState.denied => '已拒绝',
   PermissionState.restricted => '受系统限制',
+  PermissionState.unavailable => '适配器未接入',
 };
 Color _permissionTone(PermissionKind kind) => switch (kind) {
   PermissionKind.microphone => AccountOxygenColors.violet,
@@ -502,6 +537,7 @@ Color _permissionStateTone(PermissionState state) => switch (state) {
   PermissionState.granted => AppColors.success,
   PermissionState.denied => AppColors.warning,
   PermissionState.restricted => AppColors.error,
+  PermissionState.unavailable => AppColors.warning,
 };
 
 String _verificationLabel(VerificationState state) => switch (state) {

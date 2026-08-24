@@ -29,7 +29,10 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   late SearchEntityType _type;
   DiscoverySearchResult? _result;
   bool _loading = true;
+  bool _loadingMore = false;
   String? _error;
+  String? _loadMoreError;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -48,16 +51,20 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   }
 
   Future<void> _load() async {
+    final int generation = ++_loadGeneration;
+    final SearchEntityType requestedType = _type;
     setState(() {
       _loading = true;
+      _loadingMore = false;
       _error = null;
+      _loadMoreError = null;
     });
     try {
       final DiscoverySearchResult result = await _repository.search(
         keyword: widget.keyword,
-        type: _type,
+        type: requestedType,
       );
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -65,12 +72,55 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
         _loading = false;
         _error = _messageFor(error);
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final DiscoverySearchResult? current = _result;
+    if (_loading || _loadingMore || current == null || !current.hasMore) {
+      return;
+    }
+    final int generation = _loadGeneration;
+    final SearchEntityType requestedType = _type;
+    final int requestedPage = current.page + 1;
+    setState(() {
+      _loadingMore = true;
+      _loadMoreError = null;
+    });
+    try {
+      final DiscoverySearchResult next = await _repository.search(
+        keyword: widget.keyword,
+        type: requestedType,
+        page: requestedPage,
+        pageSize: current.pageSize,
+      );
+      if (!mounted || generation != _loadGeneration) {
+        return;
+      }
+      setState(() {
+        _result = DiscoverySearchResult(
+          rooms: _appendRooms(current.rooms, next.rooms),
+          users: _appendUsers(current.users, next.users),
+          page: next.page,
+          pageSize: next.pageSize,
+          hasMore: next.hasMore,
+        );
+        _loadingMore = false;
+      });
+    } catch (error) {
+      if (!mounted || generation != _loadGeneration) {
+        return;
+      }
+      setState(() {
+        _loadingMore = false;
+        _loadMoreError = _messageFor(error);
       });
     }
   }
@@ -163,9 +213,64 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
                 onEnterRoom: user.isInRoom ? () => _openUserRoom(user) : null,
               ),
           ],
+          if (result.hasMore || _loadingMore || _loadMoreError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Column(
+                children: <Widget>[
+                  if (_loadMoreError != null) ...<Widget>[
+                    Text(
+                      _loadMoreError!,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (_loadingMore)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 10),
+                      child: SizedBox.square(
+                        dimension: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  else
+                    FilledButton.tonal(
+                      onPressed: _loadMore,
+                      child: Text(_loadMoreError == null ? '加载更多' : '重试加载'),
+                    ),
+                ],
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  static List<DiscoveryRoom> _appendRooms(
+    List<DiscoveryRoom> current,
+    List<DiscoveryRoom> next,
+  ) {
+    final Set<String> ids = current
+        .map((DiscoveryRoom room) => room.id)
+        .toSet();
+    return <DiscoveryRoom>[
+      ...current,
+      ...next.where((DiscoveryRoom room) => ids.add(room.id)),
+    ];
+  }
+
+  static List<DiscoveryUser> _appendUsers(
+    List<DiscoveryUser> current,
+    List<DiscoveryUser> next,
+  ) {
+    final Set<int> ids = current
+        .map((DiscoveryUser user) => user.userId)
+        .toSet();
+    return <DiscoveryUser>[
+      ...current,
+      ...next.where((DiscoveryUser user) => ids.add(user.userId)),
+    ];
   }
 
   void _openRoom(DiscoveryRoom room) {
@@ -278,7 +383,7 @@ class _RoomResultTile extends StatelessWidget {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            '${room.onlineCount} 人在线',
+                            discoveryOnlineCountLabel(room.onlineCount),
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 9,

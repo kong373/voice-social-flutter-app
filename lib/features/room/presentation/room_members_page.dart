@@ -8,6 +8,7 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_authority_display.dart';
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
@@ -20,6 +21,7 @@ class RoomMembersPage extends StatefulWidget {
     required this.currentUserId,
     required this.currentRole,
     required this.seats,
+    this.roomTitle,
     super.key,
   });
 
@@ -27,6 +29,7 @@ class RoomMembersPage extends StatefulWidget {
   final int currentUserId;
   final RoomRole currentRole;
   final List<MicSeat> seats;
+  final String? roomTitle;
 
   @override
   State<RoomMembersPage> createState() => _RoomMembersPageState();
@@ -171,7 +174,7 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: RoomOxygenContextBar(
-              title: '深夜温柔陪伴',
+              title: roomAuthorityTitle(widget.roomTitle),
               subtitle: '房间号 ${widget.roomId} · ${_members.length} 人在线',
               seed: widget.roomId,
               status: _canManage ? '可管理' : '在线',
@@ -314,12 +317,10 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
                       Navigator.of(sheetContext).pop();
                       _openMemberPage(
                         PrivateChatPage(
-                          conversation: ConversationSummary(
-                            id: 'conversation-${member.userId}',
+                          conversation: ConversationSummary.draft(
                             kind: ConversationKind.privateChat,
                             title: member.name,
                             lastMessage: '',
-                            updatedAt: DateTime.now(),
                             unreadCount: 0,
                             targetUserId: member.userId,
                           ),
@@ -364,6 +365,7 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
                                       currentUserId: widget.currentUserId,
                                       currentRole: widget.currentRole,
                                       seats: widget.seats,
+                                      roomTitle: widget.roomTitle,
                                       initialMemberId: member.userId,
                                     ),
                               ),

@@ -19,6 +19,9 @@ class _RefundListPageState extends State<RefundListPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_repository.refundScope == RefundScope.order) {
+      return;
+    }
     if (_applications == null && _error == null) {
       _load();
     }
@@ -43,6 +46,30 @@ class _RefundListPageState extends State<RefundListPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_repository.refundScope == RefundScope.order) {
+      return _CommerceScaffold(
+        appBar: AppBar(title: const Text('订单退款')),
+        body: ListView(
+          padding: const EdgeInsets.all(20),
+          children: <Widget>[
+            const _CommerceInfoBanner(
+              text: '当前退款接口严格绑定充值订单，不能从账户退款表单发起。请先选择一笔充值订单。',
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () =>
+                  Navigator.of(context).pushReplacement<void, void>(
+                    MaterialPageRoute<void>(
+                      builder: (BuildContext context) => const OrdersPage(),
+                    ),
+                  ),
+              icon: const Icon(Icons.receipt_long_outlined),
+              label: const Text('选择充值订单'),
+            ),
+          ],
+        ),
+      );
+    }
     return _CommerceScaffold(
       appBar: AppBar(
         title: const Text('退款申请列表'),
@@ -98,8 +125,10 @@ class _RefundListPageState extends State<RefundListPage> {
                       child: _CommercePanel(
                         onTap: () => Navigator.of(context).push<void>(
                           MaterialPageRoute<void>(
-                            builder: (BuildContext context) =>
-                                RefundResultPage(application: application),
+                            builder: (BuildContext context) => RefundResultPage(
+                              application: application,
+                              repository: _repository,
+                            ),
                           ),
                         ),
                         padding: const EdgeInsets.all(13),
@@ -159,9 +188,19 @@ class _RefundListPageState extends State<RefundListPage> {
 }
 
 class RefundApplicationPage extends StatefulWidget {
-  const RefundApplicationPage({required this.account, super.key});
+  const RefundApplicationPage({
+    this.account,
+    this.order,
+    this.repository,
+    super.key,
+  }) : assert((account == null) != (order == null));
 
-  final String account;
+  final String? account;
+  final PaymentOrder? order;
+  @visibleForTesting
+  final CommerceRepository? repository;
+
+  bool get isOrderScope => order != null;
 
   @override
   State<RefundApplicationPage> createState() => _RefundApplicationPageState();
@@ -183,6 +222,15 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
   RefundEligibility? _eligibility;
   bool _submitting = false;
   String? _error;
+
+  CommerceRepository get _repository =>
+      widget.repository ?? AppDependencyScope.of(context).commerceRepository;
+
+  String get _subject => widget.order?.orderNo ?? widget.account ?? '';
+
+  double get _requestedAmount =>
+      widget.order?.amount ??
+      (double.tryParse(_amountController.text.trim()) ?? 0);
 
   @override
   void didChangeDependencies() {
@@ -207,9 +255,8 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
 
   Future<void> _check() async {
     try {
-      final RefundEligibility eligibility = await AppDependencyScope.of(
-        context,
-      ).commerceRepository.checkRefundEligibility(widget.account);
+      final RefundEligibility eligibility = await _repository
+          .checkRefundEligibility(_subject);
       if (mounted) {
         setState(() {
           _eligibility = eligibility;
@@ -229,51 +276,65 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
         _eligibility?.allowed != true) {
       return;
     }
-    final double amount = double.parse(_amountController.text.trim());
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: const Text('确认提交退款申请？'),
-        content: Text(
-          '申请账号：${widget.account}\n申请金额：¥${amount.toStringAsFixed(2)}\n提交后将进入人工审核。',
+    final double amount = _requestedAmount;
+    // Lock before opening the confirmation dialog. This makes the write
+    // boundary single-flight even when a tap/semantics event is delivered
+    // twice before the dialog finishes.
+    setState(() => _submitting = true);
+    final bool? confirmed;
+    try {
+      confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) => AlertDialog(
+          title: const Text('确认提交退款申请？'),
+          content: Text(
+            '${widget.isOrderScope ? '充值订单' : '申请账号'}：$_subject\n申请金额：¥${amount.toStringAsFixed(2)}\n提交后将进入人工审核。',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('返回检查'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('确认提交'),
+            ),
+          ],
         ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('返回检查'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('确认提交'),
-          ),
-        ],
-      ),
-    );
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+      rethrow;
+    }
     if (confirmed != true || !mounted) {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
       return;
     }
-    setState(() => _submitting = true);
     try {
-      final RefundApplication application = await AppDependencyScope.of(context)
-          .commerceRepository
-          .submitRefund(
-            RefundRequest(
-              account: widget.account,
-              realName: _nameController.text.trim(),
-              age: int.parse(_ageController.text.trim()),
-              amount: amount,
-              reason: _reasonController.text.trim(),
-              receivingAccount: _receivingAccountController.text.trim(),
-              receivingName: _receivingNameController.text.trim(),
-              guardianName: _guardianNameController.text.trim(),
-              guardianPhone: _guardianPhoneController.text.trim(),
-            ),
-          );
+      final RefundApplication application = await _repository.submitRefund(
+        RefundRequest(
+          account: _subject,
+          realName: widget.isOrderScope ? '' : _nameController.text.trim(),
+          age: widget.isOrderScope ? 0 : int.parse(_ageController.text.trim()),
+          amount: amount,
+          reason: _reasonController.text.trim(),
+          receivingAccount: _receivingAccountController.text.trim(),
+          receivingName: _receivingNameController.text.trim(),
+          guardianName: _guardianNameController.text.trim(),
+          guardianPhone: _guardianPhoneController.text.trim(),
+        ),
+      );
       if (mounted) {
         Navigator.of(context).pushReplacement<void, void>(
           MaterialPageRoute<void>(
-            builder: (BuildContext context) =>
-                RefundResultPage(application: application),
+            builder: (BuildContext context) => RefundResultPage(
+              application: application,
+              repository: _repository,
+            ),
           ),
         );
       }
@@ -290,6 +351,70 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
     }
   }
 
+  Widget _buildOrderForm() {
+    final PaymentOrder order = widget.order!;
+    return Form(
+      key: _formKey,
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: <Widget>[
+          _CommerceInfoBanner(text: _eligibility!.message),
+          const SizedBox(height: 14),
+          _CommercePanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const _CommerceSectionTitle(title: '充值订单退款'),
+                const SizedBox(height: 12),
+                _CommerceDetail(label: '订单号', value: order.orderNo),
+                _CommerceDetail(
+                  label: '退款金额',
+                  value: '¥${order.amount.toStringAsFixed(2)}',
+                ),
+                _CommerceDetail(label: '支付渠道', value: order.channelName),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          _CommercePanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const _CommerceSectionTitle(title: '退款原因'),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _reasonController,
+                  minLines: 3,
+                  maxLines: 6,
+                  maxLength: 300,
+                  decoration: const InputDecoration(labelText: '退款原因'),
+                  validator: (String? value) =>
+                      value == null || value.trim().length < 5
+                      ? '退款原因至少填写 5 个字'
+                      : null,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          const _CommerceInfoBanner(
+            text: '订单退款由服务端校验订单状态并处理。客户端不会提交姓名、年龄、收款账户或监护人资料。',
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: _eligibility!.allowed && !_submitting ? _submit : null,
+            child: _submitting
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('提交订单退款申请'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return _CommerceScaffold(
@@ -298,6 +423,8 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
           ? _error == null
                 ? const Center(child: CircularProgressIndicator())
                 : _CommerceErrorState(message: _error!, onRetry: _check)
+          : widget.isOrderScope
+          ? _buildOrderForm()
           : Form(
               key: _formKey,
               child: ListView(
@@ -312,7 +439,7 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
                         const _CommerceSectionTitle(title: '退款资料'),
                         const SizedBox(height: 12),
                         TextFormField(
-                          initialValue: widget.account,
+                          initialValue: _subject,
                           readOnly: true,
                           decoration: const InputDecoration(labelText: '申请账号'),
                         ),
@@ -457,9 +584,15 @@ class _RefundApplicationPageState extends State<RefundApplicationPage> {
 }
 
 class RefundResultPage extends StatefulWidget {
-  const RefundResultPage({required this.application, super.key});
+  const RefundResultPage({
+    required this.application,
+    this.repository,
+    super.key,
+  });
 
   final RefundApplication application;
+  @visibleForTesting
+  final CommerceRepository? repository;
 
   @override
   State<RefundResultPage> createState() => _RefundResultPageState();
@@ -469,6 +602,9 @@ class _RefundResultPageState extends State<RefundResultPage> {
   late RefundApplication _application;
   bool _refreshing = false;
 
+  CommerceRepository get _repository =>
+      widget.repository ?? AppDependencyScope.of(context).commerceRepository;
+
   @override
   void initState() {
     super.initState();
@@ -476,11 +612,15 @@ class _RefundResultPageState extends State<RefundResultPage> {
   }
 
   Future<void> _refresh() async {
+    if (_refreshing) {
+      return;
+    }
     setState(() => _refreshing = true);
     try {
-      final RefundApplication updated = await AppDependencyScope.of(
-        context,
-      ).commerceRepository.fetchRefundResult(_application.id);
+      final RefundApplication updated = await _repository.fetchRefundResult(
+        _application.id,
+        expectedOrderNo: _application.account,
+      );
       if (mounted) {
         setState(() => _application = updated);
       }
@@ -498,11 +638,15 @@ class _RefundResultPageState extends State<RefundResultPage> {
   }
 
   Future<void> _resubmit() async {
+    if (_refreshing) {
+      return;
+    }
     setState(() => _refreshing = true);
     try {
-      final RefundApplication updated = await AppDependencyScope.of(
-        context,
-      ).commerceRepository.resubmitRefund(_application.id);
+      final RefundApplication updated = await _repository.resubmitRefund(
+        _application.id,
+        expectedOrderNo: _application.account,
+      );
       if (mounted) {
         setState(() => _application = updated);
       }
@@ -521,6 +665,7 @@ class _RefundResultPageState extends State<RefundResultPage> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isOrderScope = _repository.refundScope == RefundScope.order;
     return _CommerceScaffold(
       appBar: AppBar(
         title: const Text('退款申请结果'),
@@ -548,7 +693,10 @@ class _RefundResultPageState extends State<RefundResultPage> {
             child: Column(
               children: <Widget>[
                 _CommerceDetail(label: '申请编号', value: _application.id),
-                _CommerceDetail(label: '申请账号', value: _application.account),
+                _CommerceDetail(
+                  label: isOrderScope ? '充值订单号' : '申请账号',
+                  value: _application.account,
+                ),
                 _CommerceDetail(
                   label: '申请金额',
                   value: '¥${_application.amount.toStringAsFixed(2)}',

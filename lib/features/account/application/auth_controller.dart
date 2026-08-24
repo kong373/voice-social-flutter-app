@@ -37,6 +37,8 @@ class AuthController extends ChangeNotifier {
   String? _pendingSmsCode;
   SmsChallenge? _lastSmsChallenge;
   Future<bool>? _refreshInFlight;
+  Future<void>? _signOutInFlight;
+  int _sessionGeneration = 0;
 
   AuthFlowStage get stage => _stage;
   bool get busy => _busy;
@@ -67,12 +69,14 @@ class AuthController extends ChangeNotifier {
         _stage = AuthFlowStage.signedIn;
       }
     } on FormatException {
+      _sessionGeneration += 1;
       await _sessionManager.clear();
       _errorMessage = '本地登录信息损坏，请重新登录';
       _stage = AuthFlowStage.signedOut;
     } catch (error) {
       // A secure-storage failure makes the local session state unverifiable.
       // It is safer to clear it than to continue with unknown credentials.
+      _sessionGeneration += 1;
       await _sessionManager.clear();
       _errorMessage = _messageFor(error, fallback: '登录状态无法恢复，请重新登录');
       _stage = AuthFlowStage.signedOut;
@@ -95,11 +99,16 @@ class AuthController extends ChangeNotifier {
     _lastSmsChallenge = null;
     notifyListeners();
     try {
+      final int operationGeneration = _sessionGeneration;
       final ClientDevice device = await _deviceIdentityProvider.load();
-      _lastSmsChallenge = await _repository.sendSmsCode(
+      final SmsChallenge challenge = await _repository.sendSmsCode(
         phone: phone.trim(),
         device: device,
       );
+      if (operationGeneration != _sessionGeneration) {
+        return false;
+      }
+      _lastSmsChallenge = challenge;
       return true;
     } catch (error) {
       _setError(error);
@@ -119,6 +128,7 @@ class AuthController extends ChangeNotifier {
     }
     _busy = true;
     _errorMessage = null;
+    final int operationGeneration = _sessionGeneration;
     notifyListeners();
     try {
       final ClientDevice device = await _deviceIdentityProvider.load();
@@ -127,6 +137,9 @@ class AuthController extends ChangeNotifier {
         smsCode: smsCode.trim(),
         device: device,
       );
+      if (operationGeneration != _sessionGeneration) {
+        return false;
+      }
       if (outcome.type == AuthOutcomeType.registrationRequired) {
         _pendingPhone = phone.trim();
         _pendingSmsCode = smsCode.trim();
@@ -140,7 +153,12 @@ class AuthController extends ChangeNotifier {
           message: '登录成功但未返回会话',
         );
       }
-      await _sessionManager.save(authenticatedSession);
+      if (!await _saveSessionIfCurrent(
+        authenticatedSession,
+        operationGeneration,
+      )) {
+        return false;
+      }
       _clearPendingChallenge();
       _stage = AuthFlowStage.signedIn;
       return true;
@@ -161,6 +179,7 @@ class AuthController extends ChangeNotifier {
     }
     _busy = true;
     _errorMessage = null;
+    final int operationGeneration = _sessionGeneration;
     notifyListeners();
     try {
       final ClientDevice device = await _deviceIdentityProvider.load();
@@ -171,7 +190,12 @@ class AuthController extends ChangeNotifier {
             device: device,
             profile: profile,
           );
-      await _sessionManager.save(authenticatedSession);
+      if (!await _saveSessionIfCurrent(
+        authenticatedSession,
+        operationGeneration,
+      )) {
+        return false;
+      }
       _pendingPhone = null;
       _pendingSmsCode = null;
       _clearPendingChallenge();
@@ -205,8 +229,10 @@ class AuthController extends ChangeNotifier {
   }
 
   Future<bool> _performRefresh() async {
+    final int operationGeneration = _sessionGeneration;
     final AuthSession? current = _sessionManager.session;
     if (current == null || !current.canRefresh) {
+      _sessionGeneration += 1;
       await _sessionManager.clear();
       _stage = AuthFlowStage.signedOut;
       _errorMessage = '刷新会话已失效，请重新登录';
@@ -219,22 +245,42 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
     try {
       final AuthSession refreshed = await _repository.refreshSession(current);
-      await _sessionManager.save(refreshed);
+      if (!_isCurrentSession(current, operationGeneration) ||
+          !await _saveSessionIfCurrent(
+            refreshed,
+            operationGeneration,
+            expectedCurrent: current,
+          )) {
+        return false;
+      }
       _stage = AuthFlowStage.signedIn;
       return true;
     } catch (error) {
-      if (_isCredentialFailure(error)) {
+      if (!_isCurrentSession(current, operationGeneration)) {
+        return false;
+      }
+      final bool refreshOutcomeAmbiguous = _isRefreshOutcomeAmbiguous(error);
+      if (_isCredentialFailure(error) || refreshOutcomeAmbiguous) {
+        // The backend rotates refresh tokens exactly once and deliberately
+        // revokes the whole family when an already-used token is replayed. A
+        // timeout, lost response, malformed success response, or server error
+        // may therefore mean the old local token has already been consumed.
+        // Never offer a retry with that uncertain credential: erase it and
+        // require a fresh login instead of risking family-wide revocation.
+        _sessionGeneration += 1;
         await _sessionManager.clear();
         _stage = AuthFlowStage.signedOut;
       } else {
-        // Preserve a still-valid refresh token through transient network/server
-        // failures. The user can retry instead of being forced to request a new
-        // SMS code merely because the backend was temporarily unreachable.
+        // Configuration/validation and other definitive pre-commit failures
+        // leave the one-time refresh credential safe to use after the local
+        // issue has been corrected.
         _stage = current.isAccessExpired
             ? AuthFlowStage.recoveryRequired
             : AuthFlowStage.signedIn;
       }
-      _setError(error);
+      _errorMessage = refreshOutcomeAmbiguous
+          ? '刷新结果无法确认，为保护账号已清除本地会话，请重新登录'
+          : _messageFor(error, fallback: '操作失败，请稍后重试');
       return false;
     } finally {
       _busy = false;
@@ -245,6 +291,7 @@ class AuthController extends ChangeNotifier {
   Future<bool> retrySessionRecovery() => refreshSession();
 
   Future<void> discardSessionAndSignOut() async {
+    _sessionGeneration += 1;
     await _sessionManager.clear();
     _stage = AuthFlowStage.signedOut;
     _errorMessage = null;
@@ -252,6 +299,7 @@ class AuthController extends ChangeNotifier {
   }
 
   void cancelRegistration() {
+    _sessionGeneration += 1;
     _pendingPhone = null;
     _pendingSmsCode = null;
     _clearPendingChallenge();
@@ -260,10 +308,32 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> signOut() async {
-    if (_busy) {
-      return;
+  Future<void> signOut() {
+    final Future<void>? active = _signOutInFlight;
+    if (active != null) {
+      return active;
     }
+    final Future<void> future = _performSignOut();
+    _signOutInFlight = future;
+    unawaited(
+      future.then<void>(
+        (_) {
+          if (identical(_signOutInFlight, future)) {
+            _signOutInFlight = null;
+          }
+        },
+        onError: (Object _, StackTrace __) {
+          if (identical(_signOutInFlight, future)) {
+            _signOutInFlight = null;
+          }
+        },
+      ),
+    );
+    return future;
+  }
+
+  Future<void> _performSignOut() async {
+    _sessionGeneration += 1;
     _busy = true;
     _errorMessage = null;
     notifyListeners();
@@ -302,9 +372,52 @@ class AuthController extends ChangeNotifier {
     _errorMessage = _messageFor(error, fallback: '操作失败，请稍后重试');
   }
 
+  bool _isCurrentSession(AuthSession session, int generation) =>
+      generation == _sessionGeneration &&
+      identical(_sessionManager.session, session);
+
+  Future<bool> _saveSessionIfCurrent(
+    AuthSession session,
+    int generation, {
+    AuthSession? expectedCurrent,
+  }) async {
+    if (generation != _sessionGeneration ||
+        (expectedCurrent != null &&
+            !identical(_sessionManager.session, expectedCurrent))) {
+      return false;
+    }
+    await _sessionManager.save(session);
+    if (generation != _sessionGeneration) {
+      if (identical(_sessionManager.session, session)) {
+        await _sessionManager.clear();
+      }
+      return false;
+    }
+    _sessionGeneration += 1;
+    return true;
+  }
+
   static bool _isCredentialFailure(Object error) =>
       error is ApiException &&
       (error.isAuthenticationFailure || error.kind == ApiFailureKind.forbidden);
+
+  static bool _isRefreshOutcomeAmbiguous(Object error) {
+    if (error is! ApiException) {
+      return true;
+    }
+    return switch (error.kind) {
+      ApiFailureKind.network ||
+      ApiFailureKind.timeout ||
+      ApiFailureKind.protocol ||
+      ApiFailureKind.server => true,
+      ApiFailureKind.configuration ||
+      ApiFailureKind.unauthorized ||
+      ApiFailureKind.forbidden ||
+      ApiFailureKind.validation ||
+      ApiFailureKind.conflict ||
+      ApiFailureKind.business => false,
+    };
+  }
 
   static String _messageFor(Object error, {required String fallback}) =>
       error is ApiException ? error.message : fallback;

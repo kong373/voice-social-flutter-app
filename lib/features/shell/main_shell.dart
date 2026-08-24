@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
+import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
+import 'package:voice_social_app/features/room/presentation/room_page.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
-import 'package:voice_social_app/features/shell/live_read_only_pages.dart';
 import 'package:voice_social_app/features/shell/video_runtime_pages.dart';
 
 class MainShell extends StatefulWidget {
@@ -32,17 +33,6 @@ class _MainShellState extends State<MainShell> {
   DiscoveryRoom? _pendingRoom;
 
   List<Widget> get _pages {
-    if (widget.dependencies.environment.isLive) {
-      return <Widget>[
-        LiveProductHomePage(dependencies: widget.dependencies),
-        const LiveDiscoveryHoldingPage(),
-        const LiveMessageHoldingPage(),
-        LiveReadOnlyAccountPage(
-          dependencies: widget.dependencies,
-          onSignOut: widget.onSignOut,
-        ),
-      ];
-    }
     return <Widget>[
       VideoRuntimeHomePage(
         dependencies: widget.dependencies,
@@ -65,11 +55,48 @@ class _MainShellState extends State<MainShell> {
   }
 
   Future<void> _openRoom(DiscoveryRoom room) async {
+    if (widget.dependencies.environment.isLive) {
+      if (_roomRouteOpen) {
+        _pendingRoom = room;
+        return;
+      }
+      await _openLiveRoom(room);
+      return;
+    }
     _pendingRoom = room;
     if (_roomRouteOpen || !mounted) {
       return;
     }
     await _drainRoomRequests();
+  }
+
+  Future<void> _openLiveRoom(DiscoveryRoom room) async {
+    if (!mounted) {
+      return;
+    }
+    _roomRouteOpen = true;
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => AppDependencyScope(
+            dependencies: widget.dependencies,
+            child: RoomPage(
+              roomId: room.id,
+              title: room.title,
+              entrySource: RoomEntrySource.home,
+            ),
+          ),
+        ),
+      );
+    } finally {
+      _roomRouteOpen = false;
+    }
+    if (!mounted || _pendingRoom == null) {
+      return;
+    }
+    final DiscoveryRoom nextRoom = _pendingRoom!;
+    _pendingRoom = null;
+    await _openLiveRoom(nextRoom);
   }
 
   Future<void> _restoreRoom() async {

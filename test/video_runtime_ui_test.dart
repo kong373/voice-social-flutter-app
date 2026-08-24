@@ -321,6 +321,8 @@ void main() {
       await tester.tap(sendGift.first);
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.byKey(const Key('gift-celebration-overlay')), findsOneWidget);
+      expect(find.text('晚星 送出星河心意'), findsNothing);
+      expect(find.text('玫瑰 已送达'), findsOneWidget);
       for (int attempt = 0; attempt < 10; attempt += 1) {
         if (find.byType(GiftSheet).evaluate().isEmpty) {
           break;

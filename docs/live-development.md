@@ -14,10 +14,13 @@ export API_BASE_URL=http://10.0.2.2:18080/
 export OAUTH_CLIENT_ID=voice-social-mobile-public
 ```
 
-`OAUTH_CLIENT_ID` is a public-client identifier. The Flutter application must
-never receive an OAuth client secret, JWT secret, vendor key, payment key,
-storage credential, or private key. The launcher rejects secret-like
-environment variables, rejects secret-like arguments, and does not accept
+`OAUTH_CLIENT_ID` is an opaque public-client identifier, not a proof that an
+arbitrary value is non-sensitive. The launcher rejects values that are
+obviously secret-like (including `secret`, `token`, or key names), whitespace,
+newlines, and `=`; callers remain responsible for supplying a public client ID.
+The Flutter application must never receive an OAuth client secret, JWT secret,
+vendor key, payment key, storage credential, or private key. The launcher
+rejects secret-like environment variables and arguments and does not accept
 `--dart-define-from-file`.
 
 ## Address mapping
@@ -34,14 +37,32 @@ Mac. The launcher requires the matching URL host before it invokes Flutter.
 `build-apk` accepts only `android-emulator`; a host-target APK would bake
 `127.0.0.1` into an Android process and therefore point back to the device,
 not the Mac.
+For `run`, `--device` is checked against the target: `android-emulator` accepts
+selectors such as `emulator-5554` or `127.0.0.1:5555`, while `host` rejects
+Android emulator selectors and should use a host selector such as `macos`.
+Both `run` targets require an explicit `--device`; Flutter's automatic device
+selection is not allowed. `build-apk` rejects `--device` because it produces an
+APK rather than selecting a running device. The API value is an origin with an
+optional single root `/` only; paths such as `/token` are rejected. Its port,
+when present, must be in the range 1 through 65535.
 Local HTTP is allowed only because the wrapper fixes `APP_ENV=development` and
 passes `ALLOW_INSECURE_HTTP=true`; this entry point cannot be used for staging
 or production.
 
 ## Commands
 
-Use Flutter 3.44.7 (for example, run these through the repository's FVM
-checkout or set `FLUTTER_BIN` to that executable):
+The launcher verifies Flutter 3.44.7 and Dart 3.12.2 before every real run or
+build. Point `FLUTTER_BIN` at the repository's FVM 3.44.7 executable; another
+SDK fails before Flutter can build or install anything:
+
+The launcher also forces `ENABLE_QA_CONSOLE=false` and
+`ENABLE_VIDEO_RUNTIME_DEMO=false`; a live build cannot route into either
+Mock-backed shell even when the host environment requests one.
+
+Only the wrapper's options are accepted. A small allowlist of non-defining
+diagnostic flags (`--verbose`, `--quiet`, `--wrap`, `--no-wrap`, `--color`,
+`--no-color`, `--suppress-analytics`, and `--disable-analytics`) may follow
+`--`. Unknown Flutter options are rejected before Flutter starts.
 
 ```bash
 # Check configuration without starting Flutter or contacting the backend.
@@ -77,28 +98,45 @@ The launcher always injects:
 ```text
 BACKEND_MODE=live
 APP_ENV=development
+ENABLE_QA_CONSOLE=false
+ENABLE_VIDEO_RUNTIME_DEMO=false
 API_BASE_URL=<validated target URL>
 OAUTH_CLIENT_ID=<public client id>
 ALLOW_INSECURE_HTTP=true
 ```
 
 It also sets the non-sensitive client metadata defaults used by
-`AppEnvironment`. Flutter receives no OAuth or vendor secret. `--dry-run`
+`AppEnvironment`; these values are fixed by the wrapper and cannot be supplied
+through ordinary host environment variables. Flutter receives no OAuth or
+vendor secret. `--dry-run`
 prints only the target, API origin, and whether the public client is configured;
 it never prints the client identifier itself.
 
 The launcher uses an explicit two-level environment policy. Environment
 variable and CLI argument checks are case-insensitive: names that clearly
 denote application or vendor credentials (`CLIENT_SECRET`, `SECRET`,
-`PASSWORD`, `PRIVATE_KEY`, or `ACCESS_KEY`) fail before Flutter. Ordinary
-`*_TOKEN` names, including lowercase or mixed-case spellings, are removed from
-the Flutter child environment instead of being forwarded; their values are
-never printed. `--dart-define` and `--dart-define-from-file` are rejected
-regardless of argument casing. This keeps unrelated host tokens out without
-blocking a local tool that happens to export one, while ensuring a secret
-cannot bypass the launcher through casing. The child still receives no OAuth
-or vendor credential. Run the launcher from a shell without hard credential
-variables when local tooling sets them.
+`PASSWORD`, `PRIVATE_KEY`, `ACCESS_KEY`, `*_API_KEY`, `*_CREDENTIALS`, `*_PAT`,
+`*_AUTH`, or `*_BEARER`) fail before Flutter. Normal system variables such as
+`PATH`, `HOME`, `SHELL`, and `SSH_AUTH_SOCK` are not treated as credentials.
+Ordinary `*_TOKEN` names, including lowercase or mixed-case spellings, are
+removed from the Flutter child environment instead of being forwarded; their
+values are never printed. `-D`, `--dart-define`, `--DartDefines`,
+`--dart-define-from-file`, Gradle `-P` define forms, and
+`--android-project-arg` are rejected regardless of argument casing. This keeps
+unrelated host tokens out while ensuring a secret or user-supplied Dart define
+cannot bypass the wrapper through casing or an alternate Flutter/Gradle
+spelling. The child still receives no OAuth or vendor credential. Run the
+launcher from a shell without hard credential variables when local tooling sets
+them.
+
+Flutter itself is started under `env -i` with only the SDK/runtime allowlist:
+`PATH`, `HOME`, `USER`/`LOGNAME`, `TMPDIR`, `SHELL`, `LANG`/`LC_*`, Java and
+Android SDK paths, `PUB_CACHE`, `GRADLE_USER_HOME`, and the macOS SDK selector
+variables needed by a host run. Profile/config/auth variables such as
+`AWS_PROFILE`, `KUBECONFIG`, `DOCKER_CONFIG`, and `SSH_AUTH_SOCK` are not passed
+to either the version probe or the run/build child. This allowlist is the
+fail-closed boundary for unknown vendor environment names; it is not an
+attempt to enumerate every possible credential suffix.
 
 ## What this does not do
 

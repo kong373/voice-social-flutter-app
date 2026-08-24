@@ -13,7 +13,13 @@ const bool _videoRuntimeDemoRequested = bool.fromEnvironment(
   defaultValue: false,
 );
 
-bool get videoRuntimeDemoEnabled => kDebugMode && _videoRuntimeDemoRequested;
+bool shouldUseVideoRuntimeDemo({
+  required bool isLive,
+  bool requested = _videoRuntimeDemoRequested,
+  bool isDebug = kDebugMode,
+}) => isDebug && requested && !isLive;
+
+bool get videoRuntimeDemoEnabled => shouldUseVideoRuntimeDemo(isLive: false);
 
 class VoiceSocialApp extends StatelessWidget {
   const VoiceSocialApp({required this.dependencies, super.key});
@@ -28,9 +34,9 @@ class VoiceSocialApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         title: 'Voice Social App',
         theme: AppTheme.dark(),
-        home: qaConsoleEnabled
+        home: shouldUseQaConsole(isLive: dependencies.environment.isLive)
             ? const QaConsoleHost()
-            : videoRuntimeDemoEnabled
+            : shouldUseVideoRuntimeDemo(isLive: dependencies.environment.isLive)
             ? MainShell(dependencies: dependencies, onSignOut: () async {})
             : AppGate(dependencies: dependencies),
       ),

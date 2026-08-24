@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/room/domain/room_intent_digest.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_permission_policy.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
@@ -9,6 +11,7 @@ import 'package:voice_social_app/features/room/infrastructure/room_realtime_gate
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
 class RoomController extends ChangeNotifier {
+  static final Random _secureRandom = Random.secure();
   static final Expando<Object> _rtcTransportOwners = Expando<Object>(
     'roomRtcTransportOwner',
   );
@@ -25,12 +28,14 @@ class RoomController extends ChangeNotifier {
     required RtcAdapter rtcAdapter,
     required RoomRealtimeGateway realtimeGateway,
     RoomPermissionPolicy permissionPolicy = const RoomPermissionPolicy(),
+    String Function(String prefix)? requestIdGenerator,
   }) : _currentUserId = currentUserId,
        _accessToken = accessToken,
        _repository = repository,
        _rtcAdapter = rtcAdapter,
        _realtimeGateway = realtimeGateway,
-       _permissionPolicy = permissionPolicy;
+       _permissionPolicy = permissionPolicy,
+       _requestIdGenerator = requestIdGenerator ?? _secureRequestId;
 
   final String roomId;
   final String title;
@@ -40,6 +45,7 @@ class RoomController extends ChangeNotifier {
   final RtcAdapter _rtcAdapter;
   final RoomRealtimeGateway _realtimeGateway;
   final RoomPermissionPolicy _permissionPolicy;
+  final String Function(String prefix) _requestIdGenerator;
 
   RoomSnapshot? _snapshot;
   final List<RoomMessage> _messages = <RoomMessage>[];
@@ -55,6 +61,14 @@ class RoomController extends ChangeNotifier {
   int _sessionEpoch = 0;
   Object? _transportLeaseId;
   String? _errorMessage;
+  ApiFailureKind? _historyErrorKind;
+  String? _historyErrorMessage;
+  final Map<String, String> _publicMessageRetryIds = <String, String>{};
+  final Map<String, _PublicMessageSubmission> _publicMessageInFlight =
+      <String, _PublicMessageSubmission>{};
+  Future<void> _publicMessageTail = Future<void>.value();
+  String? _giftRequestId;
+  String? _giftRequestKey;
 
   RoomSnapshot? get snapshot => _snapshot;
   RoomSessionStatus get status => _status;
@@ -75,6 +89,8 @@ class RoomController extends ChangeNotifier {
   bool get canSendPublicMessage =>
       !_mutedInRoom && allows(RoomCapability.sendPublicMessage);
   String? get errorMessage => _errorMessage;
+  ApiFailureKind? get historyErrorKind => _historyErrorKind;
+  String? get historyErrorMessage => _historyErrorMessage;
 
   void applyAuthoritativeTopic(String topic) {
     final RoomSnapshot? snapshot = _snapshot;
@@ -133,6 +149,8 @@ class RoomController extends ChangeNotifier {
     _mutedInRoom = false;
     _status = RoomSessionStatus.joining;
     _errorMessage = null;
+    _historyErrorKind = null;
+    _historyErrorMessage = null;
     _realtimeDegraded = false;
     _notify();
 
@@ -195,6 +213,7 @@ class RoomController extends ChangeNotifier {
             ),
         ]);
       _status = RoomSessionStatus.joined;
+      await _loadPublicHistory(snapshot, sessionEpoch: sessionEpoch);
     } catch (error) {
       if (!_isCurrent(sessionEpoch) || _joinCancelled) {
         final RoomSnapshot? snapshot = enteredSnapshot;
@@ -225,6 +244,50 @@ class RoomController extends ChangeNotifier {
     }
     if (_isCurrent(sessionEpoch)) {
       _notify();
+    }
+  }
+
+  Future<void> _loadPublicHistory(
+    RoomSnapshot snapshot, {
+    required int sessionEpoch,
+  }) async {
+    if (!_isJoinedEpoch(sessionEpoch)) {
+      return;
+    }
+    try {
+      final List<RoomMessage> history = await _repository.fetchPublicMessages(
+        snapshot.roomId,
+      );
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return;
+      }
+      _historyErrorKind = null;
+      _historyErrorMessage = null;
+      if (history.isEmpty) {
+        return;
+      }
+      _messages
+        ..clear()
+        ..addAll(history);
+      if (!snapshot.isSnapshotOnly && _realtimeDegraded) {
+        _messages.add(
+          const RoomMessage(
+            sender: '系统',
+            content: '实时消息通道暂未连接，房间状态可能延迟。',
+            isSystem: true,
+          ),
+        );
+      }
+    } catch (error) {
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return;
+      }
+      _historyErrorKind = error is ApiException
+          ? error.kind
+          : ApiFailureKind.protocol;
+      _historyErrorMessage = error is ApiException
+          ? error.message
+          : '公屏历史暂时不可用';
     }
   }
 
@@ -379,46 +442,73 @@ class RoomController extends ChangeNotifier {
     }
   }
 
-  Future<bool> sendPublicMessage(String content) async {
+  Future<bool> sendPublicMessage(String content) {
     final String normalized = content.trim();
     final RoomSnapshot? snapshot = _snapshot;
     if (normalized.isEmpty ||
         snapshot == null ||
         _status != RoomSessionStatus.joined ||
         !canSendPublicMessage) {
-      return false;
+      return Future<bool>.value(false);
     }
+    final String intentKey = roomIntentDigest(
+      scope: 'public-message',
+      fields: <String>[snapshot.roomId, normalized],
+    );
+    final _PublicMessageSubmission? existing =
+        _publicMessageInFlight[intentKey];
+    if (existing != null) {
+      return existing.future;
+    }
+
     final int sessionEpoch = _sessionEpoch;
-    try {
-      await _repository.sendPublicMessage(
-        roomId: snapshot.roomId,
-        content: normalized,
-      );
+    final String requestId =
+        _publicMessageRetryIds.remove(intentKey) ?? _newRequestId('room-chat');
+    late final _PublicMessageSubmission submission;
+    final Future<bool> operation = _publicMessageTail.then<bool>((_) async {
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
-      _messages.add(
-        RoomMessage(
-          senderId: _currentUserId,
-          sender: '我',
+      try {
+        final RoomMessage message = await _repository.sendPublicMessage(
+          roomId: snapshot.roomId,
           content: normalized,
-          createdAt: DateTime.now(),
-        ),
-      );
-      _notify();
-      return true;
-    } catch (error) {
-      if (!_isJoinedEpoch(sessionEpoch)) {
+          requestId: requestId,
+        );
+        if (!_isJoinedEpoch(sessionEpoch)) {
+          return false;
+        }
+        _appendAuthoritativeMessage(message);
+        _publicMessageRetryIds.remove(intentKey);
+        _notify();
+        return true;
+      } catch (error) {
+        if (!_isJoinedEpoch(sessionEpoch)) {
+          return false;
+        }
+        if (_isRetryableRequestError(error)) {
+          _publicMessageRetryIds[intentKey] = requestId;
+        } else {
+          _publicMessageRetryIds.remove(intentKey);
+        }
+        _errorMessage = _messageFor(error, fallback: '消息发送失败');
+        _notify();
         return false;
       }
-      _errorMessage = _messageFor(error, fallback: '消息发送失败');
-      _notify();
-      return false;
-    }
+    });
+    submission = _PublicMessageSubmission(operation);
+    _publicMessageInFlight[intentKey] = submission;
+    operation.whenComplete(() {
+      if (identical(_publicMessageInFlight[intentKey], submission)) {
+        _publicMessageInFlight.remove(intentKey);
+      }
+    });
+    _publicMessageTail = operation.then<void>((_) {});
+    return operation;
   }
 
   Future<bool> sendGift({
-    required int giftId,
+    required String giftId,
     required String giftName,
     required int receiverUserId,
     required String targetName,
@@ -433,6 +523,21 @@ class RoomController extends ChangeNotifier {
       return false;
     }
     final int sessionEpoch = _sessionEpoch;
+    final String requestKey = roomIntentDigest(
+      scope: 'controller-gift',
+      fields: <String>[
+        snapshot.roomId,
+        giftId.trim(),
+        '$receiverUserId',
+        '$quantity',
+        '$giftFrom',
+      ],
+    );
+    if (_giftRequestKey != requestKey || _giftRequestId == null) {
+      _giftRequestKey = requestKey;
+      _giftRequestId = _newRequestId('room-gift');
+    }
+    final String requestId = _giftRequestId!;
     _giftSubmitting = true;
     _errorMessage = null;
     _notify();
@@ -443,11 +548,14 @@ class RoomController extends ChangeNotifier {
         receiverUserIds: <int>[receiverUserId],
         quantity: quantity,
         giftFrom: giftFrom,
+        requestId: requestId,
       );
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
       if (!receipt.success) {
+        _giftRequestId = null;
+        _giftRequestKey = null;
         _errorMessage = '礼物赠送未完成，请刷新余额后重试';
         return false;
       }
@@ -455,18 +563,17 @@ class RoomController extends ChangeNotifier {
       if (remainingBalance != null) {
         _snapshot = snapshot.copyWith(giftBalance: remainingBalance);
       }
-      _messages.add(
-        RoomMessage(
-          sender: '系统',
-          content: '我送给 $targetName $giftName ×$quantity',
-          isSystem: true,
-          createdAt: DateTime.now(),
-        ),
-      );
+      _giftRequestId = null;
+      _giftRequestKey = null;
+      await _loadPublicHistory(snapshot, sessionEpoch: sessionEpoch);
       return true;
     } catch (error) {
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
+      }
+      if (!_isRetryableRequestError(error)) {
+        _giftRequestId = null;
+        _giftRequestKey = null;
       }
       _errorMessage = _messageFor(error, fallback: '礼物赠送失败');
       return false;
@@ -593,10 +700,14 @@ class RoomController extends ChangeNotifier {
   }
 
   void clearError() {
-    if (_errorMessage == null) {
+    if (_errorMessage == null &&
+        _historyErrorKind == null &&
+        _historyErrorMessage == null) {
       return;
     }
     _errorMessage = null;
+    _historyErrorKind = null;
+    _historyErrorMessage = null;
     _notify();
   }
 
@@ -790,6 +901,13 @@ class RoomController extends ChangeNotifier {
     _joinCancelled = true;
     _micRequestPending = false;
     _giftSubmitting = false;
+    _publicMessageRetryIds.clear();
+    _publicMessageInFlight.clear();
+    _publicMessageTail = Future<void>.value();
+    _giftRequestId = null;
+    _giftRequestKey = null;
+    _historyErrorKind = null;
+    _historyErrorMessage = null;
     _refreshingFromEvent = false;
     return _sessionEpoch;
   }
@@ -886,6 +1004,72 @@ class RoomController extends ChangeNotifier {
   static String _messageFor(Object error, {required String fallback}) =>
       error is ApiException ? error.message : fallback;
 
+  static bool _isRetryableRequestError(Object error) {
+    if (error is! ApiException) {
+      // A transport/client exception without a classified kind may have
+      // happened after the server committed the write. Preserve the same
+      // idempotency key until the caller gets an authoritative answer.
+      return true;
+    }
+    if (error.code == 40901 || error.code == 40902) {
+      return true;
+    }
+    if (error.code == 40903) {
+      return false;
+    }
+    return switch (error.kind) {
+      ApiFailureKind.timeout ||
+      ApiFailureKind.network ||
+      ApiFailureKind.protocol ||
+      ApiFailureKind.server => true,
+      ApiFailureKind.configuration ||
+      ApiFailureKind.unauthorized ||
+      ApiFailureKind.forbidden ||
+      ApiFailureKind.validation ||
+      ApiFailureKind.conflict ||
+      ApiFailureKind.business => false,
+    };
+  }
+
+  String _newRequestId(String prefix) {
+    final String value = _requestIdGenerator(prefix).trim();
+    if (value.isEmpty ||
+        value.length > 128 ||
+        !RegExp(r'^[A-Za-z0-9._:-]{1,128}$').hasMatch(value)) {
+      throw StateError('请求幂等 ID 生成器返回了无效值');
+    }
+    return value;
+  }
+
+  static String _secureRequestId(String prefix) {
+    final String entropy = List<String>.generate(
+      32,
+      (_) => _secureRandom.nextInt(16).toRadixString(16),
+      growable: false,
+    ).join();
+    return '$prefix-$entropy';
+  }
+
+  void _appendAuthoritativeMessage(RoomMessage message) {
+    final String? messageId = message.messageId?.trim();
+    if (messageId == null || messageId.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '服务端消息缺少消息 ID',
+      );
+    }
+    if (message.roomId != null && message.roomId != roomId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '服务端消息房间 ID 与当前房间不一致',
+      );
+    }
+    if (_messages.any((RoomMessage item) => item.messageId == messageId)) {
+      return;
+    }
+    _messages.add(message);
+  }
+
   @override
   void dispose() {
     if (_disposed) {
@@ -896,6 +1080,11 @@ class RoomController extends ChangeNotifier {
     _joinCancelled = true;
     _micRequestPending = false;
     _giftSubmitting = false;
+    _publicMessageRetryIds.clear();
+    _publicMessageInFlight.clear();
+    _publicMessageTail = Future<void>.value();
+    _giftRequestId = null;
+    _giftRequestKey = null;
     _refreshingFromEvent = false;
     final Object? transportLease = _transportLeaseId;
     final StreamSubscription<RoomRealtimeEvent>? subscription =
@@ -917,4 +1106,10 @@ class RoomController extends ChangeNotifier {
     }
     super.dispose();
   }
+}
+
+class _PublicMessageSubmission {
+  const _PublicMessageSubmission(this.future);
+
+  final Future<bool> future;
 }

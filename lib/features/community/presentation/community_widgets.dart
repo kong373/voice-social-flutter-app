@@ -323,7 +323,7 @@ class _GuildTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${guild.code}  ·  ${guild.memberCount} 人',
+                  '${guild.code ?? '公会编号未提供'}  ·  ${guild.memberCount} 人',
                   style: const TextStyle(
                     color: _CommunityPalette.muted,
                     fontSize: 11,
@@ -363,7 +363,7 @@ class _GuildHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _CommunityHero(
-      eyebrow: guild.code,
+      eyebrow: guild.code ?? '公会编号未提供',
       title: guild.name,
       subtitle: guild.description.isEmpty ? '一起在声音里遇见同频的人' : guild.description,
       icon: Icons.groups_rounded,

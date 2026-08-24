@@ -81,7 +81,20 @@ void main() {
       final CancellationEligibility eligibility = await repository
           .queryCancellationEligibility();
       expect(eligibility.allowed, isFalse);
+      expect(eligibility.status, 'COOLING_OFF');
+      expect(eligibility.canCancel, isTrue);
       expect(eligibility.requiresSmsCode, isFalse);
+
+      final CancellationEligibility restored = await repository
+          .cancelDeletion();
+      expect(restored.allowed, isTrue);
+      expect(restored.status, 'NONE');
+      expect(restored.canCancel, isFalse);
+
+      await expectLater(
+        repository.cancelDeletion(),
+        throwsA(isA<ApiException>()),
+      );
     },
   );
 }

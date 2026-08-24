@@ -50,7 +50,7 @@ class MockCommerceRepository implements CommerceRepository {
            statusText: '已到账',
            createdAt: seedNow.subtract(const Duration(days: 3)),
            rejectedReason: '',
-           bankName: '招商银行',
+           holderNameMasked: '晚*',
            maskedCard: '**** 8812',
          ),
        ],
@@ -123,6 +123,9 @@ class MockCommerceRepository implements CommerceRepository {
   bool get supportsRefundHistory => true;
 
   @override
+  bool get supportsWithdrawalApplication => true;
+
+  @override
   RefundScope get refundScope => RefundScope.accountLegacy;
 
   void seedPaymentOrderForQa(PaymentOrder order) {
@@ -182,13 +185,35 @@ class MockCommerceRepository implements CommerceRepository {
 
   @override
   Future<CommercePage<LedgerEntry>> fetchLedger({
+    required LedgerCurrency currency,
     required LedgerDirection direction,
     required int page,
     required int pageSize,
   }) async {
-    final List<LedgerEntry> source = direction == LedgerDirection.income
-        ? _incomeEntries
-        : _expenseEntries;
+    final List<LedgerEntry> source = switch ((currency, direction)) {
+      (LedgerCurrency.giftCoin, LedgerDirection.income) => <LedgerEntry>[
+        LedgerEntry(
+          id: 'gift-coin-income-1',
+          direction: LedgerDirection.income,
+          kind: LedgerKind.recharge,
+          title: '充值到账',
+          amount: 300,
+          createdAt: _currentTime.subtract(const Duration(hours: 1)),
+          relatedUserName: '',
+          businessName: '礼物币充值',
+          rawSubtype: 'recharge_credit',
+        ),
+      ],
+      (LedgerCurrency.giftCoin, LedgerDirection.expense) =>
+        _expenseEntries
+            .where((LedgerEntry item) => item.kind == LedgerKind.giftExpense)
+            .toList(growable: false),
+      (LedgerCurrency.cashCny, LedgerDirection.income) => _incomeEntries,
+      (LedgerCurrency.cashCny, LedgerDirection.expense) =>
+        _expenseEntries
+            .where((LedgerEntry item) => item.kind == LedgerKind.withdrawal)
+            .toList(growable: false),
+    };
     return _page(source, page: page, pageSize: pageSize);
   }
 
@@ -270,7 +295,10 @@ class MockCommerceRepository implements CommerceRepository {
   }
 
   @override
-  Future<RefundApplication> fetchRefundResult(String applicationId) async {
+  Future<RefundApplication> fetchRefundResult(
+    String applicationId, {
+    String? expectedOrderNo,
+  }) async {
     final RefundApplication? application = _refunds[applicationId];
     if (application == null) {
       throw const ApiException(
@@ -278,13 +306,23 @@ class MockCommerceRepository implements CommerceRepository {
         message: '退款申请不存在',
       );
     }
+    if (expectedOrderNo != null && application.account != expectedOrderNo) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '退款结果与选中订单不一致',
+      );
+    }
     return application;
   }
 
   @override
-  Future<RefundApplication> resubmitRefund(String applicationId) async {
+  Future<RefundApplication> resubmitRefund(
+    String applicationId, {
+    String? expectedOrderNo,
+  }) async {
     final RefundApplication application = await fetchRefundResult(
       applicationId,
+      expectedOrderNo: expectedOrderNo,
     );
     if (application.status != RefundStatus.rejected) {
       throw const ApiException(
@@ -314,16 +352,32 @@ class MockCommerceRepository implements CommerceRepository {
         );
 
   @override
-  Future<WithdrawalQuote> fetchWithdrawalQuote() async => const WithdrawalQuote(
-    feeRate: 0.01,
-    feeRateText: '1%',
-    minimumAmount: 100,
-  );
+  Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount}) async {
+    final double scaledAmount = amount * 100;
+    if (!amount.isFinite ||
+        amount < 10 ||
+        (scaledAmount - scaledAmount.round()).abs() > 0.000001) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '单笔提现金额不得少于 10 元且最多保留两位小数',
+      );
+    }
+    final int amountMinor = scaledAmount.round();
+    final int feeMinor = (amountMinor * 200 + 9999) ~/ 10000;
+    return WithdrawalQuote(
+      quotedAmount: amountMinor / 100,
+      feeAmount: feeMinor / 100,
+      receivedAmount: (amountMinor - feeMinor) / 100,
+      feeRate: 0.02,
+      feeRateText: '2.00%',
+      minimumAmount: 10,
+    );
+  }
 
   @override
   Future<WithdrawalRecord> applyWithdrawal({required double amount}) async {
     final WalletSummary wallet = await fetchWalletSummary();
-    final WithdrawalQuote quote = await fetchWithdrawalQuote();
+    final WithdrawalQuote quote = await fetchWithdrawalQuote(amount: amount);
     if (!wallet.realNameVerified || wallet.bankCard == null) {
       throw const ApiException(
         kind: ApiFailureKind.business,
@@ -354,7 +408,7 @@ class MockCommerceRepository implements CommerceRepository {
       statusText: '待审核',
       createdAt: now,
       rejectedReason: '',
-      bankName: wallet.bankCard!.bankName,
+      holderNameMasked: wallet.bankCard!.holderName,
       maskedCard: wallet.bankCard!.maskedNumber,
     );
     _withdrawals.insert(0, record);

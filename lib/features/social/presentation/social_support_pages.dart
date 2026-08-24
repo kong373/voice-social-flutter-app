@@ -23,6 +23,16 @@ class _ReportPageState extends State<ReportPage> {
   bool _alsoBlock = false;
   bool _busy = false;
 
+  bool get _canSubmitReport {
+    if (widget.targetType != ReportTargetType.room) {
+      return true;
+    }
+    if (!AppDependencyScope.of(context).environment.isLive) {
+      return true;
+    }
+    return isCanonicalReportRoomId(widget.targetId);
+  }
+
   @override
   void dispose() {
     _descriptionController.dispose();
@@ -30,7 +40,7 @@ class _ReportPageState extends State<ReportPage> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate() || _busy) {
+    if (!_canSubmitReport || !_formKey.currentState!.validate() || _busy) {
       return;
     }
     setState(() => _busy = true);
@@ -123,6 +133,12 @@ class _ReportPageState extends State<ReportPage> {
                 ],
               ),
             ),
+            if (!_canSubmitReport) ...<Widget>[
+              const SizedBox(height: 12),
+              const _InfoBanner(
+                text: '当前第一方举报接口只接受数字房间 ID；该房间使用 UUID/public_id，暂不能提交举报。',
+              ),
+            ],
             const SizedBox(height: 12),
             _OxygenPanel(
               child: Column(
@@ -169,7 +185,7 @@ class _ReportPageState extends State<ReportPage> {
             ),
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: _busy ? null : _submit,
+              onPressed: _busy || !_canSubmitReport ? null : _submit,
               child: Text(_busy ? '提交中…' : '提交举报'),
             ),
           ],

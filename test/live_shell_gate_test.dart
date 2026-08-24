@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
-import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
+import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
-import 'package:voice_social_app/features/shell/live_read_only_pages.dart';
+import 'package:voice_social_app/core/network/api_client.dart';
+import 'package:voice_social_app/features/commerce/presentation/commerce_pages.dart';
+import 'package:voice_social_app/features/message/data/mock_message_repository.dart';
+import 'package:voice_social_app/features/message/presentation/message_pages.dart';
+import 'package:voice_social_app/features/shell/live_read_only_repository.dart';
 import 'package:voice_social_app/features/shell/main_shell.dart';
 import 'package:voice_social_app/features/shell/video_runtime_pages.dart';
+import 'package:voice_social_app/features/social/data/mock_social_repository.dart';
+import 'package:voice_social_app/features/social/domain/social_models.dart';
+import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 void main() {
   const AppEnvironment liveTestEnvironment = AppEnvironment(
@@ -19,7 +26,10 @@ void main() {
     deploymentEnvironment: DeploymentEnvironment.development,
   );
 
-  Future<AppDependencies> pumpLiveShell(WidgetTester tester) async {
+  Future<AppDependencies> pumpLiveShell(
+    WidgetTester tester, {
+    required ThemeData outerTheme,
+  }) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
@@ -27,24 +37,26 @@ void main() {
 
     final AppDependencies dependencies = AppDependencies.forTestEnvironment(
       environment: liveTestEnvironment,
+      messageRepository: _StoredOnlyMessageRepository(),
     );
     await tester.pumpWidget(
       AppDependencyScope(
         dependencies: dependencies,
         child: MaterialApp(
-          theme: AppTheme.social(),
+          theme: outerTheme,
           home: MainShell(dependencies: dependencies, onSignOut: () async {}),
         ),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
     return dependencies;
   }
 
-  Future<AppDependencies> pumpLivePage(
-    WidgetTester tester,
-    Widget Function(AppDependencies dependencies) childBuilder,
-  ) async {
+  Future<void> pumpLiveAccountRoot(
+    WidgetTester tester, {
+    required ThemeData outerTheme,
+    AppDependencies? scopeDependencies,
+  }) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
@@ -53,72 +65,195 @@ void main() {
     final AppDependencies dependencies = AppDependencies.forTestEnvironment(
       environment: liveTestEnvironment,
     );
+    final AppDependencies inheritedDependencies =
+        scopeDependencies ?? dependencies;
     await tester.pumpWidget(
       AppDependencyScope(
-        dependencies: dependencies,
+        dependencies: inheritedDependencies,
         child: MaterialApp(
-          theme: AppTheme.social(),
-          home: Scaffold(body: childBuilder(dependencies)),
+          theme: outerTheme,
+          home: Scaffold(
+            body: VideoRuntimeAccountPage(
+              dependencies: dependencies,
+              onOpenRoom: (_) {},
+              onSignOut: () async {},
+              profileRepository: _LiveProfileRepository(),
+              liveReadOnlyRepository: _DeterministicLiveReadOnlyRepository(),
+            ),
+          ),
         ),
       ),
     );
-    await tester.pump();
-    return dependencies;
+    await tester.pumpAndSettle();
   }
 
-  testWidgets('live main shell keeps read-only roots on every tab', (
-    WidgetTester tester,
-  ) async {
-    final AppDependencies dependencies = await pumpLiveShell(tester);
+  for (final ({String name, ThemeData theme}) themeCase
+      in <({String name, ThemeData theme})>[
+        (name: 'light', theme: AppTheme.social()),
+        (name: 'dark', theme: AppTheme.room()),
+      ]) {
+    testWidgets(
+      'live shell message root keeps real first-party message center in ${themeCase.name}',
+      (WidgetTester tester) async {
+        final AppDependencies dependencies = await pumpLiveShell(
+          tester,
+          outerTheme: themeCase.theme,
+        );
 
-    expect(dependencies.environment.isLive, isTrue);
-    expect(find.byType(LiveProductHomePage), findsOneWidget);
-    expect(find.byType(VideoRuntimeHomePage), findsNothing);
+        expect(dependencies.environment.isLive, isTrue);
 
-    await tester.tap(find.text('发现').hitTestable());
-    await tester.pump();
-    expect(find.byType(LiveDiscoveryHoldingPage), findsOneWidget);
-    expect(find.byType(VideoRuntimeDiscoveryPage), findsNothing);
+        await tester.tap(find.text('消息').hitTestable());
+        await tester.pumpAndSettle();
 
-    await tester.tap(find.text('消息').hitTestable());
-    await tester.pump();
-    expect(find.byType(LiveMessageHoldingPage), findsOneWidget);
-    expect(find.byType(VideoRuntimeMessagesPage), findsNothing);
-
-    await tester.tap(find.text('我的').hitTestable());
-    await tester.pump();
-    expect(find.byType(LiveReadOnlyAccountPage), findsOneWidget);
-    expect(find.byType(VideoRuntimeAccountPage), findsNothing);
-  });
-
-  testWidgets('direct runtime pages still honor live read-only boundaries', (
-    WidgetTester tester,
-  ) async {
-    final AppDependencies discoveryDependencies = await pumpLivePage(
-      tester,
-      (AppDependencies dependencies) =>
-          VideoRuntimeDiscoveryPage(dependencies: dependencies),
+        expect(find.byType(MessageCenterPage), findsOneWidget);
+        expect(find.byKey(const Key('video-runtime-messages')), findsOneWidget);
+        expect(find.byKey(const Key('im-vendor-blocked')), findsNothing);
+        expect(find.text('官方消息'), findsOneWidget);
+        expect(find.text('系统通知'), findsOneWidget);
+        expect(find.text('打招呼'), findsOneWidget);
+        expect(find.text('互动消息'), findsOneWidget);
+        expect(find.text('好友请求'), findsOneWidget);
+        expect(find.textContaining('VENDOR_BLOCKED'), findsOneWidget);
+      },
     );
-    expect(discoveryDependencies.environment.isLive, isTrue);
-    expect(find.byType(LiveDiscoveryHoldingPage), findsOneWidget);
 
-    final AppDependencies messageDependencies = await pumpLivePage(
-      tester,
-      (AppDependencies dependencies) =>
-          VideoRuntimeMessagesPage(dependencies: dependencies),
+    testWidgets(
+      'live account root keeps real profile entry points in ${themeCase.name}',
+      (WidgetTester tester) async {
+        await pumpLiveAccountRoot(tester, outerTheme: themeCase.theme);
+
+        expect(find.byType(VideoRuntimeAccountPage), findsOneWidget);
+        expect(find.byKey(const Key('live-account-overview')), findsNothing);
+        expect(find.text('Live旅客'), findsOneWidget);
+        expect(find.text('晚星'), findsNothing);
+        expect(find.text('活动中心'), findsOneWidget);
+        expect(find.text('资料与设置'), findsWidgets);
+        expect(find.text('通知中心'), findsOneWidget);
+        expect(find.text('帮助与反馈'), findsOneWidget);
+        expect(find.text('开发环境接入诊断'), findsOneWidget);
+
+        await tester.tap(find.byTooltip('设置'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(PersonalCenterPage), findsOneWidget);
+      },
     );
-    expect(messageDependencies.environment.isLive, isTrue);
-    expect(find.byType(LiveMessageHoldingPage), findsOneWidget);
 
-    final AppDependencies accountDependencies = await pumpLivePage(
-      tester,
-      (AppDependencies dependencies) => VideoRuntimeAccountPage(
-        dependencies: dependencies,
-        onOpenRoom: (_) {},
-        onSignOut: () async {},
+    testWidgets(
+      'live account root keeps safe commerce reads reachable in ${themeCase.name}',
+      (WidgetTester tester) async {
+        await pumpLiveAccountRoot(
+          tester,
+          outerTheme: themeCase.theme,
+          scopeDependencies: AppDependencies.mock(),
+        );
+
+        expect(find.text('钱包'), findsOneWidget);
+        expect(find.text('装扮'), findsOneWidget);
+        expect(find.textContaining('正式支付渠道'), findsOneWidget);
+        expect(find.textContaining('对象存储上传'), findsOneWidget);
+
+        await tester.tap(find.text('钱包').hitTestable().first);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CommerceHubPage), findsOneWidget);
+        expect(find.text('钱包与商城'), findsOneWidget);
+        expect(find.text('钱包与流水'), findsOneWidget);
+        expect(find.text('充值订单'), findsOneWidget);
+        expect(find.textContaining('退款'), findsWidgets);
+        expect(find.text('礼物'), findsOneWidget);
+        expect(find.textContaining('尚在申请'), findsOneWidget);
+
+        await tester.tap(find.text('礼物').hitTestable());
+        await tester.pumpAndSettle();
+
+        expect(find.byType(GiftCatalogPage), findsOneWidget);
+        expect(find.text('礼物图鉴'), findsOneWidget);
+        expect(find.text('红包'), findsNothing);
+        expect(find.text('背包'), findsNothing);
+
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('装扮').hitTestable().first);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(DecorationPage), findsOneWidget);
+        expect(find.text('装扮中心'), findsOneWidget);
+        expect(find.text('个性装扮'), findsOneWidget);
+        expect(find.textContaining('会员'), findsNothing);
+        expect(find.textContaining('背包'), findsNothing);
+      },
+    );
+  }
+}
+
+class _StoredOnlyMessageRepository extends MockMessageRepository {
+  @override
+  bool get supportsPrivateRealtime => false;
+}
+
+class _LiveProfileRepository extends MockSocialRepository {
+  @override
+  Future<SocialProfile> fetchMyProfile() async {
+    return const SocialProfile(
+      user: SocialUser(
+        userId: 42001,
+        name: 'Live旅客',
+        signature: '真实资料来自 live 用户接口',
+        avatarUrl: '',
+        isFollowing: false,
+        isFollower: false,
+        isFriend: false,
+        isBlocked: false,
+        isOnline: true,
+        roomId: '880217',
       ),
+      account: 'live-user-42',
+      sex: 1,
+      birthday: '1999-04-02',
+      city: '上海',
+      coverUrl: '',
+      followingCount: 8,
+      followerCount: 16,
+      friendCount: 4,
+      postCount: 3,
+      level: 12,
     );
-    expect(accountDependencies.environment.isLive, isTrue);
-    expect(find.byType(LiveReadOnlyAccountPage), findsOneWidget);
-  });
+  }
+}
+
+class _DeterministicLiveReadOnlyRepository extends LiveReadOnlyRepository {
+  _DeterministicLiveReadOnlyRepository()
+    : super(
+        ApiClient(
+          baseUri: Uri.parse('https://example.invalid'),
+          clientType: 'Android',
+          clientInnerVersion: '1',
+          authorizationProvider: () => null,
+          requestHeadersProvider: () => const <String, String>{},
+        ),
+      );
+
+  @override
+  Future<LiveReadOnlyOverview> fetchOverview() async {
+    return const LiveReadOnlyOverview(
+      user: LiveCurrentUser(
+        userId: 42001,
+        account: 'live-user-42',
+        nickname: 'Live旅客',
+        mobile: '138****4242',
+        roles: 'USER',
+        status: 'NORMAL',
+      ),
+      wallet: LiveWalletSnapshot(
+        giftCoinBalance: 88,
+        cashBalance: 12.5,
+        frozenBalance: 0,
+      ),
+      orders: <LivePaymentOrder>[],
+    );
+  }
 }

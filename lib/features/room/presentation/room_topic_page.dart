@@ -5,13 +5,20 @@ import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
+import 'package:voice_social_app/features/room/presentation/room_authority_display.dart';
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
 class RoomTopicPage extends StatefulWidget {
-  const RoomTopicPage({required this.roomId, required this.canEdit, super.key});
+  const RoomTopicPage({
+    required this.roomId,
+    required this.canEdit,
+    this.roomTitle,
+    super.key,
+  });
 
   final String roomId;
   final bool canEdit;
+  final String? roomTitle;
 
   @override
   State<RoomTopicPage> createState() => _RoomTopicPageState();
@@ -124,7 +131,7 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                 children: <Widget>[
                   RoomOxygenContextBar(
-                    title: '深夜温柔陪伴',
+                    title: roomAuthorityTitle(widget.roomTitle),
                     subtitle: '房间号 ${widget.roomId} · 公告与话题',
                     seed: widget.roomId,
                     status: widget.canEdit ? '可编辑' : '只读',

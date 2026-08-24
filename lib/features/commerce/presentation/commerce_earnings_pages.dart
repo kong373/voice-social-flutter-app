@@ -28,6 +28,7 @@ class _EarningsPageState extends State<EarningsPage> {
       final List<Object> values = await Future.wait<Object>(<Future<Object>>[
         repository.fetchWalletSummary(),
         repository.fetchLedger(
+          currency: LedgerCurrency.cashCny,
           direction: LedgerDirection.income,
           page: 1,
           pageSize: 50,
@@ -125,7 +126,10 @@ class _EarningsPageState extends State<EarningsPage> {
 }
 
 class WithdrawalPage extends StatefulWidget {
-  const WithdrawalPage({super.key});
+  const WithdrawalPage({this.repository, super.key});
+
+  @visibleForTesting
+  final CommerceRepository? repository;
 
   @override
   State<WithdrawalPage> createState() => _WithdrawalPageState();
@@ -138,10 +142,18 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   List<WithdrawalRecord>? _records;
   bool _loading = true;
   bool _submitting = false;
+  bool _quoteLoading = false;
+  double? _quotedAmount;
+  String? _quoteError;
   String? _error;
 
   CommerceRepository get _repository =>
-      AppDependencyScope.of(context).commerceRepository;
+      widget.repository ?? AppDependencyScope.of(context).commerceRepository;
+
+  // The current first-party live contract deliberately has no payout-account
+  // list/selection endpoint.  A masked default card is display-only and must
+  // never be treated as the withdrawal request's payoutAccountId.
+  bool get _canApplyWithdrawal => _repository.supportsWithdrawalApplication;
 
   @override
   void didChangeDependencies() {
@@ -165,14 +177,12 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
     try {
       final List<Object> values = await Future.wait<Object>(<Future<Object>>[
         _repository.fetchWalletSummary(),
-        _repository.fetchWithdrawalQuote(),
         _repository.fetchWithdrawalRecords(page: 1, pageSize: 50),
       ]);
       if (mounted) {
         setState(() {
           _wallet = values[0] as WalletSummary;
-          _quote = values[1] as WithdrawalQuote;
-          _records = (values[2] as CommercePage<WithdrawalRecord>).items;
+          _records = (values[1] as CommercePage<WithdrawalRecord>).items;
           _loading = false;
         });
       }
@@ -186,12 +196,72 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
     }
   }
 
+  Future<void> _loadQuote() async {
+    final double? amount = double.tryParse(_amountController.text.trim());
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入有效提现金额后再计算报价')));
+      return;
+    }
+    if (_quoteLoading) {
+      return;
+    }
+    setState(() {
+      _quoteLoading = true;
+      _quoteError = null;
+    });
+    try {
+      final WithdrawalQuote quote = await _repository.fetchWithdrawalQuote(
+        amount: amount,
+      );
+      if (mounted) {
+        setState(() {
+          _quote = quote;
+          _quotedAmount = amount;
+          _quoteLoading = false;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _quoteLoading = false;
+          _quoteError = _messageFor(error);
+          _quote = null;
+          _quotedAmount = null;
+        });
+      }
+    }
+  }
+
+  double? get _enteredAmount => double.tryParse(_amountController.text.trim());
+
+  bool get _hasCurrentQuote {
+    final double? entered = _enteredAmount;
+    return entered != null &&
+        _quote != null &&
+        _quotedAmount != null &&
+        (entered - _quotedAmount!).abs() < 0.005;
+  }
+
   Future<void> _apply() async {
+    if (!_canApplyWithdrawal) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('当前后端未提供收款账户选择契约，提现申请暂不可用。')),
+      );
+      return;
+    }
     final double? amount = double.tryParse(_amountController.text.trim());
     if (amount == null || amount <= 0 || _submitting) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('请输入有效提现金额')));
+      return;
+    }
+    if (!_hasCurrentQuote) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先计算当前提现金额的服务端报价')));
       return;
     }
     final bool? confirmed = await showDialog<bool>(
@@ -264,6 +334,13 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                     const _CommerceInfoBanner(
                       text: '提交提现前必须完成实名认证并绑定银行卡。缺少条件时客户端会阻止提交。',
                     ),
+                  if (!_canApplyWithdrawal) ...<Widget>[
+                    const SizedBox(height: 10),
+                    const _CommerceInfoBanner(
+                      text:
+                          '当前第一方后端尚未提供 payoutAccountId 的账户列表与选择接口。银行卡摘要仅供展示，提现申请已安全禁用；报价和历史记录仍可查看。',
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   _CommercePanel(
                     child: Column(
@@ -276,18 +353,53 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
                           ),
+                          onChanged: (_) {
+                            if (_quote != null || _quoteError != null) {
+                              setState(() {
+                                _quote = null;
+                                _quotedAmount = null;
+                                _quoteError = null;
+                              });
+                            }
+                          },
                           decoration: InputDecoration(
                             labelText: '提现金额',
-                            helperText:
-                                '最低 ¥${_quote!.minimumAmount.toStringAsFixed(0)} · 手续费 ${_quote!.feeRateText}',
+                            helperText: _quote == null
+                                ? '输入金额后计算服务端报价'
+                                : '最低 ¥${_quote!.minimumAmount.toStringAsFixed(0)} · 手续费 ${_quote!.feeRateText}',
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _quoteLoading ? null : _loadQuote,
+                          icon: _quoteLoading
+                              ? const SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.calculate_outlined),
+                          label: const Text('计算到账金额'),
+                        ),
+                        if (_quoteError != null) ...<Widget>[
+                          const SizedBox(height: 8),
+                          _CommerceInfoBanner(text: _quoteError!),
+                        ],
+                        if (_hasCurrentQuote) ...<Widget>[
+                          const SizedBox(height: 8),
+                          _CommerceInfoBanner(
+                            text:
+                                '服务端报价：手续费 ¥${_quote!.feeFor(_quotedAmount!).toStringAsFixed(2)} · 预计到账 ¥${_quote!.receivedFor(_quotedAmount!).toStringAsFixed(2)}',
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton(
                             onPressed:
-                                _wallet!.realNameVerified &&
+                                _canApplyWithdrawal &&
+                                    _wallet!.realNameVerified &&
                                     _wallet!.bankCard != null &&
                                     !_submitting
                                 ? _apply
@@ -337,7 +449,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                                       ).textTheme.titleSmall,
                                     ),
                                     Text(
-                                      '${record.bankName} ${record.maskedCard}',
+                                      '持卡人 ${record.holderNameMasked} ${record.maskedCard}',
                                       style: Theme.of(
                                         context,
                                       ).textTheme.bodySmall,

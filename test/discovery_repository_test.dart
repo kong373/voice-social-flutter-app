@@ -4,6 +4,33 @@ import 'package:voice_social_app/features/discovery/domain/discovery_models.dart
 
 void main() {
   test(
+    'discovery online count labels distinguish unknown, zero, and positive',
+    () {
+      expect(discoveryOnlineCountLabel(null), '在线人数未知');
+      expect(discoveryOnlineCountLabel(-1), '在线人数未知');
+      expect(discoveryOnlineCountLabel(0), '0 人在线');
+      expect(discoveryOnlineCountLabel(8), '8 人在线');
+      expect(discoveryOnlineCountLabel(null, suffix: '人在听'), '在线人数未知');
+      expect(discoveryOnlineCountLabel(8, suffix: '人在听'), '8 人在听');
+    },
+  );
+
+  test('discovery room allows an unavailable online count', () {
+    const DiscoveryRoom room = DiscoveryRoom(
+      id: 'unknown-room',
+      code: 'unknown-room',
+      title: '人数待确认',
+      topic: '等待权威实时快照',
+      onlineCount: null,
+      occupiedSeats: 0,
+      isSpeaking: false,
+      isFavorite: false,
+    );
+
+    expect(room.onlineCount, isNull);
+  });
+
+  test(
     'discovery repository searches rooms and users by authoritative type',
     () async {
       final MockDiscoveryRepository repository = MockDiscoveryRepository();

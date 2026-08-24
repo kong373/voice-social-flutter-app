@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_environment.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/storage/key_value_store.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
 import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
@@ -107,4 +110,217 @@ void main() {
     expect(registered, isTrue);
     expect(controller.stage, AuthFlowStage.signedIn);
   });
+
+  test(
+    'ambiguous refresh outcome clears the one-time token and fails closed',
+    () async {
+      final AuthSessionManager sessionManager = AuthSessionManager(
+        MemoryKeyValueStore(),
+      );
+      await sessionManager.acceptConsent();
+      await sessionManager.save(_expiredRefreshableSession());
+      final _RefreshFailureAuthRepository repository =
+          _RefreshFailureAuthRepository(
+            const ApiException(kind: ApiFailureKind.timeout, message: '刷新响应超时'),
+          );
+      final AuthController controller = AuthController(
+        repository: repository,
+        sessionManager: sessionManager,
+        deviceIdentityProvider: DeviceIdentityProvider(
+          environment: AppEnvironment.mock(),
+          sessionManager: sessionManager,
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.initialize();
+
+      expect(repository.refreshCalls, 1);
+      expect(controller.stage, AuthFlowStage.signedOut);
+      expect(controller.session, isNull);
+      expect(await sessionManager.restore(), isNull);
+      expect(controller.errorMessage, contains('刷新结果无法确认'));
+    },
+  );
+
+  test(
+    'preflight configuration failure preserves a refreshable local session',
+    () async {
+      final AuthSessionManager sessionManager = AuthSessionManager(
+        MemoryKeyValueStore(),
+      );
+      await sessionManager.acceptConsent();
+      final AuthSession original = _expiredRefreshableSession();
+      await sessionManager.save(original);
+      final AuthController controller = AuthController(
+        repository: _RefreshFailureAuthRepository(
+          const ApiException(
+            kind: ApiFailureKind.configuration,
+            message: '后端地址尚未配置',
+          ),
+        ),
+        sessionManager: sessionManager,
+        deviceIdentityProvider: DeviceIdentityProvider(
+          environment: AppEnvironment.mock(),
+          sessionManager: sessionManager,
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.initialize();
+
+      expect(controller.stage, AuthFlowStage.recoveryRequired);
+      expect(controller.session?.refreshToken, original.refreshToken);
+      expect(controller.errorMessage, '后端地址尚未配置');
+    },
+  );
+
+  test('concurrent refresh calls remain a single rotation attempt', () async {
+    final AuthSessionManager sessionManager = AuthSessionManager(
+      MemoryKeyValueStore(),
+    );
+    final AuthSession original = _expiredRefreshableSession();
+    await sessionManager.save(original);
+    final _DelayedRefreshAuthRepository repository =
+        _DelayedRefreshAuthRepository();
+    final AuthController controller = AuthController(
+      repository: repository,
+      sessionManager: sessionManager,
+      deviceIdentityProvider: DeviceIdentityProvider(
+        environment: AppEnvironment.mock(),
+        sessionManager: sessionManager,
+      ),
+    );
+    addTearDown(controller.dispose);
+
+    final Future<bool> first = controller.refreshSession();
+    final Future<bool> duplicate = controller.refreshSession();
+    await repository.started.future;
+    expect(repository.refreshCalls, 1);
+    repository.result.complete(_refreshedSession());
+
+    expect(await Future.wait(<Future<bool>>[first, duplicate]), <bool>[
+      true,
+      true,
+    ]);
+    expect(repository.refreshCalls, 1);
+    expect(controller.session?.refreshToken, 'rotated-refresh');
+  });
+
+  test(
+    'late refresh response cannot restore a locally signed-out session',
+    () async {
+      final AuthSessionManager sessionManager = AuthSessionManager(
+        MemoryKeyValueStore(),
+      );
+      final AuthSession original = _expiredRefreshableSession();
+      await sessionManager.save(original);
+      final _DelayedRefreshAuthRepository repository =
+          _DelayedRefreshAuthRepository();
+      final AuthController controller = AuthController(
+        repository: repository,
+        sessionManager: sessionManager,
+        deviceIdentityProvider: DeviceIdentityProvider(
+          environment: AppEnvironment.mock(),
+          sessionManager: sessionManager,
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      final Future<bool> refresh = controller.refreshSession();
+      await repository.started.future;
+      await controller.discardSessionAndSignOut();
+      repository.result.complete(_refreshedSession());
+
+      expect(await refresh, isFalse);
+      expect(controller.stage, AuthFlowStage.signedOut);
+      expect(controller.session, isNull);
+      expect(await sessionManager.restore(), isNull);
+    },
+  );
+
+  test(
+    'signOut invalidates an in-flight refresh before clearing credentials',
+    () async {
+      final AuthSessionManager sessionManager = AuthSessionManager(
+        MemoryKeyValueStore(),
+      );
+      await sessionManager.save(_expiredRefreshableSession());
+      final _DelayedRefreshAuthRepository repository =
+          _DelayedRefreshAuthRepository();
+      final AuthController controller = AuthController(
+        repository: repository,
+        sessionManager: sessionManager,
+        deviceIdentityProvider: DeviceIdentityProvider(
+          environment: AppEnvironment.mock(),
+          sessionManager: sessionManager,
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      final Future<bool> refresh = controller.refreshSession();
+      await repository.started.future;
+      await controller.signOut();
+      repository.result.complete(_refreshedSession());
+
+      expect(await refresh, isFalse);
+      expect(controller.stage, AuthFlowStage.signedOut);
+      expect(controller.session, isNull);
+      expect(await sessionManager.restore(), isNull);
+    },
+  );
+}
+
+AuthSession _expiredRefreshableSession() => AuthSession(
+  accessToken: 'expired-access',
+  tokenType: 'Bearer',
+  expiresAt: DateTime.now().subtract(const Duration(minutes: 1)),
+  refreshToken: 'one-time-refresh',
+  refreshExpiresAt: DateTime.now().add(const Duration(days: 1)),
+  deviceId: 'device-1',
+  clientId: 'voice-social-mobile-public',
+  userId: 10001,
+  mobile: '13800138000',
+  roles: 'USER',
+);
+
+AuthSession _refreshedSession() => AuthSession(
+  accessToken: 'rotated-access',
+  tokenType: 'Bearer',
+  expiresAt: DateTime.now().add(const Duration(hours: 1)),
+  refreshToken: 'rotated-refresh',
+  refreshExpiresAt: DateTime.now().add(const Duration(days: 30)),
+  deviceId: 'device-1',
+  clientId: 'voice-social-mobile-public',
+  userId: 10001,
+  mobile: '13800138000',
+  roles: 'USER',
+);
+
+class _RefreshFailureAuthRepository extends MockAuthRepository {
+  _RefreshFailureAuthRepository(this.failure);
+
+  final Object failure;
+  int refreshCalls = 0;
+
+  @override
+  Future<AuthSession> refreshSession(AuthSession session) async {
+    refreshCalls += 1;
+    throw failure;
+  }
+}
+
+class _DelayedRefreshAuthRepository extends MockAuthRepository {
+  final Completer<void> started = Completer<void>();
+  final Completer<AuthSession> result = Completer<AuthSession>();
+  int refreshCalls = 0;
+
+  @override
+  Future<AuthSession> refreshSession(AuthSession session) {
+    refreshCalls += 1;
+    if (!started.isCompleted) {
+      started.complete();
+    }
+    return result.future;
+  }
 }

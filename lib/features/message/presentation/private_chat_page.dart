@@ -13,13 +13,22 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = <ChatMessage>[];
+  late ConversationSummary _conversation;
   bool _loading = true;
   bool _sending = false;
   String? _error;
   int _loadRequestId = 0;
+  String? _pendingSendRequestId;
+  String? _pendingSendContent;
 
   MessageRepository get _repository =>
       AppDependencyScope.of(context).messageRepository;
+
+  @override
+  void initState() {
+    super.initState();
+    _conversation = widget.conversation;
+  }
 
   @override
   void didChangeDependencies() {
@@ -49,15 +58,37 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     });
     try {
       final List<ChatMessage> value = await repository.fetchPrivateMessages(
-        widget.conversation,
+        _conversation,
       );
       if (!mounted || requestId != _loadRequestId) {
         return;
       }
+      if (_conversation.isDraft) {
+        final ChatMessage? identifiedMessage = value
+            .where(
+              (ChatMessage item) =>
+                  item.conversationId != null &&
+                  item.conversationId!.trim().isNotEmpty,
+            )
+            .firstOrNull;
+        if (identifiedMessage?.conversationId != null) {
+          final DateTime serverUpdatedAt = value
+              .map((ChatMessage item) => item.createdAt)
+              .reduce(
+                (DateTime left, DateTime right) =>
+                    left.isAfter(right) ? left : right,
+              );
+          _conversation = _conversation.withServerIdentity(
+            conversationId: identifiedMessage!.conversationId!,
+            serverUpdatedAt: serverUpdatedAt,
+          );
+        }
+      }
+      final List<ChatMessage> mergedMessages = _mergeMessages(value);
       setState(() {
         _messages
           ..clear()
-          ..addAll(value);
+          ..addAll(mergedMessages);
         _loading = false;
       });
       _scrollToEnd();
@@ -80,19 +111,43 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     if (text.isEmpty) {
       return;
     }
+    if (_pendingSendRequestId == null || _pendingSendContent != text) {
+      _pendingSendRequestId = createMessageRequestId();
+      _pendingSendContent = text;
+    }
+    final String requestId = _pendingSendRequestId!;
     setState(() => _sending = true);
     try {
       final ChatMessage message = await _repository.sendPrivateMessage(
-        conversation: widget.conversation,
+        conversation: _conversation,
         content: text,
+        requestId: requestId,
       );
       if (!mounted) {
         return;
       }
+      if (_conversation.isDraft && message.conversationId != null) {
+        _conversation = _conversation.withServerIdentity(
+          conversationId: message.conversationId!,
+          serverUpdatedAt: message.createdAt,
+        );
+      }
+      // A history/refresh request that started before this authoritative send
+      // must not overwrite the newly stored message when it completes later.
+      _loadRequestId += 1;
+      final List<ChatMessage> mergedMessages = _mergeMessages(<ChatMessage>[
+        message,
+      ]);
       setState(() {
-        _messages.add(message);
+        _messages
+          ..clear()
+          ..addAll(mergedMessages);
+        _loading = false;
+        _error = null;
         _controller.clear();
       });
+      _pendingSendRequestId = null;
+      _pendingSendContent = null;
       _scrollToEnd();
     } catch (error) {
       if (mounted) {
@@ -119,11 +174,26 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     });
   }
 
+  List<ChatMessage> _mergeMessages(List<ChatMessage> incoming) {
+    final Map<String, ChatMessage> byId = <String, ChatMessage>{
+      for (final ChatMessage item in _messages) item.id: item,
+    };
+    for (final ChatMessage item in incoming) {
+      byId[item.id] = item;
+    }
+    final List<ChatMessage> merged = byId.values.toList()
+      ..sort(
+        (ChatMessage left, ChatMessage right) =>
+            left.createdAt.compareTo(right.createdAt),
+      );
+    return merged;
+  }
+
   void _openProfile() {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (BuildContext context) =>
-            PublicProfilePage(userId: widget.conversation.targetUserId),
+            PublicProfilePage(userId: _conversation.targetUserId),
       ),
     );
   }
@@ -133,8 +203,8 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       MaterialPageRoute<void>(
         builder: (BuildContext context) => ReportPage(
           targetType: ReportTargetType.user,
-          targetId: '${widget.conversation.targetUserId}',
-          targetName: widget.conversation.title,
+          targetId: '${_conversation.targetUserId}',
+          targetName: _conversation.title,
         ),
       ),
     );
@@ -143,30 +213,35 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   @override
   Widget build(BuildContext context) {
     final bool canSend =
-        _repository.supportsPrivateSend &&
-        widget.conversation.available &&
-        !_sending;
+        _repository.supportsPrivateSend && _conversation.available && !_sending;
     return SocialPageScaffold(
       appBar: AppBar(
         centerTitle: false,
         titleSpacing: 0,
         title: Row(
           children: <Widget>[
-            RuntimeAvatar(seed: widget.conversation.id, size: 34),
+            RuntimeAvatar(
+              seed: _conversation.id ?? 'user-${_conversation.targetUserId}',
+              size: 34,
+            ),
             const SizedBox(width: 9),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   Text(
-                    widget.conversation.title,
+                    _conversation.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    _repository.supportsPrivateSend ? '在线' : '只读历史',
+                    _repository.supportsPrivateRealtime
+                        ? '实时在线'
+                        : _repository.supportsPrivateSend
+                        ? '服务端留存'
+                        : '只读历史',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: _repository.supportsPrivateSend
+                      color: _repository.supportsPrivateRealtime
                           ? SocialColors.success
                           : SocialColors.textTertiary,
                       fontSize: 9,
@@ -199,12 +274,21 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       ),
       body: Column(
         children: <Widget>[
-          if (!_repository.supportsPrivateSend)
+          if (!_repository.supportsPrivateRealtime)
+            Padding(
+              padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: const _MessageInfoCard(
+                icon: Icons.lock_outline_rounded,
+                text: '第一方消息可写入并恢复；腾讯 IM 实时投递仍为 VENDOR_BLOCKED，不伪造在线状态。',
+              ),
+            ),
+          if (_conversation.isDraft)
             const Padding(
               padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
               child: _MessageInfoCard(
-                icon: Icons.lock_outline_rounded,
-                text: '腾讯 IM 尚未接入，当前只展示后端已落库的历史内容，不伪造实时收发。',
+                icon: Icons.pending_outlined,
+                text:
+                    '新会话草稿：服务端尚未返回会话 ID；首条消息留存后会尽可能从权威会话列表解析，未解析前不会生成本地会话 ID。',
               ),
             ),
           Expanded(
@@ -256,7 +340,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                         textInputAction: TextInputAction.send,
                         onSubmitted: (_) => _send(),
                         decoration: InputDecoration(
-                          hintText: canSend ? '输入消息…' : '腾讯 IM 接入后开放发送',
+                          hintText: canSend ? '输入消息（服务端留存）…' : '当前发送不可用',
                           counterText: '',
                         ),
                       ),
@@ -340,6 +424,18 @@ class _ChatBubble extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
+                if (message.status ==
+                    ChatMessageStatus.storedPendingDelivery) ...<Widget>[
+                  Text(
+                    '已留存·实时未送达',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: message.isMine
+                          ? Colors.white.withValues(alpha: 0.86)
+                          : SocialColors.textTertiary,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
                 Text(
                   _formatMessageTime(message.createdAt, now),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(

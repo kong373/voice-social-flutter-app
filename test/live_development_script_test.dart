@@ -6,22 +6,42 @@ void main() {
   late Directory fakeFlutterBin;
   late File fakeFlutterLog;
   late File fakeFlutterEnvLog;
+  late File fakeFlutterVersionConfig;
 
   setUp(() {
     fakeFlutterBin = Directory.systemTemp.createTempSync('live-dev-flutter-');
     fakeFlutterLog = File('${fakeFlutterBin.path}/invocation.log');
     fakeFlutterEnvLog = File('${fakeFlutterBin.path}/environment.log');
+    fakeFlutterVersionConfig = File('${fakeFlutterBin.path}/version.config');
     fakePath = fakeFlutterBin.path;
     fakeLogPath = fakeFlutterLog.path;
     fakeFlutterEnvLogPath = fakeFlutterEnvLog.path;
+    fakeVersionConfigPath = fakeFlutterVersionConfig.path;
     final File fakeFlutter = File('${fakeFlutterBin.path}/flutter');
     fakeFlutter.writeAsStringSync('''#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\\n' "\$@" > "\${FAKE_FLUTTER_LOG}"
-printf 'HOST_TOOL_TOKEN=%s\\n' "\${HOST_TOOL_TOKEN-<unset>}" > "\${FAKE_FLUTTER_ENV_LOG}"
-printf 'access_token=%s\\n' "\${access_token-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG}"
-printf 'Access_Token=%s\\n' "\${Access_Token-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG}"
-printf 'MiXeD_TOkEn=%s\\n' "\${MiXeD_TOkEn-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG}"
+if [[ "\${1-}" == "--version" && "\${2-}" == "--machine" ]]; then
+  version_line='3.44.7|3.12.2'
+  if [[ -f "${fakeFlutterVersionConfig.path}" ]]; then
+    IFS= read -r version_line < "${fakeFlutterVersionConfig.path}"
+  fi
+  IFS='|' read -r framework_version dart_version <<< "\$version_line"
+  printf '{"frameworkVersion":"%s","dartSdkVersion":"%s"}\\n' "\$framework_version" "\$dart_version"
+  exit 0
+fi
+printf '%s\\n' "\$@" > "${fakeFlutterLog.path}"
+printf 'HOST_TOOL_TOKEN=%s\\n' "\${HOST_TOOL_TOKEN-<unset>}" > "${fakeFlutterEnvLog.path}"
+printf 'access_token=%s\\n' "\${access_token-<unset>}" >> "${fakeFlutterEnvLog.path}"
+printf 'Access_Token=%s\\n' "\${Access_Token-<unset>}" >> "${fakeFlutterEnvLog.path}"
+printf 'MiXeD_TOkEn=%s\\n' "\${MiXeD_TOkEn-<unset>}" >> "${fakeFlutterEnvLog.path}"
+printf 'AWS_PROFILE=%s\\n' "\${AWS_PROFILE-<unset>}" >> "${fakeFlutterEnvLog.path}"
+printf 'KUBECONFIG=%s\\n' "\${KUBECONFIG-<unset>}" >> "${fakeFlutterEnvLog.path}"
+printf 'SSH_AUTH_SOCK=%s\\n' "\${SSH_AUTH_SOCK-<unset>}" >> "${fakeFlutterEnvLog.path}"
+printf 'PATH=%s\\n' "\${PATH-<unset>}" >> "${fakeFlutterEnvLog.path}"
+printf 'HOME=%s\\n' "\${HOME-<unset>}" >> "${fakeFlutterEnvLog.path}"
+printf 'JAVA_HOME=%s\\n' "\${JAVA_HOME-<unset>}" >> "${fakeFlutterEnvLog.path}"
+printf 'ANDROID_HOME=%s\\n' "\${ANDROID_HOME-<unset>}" >> "${fakeFlutterEnvLog.path}"
+printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutterEnvLog.path}"
 ''');
     Process.runSync('chmod', <String>['+x', fakeFlutter.path]);
   });
@@ -33,6 +53,7 @@ printf 'MiXeD_TOkEn=%s\\n' "\${MiXeD_TOkEn-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG
     fakePath = null;
     fakeLogPath = null;
     fakeFlutterEnvLogPath = null;
+    fakeVersionConfigPath = null;
   });
 
   test('help describes the two supported live-development entry points', () {
@@ -98,6 +119,11 @@ printf 'MiXeD_TOkEn=%s\\n' "\${MiXeD_TOkEn-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG
     expect(invocation, contains('emulator-5554'));
     expect(invocation, contains('--dart-define=BACKEND_MODE=live'));
     expect(invocation, contains('--dart-define=APP_ENV=development'));
+    expect(invocation, contains('--dart-define=ENABLE_QA_CONSOLE=false'));
+    expect(
+      invocation,
+      contains('--dart-define=ENABLE_VIDEO_RUNTIME_DEMO=false'),
+    );
     expect(
       invocation,
       contains('--dart-define=API_BASE_URL=http://10.0.2.2:18080/'),
@@ -105,6 +131,85 @@ printf 'MiXeD_TOkEn=%s\\n' "\${MiXeD_TOkEn-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG
     expect(invocation, contains('--dart-define=OAUTH_CLIENT_ID=public-client'));
     expect(invocation, isNot(contains('SECRET')));
     expect(invocation, isNot(contains('PASSWORD')));
+  });
+
+  test('run rejects a Flutter SDK other than the frozen 3.44.7', () {
+    final ProcessResult result = _run(<String>[
+      'run',
+      '--target',
+      'android-emulator',
+      '--device',
+      'emulator-5554',
+    ], environment: _baseEnvironment()..['FAKE_FLUTTER_VERSION'] = '3.45.0');
+
+    expect(result.exitCode, isNot(0));
+    expect(result.stderr, contains('Flutter 3.44.7'));
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('run rejects a Dart SDK other than the frozen 3.12.2', () {
+    final ProcessResult result = _run(<String>[
+      'run',
+      '--target',
+      'android-emulator',
+      '--device',
+      'emulator-5554',
+    ], environment: _baseEnvironment()..['FAKE_DART_VERSION'] = '3.13.0');
+
+    expect(result.exitCode, isNot(0));
+    expect(result.stderr, contains('Dart 3.12.2'));
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('run requires an explicit device for the Android emulator target', () {
+    final ProcessResult result = _run(<String>[
+      'run',
+      '--target',
+      'android-emulator',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, isNot(0));
+    expect(
+      result.stderr,
+      contains('android-emulator target requires --device'),
+    );
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('run requires an explicit device for the host target', () {
+    final ProcessResult result = _run(
+      <String>['run', '--target', 'host'],
+      environment: _baseEnvironment()
+        ..['API_BASE_URL'] = 'http://127.0.0.1:18080/',
+    );
+
+    expect(result.exitCode, isNot(0));
+    expect(result.stderr, contains('host target requires --device'));
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('build-apk rejects a Flutter SDK other than the frozen 3.44.7', () {
+    final ProcessResult result = _run(<String>[
+      'build-apk',
+      '--target',
+      'android-emulator',
+    ], environment: _baseEnvironment()..['FAKE_FLUTTER_VERSION'] = '3.45.0');
+
+    expect(result.exitCode, isNot(0));
+    expect(result.stderr, contains('Flutter 3.44.7'));
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('build-apk rejects a Dart SDK other than the frozen 3.12.2', () {
+    final ProcessResult result = _run(<String>[
+      'build-apk',
+      '--target',
+      'android-emulator',
+    ], environment: _baseEnvironment()..['FAKE_DART_VERSION'] = '3.13.0');
+
+    expect(result.exitCode, isNot(0));
+    expect(result.stderr, contains('Dart 3.12.2'));
+    expect(fakeFlutterLog.existsSync(), isFalse);
   });
 
   test(
@@ -165,6 +270,14 @@ printf 'MiXeD_TOkEn=%s\\n' "\${MiXeD_TOkEn-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG
       expect(invocationLines, contains('--dart-define=APP_ENV=development'));
       expect(
         invocationLines,
+        contains('--dart-define=ENABLE_QA_CONSOLE=false'),
+      );
+      expect(
+        invocationLines,
+        contains('--dart-define=ENABLE_VIDEO_RUNTIME_DEMO=false'),
+      );
+      expect(
+        invocationLines,
         contains('--dart-define=API_BASE_URL=http://10.0.2.2:18080/'),
       );
       expect(
@@ -185,6 +298,82 @@ printf 'MiXeD_TOkEn=%s\\n' "\${MiXeD_TOkEn-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG
   );
 
   test(
+    'build-apk rejects a device selector instead of silently ignoring it',
+    () {
+      final ProcessResult result = _run(<String>[
+        'build-apk',
+        '--target',
+        'android-emulator',
+        '--device',
+        'emulator-5554',
+      ], environment: _baseEnvironment());
+
+      expect(result.exitCode, isNot(0));
+      expect(result.stderr, contains('--device is only valid for run'));
+      expect(fakeFlutterLog.existsSync(), isFalse);
+    },
+  );
+
+  test(
+    'fixed client metadata cannot be overridden by the host environment',
+    () {
+      final ProcessResult result = _run(
+        <String>['build-apk', '--target', 'android-emulator'],
+        environment: _baseEnvironment()
+          ..['CLIENT_TYPE'] = 'iOS'
+          ..['CLIENT_INNER_VERSION'] = 'SECRET'
+          ..['API_TIMEOUT_SECONDS'] = '99999'
+          ..['LIVE_PROBE_PATH'] = '/token',
+      );
+
+      expect(result.exitCode, 0);
+      final String invocation = fakeFlutterLog.readAsStringSync();
+      expect(invocation, contains('--dart-define=CLIENT_TYPE=Android'));
+      expect(invocation, contains('--dart-define=CLIENT_INNER_VERSION=6'));
+      expect(invocation, contains('--dart-define=API_TIMEOUT_SECONDS=15'));
+      expect(invocation, contains('--dart-define=LIVE_PROBE_PATH=/'));
+      expect(invocation, isNot(contains('CLIENT_TYPE=iOS')));
+      expect(invocation, isNot(contains('CLIENT_INNER_VERSION=SECRET')));
+      expect(invocation, isNot(contains('API_TIMEOUT_SECONDS=99999')));
+      expect(invocation, isNot(contains('LIVE_PROBE_PATH=/token')));
+    },
+  );
+
+  test('live launcher overrides host Mock-shell requests to false', () {
+    final ProcessResult result = _run(
+      <String>[
+        'run',
+        '--target',
+        'android-emulator',
+        '--device',
+        'emulator-5554',
+      ],
+      environment: _baseEnvironment()
+        ..['ENABLE_QA_CONSOLE'] = 'true'
+        ..['ENABLE_VIDEO_RUNTIME_DEMO'] = 'true',
+    );
+
+    expect(result.exitCode, 0);
+    final List<String> invocationLines = fakeFlutterLog
+        .readAsStringSync()
+        .trim()
+        .split('\n');
+    expect(invocationLines, contains('--dart-define=ENABLE_QA_CONSOLE=false'));
+    expect(
+      invocationLines,
+      isNot(contains('--dart-define=ENABLE_QA_CONSOLE=true')),
+    );
+    expect(
+      invocationLines,
+      contains('--dart-define=ENABLE_VIDEO_RUNTIME_DEMO=false'),
+    );
+    expect(
+      invocationLines,
+      isNot(contains('--dart-define=ENABLE_VIDEO_RUNTIME_DEMO=true')),
+    );
+  });
+
+  test(
     'rejects OAuth and vendor secret environment variables without echoing values',
     () {
       const String secretValue = 'never-print-this-secret';
@@ -203,7 +392,13 @@ printf 'MiXeD_TOkEn=%s\\n' "\${MiXeD_TOkEn-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG
 
   test('strips an unrelated host token before invoking Flutter', () {
     final ProcessResult result = _run(
-      <String>['run', '--target', 'android-emulator'],
+      <String>[
+        'run',
+        '--target',
+        'android-emulator',
+        '--device',
+        'emulator-5554',
+      ],
       environment: _baseEnvironment()..['HOST_TOOL_TOKEN'] = 'host-only-token',
     );
 
@@ -216,7 +411,13 @@ printf 'MiXeD_TOkEn=%s\\n' "\${MiXeD_TOkEn-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG
 
   test('strips lowercase and mixed-case token environment variables', () {
     final ProcessResult result = _run(
-      <String>['run', '--target', 'android-emulator'],
+      <String>[
+        'run',
+        '--target',
+        'android-emulator',
+        '--device',
+        'emulator-5554',
+      ],
       environment: _baseEnvironment()
         ..['access_token'] = 'lowercase-token'
         ..['Access_Token'] = 'mixed-token'
@@ -233,6 +434,61 @@ printf 'MiXeD_TOkEn=%s\\n' "\${MiXeD_TOkEn-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG
     expect(childEnvironment, contains('Access_Token=<unset>'));
     expect(childEnvironment, contains('MiXeD_TOkEn=<unset>'));
   });
+
+  test('passes only the minimal SDK environment to Flutter', () {
+    final ProcessResult result = _run(<String>[
+      'run',
+      '--target',
+      'android-emulator',
+      '--device',
+      'emulator-5554',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, 0);
+    final String childEnvironment = fakeFlutterEnvLog.readAsStringSync();
+    expect(childEnvironment, contains('AWS_PROFILE=<unset>'));
+    expect(childEnvironment, contains('KUBECONFIG=<unset>'));
+    expect(childEnvironment, contains('SSH_AUTH_SOCK=<unset>'));
+    expect(childEnvironment, contains('PATH=${fakePath!}:'));
+    expect(childEnvironment, contains('HOME=/tmp/live-development-test-home'));
+    expect(
+      childEnvironment,
+      contains('JAVA_HOME=/tmp/live-development-test-java'),
+    );
+    expect(
+      childEnvironment,
+      contains('ANDROID_HOME=/tmp/live-development-test-android'),
+    );
+    expect(
+      childEnvironment,
+      contains('ANDROID_SDK_ROOT=/tmp/live-development-test-android'),
+    );
+  });
+
+  test(
+    'rejects API-key and credential environment variables before Flutter',
+    () {
+      for (final MapEntry<String, String> entry in <String, String>{
+        'STRIPE_API_KEY': 'stripe-api-key-value',
+        'google_application_credentials': 'google-credentials-value',
+        'GitHub_Pat': 'github-pat-value',
+        'vendor_auth': 'vendor-auth-value',
+        'VENDOR_BEARER': 'vendor-bearer-value',
+      }.entries) {
+        final ProcessResult result = _run(<String>[
+          'run',
+          '--target',
+          'android-emulator',
+        ], environment: _baseEnvironment()..[entry.key] = entry.value);
+
+        final String output = '${result.stdout}\n${result.stderr}';
+        expect(result.exitCode, isNot(0), reason: entry.key);
+        expect(output, contains('confidential credential'), reason: entry.key);
+        expect(output, isNot(contains(entry.value)), reason: entry.key);
+        expect(fakeFlutterLog.existsSync(), isFalse, reason: entry.key);
+      }
+    },
+  );
 
   test(
     'rejects lowercase and mixed-case confidential environment variables',
@@ -299,6 +555,9 @@ printf 'MiXeD_TOkEn=%s\\n' "\${MiXeD_TOkEn-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG
           'lowercase-client-secret',
       '--PrIvAtE_KeY=mixed-private-key': 'mixed-private-key',
       '--ACCESS_TOKEN=mixed-access-token': 'mixed-access-token',
+      '--api-key=mixed-api-key': 'mixed-api-key',
+      '--AUTH=mixed-auth': 'mixed-auth',
+      '--BEARER=mixed-bearer': 'mixed-bearer',
     }.entries) {
       final ProcessResult result = _run(<String>[
         'run',
@@ -314,6 +573,230 @@ printf 'MiXeD_TOkEn=%s\\n' "\${MiXeD_TOkEn-<unset>}" >> "\${FAKE_FLUTTER_ENV_LOG
       expect(fakeFlutterLog.existsSync(), isFalse, reason: entry.key);
     }
   });
+
+  test('rejects separated OAuth client-id values that look confidential', () {
+    final ProcessResult result = _run(<String>[
+      'run',
+      '--target',
+      'android-emulator',
+      '--oauth-client-id',
+      'client_secret_value',
+    ], environment: _baseEnvironment());
+
+    final String output = '${result.stdout}\n${result.stderr}';
+    expect(result.exitCode, isNot(0));
+    expect(output, contains('confidential credential'));
+    expect(output, isNot(contains('client_secret_value')));
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('rejects a newline in a separated OAuth client-id value', () {
+    final ProcessResult result = _run(<String>[
+      'run',
+      '--target',
+      'android-emulator',
+      '--oauth-client-id',
+      'public-client\n-injected',
+    ], environment: _baseEnvironment());
+
+    final String output = '${result.stdout}\n${result.stderr}';
+    expect(result.exitCode, isNot(0));
+    expect(output, contains('confidential credential'));
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('rejects an obviously confidential OAuth environment value', () {
+    final ProcessResult result = _run(
+      <String>['run', '--target', 'android-emulator'],
+      environment: _baseEnvironment()
+        ..['OAUTH_CLIENT_ID'] = 'client_secret_value',
+    );
+
+    final String output = '${result.stdout}\n${result.stderr}';
+    expect(result.exitCode, isNot(0));
+    expect(output, contains('confidential credential'));
+    expect(output, isNot(contains('client_secret_value')));
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('rejects all user Dart-define aliases before Flutter', () {
+    for (final List<String> alias in <List<String>>[
+      <String>['-D', 'BACKEND_MODE=mock'],
+      <String>['-DENABLE_QA_CONSOLE=true'],
+      <String>['--DartDefines', 'BACKEND_MODE=mock'],
+      <String>['--DartDefines=ENABLE_QA_CONSOLE=true'],
+    ]) {
+      final ProcessResult result = _run(<String>[
+        'run',
+        '--target',
+        'android-emulator',
+        ...alias,
+      ], environment: _baseEnvironment());
+
+      expect(result.exitCode, isNot(0), reason: alias.join(' '));
+      expect(
+        result.stderr,
+        contains('runtime defines are owned by this wrapper'),
+        reason: alias.join(' '),
+      );
+      expect(fakeFlutterLog.existsSync(), isFalse, reason: alias.join(' '));
+    }
+  });
+
+  test('rejects Android project define aliases before Flutter', () {
+    for (final List<String> alias in <List<String>>[
+      <String>['-Pdart-defines=QkFDS0VORF9NT0RFPW1vY2s='],
+      <String>['-P', 'dart-defines=QkFDS0VORF9NT0RFPW1vY2s='],
+      <String>['--android-project-arg=dart-defines=QkFDS0VORF9NT0RFPW1vY2s='],
+      <String>[
+        '--android-project-arg',
+        'dart-defines=QkFDS0VORF9NT0RFPW1vY2s=',
+      ],
+    ]) {
+      final ProcessResult result = _run(<String>[
+        'build-apk',
+        '--target',
+        'android-emulator',
+        ...alias,
+      ], environment: _baseEnvironment());
+
+      expect(result.exitCode, isNot(0), reason: alias.join(' '));
+      expect(
+        result.stderr,
+        contains('runtime defines are owned by this wrapper'),
+        reason: alias.join(' '),
+      );
+      expect(fakeFlutterLog.existsSync(), isFalse, reason: alias.join(' '));
+    }
+  });
+
+  test('rejects an unapproved Flutter passthrough option', () {
+    final ProcessResult result = _run(<String>[
+      'run',
+      '--target',
+      'android-emulator',
+      '--target-platform=android-arm64',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, isNot(0));
+    expect(
+      result.stderr,
+      contains('additional Flutter arguments are restricted'),
+    );
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('allows a harmless verbosity flag through the explicit allowlist', () {
+    final ProcessResult result = _run(<String>[
+      'run',
+      '--target',
+      'android-emulator',
+      '--device',
+      'emulator-5554',
+      '--',
+      '--verbose',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, 0);
+    expect(fakeFlutterLog.readAsStringSync(), contains('--verbose'));
+  });
+
+  test('rejects an Android emulator selector for the host target', () {
+    final ProcessResult result = _run(
+      <String>['run', '--target', 'host', '--device', 'emulator-5554'],
+      environment: _baseEnvironment()
+        ..['API_BASE_URL'] = 'http://127.0.0.1:18080/',
+    );
+
+    expect(result.exitCode, isNot(0));
+    expect(
+      result.stderr,
+      contains('host target cannot use an Android emulator'),
+    );
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('requires an Android emulator selector for the emulator target', () {
+    final ProcessResult result = _run(<String>[
+      'run',
+      '--target',
+      'android-emulator',
+      '--device',
+      'macos',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, isNot(0));
+    expect(
+      result.stderr,
+      contains(
+        'android-emulator target requires an Android emulator device selector',
+      ),
+    );
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('rejects API ports outside 1 through 65535', () {
+    for (final String port in <String>['0', '65536']) {
+      final ProcessResult result = _run(
+        <String>[
+          'run',
+          '--target',
+          'android-emulator',
+          '--device',
+          'emulator-5554',
+        ],
+        environment: _baseEnvironment()
+          ..['API_BASE_URL'] = 'http://10.0.2.2:$port/',
+      );
+
+      expect(result.exitCode, isNot(0), reason: port);
+      expect(
+        result.stderr,
+        contains('port must be between 1 and 65535'),
+        reason: port,
+      );
+      expect(fakeFlutterLog.existsSync(), isFalse, reason: port);
+    }
+  });
+
+  test('rejects whitespace in the API URL before Flutter', () {
+    final ProcessResult result = _run(
+      <String>[
+        'run',
+        '--target',
+        'android-emulator',
+        '--device',
+        'emulator-5554',
+      ],
+      environment: _baseEnvironment()
+        ..['API_BASE_URL'] = 'http://10.0.2.2:18080/path with space',
+    );
+
+    expect(result.exitCode, isNot(0));
+    expect(result.stderr, contains('API_BASE_URL must not contain whitespace'));
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('rejects a non-root API URL path before Flutter', () {
+    final ProcessResult result = _run(
+      <String>[
+        'run',
+        '--target',
+        'android-emulator',
+        '--device',
+        'emulator-5554',
+      ],
+      environment: _baseEnvironment()
+        ..['API_BASE_URL'] = 'http://10.0.2.2:18080/token',
+    );
+
+    expect(result.exitCode, isNot(0));
+    expect(
+      result.stderr,
+      contains('API_BASE_URL must be an absolute HTTP(S) origin'),
+    );
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
 }
 
 String get _projectRoot => Directory.current.path;
@@ -328,6 +811,17 @@ Map<String, String> _baseEnvironment() {
     'OAUTH_CLIENT_ID': 'public-client',
     'FAKE_FLUTTER_LOG': fakeLogPath!,
     'FAKE_FLUTTER_ENV_LOG': fakeFlutterEnvLogPath!,
+    'HOME': '/tmp/live-development-test-home',
+    'USER': 'live-development-test',
+    'LOGNAME': 'live-development-test',
+    'TMPDIR': '/tmp/live-development-test-tmp',
+    'SHELL': '/bin/bash',
+    'JAVA_HOME': '/tmp/live-development-test-java',
+    'ANDROID_HOME': '/tmp/live-development-test-android',
+    'ANDROID_SDK_ROOT': '/tmp/live-development-test-android',
+    'AWS_PROFILE': 'host-profile',
+    'KUBECONFIG': '/private/host-kubeconfig',
+    'SSH_AUTH_SOCK': '/tmp/host-ssh-agent.sock',
   };
   for (final String name in <String>[
     'OAUTH_CLIENT_SECRET',
@@ -350,6 +844,15 @@ Map<String, String> _baseEnvironment() {
     'PaSsWoRd',
     'private_key',
     'ACCESS_KEY',
+    'STRIPE_API_KEY',
+    'google_application_credentials',
+    'GitHub_Pat',
+    'vendor_auth',
+    'VENDOR_BEARER',
+    'CLIENT_TYPE',
+    'CLIENT_INNER_VERSION',
+    'API_TIMEOUT_SECONDS',
+    'LIVE_PROBE_PATH',
     'access_token',
     'Access_Token',
     'MiXeD_TOkEn',
@@ -362,6 +865,7 @@ Map<String, String> _baseEnvironment() {
 String? fakePath;
 String? fakeLogPath;
 String? fakeFlutterEnvLogPath;
+String? fakeVersionConfigPath;
 
 ProcessResult _run(List<String> arguments, {Map<String, String>? environment}) {
   final Map<String, String> env = <String, String>{
@@ -373,6 +877,11 @@ ProcessResult _run(List<String> arguments, {Map<String, String>? environment}) {
       path?.split(Platform.isWindows ? ';' : ':') ?? <String>[];
   fakePath = pathParts.isNotEmpty ? pathParts.first : null;
   fakeLogPath = env['FAKE_FLUTTER_LOG'];
+  final String frameworkVersion = env['FAKE_FLUTTER_VERSION'] ?? '3.44.7';
+  final String dartVersion = env['FAKE_DART_VERSION'] ?? '3.12.2';
+  File(
+    fakeVersionConfigPath!,
+  ).writeAsStringSync('$frameworkVersion|$dartVersion\n');
   return Process.runSync(
     'bash',
     <String>[_script.path, ...arguments],

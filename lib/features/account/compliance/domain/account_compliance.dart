@@ -6,7 +6,13 @@ enum AppealState { none, pending, approved, rejected }
 
 enum PermissionKind { microphone, notifications, photos }
 
-enum PermissionState { notDetermined, granted, denied, restricted }
+/// State returned by the authoritative permission source.
+///
+/// `notDetermined` is only valid after a native platform adapter has actually
+/// queried the OS. Live HTTP data cannot infer it. Until that adapter exists,
+/// the backend repository must use [unavailable] and leave platform ownership
+/// unknown.
+enum PermissionState { notDetermined, granted, denied, restricted, unavailable }
 
 class PermissionSetting {
   const PermissionSetting({
@@ -21,7 +27,12 @@ class PermissionSetting {
   final PermissionState state;
   final String title;
   final String purpose;
-  final bool managedByPlatform;
+
+  /// Whether the OS/native adapter owns this state. `null` means that no
+  /// native authority is connected yet; it is intentionally different from
+  /// `false`, which would claim that the platform does not manage the
+  /// permission.
+  final bool? managedByPlatform;
 
   PermissionSetting copyWith({
     PermissionState? state,
@@ -95,12 +106,27 @@ class CancellationEligibility {
     required this.message,
     required this.mobile,
     required this.requiresSmsCode,
+    this.status = 'NONE',
+    this.canCancel = false,
+    this.coolingEndsAt = '',
   });
 
   final bool allowed;
   final String message;
   final String mobile;
   final bool requiresSmsCode;
+
+  /// The server-owned deletion request state, for example `NONE` or
+  /// `COOLING_OFF`.
+  final String status;
+
+  /// Whether the server currently permits cancelling the deletion request.
+  /// This is intentionally separate from [allowed], which means that a new
+  /// deletion request may be submitted.
+  final bool canCancel;
+
+  /// The server-provided cooling-off deadline, if one exists.
+  final String coolingEndsAt;
 }
 
 class VersionUpdateInfo {
@@ -205,6 +231,8 @@ abstract interface class AccountComplianceRepository {
   Future<CancellationEligibility> queryCancellationEligibility();
 
   Future<void> requestCancellation({required String smsCode});
+
+  Future<CancellationEligibility> cancelDeletion();
 
   Future<VersionUpdateInfo> checkVersion({
     required int currentVersion,

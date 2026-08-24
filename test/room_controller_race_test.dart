@@ -73,6 +73,41 @@ void main() {
     },
   );
 
+  test('late public history cannot write after the room is left', () async {
+    final _RaceRepository repository = _RaceRepository()
+      ..holdPublicMessages = true;
+    final _RaceRealtimeGateway realtime = _RaceRealtimeGateway();
+    final RoomController controller = _controller(repository, realtime);
+    addTearDown(() async {
+      controller.dispose();
+      await realtime.dispose();
+    });
+
+    final Future<void> join = controller.join();
+    await repository.publicMessagesStarted.future;
+    expect(await controller.leaveRoom(), isTrue);
+    repository.publicMessagesGate.complete(<RoomMessage>[
+      const RoomMessage(
+        messageId: 'late-message',
+        sender: '晚星',
+        content: '不应写入已离开的房间',
+      ),
+    ]);
+    await join;
+
+    expect(controller.status, RoomSessionStatus.left);
+    expect(
+      controller.messages,
+      isNot(
+        contains(
+          predicate<RoomMessage>(
+            (RoomMessage message) => message.messageId == 'late-message',
+          ),
+        ),
+      ),
+    );
+  });
+
   test(
     'late microphone, chat and gift completions do not write after dispose',
     () async {
@@ -133,7 +168,7 @@ void main() {
       });
       await giftController.join();
       final Future<bool> gift = giftController.sendGift(
-        giftId: 101,
+        giftId: 'gift-rose-uuid',
         giftName: '玫瑰',
         receiverUserId: 20001,
         targetName: '房主',
@@ -466,6 +501,10 @@ class _RaceRepository implements RoomRepository {
   final Completer<void> chatGate = Completer<void>();
   final Completer<void> giftStarted = Completer<void>();
   final Completer<GiftReceipt> giftGate = Completer<GiftReceipt>();
+  final Completer<void> publicMessagesStarted = Completer<void>();
+  final Completer<List<RoomMessage>> publicMessagesGate =
+      Completer<List<RoomMessage>>();
+  bool holdPublicMessages = false;
   final Completer<void> reconnectStarted = Completer<void>();
   final Completer<RoomSnapshot> reconnectGate = Completer<RoomSnapshot>();
 
@@ -519,23 +558,46 @@ class _RaceRepository implements RoomRepository {
   }
 
   @override
-  Future<void> sendPublicMessage({
+  Future<RoomMessage> sendPublicMessage({
     required String roomId,
     required String content,
+    String? requestId,
   }) async {
     if (!chatStarted.isCompleted) {
       chatStarted.complete();
       await chatGate.future;
     }
+    return RoomMessage(
+      roomId: '880217',
+      messageId: 'race-chat-1',
+      senderId: 10001,
+      sender: '我',
+      content: '迟到的消息',
+      createdAt: DateTime.utc(2026, 8, 22),
+      deliveryMode: 'HTTP_PERSISTED_NO_REALTIME',
+      realtimeStatus: 'VENDOR_BLOCKED',
+    );
+  }
+
+  @override
+  Future<List<RoomMessage>> fetchPublicMessages(String roomId) {
+    if (!holdPublicMessages) {
+      return Future<List<RoomMessage>>.value(const <RoomMessage>[]);
+    }
+    if (!publicMessagesStarted.isCompleted) {
+      publicMessagesStarted.complete();
+    }
+    return publicMessagesGate.future;
   }
 
   @override
   Future<GiftReceipt> sendGift({
     required String roomId,
-    required int giftId,
+    required String giftId,
     required List<int> receiverUserIds,
     required int quantity,
     required int giftFrom,
+    String? requestId,
   }) {
     if (!giftStarted.isCompleted) {
       giftStarted.complete();
@@ -652,18 +714,33 @@ class _StaleJoinRepository implements RoomRepository {
   }) async {}
 
   @override
-  Future<void> sendPublicMessage({
+  Future<RoomMessage> sendPublicMessage({
     required String roomId,
     required String content,
-  }) async {}
+    String? requestId,
+  }) async => RoomMessage(
+    roomId: '880217',
+    messageId: 'stale-chat-1',
+    senderId: 10001,
+    sender: '我',
+    content: 'stale',
+    createdAt: DateTime.utc(2026, 8, 22),
+    deliveryMode: 'HTTP_PERSISTED_NO_REALTIME',
+    realtimeStatus: 'VENDOR_BLOCKED',
+  );
+
+  @override
+  Future<List<RoomMessage>> fetchPublicMessages(String roomId) async =>
+      const <RoomMessage>[];
 
   @override
   Future<GiftReceipt> sendGift({
     required String roomId,
-    required int giftId,
+    required String giftId,
     required List<int> receiverUserIds,
     required int quantity,
     required int giftFrom,
+    String? requestId,
   }) async => const GiftReceipt(success: true, remainingBalance: 1200);
 }
 

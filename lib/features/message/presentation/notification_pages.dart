@@ -18,6 +18,7 @@ class _NotificationCenterPageState extends State<NotificationCenterPage> {
   bool _loading = true;
   bool _clearing = false;
   String? _error;
+  int _loadGeneration = 0;
 
   MessageRepository get _repository =>
       AppDependencyScope.of(context).messageRepository;
@@ -37,28 +38,40 @@ class _NotificationCenterPageState extends State<NotificationCenterPage> {
   }
 
   Future<void> _load() async {
+    final int generation = ++_loadGeneration;
+    final NotificationCategory requestedCategory = _category;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final List<AppNotification> value = await _repository.fetchNotifications(
-        _category,
+        requestedCategory,
       );
-      if (mounted) {
+      if (mounted &&
+          generation == _loadGeneration &&
+          requestedCategory == _category) {
         setState(() {
           _notifications = value;
           _loading = false;
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted &&
+          generation == _loadGeneration &&
+          requestedCategory == _category) {
         setState(() {
           _loading = false;
           _error = _messageFor(error);
         });
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _loadGeneration += 1;
+    super.dispose();
   }
 
   Future<void> _clearInteraction() async {

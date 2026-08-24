@@ -25,6 +25,10 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
       ? ClientStorePlatform.ios
       : ClientStorePlatform.android;
 
+  bool get _paymentAvailable => AppDependencyScope.of(
+    context,
+  ).commerceCatalogRepository.supportsPaymentChannelInvocation;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -254,14 +258,19 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
                       },
                     ),
                   const SizedBox(height: 18),
-                  FilledButton(
-                    onPressed:
-                        _selected == null ||
-                            _compliance?.youthModeEnabled == true
-                        ? null
-                        : _continue,
-                    child: const Text('选择支付方式'),
-                  ),
+                  if (_paymentAvailable)
+                    FilledButton(
+                      onPressed:
+                          _selected == null ||
+                              _compliance?.youthModeEnabled == true
+                          ? null
+                          : _continue,
+                      child: const Text('选择支付方式'),
+                    )
+                  else
+                    const _CommerceInfoBanner(
+                      text: '正式支付尚未接入。当前仅展示服务端商品和礼物币档位，不能选择支付渠道或提交充值订单。',
+                    ),
                   const SizedBox(height: 12),
                   const _CommerceInfoBanner(
                     text: '充值得到的是礼物币，不是主播现金收益或可提现余额。支付结果始终以服务端订单状态为准。',
@@ -299,12 +308,16 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _channel ??= _repository.availableChannels(widget.platform).firstOrNull;
+    if (_repository.supportsPaymentChannelInvocation) {
+      _channel ??= _repository.availableChannels(widget.platform).firstOrNull;
+    }
   }
 
   Future<void> _submit() async {
     final PaymentChannelType? channel = _channel;
-    if (channel == null || _submitting) {
+    if (!_repository.supportsPaymentChannelInvocation ||
+        channel == null ||
+        _submitting) {
       return;
     }
     final bool? confirmed = await showDialog<bool>(
@@ -366,9 +379,10 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
 
   @override
   Widget build(BuildContext context) {
-    final List<PaymentChannelType> channels = _repository.availableChannels(
-      widget.platform,
-    );
+    final bool paymentAvailable = _repository.supportsPaymentChannelInvocation;
+    final List<PaymentChannelType> channels = paymentAvailable
+        ? _repository.availableChannels(widget.platform)
+        : const <PaymentChannelType>[];
     return _CommerceScaffold(
       appBar: AppBar(title: const Text('支付方式与提交')),
       body: ListView(
@@ -410,56 +424,59 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
-          const _CommerceSectionTitle(title: '选择支付方式'),
-          const SizedBox(height: 10),
-          for (final PaymentChannelType channel in channels)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _CommercePanel(
-                selected: _channel == channel,
-                padding: EdgeInsets.zero,
-                child: RadioListTile<PaymentChannelType>(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  value: channel,
-                  groupValue: _channel,
-                  onChanged: _submitting
-                      ? null
-                      : (PaymentChannelType? value) =>
-                            setState(() => _channel = value),
-                  secondary: _CommerceAssetOrb(
-                    icon: channel == PaymentChannelType.wechat
-                        ? Icons.chat_bubble_rounded
-                        : channel == PaymentChannelType.alipay
-                        ? Icons.account_balance_wallet_rounded
-                        : Icons.apple_rounded,
-                    size: 40,
-                  ),
-                  title: Text(channel.label),
-                  subtitle: Text(
-                    channel == PaymentChannelType.appleIap
-                        ? '由 Apple IAP 完成购买与收据校验'
-                        : '支付结果需等待服务端订单确认',
+          if (paymentAvailable) ...<Widget>[
+            const SizedBox(height: 20),
+            const _CommerceSectionTitle(title: '选择支付方式'),
+            const SizedBox(height: 10),
+            for (final PaymentChannelType channel in channels)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _CommercePanel(
+                  selected: _channel == channel,
+                  padding: EdgeInsets.zero,
+                  child: RadioListTile<PaymentChannelType>(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    value: channel,
+                    groupValue: _channel,
+                    onChanged: _submitting
+                        ? null
+                        : (PaymentChannelType? value) =>
+                              setState(() => _channel = value),
+                    secondary: _CommerceAssetOrb(
+                      icon: channel == PaymentChannelType.wechat
+                          ? Icons.chat_bubble_rounded
+                          : channel == PaymentChannelType.alipay
+                          ? Icons.account_balance_wallet_rounded
+                          : Icons.apple_rounded,
+                      size: 40,
+                    ),
+                    title: Text(channel.label),
+                    subtitle: Text(
+                      channel == PaymentChannelType.appleIap
+                          ? '由 Apple IAP 完成购买与收据校验'
+                          : '支付结果需等待服务端订单确认',
+                    ),
                   ),
                 ),
               ),
-            ),
-          if (!_repository.supportsPaymentChannelInvocation)
+          ] else
             const _CommerceInfoBanner(
-              text: '支付 SDK 尚未接入。Live 模式不会伪造调起或支付成功；正式渠道接入后再开放提交。',
+              text: '正式支付尚未接入。当前仅展示订单摘要，不能选择支付渠道或提交充值订单。',
             ),
-          const SizedBox(height: 18),
-          FilledButton(
-            onPressed: _channel == null || _submitting ? null : _submit,
-            child: _submitting
-                ? const SizedBox.square(
-                    dimension: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('提交充值订单'),
-          ),
+          if (paymentAvailable) ...<Widget>[
+            const SizedBox(height: 18),
+            FilledButton(
+              onPressed: _channel == null || _submitting ? null : _submit,
+              child: _submitting
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('提交充值订单'),
+            ),
+          ],
           const SizedBox(height: 10),
           Text(
             widget.platform == ClientStorePlatform.ios
@@ -617,7 +634,11 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
 }
 
 class GiftCatalogPage extends StatefulWidget {
-  const GiftCatalogPage({super.key});
+  const GiftCatalogPage({this.initialGifts, super.key});
+
+  /// Explicit deterministic data for the QA page catalog. Ordinary app routes
+  /// leave this null and always load the backend-owned gift categories.
+  final List<GiftCatalogItem>? initialGifts;
 
   @override
   State<GiftCatalogPage> createState() => _GiftCatalogPageState();
@@ -646,7 +667,10 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
     final AppDependencies dependencies = AppDependencyScope.of(context);
     try {
       final List<Object> result = await Future.wait<Object>(<Future<Object>>[
-        dependencies.commerceCatalogRepository.fetchGiftCatalog(),
+        if (widget.initialGifts == null)
+          dependencies.commerceCatalogRepository.fetchGiftCatalog()
+        else
+          Future<List<GiftCatalogItem>>.value(widget.initialGifts),
         dependencies.commerceRepository.fetchWalletSummary(),
       ]);
       if (mounted) {
@@ -669,12 +693,10 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
   @override
   Widget build(BuildContext context) {
     final List<GiftCatalogItem> gifts = _gifts ?? const <GiftCatalogItem>[];
-    final List<GiftCatalogItem> visible =
-        _category == GiftCatalogCategory.popular
-        ? gifts.take(8).toList(growable: false)
-        : gifts
-              .where((GiftCatalogItem item) => item.category == _category)
-              .toList(growable: false);
+    final List<GiftCatalogItem> visible = filterGiftCatalogItems(
+      gifts: gifts,
+      category: _category,
+    );
     return _CommerceScaffold(
       appBar: AppBar(title: const Text('礼物图鉴')),
       body: _loading
@@ -752,7 +774,7 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
                       itemCount: visible.length,
                       itemBuilder: (BuildContext context, int index) {
                         final GiftCatalogItem gift = visible[index];
-                        final String asset = switch (gift.id % 4) {
+                        final String asset = switch (_giftAssetIndex(gift.id)) {
                           0 => 'assets/runtime/gift-blossom.png',
                           1 => 'assets/runtime/gift-whale.png',
                           2 => 'assets/runtime/gift-ticket.png',
@@ -810,6 +832,20 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
     );
   }
 }
+
+/// Applies the backend-owned category to the catalog tab. The grid remains a
+/// four-column layout; the popular tab must not show arbitrary first records.
+List<GiftCatalogItem> filterGiftCatalogItems({
+  required List<GiftCatalogItem> gifts,
+  required GiftCatalogCategory category,
+}) => gifts
+    .where((GiftCatalogItem item) => item.category == category)
+    .toList(growable: false);
+
+int _giftAssetIndex(String giftId) => giftId.codeUnits.fold<int>(
+  0,
+  (int value, int codeUnit) => (value + codeUnit) % 4,
+);
 
 class DecorationPage extends StatefulWidget {
   const DecorationPage({super.key});

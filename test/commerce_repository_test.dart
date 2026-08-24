@@ -27,19 +27,36 @@ void main() {
       'ktv',
     };
 
-    for (final LedgerDirection direction in LedgerDirection.values) {
-      final CommercePage<LedgerEntry> page = await repository.fetchLedger(
-        direction: direction,
-        page: 1,
-        pageSize: 50,
-      );
-      expect(
-        page.items.where(
-          (LedgerEntry entry) => retired.contains(entry.rawSubtype),
-        ),
-        isEmpty,
-      );
+    for (final LedgerCurrency currency in LedgerCurrency.values) {
+      for (final LedgerDirection direction in LedgerDirection.values) {
+        final CommercePage<LedgerEntry> page = await repository.fetchLedger(
+          currency: currency,
+          direction: direction,
+          page: 1,
+          pageSize: 50,
+        );
+        expect(
+          page.items.where(
+            (LedgerEntry entry) => retired.contains(entry.rawSubtype),
+          ),
+          isEmpty,
+        );
+      }
     }
+    final LedgerEntry giftCoin = (await repository.fetchLedger(
+      currency: LedgerCurrency.giftCoin,
+      direction: LedgerDirection.income,
+      page: 1,
+      pageSize: 10,
+    )).items.single;
+    final LedgerEntry cash = (await repository.fetchLedger(
+      currency: LedgerCurrency.cashCny,
+      direction: LedgerDirection.income,
+      page: 1,
+      pageSize: 10,
+    )).items.first;
+    expect(giftCoin.amount, 300);
+    expect(cash.amount, 68);
     expect(repository.supportsPaymentChannelInvocation, isFalse);
     expect(repository.refundScope, RefundScope.accountLegacy);
   });
@@ -68,14 +85,14 @@ void main() {
       expect(blocked.existingApplicationId, isNotNull);
 
       await expectLater(
-        repository.applyWithdrawal(amount: 50),
+        repository.applyWithdrawal(amount: 5),
         throwsA(isA<ApiException>()),
       );
       final WithdrawalRecord withdrawal = await repository.applyWithdrawal(
         amount: 100,
       );
       expect(withdrawal.status, WithdrawalStatus.pending);
-      expect(withdrawal.receivedAmount, 99);
+      expect(withdrawal.receivedAmount, 98);
     },
   );
 }

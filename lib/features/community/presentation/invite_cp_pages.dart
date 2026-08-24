@@ -50,7 +50,7 @@ class _InviteAttributionPageState extends State<InviteAttributionPage> {
                   eyebrow: 'INVITATION RECORD',
                   title: data.available ? '邀请关系已确认' : '暂未形成邀请归属',
                   subtitle: data.available
-                      ? '邀请码 ${data.inviteCode}  ·  已邀请 ${data.invitedUsers} 人'
+                      ? '邀请码 ${data.inviteCode}  ·  ${data.invitedUsers == null ? '邀请人数未知' : '已邀请 ${data.invitedUsers} 人'}'
                       : data.message,
                   icon: Icons.mark_email_read_rounded,
                   colors: const <Color>[
@@ -107,7 +107,9 @@ class _InviteAttributionPageState extends State<InviteAttributionPage> {
                           _KeyValue(label: '绑定时间', value: data.boundAt),
                           _KeyValue(
                             label: '已邀请用户',
-                            value: '${data.invitedUsers} 人',
+                            value: data.invitedUsers == null
+                                ? '未知（服务端未提供统计）'
+                                : '${data.invitedUsers} 人',
                           ),
                           if (data.message.isNotEmpty)
                             Padding(
@@ -261,6 +263,54 @@ class _CpRelationPageState extends State<CpRelationPage> {
     }
   }
 
+  Future<void> _end(CpRelation relation) async {
+    if (_busy) {
+      return;
+    }
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('解除 CP 关系？'),
+        content: const Text('解除后双方关系会立即结束，是否继续？'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('确认解除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await _repository.endCpRelation(relation.relationId);
+      if (mounted) {
+        await _load();
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('CP 关系已解除')));
+        }
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
   Widget _relationCard(CpRelation relation) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
@@ -319,27 +369,39 @@ class _CpRelationPageState extends State<CpRelationPage> {
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    '已相伴 ${relation.days} 天',
+                    relation.days == null ? '相伴天数未知' : '已相伴 ${relation.days} 天',
                     style: const TextStyle(
                       color: Color(0xFFE25D8A),
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  if (relation.boundAt.isNotEmpty)
-                    Text(
-                      '从 ${relation.boundAt} 开始',
-                      style: const TextStyle(
-                        color: _CommunityPalette.muted,
-                        fontSize: 10,
-                      ),
+                  Text(
+                    relation.boundAt.isEmpty
+                        ? '建立时间未知'
+                        : '建立于 ${relation.boundAt}',
+                    style: const TextStyle(
+                      color: _CommunityPalette.muted,
+                      fontSize: 10,
                     ),
+                  ),
                 ],
               ),
             ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: _CommunityPalette.muted,
+            PopupMenuButton<String>(
+              tooltip: '关系操作',
+              onSelected: (String value) {
+                if (value == 'end') {
+                  _end(relation);
+                }
+              },
+              itemBuilder: (BuildContext context) =>
+                  const <PopupMenuEntry<String>>[
+                    PopupMenuItem<String>(
+                      value: 'end',
+                      child: Text('解除 CP 关系'),
+                    ),
+                  ],
             ),
           ],
         ),

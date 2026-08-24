@@ -25,6 +25,7 @@ class _HomePageState extends State<HomePage> {
   int _rotation = 0;
   bool _loading = true;
   String? _error;
+  int _loadGeneration = 0;
 
   @override
   void didChangeDependencies() {
@@ -37,13 +38,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _load() async {
+    final int generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final List<DiscoveryRoom> rooms = await _repository.fetchHomeRooms();
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -54,7 +56,7 @@ class _HomePageState extends State<HomePage> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -354,7 +356,7 @@ class _HeroRoomCard extends StatelessWidget {
                     const Icon(Icons.lock_outline_rounded, size: 17),
                     const SizedBox(width: 6),
                   ],
-                  Text('${room.onlineCount} 人在线'),
+                  Text(discoveryOnlineCountLabel(room.onlineCount)),
                 ],
               ),
               const Spacer(),
@@ -456,7 +458,7 @@ class _LiveRoomCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 7),
                     Text(
-                      '${room.occupiedSeats}/8 麦 · ${room.onlineCount} 人在线 · ${room.relationReason ?? '实时推荐'}',
+                      '${room.occupiedSeats}/8 麦 · ${discoveryOnlineCountLabel(room.onlineCount)} · ${room.relationReason ?? '实时推荐'}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall,

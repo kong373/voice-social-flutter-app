@@ -7,6 +7,7 @@ import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/data/backend_room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart';
+import 'package:voice_social_app/features/room/domain/room_intent_digest.dart';
 
 void main() {
   test('fetchRoom joins room information and topic contracts', () async {
@@ -14,22 +15,45 @@ void main() {
       _CapturedRequest request,
     ) {
       switch (request.path) {
-        case '/app-api/rooms/getRoomById':
+        case '/app-api/rooms/getRoomSelectByUserId':
           expect(request.method, 'GET');
-          expect(request.query, <String, String>{'id': '9527'});
+          expect(request.query, <String, String>{
+            'pageNum': '1',
+            'pageSize': '50',
+          });
           return _Reply(
             data: <String, Object?>{
-              'idStr': '9527',
-              'code': 'R9527',
-              'name': '夜航电台',
-              'welcomeWord': '欢迎来到夜航电台',
-              'isLock': '1',
-              'password': '2468',
-              'isShow': 1,
-              'isAutoLockMic': '1',
-              'status': 1,
-              'sysStatus': 0,
-              'coverImgUrl': 'https://cdn.example/room.png',
+              'list': <Object?>[
+                <String, Object?>{
+                  'roomId': '9527',
+                  'roomIdStr': '9527',
+                  'roomCode': 'R9527',
+                  'roomName': '夜航电台',
+                  'topic': '列表中的旧话题，不作为编辑 authority',
+                  'accessMode': 'APPROVAL',
+                  'hallVisible': false,
+                  'status': 'OPEN',
+                  'coverImgUrl': 'https://cdn.example/room.png',
+                },
+              ],
+              'records': <Object?>[
+                <String, Object?>{
+                  'roomId': '9527',
+                  'roomIdStr': '9527',
+                  'roomCode': 'R9527',
+                  'roomName': '夜航电台',
+                  'topic': '列表中的旧话题，不作为编辑 authority',
+                  'accessMode': 'APPROVAL',
+                  'hallVisible': false,
+                  'status': 'OPEN',
+                  'coverImgUrl': 'https://cdn.example/room.png',
+                },
+              ],
+              'current': 1,
+              'pageSize': 50,
+              'size': 50,
+              'total': 1,
+              'pages': 1,
             },
           );
         case '/app-api/rooms/getRoomTopics':
@@ -37,8 +61,11 @@ void main() {
           expect(request.query, <String, String>{'roomId': '9527'});
           return _Reply(
             data: <String, Object?>{
-              'topicTitle': '今晚话题',
-              'topicContent': '聊聊最近的电影',
+              'topic': '聊聊最近的电影',
+              'welcomeText': '欢迎来到夜航电台',
+              'roomId': '9527',
+              'canEdit': true,
+              'version': 4,
             },
           );
         default:
@@ -53,13 +80,13 @@ void main() {
     expect(room.roomId, '9527');
     expect(room.roomCode, 'R9527');
     expect(room.title, '夜航电台');
-    expect(room.topicTitle, '今晚话题');
+    expect(room.topicTitle, isEmpty);
     expect(room.topicContent, '聊聊最近的电影');
     expect(room.welcomeMessage, '欢迎来到夜航电台');
-    expect(room.accessMode, RoomAccessMode.password);
-    expect(room.password, '2468');
-    expect(room.showInHall, isTrue);
-    expect(room.autoLockMic, isTrue);
+    expect(room.accessMode, RoomAccessMode.approval);
+    expect(room.password, isEmpty);
+    expect(room.showInHall, isFalse);
+    expect(room.autoLockMic, isFalse);
     expect(room.availability, RoomAvailability.open);
     expect(room.coverUrl, 'https://cdn.example/room.png');
     expect(server.requests, hasLength(2));
@@ -73,8 +100,21 @@ void main() {
       ) {
         expect(request.method, 'GET');
         expect(request.path, '/app-api/rooms/getRoomSelectByUserId');
-        expect(request.query, isEmpty);
-        return const _Reply(data: <Object?>[]);
+        expect(request.query, <String, String>{
+          'pageNum': '1',
+          'pageSize': '50',
+        });
+        return const _Reply(
+          data: <String, Object?>{
+            'list': <Object?>[],
+            'records': <Object?>[],
+            'current': 1,
+            'pageSize': 50,
+            'size': 50,
+            'pages': 0,
+            'total': 0,
+          },
+        );
       });
       addTearDown(server.close);
       final BackendRoomLifecycleRepository repository =
@@ -84,6 +124,328 @@ void main() {
       expect(server.requests, hasLength(1));
     },
   );
+
+  test(
+    'create rejects a created snapshot that does not echo the submitted configuration',
+    () async {
+      final _RunningServer server = await _RunningServer.start(
+        (_CapturedRequest request) => _Reply(
+          data: _createSnapshot(
+            roomName: '服务端另一间房',
+            topic: '服务端话题',
+            welcomeText: '服务端欢迎语',
+            accessMode: 'PUBLIC',
+            hallVisible: false,
+            created: true,
+            reused: false,
+          ),
+        ),
+      );
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+
+      await expectLater(
+        repository.saveRoom(
+          const RoomConfiguration(
+            title: '提交房间',
+            topicTitle: '',
+            topicContent: '提交话题',
+            welcomeMessage: '提交欢迎语',
+            accessMode: RoomAccessMode.publicRoom,
+            password: '',
+            showInHall: true,
+            autoLockMic: false,
+            availability: RoomAvailability.open,
+          ),
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'create requires explicit mutually-exclusive flags and vendor boundary fields',
+    () async {
+      final _RunningServer server = await _RunningServer.start(
+        (_CapturedRequest request) => _Reply(
+          data: <String, Object?>{
+            'roomId': 'room-created',
+            'roomCode': '9527',
+            'roomName': '新房间',
+            'topic': '',
+            'welcomeText': '',
+            'status': 'OPEN',
+            'accessMode': 'PUBLIC',
+            'hallVisible': true,
+            'created': false,
+            'reused': false,
+            'rtcStatus': 'VENDOR_BLOCKED',
+            'imStatus': 'VENDOR_BLOCKED',
+            // providerInvocation is intentionally omitted.
+          },
+        ),
+      );
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+
+      await expectLater(
+        repository.saveRoom(
+          const RoomConfiguration(
+            title: '新房间',
+            topicTitle: '',
+            topicContent: '',
+            welcomeMessage: '',
+            accessMode: RoomAccessMode.publicRoom,
+            password: '',
+            showInHall: true,
+            autoLockMic: false,
+            availability: RoomAvailability.open,
+          ),
+        ),
+        throwsA(isA<ApiException>()),
+      );
+    },
+  );
+
+  test('create rejects a non-boolean hallVisible', () async {
+    final _RunningServer server = await _RunningServer.start(
+      (_CapturedRequest request) => _Reply(
+        data: _createSnapshot(
+          hallVisible: 'true',
+          created: true,
+          reused: false,
+        ),
+      ),
+    );
+    addTearDown(server.close);
+    final BackendRoomLifecycleRepository repository =
+        BackendRoomLifecycleRepository(apiClient: server.client);
+
+    await expectLater(
+      repository.saveRoom(_newPublicRoom()),
+      throwsA(
+        isA<ApiException>().having(
+          (ApiException error) => error.kind,
+          'kind',
+          ApiFailureKind.protocol,
+        ),
+      ),
+    );
+  });
+
+  test('create never fills missing snapshot fields from the request', () async {
+    final Map<String, Object?> snapshot = _createSnapshot(
+      created: true,
+      reused: false,
+    )..remove('topic');
+    final _RunningServer server = await _RunningServer.start(
+      (_CapturedRequest request) => _Reply(data: snapshot),
+    );
+    addTearDown(server.close);
+    final BackendRoomLifecycleRepository repository =
+        BackendRoomLifecycleRepository(apiClient: server.client);
+
+    await expectLater(
+      repository.saveRoom(_newPublicRoom()),
+      throwsA(isA<ApiException>()),
+    );
+  });
+
+  test('create rejects non-frozen vendor metadata', () async {
+    final _RunningServer server = await _RunningServer.start(
+      (_CapturedRequest request) => _Reply(
+        data: _createSnapshot(
+          created: true,
+          reused: false,
+          providerInvocation: 'false',
+        ),
+      ),
+    );
+    addTearDown(server.close);
+    final BackendRoomLifecycleRepository repository =
+        BackendRoomLifecycleRepository(apiClient: server.client);
+
+    await expectLater(
+      repository.saveRoom(_newPublicRoom()),
+      throwsA(isA<ApiException>()),
+    );
+  });
+
+  test(
+    'reused create result is explicit and may return existing configuration',
+    () async {
+      final _RunningServer server = await _RunningServer.start(
+        (_CapturedRequest request) => _Reply(
+          data: _createSnapshot(
+            roomName: '已有房间',
+            topic: '已有话题',
+            welcomeText: '已有欢迎语',
+            accessMode: 'APPROVAL',
+            hallVisible: false,
+            created: false,
+            reused: true,
+          ),
+        ),
+      );
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+
+      final RoomLifecycleSaveResult result = await repository.saveRoom(
+        _newPublicRoom(),
+      );
+      expect(result.created, isFalse);
+      expect(result.roomId, 'room-created');
+      expect(result.roomCode, '9527');
+    },
+  );
+
+  test('owner room status rejects values outside OPEN and CLOSED', () async {
+    final _RunningServer server = await _RunningServer.start(
+      (_CapturedRequest request) => _Reply(
+        data: _ownerPage(
+          row: <String, Object?>{
+            'roomId': '9527',
+            'roomCode': 'R9527',
+            'roomName': '未知状态房',
+            'accessMode': 'PUBLIC',
+            'hallVisible': true,
+            'status': 'PAUSED',
+          },
+        ),
+      ),
+    );
+    addTearDown(server.close);
+    final BackendRoomLifecycleRepository repository =
+        BackendRoomLifecycleRepository(apiClient: server.client);
+
+    await expectLater(
+      repository.fetchRoom('9527'),
+      throwsA(
+        isA<ApiException>().having(
+          (ApiException error) => error.kind,
+          'kind',
+          ApiFailureKind.protocol,
+        ),
+      ),
+    );
+  });
+
+  test('owner pagination refuses more than 100 pages', () async {
+    final List<Object?> rows = List<Object?>.generate(
+      50,
+      (int index) => <String, Object?>{
+        'roomId': 'room-$index',
+        'roomCode': 'R$index',
+        'roomName': '房间 $index',
+        'accessMode': 'PUBLIC',
+        'hallVisible': true,
+        'status': 'OPEN',
+      },
+    );
+    final _RunningServer server = await _RunningServer.start(
+      (_CapturedRequest request) => _Reply(
+        data: <String, Object?>{
+          'list': rows,
+          'records': rows,
+          'current': 1,
+          'pageSize': 50,
+          'size': 50,
+          'total': 5050,
+          'pages': 101,
+        },
+      ),
+    );
+    addTearDown(server.close);
+    final BackendRoomLifecycleRepository repository =
+        BackendRoomLifecycleRepository(apiClient: server.client);
+
+    await expectLater(
+      repository.fetchOwnedRoom(),
+      throwsA(isA<ApiException>()),
+    );
+    expect(server.requests, hasLength(1));
+  });
+
+  test(
+    'owner room topic requires exact identity, canEdit true, and version',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        if (request.path == '/app-api/rooms/getRoomSelectByUserId') {
+          return _Reply(
+            data: _ownerPage(
+              row: <String, Object?>{
+                'roomId': '9527',
+                'roomCode': 'R9527',
+                'roomName': '话题房',
+                'accessMode': 'PUBLIC',
+                'hallVisible': true,
+                'status': 'OPEN',
+              },
+            ),
+          );
+        }
+        return const _Reply(
+          data: <String, Object?>{
+            'roomId': '9527',
+            'topic': '公告',
+            'welcomeText': '欢迎',
+            'canEdit': false,
+            'version': -1,
+          },
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+
+      await expectLater(
+        repository.fetchRoom('9527'),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+    },
+  );
+
+  test('owner hallVisible must be an explicit bool', () async {
+    final _RunningServer server = await _RunningServer.start(
+      (_CapturedRequest request) => _Reply(
+        data: _ownerPage(
+          row: <String, Object?>{
+            'roomId': '9527',
+            'roomCode': 'R9527',
+            'roomName': '布尔房',
+            'accessMode': 'PUBLIC',
+            'hallVisible': 'true',
+            'status': 'OPEN',
+          },
+        ),
+      ),
+    );
+    addTearDown(server.close);
+    final BackendRoomLifecycleRepository repository =
+        BackendRoomLifecycleRepository(apiClient: server.client);
+
+    await expectLater(
+      repository.fetchRoom('9527'),
+      throwsA(isA<ApiException>()),
+    );
+  });
 
   test(
     'lifecycle error envelopes preserve HTTP and business failure details',
@@ -125,7 +487,79 @@ void main() {
   );
 
   test(
-    'saveRoom sends information and topic writes, then re-reads authority',
+    'empty room detail is rejected instead of becoming a fake room',
+    () async {
+      final _RunningServer server = await _RunningServer.start(
+        (_CapturedRequest request) => const _Reply(data: <String, Object?>{}),
+      );
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+
+      await expectLater(
+        repository.fetchRoom('9527'),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+    },
+  );
+
+  test('owner configuration fails closed when accessMode is absent', () async {
+    final _RunningServer server = await _RunningServer.start(
+      (_CapturedRequest request) => const _Reply(
+        data: <String, Object?>{
+          'list': <Object?>[
+            <String, Object?>{
+              'roomId': '9527',
+              'roomCode': 'R9527',
+              'roomName': '锁定但未声明模式',
+              'hallVisible': true,
+              'status': 'OPEN',
+              'locked': true,
+            },
+          ],
+          'records': <Object?>[
+            <String, Object?>{
+              'roomId': '9527',
+              'roomCode': 'R9527',
+              'roomName': '锁定但未声明模式',
+              'hallVisible': true,
+              'status': 'OPEN',
+              'locked': true,
+            },
+          ],
+          'current': 1,
+          'pageSize': 50,
+          'size': 50,
+          'total': 1,
+          'pages': 1,
+        },
+      ),
+    );
+    addTearDown(server.close);
+    final BackendRoomLifecycleRepository repository =
+        BackendRoomLifecycleRepository(apiClient: server.client);
+
+    await expectLater(
+      repository.fetchRoom('9527'),
+      throwsA(
+        isA<ApiException>().having(
+          (ApiException error) => error.kind,
+          'kind',
+          ApiFailureKind.protocol,
+        ),
+      ),
+    );
+    expect(server.requests, hasLength(1));
+  });
+
+  test(
+    'saveRoom sends one authoritative information write, then re-reads authority',
     () async {
       final List<_CapturedRequest> seen = <_CapturedRequest>[];
       final _RunningServer server = await _RunningServer.start((
@@ -134,36 +568,50 @@ void main() {
         seen.add(request);
         switch (request.path) {
           case '/app-api/rooms/updateRoomInformation':
-            expect(request.method, 'PUT');
-            expect(request.body, <String, Object?>{
-              'id': 9527,
-              'name': '新房间',
-              'isShow': 1,
-              'isLock': 1,
-              'password': '1357',
-              'welcomeWord': '欢迎新朋友',
-            });
-            return const _Reply(data: null);
-          case '/app-api/rooms/setRoomTopics':
             expect(request.method, 'PATCH');
             expect(request.body, <String, Object?>{
-              'roomId': 9527,
-              'topicTitle': '新话题',
-              'topicContent': '新的内容',
+              'roomId': '9527',
+              'roomName': '新房间',
+              'topic': '新的内容',
+              'welcomeText': '欢迎新朋友',
+              'accessMode': 'PASSWORD',
+              'hallVisible': true,
+              'password': '1357',
             });
             return const _Reply(data: null);
-          case '/app-api/rooms/getRoomById':
+          case '/app-api/rooms/getRoomSelectByUserId':
             expect(request.method, 'GET');
-            expect(request.query, <String, String>{'id': '9527'});
+            expect(request.query, <String, String>{
+              'pageNum': '1',
+              'pageSize': '50',
+            });
             return _Reply(
               data: <String, Object?>{
-                'id': '9527',
-                'code': 'R9527',
-                'name': '新房间',
-                'isLock': 1,
-                'isShow': 1,
-                'status': 1,
-                'sysStatus': 0,
+                'list': <Object?>[
+                  <String, Object?>{
+                    'roomId': '9527',
+                    'roomCode': 'R9527',
+                    'roomName': '新房间',
+                    'accessMode': 'PASSWORD',
+                    'hallVisible': true,
+                    'status': 'OPEN',
+                  },
+                ],
+                'records': <Object?>[
+                  <String, Object?>{
+                    'roomId': '9527',
+                    'roomCode': 'R9527',
+                    'roomName': '新房间',
+                    'accessMode': 'PASSWORD',
+                    'hallVisible': true,
+                    'status': 'OPEN',
+                  },
+                ],
+                'current': 1,
+                'pageSize': 50,
+                'size': 50,
+                'total': 1,
+                'pages': 1,
               },
             );
           case '/app-api/rooms/getRoomTopics':
@@ -171,8 +619,11 @@ void main() {
             expect(request.query, <String, String>{'roomId': '9527'});
             return _Reply(
               data: <String, Object?>{
-                'topicTitle': '新话题',
-                'topicContent': '新的内容',
+                'roomId': '9527',
+                'topic': '新的内容',
+                'welcomeText': '欢迎新朋友',
+                'canEdit': true,
+                'version': 4,
               },
             );
           default:
@@ -206,11 +657,10 @@ void main() {
         seen.map((_CapturedRequest request) => request.path),
         containsAllInOrder(<String>[
           '/app-api/rooms/updateRoomInformation',
-          '/app-api/rooms/setRoomTopics',
           // The two authority reads may complete in either order.
         ]),
       );
-      expect(server.requests, hasLength(4));
+      expect(seen, hasLength(3));
     },
   );
 
@@ -222,24 +672,58 @@ void main() {
       ) {
         switch (request.path) {
           case '/app-api/rooms/updateRoomInformation':
-          case '/app-api/rooms/setRoomTopics':
-            return const _Reply(data: null);
-          case '/app-api/rooms/getRoomById':
             return const _Reply(
               data: <String, Object?>{
-                'id': '9527',
-                'code': 'R9527',
-                'name': '服务端已改名',
-                'isShow': 1,
-                'status': 1,
-                'sysStatus': 0,
+                'roomId': '9527',
+                'roomCode': 'R9527',
+                'roomName': '服务端已改名',
+                'hallVisible': true,
+                'accessMode': 'PUBLIC',
+                'status': 'OPEN',
+              },
+            );
+          case '/app-api/rooms/getRoomSelectByUserId':
+            expect(request.query, <String, String>{
+              'pageNum': '1',
+              'pageSize': '50',
+            });
+            return const _Reply(
+              data: <String, Object?>{
+                'list': <Object?>[
+                  <String, Object?>{
+                    'roomId': '9527',
+                    'roomCode': 'R9527',
+                    'roomName': '服务端已改名',
+                    'accessMode': 'PUBLIC',
+                    'hallVisible': true,
+                    'status': 'OPEN',
+                  },
+                ],
+                'records': <Object?>[
+                  <String, Object?>{
+                    'roomId': '9527',
+                    'roomCode': 'R9527',
+                    'roomName': '服务端已改名',
+                    'accessMode': 'PUBLIC',
+                    'hallVisible': true,
+                    'status': 'OPEN',
+                  },
+                ],
+                'current': 1,
+                'pageSize': 50,
+                'size': 50,
+                'total': 1,
+                'pages': 1,
               },
             );
           case '/app-api/rooms/getRoomTopics':
             return const _Reply(
               data: <String, Object?>{
-                'topicTitle': '新话题',
-                'topicContent': '新的内容',
+                'roomId': '9527',
+                'topic': '新的内容',
+                'welcomeText': '欢迎',
+                'canEdit': true,
+                'version': 4,
               },
             );
           default:
@@ -294,25 +778,162 @@ void main() {
     },
   );
 
+  test(
+    'saveRoom detects authoritative accessMode drift after update',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        switch (request.path) {
+          case '/app-api/rooms/updateRoomInformation':
+            return const _Reply(data: null);
+          case '/app-api/rooms/getRoomSelectByUserId':
+            return _Reply(
+              data: _ownerPage(
+                row: <String, Object?>{
+                  'roomId': '9527',
+                  'roomCode': 'R9527',
+                  'roomName': '新房间',
+                  'accessMode': 'PUBLIC',
+                  'hallVisible': true,
+                  'status': 'OPEN',
+                },
+              ),
+            );
+          case '/app-api/rooms/getRoomTopics':
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'topic': '',
+                'welcomeText': '',
+                'canEdit': true,
+                'version': 1,
+              },
+            );
+          default:
+            fail('unexpected accessMode drift route: ${request.path}');
+        }
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+
+      await expectLater(
+        repository.saveRoom(
+          const RoomConfiguration(
+            roomId: '9527',
+            roomCode: 'R9527',
+            title: '新房间',
+            topicTitle: '',
+            topicContent: '',
+            welcomeMessage: '',
+            accessMode: RoomAccessMode.password,
+            password: '1357',
+            showInHall: true,
+            autoLockMic: false,
+            availability: RoomAvailability.open,
+          ),
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.business,
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'saveRoom detects authoritative hallVisible drift after update',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        switch (request.path) {
+          case '/app-api/rooms/updateRoomInformation':
+            return const _Reply(data: null);
+          case '/app-api/rooms/getRoomSelectByUserId':
+            return _Reply(
+              data: _ownerPage(
+                row: <String, Object?>{
+                  'roomId': '9527',
+                  'roomCode': 'R9527',
+                  'roomName': '新房间',
+                  'accessMode': 'PUBLIC',
+                  'hallVisible': false,
+                  'status': 'OPEN',
+                },
+              ),
+            );
+          case '/app-api/rooms/getRoomTopics':
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'topic': '',
+                'welcomeText': '',
+                'canEdit': true,
+                'version': 1,
+              },
+            );
+          default:
+            fail('unexpected hallVisible drift route: ${request.path}');
+        }
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+
+      await expectLater(
+        repository.saveRoom(
+          const RoomConfiguration(
+            roomId: '9527',
+            roomCode: 'R9527',
+            title: '新房间',
+            topicTitle: '',
+            topicContent: '',
+            welcomeMessage: '',
+            accessMode: RoomAccessMode.publicRoom,
+            password: '',
+            showInHall: true,
+            autoLockMic: false,
+            availability: RoomAvailability.open,
+          ),
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.business,
+          ),
+        ),
+      );
+    },
+  );
+
   test('room links distinguish invalid, closed, and valid snapshots', () async {
     final _RunningServer server = await _RunningServer.start((
       _CapturedRequest request,
     ) {
       if (request.path == '/app-api/rooms/getRoomById') {
-        final String roomId = request.query['id']!;
+        final String roomId = request.query['roomId']!;
         return _Reply(
           data: <String, Object?>{
-            'id': roomId,
-            'code': 'R$roomId',
-            'name': roomId == '9999' ? '已关闭房间' : '公开房间',
-            'sysStatus': roomId == '9999' ? 1 : 0,
-            'status': 1,
+            'roomId': roomId,
+            'roomCode': 'R$roomId',
+            'roomName': roomId == '9999' ? '已关闭房间' : '公开房间',
+            'status': roomId == '9999' ? 'CLOSED' : 'OPEN',
           },
         );
       }
       if (request.path == '/app-api/rooms/getRoomTopics') {
-        return const _Reply(
-          data: <String, Object?>{'topicTitle': '', 'topicContent': ''},
+        return _Reply(
+          data: <String, Object?>{
+            'roomId': request.query['roomId']!,
+            'topic': '',
+            'welcomeText': '',
+          },
         );
       }
       fail('unexpected link route: ${request.path}');
@@ -339,12 +960,250 @@ void main() {
     expect(valid.status, RoomLinkStatus.valid);
     expect(valid.canEnter, isTrue);
     expect(valid.room?.roomId, '9527');
+
+    final RoomLinkResolution uuid = await repository.resolveRoomLink(
+      'voice-social://room/550e8400-e29b-41d4-a716-446655440000',
+    );
+    expect(uuid.status, RoomLinkStatus.valid);
+    expect(uuid.room?.roomId, '550e8400-e29b-41d4-a716-446655440000');
   });
 
-  test('unsupported create and close operations fail closed', () async {
-    final _RunningServer server = await _RunningServer.start(
-      (_CapturedRequest request) => fail('unexpected lifecycle write'),
+  test(
+    'create, update, and close preserve 403/409/422/500 envelopes with request ids',
+    () async {
+      final List<
+        ({
+          String name,
+          String path,
+          Future<void> Function(BackendRoomLifecycleRepository repository)
+          invoke,
+        })
+      >
+      writes =
+          <
+            ({
+              String name,
+              String path,
+              Future<void> Function(BackendRoomLifecycleRepository repository)
+              invoke,
+            })
+          >[
+            (
+              name: 'create',
+              path: '/app-mini-api/mini/v1/rooms',
+              invoke: (BackendRoomLifecycleRepository repository) async {
+                await repository.saveRoom(_newPublicRoom());
+              },
+            ),
+            (
+              name: 'update',
+              path: '/app-api/rooms/updateRoomInformation',
+              invoke: (BackendRoomLifecycleRepository repository) async {
+                await repository.saveRoom(_existingPublicRoom());
+              },
+            ),
+            (
+              name: 'close',
+              path: '/app-mini-api/mini/v1/rooms/close',
+              invoke: (BackendRoomLifecycleRepository repository) async {
+                await repository.closeRoom('9527');
+              },
+            ),
+          ];
+      final List<({int status, int code, ApiFailureKind kind})> failures =
+          <({int status, int code, ApiFailureKind kind})>[
+            (status: 403, code: 40335, kind: ApiFailureKind.forbidden),
+            (status: 409, code: 40943, kind: ApiFailureKind.conflict),
+            (status: 422, code: 42201, kind: ApiFailureKind.validation),
+            (status: 500, code: 50001, kind: ApiFailureKind.server),
+          ];
+
+      for (final write in writes) {
+        for (final failure in failures) {
+          final _RunningServer server = await _RunningServer.start((
+            _CapturedRequest request,
+          ) {
+            expect(request.path, write.path, reason: write.name);
+            expect(request.requestId, isNotEmpty, reason: write.name);
+            expect(
+              request.requestId,
+              matches(RegExp(r'^room-lifecycle-[0-9a-f]{32}$')),
+              reason: write.name,
+            );
+            return _Reply(
+              code: failure.code,
+              message: '${write.name}-${failure.status}',
+              data: null,
+              httpStatus: failure.status,
+            );
+          });
+          final BackendRoomLifecycleRepository repository =
+              BackendRoomLifecycleRepository(apiClient: server.client);
+
+          await expectLater(
+            write.invoke(repository),
+            throwsA(
+              isA<ApiException>()
+                  .having(
+                    (ApiException error) => error.kind,
+                    'kind',
+                    failure.kind,
+                  )
+                  .having(
+                    (ApiException error) => error.code,
+                    'code',
+                    failure.code,
+                  )
+                  .having(
+                    (ApiException error) => error.httpStatus,
+                    'httpStatus',
+                    failure.status,
+                  )
+                  .having(
+                    (ApiException error) => error.message,
+                    'message',
+                    '${write.name}-${failure.status}',
+                  ),
+            ),
+            reason: '${write.name} HTTP ${failure.status}',
+          );
+          expect(server.requests, hasLength(1));
+          await server.close();
+        }
+      }
+    },
+  );
+
+  test('room lifecycle intent digest is opaque and stable for PIN configs', () {
+    const List<String> fields = <String>[
+      'new',
+      'PIN 房间',
+      '',
+      '',
+      '',
+      'password',
+      '1357',
+      'false',
+      'true',
+      'false',
+      'open',
+    ];
+    final String first = roomIntentDigest(
+      scope: 'room-lifecycle-save',
+      fields: fields,
     );
+    final String sameConfiguration = roomIntentDigest(
+      scope: 'room-lifecycle-save',
+      fields: fields,
+    );
+    final String differentPin = roomIntentDigest(
+      scope: 'room-lifecycle-save',
+      fields: <String>[...fields.sublist(0, 6), '2468', ...fields.sublist(7)],
+    );
+
+    expect(first, matches(RegExp(r'^[0-9a-f]{64}$')));
+    expect(first, isNot(contains('1357')));
+    expect(first, sameConfiguration);
+    expect(first, isNot(differentPin));
+  });
+
+  test(
+    'close requires matching roomId, CLOSED, and closed=true authority',
+    () async {
+      final List<Map<String, Object?>> nonAuthoritative =
+          <Map<String, Object?>>[
+            <String, Object?>{
+              'roomId': '9527',
+              'status': 'OPEN',
+              'closed': true,
+            },
+            <String, Object?>{
+              'roomId': '9527',
+              'status': 'CLOSED',
+              'closed': false,
+            },
+            <String, Object?>{
+              'roomId': 'other-room',
+              'status': 'CLOSED',
+              'closed': true,
+            },
+            <String, Object?>{'roomId': '9527', 'closed': true},
+            <String, Object?>{'roomId': '9527', 'status': 'CLOSED'},
+          ];
+
+      for (final Map<String, Object?> payload in nonAuthoritative) {
+        final _RunningServer server = await _RunningServer.start((
+          _CapturedRequest request,
+        ) {
+          expect(request.path, '/app-mini-api/mini/v1/rooms/close');
+          expect(request.requestId, isNotEmpty);
+          return _Reply(data: payload);
+        });
+        final BackendRoomLifecycleRepository repository =
+            BackendRoomLifecycleRepository(apiClient: server.client);
+
+        await expectLater(
+          repository.closeRoom('9527'),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.protocol,
+            ),
+          ),
+          reason: '$payload',
+        );
+        expect(server.requests, hasLength(1));
+        await server.close();
+      }
+    },
+  );
+
+  test('create and close use first-party lifecycle endpoints', () async {
+    final _RunningServer server = await _RunningServer.start((
+      _CapturedRequest request,
+    ) {
+      switch (request.path) {
+        case '/app-mini-api/mini/v1/rooms':
+          expect(request.method, 'POST');
+          expect(request.body, <String, Object?>{
+            'roomName': '新房间',
+            'topic': '',
+            'welcomeText': '',
+            'accessMode': 'PUBLIC',
+            'hallVisible': true,
+          });
+          return const _Reply(
+            data: <String, Object?>{
+              'roomId': 'room-created',
+              'roomCode': '9527',
+              'roomName': '新房间',
+              'topic': '',
+              'welcomeText': '',
+              'accessMode': 'PUBLIC',
+              'hallVisible': true,
+              'status': 'OPEN',
+              'created': true,
+              'reused': false,
+              'rtcStatus': 'VENDOR_BLOCKED',
+              'imStatus': 'VENDOR_BLOCKED',
+              'providerInvocation': false,
+            },
+          );
+        case '/app-mini-api/mini/v1/rooms/close':
+          expect(request.method, 'POST');
+          expect(request.body, <String, Object?>{'roomId': 'room-created'});
+          return const _Reply(
+            data: <String, Object?>{
+              'roomId': 'room-created',
+              'closed': true,
+              'status': 'CLOSED',
+            },
+          );
+        default:
+          fail('unexpected lifecycle write: ${request.path}');
+      }
+    });
     addTearDown(server.close);
     final BackendRoomLifecycleRepository repository =
         BackendRoomLifecycleRepository(apiClient: server.client);
@@ -360,28 +1219,249 @@ void main() {
       availability: RoomAvailability.open,
     );
 
+    final RoomLifecycleSaveResult result = await repository.saveRoom(newRoom);
+    expect(result.roomId, 'room-created');
+    expect(result.roomCode, '9527');
+    expect(result.created, isTrue);
+    await repository.closeRoom('room-created');
+    expect(server.requests, hasLength(2));
+  });
+
+  test(
+    'replayed create response is parsed as reused without a fake duplicate',
+    () async {
+      int createCalls = 0;
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        expect(request.path, '/app-mini-api/mini/v1/rooms');
+        expect(request.method, 'POST');
+        expect(request.body, <String, Object?>{
+          'roomName': '幂等房间',
+          'topic': '',
+          'welcomeText': '',
+          'accessMode': 'PUBLIC',
+          'hallVisible': true,
+        });
+        createCalls += 1;
+        return _Reply(
+          data: <String, Object?>{
+            'roomId': 'room-replayed',
+            'roomCode': '9528',
+            'roomName': '幂等房间',
+            'topic': '',
+            'welcomeText': '',
+            'accessMode': 'PUBLIC',
+            'hallVisible': true,
+            'status': 'OPEN',
+            'created': createCalls == 1,
+            'reused': createCalls > 1,
+            'rtcStatus': 'VENDOR_BLOCKED',
+            'imStatus': 'VENDOR_BLOCKED',
+            'providerInvocation': false,
+          },
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+      const RoomConfiguration room = RoomConfiguration(
+        title: '幂等房间',
+        topicTitle: '',
+        topicContent: '',
+        welcomeMessage: '',
+        accessMode: RoomAccessMode.publicRoom,
+        password: '',
+        showInHall: true,
+        autoLockMic: false,
+        availability: RoomAvailability.open,
+      );
+
+      final RoomLifecycleSaveResult first = await repository.saveRoom(room);
+      final RoomLifecycleSaveResult replay = await repository.saveRoom(room);
+
+      expect(first.roomId, replay.roomId);
+      expect(first.created, isTrue);
+      expect(replay.created, isFalse);
+      expect(createCalls, 2);
+    },
+  );
+
+  test(
+    'approval room creation uses APPROVAL and does not require a password',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        expect(request.path, '/app-mini-api/mini/v1/rooms');
+        expect(request.method, 'POST');
+        expect(request.body, <String, Object?>{
+          'roomName': '审批房',
+          'topic': '先申请再进入',
+          'welcomeText': '请等待房主批准',
+          'accessMode': 'APPROVAL',
+          'hallVisible': true,
+        });
+        return const _Reply(
+          data: <String, Object?>{
+            'roomId': 'approval-room',
+            'roomCode': '9529',
+            'roomName': '审批房',
+            'topic': '先申请再进入',
+            'welcomeText': '请等待房主批准',
+            'accessMode': 'APPROVAL',
+            'hallVisible': true,
+            'status': 'OPEN',
+            'created': true,
+            'reused': false,
+            'rtcStatus': 'VENDOR_BLOCKED',
+            'imStatus': 'VENDOR_BLOCKED',
+            'providerInvocation': false,
+          },
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+      final RoomLifecycleSaveResult result = await repository.saveRoom(
+        const RoomConfiguration(
+          title: '审批房',
+          topicTitle: '',
+          topicContent: '先申请再进入',
+          welcomeMessage: '请等待房主批准',
+          accessMode: RoomAccessMode.approval,
+          password: '',
+          showInHall: true,
+          autoLockMic: false,
+          availability: RoomAvailability.open,
+        ),
+      );
+
+      expect(result.roomId, 'approval-room');
+      expect(repository.capabilities.supportsApprovalAccessMode, isTrue);
+      expect(repository.capabilities.supportsTopicTitle, isFalse);
+      expect(repository.capabilities.supportsAutoLockMic, isFalse);
+      expect(repository.capabilities.supportsReopen, isFalse);
+    },
+  );
+
+  test('closed live room cannot be mistaken for a reopen write', () async {
+    final _RunningServer server = await _RunningServer.start(
+      (_CapturedRequest request) =>
+          fail('closed room must not write: ${request.path}'),
+    );
+    addTearDown(server.close);
+    final BackendRoomLifecycleRepository repository =
+        BackendRoomLifecycleRepository(apiClient: server.client);
+
     await expectLater(
-      repository.saveRoom(newRoom),
-      throwsA(
-        isA<ApiException>().having(
-          (ApiException error) => error.kind,
-          'kind',
-          ApiFailureKind.configuration,
+      repository.saveRoom(
+        const RoomConfiguration(
+          roomId: '9527',
+          roomCode: 'R9527',
+          title: '已关闭房间',
+          topicTitle: '',
+          topicContent: '',
+          welcomeMessage: '',
+          accessMode: RoomAccessMode.approval,
+          password: '',
+          showInHall: true,
+          autoLockMic: false,
+          availability: RoomAvailability.closed,
         ),
       ),
-    );
-    await expectLater(
-      repository.closeRoom('9527'),
       throwsA(
         isA<ApiException>().having(
           (ApiException error) => error.kind,
           'kind',
-          ApiFailureKind.configuration,
+          ApiFailureKind.business,
         ),
       ),
     );
     expect(server.requests, isEmpty);
   });
+}
+
+RoomConfiguration _newPublicRoom() => const RoomConfiguration(
+  title: '新房间',
+  topicTitle: '',
+  topicContent: '',
+  welcomeMessage: '',
+  accessMode: RoomAccessMode.publicRoom,
+  password: '',
+  showInHall: true,
+  autoLockMic: false,
+  availability: RoomAvailability.open,
+);
+
+RoomConfiguration _existingPublicRoom() => const RoomConfiguration(
+  roomId: '9527',
+  roomCode: 'R9527',
+  title: '现有房间',
+  topicTitle: '',
+  topicContent: '',
+  welcomeMessage: '',
+  accessMode: RoomAccessMode.publicRoom,
+  password: '',
+  showInHall: true,
+  autoLockMic: false,
+  availability: RoomAvailability.open,
+);
+
+Map<String, Object?> _createSnapshot({
+  String roomId = 'room-created',
+  String roomCode = '9527',
+  String roomName = '新房间',
+  String topic = '',
+  String welcomeText = '',
+  String status = 'OPEN',
+  String accessMode = 'PUBLIC',
+  Object? hallVisible = true,
+  required bool created,
+  required bool reused,
+  Object? rtcStatus = 'VENDOR_BLOCKED',
+  Object? imStatus = 'VENDOR_BLOCKED',
+  Object? providerInvocation = false,
+}) => <String, Object?>{
+  'roomId': roomId,
+  'roomCode': roomCode,
+  'roomName': roomName,
+  'topic': topic,
+  'welcomeText': welcomeText,
+  'status': status,
+  'accessMode': accessMode,
+  'hallVisible': hallVisible,
+  'created': created,
+  'reused': reused,
+  'rtcStatus': rtcStatus,
+  'imStatus': imStatus,
+  'providerInvocation': providerInvocation,
+};
+
+Map<String, Object?> _ownerPage({
+  required Map<String, Object?> row,
+  int current = 1,
+  int pageSize = 50,
+  int? total,
+  int? pages,
+}) {
+  final int resolvedTotal = total ?? 1;
+  final int resolvedPages = pages ?? 1;
+  final int expectedCount = resolvedPages == 0
+      ? 0
+      : current < resolvedPages
+      ? pageSize
+      : resolvedTotal - ((resolvedPages - 1) * pageSize);
+  final List<Object?> rows = List<Object?>.generate(expectedCount, (_) => row);
+  return <String, Object?>{
+    'list': rows,
+    'records': rows,
+    'current': current,
+    'pageSize': pageSize,
+    'size': pageSize,
+    'total': resolvedTotal,
+    'pages': resolvedPages,
+  };
 }
 
 class _CapturedRequest {
@@ -390,6 +1470,7 @@ class _CapturedRequest {
     required this.path,
     required this.query,
     required this.authorization,
+    required this.requestId,
     required this.body,
   });
 
@@ -397,6 +1478,7 @@ class _CapturedRequest {
   final String path;
   final Map<String, String> query;
   final String authorization;
+  final String requestId;
   final Object? body;
 }
 
@@ -443,6 +1525,7 @@ class _RunningServer {
         path: request.uri.path,
         query: request.uri.queryParameters,
         authorization: captureContractAuthorization(request),
+        requestId: request.headers.value('X-Request-Id') ?? '',
         body: body,
       );
       requests.add(captured);

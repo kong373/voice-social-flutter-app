@@ -98,11 +98,17 @@ class AppDependencies {
     required AppEnvironment environment,
     Map<String, String>? initialStorage,
     DateTime? mockNow,
+    AccountComplianceRepository? accountComplianceRepository,
+    DiscoveryRepository? discoveryRepository,
+    MessageRepository? messageRepository,
   }) {
     return _build(
       environment: environment,
       store: MemoryKeyValueStore(initialStorage),
       mockNow: mockNow,
+      accountComplianceRepositoryOverride: accountComplianceRepository,
+      discoveryRepositoryOverride: discoveryRepository,
+      messageRepositoryOverride: messageRepository,
     );
   }
 
@@ -110,6 +116,9 @@ class AppDependencies {
     required AppEnvironment environment,
     required KeyValueStore store,
     DateTime? mockNow,
+    AccountComplianceRepository? accountComplianceRepositoryOverride,
+    DiscoveryRepository? discoveryRepositoryOverride,
+    MessageRepository? messageRepositoryOverride,
   }) {
     final AuthSessionManager sessionManager = AuthSessionManager(store);
     final ApiClient apiClient = ApiClient(
@@ -134,19 +143,24 @@ class AppDependencies {
           )
         : const MockAuthRepository();
     final AccountComplianceRepository accountComplianceRepository =
-        environment.isLive
-        ? BackendAccountComplianceRepository(
-            apiClient: apiClient,
-            routes: routes,
-          )
-        : MockAccountComplianceRepository();
-    final DiscoveryRepository discoveryRepository = environment.isLive
-        ? BackendDiscoveryRepository(
-            apiClient: apiClient,
-            clientType: environment.clientType,
-            routes: routes,
-          )
-        : MockDiscoveryRepository();
+        accountComplianceRepositoryOverride ??
+        (environment.isLive
+            ? BackendAccountComplianceRepository(
+                apiClient: apiClient,
+                routes: routes,
+                currentDeviceIdProvider: () =>
+                    sessionManager.session?.deviceId ?? '',
+              )
+            : MockAccountComplianceRepository());
+    final DiscoveryRepository discoveryRepository =
+        discoveryRepositoryOverride ??
+        (environment.isLive
+            ? BackendDiscoveryRepository(
+                apiClient: apiClient,
+                clientType: environment.clientType,
+                routes: routes,
+              )
+            : MockDiscoveryRepository());
     final DynamicRepository dynamicRepository = environment.isLive
         ? BackendDynamicRepository(
             apiClient: apiClient,
@@ -183,13 +197,16 @@ class AppDependencies {
         onRechargeOrderChanged: mockCommerceRepository.syncRechargeOrder,
       );
     }
-    final MessageRepository messageRepository = environment.isLive
-        ? BackendMessageRepository(
-            apiClient: apiClient,
-            routes: routes,
-            currentUserIdProvider: () => sessionManager.session?.userId ?? 0,
-          )
-        : MockMessageRepository(now: mockNow);
+    final MessageRepository messageRepository =
+        messageRepositoryOverride ??
+        (environment.isLive
+            ? BackendMessageRepository(
+                apiClient: apiClient,
+                routes: routes,
+                currentUserIdProvider: () =>
+                    sessionManager.session?.userId ?? 0,
+              )
+            : MockMessageRepository(now: mockNow));
     final RoomRepository roomRepository = environment.isLive
         ? BackendRoomRepository(apiClient: apiClient, routes: routes)
         : MockRoomRepository();

@@ -30,7 +30,11 @@ void main() {
       isTrue,
     );
 
-    await repository.takeUserOffMic(backendMicIndex: 2, userId: 20002);
+    await repository.takeUserOffMic(
+      roomId: '9527',
+      backendMicIndex: 2,
+      userId: 20002,
+    );
     page = await repository.fetchOnlineMembers(roomId: '9527', page: 1);
     final RoomMember moved = page.items.firstWhere(
       (RoomMember member) => member.userId == 20002,

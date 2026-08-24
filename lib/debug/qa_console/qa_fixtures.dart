@@ -14,6 +14,57 @@ import 'package:voice_social_app/features/social/domain/social_models.dart';
 
 final DateTime qaReferenceTime = DateTime(2026, 8, 20, 20, 39);
 
+const List<GiftCatalogItem> qaReviewedPopularGiftCatalog = <GiftCatalogItem>[
+  GiftCatalogItem(
+    id: 'mock-gift-101',
+    name: '玫瑰',
+    price: 10,
+    category: GiftCatalogCategory.popular,
+  ),
+  GiftCatalogItem(
+    id: 'mock-gift-102',
+    name: '星光',
+    price: 66,
+    category: GiftCatalogCategory.popular,
+  ),
+  GiftCatalogItem(
+    id: 'mock-gift-103',
+    name: '晚安灯',
+    price: 188,
+    category: GiftCatalogCategory.popular,
+  ),
+  GiftCatalogItem(
+    id: 'mock-gift-104',
+    name: '庆祝烟花',
+    price: 520,
+    category: GiftCatalogCategory.popular,
+  ),
+  GiftCatalogItem(
+    id: 'mock-gift-105',
+    name: '流星票',
+    price: 100,
+    category: GiftCatalogCategory.popular,
+  ),
+  GiftCatalogItem(
+    id: 'mock-gift-106',
+    name: '心意彩虹',
+    price: 266,
+    category: GiftCatalogCategory.popular,
+  ),
+  GiftCatalogItem(
+    id: 'mock-gift-107',
+    name: '星河小鲸',
+    price: 1314,
+    category: GiftCatalogCategory.popular,
+  ),
+  GiftCatalogItem(
+    id: 'mock-gift-108',
+    name: '纸飞机',
+    price: 20,
+    category: GiftCatalogCategory.popular,
+  ),
+];
+
 Future<AppDependencies> createQaDependencies() async {
   final AppDependencies dependencies = AppDependencies.mock(
     mockNow: qaReferenceTime,
@@ -69,6 +120,7 @@ const List<MicSeat> qaEightSeats = <MicSeat>[
     state: MicSeatState.occupied,
     userId: 20001,
     userName: '房主 · 鹿屿',
+    avatarUrl: 'assets/runtime/avatar-copper.png',
     userRole: RoomRole.owner,
   ),
   MicSeat(
@@ -77,6 +129,7 @@ const List<MicSeat> qaEightSeats = <MicSeat>[
     state: MicSeatState.occupiedMuted,
     userId: 20002,
     userName: '南风',
+    avatarUrl: 'assets/runtime/avatar-rose.png',
     userRole: RoomRole.speaker,
   ),
   MicSeat(number: 3, backendIndex: 3, state: MicSeatState.available),

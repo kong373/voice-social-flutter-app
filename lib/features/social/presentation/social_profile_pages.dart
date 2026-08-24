@@ -493,6 +493,14 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
   SocialProfile? _profile;
   String? _error;
   bool _busy = false;
+  bool _sendingFriendRequest = false;
+  FriendRequestSendResult? _friendRequestResult;
+
+  SocialRepository get _repository =>
+      AppDependencyScope.of(context).socialRepository;
+
+  int get _currentUserId =>
+      AppDependencyScope.of(context).sessionManager.session?.userId ?? 0;
 
   @override
   void didChangeDependencies() {
@@ -546,6 +554,54 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     }
   }
 
+  bool _canRequestFriend(SocialProfile profile) {
+    return _repository.supportsFriendRequestWorkflow &&
+        profile.user.userId != _currentUserId &&
+        !profile.user.isFriend &&
+        !profile.user.isBlocked &&
+        _friendRequestResult == null;
+  }
+
+  Future<void> _sendFriendRequest() async {
+    final SocialProfile? profile = _profile;
+    if (profile == null ||
+        _busy ||
+        _sendingFriendRequest ||
+        !_canRequestFriend(profile)) {
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _sendingFriendRequest = true;
+    });
+    try {
+      final FriendRequestSendResult result = await _repository
+          .sendFriendRequest(
+            userId: profile.user.userId,
+            message: '你好，我想和你成为好友。',
+          );
+      if (mounted) {
+        setState(() => _friendRequestResult = result);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('好友申请已发送')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _sendingFriendRequest = false;
+        });
+      }
+    }
+  }
+
   Future<void> _block() async {
     final bool next = !_profile!.user.isBlocked;
     final bool? confirmed = await showDialog<bool>(
@@ -588,12 +644,10 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (BuildContext context) => PrivateChatPage(
-          conversation: ConversationSummary(
-            id: 'conversation-${profile.user.userId}',
+          conversation: ConversationSummary.draft(
             kind: ConversationKind.privateChat,
             title: profile.user.name,
             lastMessage: '',
-            updatedAt: DateTime.now(),
             unreadCount: 0,
             targetUserId: profile.user.userId,
             available: !profile.user.isBlocked,
@@ -754,6 +808,38 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
                     ),
                   ],
                 ),
+                if (_canRequestFriend(profile)) ...<Widget>[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : _sendFriendRequest,
+                      icon: _sendingFriendRequest
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.person_add_alt_1_rounded),
+                      label: Text(_sendingFriendRequest ? '申请中…' : '申请好友'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Color(0x557F8AD6)),
+                      ),
+                    ),
+                  ),
+                ],
+                if (_friendRequestResult != null) ...<Widget>[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: null,
+                      icon: const Icon(Icons.check_circle_outline_rounded),
+                      label: const Text('已发送申请'),
+                    ),
+                  ),
+                ],
                 if (profile.user.roomId != null) ...<Widget>[
                   const SizedBox(height: 16),
                   RoomGlassCard(

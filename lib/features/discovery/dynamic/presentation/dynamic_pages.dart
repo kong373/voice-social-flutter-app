@@ -5,12 +5,16 @@ import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/community/presentation/community_pages.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_models.dart';
+import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_request_id.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_deep_link_page.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 class DiscoveryFeedPage extends StatefulWidget {
-  const DiscoveryFeedPage({super.key});
+  const DiscoveryFeedPage({this.repository, super.key});
+
+  @visibleForTesting
+  final DynamicRepository? repository;
 
   @override
   State<DiscoveryFeedPage> createState() => _DiscoveryFeedPageState();
@@ -25,8 +29,15 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
   bool _loadingMore = false;
   bool _hasMore = false;
   int _page = 1;
+  int _loadRequestId = 0;
+  int _publishingRequestId = 0;
+  bool _publishing = false;
   String? _error;
   DynamicRepository? _repositoryInstance;
+  final Set<String> _likeInFlight = <String>{};
+  final Map<String, int> _likeRequestIds = <String, int>{};
+  final Map<String, _PendingDynamicLikeIntent> _pendingLikeIntents =
+      <String, _PendingDynamicLikeIntent>{};
 
   DynamicRepository get _repository => _repositoryInstance!;
 
@@ -45,7 +56,8 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
     if (_repositoryInstance != null) {
       return;
     }
-    _repositoryInstance = AppDependencyScope.of(context).dynamicRepository;
+    _repositoryInstance =
+        widget.repository ?? AppDependencyScope.of(context).dynamicRepository;
     _load(reset: true);
   }
 
@@ -66,6 +78,7 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
   }
 
   Future<void> _load({required bool reset}) async {
+    final int requestId = ++_loadRequestId;
     if (reset) {
       setState(() {
         _loading = true;
@@ -81,7 +94,7 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
         category: _category,
         page: requestedPage,
       );
-      if (!mounted) {
+      if (!mounted || requestId != _loadRequestId) {
         return;
       }
       setState(() {
@@ -104,7 +117,7 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
         _loadingMore = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || requestId != _loadRequestId) {
         return;
       }
       setState(() {
@@ -115,13 +128,78 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
     }
   }
 
+  Future<void> _toggleLike(DynamicPost post) async {
+    if (_likeInFlight.contains(post.id)) {
+      return;
+    }
+    final int feedRequestId = _loadRequestId;
+    final _PendingDynamicLikeIntent intent = _resolveLikeIntent(post);
+    final int requestId = (_likeRequestIds[post.id] ?? 0) + 1;
+    _likeRequestIds[post.id] = requestId;
+    _likeInFlight.add(post.id);
+    if (mounted) {
+      setState(() {});
+    }
+    try {
+      final DynamicPost updated = await _repository.toggleLike(
+        post.id,
+        liked: intent.desiredLiked,
+        requestId: intent.requestId,
+      );
+      if (!mounted ||
+          feedRequestId != _loadRequestId ||
+          requestId != _likeRequestIds[post.id]) {
+        return;
+      }
+      final int index = _posts.indexWhere(
+        (DynamicPost item) => item.id == post.id,
+      );
+      if (index >= 0) {
+        setState(() => _posts[index] = updated);
+      }
+      _pendingLikeIntents.remove(post.id);
+    } catch (error) {
+      if (mounted &&
+          feedRequestId == _loadRequestId &&
+          requestId == _likeRequestIds[post.id]) {
+        if (!shouldRetainDynamicWriteRequest(error)) {
+          _pendingLikeIntents.remove(post.id);
+        }
+        _showOperationError(error);
+      }
+    } finally {
+      if (requestId == _likeRequestIds[post.id]) {
+        _likeInFlight.remove(post.id);
+        if (mounted) {
+          setState(() {});
+        }
+      }
+    }
+  }
+
+  _PendingDynamicLikeIntent _resolveLikeIntent(DynamicPost post) {
+    final bool desiredLiked = !post.isLiked;
+    final _PendingDynamicLikeIntent? existing = _pendingLikeIntents[post.id];
+    if (existing != null && existing.desiredLiked == desiredLiked) {
+      return existing;
+    }
+    final _PendingDynamicLikeIntent intent = _PendingDynamicLikeIntent(
+      desiredLiked: desiredLiked,
+      requestId: newDynamicRequestId('dynamic-like'),
+    );
+    _pendingLikeIntents[post.id] = intent;
+    return intent;
+  }
+
   Future<void> _openPost(DynamicPost post) async {
+    final int feedRequestId = _loadRequestId;
     final DynamicPost? updated = await Navigator.of(context).push<DynamicPost>(
       MaterialPageRoute<DynamicPost>(
-        builder: (BuildContext context) => DynamicDetailPage(postId: post.id),
+        builder: (BuildContext context) =>
+            DynamicDetailPage(postId: post.id, repository: widget.repository),
       ),
     );
-    if (!mounted) {
+    if (!mounted || feedRequestId != _loadRequestId) {
       return;
     }
     if (updated == null) {
@@ -137,14 +215,50 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
   }
 
   Future<void> _publish() async {
-    final DynamicPost? post = await Navigator.of(context).push<DynamicPost>(
-      MaterialPageRoute<DynamicPost>(
-        builder: (BuildContext context) => const PublishDynamicPage(),
-      ),
-    );
-    if (post != null && mounted) {
-      setState(() => _posts.insert(0, post));
+    if (_publishing) {
+      return;
     }
+    final int requestId = ++_publishingRequestId;
+    setState(() => _publishing = true);
+    try {
+      final DynamicPost? post = await Navigator.of(context).push<DynamicPost>(
+        MaterialPageRoute<DynamicPost>(
+          builder: (BuildContext context) =>
+              PublishDynamicPage(repository: widget.repository),
+        ),
+      );
+      if (post != null && mounted && requestId == _publishingRequestId) {
+        // Invalidate an older feed response so it cannot erase the newly
+        // published server-authoritative item when the page is refreshed.
+        _loadRequestId += 1;
+        setState(() {
+          _posts.insert(0, post);
+          // The invalidated load no longer owns either spinner. Leaving
+          // _loading true here strands the feed behind a never-completing
+          // stale request after a successful publish.
+          _loading = false;
+          _loadingMore = false;
+          _error = null;
+        });
+      }
+    } catch (error) {
+      if (mounted && requestId == _publishingRequestId) {
+        _showOperationError(error);
+      }
+    } finally {
+      if (mounted && requestId == _publishingRequestId) {
+        setState(() => _publishing = false);
+      }
+    }
+  }
+
+  void _showOperationError(Object error) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(_messageFor(error))));
   }
 
   @override
@@ -185,7 +299,7 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
                   ),
                   IconButton(
                     tooltip: '发布动态',
-                    onPressed: _publish,
+                    onPressed: _publishing ? null : _publish,
                     icon: const Icon(Icons.add_circle_outline_rounded),
                   ),
                 ],
@@ -236,6 +350,13 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
                   child: _FeedEmpty(onPublish: _publish),
                 )
               else ...<Widget>[
+                if (_error != null)
+                  SliverToBoxAdapter(
+                    child: _FeedError(
+                      message: _error!,
+                      onRetry: () => _load(reset: true),
+                    ),
+                  ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
                   sliver: SliverList.separated(
@@ -246,13 +367,8 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
                       return DynamicPostCard(
                         post: post,
                         onOpen: () => _openPost(post),
-                        onLike: () async {
-                          final DynamicPost updated = await _repository
-                              .toggleLike(post.id);
-                          if (mounted) {
-                            setState(() => _posts[index] = updated);
-                          }
-                        },
+                        onLike: () => _toggleLike(post),
+                        likeInFlight: _likeInFlight.contains(post.id),
                       );
                     },
                   ),
@@ -276,7 +392,7 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _publish,
+        onPressed: _publishing ? null : _publish,
         icon: const Icon(Icons.edit_rounded),
         label: const Text('发布'),
       ),
@@ -285,9 +401,20 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
 }
 
 class DynamicDetailPage extends StatefulWidget {
-  const DynamicDetailPage({required this.postId, super.key});
+  const DynamicDetailPage({
+    required this.postId,
+    this.repository,
+    this.currentUserId,
+    super.key,
+  });
 
   final String postId;
+
+  @visibleForTesting
+  final DynamicRepository? repository;
+
+  @visibleForTesting
+  final int? currentUserId;
 
   @override
   State<DynamicDetailPage> createState() => _DynamicDetailPageState();
@@ -300,10 +427,19 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
   DynamicComment? _replyingTo;
   bool _loading = true;
   bool _submitting = false;
+  bool _likeInFlight = false;
+  bool _deleteDialogOpen = false;
+  bool _deleting = false;
+  int _loadRequestId = 0;
+  int _likeRequestId = 0;
+  int _commentRequestId = 0;
+  int _deleteRequestId = 0;
   String? _error;
+  _PendingDynamicLikeIntent? _pendingLikeIntent;
+  _PendingDynamicWriteIntent? _pendingCommentIntent;
 
   DynamicRepository get _repository =>
-      AppDependencyScope.of(context).dynamicRepository;
+      widget.repository ?? AppDependencyScope.of(context).dynamicRepository;
 
   @override
   void didChangeDependencies() {
@@ -320,6 +456,7 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
   }
 
   Future<void> _load() async {
+    final int requestId = ++_loadRequestId;
     setState(() {
       _loading = true;
       _error = null;
@@ -329,7 +466,7 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
         _repository.fetchPost(widget.postId),
         _repository.fetchComments(dynamicId: widget.postId),
       ]);
-      if (!mounted) {
+      if (!mounted || requestId != _loadRequestId) {
         return;
       }
       final DynamicPost post = result[0] as DynamicPost;
@@ -343,7 +480,7 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
         _loading = false;
       });
     } catch (error) {
-      if (mounted) {
+      if (mounted && requestId == _loadRequestId) {
         setState(() {
           _loading = false;
           _error = _messageFor(error);
@@ -360,37 +497,155 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
     if (content.isEmpty) {
       return;
     }
+    final int loadRequestId = _loadRequestId;
+    final int requestId = ++_commentRequestId;
+    final _PendingDynamicWriteIntent intent = _resolveCommentIntent(content);
+    bool commentPersisted = false;
     setState(() => _submitting = true);
     try {
-      final DynamicComment comment = await _repository.addComment(
+      await _repository.addComment(
         dynamicId: widget.postId,
         content: content,
         replyToUserId: _replyingTo?.author.userId,
         replyToCommentId: _replyingTo?.id,
+        requestId: intent.requestId,
       );
-      if (!mounted) {
+      if (!mounted ||
+          loadRequestId != _loadRequestId ||
+          requestId != _commentRequestId) {
         return;
       }
+      commentPersisted = true;
+      _pendingCommentIntent = null;
       setState(() {
-        _comments.insert(0, comment);
-        _post = _post?.copyWith(commentCount: (_post?.commentCount ?? 0) + 1);
         _commentController.clear();
         _replyingTo = null;
       });
+
+      // The server owns comment order and the aggregate counter. Re-read both
+      // resources after a successful write instead of manufacturing a local
+      // first-row comment or incrementing a potentially stale counter.
+      final List<Object> result = await Future.wait<Object>(<Future<Object>>[
+        _repository.fetchPost(widget.postId),
+        _repository.fetchComments(dynamicId: widget.postId),
+      ]);
+      if (!mounted ||
+          loadRequestId != _loadRequestId ||
+          requestId != _commentRequestId) {
+        return;
+      }
+      final DynamicPost post = result[0] as DynamicPost;
+      final PagedResult<DynamicComment> comments =
+          result[1] as PagedResult<DynamicComment>;
+      setState(() {
+        _post = post;
+        _comments
+          ..clear()
+          ..addAll(comments.items);
+      });
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+      if (mounted &&
+          loadRequestId == _loadRequestId &&
+          requestId == _commentRequestId) {
+        if (commentPersisted) {
+          _showOperationError(
+            const ApiException(
+              kind: ApiFailureKind.network,
+              message: '评论已提交，但最新列表刷新失败，请稍后重试',
+            ),
+          );
+        } else {
+          if (!shouldRetainDynamicWriteRequest(error)) {
+            _pendingCommentIntent = null;
+          }
+          _showOperationError(error);
+        }
       }
     } finally {
-      if (mounted) {
+      if (mounted && requestId == _commentRequestId) {
         setState(() => _submitting = false);
       }
     }
   }
 
+  Future<void> _toggleLike() async {
+    if (_likeInFlight || _post == null) {
+      return;
+    }
+    final int loadRequestId = _loadRequestId;
+    final int requestId = ++_likeRequestId;
+    final _PendingDynamicLikeIntent intent = _resolveDetailLikeIntent(_post!);
+    _likeInFlight = true;
+    setState(() {});
+    try {
+      final DynamicPost updated = await _repository.toggleLike(
+        widget.postId,
+        liked: intent.desiredLiked,
+        requestId: intent.requestId,
+      );
+      if (!mounted ||
+          loadRequestId != _loadRequestId ||
+          requestId != _likeRequestId) {
+        return;
+      }
+      _pendingLikeIntent = null;
+      setState(() => _post = updated);
+    } catch (error) {
+      if (mounted &&
+          loadRequestId == _loadRequestId &&
+          requestId == _likeRequestId) {
+        if (!shouldRetainDynamicWriteRequest(error)) {
+          _pendingLikeIntent = null;
+        }
+        _showOperationError(error);
+      }
+    } finally {
+      if (requestId == _likeRequestId) {
+        _likeInFlight = false;
+        if (mounted) {
+          setState(() {});
+        }
+      }
+    }
+  }
+
+  _PendingDynamicLikeIntent _resolveDetailLikeIntent(DynamicPost post) {
+    final bool desiredLiked = !post.isLiked;
+    final _PendingDynamicLikeIntent? existing = _pendingLikeIntent;
+    if (existing != null && existing.desiredLiked == desiredLiked) {
+      return existing;
+    }
+    final _PendingDynamicLikeIntent intent = _PendingDynamicLikeIntent(
+      desiredLiked: desiredLiked,
+      requestId: newDynamicRequestId('dynamic-like'),
+    );
+    _pendingLikeIntent = intent;
+    return intent;
+  }
+
+  _PendingDynamicWriteIntent _resolveCommentIntent(String content) {
+    final _PendingDynamicWriteIntent candidate = _PendingDynamicWriteIntent(
+      requestKey:
+          '${widget.postId}|${content.trim()}|${_replyingTo?.author.userId ?? ''}|${_replyingTo?.id ?? ''}',
+      requestId: '',
+    );
+    final _PendingDynamicWriteIntent? existing = _pendingCommentIntent;
+    if (existing != null && existing.requestKey == candidate.requestKey) {
+      return existing;
+    }
+    final _PendingDynamicWriteIntent intent = _PendingDynamicWriteIntent(
+      requestKey: candidate.requestKey,
+      requestId: newDynamicRequestId('dynamic-comment'),
+    );
+    _pendingCommentIntent = intent;
+    return intent;
+  }
+
   Future<void> _delete() async {
+    if (_deleteDialogOpen || _deleting) {
+      return;
+    }
+    _deleteDialogOpen = true;
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
@@ -408,28 +663,44 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
         ],
       ),
     );
+    _deleteDialogOpen = false;
     if (confirmed != true || !mounted) {
       return;
     }
+    final int requestId = ++_deleteRequestId;
+    setState(() => _deleting = true);
     try {
       await _repository.deletePost(widget.postId);
-      if (mounted) {
+      if (mounted && requestId == _deleteRequestId) {
         Navigator.of(context).pop<DynamicPost>();
       }
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+      if (mounted && requestId == _deleteRequestId) {
+        _showOperationError(error);
+      }
+    } finally {
+      if (mounted && requestId == _deleteRequestId) {
+        setState(() => _deleting = false);
       }
     }
+  }
+
+  void _showOperationError(Object error) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(_messageFor(error))));
   }
 
   @override
   Widget build(BuildContext context) {
     final DynamicPost? post = _post;
     final int currentUserId =
-        AppDependencyScope.of(context).sessionManager.session?.userId ?? 0;
+        widget.currentUserId ??
+        AppDependencyScope.of(context).sessionManager.session?.userId ??
+        0;
     return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('动态详情'),
@@ -437,7 +708,7 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
           if (post?.author.userId == currentUserId)
             IconButton(
               tooltip: '删除动态',
-              onPressed: _delete,
+              onPressed: _deleteDialogOpen || _deleting ? null : _delete,
               icon: const Icon(Icons.delete_outline_rounded),
             ),
         ],
@@ -459,13 +730,8 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
                         DynamicPostCard(
                           post: post,
                           onOpen: () {},
-                          onLike: () async {
-                            final DynamicPost updated = await _repository
-                                .toggleLike(post.id);
-                            if (mounted) {
-                              setState(() => _post = updated);
-                            }
-                          },
+                          onLike: _toggleLike,
+                          likeInFlight: _likeInFlight,
                           expanded: true,
                         ),
                         const SizedBox(height: 20),
@@ -568,7 +834,10 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
 }
 
 class PublishDynamicPage extends StatefulWidget {
-  const PublishDynamicPage({super.key});
+  const PublishDynamicPage({this.repository, super.key});
+
+  @visibleForTesting
+  final DynamicRepository? repository;
 
   @override
   State<PublishDynamicPage> createState() => _PublishDynamicPageState();
@@ -581,6 +850,11 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
   final TextEditingController _locationController = TextEditingController();
   DynamicCategory _category = DynamicCategory.companionship;
   bool _submitting = false;
+  int _submitRequestId = 0;
+  _PendingDynamicWriteIntent? _pendingPublishIntent;
+
+  DynamicRepository get _repository =>
+      widget.repository ?? AppDependencyScope.of(context).dynamicRepository;
 
   @override
   void dispose() {
@@ -594,45 +868,61 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
     if (_submitting || !_formKey.currentState!.validate()) {
       return;
     }
+    final List<String> topics = _topicController.text
+        .split(',')
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .take(3)
+        .toList(growable: false);
+    final _PendingDynamicWriteIntent intent = _resolvePublishIntent(topics);
+    final int requestId = ++_submitRequestId;
     setState(() => _submitting = true);
     try {
-      final List<String> topics = _topicController.text
-          .split(',')
-          .map((String value) => value.trim())
-          .where((String value) => value.isNotEmpty)
-          .take(3)
-          .toList(growable: false);
-      final DynamicPost post = await AppDependencyScope.of(context)
-          .dynamicRepository
-          .publish(
-            PublishDynamicRequest(
-              content: _contentController.text,
-              category: _category,
-              topics: topics,
-              location: _locationController.text,
-            ),
-          );
-      if (mounted) {
+      final DynamicPost post = await _repository.publish(
+        PublishDynamicRequest(
+          content: _contentController.text,
+          category: _category,
+          topics: topics,
+          location: _locationController.text,
+        ),
+        requestId: intent.requestId,
+      );
+      if (mounted && requestId == _submitRequestId) {
+        _pendingPublishIntent = null;
         Navigator.of(context).pop(post);
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+        if (!shouldRetainDynamicWriteRequest(error)) {
+          _pendingPublishIntent = null;
+        }
+        _showOperationError(context, error);
       }
     } finally {
-      if (mounted) {
+      if (mounted && requestId == _submitRequestId) {
         setState(() => _submitting = false);
       }
     }
   }
 
+  _PendingDynamicWriteIntent _resolvePublishIntent(List<String> topics) {
+    final String requestKey =
+        '${_contentController.text.trim()}|${_category.name}|${topics.join(',')}|${_locationController.text.trim()}';
+    final _PendingDynamicWriteIntent? existing = _pendingPublishIntent;
+    if (existing != null && existing.requestKey == requestKey) {
+      return existing;
+    }
+    final _PendingDynamicWriteIntent intent = _PendingDynamicWriteIntent(
+      requestKey: requestKey,
+      requestId: newDynamicRequestId('dynamic-publish'),
+    );
+    _pendingPublishIntent = intent;
+    return intent;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool supportsImages = AppDependencyScope.of(
-      context,
-    ).dynamicRepository.supportsImagePublishing;
+    final bool supportsImages = _repository.supportsImagePublishing;
     return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('发布动态'),
@@ -731,7 +1021,10 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
 }
 
 class RankingPage extends StatefulWidget {
-  const RankingPage({super.key});
+  const RankingPage({this.repository, super.key});
+
+  @visibleForTesting
+  final DynamicRepository? repository;
 
   @override
   State<RankingPage> createState() => _RankingPageState();
@@ -743,6 +1036,10 @@ class _RankingPageState extends State<RankingPage> {
   RankingSnapshot? _snapshot;
   String? _error;
   bool _loading = true;
+  int _loadRequestId = 0;
+
+  DynamicRepository get _repository =>
+      widget.repository ?? AppDependencyScope.of(context).dynamicRepository;
 
   @override
   void didChangeDependencies() {
@@ -753,22 +1050,24 @@ class _RankingPageState extends State<RankingPage> {
   }
 
   Future<void> _load() async {
+    final int requestId = ++_loadRequestId;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final RankingSnapshot value = await AppDependencyScope.of(
-        context,
-      ).dynamicRepository.fetchRanking(board: _board, period: _period);
-      if (mounted) {
+      final RankingSnapshot value = await _repository.fetchRanking(
+        board: _board,
+        period: _period,
+      );
+      if (mounted && requestId == _loadRequestId) {
         setState(() {
           _snapshot = value;
           _loading = false;
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted && requestId == _loadRequestId) {
         setState(() {
           _loading = false;
           _error = _messageFor(error);
@@ -1017,6 +1316,7 @@ class DynamicPostCard extends StatelessWidget {
     required this.onOpen,
     required this.onLike,
     this.expanded = false,
+    this.likeInFlight = false,
     super.key,
   });
 
@@ -1024,6 +1324,7 @@ class DynamicPostCard extends StatelessWidget {
   final VoidCallback onOpen;
   final Future<void> Function() onLike;
   final bool expanded;
+  final bool likeInFlight;
 
   @override
   Widget build(BuildContext context) {
@@ -1094,9 +1395,11 @@ class DynamicPostCard extends StatelessWidget {
             Row(
               children: <Widget>[
                 TextButton.icon(
-                  onPressed: onLike,
+                  onPressed: likeInFlight ? null : onLike,
                   icon: Icon(
-                    post.isLiked
+                    likeInFlight
+                        ? Icons.hourglass_top_rounded
+                        : post.isLiked
                         ? Icons.favorite_rounded
                         : Icons.favorite_border_rounded,
                     color: post.isLiked ? SocialColors.secondary : null,
@@ -1281,6 +1584,32 @@ class _InfoPanel extends StatelessWidget {
 
 String _messageFor(Object error) =>
     error is ApiException ? error.message : '操作失败，请稍后重试';
+
+class _PendingDynamicLikeIntent {
+  const _PendingDynamicLikeIntent({
+    required this.desiredLiked,
+    required this.requestId,
+  });
+
+  final bool desiredLiked;
+  final String requestId;
+}
+
+class _PendingDynamicWriteIntent {
+  const _PendingDynamicWriteIntent({
+    required this.requestKey,
+    required this.requestId,
+  });
+
+  final String requestKey;
+  final String requestId;
+}
+
+void _showOperationError(BuildContext context, Object error) {
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(_messageFor(error))));
+}
 
 String _compact(num value) {
   if (value >= 10000) {

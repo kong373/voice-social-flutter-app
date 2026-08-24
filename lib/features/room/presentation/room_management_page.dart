@@ -6,6 +6,7 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
+import 'package:voice_social_app/features/room/presentation/room_authority_display.dart';
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
 enum _ManagementSection { members, seats, requests }
@@ -16,6 +17,7 @@ class RoomManagementPage extends StatefulWidget {
     required this.currentUserId,
     required this.currentRole,
     required this.seats,
+    this.roomTitle,
     this.initialMemberId,
     super.key,
   });
@@ -24,6 +26,7 @@ class RoomManagementPage extends StatefulWidget {
   final int currentUserId;
   final RoomRole currentRole;
   final List<MicSeat> seats;
+  final String? roomTitle;
   final int? initialMemberId;
 
   @override
@@ -73,7 +76,8 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
         _repository.fetchOnlineMembers(
           roomId: widget.roomId,
           page: 1,
-          pageSize: 100,
+          // Backend room-member pages cap pageSize at 50.
+          pageSize: 50,
         ),
         _repository.fetchMutedUsers(widget.roomId),
         _repository.fetchManagers(widget.roomId),
@@ -195,7 +199,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: RoomOxygenContextBar(
-                title: '深夜温柔陪伴',
+                title: roomAuthorityTitle(widget.roomTitle),
                 subtitle: '房间号 ${widget.roomId} · 权威状态管理',
                 seed: widget.roomId,
                 status: _isOwner ? '房主' : '房管',
@@ -598,6 +602,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     await _runMemberOperation(
       member,
       () => _repository.takeUserOffMic(
+        roomId: widget.roomId,
         backendMicIndex: seat!.backendIndex,
         userId: member.userId,
       ),
@@ -689,6 +694,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     setState(() => _busySeatNumber = seat.number);
     try {
       await _repository.setSeatLocked(
+        roomId: widget.roomId,
         backendMicIndex: seat.backendIndex,
         locked: locked,
       );
@@ -723,6 +729,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     setState(() => _busySeatNumber = seat.number);
     try {
       await _repository.setSeatMuted(
+        roomId: widget.roomId,
         backendMicIndex: seat.backendIndex,
         muted: muted,
       );

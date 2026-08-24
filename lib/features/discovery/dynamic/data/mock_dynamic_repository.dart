@@ -119,7 +119,11 @@ class MockDynamicRepository implements DynamicRepository {
   }
 
   @override
-  Future<DynamicPost> toggleLike(String dynamicId) async {
+  Future<DynamicPost> toggleLike(
+    String dynamicId, {
+    required bool liked,
+    String? requestId,
+  }) async {
     await _delay();
     final int index = _posts.indexWhere(
       (DynamicPost post) => post.id == dynamicId,
@@ -131,7 +135,6 @@ class MockDynamicRepository implements DynamicRepository {
       );
     }
     final DynamicPost current = _posts[index];
-    final bool liked = !current.isLiked;
     final DynamicPost updated = current.copyWith(
       isLiked: liked,
       likeCount: (current.likeCount + (liked ? 1 : -1))
@@ -148,6 +151,7 @@ class MockDynamicRepository implements DynamicRepository {
     required String content,
     int? replyToUserId,
     String? replyToCommentId,
+    String? requestId,
   }) async {
     await _delay();
     final String normalized = content.trim();
@@ -196,7 +200,10 @@ class MockDynamicRepository implements DynamicRepository {
   }
 
   @override
-  Future<DynamicPost> publish(PublishDynamicRequest request) async {
+  Future<DynamicPost> publish(
+    PublishDynamicRequest request, {
+    String? requestId,
+  }) async {
     await _delay();
     final String content = request.content.trim();
     if (content.isEmpty || content.length > 1000) {

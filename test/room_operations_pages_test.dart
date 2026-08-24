@@ -59,6 +59,33 @@ void main() {
     expect(find.text('房主 · 鹿屿'), findsNothing);
   });
 
+  testWidgets('RM room subpages never invent a sample room title', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final AppDependencies dependencies = AppDependencies.mock();
+
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: dependencies,
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: const RoomMembersPage(
+            roomId: '9527',
+            currentUserId: 10001,
+            currentRole: RoomRole.listener,
+            seats: <MicSeat>[],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('房间名称不可用'), findsOneWidget);
+    expect(find.text('深夜温柔陪伴'), findsNothing);
+  });
+
   testWidgets('RM-008 persists the authoritative topic before closing', (
     WidgetTester tester,
   ) async {

@@ -269,11 +269,10 @@ class _MessageCenterPageState extends State<MessageCenterPage>
                       ),
                     ),
                     const SizedBox(height: 12),
-                    if (!_repository.supportsPrivateSend)
+                    if (!_repository.supportsPrivateRealtime)
                       const _MessageInfoCard(
                         icon: Icons.chat_bubble_outline_rounded,
-                        text:
-                            '腾讯 IM 尚未接入。Live 模式不伪造私聊发送、漫游或未读状态；服务端已落库通知仍可独立刷新。',
+                        text: '第一方会话、历史、未读与发送已落库；腾讯 IM 实时投递仍为 VENDOR_BLOCKED。',
                       ),
                     if (!_repository.supportsConversationList) ...<Widget>[
                       const SizedBox(height: 10),

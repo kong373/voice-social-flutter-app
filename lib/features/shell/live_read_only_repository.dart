@@ -118,6 +118,19 @@ class LiveReadOnlyRepository {
   static const String _ordersPath = '/app-economy-api/pay/getOrders';
   static const String _vendorReadinessPath =
       '/app-register-api/vendor/v1/readiness';
+  static const Set<String> _authoritativeOrderStatuses = <String>{
+    'PENDING',
+    'CREATED',
+    'CONFIRMING',
+    'PROCESSING',
+    'SUCCEEDED',
+    'SUCCESS',
+    'PAID',
+    'FAILED',
+    'FAILURE',
+    'CANCELED',
+    'CANCELLED',
+  };
 
   final ApiClient _apiClient;
 
@@ -161,12 +174,29 @@ class LiveReadOnlyRepository {
         _apiClient.get(_walletPath),
       ],
     );
-    final Map<String, Object?> giftCoin = _map(responses[0].data);
-    final Map<String, Object?> wallet = _map(responses[1].data);
+    final Map<String, Object?> giftCoin = _requiredMap(
+      responses[0].data,
+      field: '礼物币余额响应',
+    );
+    final Map<String, Object?> wallet = _requiredMap(
+      responses[1].data,
+      field: '钱包余额响应',
+    );
+    final int giftCoinBalance = _requiredGiftCoinBalance(giftCoin);
+    final double cashBalance = _requiredNonNegativeNumber(
+      wallet,
+      'balance',
+      field: '现金余额',
+    );
+    final double frozenBalance = _requiredNonNegativeNumber(
+      wallet,
+      'frozenBalance',
+      field: '冻结余额',
+    );
     return LiveWalletSnapshot(
-      giftCoinBalance: _int(giftCoin['integer'] ?? giftCoin['value']) ?? 0,
-      cashBalance: _double(wallet['balance']) ?? 0,
-      frozenBalance: _double(wallet['frozenBalance']) ?? 0,
+      giftCoinBalance: giftCoinBalance,
+      cashBalance: cashBalance,
+      frozenBalance: frozenBalance,
     );
   }
 
@@ -182,18 +212,21 @@ class LiveReadOnlyRepository {
         'isSearchCount': true,
       },
     );
-    final Map<String, Object?> data = _map(response.data);
+    final Map<String, Object?> data = _requiredMap(
+      response.data,
+      field: '充值订单响应',
+    );
+    final List<Object?> rawOrders = _requiredAliasedList(data);
+    final int total = _requiredNonNegativeInt(data, 'total', field: '充值订单总数');
+    if (total < rawOrders.length) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '充值订单总数小于当前返回记录数',
+      );
+    }
     return <LivePaymentOrder>[
-      for (final Object? raw in _list(data['list']))
-        if (raw is Map<String, Object?>)
-          LivePaymentOrder(
-            orderNo: _string(raw['orderNo']),
-            amount: _double(raw['amount']) ?? 0,
-            giftCoinAmount: _int(raw['ncoin']) ?? 0,
-            channelName: _string(raw['payType'], fallback: '支付渠道'),
-            status: _string(raw['status'], fallback: 'UNKNOWN'),
-            createdAt: DateTime.tryParse(_string(raw['createDate'])),
-          ),
+      for (final Object? raw in rawOrders)
+        _paymentOrderFromMap(_requiredMap(raw, field: '充值订单记录')),
     ];
   }
 
@@ -238,6 +271,248 @@ class LiveReadOnlyRepository {
   static Map<String, Object?> _map(Object? value) =>
       value is Map<String, Object?> ? value : <String, Object?>{};
 
+  static Map<String, Object?> _requiredMap(
+    Object? value, {
+    required String field,
+  }) {
+    if (value is! Map) {
+      throw ApiException(kind: ApiFailureKind.protocol, message: '$field必须是对象');
+    }
+    final Map<String, Object?> result = <String, Object?>{};
+    for (final MapEntry<Object?, Object?> entry in value.entries) {
+      if (entry.key is! String) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '$field包含非法字段名',
+        );
+      }
+      result[entry.key as String] = entry.value;
+    }
+    return result;
+  }
+
+  static List<Object?> _requiredAliasedList(Map<String, Object?> data) {
+    List<Object?>? selected;
+    for (final String key in <String>['list', 'records']) {
+      if (!data.containsKey(key)) {
+        continue;
+      }
+      final Object? raw = data[key];
+      if (raw is! List) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '充值订单$key必须是数组',
+        );
+      }
+      final List<Object?> candidate = <Object?>[...raw];
+      if (selected != null && !_deepEqual(selected, candidate)) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '充值订单 list 与 records 不一致',
+        );
+      }
+      selected = candidate;
+    }
+    if (selected == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '充值订单响应缺少 list 或 records',
+      );
+    }
+    return selected;
+  }
+
+  static int _requiredGiftCoinBalance(Map<String, Object?> data) {
+    final int? integer = _optionalStrictInt(data, 'integer', field: '礼物币余额');
+    final int? value = _optionalStrictInt(data, 'value', field: '礼物币余额');
+    if (integer == null && value == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '礼物币余额缺少有效服务端整数',
+      );
+    }
+    if (integer != null && value != null && integer != value) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '礼物币余额的 integer 与 value 不一致',
+      );
+    }
+    final int balance = integer ?? value!;
+    if (balance < 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '礼物币余额不能为负数',
+      );
+    }
+    return balance;
+  }
+
+  static int? _optionalStrictInt(
+    Map<String, Object?> data,
+    String key, {
+    required String field,
+  }) {
+    if (!data.containsKey(key)) {
+      return null;
+    }
+    final Object? raw = data[key];
+    if (raw is! int) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field的 $key 不是有效服务端整数',
+      );
+    }
+    return raw;
+  }
+
+  static int _requiredNonNegativeInt(
+    Map<String, Object?> data,
+    String key, {
+    required String field,
+  }) {
+    if (!data.containsKey(key) || data[key] is! int) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field缺少有效服务端整数',
+      );
+    }
+    final int value = data[key]! as int;
+    if (value < 0) {
+      throw ApiException(kind: ApiFailureKind.protocol, message: '$field不能为负数');
+    }
+    return value;
+  }
+
+  static double _requiredNonNegativeNumber(
+    Map<String, Object?> data,
+    String key, {
+    required String field,
+  }) {
+    final Object? raw = data[key];
+    if (!data.containsKey(key) || raw is! num || !raw.isFinite) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field缺少有效服务端金额',
+      );
+    }
+    final double value = raw.toDouble();
+    if (value < 0) {
+      throw ApiException(kind: ApiFailureKind.protocol, message: '$field不能为负数');
+    }
+    return value;
+  }
+
+  static LivePaymentOrder _paymentOrderFromMap(Map<String, Object?> raw) {
+    final String orderNo = _requiredNonEmptyString(
+      raw,
+      'orderNo',
+      field: '订单号',
+    );
+    final double amount = _requiredNonNegativeNumber(
+      raw,
+      'amount',
+      field: '订单金额',
+    );
+    final int giftCoinAmount = _requiredNonNegativeInt(
+      raw,
+      'ncoin',
+      field: '订单礼物币金额',
+    );
+    final String channelName = _requiredNonEmptyString(
+      raw,
+      'payType',
+      field: '支付渠道',
+    );
+    final String status = _requiredOrderStatus(raw['status']);
+    final DateTime createdAt = _requiredDateTime(raw['createDate']);
+    return LivePaymentOrder(
+      orderNo: orderNo,
+      amount: amount,
+      giftCoinAmount: giftCoinAmount,
+      channelName: channelName,
+      status: status,
+      createdAt: createdAt,
+    );
+  }
+
+  static String _requiredNonEmptyString(
+    Map<String, Object?> data,
+    String key, {
+    required String field,
+  }) {
+    final Object? raw = data[key];
+    if (raw is! String || raw.trim().isEmpty) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field缺少有效服务端字符串',
+      );
+    }
+    return raw.trim();
+  }
+
+  static String _requiredOrderStatus(Object? value) {
+    if (value is! String || value.trim().isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '订单响应缺少有效服务端状态',
+      );
+    }
+    final String status = value.trim().toUpperCase();
+    if (!_authoritativeOrderStatuses.contains(status)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '订单响应缺少有效服务端状态',
+      );
+    }
+    return status;
+  }
+
+  static DateTime _requiredDateTime(Object? value) {
+    if (value is! String || value.trim().isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '订单响应缺少有效服务端时间',
+      );
+    }
+    final DateTime? parsed = DateTime.tryParse(value.trim());
+    if (parsed == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '订单响应缺少有效服务端时间',
+      );
+    }
+    return parsed;
+  }
+
+  static bool _deepEqual(Object? left, Object? right) {
+    if (left is List && right is List) {
+      if (left.length != right.length) {
+        return false;
+      }
+      for (int index = 0; index < left.length; index += 1) {
+        if (!_deepEqual(left[index], right[index])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (left is Map && right is Map) {
+      if (left.length != right.length) {
+        return false;
+      }
+      for (final Object? key in left.keys) {
+        if (!right.containsKey(key) || !_deepEqual(left[key], right[key])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (left is num && right is num) {
+      return left == right;
+    }
+    return left == right;
+  }
+
   static List<Object?> _list(Object? value) =>
       value is List<Object?> ? value : <Object?>[];
 
@@ -251,13 +526,6 @@ class LiveReadOnlyRepository {
       return value;
     }
     return int.tryParse(value?.toString() ?? '');
-  }
-
-  static double? _double(Object? value) {
-    if (value is num) {
-      return value.toDouble();
-    }
-    return double.tryParse(value?.toString() ?? '');
   }
 
   static String _string(Object? value, {String fallback = ''}) {

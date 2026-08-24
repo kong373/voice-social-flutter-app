@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/data/backend_auth_repository.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 
@@ -33,6 +34,7 @@ void main() {
             HttpHeaders.authorizationHeader,
           ),
           'deviceId': request.headers.value('X-Device-Id'),
+          'requestId': request.headers.value('X-Request-Id'),
           'developmentClientId': request.headers.value(
             'X-Development-Client-Id',
           ),
@@ -117,6 +119,12 @@ void main() {
         ),
         everyElement(isNull),
       );
+      expect(
+        captured.map((Map<String, Object?> item) => item['requestId']),
+        everyElement(
+          isA<String>().having((String value) => value, 'value', isNotEmpty),
+        ),
+      );
       final String serialized = jsonEncode(captured);
       expect(serialized, isNot(contains('OAUTH_CLIENT_SECRET')));
       expect(serialized, isNot(contains('secret-value')));
@@ -143,7 +151,293 @@ void main() {
       expect(logout['authorization'], 'Bearer access-2');
     },
   );
+
+  test(
+    'ambiguous SMS response is surfaced once without unsafe automatic replay',
+    () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => server.close(force: true));
+      var attempts = 0;
+      server.listen((HttpRequest request) async {
+        attempts += 1;
+        request.response.headers.contentType = ContentType.json;
+        await request.response.close();
+      });
+
+      final AppEnvironment environment = _testEnvironment(server);
+      final ApiClient client = ApiClient(
+        baseUri: environment.apiBaseUri!,
+        clientType: environment.clientType,
+        clientInnerVersion: environment.clientInnerVersion,
+        authorizationProvider: () => null,
+        timeout: const Duration(milliseconds: 50),
+      );
+      final BackendAuthRepository repository = BackendAuthRepository(
+        apiClient: client,
+        environment: environment,
+      );
+
+      ApiException? failure;
+      try {
+        await repository.sendSmsCode(phone: '13800138000', device: _testDevice);
+      } on ApiException catch (error) {
+        failure = error;
+      }
+
+      expect(failure?.kind, ApiFailureKind.protocol);
+      expect(attempts, 1);
+    },
+  );
+
+  test(
+    'registerWithSms sends the canonical first-party request body',
+    () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => server.close(force: true));
+      Map<String, Object?>? capturedBody;
+      String? capturedClientId;
+      String? capturedAuthorization;
+      server.listen((HttpRequest request) async {
+        capturedClientId = request.headers.value('Client-Id');
+        capturedAuthorization = request.headers.value(
+          HttpHeaders.authorizationHeader,
+        );
+        capturedBody = Map<String, Object?>.from(
+          jsonDecode(await utf8.decoder.bind(request).join()) as Map,
+        );
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode(<String, Object?>{
+            'code': 200,
+            'message': 'OK',
+            'data': _token('registered-access', 'registered-refresh'),
+          }),
+        );
+        await request.response.close();
+      });
+
+      final AppEnvironment environment = _testEnvironment(server);
+      final BackendAuthRepository repository = _testRepository(environment);
+      const ClientDevice device = ClientDevice(
+        deviceType: 1,
+        deviceId: 'install-device-1',
+        mobileKind: 'Android emulator',
+        appMarketType: 1,
+        isEmulator: 1,
+        smDeviceId: 'sm-device-1',
+      );
+
+      final AuthSession session = await repository.registerWithSms(
+        phone: '13800138000',
+        smsCode: '123456',
+        device: device,
+        profile: const RegistrationProfile(
+          nickname: '新用户',
+          sex: 2,
+          birthday: '2000-01-02',
+          inviteCode: 'INV-001',
+        ),
+      );
+
+      expect(capturedClientId, 'voice-social-mobile-public');
+      expect(capturedAuthorization, isNull);
+      expect(capturedBody, <String, Object?>{
+        'phone': '13800138000',
+        'smsCode': '123456',
+        'sex': 2,
+        'labelIds': <int>[],
+        'inviteCode': 'INV-001',
+        'appInviteCode': '',
+        'deviceType': 1,
+        'deviceId': 'install-device-1',
+        'mobileKind': 'Android emulator',
+        'appMarketType': 1,
+        'clientId': 'voice-social-mobile-public',
+        'isEmulator': 1,
+        'nickname': '新用户',
+        'birthday': '2000-01-02',
+        'smDeviceId': 'sm-device-1',
+        'sensorsAnonymousId': 'install-device-1',
+      });
+      expect(session.accessToken, 'registered-access');
+      expect(session.refreshToken, 'registered-refresh');
+      expect(session.tokenType, 'Bearer');
+      expect(session.userId, 10001);
+      expect(session.mobile, '13800138000');
+      expect(session.roles, 'USER');
+      expect(session.deviceId, 'install-device-1');
+      expect(session.clientId, 'voice-social-mobile-public');
+      expect(session.boundRoomId, isNull);
+      expect(session.expiresAt.isAfter(DateTime.now()), isTrue);
+      expect(session.refreshExpiresAt.isAfter(DateTime.now()), isTrue);
+    },
+  );
+
+  test(
+    'registerWithSms rejects malformed session payloads fail closed',
+    () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => server.close(force: true));
+      Object? responseData;
+      server.listen((HttpRequest request) async {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode(<String, Object?>{
+            'code': 200,
+            'message': 'OK',
+            'data': responseData,
+          }),
+        );
+        await request.response.close();
+      });
+
+      final BackendAuthRepository repository = _testRepository(
+        _testEnvironment(server),
+      );
+      const ClientDevice device = _testDevice;
+      final List<Object?> malformedPayloads = <Object?>[
+        null,
+        <String, Object?>{},
+        <String, Object?>{
+          'access_token': 'access-only',
+          'expires_in': 3600,
+          'refresh_token': 'refresh',
+          'refresh_expires_in': 3600,
+        },
+        <String, Object?>{
+          'access_token': 'access',
+          'expires_in': 0,
+          'refresh_token': 'refresh',
+          'refresh_expires_in': 3600,
+          'userId': 10001,
+        },
+        <String, Object?>{
+          'access_token': 'access',
+          'expires_in': 3600,
+          'refresh_token': 'refresh',
+          'refresh_expires_in': 3600,
+          'userId': 0,
+        },
+      ];
+
+      for (final Object? malformed in malformedPayloads) {
+        responseData = malformed;
+        ApiException? failure;
+        try {
+          await repository.registerWithSms(
+            phone: '13800138000',
+            smsCode: '123456',
+            device: device,
+            profile: const RegistrationProfile(nickname: '新用户', sex: 2),
+          );
+        } on ApiException catch (error) {
+          failure = error;
+        }
+        expect(failure?.kind, ApiFailureKind.protocol);
+        expect(failure?.message, '登录响应中的会话字段不完整');
+      }
+    },
+  );
+
+  test(
+    'registerWithSms preserves first-party auth HTTP failure classes',
+    () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => server.close(force: true));
+      var responseStatus = HttpStatus.unauthorized;
+      server.listen((HttpRequest request) async {
+        request.response
+          ..statusCode = responseStatus
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode(<String, Object?>{
+              'code': responseStatus == HttpStatus.unprocessableEntity
+                  ? 42201
+                  : responseStatus,
+              'message': 'registration rejected',
+              'data': null,
+            }),
+          );
+        await request.response.close();
+      });
+
+      final BackendAuthRepository repository = _testRepository(
+        _testEnvironment(server),
+      );
+      const ClientDevice device = _testDevice;
+      final List<(int, ApiFailureKind)> cases = <(int, ApiFailureKind)>[
+        (HttpStatus.unauthorized, ApiFailureKind.unauthorized),
+        (HttpStatus.forbidden, ApiFailureKind.forbidden),
+        (HttpStatus.conflict, ApiFailureKind.conflict),
+        (HttpStatus.unprocessableEntity, ApiFailureKind.validation),
+        (HttpStatus.internalServerError, ApiFailureKind.server),
+      ];
+
+      for (final (int status, ApiFailureKind expectedKind) in cases) {
+        responseStatus = status;
+        ApiException? failure;
+        try {
+          await repository.registerWithSms(
+            phone: '13800138000',
+            smsCode: '123456',
+            device: device,
+            profile: const RegistrationProfile(nickname: '新用户', sex: 2),
+          );
+        } on ApiException catch (error) {
+          failure = error;
+        }
+        expect(failure?.kind, expectedKind);
+        expect(failure?.httpStatus, status);
+        expect(
+          failure?.code,
+          status == HttpStatus.unprocessableEntity ? 42201 : status,
+        );
+      }
+    },
+  );
 }
+
+AppEnvironment _testEnvironment(HttpServer server) => AppEnvironment(
+  backendMode: BackendMode.live,
+  apiBaseUrl: 'http://${server.address.address}:${server.port}/',
+  clientType: 'Android',
+  clientInnerVersion: '6',
+  oauthClientId: 'voice-social-mobile-public',
+  realtimeEndpoint: '',
+  deploymentEnvironment: DeploymentEnvironment.development,
+  allowInsecureHttp: true,
+);
+
+BackendAuthRepository _testRepository(AppEnvironment environment) {
+  final ApiClient client = ApiClient(
+    baseUri: environment.apiBaseUri!,
+    clientType: environment.clientType,
+    clientInnerVersion: environment.clientInnerVersion,
+    authorizationProvider: () => null,
+  );
+  return BackendAuthRepository(apiClient: client, environment: environment);
+}
+
+const ClientDevice _testDevice = ClientDevice(
+  deviceType: 1,
+  deviceId: 'install-device-1',
+  mobileKind: 'Android emulator',
+  appMarketType: 1,
+  isEmulator: 1,
+  smDeviceId: 'sm-device-1',
+);
 
 Object? _authResponseFor(String path) => switch (path) {
   '/app-register-api/util/v1/sendSmsCode' => <String, Object?>{

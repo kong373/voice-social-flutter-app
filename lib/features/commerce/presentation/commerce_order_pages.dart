@@ -139,6 +139,7 @@ class OrderDetailPage extends StatefulWidget {
 class _OrderDetailPageState extends State<OrderDetailPage> {
   late PaymentOrder _order;
   bool _refreshing = false;
+  bool _openingRefund = false;
 
   @override
   void initState() {
@@ -177,6 +178,48 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('订单号已复制')));
+    }
+  }
+
+  Future<void> _openRefund() async {
+    if (_openingRefund) {
+      return;
+    }
+    final CommerceRepository repository = AppDependencyScope.of(
+      context,
+    ).commerceRepository;
+    if (repository.refundScope != RefundScope.order) {
+      return;
+    }
+    setState(() => _openingRefund = true);
+    try {
+      final RefundEligibility eligibility = await repository
+          .checkRefundEligibility(_order.orderNo);
+      if (!mounted) {
+        return;
+      }
+      if (!eligibility.allowed) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(eligibility.message)));
+        return;
+      }
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (BuildContext context) =>
+              RefundApplicationPage(order: _order),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _openingRefund = false);
+      }
     }
   }
 
@@ -233,6 +276,26 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                 : const Icon(Icons.sync_rounded),
             label: const Text('刷新并补单核验'),
           ),
+          if (AppDependencyScope.of(context).commerceRepository.refundScope ==
+                  RefundScope.order &&
+              _order.status == PaymentOrderStatus.succeeded) ...<Widget>[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _openingRefund ? null : _openRefund,
+              icon: _openingRefund
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.assignment_return_outlined),
+              label: const Text('申请退款'),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '是否可退款以服务端订单校验为准。退款申请只提交订单号和原因，退款金额由服务端根据订单核验。',
+              textAlign: TextAlign.center,
+            ),
+          ],
           const SizedBox(height: 14),
           const _CommerceInfoBanner(text: '补单核验只查询服务端权威订单状态，不会在客户端自行把订单改成成功。'),
         ],

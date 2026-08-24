@@ -1,4 +1,22 @@
-enum RoomAccessMode { publicRoom, password }
+enum RoomAccessMode { publicRoom, password, approval }
+
+/// Declares which room-configuration operations the selected repository can
+/// actually persist.  The live first-party backend intentionally exposes a
+/// smaller surface than the local mock, so presentation code can hide or
+/// disable unsupported controls instead of claiming a setting was saved.
+class RoomLifecycleCapabilities {
+  const RoomLifecycleCapabilities({
+    required this.supportsApprovalAccessMode,
+    required this.supportsTopicTitle,
+    required this.supportsAutoLockMic,
+    required this.supportsReopen,
+  });
+
+  final bool supportsApprovalAccessMode;
+  final bool supportsTopicTitle;
+  final bool supportsAutoLockMic;
+  final bool supportsReopen;
+}
 
 enum RoomAvailability { open, closed, unavailable }
 
@@ -10,6 +28,7 @@ class RoomConfiguration {
     required this.welcomeMessage,
     required this.accessMode,
     required this.password,
+    this.passwordConfigured = false,
     required this.showInHall,
     required this.autoLockMic,
     required this.availability,
@@ -26,6 +45,10 @@ class RoomConfiguration {
   final String welcomeMessage;
   final RoomAccessMode accessMode;
   final String password;
+
+  /// True when the server already has a password hash for this room. The
+  /// hash is never sent to the client; a blank edit keeps the existing hash.
+  final bool passwordConfigured;
   final bool showInHall;
   final bool autoLockMic;
   final RoomAvailability availability;
@@ -43,6 +66,7 @@ class RoomConfiguration {
     String? welcomeMessage,
     RoomAccessMode? accessMode,
     String? password,
+    bool? passwordConfigured,
     bool? showInHall,
     bool? autoLockMic,
     RoomAvailability? availability,
@@ -57,6 +81,7 @@ class RoomConfiguration {
       welcomeMessage: welcomeMessage ?? this.welcomeMessage,
       accessMode: accessMode ?? this.accessMode,
       password: password ?? this.password,
+      passwordConfigured: passwordConfigured ?? this.passwordConfigured,
       showInHall: showInHall ?? this.showInHall,
       autoLockMic: autoLockMic ?? this.autoLockMic,
       availability: availability ?? this.availability,

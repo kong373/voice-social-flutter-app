@@ -34,16 +34,19 @@ abstract interface class RoomOperationsRepository {
   Future<void> kickUser({required String roomId, required int userId});
 
   Future<void> takeUserOffMic({
+    required String roomId,
     required int backendMicIndex,
     required int userId,
   });
 
   Future<void> setSeatLocked({
+    required String roomId,
     required int backendMicIndex,
     required bool locked,
   });
 
   Future<void> setSeatMuted({
+    required String roomId,
     required int backendMicIndex,
     required bool muted,
   });

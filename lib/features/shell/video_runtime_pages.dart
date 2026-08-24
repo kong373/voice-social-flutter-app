@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
@@ -7,24 +9,31 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/commerce/presentation/commerce_pages.dart';
 import 'package:voice_social_app/features/community/presentation/community_pages.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
+import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_models.dart';
 import 'package:voice_social_app/features/discovery/dynamic/presentation/dynamic_pages.dart';
 import 'package:voice_social_app/features/discovery/presentation/global_search_page.dart';
 import 'package:voice_social_app/features/discovery/presentation/saved_rooms_page.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
-import 'package:voice_social_app/features/shell/live_read_only_pages.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
+import 'package:voice_social_app/features/shell/live_read_only_repository.dart';
+import 'package:voice_social_app/features/shell/live_vendor_boundary_page.dart';
+
+String _onlineCountChipText(int? onlineCount) =>
+    onlineCount == null || onlineCount < 0 ? '未知' : onlineCount.toString();
 
 class VideoRuntimeHomePage extends StatefulWidget {
   const VideoRuntimeHomePage({
     required this.dependencies,
     required this.onOpenRoom,
+    this.repository,
     super.key,
   });
 
   final AppDependencies dependencies;
   final void Function(DiscoveryRoom room) onOpenRoom;
+  final DiscoveryRepository? repository;
 
   @override
   State<VideoRuntimeHomePage> createState() => _VideoRuntimeHomePageState();
@@ -44,6 +53,7 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
   String? _error;
   int _category = 0;
   int _roomOffset = 0;
+  int _loadGeneration = 0;
 
   List<DiscoveryRoom> get _visibleRooms {
     final List<DiscoveryRoom> matching = _rooms
@@ -78,6 +88,7 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
   }
 
   Future<void> _load() async {
+    final int generation = ++_loadGeneration;
     if (mounted) {
       setState(() {
         _loading = true;
@@ -85,18 +96,17 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
       });
     }
     try {
-      final List<DiscoveryRoom> rooms = await widget
-          .dependencies
-          .discoveryRepository
-          .fetchHomeRooms();
-      if (!mounted) return;
+      final List<DiscoveryRoom> rooms =
+          await (widget.repository ?? widget.dependencies.discoveryRepository)
+              .fetchHomeRooms();
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _rooms = rooms;
         _roomOffset = 0;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _loading = false;
         _error = error is ApiException ? error.message : '房间推荐暂时无法加载';
@@ -126,7 +136,12 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
       _load();
       return;
     }
-    setState(() => _roomOffset += 1);
+    ++_loadGeneration;
+    setState(() {
+      _roomOffset += 1;
+      _loading = false;
+      _error = null;
+    });
   }
 
   void _openRanking() => Navigator.of(context).push<void>(
@@ -160,7 +175,9 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
                 contentPadding: EdgeInsets.zero,
                 leading: RuntimeAvatar(seed: room.id, size: 40),
                 title: Text(room.topic),
-                subtitle: Text('${room.title} · ${room.onlineCount} 人在线'),
+                subtitle: Text(
+                  '${room.title} · ${discoveryOnlineCountLabel(room.onlineCount)}',
+                ),
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () => Navigator.of(sheetContext).pop(room),
               ),
@@ -179,107 +196,114 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
     return SocialSkySurface(
       child: SafeArea(
         bottom: false,
-        child: RefreshIndicator(
-          onRefresh: _load,
-          child: CustomScrollView(
-            key: const Key('video-runtime-home'),
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: <Widget>[
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
-                sliver: SliverToBoxAdapter(child: _header()),
-              ),
-              SliverToBoxAdapter(child: _tabs()),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
-                sliver: SliverToBoxAdapter(child: _hero()),
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(12, 9, 12, 0),
-                sliver: SliverToBoxAdapter(child: _activity()),
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(12, 9, 12, 0),
-                sliver: SliverToBoxAdapter(child: _finder()),
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(14, 13, 14, 7),
-                sliver: SliverToBoxAdapter(
-                  child: Row(
-                    children: <Widget>[
-                      Text(
-                        '正在发生',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(width: 7),
-                      const RuntimeWaveform(width: 30),
-                      const Spacer(),
-                      TextButton(
-                        key: const Key('home-rotate-rooms'),
-                        onPressed: _rotateRooms,
-                        child: const Text('换一批'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (_loading)
-                const SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: 180,
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                )
-              else if (_error != null)
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: 210,
-                    child: _LightState(
-                      icon: Icons.cloud_off_rounded,
-                      title: '加载失败',
-                      description: _error!,
-                      actionLabel: '重试',
-                      onAction: _load,
-                    ),
-                  ),
-                )
-              else if (_rooms.isEmpty)
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: 210,
-                    child: _LightState(
-                      icon: Icons.headphones_rounded,
-                      title: '暂时没有开放中的房间',
-                      description: '下拉刷新，稍后再来听听。',
-                      actionLabel: '刷新',
-                      onAction: _load,
-                    ),
-                  ),
-                )
-              else
+        child: KeyedSubtree(
+          key: widget.dependencies.environment.isLive
+              ? const Key('live-home-ready')
+              : null,
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: CustomScrollView(
+              key: const Key('video-runtime-home'),
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: <Widget>[
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 34),
-                  sliver: SliverGrid(
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 9,
-                          mainAxisSpacing: 9,
-                          childAspectRatio: 0.78,
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+                  sliver: SliverToBoxAdapter(child: _header()),
+                ),
+                SliverToBoxAdapter(child: _tabs()),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
+                  sliver: SliverToBoxAdapter(child: _hero()),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(12, 9, 12, 0),
+                  sliver: SliverToBoxAdapter(child: _activity()),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(12, 9, 12, 0),
+                  sliver: SliverToBoxAdapter(child: _finder()),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(14, 13, 14, 7),
+                  sliver: SliverToBoxAdapter(
+                    child: Row(
+                      children: <Widget>[
+                        Text(
+                          widget.dependencies.environment.isLive
+                              ? '此刻适合你的房间'
+                              : '正在发生',
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
-                    delegate: SliverChildBuilderDelegate((
-                      BuildContext context,
-                      int index,
-                    ) {
-                      final DiscoveryRoom room = visibleRooms[index];
-                      return _RoomPoster(
-                        room: room,
-                        onTap: () => widget.onOpenRoom(room),
-                      );
-                    }, childCount: visibleRooms.length),
+                        const SizedBox(width: 7),
+                        const RuntimeWaveform(width: 30),
+                        const Spacer(),
+                        TextButton(
+                          key: const Key('home-rotate-rooms'),
+                          onPressed: _rotateRooms,
+                          child: const Text('换一批'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-            ],
+                if (_loading)
+                  const SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 180,
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  )
+                else if (_error != null)
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 210,
+                      child: _LightState(
+                        icon: Icons.cloud_off_rounded,
+                        title: '加载失败',
+                        description: _error!,
+                        actionLabel: '重试',
+                        onAction: _load,
+                      ),
+                    ),
+                  )
+                else if (_rooms.isEmpty)
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 210,
+                      child: _LightState(
+                        icon: Icons.headphones_rounded,
+                        title: '暂时没有开放中的房间',
+                        description: '下拉刷新，稍后再来听听。',
+                        actionLabel: '刷新',
+                        onAction: _load,
+                      ),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 34),
+                    sliver: SliverGrid(
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 9,
+                            mainAxisSpacing: 9,
+                            childAspectRatio: 0.78,
+                          ),
+                      delegate: SliverChildBuilderDelegate((
+                        BuildContext context,
+                        int index,
+                      ) {
+                        final DiscoveryRoom room = visibleRooms[index];
+                        return _RoomPoster(
+                          room: room,
+                          onTap: () => widget.onOpenRoom(room),
+                        );
+                      }, childCount: visibleRooms.length),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -302,6 +326,7 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
       ),
       const SizedBox(width: 7),
       _RoundHeaderButton(
+        key: const Key('open-global-search'),
         icon: Icons.search_rounded,
         tooltip: '搜索',
         onTap: _openSearch,
@@ -358,49 +383,51 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
         children: <Widget>[
           Expanded(
             flex: 6,
-            child: OriginalRoomArtwork(
-              seed: 'hero-main',
-              height: 104,
-              borderRadius: BorderRadius.circular(19),
-              child: InkWell(
-                onTap: room == null ? null : () => widget.onOpenRoom(room),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(13, 11, 11, 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      const Row(
-                        children: <Widget>[
-                          Icon(
-                            Icons.play_circle_fill_rounded,
-                            color: Colors.white,
-                          ),
-                          Spacer(),
-                          Icon(
-                            Icons.favorite_rounded,
-                            color: Color(0xFFFF9AC7),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      Text(
-                        room?.title ?? '深夜轻聊',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          shadows: <Shadow>[
-                            Shadow(color: Colors.black45, blurRadius: 7),
+            child: room == null
+                ? const _UnavailableRoomHero()
+                : OriginalRoomArtwork(
+                    seed: 'hero-main',
+                    height: 104,
+                    borderRadius: BorderRadius.circular(19),
+                    child: InkWell(
+                      onTap: () => widget.onOpenRoom(room),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(13, 11, 11, 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            const Row(
+                              children: <Widget>[
+                                Icon(
+                                  Icons.play_circle_fill_rounded,
+                                  color: Colors.white,
+                                ),
+                                Spacer(),
+                                Icon(
+                                  Icons.favorite_rounded,
+                                  color: Color(0xFFFF9AC7),
+                                ),
+                              ],
+                            ),
+                            const Spacer(),
+                            Text(
+                              room.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                shadows: <Shadow>[
+                                  Shadow(color: Colors.black45, blurRadius: 7),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            ),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -436,32 +463,50 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
     final DiscoveryRoom? room = _rooms
         .where((DiscoveryRoom item) => item.isFavorite)
         .firstOrNull;
+    final String activityLabel;
+    if (room == null) {
+      activityLabel = '实时活动暂不可用';
+    } else {
+      final String ownerName = room.ownerName?.trim() ?? '';
+      activityLabel = ownerName.isEmpty
+          ? '${room.title} · ${discoveryOnlineCountLabel(room.onlineCount)}'
+          : '$ownerName 正在「${room.title}」 · ${discoveryOnlineCountLabel(room.onlineCount, suffix: '人在听')}';
+    }
     return SocialCard(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       radius: 15,
       color: const Color(0xEAF5E8FF),
       onTap: room == null ? null : () => widget.onOpenRoom(room),
-      child: const Row(
+      child: Row(
         children: <Widget>[
-          SizedBox(
-            width: 48,
-            child: Stack(
-              children: <Widget>[
-                RuntimeAvatar(seed: 'activity-1', size: 28),
-                Positioned(
-                  left: 20,
-                  child: RuntimeAvatar(seed: 'activity-2', size: 28),
-                ),
-              ],
+          if (room == null)
+            const SizedBox(
+              width: 48,
+              child: Icon(
+                Icons.hourglass_empty_rounded,
+                color: SocialColors.textTertiary,
+              ),
+            )
+          else
+            SizedBox(
+              width: 48,
+              child: Stack(
+                children: <Widget>[
+                  RuntimeAvatar(seed: room.id, size: 28),
+                  Positioned(
+                    left: 20,
+                    child: RuntimeAvatar(seed: '${room.id}-owner', size: 28),
+                  ),
+                ],
+              ),
             ),
-          ),
           SizedBox(width: 7),
           Expanded(
             child: Text(
-              '云朵和晚星正在「周末轻聊」 · 3 人在听',
+              activityLabel,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
+              style: const TextStyle(
                 color: SocialColors.textSecondary,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -541,6 +586,7 @@ class _RoundHeaderButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onTap,
+    super.key,
   });
 
   final IconData icon;
@@ -606,6 +652,38 @@ class _HeroMiniCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    ),
+  );
+}
+
+class _UnavailableRoomHero extends StatelessWidget {
+  const _UnavailableRoomHero();
+
+  @override
+  Widget build(BuildContext context) => OriginalRoomArtwork(
+    seed: 'hero-main-unavailable',
+    height: 104,
+    borderRadius: BorderRadius.circular(19),
+    child: const Padding(
+      padding: EdgeInsets.fromLTRB(13, 11, 11, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(Icons.cloud_off_rounded, color: Colors.white70),
+          Spacer(),
+          Text(
+            '暂无可进入房间',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              shadows: <Shadow>[Shadow(color: Colors.black45, blurRadius: 7)],
+            ),
+          ),
+        ],
       ),
     ),
   );
@@ -690,7 +768,7 @@ class _RoomPoster extends StatelessWidget {
                         size: 12,
                       ),
                       Text(
-                        '${room.onlineCount}',
+                        _onlineCountChipText(room.onlineCount),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 9,
@@ -790,9 +868,6 @@ class _VideoRuntimeDiscoveryPageState extends State<VideoRuntimeDiscoveryPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.dependencies.environment.isLive) {
-      return const LiveDiscoveryHoldingPage();
-    }
     final List<_MockPost> visiblePosts = _visiblePosts;
     return SocialSkySurface(
       child: SafeArea(
@@ -1284,12 +1359,8 @@ class VideoRuntimeMessagesPage extends StatelessWidget {
   final AppDependencies dependencies;
 
   @override
-  Widget build(BuildContext context) {
-    if (dependencies.environment.isLive) {
-      return const LiveMessageHoldingPage();
-    }
-    return const MessageCenterPage(key: Key('video-runtime-messages'));
-  }
+  Widget build(BuildContext context) =>
+      const MessageCenterPage(key: Key('video-runtime-messages'));
 }
 
 class VideoRuntimeAccountPage extends StatefulWidget {
@@ -1298,6 +1369,7 @@ class VideoRuntimeAccountPage extends StatefulWidget {
     required this.onOpenRoom,
     required this.onSignOut,
     this.profileRepository,
+    this.liveReadOnlyRepository,
     super.key,
   });
 
@@ -1305,6 +1377,7 @@ class VideoRuntimeAccountPage extends StatefulWidget {
   final void Function(DiscoveryRoom room) onOpenRoom;
   final Future<void> Function() onSignOut;
   final SocialRepository? profileRepository;
+  final LiveReadOnlyRepository? liveReadOnlyRepository;
 
   @override
   State<VideoRuntimeAccountPage> createState() =>
@@ -1316,15 +1389,53 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
   String? _profileError;
   bool _loadingProfile = false;
   int _profileLoadRequestId = 0;
+  LiveReadOnlyOverview? _liveOverview;
+  String? _liveError;
+  bool _loadingLiveOverview = false;
+  int _liveLoadRequestId = 0;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (widget.dependencies.environment.isLive) {
-      return;
-    }
     if (_profile == null && !_loadingProfile && _profileError == null) {
       _loadProfile();
+    }
+    if (widget.dependencies.environment.isLive &&
+        _liveOverview == null &&
+        !_loadingLiveOverview &&
+        _liveError == null) {
+      _loadLiveOverview();
+    }
+  }
+
+  Future<void> _loadLiveOverview() async {
+    final int requestId = ++_liveLoadRequestId;
+    if (mounted) {
+      setState(() {
+        _loadingLiveOverview = true;
+        _liveError = null;
+      });
+    }
+    try {
+      final LiveReadOnlyOverview overview =
+          await (widget.liveReadOnlyRepository ??
+                  widget.dependencies.liveReadOnlyRepository)
+              .fetchOverview();
+      if (!mounted || requestId != _liveLoadRequestId) {
+        return;
+      }
+      setState(() {
+        _liveOverview = overview;
+        _loadingLiveOverview = false;
+      });
+    } catch (error) {
+      if (!mounted || requestId != _liveLoadRequestId) {
+        return;
+      }
+      setState(() {
+        _loadingLiveOverview = false;
+        _liveError = error is ApiException ? error.message : '账号信息加载失败';
+      });
     }
   }
 
@@ -1360,6 +1471,7 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
   @override
   void dispose() {
     _profileLoadRequestId += 1;
+    _liveLoadRequestId += 1;
     super.dispose();
   }
 
@@ -1376,14 +1488,27 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
     }
   }
 
+  bool get _showDeveloperDiagnostics =>
+      kDebugMode &&
+      (widget.dependencies.environment.deploymentEnvironment ==
+              DeploymentEnvironment.local ||
+          widget.dependencies.environment.deploymentEnvironment ==
+              DeploymentEnvironment.development);
+
+  Future<void> _openLiveVendorDiagnostics() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => Scaffold(
+          appBar: AppBar(title: const Text('开发环境接入诊断')),
+          body: LiveVendorBoundaryPage(dependencies: widget.dependencies),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (widget.dependencies.environment.isLive) {
-      return LiveReadOnlyAccountPage(
-        dependencies: widget.dependencies,
-        onSignOut: widget.onSignOut,
-      );
-    }
+    final bool live = widget.dependencies.environment.isLive;
     final SocialProfile? profile = _profile;
     if (profile == null) {
       return SocialSkySurface(
@@ -1402,15 +1527,10 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
     }
     final String account =
         widget.dependencies.sessionManager.session?.mobile ?? profile.account;
-    final Widget accountPage = widget.dependencies.environment.isLive
-        ? LiveReadOnlyAccountPage(
-            dependencies: widget.dependencies,
-            onSignOut: widget.onSignOut,
-          )
-        : PersonalCenterPage(
-            session: widget.dependencies.sessionManager.session,
-            onSignOut: widget.onSignOut,
-          );
+    final Widget accountPage = PersonalCenterPage(
+      session: widget.dependencies.sessionManager.session,
+      onSignOut: widget.onSignOut,
+    );
     return SocialSkySurface(
       child: SafeArea(
         bottom: false,
@@ -1447,68 +1567,130 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
                 ),
               ),
             ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-              sliver: SliverToBoxAdapter(
-                child: _DecorationBanner(
-                  onTap: () => _open(context, const DecorationPage()),
+            if (live) ...<Widget>[
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                sliver: SliverToBoxAdapter(
+                  child: _LiveStatusBanner(
+                    key: const Key('live-account-boundary'),
+                    icon: Icons.verified_user_outlined,
+                    title: 'Live 模式保留真实资料与第一方入口',
+                    description: switch ((_liveOverview, _liveError)) {
+                      (final LiveReadOnlyOverview overview?, _) =>
+                        '账号 ${overview.user.account} 已接入真实资料；钱包余额与流水、订单与退款记录、礼物与装扮目录、活动、通知、帮助与资料设置保持可达。正式支付渠道、对象存储上传与任何 provider 调起继续严格关闭；装扮购买与穿戴只接受服务端权威结果。',
+                      (_, final String error?) =>
+                        '真实资料与第一方入口保持可达；钱包余额与流水、订单与退款记录、礼物与装扮目录可以查看。正式支付渠道、对象存储上传与任何 provider 调起继续严格关闭。厂商边界状态暂不可读：$error',
+                      _ =>
+                        '真实资料与第一方入口保持可达；钱包余额与流水、订单与退款记录、礼物与装扮目录可以查看。正式支付渠道、对象存储上传与任何 provider 调起继续严格关闭；装扮购买与穿戴只接受服务端权威结果。',
+                    },
+                  ),
                 ),
               ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-              sliver: SliverToBoxAdapter(
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: _AccountFeatureCard(
-                        icon: Icons.account_balance_wallet_outlined,
-                        title: '钱包',
-                        subtitle: '礼物币与流水',
-                        color: const Color(0xFFFFE4B8),
-                        onTap: () =>
-                            _open(context, CommerceHubPage(account: account)),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                sliver: SliverToBoxAdapter(
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: _AccountFeatureCard(
+                          icon: Icons.account_balance_wallet_outlined,
+                          title: '钱包',
+                          subtitle: '余额、流水与订单',
+                          color: const Color(0xFFFFE4B8),
+                          onTap: () =>
+                              _open(context, CommerceHubPage(account: account)),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _AccountFeatureCard(
-                        icon: Icons.photo_library_outlined,
-                        title: '收藏房间',
-                        subtitle: '最近听过的',
-                        color: const Color(0xFFDCEAFF),
-                        onTap: () => _open(context, const SavedRoomsPage()),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _AccountFeatureCard(
+                          icon: Icons.photo_library_outlined,
+                          title: '收藏房间',
+                          subtitle: '最近听过的',
+                          color: const Color(0xFFDCEAFF),
+                          onTap: () => _open(context, const SavedRoomsPage()),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _AccountFeatureCard(
-                        icon: Icons.storefront_outlined,
-                        title: '装扮',
-                        subtitle: '头像框与进场',
-                        color: const Color(0xFFFFDDED),
-                        onTap: () => _open(context, const DecorationPage()),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _AccountFeatureCard(
+                          icon: Icons.storefront_outlined,
+                          title: '装扮',
+                          subtitle: '图鉴与当前穿戴',
+                          color: const Color(0xFFFFDDED),
+                          onTap: () => _open(context, const DecorationPage()),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(14, 18, 14, 9),
-              sliver: SliverToBoxAdapter(
-                child: Text(
-                  '最近常听',
-                  style: Theme.of(context).textTheme.titleLarge,
+            ] else ...<Widget>[
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                sliver: SliverToBoxAdapter(
+                  child: _DecorationBanner(
+                    onTap: () => _open(context, const DecorationPage()),
+                  ),
                 ),
               ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              sliver: SliverToBoxAdapter(
-                child: _RecentRoomsStrip(onOpenRoom: widget.onOpenRoom),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                sliver: SliverToBoxAdapter(
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: _AccountFeatureCard(
+                          icon: Icons.account_balance_wallet_outlined,
+                          title: '钱包',
+                          subtitle: '礼物币与流水',
+                          color: const Color(0xFFFFE4B8),
+                          onTap: () =>
+                              _open(context, CommerceHubPage(account: account)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _AccountFeatureCard(
+                          icon: Icons.photo_library_outlined,
+                          title: '收藏房间',
+                          subtitle: '最近听过的',
+                          color: const Color(0xFFDCEAFF),
+                          onTap: () => _open(context, const SavedRoomsPage()),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _AccountFeatureCard(
+                          icon: Icons.storefront_outlined,
+                          title: '装扮',
+                          subtitle: '头像框与进场',
+                          color: const Color(0xFFFFDDED),
+                          onTap: () => _open(context, const DecorationPage()),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
+            ],
+            if (!live) ...<Widget>[
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(14, 18, 14, 9),
+                sliver: SliverToBoxAdapter(
+                  child: Text(
+                    '最近常听',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                sliver: SliverToBoxAdapter(
+                  child: _RecentRoomsStrip(onOpenRoom: widget.onOpenRoom),
+                ),
+              ),
+            ],
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(14, 18, 14, 9),
               sliver: SliverToBoxAdapter(
@@ -1527,57 +1709,89 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
                     vertical: 14,
                   ),
                   radius: 20,
-                  child: GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 4,
-                    mainAxisSpacing: 16,
-                    childAspectRatio: 0.94,
+                  child: Column(
                     children: <Widget>[
-                      _AccountTool(
-                        icon: Icons.people_outline_rounded,
-                        label: '关注与粉丝',
-                        onTap: () => _open(context, const RelationsPage()),
+                      GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: 4,
+                        mainAxisSpacing: 16,
+                        childAspectRatio: 0.94,
+                        children: <Widget>[
+                          _AccountTool(
+                            icon: Icons.people_outline_rounded,
+                            label: '关注与粉丝',
+                            onTap: () => _open(context, const RelationsPage()),
+                          ),
+                          _AccountTool(
+                            icon: Icons.event_available_outlined,
+                            label: '活动中心',
+                            onTap: () =>
+                                _open(context, const ActivityCenterPage()),
+                          ),
+                          _AccountTool(
+                            icon: Icons.visibility_outlined,
+                            label: '访客记录',
+                            onTap: () =>
+                                _open(context, const VisitorRecordsPage()),
+                          ),
+                          _AccountTool(
+                            icon: Icons.manage_accounts_outlined,
+                            label: '资料与设置',
+                            onTap: () => _open(
+                              context,
+                              accountPage,
+                              refreshProfile: true,
+                            ),
+                          ),
+                          _AccountTool(
+                            icon: Icons.notifications_none_rounded,
+                            label: '通知中心',
+                            onTap: () =>
+                                _open(context, const NotificationCenterPage()),
+                          ),
+                          _AccountTool(
+                            icon: Icons.help_outline_rounded,
+                            label: '帮助与反馈',
+                            onTap: () => _open(context, const HelpCenterPage()),
+                          ),
+                          _AccountTool(
+                            icon: Icons.verified_user_outlined,
+                            label: '隐私与安全',
+                            onTap: () => _open(
+                              context,
+                              accountPage,
+                              refreshProfile: true,
+                            ),
+                          ),
+                          _AccountTool(
+                            icon: Icons.more_horiz_rounded,
+                            label: '更多',
+                            onTap: () => _open(
+                              context,
+                              accountPage,
+                              refreshProfile: true,
+                            ),
+                          ),
+                        ],
                       ),
-                      _AccountTool(
-                        icon: Icons.event_available_outlined,
-                        label: '活动中心',
-                        onTap: () => _open(context, const ActivityCenterPage()),
-                      ),
-                      _AccountTool(
-                        icon: Icons.visibility_outlined,
-                        label: '访客记录',
-                        onTap: () => _open(context, const VisitorRecordsPage()),
-                      ),
-                      _AccountTool(
-                        icon: Icons.manage_accounts_outlined,
-                        label: '资料与设置',
-                        onTap: () =>
-                            _open(context, accountPage, refreshProfile: true),
-                      ),
-                      _AccountTool(
-                        icon: Icons.notifications_none_rounded,
-                        label: '通知中心',
-                        onTap: () =>
-                            _open(context, const NotificationCenterPage()),
-                      ),
-                      _AccountTool(
-                        icon: Icons.help_outline_rounded,
-                        label: '帮助与反馈',
-                        onTap: () => _open(context, const HelpCenterPage()),
-                      ),
-                      _AccountTool(
-                        icon: Icons.verified_user_outlined,
-                        label: '隐私与安全',
-                        onTap: () =>
-                            _open(context, accountPage, refreshProfile: true),
-                      ),
-                      _AccountTool(
-                        icon: Icons.more_horiz_rounded,
-                        label: '更多',
-                        onTap: () =>
-                            _open(context, accountPage, refreshProfile: true),
-                      ),
+                      if (live && _showDeveloperDiagnostics) ...<Widget>[
+                        const SizedBox(height: 10),
+                        Material(
+                          color: Colors.transparent,
+                          child: ListTile(
+                            key: const Key('open-vendor-diagnostics'),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                            ),
+                            leading: const Icon(Icons.developer_mode_outlined),
+                            title: const Text('开发环境接入诊断'),
+                            subtitle: const Text('仅调试构建可见，不会出现在正式版本'),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: _openLiveVendorDiagnostics,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1946,6 +2160,47 @@ class _AccountTool extends StatelessWidget {
   );
 }
 
+class _LiveStatusBanner extends StatelessWidget {
+  const _LiveStatusBanner({
+    required this.icon,
+    required this.title,
+    required this.description,
+    super.key,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surfaceHigh,
+      borderRadius: BorderRadius.circular(18),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(icon, color: AppColors.accent),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(title, style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 5),
+                  Text(description),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _LightState extends StatelessWidget {
   const _LightState({
     required this.icon,
@@ -1963,7 +2218,7 @@ class _LightState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-    child: Padding(
+    child: SingleChildScrollView(
       padding: const EdgeInsets.all(18),
       child: SocialCard(
         child: Column(

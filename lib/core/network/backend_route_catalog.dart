@@ -5,6 +5,8 @@ class BackendRouteCatalog {
         '/app-register-api/userAccount/v1/loginByMobileAndSmsCode',
     this.registerByMobile = '/app-register-api/userAccount/v1/registerByMobile',
     this.enterRoom = '/app-room-api/room/com/v1/enterRoom',
+    this.createRoom = '/app-mini-api/mini/v1/rooms',
+    this.closeRoom = '/app-mini-api/mini/v1/rooms/close',
     this.queryRoomInfo = '/app-room-api/room/com/v1/queryRoomInfo',
     this.reconnectRoom = '/app-room-api/room/com/v1/reConnectRoomInfo',
     this.queryRoomOtherInfo = '/app-room-api/room/com/v1/queryRoomOtherInfo',
@@ -12,6 +14,7 @@ class BackendRouteCatalog {
     this.buildRtcToken = '/app-room-api/room/com/v1/buildAgoraToken',
     this.sendGift = '/app-room-api/room/com/v1/sendGift',
     this.sendPublicMessage = '/app-room-api/room/com/v1/roomScreenChat',
+    this.publicMessages = '/app-mini-api/mini/v1/rooms/public-messages',
     this.userUpMic = '/app-api/micUserBase/userInitiativeUpMic',
     this.userLeaveMic = '/app-api/micUserBase/leaveMic',
     this.closeMic = '/app-api/micBase/closedMike',
@@ -39,10 +42,15 @@ class BackendRouteCatalog {
     this.youthModeStatus = '/app-api/user/other/getMatchButtonAndYouthMode',
     this.queryAccountCancellation = '/app-api/user/queryUserLogout',
     this.deleteAccount = '/app-register-api/userAccount/v1/delete',
+    this.cancelAccountDeletion =
+        '/app-mini-api/mini/v1/account/deletion/cancel',
     this.queryAppealInfo = '/app-api/accappeal/queryAppealInfo',
     this.submitAppeal = '/app-api/accappeal/commitAppeal',
     this.queryAppealProgress = '/app-api/accappeal/queryAppealProcess',
     this.versionInformation = '/app-api/appBase/getVersionInformation',
+    this.accountRealName = '/app-mini-api/mini/v1/account/real-name',
+    this.accountSessions = '/app-mini-api/mini/v1/account/sessions',
+    this.accountRestrictions = '/app-mini-api/mini/v1/account/restrictions',
     this.enableYouthMode = '/app-api/user/openYouthMode',
     this.disableYouthMode = '/app-api/user/turnOffYouthMode',
     this.updateUserProfile = '/app-api/user/updateUserByUserId',
@@ -58,6 +66,12 @@ class BackendRouteCatalog {
     this.reportUserOrRoom = '/app-api/util/tipOffUserOrRoom',
     this.customerService = '/app-api/user/getCustomerServiceDetail',
     this.submitFeedback = '/app-api/suggestion/saveSugggestion',
+    this.socialPrivacy = '/app-mini-api/mini/v1/social/privacy',
+    this.friendRequestList = '/app-mini-api/mini/v1/social/friend-request/list',
+    this.friendRequestSend = '/app-mini-api/mini/v1/social/friend-request/send',
+    this.friendRequestResolve =
+        '/app-mini-api/mini/v1/social/friend-request/resolve',
+    this.supportTicket = '/app-mini-api/mini/v1/support/ticket',
     this.ncoinBalance = '/app-economy-api/ncoin',
     this.paymentOrders = '/app-economy-api/pay/getOrders',
     this.paymentOrderResult = '/app-economy-api/pay/isOrderSuccess',
@@ -70,8 +84,10 @@ class BackendRouteCatalog {
     this.withdrawalFeeRate = '/app-mini-api/mini/v1/withdrawal/fee-rate',
     this.withdrawalApply = '/app-mini-api/mini/v1/withdrawal/apply',
     this.withdrawalRecords = '/app-mini-api/mini/v1/withdrawal/records',
+    this.walletReconcile = '/app-mini-api/mini/v1/wallet/reconcile',
     this.dynamicPublish = '/app-mini-api/mini/v1/dynamic/publish',
     this.dynamicList = '/app-mini-api/mini/v1/dynamic/list',
+    this.dynamicDetail = '/app-mini-api/mini/v1/dynamic/detail',
     this.dynamicMyList = '/app-mini-api/mini/v1/dynamic/list/my',
     this.dynamicUserList = '/app-mini-api/mini/v1/dynamic/list/user',
     this.dynamicDelete = '/app-mini-api/mini/v1/dynamic/delete',
@@ -83,6 +99,7 @@ class BackendRouteCatalog {
     this.contributionRanking = '/app-api/rankinglist/contribuitonrank',
     this.roomRanking = '/app-api/dfrank/queryRoomDfRank',
     this.recommendedGuilds = '/app-api/guild/getRecommendGuildPage',
+    this.createGuild = '/app-mini-api/mini/v1/guild/create',
     this.searchGuilds = '/app-api/guild/searchGuild',
     this.guildHomepage = '/app-api/guild/getGuildHomepageDetails',
     this.guildMembers = '/app-api/guild/getGuildMembers',
@@ -99,6 +116,7 @@ class BackendRouteCatalog {
     this.cpRequest = '/app-mini-api/mini/v1/cp/request',
     this.cpAccept = '/app-mini-api/mini/v1/cp/accept',
     this.cpReject = '/app-mini-api/mini/v1/cp/reject',
+    this.cpEnd = '/app-mini-api/mini/v1/cp/end',
     this.cpEligibility =
         '/app-mini-api/mini/v1/cp/check-invitation-eligibility',
     this.guardianLevels = '/app-api/room/radio/v1/queryGuardianLevels',
@@ -116,6 +134,8 @@ class BackendRouteCatalog {
     this.signRewards = '/app-api/taskSystem/querySignReward',
     this.completeSignIn = '/app-api/taskSystem/completeDailySignIn',
     this.todaySignStatus = '/app-api/taskSystem/queryTodaySignStatus',
+    this.inviteAttribution = '/app-mini-api/mini/v1/invite/attribution',
+    this.activityCatalog = '/app-mini-api/mini/v1/activity/list',
     this.roomPkInvite = '/app-api/activityPk/inviteRoomPk',
     this.roomPkAccept = '/app-api/activityPk/acceptRoomPkInvitation',
     this.roomPkReject = '/app-api/activityPk/rejectRoomPkInvitation',
@@ -124,6 +144,7 @@ class BackendRouteCatalog {
     this.roomPkHotRooms = '/app-api/activityPk/getRoomPkHotRoomList',
     this.roomPkSearch = '/app-api/activityPk/searchRoomPk',
     this.rechargePrecheck = '/app-economy-api/pay/check',
+    this.rechargeProducts = '/app-mini-api/mini/v1/recharge/products',
     this.createWechatRechargeOrder = '/app-economy-api/pay/v1/wechat/order',
     this.createAlipayRechargeOrder = '/app-economy-api/pay/ali/order',
     this.createAppleRechargeOrder = '/app-economy-api/pay/apple/order',
@@ -141,12 +162,20 @@ class BackendRouteCatalog {
     this.dynamicNotificationBadge = '/app-api/dynamic/queryDynamicNotifyRedHot',
     this.pushNotificationDetail = '/app-api/nolg/getPushMsg',
     this.messagePermission = '/app-mini-api/mini/v1/message/permission',
+    this.sendPrivateMessage = '/app-mini-api/mini/v1/message/send',
+    this.messageConversations = '/app-mini-api/mini/v1/message/conversations',
+    this.markPrivateMessageRead = '/app-mini-api/mini/v1/message/read',
+    this.systemNotifications = '/app-mini-api/mini/v1/notifications',
+    this.markSystemNotificationRead =
+        '/app-mini-api/mini/v1/notifications/read',
   });
 
   final String sendSmsCode;
   final String loginBySms;
   final String registerByMobile;
   final String enterRoom;
+  final String createRoom;
+  final String closeRoom;
   final String queryRoomInfo;
   final String reconnectRoom;
   final String queryRoomOtherInfo;
@@ -154,6 +183,7 @@ class BackendRouteCatalog {
   final String buildRtcToken;
   final String sendGift;
   final String sendPublicMessage;
+  final String publicMessages;
   final String userUpMic;
   final String userLeaveMic;
   final String closeMic;
@@ -181,10 +211,14 @@ class BackendRouteCatalog {
   final String youthModeStatus;
   final String queryAccountCancellation;
   final String deleteAccount;
+  final String cancelAccountDeletion;
   final String queryAppealInfo;
   final String submitAppeal;
   final String queryAppealProgress;
   final String versionInformation;
+  final String accountRealName;
+  final String accountSessions;
+  final String accountRestrictions;
   final String enableYouthMode;
   final String disableYouthMode;
   final String updateUserProfile;
@@ -200,6 +234,11 @@ class BackendRouteCatalog {
   final String reportUserOrRoom;
   final String customerService;
   final String submitFeedback;
+  final String socialPrivacy;
+  final String friendRequestList;
+  final String friendRequestSend;
+  final String friendRequestResolve;
+  final String supportTicket;
   final String ncoinBalance;
   final String paymentOrders;
   final String paymentOrderResult;
@@ -212,8 +251,10 @@ class BackendRouteCatalog {
   final String withdrawalFeeRate;
   final String withdrawalApply;
   final String withdrawalRecords;
+  final String walletReconcile;
   final String dynamicPublish;
   final String dynamicList;
+  final String dynamicDetail;
   final String dynamicMyList;
   final String dynamicUserList;
   final String dynamicDelete;
@@ -225,6 +266,7 @@ class BackendRouteCatalog {
   final String contributionRanking;
   final String roomRanking;
   final String recommendedGuilds;
+  final String createGuild;
   final String searchGuilds;
   final String guildHomepage;
   final String guildMembers;
@@ -240,6 +282,7 @@ class BackendRouteCatalog {
   final String cpRequest;
   final String cpAccept;
   final String cpReject;
+  final String cpEnd;
   final String cpEligibility;
   final String guardianLevels;
   final String guardianInfo;
@@ -255,6 +298,8 @@ class BackendRouteCatalog {
   final String signRewards;
   final String completeSignIn;
   final String todaySignStatus;
+  final String inviteAttribution;
+  final String activityCatalog;
   final String roomPkInvite;
   final String roomPkAccept;
   final String roomPkReject;
@@ -263,6 +308,7 @@ class BackendRouteCatalog {
   final String roomPkHotRooms;
   final String roomPkSearch;
   final String rechargePrecheck;
+  final String rechargeProducts;
   final String createWechatRechargeOrder;
   final String createAlipayRechargeOrder;
   final String createAppleRechargeOrder;
@@ -280,4 +326,9 @@ class BackendRouteCatalog {
   final String dynamicNotificationBadge;
   final String pushNotificationDetail;
   final String messagePermission;
+  final String sendPrivateMessage;
+  final String messageConversations;
+  final String markPrivateMessageRead;
+  final String systemNotifications;
+  final String markSystemNotificationRead;
 }

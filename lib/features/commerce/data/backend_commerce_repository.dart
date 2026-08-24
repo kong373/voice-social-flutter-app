@@ -2,6 +2,7 @@ import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
+import 'package:voice_social_app/features/commerce/domain/refund_request_id.dart';
 
 class BackendCommerceRepository implements CommerceRepository {
   BackendCommerceRepository({
@@ -12,17 +13,30 @@ class BackendCommerceRepository implements CommerceRepository {
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
-  final Map<String, RefundApplication> _knownRefunds =
-      <String, RefundApplication>{};
+  final Map<String, Future<RefundApplication>> _pendingRefundSubmissions =
+      <String, Future<RefundApplication>>{};
+  final Map<String, Future<RefundApplication>> _pendingRefundRetries =
+      <String, Future<RefundApplication>>{};
+  final Map<String, String> _retainedRefundSubmissionRequestIds =
+      <String, String>{};
+  final Map<String, String> _retainedRefundRetryRequestIds = <String, String>{};
+  final Set<String> _refundSubmissionWritesStarted = <String>{};
+  final Set<String> _refundRetryWritesStarted = <String>{};
 
   static const Set<String> _retiredLedgerSubtypes = <String>{
-    'blind_box',
-    'red_packet',
-    'ktv',
-    'magic_ball',
-    'dango',
-    'love_letter',
+    'BLIND_BOX',
+    'RED_PACKET',
+    'KTV',
+    'MAGIC_BALL',
+    'DANGO',
+    'LOVE_LETTER',
+    // The Backend F2 retirement is forward-only and intentionally preserves
+    // old audit rows. Keep the permanently excluded membership product from
+    // resurfacing through the otherwise-authoritative wallet history.
+    'VIP_PURCHASE',
   };
+
+  static const int _maximumCommerceBackendPages = 100;
 
   @override
   bool get supportsPaymentChannelInvocation => false;
@@ -31,7 +45,10 @@ class BackendCommerceRepository implements CommerceRepository {
   bool get supportsRefundHistory => false;
 
   @override
-  RefundScope get refundScope => RefundScope.accountLegacy;
+  bool get supportsWithdrawalApplication => false;
+
+  @override
+  RefundScope get refundScope => RefundScope.order;
 
   @override
   Future<WalletSummary> fetchWalletSummary() async {
@@ -45,68 +62,192 @@ class BackendCommerceRepository implements CommerceRepository {
     final Map<String, Object?> wallet = _asMap(walletResponse.data);
     final Map<String, Object?> card = _asMap(wallet['defaultBankCard']);
     return WalletSummary(
-      giftCoinBalance: _asInt(ncoin['integer'] ?? ncoin['value']),
-      cashBalance: _asDouble(wallet['balance']) ?? 0,
-      frozenBalance: _asDouble(wallet['frozenBalance']) ?? 0,
-      totalEarnings: _asDouble(wallet['totalEarnings']) ?? 0,
-      yesterdayEarnings: _asDouble(wallet['yesterdayEarnings']) ?? 0,
-      totalWithdrawn: _asDouble(wallet['totalWithdraw']) ?? 0,
-      realNameVerified: _asBool(wallet['isRealName']),
+      giftCoinBalance: _requiredNonNegativeInt(ncoin, <String>[
+        'integer',
+        'value',
+      ], field: '礼物币余额'),
+      cashBalance: _requiredNonNegativeDouble(wallet, 'balance'),
+      frozenBalance: _requiredNonNegativeDouble(wallet, 'frozenBalance'),
+      totalEarnings: _requiredNonNegativeDouble(wallet, 'totalEarnings'),
+      yesterdayEarnings: _requiredNonNegativeDouble(
+        wallet,
+        'yesterdayEarnings',
+      ),
+      totalWithdrawn: _requiredNonNegativeDouble(wallet, 'totalWithdraw'),
+      realNameVerified: _requiredBool(wallet, 'isRealName'),
       bankCard: card.isEmpty
           ? null
           : BankCardSummary(
-              id: _string(card['id']),
-              bankName: _string(card['bankName'], fallback: '银行卡'),
-              maskedNumber: _string(card['cardNumberMasked']),
-              holderName: _string(card['cardHolderName']),
+              id: _requiredString(card, 'id', field: '银行卡 ID'),
+              bankName: _requiredString(card, 'bankName', field: '银行名称'),
+              maskedNumber: _requiredString(
+                card,
+                'cardNumberMasked',
+                field: '银行卡号',
+              ),
+              holderName: _requiredString(card, 'cardHolderName', field: '持卡人'),
             ),
-      agentEarnings: _asDouble(wallet['agentEarnings']) ?? 0,
-      superAgentEarnings: _asDouble(wallet['superAgentEarnings']) ?? 0,
+      agentEarnings: _requiredNonNegativeDouble(wallet, 'agentEarnings'),
+      superAgentEarnings: _requiredNonNegativeDouble(
+        wallet,
+        'superAgentEarnings',
+      ),
     );
   }
 
   @override
   Future<CommercePage<LedgerEntry>> fetchLedger({
+    required LedgerCurrency currency,
     required LedgerDirection direction,
     required int page,
     required int pageSize,
   }) async {
-    final ApiResponse response = await _apiClient.get(
-      _routes.walletAccountDetails,
-      query: <String, String>{
-        'type': direction == LedgerDirection.income ? '1' : '2',
-        'page': '$page',
-        'size': '$pageSize',
-      },
-    );
-    final Map<String, Object?> data = _asMap(response.data);
-    final List<LedgerEntry> entries = <LedgerEntry>[];
-    for (final Object? raw in _asList(data['records'] ?? data['list'])) {
-      if (raw is! Map<String, Object?>) {
-        continue;
+    _validatePageArguments(page: page, pageSize: pageSize);
+    const int backendPageSize = 100;
+    final List<LedgerEntry> matching = <LedgerEntry>[];
+    final Set<String> seenLedgerIds = <String>{};
+    _PageMetadata? expectedMetadata;
+    var backendPage = 1;
+    var hasMore = true;
+    while (hasMore && backendPage <= _maximumCommerceBackendPages) {
+      final ApiResponse response = await _apiClient.get(
+        _routes.walletAccountDetails,
+        query: <String, String>{
+          'currency': currency == LedgerCurrency.giftCoin
+              ? 'GIFT_COIN'
+              : 'CASH_CNY',
+          'pageNum': '$backendPage',
+          'pageSize': '$backendPageSize',
+        },
+      );
+      final Map<String, Object?> data = _asMap(response.data);
+      final LedgerCurrency responseCurrency = _requiredCurrency(
+        data,
+        field: '流水币种',
+      );
+      if (responseCurrency != currency) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '流水币种与请求币种不一致',
+        );
       }
-      final String subtype = _string(raw['subType']).toLowerCase();
-      if (_retiredLedgerSubtypes.contains(subtype)) {
-        continue;
-      }
-      entries.add(
-        LedgerEntry(
-          id: _string(raw['id']),
+      final List<Object?> rawEntries = _requiredList(data, field: '流水列表');
+      final _PageMetadata metadata = _requiredPageMetadata(
+        data,
+        requestedPage: backendPage,
+        requestedPageSize: backendPageSize,
+      );
+      expectedMetadata = _validateStablePageMetadata(
+        expected: expectedMetadata,
+        actual: metadata,
+      );
+      _validatePageItemCount(rawEntries, metadata, field: '钱包流水');
+      for (final Object? raw in rawEntries) {
+        if (raw is! Map<String, Object?>) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '钱包流水记录结构无法识别',
+          );
+        }
+        final String authoritativeId = _requiredString(
+          raw,
+          'transactionId',
+          field: '流水 ID',
+        );
+        if (!seenLedgerIds.add(authoritativeId)) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '多页钱包流水包含重复的权威流水 ID',
+          );
+        }
+        final LedgerEntry? entry = _ledgerEntry(
+          raw,
+          currency: currency,
           direction: direction,
-          kind: _ledgerKind(subtype, direction),
-          title: _string(
-            raw['subTypeName'],
-            fallback: direction == LedgerDirection.income ? '收入' : '支出',
-          ),
-          amount: _asDouble(raw['amount']) ?? 0,
-          createdAt: _asDateTime(raw['createTime']) ?? DateTime.now(),
-          relatedUserName: _string(raw['relatedUserName']),
-          businessName: _string(raw['businessName']),
-          rawSubtype: subtype,
-        ),
+        );
+        if (entry != null) matching.add(entry);
+      }
+      hasMore = metadata.current < metadata.pages;
+      if (hasMore && rawEntries.isEmpty) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '钱包流水分页响应为空但仍声明存在下一页',
+        );
+      }
+      backendPage += 1;
+    }
+    if (hasMore) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '钱包流水超过客户端安全分页上限',
       );
     }
-    return _commercePage(data, entries, page: page, pageSize: pageSize);
+    final int start = (page - 1) * pageSize;
+    final int end = start >= matching.length
+        ? start
+        : (start + pageSize).clamp(start, matching.length);
+    final List<LedgerEntry> items = start >= matching.length
+        ? const <LedgerEntry>[]
+        : matching.sublist(start, end);
+    return CommercePage<LedgerEntry>(
+      items: items,
+      page: page,
+      pageSize: pageSize,
+      total: matching.length,
+      hasMore: end < matching.length,
+    );
+  }
+
+  static LedgerEntry? _ledgerEntry(
+    Map<String, Object?> raw, {
+    required LedgerCurrency currency,
+    required LedgerDirection direction,
+  }) {
+    final String businessType = _string(raw['businessType']).toUpperCase();
+    if (_retiredLedgerSubtypes.contains(businessType)) {
+      return null;
+    }
+    final LedgerDirection? entryDirection = _ledgerDirection(raw['type']);
+    if (entryDirection == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '流水缺少有效服务端方向',
+      );
+    }
+    if (entryDirection != direction) return null;
+    final String id = _requiredString(raw, 'transactionId', field: '流水 ID');
+    _validateOptionalCurrency(raw, currency, field: '流水币种');
+    final int amountMinor = _requiredInt(raw, <String>[
+      'amountMinor',
+    ], field: '流水金额');
+    if (amountMinor < 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '流水金额不能为负数',
+      );
+    }
+    final DateTime createdAt = _requiredDateTime(
+      raw,
+      'createdAt',
+      field: '流水时间',
+    );
+    return LedgerEntry(
+      id: id,
+      direction: entryDirection,
+      kind: _ledgerKind(businessType),
+      title: _string(
+        raw['description'],
+        fallback: direction == LedgerDirection.income ? '收入' : '支出',
+      ),
+      amount: currency == LedgerCurrency.giftCoin
+          ? amountMinor.toDouble()
+          : _minorToMajor(amountMinor),
+      createdAt: createdAt,
+      relatedUserName: _string(raw['counterpartyUserId']),
+      businessName: _string(raw['businessId']),
+      rawSubtype: businessType.toLowerCase(),
+      currency: currency,
+    );
   }
 
   @override
@@ -114,28 +255,85 @@ class BackendCommerceRepository implements CommerceRepository {
     required int page,
     required int pageSize,
   }) async {
-    final ApiResponse response = await _apiClient.post(
-      _routes.paymentOrders,
-      body: <String, Object?>{
-        'pageNum': page,
-        'pageSize': pageSize,
-        'isSearchCount': true,
-      },
+    _validatePageArguments(page: page, pageSize: pageSize);
+    final List<PaymentOrder> allOrders = <PaymentOrder>[];
+    final Set<String> seenOrderIds = <String>{};
+    _PageMetadata? expectedMetadata;
+    var backendPage = 1;
+    var hasMore = true;
+    while (hasMore && backendPage <= _maximumCommerceBackendPages) {
+      final ApiResponse response = await _apiClient.post(
+        _routes.paymentOrders,
+        body: <String, Object?>{'pageNum': backendPage, 'pageSize': pageSize},
+      );
+      final Map<String, Object?> data = _asMap(response.data);
+      final List<Object?> rawOrders = _requiredList(data, field: '充值订单列表');
+      final _PageMetadata metadata = _requiredOrderPageMetadata(
+        data,
+        requestedPage: backendPage,
+        requestedPageSize: pageSize,
+      );
+      expectedMetadata = _validateStablePageMetadata(
+        expected: expectedMetadata,
+        actual: metadata,
+      );
+      _validatePageItemCount(rawOrders, metadata, field: '充值订单');
+      for (final Object? raw in rawOrders) {
+        if (raw is! Map<String, Object?>) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '充值订单记录结构无法识别',
+          );
+        }
+        final PaymentOrder order = _paymentOrderFromMap(
+          raw,
+          currency: LedgerCurrency.cashCny,
+        );
+        if (!seenOrderIds.add(order.orderNo)) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '多页充值订单包含重复的权威订单号',
+          );
+        }
+        allOrders.add(order);
+      }
+      hasMore = metadata.current < metadata.pages;
+      if (hasMore && rawOrders.isEmpty) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '充值订单分页响应为空但仍声明存在下一页',
+        );
+      }
+      backendPage += 1;
+    }
+    if (hasMore) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '充值订单超过客户端安全分页上限',
+      );
+    }
+    final _PageMetadata metadata = expectedMetadata!;
+    if ((metadata.pages == 0 && page != 1) ||
+        (metadata.pages > 0 && page > metadata.pages)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '充值订单请求页超过服务端页数',
+      );
+    }
+    final int start = (page - 1) * pageSize;
+    final int end = start >= allOrders.length
+        ? start
+        : (start + pageSize).clamp(start, allOrders.length);
+    final List<PaymentOrder> orders = start >= allOrders.length
+        ? const <PaymentOrder>[]
+        : allOrders.sublist(start, end);
+    return CommercePage<PaymentOrder>(
+      items: orders,
+      page: page,
+      pageSize: metadata.pageSize,
+      total: metadata.total,
+      hasMore: page < metadata.pages,
     );
-    final Map<String, Object?> data = _asMap(response.data);
-    final List<PaymentOrder> orders = <PaymentOrder>[
-      for (final Object? raw in _asList(data['list']))
-        if (raw is Map<String, Object?>)
-          PaymentOrder(
-            orderNo: _string(raw['orderNo']),
-            amount: _asDouble(raw['amount']) ?? 0,
-            giftCoinAmount: _asInt(raw['ncoin']) ?? 0,
-            channelName: _string(raw['payType'], fallback: '支付渠道'),
-            createdAt: _asDateTime(raw['createDate']) ?? DateTime.now(),
-            status: PaymentOrderStatus.unknown,
-          ),
-    ];
-    return _commercePage(data, orders, page: page, pageSize: pageSize);
   }
 
   @override
@@ -145,205 +343,426 @@ class BackendCommerceRepository implements CommerceRepository {
       query: <String, String>{'orderNo': order.orderNo},
     );
     final Map<String, Object?> data = _asMap(response.data);
-    final bool succeeded = _asBool(data['bool'] ?? data['value']);
-    return order.copyWith(
-      status: succeeded
-          ? PaymentOrderStatus.succeeded
-          : PaymentOrderStatus.confirming,
+    final String returnedOrderNo = _requiredString(
+      data,
+      'orderNo',
+      field: '订单号',
     );
+    if (returnedOrderNo != order.orderNo) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '订单状态响应与请求订单不一致',
+      );
+    }
+    final PaymentOrder authoritative = _paymentOrderFromMap(
+      data,
+      currency: LedgerCurrency.cashCny,
+    );
+    final Object? rawSuccess = data['bool'];
+    if (!data.containsKey('bool') || rawSuccess is! bool) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '订单状态响应缺少严格的 bool 权威字段',
+      );
+    }
+    final bool statusSuccess =
+        authoritative.status == PaymentOrderStatus.succeeded;
+    if (rawSuccess != statusSuccess) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '订单状态响应的 bool 与 status 不一致',
+      );
+    }
+    if (authoritative.orderNo != order.orderNo) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '订单状态响应与请求订单不一致',
+      );
+    }
+    return authoritative;
   }
 
   @override
   Future<RefundEligibility> checkRefundEligibility(String account) async {
+    final String orderNo = account.trim();
+    if (orderNo.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '请选择需要退款的充值订单',
+      );
+    }
     final ApiResponse response = await _apiClient.get(
       _routes.refundCheck,
-      query: <String, String>{'loginName': account},
+      query: <String, String>{'orderNo': orderNo},
     );
     final Map<String, Object?> data = _asMap(response.data);
-    final String existingId = _string(data['string']);
+    final String responseOrderNo = _requiredString(
+      data,
+      'orderNo',
+      field: '退款订单号',
+    );
+    if (responseOrderNo != orderNo) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '退款资格响应与请求订单不一致',
+      );
+    }
+    final bool allowed = _requiredBool(data, 'eligible');
+    _requireVendorBlocked(data, field: 'providerStatus', label: '退款资格');
+    _validateOptionalCurrency(data, LedgerCurrency.cashCny, field: '退款币种');
+    final int amountMinor = _requiredInt(data, <String>[
+      'amountMinor',
+    ], field: '退款订单金额');
+    final int giftCoinAmount = _requiredInt(data, <String>[
+      'giftCoinAmount',
+    ], field: '退款订单礼物币');
+    final String reason = _requiredString(
+      data,
+      'reason',
+      field: '退款资格原因',
+    ).toUpperCase();
+    if (amountMinor <= 0 ||
+        giftCoinAmount <= 0 ||
+        (allowed && reason != 'ELIGIBLE') ||
+        (!allowed && reason == 'ELIGIBLE')) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '退款资格响应的金额、结论或原因相互矛盾',
+      );
+    }
     return RefundEligibility(
-      allowed: existingId.isEmpty || existingId == 'null',
-      existingApplicationId: existingId.isEmpty || existingId == 'null'
-          ? null
-          : existingId,
-      message: existingId.isEmpty || existingId == 'null'
-          ? '当前账号可以提交账户退款申请。'
-          : '已有账户退款申请正在处理，请先查看结果。',
+      allowed: allowed,
+      existingApplicationId: null,
+      message: _refundEligibilityMessage(reason, allowed: allowed),
     );
   }
 
   @override
   Future<RefundApplication> submitRefund(RefundRequest request) async {
-    final RefundEligibility eligibility = await checkRefundEligibility(
-      request.account,
-    );
-    if (!eligibility.allowed && eligibility.existingApplicationId != null) {
-      return fetchRefundResult(eligibility.existingApplicationId!);
-    }
-    final ApiResponse response = await _apiClient.post(
-      _routes.refundApplication,
-      body: <String, Object?>{
-        'loginName': request.account,
-        'realName': request.realName,
-        'age': request.age,
-        'refundAmount': request.amount,
-        'refundReason': request.reason,
-        'alipayAccount': request.receivingAccount,
-        'alipayRealName': request.receivingName,
-        'payEvidenceImgUrls': '',
-        'custodianName': request.guardianName,
-        'custodianPhone': request.guardianPhone,
-        'custodianIdcardNo': '',
-        'custodianCertificateImgUrls': '',
-        'rechargeNotCustodianEvidenceImgUrls': '',
-      },
-    );
-    final String id = _string(_asMap(response.data)['string']);
-    if (id.isEmpty) {
+    final String orderNo = request.account.trim();
+    final String reason = request.reason.trim();
+    if (orderNo.isEmpty || reason.isEmpty) {
       throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '退款申请提交成功但未返回申请编号',
+        kind: ApiFailureKind.validation,
+        message: '充值订单和退款原因不能为空',
       );
     }
-    final RefundApplication application = RefundApplication(
-      id: id,
-      account: request.account,
-      amount: request.amount,
-      status: RefundStatus.reviewing,
-      statusText: '审核中',
-      rejectedReason: '',
-      createdAt: DateTime.now(),
+    final String intentKey = _refundSubmissionIntentKey(
+      orderNo: orderNo,
+      reason: reason,
     );
-    _knownRefunds[id] = application;
-    return application;
+    final Future<RefundApplication>? pending =
+        _pendingRefundSubmissions[intentKey];
+    if (pending != null) {
+      return pending;
+    }
+    final String requestId = _retainedRefundSubmissionRequestIds.putIfAbsent(
+      intentKey,
+      () => normalizeCommerceRefundRequestId(newCommerceRefundRequestId()),
+    );
+    final bool replayingRetainedWrite = _refundSubmissionWritesStarted.contains(
+      intentKey,
+    );
+    late final Future<RefundApplication> future;
+    future =
+        _submitRefundOnce(
+          orderNo,
+          reason,
+          requestId,
+          intentKey: intentKey,
+          replayingRetainedWrite: replayingRetainedWrite,
+        ).then<RefundApplication>(
+          (RefundApplication value) {
+            if (identical(_pendingRefundSubmissions[intentKey], future)) {
+              _pendingRefundSubmissions.remove(intentKey);
+            }
+            _retainedRefundSubmissionRequestIds.remove(intentKey);
+            _refundSubmissionWritesStarted.remove(intentKey);
+            return value;
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (identical(_pendingRefundSubmissions[intentKey], future)) {
+              _pendingRefundSubmissions.remove(intentKey);
+            }
+            if (!shouldRetainCommerceRefundRequest(error)) {
+              _retainedRefundSubmissionRequestIds.remove(intentKey);
+              _refundSubmissionWritesStarted.remove(intentKey);
+            }
+            Error.throwWithStackTrace(error, stackTrace);
+          },
+        );
+    _pendingRefundSubmissions[intentKey] = future;
+    return future;
+  }
+
+  Future<RefundApplication> _submitRefundOnce(
+    String orderNo,
+    String reason,
+    String requestId, {
+    required String intentKey,
+    required bool replayingRetainedWrite,
+  }) async {
+    if (!replayingRetainedWrite) {
+      final RefundEligibility eligibility = await checkRefundEligibility(
+        orderNo,
+      );
+      if (!eligibility.allowed) {
+        throw ApiException(
+          kind: ApiFailureKind.conflict,
+          message: eligibility.message,
+        );
+      }
+    }
+    // The eligibility check is only a precondition for a new write. Once the
+    // POST has started, a later attempt is an idempotent replay and must not
+    // be blocked by the now-mutated order eligibility state.
+    _refundSubmissionWritesStarted.add(intentKey);
+    final ApiResponse response = await _apiClient.post(
+      _routes.refundApplication,
+      headers: <String, String>{'X-Request-Id': requestId},
+      body: <String, Object?>{'orderNo': orderNo, 'reason': reason},
+    );
+    return _refundFromMap(
+      _asMap(response.data),
+      currency: LedgerCurrency.cashCny,
+      expectedOrderNo: orderNo,
+    );
   }
 
   @override
-  Future<RefundApplication> fetchRefundResult(String applicationId) async {
+  Future<RefundApplication> fetchRefundResult(
+    String applicationId, {
+    String? expectedOrderNo,
+  }) async {
+    final String refundId = applicationId.trim();
+    final String? orderNo = _optionalExpectedOrderNo(expectedOrderNo);
+    if (refundId.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '退款申请编号不能为空',
+      );
+    }
     final ApiResponse response = await _apiClient.get(
       _routes.refundResult,
-      query: <String, String>{'id': applicationId},
+      query: <String, String>{'refundId': refundId},
     );
-    final Map<String, Object?> data = _asMap(response.data);
-    final int code = _asInt(data['status']) ?? 0;
-    final RefundStatus status = switch (code) {
-      1 => RefundStatus.approved,
-      2 => RefundStatus.rejected,
-      3 => RefundStatus.resubmitted,
-      _ => RefundStatus.reviewing,
-    };
-    final RefundApplication base =
-        _knownRefunds[applicationId] ??
-        RefundApplication(
-          id: applicationId,
-          account: '',
-          amount: 0,
-          status: status,
-          statusText: _refundStatusText(status),
-          rejectedReason: '',
-          createdAt: DateTime.now(),
-        );
-    final RefundApplication updated = base.copyWith(
-      status: status,
-      statusText: _refundStatusText(status),
-      rejectedReason: _string(data['rejectedReason']),
+    return _refundFromMap(
+      _asMap(response.data),
+      currency: LedgerCurrency.cashCny,
+      expectedRefundId: refundId,
+      expectedOrderNo: orderNo,
     );
-    _knownRefunds[applicationId] = updated;
-    return updated;
   }
 
   @override
-  Future<RefundApplication> resubmitRefund(String applicationId) async {
-    await _apiClient.get(
-      _routes.refundRepeat,
-      query: <String, String>{'id': applicationId},
+  Future<RefundApplication> resubmitRefund(
+    String applicationId, {
+    String? expectedOrderNo,
+  }) async {
+    final String refundId = applicationId.trim();
+    final String? orderNo = _optionalExpectedOrderNo(expectedOrderNo);
+    if (refundId.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '退款申请编号不能为空',
+      );
+    }
+    final String intentKey = _refundRetryIntentKey(refundId: refundId);
+    final Future<RefundApplication>? pending = _pendingRefundRetries[intentKey];
+    if (pending != null) {
+      return pending.then(
+        (RefundApplication value) =>
+            _validateExpectedRefundOrder(value, expectedOrderNo: orderNo),
+      );
+    }
+    final String requestId = _retainedRefundRetryRequestIds.putIfAbsent(
+      intentKey,
+      () => normalizeCommerceRefundRequestId(newCommerceRefundRequestId()),
     );
-    final RefundApplication current = await fetchRefundResult(applicationId);
-    final RefundApplication updated = current.copyWith(
-      status: RefundStatus.resubmitted,
-      statusText: '已重新提交',
-      rejectedReason: '',
+    final bool replayingRetainedWrite = _refundRetryWritesStarted.contains(
+      intentKey,
     );
-    _knownRefunds[applicationId] = updated;
-    return updated;
+    late final Future<RefundApplication> future;
+    future =
+        _resubmitRefundOnce(
+          refundId,
+          requestId,
+          expectedOrderNo: orderNo,
+          intentKey: intentKey,
+          replayingRetainedWrite: replayingRetainedWrite,
+        ).then<RefundApplication>(
+          (RefundApplication value) {
+            if (identical(_pendingRefundRetries[intentKey], future)) {
+              _pendingRefundRetries.remove(intentKey);
+            }
+            _retainedRefundRetryRequestIds.remove(intentKey);
+            _refundRetryWritesStarted.remove(intentKey);
+            return value;
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (identical(_pendingRefundRetries[intentKey], future)) {
+              _pendingRefundRetries.remove(intentKey);
+            }
+            if (!shouldRetainCommerceRefundRequest(error)) {
+              _retainedRefundRetryRequestIds.remove(intentKey);
+              _refundRetryWritesStarted.remove(intentKey);
+            }
+            Error.throwWithStackTrace(error, stackTrace);
+          },
+        );
+    _pendingRefundRetries[intentKey] = future;
+    return future;
   }
+
+  Future<RefundApplication> _resubmitRefundOnce(
+    String refundId,
+    String requestId, {
+    String? expectedOrderNo,
+    required String intentKey,
+    required bool replayingRetainedWrite,
+  }) async {
+    final ApiResponse currentResponse = await _apiClient.get(
+      _routes.refundResult,
+      query: <String, String>{'refundId': refundId},
+    );
+    final Map<String, Object?> current = _asMap(currentResponse.data);
+    final RefundApplication currentApplication = _refundFromMap(
+      current,
+      currency: LedgerCurrency.cashCny,
+      expectedRefundId: refundId,
+      expectedOrderNo: expectedOrderNo,
+    );
+    if (currentApplication.status != RefundStatus.rejected) {
+      if (replayingRetainedWrite &&
+          _refundRetryAppliedStatus(currentApplication.status)) {
+        // A previous repeat POST may have committed before its response was
+        // lost. Treat a server-confirmed submitted/terminal state as the
+        // idempotent reconciliation result instead of issuing a second POST
+        // or rejecting it on the pre-write REJECTED gate.
+        return currentApplication;
+      }
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '只有已拒绝的退款申请可以重新提交',
+      );
+    }
+    final String reason = _string(current['reason']);
+    if (reason.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '退款结果未返回原申请原因，无法安全重新提交',
+      );
+    }
+    _refundRetryWritesStarted.add(intentKey);
+    final ApiResponse response = await _apiClient.post(
+      _routes.refundRepeat,
+      headers: <String, String>{'X-Request-Id': requestId},
+      body: <String, Object?>{'refundId': refundId, 'reason': reason},
+    );
+    return _refundFromMap(
+      _asMap(response.data),
+      currency: LedgerCurrency.cashCny,
+      expectedRefundId: refundId,
+      expectedOrderNo: expectedOrderNo,
+    );
+  }
+
+  static bool _refundRetryAppliedStatus(RefundStatus status) =>
+      status == RefundStatus.reviewing ||
+      status == RefundStatus.resubmitted ||
+      status == RefundStatus.approved;
 
   @override
   Future<List<RefundApplication>> fetchRefundApplications(
     String account,
   ) async {
-    final RefundEligibility eligibility = await checkRefundEligibility(account);
-    final String? id = eligibility.existingApplicationId;
-    if (id == null) {
-      return _knownRefunds.values
-          .where((RefundApplication item) => item.account == account)
-          .toList(growable: false);
-    }
-    final RefundApplication application = await fetchRefundResult(id);
-    if (application.account.isEmpty) {
-      final RefundApplication withAccount = RefundApplication(
-        id: application.id,
-        account: account,
-        amount: application.amount,
-        status: application.status,
-        statusText: application.statusText,
-        rejectedReason: application.rejectedReason,
-        createdAt: application.createdAt,
-      );
-      _knownRefunds[id] = withAccount;
-      return <RefundApplication>[withAccount];
-    }
-    return <RefundApplication>[application];
+    throw const ApiException(
+      kind: ApiFailureKind.configuration,
+      message: '当前第一方后端未提供退款历史列表接口，请从具体充值订单查询退款结果',
+    );
   }
 
   @override
-  Future<WithdrawalQuote> fetchWithdrawalQuote() async {
+  Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount}) async {
+    if (!amount.isFinite || amount <= 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '提现金额必须大于 0',
+      );
+    }
+    final double scaledAmount = amount * 100;
+    final int amountMinor = scaledAmount.round();
+    if (amountMinor <= 0 || (scaledAmount - amountMinor).abs() > 0.000001) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '提现金额最多保留两位小数',
+      );
+    }
     final ApiResponse response = await _apiClient.get(
       _routes.withdrawalFeeRate,
+      query: <String, String>{'amountMinor': '$amountMinor'},
     );
     final Map<String, Object?> data = _asMap(response.data);
-    final double rate = _asDouble(data['feeRate']) ?? 0;
+    final int requestedMinor = amountMinor;
+    final int quotedMinor = _requiredInt(data, <String>[
+      'amountMinor',
+    ], field: '提现报价金额');
+    if (quotedMinor != requestedMinor) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现报价金额与请求金额不一致',
+      );
+    }
+    const LedgerCurrency currency = LedgerCurrency.cashCny;
+    _validateOptionalCurrency(data, currency, field: '提现报价币种');
+    final int feeMinor = _requiredInt(data, <String>[
+      'feeMinor',
+    ], field: '提现手续费');
+    final int netMinor = _requiredInt(data, <String>[
+      'netAmountMinor',
+    ], field: '提现到账金额');
+    final int minimumMinor = _requiredInt(data, <String>[
+      'minimumAmountMinor',
+    ], field: '提现最低金额');
+    final int basisPoints = _requiredInt(data, <String>[
+      'feeRateBasisPoints',
+    ], field: '提现费率');
+    if (feeMinor < 0 || netMinor < 0 || minimumMinor < 0 || basisPoints < 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现报价金额或费率不能为负数',
+      );
+    }
+    if (requestedMinor - feeMinor != netMinor) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现报价手续费与到账金额不一致',
+      );
+    }
+    final double rate = basisPoints / 10000;
     return WithdrawalQuote(
+      quotedAmount: _minorToMajor(quotedMinor),
+      feeAmount: _minorToMajor(feeMinor),
+      receivedAmount: _minorToMajor(netMinor),
       feeRate: rate,
-      feeRateText: _string(
-        data['feeRateDisplay'],
-        fallback: '${(rate * 100).toStringAsFixed(2)}%',
-      ),
-      minimumAmount: 100,
+      feeRateText: '${(rate * 100).toStringAsFixed(2)}%',
+      minimumAmount: _minorToMajor(minimumMinor),
+      currency: currency,
     );
   }
 
   @override
   Future<WithdrawalRecord> applyWithdrawal({required double amount}) async {
-    final ApiResponse response = await _apiClient.post(
-      _routes.withdrawalApply,
-      body: <String, Object?>{'amount': amount},
-    );
-    final String id = _string(response.data);
-    if (id.isEmpty) {
+    if (amount <= 0) {
       throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '提现申请未返回记录编号',
+        kind: ApiFailureKind.validation,
+        message: '提现金额必须大于 0',
       );
     }
-    try {
-      return await fetchWithdrawalRecord(id);
-    } on ApiException {
-      final WithdrawalQuote quote = await fetchWithdrawalQuote();
-      return WithdrawalRecord(
-        id: id,
-        withdrawalNo: id,
-        amount: amount,
-        fee: quote.feeFor(amount),
-        receivedAmount: quote.receivedFor(amount),
-        status: WithdrawalStatus.pending,
-        statusText: '待审核',
-        createdAt: DateTime.now(),
-        rejectedReason: '',
-        bankName: '',
-        maskedCard: '',
-      );
-    }
+    throw const ApiException(
+      kind: ApiFailureKind.configuration,
+      message: '当前后端未提供收款账户列表与选择契约，不能伪造 payoutAccountId 提交提现',
+    );
   }
 
   @override
@@ -352,92 +771,677 @@ class BackendCommerceRepository implements CommerceRepository {
     required int page,
     required int pageSize,
   }) async {
+    _validatePageArguments(page: page, pageSize: pageSize);
+    if (status == null) {
+      return _fetchWithdrawalPage(page: page, pageSize: pageSize);
+    }
+    final List<WithdrawalRecord> matching = <WithdrawalRecord>[];
+    final Set<String> seenWithdrawalIds = <String>{};
+    _PageMetadata? expectedMetadata;
+    int backendPage = 1;
+    bool hasMore = true;
+    while (hasMore && backendPage <= _maximumCommerceBackendPages) {
+      final CommercePage<WithdrawalRecord> result = await _fetchWithdrawalPage(
+        page: backendPage,
+        pageSize: 100,
+      );
+      final _PageMetadata metadata = _PageMetadata(
+        current: result.page,
+        pageSize: result.pageSize,
+        total: result.total,
+        pages: result.total == 0
+            ? 0
+            : (result.total + result.pageSize - 1) ~/ result.pageSize,
+      );
+      expectedMetadata = _validateStablePageMetadata(
+        expected: expectedMetadata,
+        actual: metadata,
+      );
+      _validateWithdrawalPageProgress(result, requestedPage: backendPage);
+      for (final WithdrawalRecord item in result.items) {
+        if (!seenWithdrawalIds.add(item.id)) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '多页提现记录包含重复的权威提现 ID',
+          );
+        }
+      }
+      matching.addAll(
+        result.items.where((WithdrawalRecord item) => item.status == status),
+      );
+      hasMore = result.hasMore;
+      backendPage += 1;
+    }
+    if (hasMore) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现记录超过客户端安全分页上限',
+      );
+    }
+    final int start = (page - 1) * pageSize;
+    final int end = start + pageSize < matching.length
+        ? start + pageSize
+        : matching.length;
+    final List<WithdrawalRecord> items = start >= matching.length
+        ? const <WithdrawalRecord>[]
+        : matching.sublist(start, end);
+    return CommercePage<WithdrawalRecord>(
+      items: items,
+      page: page,
+      pageSize: pageSize,
+      total: matching.length,
+      hasMore: end < matching.length,
+    );
+  }
+
+  Future<CommercePage<WithdrawalRecord>> _fetchWithdrawalPage({
+    required int page,
+    required int pageSize,
+  }) async {
     final Map<String, String> query = <String, String>{
-      'page': '$page',
-      'size': '$pageSize',
-      if (status != null) 'status': '${_withdrawalStatusCode(status)}',
+      'pageNum': '$page',
+      'pageSize': '$pageSize',
     };
     final ApiResponse response = await _apiClient.get(
       _routes.withdrawalRecords,
       query: query,
     );
     final Map<String, Object?> data = _asMap(response.data);
+    final List<Object?> rawRecords = _requiredList(data, field: '提现记录列表');
+    final _PageMetadata metadata = _requiredPageMetadata(
+      data,
+      requestedPage: page,
+      requestedPageSize: pageSize,
+    );
+    _validatePageItemCount(rawRecords, metadata, field: '提现记录');
     final List<WithdrawalRecord> records = <WithdrawalRecord>[
-      for (final Object? raw in _asList(data['records'] ?? data['list']))
-        if (raw is Map<String, Object?>) _withdrawalFromMap(raw),
+      for (final Object? raw in rawRecords)
+        if (raw is! Map<String, Object?>)
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '提现记录结构无法识别',
+          )
+        else
+          _withdrawalFromMap(raw, currency: LedgerCurrency.cashCny),
     ];
-    return _commercePage(data, records, page: page, pageSize: pageSize);
+    return CommercePage<WithdrawalRecord>(
+      items: records,
+      page: metadata.current,
+      pageSize: metadata.pageSize,
+      total: metadata.total,
+      hasMore: metadata.current < metadata.pages,
+    );
   }
 
   @override
   Future<WithdrawalRecord> fetchWithdrawalRecord(String id) async {
-    final ApiResponse response = await _apiClient.get(
-      '${_routes.withdrawalRecords}/$id',
-    );
-    final Map<String, Object?> data = _asMap(response.data);
-    if (data.isEmpty) {
+    final String normalizedId = id.trim();
+    if (normalizedId.isEmpty) {
       throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '提现记录响应为空',
+        kind: ApiFailureKind.validation,
+        message: '提现记录 ID 不能为空',
       );
     }
-    return _withdrawalFromMap(data);
+    _PageMetadata? expectedMetadata;
+    int backendPage = 1;
+    bool hasMore = true;
+    final Set<String> seenWithdrawalIds = <String>{};
+    while (hasMore && backendPage <= _maximumCommerceBackendPages) {
+      final CommercePage<WithdrawalRecord> page = await _fetchWithdrawalPage(
+        page: backendPage,
+        pageSize: 100,
+      );
+      final _PageMetadata metadata = _PageMetadata(
+        current: page.page,
+        pageSize: page.pageSize,
+        total: page.total,
+        pages: page.total == 0
+            ? 0
+            : (page.total + page.pageSize - 1) ~/ page.pageSize,
+      );
+      expectedMetadata = _validateStablePageMetadata(
+        expected: expectedMetadata,
+        actual: metadata,
+      );
+      _validateWithdrawalPageProgress(page, requestedPage: backendPage);
+      for (final WithdrawalRecord record in page.items) {
+        if (!seenWithdrawalIds.add(record.id)) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '多页提现记录包含重复的权威提现 ID',
+          );
+        }
+        if (record.id == normalizedId) {
+          return record;
+        }
+      }
+      hasMore = page.hasMore;
+      backendPage += 1;
+    }
+    if (hasMore) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现记录超过客户端安全分页上限',
+      );
+    }
+    throw const ApiException(
+      kind: ApiFailureKind.validation,
+      message: '提现记录不存在或不在当前可查询范围',
+    );
   }
 
-  static LedgerKind _ledgerKind(String subtype, LedgerDirection direction) {
-    return switch (subtype) {
-      'gift_income' => LedgerKind.giftIncome,
-      'send_gift' => LedgerKind.giftExpense,
-      'agent_income' => LedgerKind.agentIncome,
-      'super_agent_income' => LedgerKind.superAgentIncome,
-      'withdrawal' => LedgerKind.withdrawal,
-      _ =>
-        direction == LedgerDirection.income
-            ? LedgerKind.other
-            : LedgerKind.other,
+  static String _refundSubmissionIntentKey({
+    required String orderNo,
+    required String reason,
+  }) {
+    return 'refund:${commerceRefundIntentDigest(scope: 'refund-submit', fields: <String>[orderNo, reason])}';
+  }
+
+  static String _refundRetryIntentKey({required String refundId}) {
+    return 'refund-retry:${commerceRefundIntentDigest(scope: 'refund-retry', fields: <String>[refundId])}';
+  }
+
+  static String? _optionalExpectedOrderNo(String? value) {
+    final String? normalized = value?.trim();
+    if (normalized != null && normalized.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '退款订单号不能为空',
+      );
+    }
+    return normalized;
+  }
+
+  static RefundApplication _validateExpectedRefundOrder(
+    RefundApplication application, {
+    required String? expectedOrderNo,
+  }) {
+    if (expectedOrderNo != null && application.account != expectedOrderNo) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '退款结果与选中订单不一致',
+      );
+    }
+    return application;
+  }
+
+  static LedgerDirection? _ledgerDirection(Object? value) {
+    return switch (_string(value).toUpperCase()) {
+      'CREDIT' || 'RELEASE' => LedgerDirection.income,
+      'DEBIT' || 'HOLD' => LedgerDirection.expense,
+      _ => null,
     };
   }
 
-  static WithdrawalRecord _withdrawalFromMap(Map<String, Object?> raw) {
-    final WithdrawalStatus status = _withdrawalStatus(
-      _asInt(raw['status']) ?? 0,
+  static LedgerKind _ledgerKind(String businessType) {
+    return switch (businessType) {
+      'GIFT_INCOME' => LedgerKind.giftIncome,
+      'GIFT_SEND' => LedgerKind.giftExpense,
+      'AGENT_INCOME' => LedgerKind.agentIncome,
+      'SUPER_AGENT_INCOME' => LedgerKind.superAgentIncome,
+      'RECHARGE' || 'RECHARGE_CREDIT' => LedgerKind.recharge,
+      'REFUND' ||
+      'REFUND_RESERVE' ||
+      'REFUND_RETRY_RESERVE' => LedgerKind.refund,
+      'WITHDRAWAL' || 'WITHDRAWAL_HOLD' => LedgerKind.withdrawal,
+      _ => LedgerKind.other,
+    };
+  }
+
+  static PaymentOrderStatus _paymentOrderStatus(Object? value) {
+    return switch (_string(value).toUpperCase()) {
+      'PENDING' || 'CREATED' => PaymentOrderStatus.pending,
+      'CONFIRMING' || 'PROCESSING' => PaymentOrderStatus.confirming,
+      'SUCCEEDED' || 'SUCCESS' || 'PAID' => PaymentOrderStatus.succeeded,
+      'FAILED' || 'FAILURE' => PaymentOrderStatus.failed,
+      'CANCELED' || 'CANCELLED' => PaymentOrderStatus.canceled,
+      _ => PaymentOrderStatus.unknown,
+    };
+  }
+
+  static PaymentOrderStatus _requiredPaymentOrderStatus(Object? value) {
+    final PaymentOrderStatus status = _paymentOrderStatus(value);
+    if (status == PaymentOrderStatus.unknown) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '订单响应缺少有效服务端状态',
+      );
+    }
+    return status;
+  }
+
+  static PaymentOrder _paymentOrderFromMap(
+    Map<String, Object?> raw, {
+    required LedgerCurrency currency,
+  }) {
+    final String orderNo = _requiredString(raw, 'orderNo', field: '订单号');
+    final double amount = _requiredDouble(raw, 'amount');
+    final int giftCoinAmount = _requiredInt(raw, <String>[
+      'ncoin',
+      'giftCoinAmount',
+    ], field: '订单礼物币金额');
+    if (amount < 0 || giftCoinAmount < 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '订单金额不能为负数',
+      );
+    }
+    _validateOptionalCurrency(raw, currency, field: '订单币种');
+    final DateTime createdAt = _requiredDateTime(
+      raw,
+      'createDate',
+      field: '订单创建时间',
     );
-    return WithdrawalRecord(
-      id: _string(raw['id']),
-      withdrawalNo: _string(raw['withdrawalNo']),
-      amount: _asDouble(raw['amount']) ?? 0,
-      fee: _asDouble(raw['fee']) ?? 0,
-      receivedAmount: _asDouble(raw['actualAmount']) ?? 0,
-      status: status,
-      statusText: _string(
-        raw['statusName'],
-        fallback: _withdrawalStatusText(status),
-      ),
-      createdAt: _asDateTime(raw['createTime']) ?? DateTime.now(),
-      rejectedReason: _string(raw['rejectReason']),
-      bankName: _string(raw['bankCardName']),
-      maskedCard: _string(raw['bankCardId']),
+    return PaymentOrder(
+      orderNo: orderNo,
+      amount: amount,
+      giftCoinAmount: giftCoinAmount,
+      channelName: _requiredString(raw, 'payType', field: '支付渠道'),
+      createdAt: createdAt,
+      status: _requiredPaymentOrderStatus(raw['status']),
+      currency: currency,
     );
   }
 
-  static CommercePage<T> _commercePage<T>(
-    Map<String, Object?> data,
-    List<T> items, {
+  static RefundApplication _refundFromMap(
+    Map<String, Object?> raw, {
+    required LedgerCurrency currency,
+    String? expectedRefundId,
+    String? expectedOrderNo,
+  }) {
+    final String id = _requiredString(raw, 'refundId', field: '退款申请编号');
+    final String orderNo = _requiredString(raw, 'orderNo', field: '退款订单号');
+    if (expectedRefundId != null && id != expectedRefundId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '退款结果与请求退款申请不一致',
+      );
+    }
+    if (expectedOrderNo != null && orderNo != expectedOrderNo) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '退款结果与选中订单不一致',
+      );
+    }
+    _validateOptionalCurrency(raw, currency, field: '退款币种');
+    _requireVendorBlocked(raw, field: 'providerStatus', label: '退款结果');
+    final int amountMinor = _requiredInt(raw, <String>[
+      'amountMinor',
+    ], field: '退款金额');
+    if (amountMinor <= 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '退款金额必须大于 0',
+      );
+    }
+    final String rawStatus = _requiredString(
+      raw,
+      'status',
+      field: '退款状态',
+    ).toUpperCase();
+    final RefundStatus status = _requiredRefundStatus(rawStatus);
+    final bool completed = _requiredBool(raw, 'completed');
+    if (completed != (rawStatus == 'COMPLETED')) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '退款结果 completed 与服务端状态矛盾',
+      );
+    }
+    _requiredString(raw, 'reason', field: '退款申请原因');
+    final String resultMessage = _string(raw['resultMessage']);
+    if (status == RefundStatus.rejected && resultMessage.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '已拒绝退款缺少服务端拒绝原因',
+      );
+    }
+    final DateTime submittedAt = _requiredDateTime(
+      raw,
+      'submittedAt',
+      field: '退款提交时间',
+    );
+    return RefundApplication(
+      id: id,
+      account: orderNo,
+      amount: _minorToMajor(amountMinor),
+      status: status,
+      statusText: _refundStatusText(status),
+      rejectedReason: status == RefundStatus.rejected ? resultMessage : '',
+      createdAt: submittedAt,
+      currency: currency,
+    );
+  }
+
+  static RefundStatus? _refundStatus(Object? value) {
+    return switch (_string(value).toUpperCase()) {
+      'APPROVED' || 'COMPLETED' => RefundStatus.approved,
+      'REJECTED' => RefundStatus.rejected,
+      'CANCELLED' || 'CANCELED' => RefundStatus.unavailable,
+      'RESUBMITTED' => RefundStatus.resubmitted,
+      'SUBMITTED' ||
+      'PENDING' ||
+      'PROCESSING' ||
+      'REVIEWING' => RefundStatus.reviewing,
+      _ => null,
+    };
+  }
+
+  static RefundStatus _requiredRefundStatus(Object? value) {
+    final RefundStatus? status = _refundStatus(value);
+    if (status == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '退款响应缺少有效服务端状态',
+      );
+    }
+    return status;
+  }
+
+  static String _refundEligibilityMessage(
+    String reason, {
+    required bool allowed,
+  }) {
+    if (allowed) {
+      return '该充值订单可以提交退款申请；正式渠道退款仍等待厂商接入。';
+    }
+    return switch (reason.toUpperCase()) {
+      'ACTIVE_REFUND_EXISTS' => '该订单已有退款申请正在处理。',
+      'GIFT_COIN_ALREADY_CONSUMED' => '该订单对应礼物币已消费，当前不能退款。',
+      _ => reason.isEmpty ? '该充值订单当前不能退款。' : reason,
+    };
+  }
+
+  static WithdrawalRecord _withdrawalFromMap(
+    Map<String, Object?> raw, {
+    required LedgerCurrency currency,
+  }) {
+    final WithdrawalStatus status = _requiredWithdrawalStatus(raw['status']);
+    final String id = _requiredString(raw, 'withdrawalId', field: '提现记录 ID');
+    final String payoutAccountId = _requiredString(
+      raw,
+      'payoutAccountId',
+      field: '提现收款账户 ID',
+    );
+    _validateOptionalCurrency(raw, currency, field: '提现记录币种');
+    if (currency != LedgerCurrency.cashCny) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现记录币种不是 CASH_CNY',
+      );
+    }
+    final int amountMinor = _requiredInt(raw, <String>[
+      'amountMinor',
+    ], field: '提现金额');
+    final int feeMinor = _requiredInt(raw, <String>[
+      'feeMinor',
+    ], field: '提现手续费');
+    final int netMinor = _requiredInt(raw, <String>[
+      'netAmountMinor',
+    ], field: '提现到账金额');
+    if (amountMinor < 0 ||
+        feeMinor < 0 ||
+        netMinor < 0 ||
+        amountMinor - feeMinor != netMinor) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现记录金额不一致',
+      );
+    }
+    return WithdrawalRecord(
+      id: id,
+      withdrawalNo: id,
+      amount: _minorToMajor(amountMinor),
+      fee: _minorToMajor(feeMinor),
+      receivedAmount: _minorToMajor(netMinor),
+      status: status,
+      statusText: _withdrawalStatusText(status),
+      createdAt: _requiredDateTime(raw, 'submittedAt', field: '提现提交时间'),
+      rejectedReason: _string(raw['resultMessage']),
+      payoutAccountId: payoutAccountId,
+      holderNameMasked: _string(raw['holderNameMasked']),
+      maskedCard: _string(raw['accountMasked']),
+      currency: currency,
+    );
+  }
+
+  static List<Object?> _requiredList(
+    Map<String, Object?> data, {
+    required String field,
+  }) {
+    List<Object?>? selected;
+    for (final String key in <String>['records', 'list', 'items']) {
+      if (!data.containsKey(key)) {
+        continue;
+      }
+      final Object? value = data[key];
+      if (value is! List) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '$field的 $key 不是有效列表',
+        );
+      }
+      final List<Object?> candidate = List<Object?>.from(value);
+      if (selected != null && !_deepEqual(selected, candidate)) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '$field的多个列表别名内容不一致',
+        );
+      }
+      selected = candidate;
+    }
+    if (selected != null) {
+      return selected;
+    }
+    throw ApiException(kind: ApiFailureKind.protocol, message: '$field缺少服务端列表');
+  }
+
+  static _PageMetadata _requiredPageMetadata(
+    Map<String, Object?> data, {
+    required int requestedPage,
+    required int requestedPageSize,
+  }) {
+    final int current = _requiredAliasedInt(data, <String>[
+      'pageNum',
+      'current',
+    ], field: '服务端当前页');
+    final int pageSize = _requiredAliasedInt(data, <String>[
+      'pageSize',
+      'size',
+    ], field: '服务端分页大小');
+    final int total = _requiredAliasedInt(data, <String>[
+      'total',
+    ], field: '服务端总数');
+    final int pages = _requiredAliasedInt(data, <String>[
+      'pages',
+      'totalPages',
+    ], field: '服务端总页数');
+    if (current < 1 || pageSize < 1 || total < 0 || pages < 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '分页响应缺少有效服务端页码元数据',
+      );
+    }
+    if (current != requestedPage || pageSize != requestedPageSize) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '服务端分页 current 或 pageSize 与请求不一致，页码未向前进展',
+      );
+    }
+    final int expectedPages = total == 0
+        ? 0
+        : (total + pageSize - 1) ~/ pageSize;
+    if (pages != expectedPages ||
+        (pages == 0 && current != 1) ||
+        (pages > 0 && current > pages)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '分页响应的总数与页数不一致',
+      );
+    }
+    return _PageMetadata(
+      current: current,
+      pageSize: pageSize,
+      total: total,
+      pages: pages,
+    );
+  }
+
+  static _PageMetadata _requiredOrderPageMetadata(
+    Map<String, Object?> data, {
+    required int requestedPage,
+    required int requestedPageSize,
+  }) {
+    final int current = _requiredAliasedInt(data, <String>[
+      'pageNum',
+      'current',
+    ], field: '充值订单当前页');
+    final int pageSize = _requiredAliasedInt(data, <String>[
+      'pageSize',
+      'size',
+    ], field: '充值订单分页大小');
+    final int total = _requiredAliasedInt(data, <String>[
+      'total',
+    ], field: '充值订单总数');
+    if (current < 1 || pageSize < 1 || total < 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '充值订单分页缺少有效服务端页码元数据',
+      );
+    }
+    if (current != requestedPage || pageSize != requestedPageSize) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '充值订单分页 current 或 pageSize 与请求不一致',
+      );
+    }
+    final int expectedPages = total == 0
+        ? 0
+        : (total + pageSize - 1) ~/ pageSize;
+    final int? reportedPages = _optionalAliasedInt(data, <String>[
+      'pages',
+      'totalPages',
+    ], field: '充值订单总页数');
+    final int pages = reportedPages ?? expectedPages;
+    if (pages < 0 || pages != expectedPages) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '充值订单分页的 pages 与 total 不一致',
+      );
+    }
+    if ((pages == 0 && current != 1) || (pages > 0 && current > pages)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '充值订单分页当前页超过服务端页数',
+      );
+    }
+    return _PageMetadata(
+      current: current,
+      pageSize: pageSize,
+      total: total,
+      pages: pages,
+    );
+  }
+
+  static void _validateWithdrawalPageProgress(
+    CommercePage<WithdrawalRecord> page, {
+    required int requestedPage,
+  }) {
+    if (!page.hasMore) {
+      return;
+    }
+    if (page.items.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现记录分页响应为空但仍声明存在下一页',
+      );
+    }
+    if (page.page != requestedPage) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现记录分页 current 与请求页不一致',
+      );
+    }
+  }
+
+  static _PageMetadata _validateStablePageMetadata({
+    required _PageMetadata? expected,
+    required _PageMetadata actual,
+  }) {
+    if (expected == null) {
+      return actual;
+    }
+    if (expected.pageSize != actual.pageSize ||
+        expected.total != actual.total ||
+        expected.pages != actual.pages) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '服务端分页元数据在请求间发生变化',
+      );
+    }
+    return expected;
+  }
+
+  static void _validatePageItemCount(
+    List<Object?> items,
+    _PageMetadata metadata, {
+    required String field,
+  }) {
+    if (items.length > metadata.pageSize) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field分页记录数超过服务端 pageSize',
+      );
+    }
+    if (metadata.pages == 0 && items.isNotEmpty) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field空分页包含记录',
+      );
+    }
+    if (metadata.total == 0) {
+      if (items.isNotEmpty) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '$field分页总数为零但包含记录',
+        );
+      }
+      return;
+    }
+    if (items.isEmpty && metadata.current < metadata.pages) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field分页响应为空但仍声明存在下一页',
+      );
+    }
+    final int expectedCount = metadata.current < metadata.pages
+        ? metadata.pageSize
+        : metadata.total - (metadata.pages - 1) * metadata.pageSize;
+    if (expectedCount <= 0 ||
+        expectedCount > metadata.pageSize ||
+        items.length != expectedCount) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field分页记录数与服务端 total/pageSize/pages 不一致',
+      );
+    }
+  }
+
+  static void _validatePageArguments({
     required int page,
     required int pageSize,
   }) {
-    final int current = _asInt(data['current']) ?? page;
-    final int size = _asInt(data['size']) ?? pageSize;
-    final int total = _asInt(data['total']) ?? items.length;
-    final int pages =
-        _asInt(data['pages']) ?? (size <= 0 ? 1 : (total / size).ceil());
-    return CommercePage<T>(
-      items: items,
-      page: current,
-      pageSize: size,
-      total: total,
-      hasMore: current < pages,
-    );
+    if (page < 1 || pageSize < 1) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '分页页码和 pageSize 必须大于 0',
+      );
+    }
+    if (page > _maximumCommerceBackendPages) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '服务端分页超过客户端安全上限',
+      );
+    }
   }
 
   static String _refundStatusText(RefundStatus status) => switch (status) {
@@ -448,23 +1452,27 @@ class BackendCommerceRepository implements CommerceRepository {
     RefundStatus.unavailable => '不可用',
   };
 
-  static WithdrawalStatus _withdrawalStatus(int code) => switch (code) {
-    1 => WithdrawalStatus.approved,
-    2 => WithdrawalStatus.rejected,
-    3 => WithdrawalStatus.paying,
-    4 => WithdrawalStatus.succeeded,
-    5 => WithdrawalStatus.failed,
-    _ => WithdrawalStatus.pending,
-  };
+  static WithdrawalStatus? _withdrawalStatus(Object? value) =>
+      switch (_string(value).toUpperCase()) {
+        'PENDING' || 'CREATED' || 'SUBMITTED' => WithdrawalStatus.pending,
+        'APPROVED' => WithdrawalStatus.approved,
+        'REJECTED' || 'CANCELLED' || 'CANCELED' => WithdrawalStatus.rejected,
+        'PAYING' || 'PROCESSING' => WithdrawalStatus.paying,
+        'SETTLED' || 'SUCCEEDED' => WithdrawalStatus.succeeded,
+        'FAILED' => WithdrawalStatus.failed,
+        _ => null,
+      };
 
-  static int _withdrawalStatusCode(WithdrawalStatus status) => switch (status) {
-    WithdrawalStatus.pending => 0,
-    WithdrawalStatus.approved => 1,
-    WithdrawalStatus.rejected => 2,
-    WithdrawalStatus.paying => 3,
-    WithdrawalStatus.succeeded => 4,
-    WithdrawalStatus.failed => 5,
-  };
+  static WithdrawalStatus _requiredWithdrawalStatus(Object? value) {
+    final WithdrawalStatus? status = _withdrawalStatus(value);
+    if (status == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现记录缺少有效服务端状态',
+      );
+    }
+    return status;
+  }
 
   static String _withdrawalStatusText(WithdrawalStatus status) =>
       switch (status) {
@@ -479,14 +1487,83 @@ class BackendCommerceRepository implements CommerceRepository {
   static Map<String, Object?> _asMap(Object? value) =>
       value is Map<String, Object?> ? value : const <String, Object?>{};
 
-  static List<Object?> _asList(Object? value) =>
-      value is List<Object?> ? value : const <Object?>[];
-
   static int? _asInt(Object? value) {
     if (value is int) {
       return value;
     }
     return int.tryParse(value?.toString() ?? '');
+  }
+
+  static int _requiredAliasedInt(
+    Map<String, Object?> data,
+    List<String> keys, {
+    required String field,
+  }) {
+    final int? value = _optionalAliasedInt(data, keys, field: field);
+    if (value == null) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field缺少有效服务端整数',
+      );
+    }
+    return value;
+  }
+
+  static int? _optionalAliasedInt(
+    Map<String, Object?> data,
+    List<String> keys, {
+    required String field,
+  }) {
+    int? selected;
+    for (final String key in keys) {
+      if (!data.containsKey(key)) {
+        continue;
+      }
+      final int? value = _asInt(data[key]);
+      if (value == null) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '$field的 $key 不是有效服务端整数',
+        );
+      }
+      if (selected != null && selected != value) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '$field的多个分页别名不一致',
+        );
+      }
+      selected = value;
+    }
+    return selected;
+  }
+
+  static bool _deepEqual(Object? left, Object? right) {
+    if (left is List && right is List) {
+      if (left.length != right.length) {
+        return false;
+      }
+      for (int index = 0; index < left.length; index += 1) {
+        if (!_deepEqual(left[index], right[index])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (left is Map && right is Map) {
+      if (left.length != right.length) {
+        return false;
+      }
+      for (final Object? key in left.keys) {
+        if (!right.containsKey(key) || !_deepEqual(left[key], right[key])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (left is num && right is num) {
+      return left == right;
+    }
+    return left == right;
   }
 
   static double? _asDouble(Object? value) {
@@ -496,11 +1573,169 @@ class BackendCommerceRepository implements CommerceRepository {
     return double.tryParse(value?.toString() ?? '');
   }
 
-  static bool _asBool(Object? value) {
-    if (value is bool) {
-      return value;
+  static double _minorToMajor(int value) => value / 100;
+
+  static int _requiredInt(
+    Map<String, Object?> data,
+    List<String> keys, {
+    required String field,
+  }) {
+    for (final String key in keys) {
+      if (!data.containsKey(key)) {
+        continue;
+      }
+      final int? value = _asInt(data[key]);
+      if (value != null) {
+        return value;
+      }
+      break;
     }
-    return _asInt(value) == 1;
+    throw ApiException(
+      kind: ApiFailureKind.protocol,
+      message: '$field缺少有效服务端整数',
+    );
+  }
+
+  static int _requiredNonNegativeInt(
+    Map<String, Object?> data,
+    List<String> keys, {
+    required String field,
+  }) {
+    final int value = _requiredInt(data, keys, field: field);
+    if (value < 0) {
+      throw ApiException(kind: ApiFailureKind.protocol, message: '$field不能为负数');
+    }
+    return value;
+  }
+
+  static double _requiredDouble(Map<String, Object?> data, String key) {
+    final double? value = _asDouble(data[key]);
+    if (!data.containsKey(key) || value == null || !value.isFinite) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$key缺少有效服务端金额',
+      );
+    }
+    return value;
+  }
+
+  static double _requiredNonNegativeDouble(
+    Map<String, Object?> data,
+    String key,
+  ) {
+    final double value = _requiredDouble(data, key);
+    if (value < 0) {
+      throw ApiException(kind: ApiFailureKind.protocol, message: '$key不能为负数');
+    }
+    return value;
+  }
+
+  static bool _requiredBool(Map<String, Object?> data, String key) {
+    if (!data.containsKey(key)) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$key缺少服务端布尔值',
+      );
+    }
+    final bool? value = _asNullableBool(data[key]);
+    if (value == null) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$key不是有效服务端布尔值',
+      );
+    }
+    return value;
+  }
+
+  static void _requireVendorBlocked(
+    Map<String, Object?> data, {
+    required String field,
+    required String label,
+  }) {
+    final Object? raw = data[field];
+    if (raw is! String || raw.trim().toUpperCase() != 'VENDOR_BLOCKED') {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$label缺少正式厂商失败关闭状态',
+      );
+    }
+  }
+
+  static String _requiredString(
+    Map<String, Object?> data,
+    String key, {
+    required String field,
+  }) {
+    final String value = _string(data[key]);
+    if (!data.containsKey(key) || value.isEmpty) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field缺少有效服务端字符串',
+      );
+    }
+    return value;
+  }
+
+  static DateTime _requiredDateTime(
+    Map<String, Object?> data,
+    String key, {
+    required String field,
+  }) {
+    final DateTime? value = _asDateTime(data[key]);
+    if (!data.containsKey(key) || value == null) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field缺少有效服务端时间',
+      );
+    }
+    return value;
+  }
+
+  static LedgerCurrency _requiredCurrency(
+    Map<String, Object?> data, {
+    required String field,
+  }) {
+    final String value = _string(
+      data['currency'] ?? data['currencyCode'] ?? data['currencyType'],
+    ).toUpperCase();
+    return switch (value) {
+      'GIFT_COIN' || 'GIFTCOIN' || 'NCOIN' => LedgerCurrency.giftCoin,
+      'CASH_CNY' || 'CNY' || 'CASH' => LedgerCurrency.cashCny,
+      _ => throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field缺少有效服务端币种',
+      ),
+    };
+  }
+
+  static void _validateOptionalCurrency(
+    Map<String, Object?> data,
+    LedgerCurrency expected, {
+    required String field,
+  }) {
+    final bool present =
+        data.containsKey('currency') ||
+        data.containsKey('currencyCode') ||
+        data.containsKey('currencyType');
+    if (!present) {
+      return;
+    }
+    final LedgerCurrency actual = _requiredCurrency(data, field: field);
+    if (actual != expected) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field与服务端接口币种不一致',
+      );
+    }
+  }
+
+  static bool? _asNullableBool(Object? value) {
+    if (value is bool) return value;
+    if (value is num && (value == 0 || value == 1)) return value == 1;
+    final String normalized = value?.toString().trim().toLowerCase() ?? '';
+    if (<String>{'true', '1', 'yes'}.contains(normalized)) return true;
+    if (<String>{'false', '0', 'no'}.contains(normalized)) return false;
+    return null;
   }
 
   static String _string(Object? value, {String fallback = ''}) {
@@ -509,9 +1744,30 @@ class BackendCommerceRepository implements CommerceRepository {
   }
 
   static DateTime? _asDateTime(Object? value) {
+    if (value is DateTime) {
+      return value;
+    }
     if (value is int) {
-      return DateTime.fromMillisecondsSinceEpoch(value);
+      try {
+        return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
+      } on RangeError {
+        return null;
+      }
     }
     return DateTime.tryParse(value?.toString() ?? '');
   }
+}
+
+class _PageMetadata {
+  const _PageMetadata({
+    required this.current,
+    required this.pageSize,
+    required this.total,
+    required this.pages,
+  });
+
+  final int current;
+  final int pageSize;
+  final int total;
+  final int pages;
 }

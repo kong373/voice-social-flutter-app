@@ -45,6 +45,9 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
     );
   }
 
+  CommerceRepository get _repository =>
+      AppDependencyScope.of(context).commerceRepository;
+
   @override
   Widget build(BuildContext context) {
     return _CommerceScaffold(
@@ -106,9 +109,15 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
                 ),
                 _CommerceEntry(
                   icon: Icons.assignment_return_outlined,
-                  title: '退款申请',
-                  subtitle: '当前后端为账户级历史退款流程，不冒充逐订单退款',
-                  onTap: () => _open(RefundListPage(account: widget.account)),
+                  title: _repository.refundScope == RefundScope.order
+                      ? '订单退款'
+                      : '退款申请',
+                  subtitle: _repository.refundScope == RefundScope.order
+                      ? '请从充值订单详情选择可退款订单'
+                      : '当前后端为账户级历史退款流程，不冒充逐订单退款',
+                  onTap: () => _repository.refundScope == RefundScope.order
+                      ? _open(const OrdersPage())
+                      : _open(RefundListPage(account: widget.account)),
                 ),
                 _CommerceEntry(
                   icon: Icons.trending_up_rounded,
@@ -166,7 +175,12 @@ class _WalletPageState extends State<WalletPage> {
     try {
       final List<Object> results = await Future.wait<Object>(<Future<Object>>[
         _repository.fetchWalletSummary(),
-        _repository.fetchLedger(direction: _direction, page: 1, pageSize: 50),
+        _repository.fetchLedger(
+          currency: LedgerCurrency.giftCoin,
+          direction: _direction,
+          page: 1,
+          pageSize: 50,
+        ),
       ]);
       final WalletSummary wallet = results[0] as WalletSummary;
       final CommercePage<LedgerEntry> page =
@@ -287,7 +301,7 @@ class _WalletPageState extends State<WalletPage> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${entry.direction == LedgerDirection.income ? '+' : '-'}¥${entry.amount.toStringAsFixed(2)}',
+                  '${entry.direction == LedgerDirection.income ? '+' : '-'}${entry.amount.toStringAsFixed(0)} 礼物币',
                   style: TextStyle(
                     color: entry.direction == LedgerDirection.income
                         ? AppColors.success

@@ -113,7 +113,9 @@ class GiftCatalogItem {
     this.enabled = true,
   });
 
-  final int id;
+  /// Backend-owned public identifier. M4 commerce uses the full UUID value;
+  /// it must never be truncated or converted to a synthetic integer.
+  final String id;
   final String name;
   final int price;
   final GiftCatalogCategory category;

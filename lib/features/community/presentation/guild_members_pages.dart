@@ -37,12 +37,28 @@ class _GuildMembersEntryPageState extends State<GuildMembersEntryPage> {
   @override
   Widget build(BuildContext context) {
     final GuildSummary? guild = _snapshot?.currentGuild;
+    final bool authorityUnavailable =
+        _snapshot?.currentGuildAuthority == GuildCurrentAuthority.unavailable;
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('公会加入与成员管理')),
       body: _error != null
           ? _StateError(message: _error!, onRetry: _load)
           : _snapshot == null
           ? const Center(child: CircularProgressIndicator())
+          : authorityUnavailable
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(Icons.cloud_off_outlined, size: 46),
+                    SizedBox(height: 14),
+                    Text('当前公会信息暂不可用'),
+                  ],
+                ),
+              ),
+            )
           : guild == null
           ? Center(
               child: Padding(
@@ -118,7 +134,7 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
         widget.guildId,
       );
       List<GuildApplication> applications = const <GuildApplication>[];
-      if (guild.role.canManage) {
+      if (guild.status == GuildStatus.active && guild.role.canManage) {
         applications = await _repository.fetchGuildApplications(widget.guildId);
       }
       if (!mounted) {
@@ -126,6 +142,9 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
       }
       setState(() {
         _guild = guild;
+        if (guild.status == GuildStatus.closed) {
+          _tab = 0;
+        }
         _members
           ..clear()
           ..addAll(members);
@@ -188,7 +207,10 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
     if (confirmed == true && mounted) {
       await _operate(
         member.recordId,
-        () => _repository.removeGuildMember(member.recordId),
+        () => _repository.removeGuildMember(
+          guildId: widget.guildId,
+          userId: member.userId,
+        ),
       );
     }
   }
@@ -258,7 +280,11 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                       Expanded(
                         child: Text(
                           member.roomId == null
-                              ? (member.isSigned ? '今日已签到' : '当前未在公会房')
+                              ? switch (member.isSigned) {
+                                  true => '今日已签到 · 房间状态未知',
+                                  false => '今日未签到 · 房间状态未知',
+                                  null => '房间与签到状态未知',
+                                }
                               : '正在公会房间 ${member.roomId}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -289,7 +315,8 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                     _operate(
                       member.recordId,
                       () => _repository.setGuildMemberMuted(
-                        memberRecordId: member.recordId,
+                        guildId: widget.guildId,
+                        userId: member.userId,
                         muted: !member.isMuted,
                       ),
                     );
@@ -315,6 +342,12 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
   }
 
   Widget _applicationCard(GuildApplication application) {
+    final (String statusLabel, Color statusTint) = switch (application.status) {
+      GuildApplicationStatus.pending => ('待审核', _CommunityPalette.gold),
+      GuildApplicationStatus.accepted => ('已通过', AppColors.success),
+      GuildApplicationStatus.rejected => ('已拒绝', AppColors.error),
+      GuildApplicationStatus.expired => ('已过期', _CommunityPalette.muted),
+    };
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: _CommunitySection(
@@ -349,7 +382,7 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                     ],
                   ),
                 ),
-                const _SmallTag(label: '待审核', tint: _CommunityPalette.gold),
+                _SmallTag(label: statusLabel, tint: statusTint),
               ],
             ),
             if (application.message.isNotEmpty) ...<Widget>[
@@ -363,43 +396,46 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                 ),
               ),
             ],
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: _busyId == application.id
-                  ? const Padding(
-                      padding: EdgeInsets.all(10),
-                      child: SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+            if (application.status ==
+                GuildApplicationStatus.pending) ...<Widget>[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: _busyId == application.id
+                    ? const Padding(
+                        padding: EdgeInsets.all(10),
+                        child: SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : Wrap(
+                        spacing: 6,
+                        children: <Widget>[
+                          TextButton(
+                            onPressed: () => _operate(
+                              application.id,
+                              () => _repository.resolveGuildApplication(
+                                applicationId: application.id,
+                                accepted: false,
+                              ),
+                            ),
+                            child: const Text('拒绝'),
+                          ),
+                          FilledButton.tonal(
+                            onPressed: () => _operate(
+                              application.id,
+                              () => _repository.resolveGuildApplication(
+                                applicationId: application.id,
+                                accepted: true,
+                              ),
+                            ),
+                            child: const Text('通过'),
+                          ),
+                        ],
                       ),
-                    )
-                  : Wrap(
-                      spacing: 6,
-                      children: <Widget>[
-                        TextButton(
-                          onPressed: () => _operate(
-                            application.id,
-                            () => _repository.resolveGuildApplication(
-                              applicationId: application.id,
-                              accepted: false,
-                            ),
-                          ),
-                          child: const Text('拒绝'),
-                        ),
-                        FilledButton.tonal(
-                          onPressed: () => _operate(
-                            application.id,
-                            () => _repository.resolveGuildApplication(
-                              applicationId: application.id,
-                              accepted: true,
-                            ),
-                          ),
-                          child: const Text('通过'),
-                        ),
-                      ],
-                    ),
-            ),
+              ),
+            ],
           ],
         ),
       ),
@@ -408,7 +444,14 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bool canManage = _guild?.role.canManage ?? false;
+    final bool isClosed = _guild?.status == GuildStatus.closed;
+    final bool canManage = !isClosed && (_guild?.role.canManage ?? false);
+    final int pendingApplicationCount = _applications
+        .where(
+          (GuildApplication application) =>
+              application.status == GuildApplicationStatus.pending,
+        )
+        .length;
     final Widget body = _loading
         ? const Center(child: CircularProgressIndicator())
         : _error != null
@@ -423,7 +466,7 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                     eyebrow: 'GUILD OPERATIONS',
                     title: _guild!.name,
                     subtitle:
-                        '${_members.length} 位成员  ·  ${_applications.length} 条待审核申请',
+                        '${_members.length} 位成员  ·  $pendingApplicationCount 条待审核申请',
                     icon: Icons.manage_accounts_rounded,
                     colors: const <Color>[
                       Color(0xFF477EDB),
@@ -432,6 +475,13 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                     ],
                   ),
                   const SizedBox(height: 14),
+                  if (isClosed) ...<Widget>[
+                    const _InfoCard(
+                      icon: Icons.lock_outline_rounded,
+                      text: '公会已关闭',
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                 ],
                 if (canManage)
                   SegmentedButton<int>(
@@ -440,7 +490,7 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                       const ButtonSegment<int>(value: 0, label: Text('成员')),
                       ButtonSegment<int>(
                         value: 1,
-                        label: Text('申请 ${_applications.length}'),
+                        label: Text('申请 $pendingApplicationCount'),
                       ),
                     ],
                     selected: <int>{_tab},

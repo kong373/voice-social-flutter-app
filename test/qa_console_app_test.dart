@@ -2,9 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
+import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/debug/qa_console/qa_gate.dart';
 
 void main() {
+  test('live mode rejects the QA console even in a debug QA build', () {
+    expect(
+      shouldUseQaConsole(isLive: true, requested: true, isDebug: true),
+      isFalse,
+    );
+    expect(
+      shouldUseQaConsole(isLive: false, requested: true, isDebug: true),
+      isTrue,
+    );
+  });
+
+  test('live mode rejects the unauthenticated runtime demo shell', () {
+    expect(
+      shouldUseVideoRuntimeDemo(isLive: true, requested: true, isDebug: true),
+      isFalse,
+    );
+    expect(
+      shouldUseVideoRuntimeDemo(isLive: false, requested: true, isDebug: true),
+      isTrue,
+    );
+  });
+
   testWidgets('application root obeys the hardened QA console gate', (
     WidgetTester tester,
   ) async {
@@ -60,5 +83,33 @@ void main() {
       expect(find.text('M2.4 QA Console'), findsNothing);
       expect(find.text('同意并继续'), findsOneWidget);
     }
+  });
+
+  testWidgets('live application never routes into the Mock QA console', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const AppEnvironment liveEnvironment = AppEnvironment(
+      backendMode: BackendMode.live,
+      apiBaseUrl: 'https://example.invalid',
+      clientType: 'Android',
+      clientInnerVersion: '6',
+      oauthClientId: 'public-client',
+      realtimeEndpoint: '',
+      deploymentEnvironment: DeploymentEnvironment.development,
+    );
+
+    await tester.pumpWidget(
+      VoiceSocialApp(
+        dependencies: AppDependencies.forTestEnvironment(
+          environment: liveEnvironment,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('M2.4 QA Console'), findsNothing);
+    expect(find.textContaining('BackendMode: mock'), findsNothing);
   });
 }

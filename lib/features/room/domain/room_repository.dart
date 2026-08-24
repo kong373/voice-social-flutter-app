@@ -24,16 +24,20 @@ abstract interface class RoomRepository {
     required bool muted,
   });
 
-  Future<void> sendPublicMessage({
+  Future<RoomMessage> sendPublicMessage({
     required String roomId,
     required String content,
+    String? requestId,
   });
+
+  Future<List<RoomMessage>> fetchPublicMessages(String roomId);
 
   Future<GiftReceipt> sendGift({
     required String roomId,
-    required int giftId,
+    required String giftId,
     required List<int> receiverUserIds,
     required int quantity,
     required int giftFrom,
+    String? requestId,
   });
 }

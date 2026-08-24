@@ -203,6 +203,7 @@ void main() {
             userRole: RoomRole.speaker,
           ),
         ],
+        roomTitle: '深夜温柔陪伴',
       ),
       'goldens/m3_3_room_members_390x844.png',
     );
@@ -229,6 +230,7 @@ void main() {
             userRole: RoomRole.speaker,
           ),
         ],
+        roomTitle: '深夜温柔陪伴',
       ),
       'goldens/m3_3_room_management_390x844.png',
     );

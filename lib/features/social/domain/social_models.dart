@@ -6,6 +6,26 @@ enum VisitorRecordType { viewedMe, viewedByMe }
 
 enum ReportTargetType { user, room }
 
+final RegExp _canonicalReportRoomIdPattern = RegExp(r'^[1-9][0-9]*$');
+const int _maxBackendEntityId = 9223372036854775807;
+
+int? parseCanonicalReportEntityId(String value) {
+  final String normalized = value.trim();
+  if (!_canonicalReportRoomIdPattern.hasMatch(normalized)) {
+    return null;
+  }
+  final int? parsed = int.tryParse(normalized);
+  if (parsed == null || parsed > _maxBackendEntityId) {
+    return null;
+  }
+  return parsed;
+}
+
+/// Returns whether [value] is the positive-integer room identifier accepted by
+/// the first-party report endpoint.
+bool isCanonicalReportRoomId(String value) =>
+    parseCanonicalReportEntityId(value) != null;
+
 enum SupportTicketStatus {
   submitted,
   processing,
@@ -155,6 +175,22 @@ class FriendRequest {
   }
 }
 
+/// The server-authoritative result returned after creating a friend request.
+///
+/// A send response does not contain the target profile, so it must not be
+/// represented as a synthetic [FriendRequest]. Keeping the request id and
+/// status together also lets the UI distinguish a confirmed pending request
+/// from a locally assumed success.
+class FriendRequestSendResult {
+  const FriendRequestSendResult({
+    required this.requestId,
+    required this.status,
+  });
+
+  final String requestId;
+  final FriendRequestStatus status;
+}
+
 class PrivacySettings {
   const PrivacySettings({
     required this.onlyFollowedCanFollow,
@@ -249,6 +285,11 @@ abstract interface class SocialRepository {
   });
 
   Future<void> setFollowing({required int userId, required bool following});
+
+  Future<FriendRequestSendResult> sendFriendRequest({
+    required int userId,
+    required String message,
+  });
 
   Future<List<FriendRequest>> fetchFriendRequests();
 

@@ -26,6 +26,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
 
   RoomLifecycleRepository? _repositoryInstance;
   RoomLifecycleRepository get _repository => _repositoryInstance!;
+  RoomLifecycleCapabilities get _capabilities => _repository.capabilities;
   RoomConfiguration? _existing;
   RoomAccessMode _accessMode = RoomAccessMode.publicRoom;
   bool _showInHall = true;
@@ -136,13 +137,25 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
                   RoomOxygenContextBar(
                     title: existing.title,
                     subtitle:
-                        '房间号 ${existing.roomCode ?? existing.roomId} · ${existing.isOpen ? '保存后直接进入' : '保存后重新开放'}',
+                        '房间号 ${existing.roomCode ?? existing.roomId} · ${existing.isOpen
+                            ? '保存后直接进入'
+                            : _capabilities.supportsReopen
+                            ? '保存后重新开放'
+                            : '当前仅可查看'}',
                     seed: existing.roomId ?? existing.roomCode ?? 'owned-room',
                     status: existing.isOpen ? '已开放' : '已关闭',
                     statusColor: existing.isOpen
                         ? RoomColors.success
                         : RoomColors.warning,
                   ),
+                  if (!existing.isOpen &&
+                      !_capabilities.supportsReopen) ...<Widget>[
+                    const SizedBox(height: 12),
+                    const RoomOxygenNotice(
+                      icon: Icons.info_outline_rounded,
+                      message: '当前 development 后端尚未提供重新开放接口，已关闭房间仅可查看。',
+                    ),
+                  ],
                   const SizedBox(height: 18),
                 ] else ...<Widget>[
                   const RoomOxygenNotice(
@@ -163,9 +176,14 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
                   topicContentController: _topicContentController,
                   welcomeController: _welcomeController,
                   passwordController: _passwordController,
+                  allowExistingPassword: existing?.passwordConfigured ?? false,
                   accessMode: _accessMode,
                   showInHall: _showInHall,
                   autoLockMic: _autoLockMic,
+                  supportsApprovalAccessMode:
+                      _capabilities.supportsApprovalAccessMode,
+                  supportsTopicTitle: _capabilities.supportsTopicTitle,
+                  supportsAutoLockMic: _capabilities.supportsAutoLockMic,
                   enabled: !_saving,
                   onAccessModeChanged: (RoomAccessMode value) {
                     setState(() => _accessMode = value);
@@ -185,14 +203,25 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
             child: SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: _saving ? null : _save,
+                onPressed:
+                    _saving ||
+                        (existing != null &&
+                            !existing.isOpen &&
+                            !_capabilities.supportsReopen)
+                    ? null
+                    : _save,
                 icon: _saving
                     ? const SizedBox.square(
                         dimension: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.arrow_forward_rounded),
-                label: Text(_buttonLabel(existing)),
+                label: Text(
+                  _buttonLabel(
+                    existing,
+                    canReopen: _capabilities.supportsReopen,
+                  ),
+                ),
               ),
             ),
           ),
@@ -202,6 +231,13 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
   }
 
   Future<void> _save() async {
+    final RoomConfiguration? existing = _existing;
+    if (existing != null && !existing.isOpen && !_capabilities.supportsReopen) {
+      setState(() {
+        _error = '当前 development 后端尚未提供重新开放房间接口。';
+      });
+      return;
+    }
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
@@ -213,15 +249,18 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
       roomId: _existing?.roomId,
       roomCode: _existing?.roomCode,
       title: _titleController.text.trim(),
-      topicTitle: _topicTitleController.text.trim(),
+      topicTitle: _capabilities.supportsTopicTitle
+          ? _topicTitleController.text.trim()
+          : '',
       topicContent: _topicContentController.text.trim(),
       welcomeMessage: _welcomeController.text.trim(),
       accessMode: _accessMode,
       password: _accessMode == RoomAccessMode.password
           ? _passwordController.text
           : '',
+      passwordConfigured: _existing?.passwordConfigured ?? false,
       showInHall: _showInHall,
-      autoLockMic: _autoLockMic,
+      autoLockMic: _capabilities.supportsAutoLockMic ? _autoLockMic : false,
       availability: RoomAvailability.open,
       coverUrl: _existing?.coverUrl,
     );
@@ -249,12 +288,15 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
     }
   }
 
-  static String _buttonLabel(RoomConfiguration? existing) {
+  static String _buttonLabel(
+    RoomConfiguration? existing, {
+    required bool canReopen,
+  }) {
     if (existing == null) {
       return '创建并进入房间';
     }
     if (!existing.isOpen) {
-      return '重新开放并进入房间';
+      return canReopen ? '重新开放并进入房间' : '暂不支持重新开放';
     }
     return '保存并进入房间';
   }

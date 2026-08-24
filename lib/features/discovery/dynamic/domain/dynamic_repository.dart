@@ -17,16 +17,24 @@ abstract interface class DynamicRepository {
     int pageSize = 30,
   });
 
-  Future<DynamicPost> toggleLike(String dynamicId);
+  Future<DynamicPost> toggleLike(
+    String dynamicId, {
+    required bool liked,
+    String? requestId,
+  });
 
   Future<DynamicComment> addComment({
     required String dynamicId,
     required String content,
     int? replyToUserId,
     String? replyToCommentId,
+    String? requestId,
   });
 
-  Future<DynamicPost> publish(PublishDynamicRequest request);
+  Future<DynamicPost> publish(
+    PublishDynamicRequest request, {
+    String? requestId,
+  });
 
   Future<void> deletePost(String dynamicId);
 

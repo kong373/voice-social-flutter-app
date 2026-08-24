@@ -4,12 +4,14 @@ import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_audio_service.dart';
+import 'package:voice_social_app/features/room/presentation/room_authority_display.dart';
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
 class RoomAudioPage extends StatefulWidget {
-  const RoomAudioPage({required this.isOnMic, super.key});
+  const RoomAudioPage({required this.isOnMic, this.roomTitle, super.key});
 
   final bool isOnMic;
+  final String? roomTitle;
 
   @override
   State<RoomAudioPage> createState() => _RoomAudioPageState();
@@ -81,7 +83,7 @@ class _RoomAudioPageState extends State<RoomAudioPage> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: <Widget>[
                 RoomOxygenContextBar(
-                  title: '深夜温柔陪伴',
+                  title: roomAuthorityTitle(widget.roomTitle),
                   subtitle: widget.isOnMic ? '麦上发言中 · 音频控制' : '听众模式 · 音频控制',
                   status: widget.isOnMic ? '麦上' : '听众',
                   statusColor: widget.isOnMic

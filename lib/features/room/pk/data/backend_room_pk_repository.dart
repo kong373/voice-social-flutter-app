@@ -112,9 +112,29 @@ class BackendRoomPkRepository implements RoomPkRepository {
     );
     final Map<String, Object?> data = _asMap(response.data);
     final String id = _string(
-      data['id'] ?? data['pkInviteId'] ?? data['invitationId'],
-      fallback: 'pending-${DateTime.now().millisecondsSinceEpoch}',
+      data['id'] ??
+          data['pkInviteId'] ??
+          data['invitationId'] ??
+          data['inviteId'],
     );
+    final RoomPkInvitationStatus? status = _invitationStatus(
+      data['status'] ?? data['inviteStatus'] ?? data['state'],
+    );
+    final DateTime? createdAt = _serviceDateTime(
+      data['createdAt'] ?? data['createTime'] ?? data['createdTime'],
+    );
+    final DateTime? expiresAt = _serviceDateTime(
+      data['expiresAt'] ?? data['expireTime'] ?? data['expiredAt'],
+    );
+    if (id.isEmpty ||
+        status == null ||
+        createdAt == null ||
+        expiresAt == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'PK 邀请响应缺少服务端 ID、状态或时间',
+      );
+    }
     return RoomPkInvitation(
       id: id,
       direction: RoomPkInvitationDirection.outgoing,
@@ -122,9 +142,9 @@ class BackendRoomPkRepository implements RoomPkRepository {
       opponent: opponent,
       punishmentTheme: punishment,
       durationMinutes: durationMinutes,
-      status: RoomPkInvitationStatus.pending,
-      createdAt: DateTime.now(),
-      expiresAt: DateTime.now().add(const Duration(minutes: 1)),
+      status: status,
+      createdAt: createdAt,
+      expiresAt: expiresAt,
     );
   }
 
@@ -180,10 +200,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
       query: <String, String>{'roomId': roomId},
     );
     final Map<String, Object?> data = _asMap(response.data);
-    if (data.isEmpty ||
-        _string(data['pkId'] ?? data['id']).isEmpty ||
-        (_asMap(data['senderRoom']).isEmpty &&
-            _asMap(data['receiverRoom']).isEmpty)) {
+    if (data.isEmpty) {
       return null;
     }
     return _battleFromMap(roomId, data);
@@ -233,7 +250,6 @@ class BackendRoomPkRepository implements RoomPkRepository {
     );
     return _extractList(response.data)
         .map((Map<String, Object?> item) => _recordFromMap(roomId, item))
-        .where((RoomPkRecord item) => item.id.isNotEmpty)
         .toList(growable: false);
   }
 
@@ -241,8 +257,40 @@ class BackendRoomPkRepository implements RoomPkRepository {
     String currentRoomId,
     Map<String, Object?> data,
   ) {
+    final String id = _string(data['battleId'] ?? data['pkId'] ?? data['id']);
+    final RoomPkBattleStage? stage = _battleStage(
+      data['status'] ??
+          data['battleStatus'] ??
+          data['pkStatus'] ??
+          data['stage'],
+    );
+    final DateTime? updatedAt = _serviceDateTime(
+      data['updatedAt'] ??
+          data['updateTime'] ??
+          data['updateAt'] ??
+          data['lastUpdatedAt'],
+    );
+    if (id.isEmpty || stage == null || updatedAt == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'PK 对局响应缺少服务端 ID、状态或更新时间',
+      );
+    }
     final RoomPkSide sender = _sideFromMap(_asMap(data['senderRoom']));
     final RoomPkSide receiver = _sideFromMap(_asMap(data['receiverRoom']));
+    if (sender.roomId.isEmpty || receiver.roomId.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'PK 对局响应缺少双方房间 ID',
+      );
+    }
+    if (sender.roomId == receiver.roomId ||
+        (sender.roomId != currentRoomId && receiver.roomId != currentRoomId)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'PK 对局双方房间与当前房间不一致',
+      );
+    }
     final int remaining =
         (_asInt(data['remainingTime'] ?? data['remainingSeconds']) ?? 0)
             .clamp(0, 24 * 60 * 60)
@@ -256,13 +304,8 @@ class BackendRoomPkRepository implements RoomPkRepository {
       5 => RoomPkResult.canceled,
       _ => null,
     };
-    final RoomPkBattleStage stage = result != null
-        ? RoomPkBattleStage.completed
-        : remaining > 0
-        ? RoomPkBattleStage.fighting
-        : RoomPkBattleStage.settling;
     return RoomPkBattle(
-      id: _string(data['pkId'] ?? data['id']),
+      id: id,
       currentRoomId: currentRoomId,
       sender: sender,
       receiver: receiver,
@@ -270,13 +313,13 @@ class BackendRoomPkRepository implements RoomPkRepository {
       punishmentTheme: _string(data['punishment'] ?? data['punishmentTheme']),
       stage: stage,
       result: result,
-      updatedAt: DateTime.now(),
+      updatedAt: updatedAt,
     );
   }
 
   static RoomPkSide _sideFromMap(Map<String, Object?> item) {
     return RoomPkSide(
-      roomId: _string(item['id'] ?? item['roomId']),
+      roomId: _sideRoomId(item),
       roomCode: _string(item['code'] ?? item['roomCode']),
       roomName: _string(item['name'] ?? item['roomName'], fallback: '语音房'),
       coverUrl: _optionalString(item['headImgUrl'] ?? item['coverUrl']),
@@ -285,6 +328,24 @@ class BackendRoomPkRepository implements RoomPkRepository {
         item['sendUsers'] ?? item['receiveUsers'] ?? item['supporters'],
       ).map(_supporterFromMap).toList(growable: false),
     );
+  }
+
+  static String _sideRoomId(Map<String, Object?> item) {
+    String? resolved;
+    for (final String alias in <String>['id', 'roomId']) {
+      if (!item.containsKey(alias)) {
+        continue;
+      }
+      final String value = _string(item[alias]);
+      if (value.isEmpty || (resolved != null && resolved != value)) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: 'PK 对局房间 ID 别名缺失或不一致',
+        );
+      }
+      resolved ??= value;
+    }
+    return resolved ?? '';
   }
 
   static RoomPkSupporter _supporterFromMap(Map<String, Object?> item) {
@@ -321,13 +382,23 @@ class BackendRoomPkRepository implements RoomPkRepository {
     Map<String, Object?> item,
   ) {
     final String senderId = _string(item['senderRoomId']);
+    final String id = _string(item['id'] ?? item['pkId'] ?? item['battleId']);
+    final RoomPkResult? senderResult = _resultFromValue(
+      item['result'] ?? item['pkResult'] ?? item['status'],
+    );
+    final DateTime? completedAt = _serviceDateTime(
+      item['pkDate'] ?? item['createTime'] ?? item['completedAt'],
+    );
+    if (id.isEmpty ||
+        senderId.isEmpty ||
+        senderResult == null ||
+        completedAt == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'PK 历史记录缺少服务端 ID、结果或完成时间',
+      );
+    }
     final bool currentIsSender = senderId == currentRoomId;
-    final int raw = _asInt(item['result']) ?? 3;
-    final RoomPkResult senderResult = switch (raw) {
-      1 => RoomPkResult.win,
-      2 => RoomPkResult.lose,
-      _ => RoomPkResult.draw,
-    };
     final RoomPkResult result = currentIsSender
         ? senderResult
         : switch (senderResult) {
@@ -336,7 +407,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
             _ => senderResult,
           };
     return RoomPkRecord(
-      id: _string(item['id'] ?? item['pkId']),
+      id: id,
       opponentRoomName: _string(
         currentIsSender ? item['receiverRoomName'] : item['senderRoomName'],
         fallback: '对方房间',
@@ -346,9 +417,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
             ? item['receiverRoomHeadImg']
             : item['senderRoomHeadImg'],
       ),
-      completedAt: _asDateTime(
-        item['pkDate'] ?? item['createTime'] ?? item['completedAt'],
-      ),
+      completedAt: completedAt,
       result: result,
       currentScore:
           _asInt(
@@ -361,6 +430,80 @@ class BackendRoomPkRepository implements RoomPkRepository {
           ) ??
           0,
     );
+  }
+
+  static RoomPkInvitationStatus? _invitationStatus(Object? value) {
+    return switch (_normalizedStatus(value)) {
+      'PENDING' || 'WAITING' => RoomPkInvitationStatus.pending,
+      'ACCEPTED' || 'ACCEPT' => RoomPkInvitationStatus.accepted,
+      'REJECTED' || 'REJECT' => RoomPkInvitationStatus.rejected,
+      'EXPIRED' || 'TIMEOUT' => RoomPkInvitationStatus.expired,
+      'CANCELED' || 'CANCELLED' || 'CANCEL' => RoomPkInvitationStatus.canceled,
+      _ => null,
+    };
+  }
+
+  static RoomPkBattleStage? _battleStage(Object? value) {
+    return switch (_normalizedStatus(value)) {
+      'PREPARING' ||
+      'PENDING' ||
+      'READY' ||
+      'ACCEPTED' => RoomPkBattleStage.preparing,
+      'FIGHTING' ||
+      'ACTIVE' ||
+      'ONGOING' ||
+      'RUNNING' ||
+      'STARTED' => RoomPkBattleStage.fighting,
+      'SETTLING' || 'SETTLED' => RoomPkBattleStage.settling,
+      'COMPLETED' || 'FINISHED' => RoomPkBattleStage.completed,
+      'CANCELED' || 'CANCELLED' || 'CANCEL' => RoomPkBattleStage.canceled,
+      _ => null,
+    };
+  }
+
+  static RoomPkResult? _resultFromValue(Object? value) {
+    final int? raw = _asInt(value);
+    if (raw != null) {
+      return switch (raw) {
+        1 => RoomPkResult.win,
+        2 => RoomPkResult.lose,
+        3 => RoomPkResult.draw,
+        4 => RoomPkResult.surrendered,
+        5 => RoomPkResult.canceled,
+        _ => null,
+      };
+    }
+    return switch (_normalizedStatus(value)) {
+      'WIN' || 'WON' => RoomPkResult.win,
+      'LOSE' || 'LOSS' || 'LOST' => RoomPkResult.lose,
+      'DRAW' || 'TIE' => RoomPkResult.draw,
+      'SURRENDERED' || 'SURRENDER' => RoomPkResult.surrendered,
+      'CANCELED' || 'CANCELLED' || 'CANCEL' => RoomPkResult.canceled,
+      _ => null,
+    };
+  }
+
+  static String? _normalizedStatus(Object? value) {
+    final String normalized = value?.toString().trim().toUpperCase() ?? '';
+    if (normalized.isEmpty) {
+      return null;
+    }
+    return normalized.replaceAll('-', '_').replaceAll(' ', '_');
+  }
+
+  static DateTime? _serviceDateTime(Object? value) {
+    if (value is DateTime) {
+      return value;
+    }
+    if (value is int) {
+      try {
+        return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
+      } on RangeError {
+        return null;
+      }
+    }
+    final String text = value?.toString().trim() ?? '';
+    return text.isEmpty ? null : DateTime.tryParse(text);
   }
 
   static List<Map<String, Object?>> _extractList(Object? value) {
@@ -419,6 +562,4 @@ class BackendRoomPkRepository implements RoomPkRepository {
       value is num ? value : num.tryParse(value?.toString() ?? '');
   static bool _asBool(Object? value) =>
       value == true || value == 1 || value?.toString() == '1';
-  static DateTime _asDateTime(Object? value) =>
-      DateTime.tryParse(value?.toString() ?? '') ?? DateTime.now();
 }

@@ -5,4 +5,10 @@ const bool _qaConsoleRequested = bool.fromEnvironment(
   defaultValue: false,
 );
 
-bool get qaConsoleEnabled => kDebugMode && _qaConsoleRequested;
+bool shouldUseQaConsole({
+  required bool isLive,
+  bool requested = _qaConsoleRequested,
+  bool isDebug = kDebugMode,
+}) => isDebug && requested && !isLive;
+
+bool get qaConsoleEnabled => shouldUseQaConsole(isLive: false);

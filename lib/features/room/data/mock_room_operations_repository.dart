@@ -163,6 +163,7 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
 
   @override
   Future<void> takeUserOffMic({
+    required String roomId,
     required int backendMicIndex,
     required int userId,
   }) async {
@@ -178,12 +179,14 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
 
   @override
   Future<void> setSeatLocked({
+    required String roomId,
     required int backendMicIndex,
     required bool locked,
   }) async {}
 
   @override
   Future<void> setSeatMuted({
+    required String roomId,
     required int backendMicIndex,
     required bool muted,
   }) async {

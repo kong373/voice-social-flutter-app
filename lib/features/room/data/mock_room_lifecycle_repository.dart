@@ -5,6 +5,15 @@ import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.
 class MockRoomLifecycleRepository implements RoomLifecycleRepository {
   MockRoomLifecycleRepository();
 
+  @override
+  final RoomLifecycleCapabilities capabilities =
+      const RoomLifecycleCapabilities(
+        supportsApprovalAccessMode: true,
+        supportsTopicTitle: true,
+        supportsAutoLockMic: true,
+        supportsReopen: true,
+      );
+
   RoomConfiguration? _ownedRoom = const RoomConfiguration(
     roomId: '952700',
     roomCode: '952700',
@@ -148,7 +157,10 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
       );
     }
     if (configuration.accessMode == RoomAccessMode.password &&
-        !RegExp(r'^\d{4}$').hasMatch(configuration.password)) {
+        ((!configuration.passwordConfigured &&
+                configuration.password.isEmpty) ||
+            (configuration.password.isNotEmpty &&
+                !RegExp(r'^\d{4}$').hasMatch(configuration.password)))) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
         message: '密码房需要设置 4 位数字密码',

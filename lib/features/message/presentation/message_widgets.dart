@@ -449,7 +449,10 @@ class _MessageConversationRow extends StatelessWidget {
           children: <Widget>[
             Stack(
               children: <Widget>[
-                RuntimeAvatar(seed: conversation.id, size: 48),
+                RuntimeAvatar(
+                  seed: conversation.id ?? 'user-${conversation.targetUserId}',
+                  size: 48,
+                ),
                 if (conversation.available)
                   Positioned(
                     right: 1,
@@ -481,7 +484,9 @@ class _MessageConversationRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    conversation.available
+                    conversation.isDraft
+                        ? '新会话草稿'
+                        : conversation.available
                         ? conversation.lastMessage
                         : conversation.unavailableReason,
                     maxLines: 1,
@@ -498,7 +503,9 @@ class _MessageConversationRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: <Widget>[
                 Text(
-                  _formatMessageTime(conversation.updatedAt, now),
+                  conversation.updatedAt == null
+                      ? '新会话'
+                      : _formatMessageTime(conversation.updatedAt!, now),
                   style: const TextStyle(
                     color: SocialColors.textTertiary,
                     fontSize: 9,

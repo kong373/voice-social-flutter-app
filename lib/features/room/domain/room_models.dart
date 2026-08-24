@@ -111,16 +111,26 @@ class RoomMessage {
   const RoomMessage({
     required this.sender,
     required this.content,
+    this.roomId,
+    this.messageId,
     this.senderId,
+    this.type,
     this.isSystem = false,
     this.createdAt,
+    this.deliveryMode,
+    this.realtimeStatus,
   });
 
+  final String? roomId;
+  final String? messageId;
   final int? senderId;
   final String sender;
+  final String? type;
   final String content;
   final bool isSystem;
   final DateTime? createdAt;
+  final String? deliveryMode;
+  final String? realtimeStatus;
 }
 
 class RoomSnapshot {
@@ -202,8 +212,35 @@ class RoomSnapshot {
 }
 
 class GiftReceipt {
-  const GiftReceipt({required this.success, required this.remainingBalance});
+  const GiftReceipt({
+    required this.success,
+    required this.remainingBalance,
+    this.transferId,
+    this.roomId,
+    this.senderUserId,
+    this.receiverUserId,
+    this.giftId,
+    this.giftName,
+    this.quantity,
+    this.source,
+    this.deliveryMode,
+    this.providerInvocation,
+    this.providerStatus,
+    this.status,
+  });
 
   final bool success;
   final int? remainingBalance;
+  final String? transferId;
+  final String? roomId;
+  final int? senderUserId;
+  final int? receiverUserId;
+  final String? giftId;
+  final String? giftName;
+  final int? quantity;
+  final String? source;
+  final String? deliveryMode;
+  final bool? providerInvocation;
+  final String? providerStatus;
+  final String? status;
 }
