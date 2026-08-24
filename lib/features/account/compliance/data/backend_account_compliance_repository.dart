@@ -6,6 +6,7 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance_request_id.dart';
+import 'package:voice_social_app/features/account/compliance/infrastructure/native_permission_adapter.dart';
 
 /// First-party HTTP adapter for account safety and compliance.
 ///
@@ -19,13 +20,17 @@ class BackendAccountComplianceRepository
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
     String Function()? currentDeviceIdProvider,
+    NativePermissionAdapter? nativePermissionAdapter,
   }) : _apiClient = apiClient,
        _routes = routes,
-       _currentDeviceIdProvider = currentDeviceIdProvider ?? (() => '');
+       _currentDeviceIdProvider = currentDeviceIdProvider ?? (() => ''),
+       _nativePermissionAdapter =
+           nativePermissionAdapter ?? MethodChannelNativePermissionAdapter();
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
   final String Function() _currentDeviceIdProvider;
+  final NativePermissionAdapter _nativePermissionAdapter;
   final Map<String, Future<void>> _pendingRealNameSubmissions =
       <String, Future<void>>{};
   final Map<String, String> _retainedRealNameRequestIds = <String, String>{};
@@ -151,6 +156,7 @@ class BackendAccountComplianceRepository
       );
     }
     final List<DeviceSession> deviceSessions = _parseSessions(sessionList);
+    final List<PermissionSetting> permissions = await _permissionSettings();
 
     return AccountComplianceSnapshot(
       account: loginName,
@@ -168,29 +174,7 @@ class BackendAccountComplianceRepository
       cancellation: cancellation,
       versionInfo: versionInfo,
       sessions: deviceSessions,
-      permissions: const <PermissionSetting>[
-        PermissionSetting(
-          kind: PermissionKind.microphone,
-          state: PermissionState.unavailable,
-          title: '麦克风',
-          purpose: '上麦发言、音频诊断和房间语音互动。',
-          managedByPlatform: null,
-        ),
-        PermissionSetting(
-          kind: PermissionKind.notifications,
-          state: PermissionState.unavailable,
-          title: '通知',
-          purpose: '好友请求、系统通知和房间邀请提醒。',
-          managedByPlatform: null,
-        ),
-        PermissionSetting(
-          kind: PermissionKind.photos,
-          state: PermissionState.unavailable,
-          title: '照片',
-          purpose: '修改头像、举报凭证和发布动态图片。',
-          managedByPlatform: null,
-        ),
-      ],
+      permissions: permissions,
     );
   }
 
@@ -199,11 +183,74 @@ class BackendAccountComplianceRepository
     required PermissionKind kind,
     required PermissionState state,
   }) async {
-    throw const ApiException(
-      kind: ApiFailureKind.configuration,
-      message: '系统权限需要原生平台适配器，当前版本不会伪造授权结果',
-    );
+    if (state != PermissionState.granted) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '系统权限请求只允许请求授权，不接受客户端写入状态',
+      );
+    }
+    final PermissionState result = await _requestPermission(kind);
+    if (result == PermissionState.unavailable) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '系统权限需要原生平台适配器，当前适配器不可用，不会伪造授权结果',
+      );
+    }
   }
+
+  @override
+  Future<void> openPermissionSettings() =>
+      _nativePermissionAdapter.openAppSettings();
+
+  Future<List<PermissionSetting>> _permissionSettings() async {
+    const List<PermissionKind> kinds = <PermissionKind>[
+      PermissionKind.microphone,
+      PermissionKind.notifications,
+      PermissionKind.photos,
+    ];
+    final List<PermissionSetting> permissions = <PermissionSetting>[];
+    for (final PermissionKind kind in kinds) {
+      final PermissionState state = await _readPermission(kind);
+      permissions.add(
+        PermissionSetting(
+          kind: kind,
+          state: state,
+          title: _permissionTitle(kind),
+          purpose: _permissionPurpose(kind),
+          managedByPlatform: state == PermissionState.unavailable ? null : true,
+        ),
+      );
+    }
+    return permissions;
+  }
+
+  Future<PermissionState> _readPermission(PermissionKind kind) async {
+    try {
+      return await _nativePermissionAdapter.status(kind);
+    } on Object {
+      return PermissionState.unavailable;
+    }
+  }
+
+  Future<PermissionState> _requestPermission(PermissionKind kind) async {
+    try {
+      return await _nativePermissionAdapter.request(kind);
+    } on Object {
+      return PermissionState.unavailable;
+    }
+  }
+
+  static String _permissionTitle(PermissionKind kind) => switch (kind) {
+    PermissionKind.microphone => '麦克风',
+    PermissionKind.notifications => '通知',
+    PermissionKind.photos => '照片',
+  };
+
+  static String _permissionPurpose(PermissionKind kind) => switch (kind) {
+    PermissionKind.microphone => '上麦发言、音频诊断和房间语音互动。',
+    PermissionKind.notifications => '好友请求、系统通知和房间邀请提醒。',
+    PermissionKind.photos => '修改头像、举报凭证和发布动态图片。',
+  };
 
   @override
   Future<void> submitRealName({
@@ -993,29 +1040,57 @@ class BackendAccountComplianceRepository
 
   static int _parseVerificationCode(Map<String, Object?> data) {
     final String status = _requiredString(data, 'status', '实名认证').toUpperCase();
-    final int code = _requiredNonNegativeInt(data, 'statusCode', '实名认证');
+    final Object? rawCode = data['statusCode'];
+    final int? code = rawCode == null
+        ? null
+        : _requiredNonNegativeInt(data, 'statusCode', '实名认证');
     final int expected = switch (status) {
       'NOT_SUBMITTED' || 'UNVERIFIED' => 0,
       'PENDING' => 1,
-      'VERIFIED' => 2,
+      'VERIFIED' || 'APPROVED' => 2,
       'REJECTED' => 3,
       _ => -1,
     };
-    if (expected < 0 || code != expected) {
+    if (expected < 0 || (code != null && code != expected)) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '实名认证响应中的状态字段无效或互相矛盾',
       );
     }
-    if (_requiredString(data, 'providerStatus', '实名认证') != 'VENDOR_BLOCKED' ||
-        _requiredString(data, 'reviewMode', '实名认证') !=
-            'FIRST_PARTY_MANUAL_REVIEW') {
+    final String providerStatus = _string(data['providerStatus']).toUpperCase();
+    final String reviewMode = _string(data['reviewMode']).toUpperCase();
+    const Set<String> allowedProviderStatuses = <String>{
+      'VENDOR_BLOCKED',
+      'FIRST_PARTY_REVIEW',
+      'FIRST_PARTY_REVIEWED',
+    };
+    const Set<String> allowedReviewModes = <String>{
+      'FIRST_PARTY_MANUAL_REVIEW',
+      'FIRST_PARTY_REVIEW',
+    };
+    final bool providerStatusAllowed =
+        providerStatus.isEmpty ||
+        allowedProviderStatuses.contains(providerStatus);
+    final bool reviewModeAllowed =
+        reviewMode.isEmpty || allowedReviewModes.contains(reviewMode);
+    if (!providerStatusAllowed ||
+        !reviewModeAllowed ||
+        (providerStatus.isEmpty && reviewMode.isEmpty)) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
-        message: '实名认证响应违反第一方人工审核边界',
+        message: '实名认证响应违反第一方审核边界',
       );
     }
-    return code;
+    final bool isFirstPartyReview =
+        providerStatus == 'FIRST_PARTY_REVIEW' ||
+        reviewMode == 'FIRST_PARTY_REVIEW';
+    if (code == null && !isFirstPartyReview) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '实名认证响应缺少有效 statusCode',
+      );
+    }
+    return expected;
   }
 
   static Map<String, Object?> _parseRestriction(Object? value) {

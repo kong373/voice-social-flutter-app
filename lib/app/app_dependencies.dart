@@ -7,6 +7,7 @@ import 'package:voice_social_app/features/account/application/auth_controller.da
 import 'package:voice_social_app/features/account/compliance/data/backend_account_compliance_repository.dart';
 import 'package:voice_social_app/features/account/compliance/data/mock_account_compliance_repository.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
+import 'package:voice_social_app/features/account/compliance/infrastructure/native_permission_adapter.dart';
 import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/account/data/backend_auth_repository.dart';
 import 'package:voice_social_app/features/account/data/device_identity_provider.dart';
@@ -135,6 +136,9 @@ class AppDependencies {
     final LiveReadOnlyRepository liveReadOnlyRepository =
         LiveReadOnlyRepository(apiClient);
     const BackendRouteCatalog routes = BackendRouteCatalog();
+    final NativePermissionAdapter? nativePermissionAdapter = environment.isLive
+        ? MethodChannelNativePermissionAdapter()
+        : null;
     final AuthRepository authRepository = environment.isLive
         ? BackendAuthRepository(
             apiClient: apiClient,
@@ -150,6 +154,7 @@ class AppDependencies {
                 routes: routes,
                 currentDeviceIdProvider: () =>
                     sessionManager.session?.deviceId ?? '',
+                nativePermissionAdapter: nativePermissionAdapter,
               )
             : MockAccountComplianceRepository());
     final DiscoveryRepository discoveryRepository =
@@ -205,6 +210,7 @@ class AppDependencies {
                 routes: routes,
                 currentUserIdProvider: () =>
                     sessionManager.session?.userId ?? 0,
+                nativePermissionAdapter: nativePermissionAdapter,
               )
             : MockMessageRepository(now: mockNow));
     final RoomRepository roomRepository = environment.isLive

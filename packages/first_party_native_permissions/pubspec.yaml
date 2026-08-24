@@ -1,0 +1,21 @@
+name: first_party_native_permissions
+description: First-party Android and iOS system permission bridge for the voice social app.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=3.12.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.kong373.first_party_native_permissions
+        pluginClass: FirstPartyNativePermissionsPlugin
+      ios:
+        pluginClass: FirstPartyNativePermissionsPlugin

@@ -101,6 +101,9 @@ class MockAccountComplianceRepository implements AccountComplianceRepository {
   }
 
   @override
+  Future<void> openPermissionSettings() async {}
+
+  @override
   Future<void> submitRealName({
     required String realName,
     required String idNumber,

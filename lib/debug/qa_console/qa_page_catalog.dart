@@ -113,7 +113,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
       QaPageState.permissionDenied,
       QaPageState.unavailable,
     ],
-    vendorBoundary: '原生权限适配器未接入',
+    vendorBoundary: '第一方 Android/iOS 系统权限桥；未注册原生 host 时显示不可用',
     builder: (_, __) => const SystemPermissionCenterPage(
       account: '13800138000',
       currentVersion: 5,
@@ -129,7 +129,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
         'lib/features/account/compliance/presentation/system_permission_pages.dart',
     userEntry: '我的 → 账号与安全 → 实名认证',
     requiredStates: _formStates,
-    vendorBoundary: '第三方实名认证服务未接入',
+    vendorBoundary: '第一方人工审核；状态由服务端返回 PENDING/APPROVED/REJECTED',
     builder: (_, __) => const RealNamePage(
       account: '13800138000',
       currentVersion: 5,

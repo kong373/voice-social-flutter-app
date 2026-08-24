@@ -193,6 +193,7 @@ enum NativeNotificationPermissionState {
   unknown,
   allowed,
   denied,
+  permanentlyDenied,
   restricted,
   unavailable,
 }

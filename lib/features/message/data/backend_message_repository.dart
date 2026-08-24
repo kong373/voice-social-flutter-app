@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
+import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
+import 'package:voice_social_app/features/account/compliance/infrastructure/native_permission_adapter.dart';
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/domain/message_request_id.dart';
 import 'package:voice_social_app/features/message/domain/message_repository.dart';
@@ -12,13 +14,16 @@ class BackendMessageRepository implements MessageRepository {
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
     required int Function() currentUserIdProvider,
+    NativePermissionAdapter? nativePermissionAdapter,
   }) : _apiClient = apiClient,
        _routes = routes,
-       _currentUserIdProvider = currentUserIdProvider;
+       _currentUserIdProvider = currentUserIdProvider,
+       _nativePermissionAdapter = nativePermissionAdapter;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
   final int Function() _currentUserIdProvider;
+  final NativePermissionAdapter? _nativePermissionAdapter;
   final Map<String, AppNotification> _notificationCache =
       <String, AppNotification>{};
   final Map<NotificationCategory, int> _notificationFetchVersions =
@@ -50,7 +55,8 @@ class BackendMessageRepository implements MessageRepository {
   bool get supportsSystemNotificationList => true;
 
   @override
-  bool get supportsNativeNotificationPermission => false;
+  bool get supportsNativeNotificationPermission =>
+      _nativePermissionAdapter != null;
 
   @override
   Future<List<ConversationSummary>> fetchConversations() async {
@@ -631,21 +637,80 @@ class BackendMessageRepository implements MessageRepository {
 
   @override
   Future<MessageRecoverySnapshot> fetchRecoverySnapshot() async {
+    final NativeNotificationPermissionState notificationPermission =
+        await _nativeNotificationPermission();
     return MessageRecoverySnapshot(
       privateRealtimeAvailable: false,
-      notificationPermission: NativeNotificationPermissionState.unavailable,
+      notificationPermission: notificationPermission,
       lastNotificationSyncAt: _lastSyncAt,
-      message: '第一方消息记录与通知已接通；腾讯 IM 实时投递和系统通知权限仍为 VENDOR_BLOCKED，不伪造实时状态。',
+      message:
+          notificationPermission ==
+              NativeNotificationPermissionState.unavailable
+          ? '第一方消息记录与通知已接通；系统通知权限适配器不可用，腾讯 IM 实时投递仍为 VENDOR_BLOCKED。'
+          : '系统通知状态由 Android/iOS 原生权限返回；腾讯 IM 实时投递仍为 VENDOR_BLOCKED，不伪造实时状态。',
     );
   }
 
   @override
   Future<MessageRecoverySnapshot> requestNotificationPermission() async {
-    throw const ApiException(
-      kind: ApiFailureKind.configuration,
-      message: '系统通知权限适配器尚未接入',
+    final NativePermissionAdapter? adapter = _nativePermissionAdapter;
+    if (adapter == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '系统通知权限需要原生平台适配器，当前不会伪造授权结果',
+      );
+    }
+    final PermissionState state = await adapter.request(
+      PermissionKind.notifications,
     );
+    if (state == PermissionState.unavailable) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '系统通知权限原生适配器不可用，当前不会伪造授权结果',
+      );
+    }
+    return fetchRecoverySnapshot();
   }
+
+  @override
+  Future<void> openNotificationSettings() async {
+    final NativePermissionAdapter? adapter = _nativePermissionAdapter;
+    if (adapter == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '系统通知权限需要原生平台适配器，当前不会伪造授权结果',
+      );
+    }
+    await adapter.openAppSettings();
+  }
+
+  Future<NativeNotificationPermissionState>
+  _nativeNotificationPermission() async {
+    final NativePermissionAdapter? adapter = _nativePermissionAdapter;
+    if (adapter == null) {
+      return NativeNotificationPermissionState.unavailable;
+    }
+    try {
+      return _notificationState(
+        await adapter.status(PermissionKind.notifications),
+      );
+    } on Object {
+      return NativeNotificationPermissionState.unavailable;
+    }
+  }
+
+  static NativeNotificationPermissionState _notificationState(
+    PermissionState state,
+  ) => switch (state) {
+    PermissionState.notDetermined => NativeNotificationPermissionState.unknown,
+    PermissionState.granted => NativeNotificationPermissionState.allowed,
+    PermissionState.denied => NativeNotificationPermissionState.denied,
+    PermissionState.permanentlyDenied =>
+      NativeNotificationPermissionState.permanentlyDenied,
+    PermissionState.restricted => NativeNotificationPermissionState.restricted,
+    PermissionState.unavailable =>
+      NativeNotificationPermissionState.unavailable,
+  };
 
   ChatMessage _chatMessageFromMap(
     ConversationSummary conversation,

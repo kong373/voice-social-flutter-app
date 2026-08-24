@@ -41,6 +41,37 @@ void main() {
       expect(find.text('已允许'), findsNothing);
     },
   );
+
+  testWidgets(
+    'permanently denied permission exposes a settings recovery action',
+    (WidgetTester tester) async {
+      final _PermanentPermissionRepository repository =
+          _PermanentPermissionRepository();
+      final AppDependencies dependencies = AppDependencies.forTestEnvironment(
+        environment: AppEnvironment.mock(),
+        accountComplianceRepository: repository,
+      );
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            theme: AppTheme.social(),
+            home: const SystemPermissionCenterPage(
+              account: 'user-1',
+              currentVersion: 6,
+              platformType: 1,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('已永久拒绝'), findsOneWidget);
+      await tester.tap(find.text('打开设置'));
+      await tester.pumpAndSettle();
+      expect(repository.openSettingsCalls, 1);
+    },
+  );
 }
 
 class _UnavailablePermissionRepository extends MockAccountComplianceRepository {
@@ -107,5 +138,55 @@ class _UnavailablePermissionRepository extends MockAccountComplianceRepository {
     required PermissionState state,
   }) async {
     permissionCalls++;
+  }
+}
+
+class _PermanentPermissionRepository extends _UnavailablePermissionRepository {
+  int openSettingsCalls = 0;
+
+  @override
+  Future<AccountComplianceSnapshot> fetchSnapshot({
+    required String account,
+    required int currentVersion,
+    required int platformType,
+  }) async {
+    return AccountComplianceSnapshot(
+      account: account,
+      nickname: '用户',
+      verificationState: VerificationState.unverified,
+      youthModeEnabled: false,
+      restriction: const AccountRestriction(
+        kind: RestrictionKind.none,
+        reason: '',
+      ),
+      cancellation: const CancellationEligibility(
+        allowed: true,
+        message: '可申请',
+        mobile: '',
+        requiresSmsCode: false,
+      ),
+      versionInfo: const VersionUpdateInfo(
+        hasUpdate: false,
+        forceUpdate: false,
+        versionName: '',
+        releaseNotes: '',
+        packageUrl: '',
+      ),
+      sessions: const <DeviceSession>[],
+      permissions: const <PermissionSetting>[
+        PermissionSetting(
+          kind: PermissionKind.microphone,
+          state: PermissionState.permanentlyDenied,
+          title: '麦克风',
+          purpose: '语音',
+          managedByPlatform: true,
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<void> openPermissionSettings() async {
+    openSettingsCalls++;
   }
 }

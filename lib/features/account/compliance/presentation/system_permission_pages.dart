@@ -24,10 +24,29 @@ class SystemPermissionCenterPage extends StatefulWidget {
       _SystemPermissionCenterPageState();
 }
 
-class _SystemPermissionCenterPageState
-    extends State<SystemPermissionCenterPage> {
+class _SystemPermissionCenterPageState extends State<SystemPermissionCenterPage>
+    with WidgetsBindingObserver {
   AccountComplianceSnapshot? _snapshot;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _snapshot != null) {
+      _load();
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -77,6 +96,25 @@ class _SystemPermissionCenterPageState
           context,
           message: _messageFor(error),
           onRetry: () => _request(setting),
+        );
+      }
+    }
+  }
+
+  Future<void> _openSettings() async {
+    try {
+      await AppDependencyScope.of(
+        context,
+      ).accountComplianceRepository.openPermissionSettings();
+      if (mounted) {
+        await _load();
+      }
+    } catch (error) {
+      if (mounted) {
+        showAccountComplianceRetrySnackBar(
+          context,
+          message: _messageFor(error),
+          onRetry: _openSettings,
         );
       }
     }
@@ -151,14 +189,47 @@ class _SystemPermissionCenterPageState
                           ),
                           title: Text(snapshot.permissions[index].title),
                           subtitle: Text(snapshot.permissions[index].purpose),
-                          trailing: AccountStatusPill(
-                            label: _permissionStateLabel(
-                              snapshot.permissions[index].state,
-                            ),
-                            color: _permissionStateTone(
-                              snapshot.permissions[index].state,
-                            ),
-                          ),
+                          trailing:
+                              snapshot.permissions[index].state ==
+                                  PermissionState.permanentlyDenied
+                              ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: <Widget>[
+                                    AccountStatusPill(
+                                      label: _permissionStateLabel(
+                                        snapshot.permissions[index].state,
+                                      ),
+                                      color: _permissionStateTone(
+                                        snapshot.permissions[index].state,
+                                      ),
+                                    ),
+                                    TextButton(
+                                      style: TextButton.styleFrom(
+                                        minimumSize: Size.zero,
+                                        padding: EdgeInsets.zero,
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),
+                                      onPressed:
+                                          snapshot
+                                                  .permissions[index]
+                                                  .managedByPlatform ==
+                                              true
+                                          ? _openSettings
+                                          : null,
+                                      child: const Text('打开设置'),
+                                    ),
+                                  ],
+                                )
+                              : AccountStatusPill(
+                                  label: _permissionStateLabel(
+                                    snapshot.permissions[index].state,
+                                  ),
+                                  color: _permissionStateTone(
+                                    snapshot.permissions[index].state,
+                                  ),
+                                ),
                           onTap:
                               snapshot.permissions[index].state ==
                                       PermissionState.granted ||
@@ -523,6 +594,7 @@ String _permissionStateLabel(PermissionState state) => switch (state) {
   PermissionState.notDetermined => '尚未请求',
   PermissionState.granted => '已允许',
   PermissionState.denied => '已拒绝',
+  PermissionState.permanentlyDenied => '已永久拒绝',
   PermissionState.restricted => '受系统限制',
   PermissionState.unavailable => '适配器未接入',
 };
@@ -536,6 +608,7 @@ Color _permissionStateTone(PermissionState state) => switch (state) {
   PermissionState.notDetermined => AccountOxygenColors.violet,
   PermissionState.granted => AppColors.success,
   PermissionState.denied => AppColors.warning,
+  PermissionState.permanentlyDenied => AppColors.error,
   PermissionState.restricted => AppColors.error,
   PermissionState.unavailable => AppColors.warning,
 };

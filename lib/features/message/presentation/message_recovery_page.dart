@@ -9,7 +9,8 @@ class MessagePermissionRecoveryPage extends StatefulWidget {
 }
 
 class _MessagePermissionRecoveryPageState
-    extends State<MessagePermissionRecoveryPage> {
+    extends State<MessagePermissionRecoveryPage>
+    with WidgetsBindingObserver {
   MessageRecoverySnapshot? _snapshot;
   bool _loading = true;
   bool _requesting = false;
@@ -17,6 +18,25 @@ class _MessagePermissionRecoveryPageState
 
   MessageRepository get _repository =>
       AppDependencyScope.of(context).messageRepository;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _snapshot != null) {
+      _load();
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -137,7 +157,8 @@ class _MessagePermissionRecoveryPageState
                         '恢复只刷新服务端确认存在的会话和通知。不会编造断线期间私聊、补出不存在的历史正文，也不会把互动通知当成腾讯 IM 消息。',
                   ),
                   const SizedBox(height: 18),
-                  if (_repository.supportsNativeNotificationPermission)
+                  if (_repository
+                      .supportsNativeNotificationPermission) ...<Widget>[
                     FilledButton.icon(
                       onPressed: _requesting ? null : _requestPermission,
                       icon: _requesting
@@ -147,8 +168,15 @@ class _MessagePermissionRecoveryPageState
                             )
                           : const Icon(Icons.notifications_active_outlined),
                       label: Text(_requesting ? '请求中…' : '请求系统通知权限'),
-                    )
-                  else
+                    ),
+                    if (snapshot.notificationPermission ==
+                        NativeNotificationPermissionState.permanentlyDenied)
+                      OutlinedButton.icon(
+                        onPressed: _repository.openNotificationSettings,
+                        icon: const Icon(Icons.settings_outlined),
+                        label: const Text('打开系统设置'),
+                      ),
+                  ] else
                     const _MessageInfoCard(
                       icon: Icons.settings_outlined,
                       text: '原生通知权限适配器尚未接入，Live 模式不会把未知状态显示成已授权。',
@@ -170,6 +198,7 @@ class _MessagePermissionRecoveryPageState
         NativeNotificationPermissionState.unknown => '尚未请求',
         NativeNotificationPermissionState.allowed => '已允许',
         NativeNotificationPermissionState.denied => '已拒绝',
+        NativeNotificationPermissionState.permanentlyDenied => '已永久拒绝',
         NativeNotificationPermissionState.restricted => '受系统限制',
         NativeNotificationPermissionState.unavailable => '适配器未接入',
       };

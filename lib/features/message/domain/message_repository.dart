@@ -33,4 +33,6 @@ abstract interface class MessageRepository {
   Future<MessageRecoverySnapshot> fetchRecoverySnapshot();
 
   Future<MessageRecoverySnapshot> requestNotificationPermission();
+
+  Future<void> openNotificationSettings();
 }

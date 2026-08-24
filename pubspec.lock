@@ -97,6 +97,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.1"
+  first_party_native_permissions:
+    dependency: "direct main"
+    description:
+      path: "packages/first_party_native_permissions"
+      relative: true
+    source: path
+    version: "0.1.0"
   flutter:
     dependency: "direct main"
     description: flutter

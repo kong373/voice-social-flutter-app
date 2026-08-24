@@ -170,10 +170,11 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          rm -rf .ci_app/lib .ci_app/test .ci_app/integration_test
+          rm -rf .ci_app/lib .ci_app/test .ci_app/integration_test .ci_app/packages
           cp -R lib .ci_app/lib
           cp -R test .ci_app/test
           cp -R integration_test .ci_app/integration_test
+          cp -R packages .ci_app/packages
           cp pubspec.yaml pubspec.lock analysis_options.yaml .ci_app/
 
       - name: Build live public-client debug APK

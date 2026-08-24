@@ -16,6 +16,10 @@ linux/
 macos/
 windows/
 web/
+!packages/first_party_native_permissions/android/
+!packages/first_party_native_permissions/android/**
+!packages/first_party_native_permissions/ios/
+!packages/first_party_native_permissions/ios/**
 
 # IDE
 .idea/

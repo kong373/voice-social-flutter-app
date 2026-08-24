@@ -346,6 +346,9 @@ class MockMessageRepository implements MessageRepository {
     return fetchRecoverySnapshot();
   }
 
+  @override
+  Future<void> openNotificationSettings() async {}
+
   static Future<void> _delay() =>
       Future<void>.delayed(const Duration(milliseconds: 35));
 }

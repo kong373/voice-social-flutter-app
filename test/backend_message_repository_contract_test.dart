@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
+import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
+import 'package:voice_social_app/features/account/compliance/infrastructure/native_permission_adapter.dart';
 import 'package:voice_social_app/features/message/data/backend_message_repository.dart';
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 
@@ -42,6 +44,36 @@ void main() {
       ),
     );
   });
+
+  test(
+    'live message recovery reads and requests native notification permission',
+    () async {
+      final _FakeNativePermissionAdapter adapter = _FakeNativePermissionAdapter(
+        PermissionState.denied,
+      );
+      final _Harness harness = await _Harness.start(
+        (_) => _Response.ok(<String, Object?>{}),
+        nativePermissionAdapter: adapter,
+      );
+      addTearDown(harness.close);
+
+      expect(harness.repository.supportsNativeNotificationPermission, isTrue);
+      expect(
+        (await harness.repository.fetchRecoverySnapshot())
+            .notificationPermission,
+        NativeNotificationPermissionState.denied,
+      );
+      adapter.state = PermissionState.granted;
+      expect(
+        (await harness.repository.requestNotificationPermission())
+            .notificationPermission,
+        NativeNotificationPermissionState.allowed,
+      );
+      await harness.repository.openNotificationSettings();
+      expect(adapter.requested, 1);
+      expect(adapter.openedSettings, 1);
+    },
+  );
 
   test(
     'conversation list uses page map and exact first-party GET contract',
@@ -2343,6 +2375,7 @@ class _Harness {
     this.server,
     this.requests, {
     UnauthorizedRecovery? unauthorizedRecovery,
+    NativePermissionAdapter? nativePermissionAdapter,
   }) : repository = BackendMessageRepository(
          apiClient: ApiClient(
            baseUri: Uri.parse(
@@ -2355,6 +2388,7 @@ class _Harness {
          ),
          routes: const BackendRouteCatalog(),
          currentUserIdProvider: () => 10001,
+         nativePermissionAdapter: nativePermissionAdapter,
        );
 
   final HttpServer server;
@@ -2364,6 +2398,7 @@ class _Harness {
   static Future<_Harness> start(
     FutureOr<_Response> Function(RequestRecord) handler, {
     UnauthorizedRecovery? unauthorizedRecovery,
+    NativePermissionAdapter? nativePermissionAdapter,
   }) async {
     final HttpServer server = await HttpServer.bind(
       InternetAddress.loopbackIPv4,
@@ -2374,6 +2409,7 @@ class _Harness {
       server,
       requests,
       unauthorizedRecovery: unauthorizedRecovery,
+      nativePermissionAdapter: nativePermissionAdapter,
     );
     server.listen((HttpRequest request) async {
       final String rawBody = await utf8.decoder.bind(request).join();
@@ -2409,6 +2445,28 @@ class _Harness {
   }
 
   Future<void> close() => server.close(force: true);
+}
+
+class _FakeNativePermissionAdapter implements NativePermissionAdapter {
+  _FakeNativePermissionAdapter(this.state);
+
+  PermissionState state;
+  int requested = 0;
+  int openedSettings = 0;
+
+  @override
+  Future<PermissionState> status(PermissionKind kind) async => state;
+
+  @override
+  Future<PermissionState> request(PermissionKind kind) async {
+    requested++;
+    return state;
+  }
+
+  @override
+  Future<void> openAppSettings() async {
+    openedSettings++;
+  }
 }
 
 class RequestRecord {

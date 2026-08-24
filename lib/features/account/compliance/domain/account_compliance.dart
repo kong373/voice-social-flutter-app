@@ -12,7 +12,20 @@ enum PermissionKind { microphone, notifications, photos }
 /// queried the OS. Live HTTP data cannot infer it. Until that adapter exists,
 /// the backend repository must use [unavailable] and leave platform ownership
 /// unknown.
-enum PermissionState { notDetermined, granted, denied, restricted, unavailable }
+/// Status reported by the operating system permission authority.
+///
+/// `granted` covers Android granted and iOS authorized/limited states. A
+/// permanently denied state is intentionally separate from a first denial so
+/// the UI can route the user to the app settings page instead of repeatedly
+/// presenting a request that the OS will never show.
+enum PermissionState {
+  notDetermined,
+  granted,
+  denied,
+  permanentlyDenied,
+  restricted,
+  unavailable,
+}
 
 class PermissionSetting {
   const PermissionSetting({
@@ -205,6 +218,8 @@ abstract interface class AccountComplianceRepository {
     required PermissionKind kind,
     required PermissionState state,
   });
+
+  Future<void> openPermissionSettings();
 
   Future<void> submitRealName({
     required String realName,
