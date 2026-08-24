@@ -736,6 +736,22 @@ PY
   printf 'db_evidence_status=COLLECTED\n' >"$dir/db-evidence-status.txt"
 }
 
+contains_literal_file() {
+  local value="$1"
+  local path="$2"
+  [[ -n "$value" ]] || return 1
+  # Keep protected values in shell memory/stdin; never put them in grep argv.
+  grep -aFq -f <(printf '%s' "$value") "$path" 2>/dev/null
+}
+
+contains_literal_stream() {
+  local value="$1"
+  [[ -n "$value" ]] || return 1
+  # The APK bytes stay on stdin while the private pattern travels through a
+  # process-substitution fd, so neither protected value becomes subprocess argv.
+  grep -aFq -f <(printf '%s' "$value") 2>/dev/null
+}
+
 secret_scan() {
   local dir="$1"
   local output="$dir/secret-scan.txt"
@@ -747,11 +763,11 @@ secret_scan() {
       "$path" == *'contract-server'* || "$path" == *':8765'* ]]; then
       printf 'forbidden_artifact_name=%s\n' "$base" >>"$output"; bad=1
     fi
-    if grep -aFq "$LIVE_PHONE" "$path" 2>/dev/null ||
-      grep -aFq "$OAUTH_CLIENT_ID" "$path" 2>/dev/null ||
-      { [[ -n "$DB_TOKEN" ]] && grep -aFq "$DB_TOKEN" "$path" 2>/dev/null; } ||
-      { [[ -n "$RELAY_TOKEN_A" ]] && grep -aFq "$RELAY_TOKEN_A" "$path" 2>/dev/null; } ||
-      { [[ -n "$RELAY_TOKEN_B" ]] && grep -aFq "$RELAY_TOKEN_B" "$path" 2>/dev/null; }; then
+    if contains_literal_file "$LIVE_PHONE" "$path" ||
+      contains_literal_file "$OAUTH_CLIENT_ID" "$path" ||
+      contains_literal_file "$DB_TOKEN" "$path" ||
+      contains_literal_file "$RELAY_TOKEN_A" "$path" ||
+      contains_literal_file "$RELAY_TOKEN_B" "$path"; then
       printf 'runtime_secret_value_found=true\n' >>"$output"; bad=1
     fi
     if grep -aEiq '1[3-9][0-9]{9}|Bearer[[:space:]]+[A-Za-z0-9._~+/=-]{12,}' "$path" 2>/dev/null; then
@@ -796,10 +812,10 @@ apk_scan() {
   : >"$output"
   while IFS= read -r -d '' apk; do
     apk_count=$((apk_count + 1))
-    unzip -p "$apk" 2>/dev/null | grep -aFq "$LIVE_PHONE" && { printf 'apk_phone_value_found=true\n' >>"$output"; bad=1; } || true
-    unzip -p "$apk" 2>/dev/null | grep -aFq "$OAUTH_CLIENT_ID" && { printf 'apk_oauth_client_value_found=true\n' >>"$output"; bad=1; } || true
-    unzip -p "$apk" 2>/dev/null | grep -aFq "$RELAY_TOKEN_A" && { printf 'apk_relay_token_a_value_found=true\n' >>"$output"; bad=1; } || true
-    unzip -p "$apk" 2>/dev/null | grep -aFq "$RELAY_TOKEN_B" && { printf 'apk_relay_token_b_value_found=true\n' >>"$output"; bad=1; } || true
+    unzip -p "$apk" 2>/dev/null | contains_literal_stream "$LIVE_PHONE" && { printf 'apk_phone_value_found=true\n' >>"$output"; bad=1; } || true
+    unzip -p "$apk" 2>/dev/null | contains_literal_stream "$OAUTH_CLIENT_ID" && { printf 'apk_oauth_client_value_found=true\n' >>"$output"; bad=1; } || true
+    unzip -p "$apk" 2>/dev/null | contains_literal_stream "$RELAY_TOKEN_A" && { printf 'apk_relay_token_a_value_found=true\n' >>"$output"; bad=1; } || true
+    unzip -p "$apk" 2>/dev/null | contains_literal_stream "$RELAY_TOKEN_B" && { printf 'apk_relay_token_b_value_found=true\n' >>"$output"; bad=1; } || true
   done < <(find "$PROJECT_ROOT/build/app/outputs" -type f -name '*.apk' -print0 2>/dev/null || true)
   [[ "$apk_count" -gt 0 ]] || { printf 'apk_missing=true\n' >>"$output"; bad=1; }
   [[ "$bad" -eq 0 ]] && { printf 'apk_secret_scan=0\n' >>"$output"; return 0; }

@@ -53,11 +53,17 @@ BACKEND_CONTAINER_ENV_NAMES = (
     "BACKEND_CONTAINER",
 )
 EXPECTED_SHA_ENV_NAMES = (
-    # Keep the harness checkout SHA separate: only an explicit image-attestation
-    # variable opts into the Docker label/container-environment check.
+    # QA_BACKEND_SHA is the documented, protected runtime input. The legacy
+    # aliases remain accepted only through _first_value(), which rejects any
+    # conflicting non-empty value.
+    "QA_BACKEND_SHA",
     "M4_EXPECTED_BACKEND_SHA",
     "M4_DB_EVIDENCE_EXPECTED_BACKEND_SHA",
     "QA_EXPECTED_BACKEND_SHA",
+)
+BACKEND_REPO_ENV_NAMES = (
+    "QA_BACKEND_REPO",
+    "M4_BACKEND_REPO",
 )
 
 LOOPBACK_HOST = "127.0.0.1"
@@ -76,6 +82,7 @@ RESPONSE_KEYS = frozenset(
 )
 CONTAINER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+CONTENT_DIGEST_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 COUNT_RE = re.compile(r"^[0-9]+$")
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
 AVD_RE = re.compile(r"^AVD-[AB]$")
@@ -159,6 +166,115 @@ def _valid_bearer_header(values: Sequence[str], token: str) -> bool:
     return _constant_time_equal(presented, token) and value.startswith(prefix)
 
 
+def _run_checked_command(
+    arguments: Sequence[str],
+    *,
+    cwd: str = "/",
+    timeout: float = 12.0,
+    environment: Mapping[str, str] | None = None,
+) -> str:
+    """Run a local attestation command without exposing its diagnostics."""
+
+    try:
+        completed = subprocess.run(
+            list(arguments),
+            cwd=cwd,
+            env=dict(environment or {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ConfigurationError("backend attestation command unavailable") from error
+    if completed.returncode != 0:
+        raise ConfigurationError("backend attestation command failed")
+    return completed.stdout
+
+
+def _attest_backend_checkout(repo: str, expected_sha: str) -> tuple[str, str]:
+    """Return (real checkout path, source digest) for an immutable checkout.
+
+    The commit SHA is checked with Git and the content digest is produced by
+    the tracked backend script. Ignored build output is intentionally absent
+    from ``git status``; tracked edits and non-ignored untracked inputs are not.
+    """
+
+    repo_path = os.path.realpath(repo)
+    if not os.path.isdir(repo_path) or not os.path.exists(os.path.join(repo_path, ".git")):
+        raise ConfigurationError("backend repository is unavailable")
+    git_path = shutil.which("git")
+    if not git_path:
+        raise ConfigurationError("git command is unavailable")
+    command_environment = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+    head = _run_checked_command(
+        [git_path, "-C", repo_path, "rev-parse", "--verify", "HEAD"],
+        environment=command_environment,
+    ).strip()
+    if not SHA_RE.fullmatch(head) or not _constant_time_equal(head.lower(), expected_sha.lower()):
+        raise ConfigurationError("backend repository SHA mismatch")
+    status = _run_checked_command(
+        [
+            git_path,
+            "-C",
+            repo_path,
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            "--ignore-submodules=none",
+        ],
+        environment=command_environment,
+    )
+    if status.strip():
+        raise ConfigurationError("backend repository is dirty")
+    ignored_status = _run_checked_command(
+        [
+            git_path,
+            "-C",
+            repo_path,
+            "status",
+            "--porcelain=v1",
+            "--ignored=matching",
+            "--untracked-files=all",
+            "--ignore-submodules=none",
+        ],
+        environment=command_environment,
+    )
+    for line in ignored_status.splitlines():
+        if not line.startswith("!! "):
+            continue
+        ignored_path = line[3:].rstrip("/")
+        if ignored_path == ".mvn" or ignored_path.startswith(".mvn/"):
+            raise ConfigurationError("ignored backend build input")
+        if ignored_path == "src" or ignored_path.startswith("src/"):
+            raise ConfigurationError("ignored backend build input")
+    digest_script = os.path.join(repo_path, "scripts", "compute-backend-source-digest.sh")
+    if not os.path.isfile(digest_script) or not os.access(digest_script, os.X_OK):
+        raise ConfigurationError("backend source digest script is unavailable")
+    for tracked_input in (
+        "Dockerfile",
+        "mvnw",
+        "pom.xml",
+        "scripts/compute-backend-source-digest.sh",
+    ):
+        _run_checked_command(
+            [git_path, "-C", repo_path, "ls-files", "--error-unmatch", "--", tracked_input],
+            environment=command_environment,
+        )
+    digest_output = _run_checked_command(
+        [digest_script],
+        cwd=repo_path,
+        timeout=30.0,
+        environment=command_environment,
+    )
+    digest_lines = [line.strip() for line in digest_output.splitlines() if line.strip()]
+    if len(digest_lines) != 1 or not CONTENT_DIGEST_RE.fullmatch(digest_lines[0]):
+        raise ConfigurationError("backend source digest is invalid")
+    return repo_path, digest_lines[0].lower()
+
+
 @dataclasses.dataclass(frozen=True)
 class Config:
     host: str
@@ -168,7 +284,9 @@ class Config:
     docker_env: Mapping[str, str]
     backend_container: str
     mysql_container: str
+    backend_repo: str
     expected_backend_sha: str
+    expected_backend_digest: str
 
 
 def read_config(environment: Mapping[str, str] | None = None) -> Config:
@@ -210,6 +328,10 @@ def read_config(environment: Mapping[str, str] | None = None) -> Config:
     expected_sha = _first_value(env, EXPECTED_SHA_ENV_NAMES)
     if not SHA_RE.fullmatch(expected_sha or ""):
         raise ConfigurationError("invalid expected backend SHA")
+    backend_repo = _first_value(env, BACKEND_REPO_ENV_NAMES)
+    if not backend_repo:
+        raise ConfigurationError("backend repository is required")
+    backend_repo, expected_digest = _attest_backend_checkout(backend_repo, expected_sha)
     docker_path = shutil.which("docker")
     if not docker_path:
         raise ConfigurationError("docker command is unavailable")
@@ -227,7 +349,9 @@ def read_config(environment: Mapping[str, str] | None = None) -> Config:
         docker_env=docker_env,
         backend_container=backend_container,
         mysql_container=mysql_container,
+        backend_repo=backend_repo,
         expected_backend_sha=expected_sha.lower(),
+        expected_backend_digest=expected_digest,
     )
 
 
@@ -264,6 +388,18 @@ class DockerRunner:
         if not CONTAINER_NAME_RE.fullmatch(container):
             raise EvidenceError("invalid container name")
         return self._run(("exec", container, "/bin/sh", "-c", script), timeout=timeout)
+
+    def read_backend_source_digest(self, container: str) -> str:
+        """Read the image's explicit source-content attestation file."""
+
+        value = self.exec_shell(
+            container,
+            "test -f /app/backend-source.sha256 && cat /app/backend-source.sha256",
+            timeout=8.0,
+        ).strip()
+        if not CONTENT_DIGEST_RE.fullmatch(value):
+            raise EvidenceError("backend source digest is missing or invalid")
+        return value.lower()
 
     def inspect_labels(self, container: str) -> Mapping[str, str]:
         output = self._run(
@@ -513,21 +649,6 @@ if ! flag_disabled VENDOR_PAYMENT_ADAPTER_ENABLED APP_VENDOR_PAYMENT_ADAPTER_ENA
 if ! flag_disabled VENDOR_PUSH_ADAPTER_ENABLED APP_VENDOR_PUSH_ADAPTER_ENABLED; then all_disabled=0; fi
 if ! flag_disabled VENDOR_OBJECT_STORAGE_ADAPTER_ENABLED APP_VENDOR_OBJECT_STORAGE_ADAPTER_ENABLED; then all_disabled=0; fi
 printf 'I|formal_vendor_adapters_disabled|%s\n' "$all_disabled"
-
-is_sha() {
-  value="$1"
-  length="$(printf '%s' "$value" | wc -c | tr -d ' ')"
-  [ "$length" = 40 ] || return 1
-  invalid="$(printf '%s' "$value" | tr -d '0123456789abcdefABCDEF')"
-  [ -z "$invalid" ]
-}
-
-for name in BACKEND_SHA QA_BACKEND_SHA BUILD_SHA; do
-  value="$(printenv "$name" 2>/dev/null || true)"
-  if is_sha "$value"; then
-    printf 'S|%s\n' "$value"
-  fi
-done
 """.strip()
 
 def _parse_marker_lines(output: str) -> list[list[str]]:
@@ -537,9 +658,8 @@ def _parse_marker_lines(output: str) -> list[list[str]]:
     return [line.split("|") for line in lines]
 
 
-def _parse_backend_evidence(output: str) -> tuple[dict[str, bool], list[str]]:
+def _parse_backend_evidence(output: str) -> dict[str, bool]:
     states: dict[str, bool] = {}
-    shas: list[str] = []
     for fields in _parse_marker_lines(output):
         marker = fields[0]
         if marker == "I" and len(fields) == 3 and fields[1] in {
@@ -551,8 +671,6 @@ def _parse_backend_evidence(output: str) -> tuple[dict[str, bool], list[str]]:
             if fields[2] not in {"0", "1"}:
                 raise EvidenceError("invalid backend evidence")
             states[fields[1]] = fields[2] == "1"
-        elif marker == "S" and len(fields) == 2 and SHA_RE.fullmatch(fields[1]):
-            shas.append(fields[1].lower())
         else:
             raise EvidenceError("invalid backend evidence")
     required = {
@@ -563,7 +681,7 @@ def _parse_backend_evidence(output: str) -> tuple[dict[str, bool], list[str]]:
     }
     if set(states) != required:
         raise EvidenceError("incomplete backend evidence")
-    return states, shas
+    return states
 
 
 def _parse_mysql_evidence(output: str) -> dict[str, int]:
@@ -684,11 +802,16 @@ def _require_scoped_writes(delta: Mapping[str, int]) -> int:
 def _backend_sha_matches(
     runner: DockerRunner,
     config: Config,
-    backend_shas: Sequence[str],
 ) -> bool:
+    actual_digest = runner.read_backend_source_digest(config.backend_container)
+    if not _constant_time_equal(actual_digest, config.expected_backend_digest):
+        return False
+
+    # OCI revision labels are useful corroboration, but they are not the
+    # attestation. A missing label is allowed; a present, well-formed label
+    # that disagrees with the independently verified checkout is rejected.
     expected = config.expected_backend_sha
     labels = runner.inspect_labels(config.backend_container)
-    candidates = list(backend_shas)
     for key in (
         "org.opencontainers.image.revision",
         "org.opencontainers.image.source-revision",
@@ -697,11 +820,9 @@ def _backend_sha_matches(
     ):
         value = labels.get(key, "")
         if SHA_RE.fullmatch(value):
-            candidates.append(value.lower())
-    if not candidates:
-        raise EvidenceError("backend SHA is not attestable")
-    unique = set(candidates)
-    return len(unique) == 1 and _constant_time_equal(next(iter(unique)), expected)
+            if not _constant_time_equal(value.lower(), expected):
+                return False
+    return True
 
 
 def _validate_payload(payload: Mapping[str, object]) -> None:
@@ -786,8 +907,8 @@ class EvidenceCollector:
             BACKEND_EVIDENCE_SCRIPT,
             timeout=12.0,
         )
-        backend_states, backend_shas = _parse_backend_evidence(backend_output)
-        backend_sha_ok = _backend_sha_matches(self._docker, self._config, backend_shas)
+        backend_states = _parse_backend_evidence(backend_output)
+        backend_sha_ok = _backend_sha_matches(self._docker, self._config)
         if not backend_sha_ok:
             raise EvidenceError("backend SHA mismatch")
 
@@ -1098,6 +1219,20 @@ def _self_test() -> int:
         pass
     else:
         raise AssertionError("missing expected backend SHA was accepted")
+    try:
+        read_config(
+            {
+                "M4_DB_EVIDENCE_TOKEN": token,
+                "QA_BACKEND_SHA": "1" * 40,
+                "M4_DB_EVIDENCE_BACKEND_CONTAINER": "backend",
+                "M4_DB_EVIDENCE_MYSQL_CONTAINER": "mysql",
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            }
+        )
+    except ConfigurationError:
+        pass
+    else:
+        raise AssertionError("missing backend repository was accepted")
 
     backend_output = "\n".join(
         [
@@ -1107,9 +1242,54 @@ def _self_test() -> int:
             "I|formal_vendor_adapters_disabled|1",
         ]
     )
-    backend_states, _ = _parse_backend_evidence(backend_output)
+    backend_states = _parse_backend_evidence(backend_output)
     if not all(backend_states.values()):
         raise AssertionError("backend evidence parser failed")
+
+    attestation_config = Config(
+        host=LOOPBACK_HOST,
+        port=0,
+        token=token,
+        docker_bin="docker",
+        docker_env={},
+        backend_container="backend",
+        mysql_container="mysql",
+        backend_repo="/backend",
+        expected_backend_sha="2" * 40,
+        expected_backend_digest="3" * 64,
+    )
+
+    class FakeAttestationRunner:
+        def __init__(self, digest: str, labels: Mapping[str, str]):
+            self.digest = digest
+            self.labels = labels
+
+        def read_backend_source_digest(self, _container: str) -> str:
+            return self.digest
+
+        def inspect_labels(self, _container: str) -> Mapping[str, str]:
+            return self.labels
+
+    if not _backend_sha_matches(
+        FakeAttestationRunner("3" * 64, {}), attestation_config
+    ):
+        raise AssertionError("valid source digest attestation was rejected")
+    if _backend_sha_matches(
+        FakeAttestationRunner(
+            "3" * 64,
+            {"org.opencontainers.image.revision": "2" * 40},
+        ),
+        dataclasses.replace(attestation_config, expected_backend_digest="4" * 64),
+    ):
+        raise AssertionError("OCI label was accepted without matching content digest")
+    if _backend_sha_matches(
+        FakeAttestationRunner(
+            "3" * 64,
+            {"org.opencontainers.image.revision": "1" * 40},
+        ),
+        attestation_config,
+    ):
+        raise AssertionError("mismatched OCI corroboration was accepted")
 
     mysql_output = "\n".join(
         [
@@ -1254,7 +1434,9 @@ def _self_test() -> int:
                     docker_env={},
                     backend_container="backend",
                     mysql_container="mysql",
+                    backend_repo="/backend",
                     expected_backend_sha="2" * 40,
+                    expected_backend_digest="3" * 64,
                 )
             )
             self._snapshots = [base_snapshot, next_snapshot]
@@ -1296,6 +1478,9 @@ def _self_test() -> int:
         raise AssertionError("row-level metadata query found")
     if token in MYSQL_EVIDENCE_SCRIPT or token in BACKEND_EVIDENCE_SCRIPT:
         raise AssertionError("token entered evidence command")
+    for forbidden in ("BACKEND_SHA", "QA_BACKEND_SHA", "BUILD_SHA"):
+        if forbidden in BACKEND_EVIDENCE_SCRIPT:
+            raise AssertionError("container SHA environment attestation is accepted")
     print("self-test=PASS")
     return 0
 

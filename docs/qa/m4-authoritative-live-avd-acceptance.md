@@ -231,7 +231,27 @@ export QA_M4_FIXTURE_STATUS="fresh_dedicated"
 # QA_LIVE_PHONE, QA_OAUTH_CLIENT_ID, QA_DB_EVIDENCE_URL, and
 # QA_DB_EVIDENCE_TOKEN come from the protected runner environment.
 
+# Start the helper in the same protected operator shell. These are the default
+# Compose container names for this checkout and the local Colima socket; keep
+# the token in the protected environment and never place its value in docs or
+# shell history.
+export M4_BACKEND_CONTAINER="voice-social-backend-backend-1"
+export M4_MYSQL_CONTAINER="voice-social-backend-mysql-1"
+export M4_DOCKER_SOCKET="unix://${HOME}/.colima/default/docker.sock"
+: "${QA_DB_EVIDENCE_TOKEN:?set QA_DB_EVIDENCE_TOKEN in the protected runner environment}"
+export M4_DB_EVIDENCE_TOKEN="$QA_DB_EVIDENCE_TOKEN"
+
 python3 tool/qa/m4_db_evidence_server.py --self-test
+M4_DB_EVIDENCE_LOG="$(mktemp "${TMPDIR:-/tmp}/m4-db-evidence.XXXXXX")"
+python3 tool/qa/m4_db_evidence_server.py >"$M4_DB_EVIDENCE_LOG" 2>&1 &
+M4_DB_EVIDENCE_PID=$!
+for _ in $(seq 1 50); do
+  if grep -q '^M4_DB_EVIDENCE_LISTENING=' "$M4_DB_EVIDENCE_LOG"; then break; fi
+  sleep 0.1
+done
+M4_DB_EVIDENCE_LISTENING="$(sed -n 's/^M4_DB_EVIDENCE_LISTENING=//p' "$M4_DB_EVIDENCE_LOG")"
+[[ -n "$M4_DB_EVIDENCE_LISTENING" ]] || { kill "$M4_DB_EVIDENCE_PID"; exit 1; }
+export QA_DB_EVIDENCE_URL="http://$M4_DB_EVIDENCE_LISTENING/m4/db-evidence"
 
 ./tool/qa/run_m4_authoritative_live_avd.sh
 
@@ -240,10 +260,19 @@ QA_RUN_ID="$QA_RUN_ID" \
 QA_FLUTTER_SHA="$QA_FLUTTER_SHA" \
 QA_BACKEND_SHA="$QA_BACKEND_SHA" \
   ./tool/qa/aggregate_m4_authoritative_live_avd.sh
+
+kill "$M4_DB_EVIDENCE_PID" 2>/dev/null || true
+wait "$M4_DB_EVIDENCE_PID" 2>/dev/null || true
+rm -f "$M4_DB_EVIDENCE_LOG"
 ```
 
 `QA_FLUTTER_SHA` and `QA_BACKEND_SHA` are mandatory and are compared with the
-checked-out commits before the run. The API base URL is not an input: it is
+checked-out commits before the run. The helper independently checks that
+`QA_BACKEND_REPO` is clean and at `QA_BACKEND_SHA`, runs the tracked
+`scripts/compute-backend-source-digest.sh`, and compares that digest in
+constant time with `/app/backend-source.sha256` from the named backend
+container. An OCI revision label can only corroborate this check; it can never
+replace the checkout and file digest. The API base URL is not an input: it is
 the fixed `10.0.2.2:18080` value in both the runner and test. The runner
 requires Flutter, Android `adb`/emulator tooling, Python 3, `curl`, and the
 standard file/scan utilities; its timeout is implemented through Python.
@@ -311,8 +340,9 @@ The accepted shape is exactly:
 }
 ```
 
-The helper configuration requires the exact expected backend image SHA; a
-missing or non-attested SHA is a hard failure. The runner first sends an
+The helper configuration requires the exact expected backend checkout SHA and
+repo; a missing, dirty, mismatched, or non-attested checkout/content digest is
+a hard failure. The runner first sends an
 authenticated `GET` with `X-M4-Evidence-Phase: start`, `X-M4-Run-ID`,
 `X-M4-AVD`, and `X-M4-Fixture-ID`. The helper independently derives the
 fixture nickname, joins `m4_development_fixture_user` to `app_user`, and

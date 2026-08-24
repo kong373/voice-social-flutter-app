@@ -270,6 +270,67 @@ void main() {
     );
   });
 
+  test('backend source attestation is checkout and content bound', () {
+    final String helperSource = dbEvidenceHelper.readAsStringSync();
+    expect(helperSource, contains('QA_BACKEND_SHA'));
+    expect(helperSource, contains('QA_BACKEND_REPO'));
+    expect(
+      helperSource,
+      contains('scripts", "compute-backend-source-digest.sh'),
+    );
+    expect(helperSource, contains('/app/backend-source.sha256'));
+    expect(helperSource, contains('git status'));
+    expect(helperSource, contains('expected_backend_digest'));
+    expect(
+      helperSource,
+      isNot(contains('for name in BACKEND_SHA QA_BACKEND_SHA BUILD_SHA')),
+    );
+    expect(helperSource, isNot(contains("printf 'S|%s\\n'")));
+  });
+
+  test('protected artifact values never become grep subprocess argv', () {
+    for (final String protectedName in <String>[
+      'LIVE_PHONE',
+      'OAUTH_CLIENT_ID',
+      'DB_TOKEN',
+      'RELAY_TOKEN_A',
+      'RELAY_TOKEN_B',
+    ]) {
+      expect(runnerSource, isNot(contains('grep -aFq "\$$protectedName"')));
+    }
+    expect(runnerSource, contains('grep -aFq -f <(printf'));
+    expect(runnerSource, contains('contains_literal_file'));
+    expect(runnerSource, contains('contains_literal_stream'));
+
+    final ProcessResult behavior = Process.runSync('/bin/bash', <String>[
+      '-c',
+      r'''
+set -euo pipefail
+contains_literal_file() {
+  local value="$1" path="$2"
+  [[ -n "$value" ]] || return 1
+  grep -aFq -f <(printf '%s' "$value") "$path" 2>/dev/null
+}
+contains_literal_stream() {
+  local value="$1"
+  [[ -n "$value" ]] || return 1
+  grep -aFq -f <(printf '%s' "$value") 2>/dev/null
+}
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+printf '%s\n' 'safe prefix; $(touch should-not-run)' >"$tmp"
+secret='prefix; $(touch should-not-run)'
+contains_literal_file "$secret" "$tmp"
+printf '%s\n' 'safe prefix; $(touch should-not-run)' | contains_literal_stream "$secret"
+''',
+    ]);
+    expect(
+      behavior.exitCode,
+      0,
+      reason: '${behavior.stdout}\n${behavior.stderr}',
+    );
+  });
+
   test('logcat capture is bounded and cannot block after Flutter exits', () {
     expect(runnerSource, contains('logcat -G 16M'));
     expect(runnerSource, contains('logcat -d -v threadtime'));
