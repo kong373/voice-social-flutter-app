@@ -79,6 +79,8 @@ class MockRoomPkRepository implements RoomPkRepository {
   Future<List<RoomPkOpponent>> searchOpponents({
     required String roomId,
     required String keyword,
+    int pageNum = 1,
+    int pageSize = 20,
   }) async {
     await _delay();
     final String query = keyword.trim().toLowerCase();
@@ -336,7 +338,36 @@ class MockRoomPkRepository implements RoomPkRepository {
   }
 
   @override
-  Future<List<RoomPkRecord>> fetchHistory({required String roomId}) async {
+  Future<RoomPkBattle> end({
+    required String roomId,
+    required String battleId,
+  }) async {
+    await _delay();
+    final RoomPkBattle? current = _battle;
+    if (current == null ||
+        current.id != battleId ||
+        current.currentRoomId != roomId ||
+        !current.isActive) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: 'PK 状态已变化，无法结束',
+      );
+    }
+    _battle = current.copyWith(
+      remainingSeconds: 0,
+      stage: RoomPkBattleStage.completed,
+      result: RoomPkResult.draw,
+      updatedAt: DateTime.now(),
+    );
+    return _battle!;
+  }
+
+  @override
+  Future<List<RoomPkRecord>> fetchHistory({
+    required String roomId,
+    int pageNum = 1,
+    int pageSize = 20,
+  }) async {
     await _delay();
     return <RoomPkRecord>[
       RoomPkRecord(
