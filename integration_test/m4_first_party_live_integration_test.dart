@@ -236,10 +236,15 @@ void main() {
         route: '/app-register-api/vendor/v1/readiness',
         operation: () =>
             dependencies.liveReadOnlyRepository.fetchVendorReadiness(),
+        requiredSuccess: true,
       );
-      if (vendorReadiness != null) {
-        evidence.invariant('vendor_readiness_observed_without_client_provider');
-      }
+      expect(vendorReadiness, isNotNull);
+      final VendorReadinessOverview authoritativeVendorReadiness =
+          vendorReadiness!;
+      _expectVendorReadinessFailClosed(authoritativeVendorReadiness);
+      evidence.invariant('vendor_readiness_observed_without_client_provider');
+      evidence.invariant('vendor_readiness_has_all_six_formal_capabilities');
+      evidence.invariant('vendor_runtime_adapters_are_fail_closed');
 
       // Required first-party reads. They intentionally use generic data and
       // never assume a seeded room, user, order, or task ID.
@@ -1482,6 +1487,32 @@ String _stateFor(ApiException error) => switch (error.kind) {
   ApiFailureKind.protocol => 'contract_failure',
   ApiFailureKind.configuration => 'configuration_failure',
 };
+
+void _expectVendorReadinessFailClosed(VendorReadinessOverview readiness) {
+  const Set<String> formalCapabilities = <String>{
+    'SMS',
+    'RTC',
+    'IM',
+    'PAYMENT',
+    'PUSH',
+    'OBJECT_STORAGE',
+  };
+  expect(readiness.integrationStatus, 'READY_FOR_PROVIDER_INTEGRATION');
+  expect(readiness.runtimeStatus, 'VENDOR_BLOCKED');
+  expect(readiness.allBoundariesReady, isTrue);
+  expect(readiness.allRuntimeAdaptersReady, isFalse);
+  expect(readiness.capabilities.keys.toSet(), formalCapabilities);
+  for (final String capabilityName in formalCapabilities) {
+    final VendorCapabilityReadiness? capability =
+        readiness.capabilities[capabilityName];
+    expect(capability, isNotNull, reason: 'missing $capabilityName readiness');
+    expect(capability!.capability, capabilityName);
+    expect(capability.boundaryStatus, 'READY');
+    expect(capability.boundaryReady, isTrue);
+    expect(capability.runtimeStatus, 'VENDOR_BLOCKED');
+    expect(capability.runtimeReady, isFalse);
+  }
+}
 
 void _expectExactViewport(WidgetTester tester) {
   final double dpr = tester.view.devicePixelRatio;

@@ -4,10 +4,24 @@ import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/shell/live_read_only_repository.dart';
 
+const List<String> _formalVendorCapabilities = <String>[
+  'SMS',
+  'RTC',
+  'IM',
+  'PAYMENT',
+  'PUSH',
+  'OBJECT_STORAGE',
+];
+
 class LiveVendorBoundaryPage extends StatefulWidget {
-  const LiveVendorBoundaryPage({required this.dependencies, super.key});
+  const LiveVendorBoundaryPage({
+    required this.dependencies,
+    this.repository,
+    super.key,
+  });
 
   final AppDependencies dependencies;
+  final LiveReadOnlyRepository? repository;
 
   @override
   State<LiveVendorBoundaryPage> createState() => _LiveVendorBoundaryPageState();
@@ -30,10 +44,10 @@ class _LiveVendorBoundaryPageState extends State<LiveVendorBoundaryPage> {
       _error = null;
     });
     try {
-      final VendorReadinessOverview overview = await widget
-          .dependencies
-          .liveReadOnlyRepository
-          .fetchVendorReadiness();
+      final VendorReadinessOverview overview =
+          await (widget.repository ??
+                  widget.dependencies.liveReadOnlyRepository)
+              .fetchVendorReadiness();
       if (!mounted) {
         return;
       }
@@ -82,14 +96,11 @@ class _LiveVendorBoundaryPageState extends State<LiveVendorBoundaryPage> {
             else if (overview != null) ...<Widget>[
               _VendorSummaryCard(overview: overview),
               const SizedBox(height: 14),
-              for (final String capability in const <String>[
-                'SMS',
-                'RTC',
-                'IM',
-                'PAYMENT',
-              ])
-                if (overview.capabilities[capability] case final item?)
-                  _VendorCapabilityCard(readiness: item),
+              for (final String capability in _formalVendorCapabilities)
+                _VendorCapabilityCard(
+                  capability: capability,
+                  readiness: overview.capabilities[capability],
+                ),
               const SizedBox(height: 8),
               const _SecurityBoundaryCard(),
             ],
@@ -107,8 +118,20 @@ class _VendorSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool boundariesReady = overview.allBoundariesReady;
-    final bool runtimeReady = overview.allRuntimeAdaptersReady;
+    final bool capabilitiesComplete = _hasAllFormalCapabilities(overview);
+    final bool boundariesReady =
+        overview.allBoundariesReady &&
+        capabilitiesComplete &&
+        _allBoundaryStatusesReady(overview);
+    final bool runtimeReady =
+        overview.allRuntimeAdaptersReady &&
+        overview.runtimeStatus == 'READY' &&
+        capabilitiesComplete &&
+        _allRuntimeStatusesReady(overview);
+    final String integrationStatus = _knownStatus(
+      overview.integrationStatus,
+      fallback: '接入状态未知（已阻断）',
+    );
     return Material(
       key: const Key('vendor-readiness-summary'),
       color: AppColors.surface,
@@ -129,7 +152,7 @@ class _VendorSummaryCard extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    overview.integrationStatus,
+                    integrationStatus,
                     key: const Key('vendor-integration-status'),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
@@ -137,9 +160,11 @@ class _VendorSummaryCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            Text('契约版本：${overview.contractVersion}'),
             Text(
-              '运行状态：${overview.runtimeStatus}',
+              '契约版本：${_knownStatus(overview.contractVersion, fallback: '未知（已阻断）')}',
+            ),
+            Text(
+              '运行状态：${_runtimeStatusLabel(overview.runtimeStatus)}',
               key: const Key('vendor-runtime-status'),
             ),
             const SizedBox(height: 8),
@@ -157,19 +182,42 @@ class _VendorSummaryCard extends StatelessWidget {
 }
 
 class _VendorCapabilityCard extends StatelessWidget {
-  const _VendorCapabilityCard({required this.readiness});
+  const _VendorCapabilityCard({
+    required this.capability,
+    required this.readiness,
+  });
 
-  final VendorCapabilityReadiness readiness;
+  final String capability;
+  final VendorCapabilityReadiness? readiness;
 
   @override
   Widget build(BuildContext context) {
-    final bool boundaryReady = readiness.boundaryReady;
-    final bool runtimeReady = readiness.runtimeReady;
-    final String capability = readiness.capability;
+    final bool validReadiness =
+        readiness != null && readiness!.capability == capability;
+    final bool boundaryReady = validReadiness && readiness!.boundaryReady;
+    final bool runtimeReady = validReadiness && readiness!.runtimeReady;
+    final String runtimeStatus = validReadiness
+        ? _runtimeStatusLabel(readiness!.runtimeStatus)
+        : 'UNKNOWN（已阻断）';
+    final String adapterContract = validReadiness
+        ? _knownStatus(readiness!.adapterContract, fallback: '未知（已阻断）')
+        : '未知（已阻断）';
+    final String provider = validReadiness
+        ? _knownStatus(readiness!.provider, fallback: 'UNCONFIGURED')
+        : 'UNCONFIGURED';
+    final List<String> missingConfiguration = validReadiness
+        ? readiness!.missingConfiguration
+        : const <String>[];
+    final String securityBoundary = validReadiness
+        ? _knownStatus(
+            readiness!.securityBoundary,
+            fallback: '服务端未返回该正式能力，已安全阻断。',
+          )
+        : '服务端未返回该正式能力，已安全阻断。';
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        key: Key('vendor-${capability.toLowerCase()}-status'),
+        key: Key('vendor-${_capabilityKey(capability)}-status'),
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(20),
         child: Padding(
@@ -191,13 +239,23 @@ class _VendorCapabilityCard extends StatelessWidget {
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         const SizedBox(height: 4),
-                        Text(readiness.adapterContract),
+                        Text(adapterContract),
                       ],
                     ),
                   ),
-                  _StatusPill(
-                    label: boundaryReady ? '边界就绪' : '边界失败',
-                    positive: boundaryReady,
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: <Widget>[
+                      _StatusPill(
+                        label: boundaryReady ? '边界就绪' : '边界失败',
+                        positive: boundaryReady,
+                      ),
+                      const SizedBox(height: 4),
+                      _StatusPill(
+                        label: runtimeReady ? '运行时已启用' : '已禁用',
+                        positive: runtimeReady,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -206,26 +264,32 @@ class _VendorCapabilityCard extends StatelessWidget {
                 spacing: 12,
                 runSpacing: 4,
                 children: <Widget>[
-                  Text('运行时：${readiness.runtimeStatus}'),
-                  Text('Provider：${readiness.provider}'),
+                  Text('运行时：$runtimeStatus'),
+                  Text('Provider：$provider'),
                 ],
               ),
               if (!runtimeReady) ...<Widget>[
                 const SizedBox(height: 10),
                 Text('待补配置', style: Theme.of(context).textTheme.labelLarge),
                 const SizedBox(height: 5),
-                for (final String item in readiness.missingConfiguration)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 3),
-                    child: Text(
-                      '• $item',
-                      style: Theme.of(context).textTheme.bodySmall,
+                if (missingConfiguration.isEmpty)
+                  Text(
+                    '服务端未返回该正式能力，已安全阻断。',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  )
+                else
+                  for (final String item in missingConfiguration)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Text(
+                        '• $item',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     ),
-                  ),
               ],
               const SizedBox(height: 8),
               Text(
-                readiness.securityBoundary,
+                securityBoundary,
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
@@ -276,7 +340,7 @@ class _SecurityBoundaryCard extends StatelessWidget {
             SizedBox(width: 12),
             Expanded(
               child: Text(
-                '移动端不保存短信、RTC、IM 或支付密钥。签名、Token、UserSig、支付下单与回调验签全部由服务端适配器完成。',
+                '移动端不保存短信、RTC、IM、支付、推送或对象存储密钥。签名、Token、UserSig、支付下单与回调验签全部由服务端适配器完成。',
               ),
             ),
           ],
@@ -319,6 +383,8 @@ String _capabilityLabel(String capability) => switch (capability) {
   'RTC' => '实时语音 RTC',
   'IM' => '腾讯 IM',
   'PAYMENT' => '支付',
+  'PUSH' => '推送',
+  'OBJECT_STORAGE' => '对象存储',
   _ => capability,
 };
 
@@ -327,5 +393,47 @@ IconData _capabilityIcon(String capability) => switch (capability) {
   'RTC' => Icons.graphic_eq_rounded,
   'IM' => Icons.forum_outlined,
   'PAYMENT' => Icons.payments_outlined,
+  'PUSH' => Icons.notifications_none_outlined,
+  'OBJECT_STORAGE' => Icons.cloud_upload_outlined,
   _ => Icons.extension_outlined,
 };
+
+bool _hasAllFormalCapabilities(VendorReadinessOverview overview) {
+  final Set<String> keys = overview.capabilities.keys.toSet();
+  return keys.length == _formalVendorCapabilities.length &&
+      _formalVendorCapabilities.every(
+        (String capability) =>
+            overview.capabilities[capability]?.capability == capability,
+      );
+}
+
+bool _allBoundaryStatusesReady(VendorReadinessOverview overview) =>
+    _formalVendorCapabilities.every(
+      (String capability) =>
+          overview.capabilities[capability]?.boundaryReady == true,
+    );
+
+bool _allRuntimeStatusesReady(VendorReadinessOverview overview) =>
+    _formalVendorCapabilities.every(
+      (String capability) =>
+          overview.capabilities[capability]?.runtimeReady == true,
+    );
+
+String _capabilityKey(String capability) =>
+    capability.toLowerCase().replaceAll('_', '-');
+
+String _knownStatus(String value, {required String fallback}) {
+  final String normalized = value.trim();
+  return normalized.isEmpty ? fallback : normalized;
+}
+
+String _runtimeStatusLabel(String value) {
+  final String normalized = value.trim();
+  if (normalized.isEmpty) {
+    return 'UNKNOWN（已阻断）';
+  }
+  return switch (normalized) {
+    'READY' || 'VENDOR_BLOCKED' => normalized,
+    _ => '$normalized（已阻断）',
+  };
+}
