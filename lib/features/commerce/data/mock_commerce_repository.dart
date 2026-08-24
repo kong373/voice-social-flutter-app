@@ -458,8 +458,8 @@ class MockCommerceRepository implements CommerceRepository {
       createdAt: now,
       rejectedReason: '',
       payoutAccountId: selectedAccount,
-      holderNameMasked: wallet.bankCard!.holderName,
-      maskedCard: wallet.bankCard!.maskedNumber,
+      holderNameMasked: wallet.bankCard!.holderNameMasked,
+      maskedCard: wallet.bankCard!.maskedAccount,
     );
     _withdrawals.insert(0, record);
     _cashBalance -= amount;
