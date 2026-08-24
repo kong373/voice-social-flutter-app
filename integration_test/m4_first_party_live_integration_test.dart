@@ -186,9 +186,9 @@ void main() {
         await dismissQaImeAndWait(tester);
         await tester.ensureVisible(find.text('完成注册'));
         await tester.tap(find.text('完成注册').hitTestable());
-        await _waitFor(
+        await _waitForAuthenticatedHome(
           tester,
-          () => find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty,
+          dependencies.authController,
           description: 'completed registration and home',
         );
         evidence.http(
@@ -2997,6 +2997,51 @@ Future<void> _waitFor(
     await Future<void>.delayed(const Duration(milliseconds: 100));
   }
   throw TestFailure('Timed out waiting for $description.');
+}
+
+Future<void> _waitForAuthenticatedHome(
+  WidgetTester tester,
+  AuthController controller, {
+  required String description,
+}) async {
+  await _waitFor(
+    tester,
+    () =>
+        find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty ||
+        controller.errorMessage != null ||
+        find
+            .byKey(const Key('account-access-gate-error'))
+            .evaluate()
+            .isNotEmpty ||
+        find
+            .byKey(const Key('account-restricted-status'))
+            .evaluate()
+            .isNotEmpty ||
+        find
+            .byKey(const Key('account-unusable-status'))
+            .evaluate()
+            .isNotEmpty ||
+        find.byKey(const Key('live-version-policy')).evaluate().isNotEmpty,
+    description: description,
+  );
+  if (find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty) {
+    return;
+  }
+  final String failureState = controller.errorMessage != null
+      ? 'auth_error'
+      : find.byKey(const Key('account-access-gate-error')).evaluate().isNotEmpty
+      ? 'account_preflight_error'
+      : find.byKey(const Key('account-restricted-status')).evaluate().isNotEmpty
+      ? 'account_restricted'
+      : find.byKey(const Key('account-unusable-status')).evaluate().isNotEmpty
+      ? 'account_unusable'
+      : find.byKey(const Key('live-version-policy')).evaluate().isNotEmpty
+      ? 'version_policy_gate'
+      : 'unknown_gate';
+  throw TestFailure(
+    'Authentication did not reach the live home: '
+    'stage=${controller.stage.name}, state=$failureState.',
+  );
 }
 
 class _M4Evidence {
