@@ -16,6 +16,8 @@ enum AuthFlowStage {
   signedIn,
 }
 
+enum ServerLogoutOutcome { notAttempted, succeeded, failed }
+
 class AuthController extends ChangeNotifier {
   AuthController({
     required AuthRepository repository,
@@ -43,6 +45,8 @@ class AuthController extends ChangeNotifier {
   Future<void>? _signOutInFlight;
   int _sessionGeneration = 0;
   bool _signOutRecovery = false;
+  ServerLogoutOutcome _lastServerLogoutOutcome =
+      ServerLogoutOutcome.notAttempted;
 
   AuthFlowStage get stage => _stage;
   bool get busy => _busy;
@@ -51,6 +55,7 @@ class AuthController extends ChangeNotifier {
   AuthSession? get session => _sessionManager.session;
   String get pendingPhone => _pendingPhone ?? '';
   SmsChallenge? get lastSmsChallenge => _lastSmsChallenge;
+  ServerLogoutOutcome get lastServerLogoutOutcome => _lastServerLogoutOutcome;
 
   /// Development OTPs are intentionally exposed only to local/development
   /// builds.  The controller is the final presentation-layer guard even when
@@ -410,22 +415,29 @@ class AuthController extends ChangeNotifier {
     _sessionGeneration += 1;
     _busy = true;
     _errorMessage = null;
+    _lastServerLogoutOutcome = ServerLogoutOutcome.notAttempted;
     notifyListeners();
     final AuthSession? current = _sessionManager.session;
     try {
       if (current != null) {
         try {
           await _repository.logout(current);
+          _lastServerLogoutOutcome = ServerLogoutOutcome.succeeded;
         } catch (_) {
           // Local credential deletion is mandatory even when the server cannot
-          // be reached. Server-side refresh tokens remain bounded and rotated.
+          // be reached. Keep the backend outcome visible after local cleanup;
+          // otherwise the UI and acceptance evidence would report a logout
+          // success that the server never confirmed.
+          _lastServerLogoutOutcome = ServerLogoutOutcome.failed;
         }
       }
       try {
         await _sessionManager.clear();
         _clearPendingChallenge();
         _stage = AuthFlowStage.signedOut;
-        _errorMessage = null;
+        _errorMessage = _lastServerLogoutOutcome == ServerLogoutOutcome.failed
+            ? '本机登录信息已清除，但服务端会话注销未确认；请重新登录后在设备管理中检查会话'
+            : null;
         _signOutRecovery = false;
       } catch (error) {
         _stage = AuthFlowStage.recoveryRequired;

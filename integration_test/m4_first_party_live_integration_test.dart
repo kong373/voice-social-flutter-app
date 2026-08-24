@@ -11,6 +11,7 @@ import 'package:voice_social_app/app/app_gate.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
+import 'package:voice_social_app/features/account/application/auth_controller.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
@@ -319,14 +320,17 @@ void main() {
         () => find.text('登录 / 注册').evaluate().isNotEmpty,
         description: 'logout and local credential deletion',
       );
-      // AuthController deliberately swallows a server logout failure after
-      // clearing local credentials.  The UI assertion proves the local
-      // logout, but this test cannot honestly infer the swallowed HTTP status
-      // without reaching into the production controller implementation.
-      evidence.local(
-        'auth.logout',
-        '/app-register-api/userAccount/v1/logout',
-        'local_success_backend_status_unobserved',
+      expect(
+        dependencies.authController.lastServerLogoutOutcome,
+        ServerLogoutOutcome.succeeded,
+        reason: 'the authoritative backend must confirm product logout',
+      );
+      evidence.http(
+        capability: 'auth.logout',
+        method: 'POST',
+        route: '/app-register-api/userAccount/v1/logout',
+        status: 200,
+        state: 'success',
       );
       evidence.invariant('logout_clears_local_session');
       await captureQaScreenshot(
@@ -1595,6 +1599,7 @@ class _M4Evidence {
     'auth.send_code',
     'auth.login',
     'auth.refresh',
+    'auth.logout',
     'vendor.readiness',
     'home.recommendations',
     'search.suggestions',

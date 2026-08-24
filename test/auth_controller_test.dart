@@ -356,6 +356,32 @@ void main() {
       expect(controller.session, isNull);
     },
   );
+
+  test(
+    'signOut clears local credentials but exposes an unconfirmed backend logout',
+    () async {
+      final AuthSessionManager sessionManager = AuthSessionManager(
+        MemoryKeyValueStore(),
+      );
+      await sessionManager.save(_expiredRefreshableSession());
+      final AuthController controller = AuthController(
+        repository: _LogoutFailureAuthRepository(),
+        sessionManager: sessionManager,
+        deviceIdentityProvider: DeviceIdentityProvider(
+          environment: AppEnvironment.mock(),
+          sessionManager: sessionManager,
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.signOut();
+
+      expect(controller.stage, AuthFlowStage.signedOut);
+      expect(controller.session, isNull);
+      expect(controller.lastServerLogoutOutcome, ServerLogoutOutcome.failed);
+      expect(controller.errorMessage, contains('服务端会话注销未确认'));
+    },
+  );
 }
 
 AuthSession _expiredRefreshableSession() => AuthSession(
@@ -410,6 +436,16 @@ class _DelayedRefreshAuthRepository extends MockAuthRepository {
     }
     return result.future;
   }
+}
+
+class _LogoutFailureAuthRepository extends MockAuthRepository {
+  @override
+  Future<void> logout(AuthSession session) => Future<void>.error(
+    const ApiException(
+      kind: ApiFailureKind.network,
+      message: 'logout network unavailable',
+    ),
+  );
 }
 
 class _FlakyEraseStore implements KeyValueStore {
