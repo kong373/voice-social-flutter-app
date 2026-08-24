@@ -219,7 +219,7 @@ void main() {
           });
         }
         return const _Reply.ok(<String, Object?>{});
-      }, clock: () => DateTime(2026, 8, 23, 23, 59));
+      });
       addTearDown(harness.close);
 
       await expectLater(
@@ -238,6 +238,42 @@ void main() {
       expect(writes, hasLength(3));
       expect(writes[0].requestId, writes[1].requestId);
       expect(writes[1].requestId, writes[2].requestId);
+    },
+  );
+
+  test(
+    'guild sign trusts the backend business date over the device date',
+    () async {
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/guild/sign/status')) {
+          return _Reply.ok(_availableGuildSignStatus());
+        }
+        if (request.path.endsWith('/guild/sign')) {
+          return _Reply.ok(<String, Object?>{
+            'guildId': 'guild-1',
+            'signed': true,
+            'signedToday': true,
+            'isSign': true,
+            'alreadySigned': false,
+            'signDate': '2026-08-23',
+            'businessDate': '2026-08-23',
+            'rewardPoints': 1,
+            'status': 'SIGNED',
+            'providerInvocation': false,
+          });
+        }
+        return const _Reply.ok(<String, Object?>{});
+      });
+      addTearDown(harness.close);
+
+      await harness.repository.signGuild('guild-1');
+
+      expect(
+        harness.requests.where(
+          (RequestRecord item) => item.path.endsWith('/guild/sign'),
+        ),
+        hasLength(1),
+      );
     },
   );
 
@@ -284,7 +320,7 @@ void main() {
           });
         }
         return const _Reply.ok(<String, Object?>{});
-      }, clock: () => now);
+      });
       addTearDown(harness.close);
 
       await expectLater(
@@ -322,7 +358,7 @@ void main() {
         });
       }
       return const _Reply.ok(<String, Object?>{});
-    }, clock: () => DateTime(2026, 8, 23));
+    });
     addTearDown(harness.close);
 
     await expectLater(
@@ -351,7 +387,7 @@ void main() {
         });
       }
       return const _Reply.ok(<String, Object?>{});
-    }, clock: () => DateTime(2026, 8, 23));
+    });
     addTearDown(harness.close);
 
     await expectLater(
@@ -367,10 +403,39 @@ void main() {
   });
 
   test(
+    'daily check-in trusts the backend business date over the device date',
+    () async {
+      final DateTime backendNow = DateTime(2026, 8, 23);
+      bool signed = false;
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/completeDailySignIn')) {
+          signed = true;
+          return _Reply.ok(<String, Object?>{
+            'signed': true,
+            'signedToday': true,
+            'isSign': true,
+            'alreadySigned': false,
+            'businessDate': '2026-08-23',
+            'taskId': 100,
+            'providerInvocation': false,
+          });
+        }
+        return _dailyTaskCenterReply(request, backendNow, signedToday: signed);
+      });
+      addTearDown(harness.close);
+
+      final snapshot = await harness.repository.completeDailyCheckIn();
+
+      expect(snapshot.signedToday, isTrue);
+    },
+  );
+
+  test(
     'daily check-in keeps its id across unknown conflicts but not across dates',
     () async {
       DateTime now = DateTime(2026, 8, 23, 23, 59);
       int attempts = 0;
+      String? signedDate;
       final _Harness harness = await _Harness.start((RequestRecord request) {
         if (request.path.endsWith('/completeDailySignIn')) {
           attempts += 1;
@@ -390,21 +455,31 @@ void main() {
               data: null,
             );
           }
+          final String date =
+              '${now.year.toString().padLeft(4, '0')}-'
+              '${now.month.toString().padLeft(2, '0')}-'
+              '${now.day.toString().padLeft(2, '0')}';
+          signedDate = date;
           return _Reply.ok(<String, Object?>{
             'signed': true,
             'signedToday': true,
             'isSign': true,
             'alreadySigned': false,
-            'businessDate':
-                '${now.year.toString().padLeft(4, '0')}-'
-                '${now.month.toString().padLeft(2, '0')}-'
-                '${now.day.toString().padLeft(2, '0')}',
+            'businessDate': date,
             'taskId': 100,
             'providerInvocation': false,
           });
         }
-        return _dailyTaskCenterReply(request, now);
-      }, clock: () => now);
+        final String currentDate =
+            '${now.year.toString().padLeft(4, '0')}-'
+            '${now.month.toString().padLeft(2, '0')}-'
+            '${now.day.toString().padLeft(2, '0')}';
+        return _dailyTaskCenterReply(
+          request,
+          now,
+          signedToday: signedDate == currentDate,
+        );
+      });
       addTearDown(harness.close);
 
       await expectLater(
@@ -543,8 +618,6 @@ class _Harness {
   static Future<_Harness> start(
     FutureOr<_Reply> Function(RequestRecord request) handler, {
     UnauthorizedRecovery? unauthorizedRecovery,
-    DateTime Function()? clock,
-    String Function(DateTime)? businessDateProvider,
   }) async {
     final HttpServer server = await HttpServer.bind(
       InternetAddress.loopbackIPv4,
@@ -560,8 +633,6 @@ class _Harness {
         unauthorizedRecovery: unauthorizedRecovery,
       ),
       routes: const BackendRouteCatalog(),
-      clock: clock,
-      businessDateProvider: businessDateProvider,
     );
     final _Harness harness = _Harness._(server, requests, repository);
     server.listen((HttpRequest request) async {
@@ -647,7 +718,11 @@ Map<String, Object?> _availableGuildSignStatus({
   'providerInvocation': false,
 };
 
-_Reply _dailyTaskCenterReply(RequestRecord request, DateTime now) {
+_Reply _dailyTaskCenterReply(
+  RequestRecord request,
+  DateTime now, {
+  bool signedToday = true,
+}) {
   final String date =
       '${now.year.toString().padLeft(4, '0')}-'
       '${now.month.toString().padLeft(2, '0')}-'
@@ -707,10 +782,10 @@ _Reply _dailyTaskCenterReply(RequestRecord request, DateTime now) {
       'providerInvocation': false,
     }),
     '/app-api/taskSystem/queryTodaySignStatus' => _Reply.ok(<String, Object?>{
-      'signedToday': true,
-      'isSign': true,
-      'continuousDays': 1,
-      'consecutiveDays': 1,
+      'signedToday': signedToday,
+      'isSign': signedToday,
+      'continuousDays': signedToday ? 1 : 0,
+      'consecutiveDays': signedToday ? 1 : 0,
       'businessDate': date,
       'providerInvocation': false,
     }),

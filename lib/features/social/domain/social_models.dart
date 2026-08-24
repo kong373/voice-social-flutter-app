@@ -6,12 +6,15 @@ enum VisitorRecordType { viewedMe, viewedByMe }
 
 enum ReportTargetType { user, room }
 
-final RegExp _canonicalReportRoomIdPattern = RegExp(r'^[1-9][0-9]*$');
+final RegExp _canonicalReportRoomIdPattern = RegExp(
+  r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+);
+final RegExp _canonicalReportUserIdPattern = RegExp(r'^[1-9][0-9]*$');
 const int _maxBackendEntityId = 9223372036854775807;
 
 int? parseCanonicalReportEntityId(String value) {
   final String normalized = value.trim();
-  if (!_canonicalReportRoomIdPattern.hasMatch(normalized)) {
+  if (!_canonicalReportUserIdPattern.hasMatch(normalized)) {
     return null;
   }
   final int? parsed = int.tryParse(normalized);
@@ -21,10 +24,10 @@ int? parseCanonicalReportEntityId(String value) {
   return parsed;
 }
 
-/// Returns whether [value] is the positive-integer room identifier accepted by
-/// the first-party report endpoint.
+/// Returns whether [value] is the lowercase canonical public UUID accepted by
+/// the first-party room-report endpoint.
 bool isCanonicalReportRoomId(String value) =>
-    parseCanonicalReportEntityId(value) != null;
+    _canonicalReportRoomIdPattern.hasMatch(value.trim());
 
 enum SupportTicketStatus {
   submitted,

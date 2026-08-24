@@ -1609,18 +1609,18 @@ void main() {
       expect(harness.requests[1].body, <String, Object?>{'anchorUserId': 88});
       expect(harness.requests[2].query, <String, String>{'type': '1'});
       expect(
-        harness.requests[5].path,
+        harness.requests[6].path,
         '/app-api/taskSystem/completeDailySignIn',
       );
-      expect(harness.requests[5].method, 'POST');
-      expect(harness.requests[5].body, <String, Object?>{});
-      expect(harness.requests[5].requestId, startsWith('flutter-'));
-      expect(harness.requests[9].method, 'POST');
-      expect(harness.requests[9].body, <String, Object?>{'taskId': 101});
-      expect(harness.requests[9].requestId, startsWith('flutter-'));
+      expect(harness.requests[6].method, 'POST');
+      expect(harness.requests[6].body, <String, Object?>{});
+      expect(harness.requests[6].requestId, startsWith('flutter-'));
+      expect(harness.requests[10].method, 'POST');
+      expect(harness.requests[10].body, <String, Object?>{'taskId': 101});
+      expect(harness.requests[10].requestId, startsWith('flutter-'));
       expect(
-        harness.requests[9].requestId,
-        isNot(harness.requests[5].requestId),
+        harness.requests[10].requestId,
+        isNot(harness.requests[6].requestId),
       );
     },
   );
@@ -3007,7 +3007,6 @@ class _Harness {
           authorizationProvider: () => 'Bearer contract-test',
         ),
         routes: const BackendRouteCatalog(),
-        clock: () => DateTime(2026, 8, 23),
       );
 
   final HttpServer server;

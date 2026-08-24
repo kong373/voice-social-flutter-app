@@ -1379,6 +1379,7 @@ void main() {
               data: <String, Object?>{
                 'reportId': 'report-1',
                 'status': 'SUBMITTED',
+                'providerInvocation': false,
               },
             );
           case '/app-api/user/getCustomerServiceDetail':
@@ -1458,61 +1459,50 @@ void main() {
     },
   );
 
-  test(
-    'room reports fail closed for public ids before auth, idempotency, or HTTP',
-    () async {
-      int httpCalls = 0;
-      int currentUserLookups = 0;
-      final HttpServer server = await _startServer((
-        HttpRequest request,
-        Object? body,
-      ) async {
-        httpCalls += 1;
-        return _reply(
-          request,
-          data: <String, Object?>{
-            'reportId': 'unexpected-report',
-            'status': 'SUBMITTED',
-          },
-        );
+  test('room reports send the canonical public UUID authority', () async {
+    const String roomId = '00000000-0000-0000-0000-000000000123';
+    int httpCalls = 0;
+    final HttpServer server = await _startServer((
+      HttpRequest request,
+      Object? body,
+    ) async {
+      httpCalls += 1;
+      expect(body, <String, Object?>{
+        'userId': 10001,
+        'beTipUserId': null,
+        'beTipRoomId': roomId,
+        'tipType': 2,
+        'tipDescrib': '房间内持续骚扰',
+        'tipOffImages': <String>[],
+        'type': 2,
       });
-      addTearDown(() => server.close(force: true));
-      final BackendSocialRepository repository = BackendSocialRepository(
-        apiClient: _client(server),
-        currentUserIdProvider: () {
-          currentUserLookups += 1;
-          return 10001;
+      return _reply(
+        request,
+        data: <String, Object?>{
+          'reportId': 'room-report-1',
+          'status': 'SUBMITTED',
+          'providerInvocation': false,
         },
       );
+    });
+    addTearDown(() => server.close(force: true));
+    final BackendSocialRepository repository = BackendSocialRepository(
+      apiClient: _client(server),
+      currentUserIdProvider: () => 10001,
+    );
 
-      for (int attempt = 0; attempt < 2; attempt += 1) {
-        await expectLater(
-          repository.submitReport(
-            targetType: ReportTargetType.room,
-            targetId: 'room-01HX7W6M2Y7Y8D7NQ2V9A5C1KZ',
-            reasonCode: 2,
-            description: '房间内持续骚扰',
-            alsoBlock: false,
-          ),
-          throwsA(
-            isA<ApiException>()
-                .having(
-                  (ApiException error) => error.kind,
-                  'kind',
-                  ApiFailureKind.configuration,
-                )
-                .having(
-                  (ApiException error) => error.message,
-                  'message',
-                  allOf(contains('数字房间 ID'), contains('UUID/public_id')),
-                ),
-          ),
-        );
-      }
-      expect(httpCalls, 0);
-      expect(currentUserLookups, 0);
-    },
-  );
+    expect(
+      await repository.submitReport(
+        targetType: ReportTargetType.room,
+        targetId: roomId,
+        reasonCode: 2,
+        description: '房间内持续骚扰',
+        alsoBlock: false,
+      ),
+      'room-report-1',
+    );
+    expect(httpCalls, 1);
+  });
 
   test(
     'user reports reject invalid or out-of-range ids before auth and HTTP',
@@ -1595,7 +1585,11 @@ void main() {
         }
         return _reply(
           request,
-          data: <String, Object?>{'reportId': reportId, 'status': 'SUBMITTED'},
+          data: <String, Object?>{
+            'reportId': reportId,
+            'status': 'SUBMITTED',
+            'providerInvocation': false,
+          },
         );
       });
       addTearDown(() => server.close(force: true));
@@ -1650,6 +1644,7 @@ void main() {
         data: const <String, Object?>{
           'reportId': 'report-1',
           'status': 'SUBMITTED',
+          'providerInvocation': false,
         },
       );
     });
@@ -1752,6 +1747,51 @@ void main() {
     );
   });
 
+  for (final Object? providerInvocation in <Object?>[null, true]) {
+    test(
+      'report requires providerInvocation=false (${providerInvocation ?? 'missing'})',
+      () async {
+        final HttpServer server = await _startServer((
+          HttpRequest request,
+          Object? body,
+        ) async {
+          expect(request.uri.path, '/app-api/util/tipOffUserOrRoom');
+          return _reply(
+            request,
+            data: <String, Object?>{
+              'reportId': 'report-provider-boundary',
+              'status': 'SUBMITTED',
+              if (providerInvocation != null)
+                'providerInvocation': providerInvocation,
+            },
+          );
+        });
+        addTearDown(() => server.close(force: true));
+        final BackendSocialRepository repository = BackendSocialRepository(
+          apiClient: _client(server),
+          currentUserIdProvider: () => 10001,
+        );
+
+        await expectLater(
+          repository.submitReport(
+            targetType: ReportTargetType.user,
+            targetId: '20003',
+            reasonCode: 2,
+            description: '骚扰',
+            alsoBlock: false,
+          ),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.protocol,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   test('report rotates the request id after hard 40903 conflicts', () async {
     final List<String> requestIds = <String>[];
     int calls = 0;
@@ -1775,6 +1815,7 @@ void main() {
         data: const <String, Object?>{
           'reportId': 'report-2',
           'status': 'SUBMITTED',
+          'providerInvocation': false,
         },
       );
     });

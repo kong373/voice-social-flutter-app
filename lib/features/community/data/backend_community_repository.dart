@@ -14,17 +14,11 @@ class BackendCommunityRepository implements CommunityRepository {
   BackendCommunityRepository({
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
-    DateTime Function()? clock,
-    String Function(DateTime)? businessDateProvider,
   }) : _apiClient = apiClient,
-       _routes = routes,
-       _clock = clock ?? DateTime.now,
-       _businessDateProvider = businessDateProvider ?? _defaultBusinessDate;
+       _routes = routes;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
-  final DateTime Function() _clock;
-  final String Function(DateTime) _businessDateProvider;
   final _CommunityWriteCoordinator _writeCoordinator =
       _CommunityWriteCoordinator();
   @override
@@ -166,35 +160,31 @@ class BackendCommunityRepository implements CommunityRepository {
   );
 
   @override
-  Future<void> signGuild(String guildId) {
-    final String expectedBusinessDate = _currentBusinessDate();
+  Future<void> signGuild(String guildId) async {
+    final _GuildSignStatus initial = await _fetchGuildSignStatus(guildId);
+    if ((initial.hasGuild && initial.guildId != guildId) ||
+        !initial.hasGuild ||
+        !initial.member) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '当前没有可签到的公会',
+      );
+    }
+    final String intentKey = _writeKey('guild-sign', <Object?>[
+      guildId,
+      initial.businessDate,
+    ]);
+    if (initial.signed) {
+      _writeCoordinator.discardRetained(intentKey);
+      return;
+    }
     return _runCommunityWrite<void>(
-      // A retained unknown-outcome key belongs to one business day only. A
-      // new local day must never replay yesterday's sign intent.
-      intentKey: _writeKey('guild-sign', <Object?>[
-        guildId,
-        expectedBusinessDate,
-      ]),
+      // Scope recovery to the business date returned by the authoritative
+      // status endpoint. Device time must never define a server write.
+      intentKey: intentKey,
       serialKey: _writeKey('guild', <Object?>[guildId]),
       requestIdPrefix: 'flutter-community-guild-sign',
       action: (Map<String, String> headers) async {
-        final _GuildSignStatus initial = await _fetchGuildSignStatus(guildId);
-        if ((initial.hasGuild && initial.guildId != guildId) ||
-            initial.businessDate != expectedBusinessDate) {
-          throw const ApiException(
-            kind: ApiFailureKind.protocol,
-            message: '公会签到状态业务日期与本地不一致',
-          );
-        }
-        if (!initial.hasGuild || !initial.member) {
-          throw const ApiException(
-            kind: ApiFailureKind.conflict,
-            message: '当前没有可签到的公会',
-          );
-        }
-        if (initial.signed) {
-          return;
-        }
         try {
           final ApiResponse response = await _apiClient.post(
             _routes.guildSign,
@@ -204,7 +194,7 @@ class BackendCommunityRepository implements CommunityRepository {
           _validateGuildSignResponse(
             _requiredMap(response.data),
             guildId: guildId,
-            expectedBusinessDate: expectedBusinessDate,
+            expectedBusinessDate: initial.businessDate,
           );
         } on ApiException catch (error) {
           if (!_isAmbiguousCommunityWrite(error)) {
@@ -214,7 +204,6 @@ class BackendCommunityRepository implements CommunityRepository {
             guildId,
           );
           if (recovered.guildId == guildId &&
-              recovered.businessDate == expectedBusinessDate &&
               recovered.hasGuild &&
               recovered.member &&
               recovered.signed) {
@@ -903,51 +892,37 @@ class BackendCommunityRepository implements CommunityRepository {
         .map(_checkInFromMap)
         .toList(growable: false);
 
-    final Map<String, Object?> status = _requiredMap(results[2]);
-    _requireProviderNotInvoked(status);
-    final bool signedToday = _requiredBoolField(status, 'signedToday');
-    if (_requiredBoolField(status, 'isSign') != signedToday) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '今日签到状态别名不一致',
-      );
-    }
-    final int continuousDays = _requiredNonNegativeIntField(
-      status,
-      'continuousDays',
+    final _TodaySignStatus status = _todaySignStatusFromMap(
+      _requiredMap(results[2]),
     );
-    if (continuousDays > 366) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '连续签到天数超过服务端上限',
-      );
-    }
-    if (_requiredNonNegativeIntField(status, 'consecutiveDays') !=
-        continuousDays) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '连续签到天数别名不一致',
-      );
-    }
-    _requiredDateField(status, 'businessDate');
     return TaskCenterSnapshot(
-      signedToday: signedToday,
-      continuousDays: continuousDays,
+      signedToday: status.signedToday,
+      continuousDays: status.continuousDays,
       checkInDays: days,
       tasks: tasks,
     );
   }
 
   @override
-  Future<TaskCenterSnapshot> completeDailyCheckIn() {
-    final String expectedBusinessDate = _currentBusinessDate();
+  Future<TaskCenterSnapshot> completeDailyCheckIn() async {
+    final ApiResponse statusResponse = await _apiClient.get(
+      _routes.todaySignStatus,
+    );
+    final _TodaySignStatus initial = _todaySignStatusFromMap(
+      _requiredMap(statusResponse.data),
+    );
+    final String intentKey = _writeKey('task-daily-check-in', <Object?>[
+      initial.businessDate,
+    ]);
+    if (initial.signedToday) {
+      _writeCoordinator.discardRetained(intentKey);
+      return fetchTaskCenter();
+    }
     return _runCommunityWrite<TaskCenterSnapshot>(
-      // The daily task intent is scoped to the local business date so an
-      // ambiguous response just before midnight cannot be replayed after
-      // midnight with yesterday's idempotency key.
-      intentKey: _writeKey('task-daily-check-in', <Object?>[
-        expectedBusinessDate,
-      ]),
+      // The server status date scopes ambiguous-write recovery. A later call
+      // first re-reads that authority, so a database-day rollover rotates the
+      // retained id without consulting device time.
+      intentKey: intentKey,
       serialKey: 'task-center',
       requestIdPrefix: 'flutter-community-task-check-in',
       action: (Map<String, String> headers) async {
@@ -965,7 +940,7 @@ class BackendCommunityRepository implements CommunityRepository {
             data['isSign'] != true ||
             data['alreadySigned'] is! bool ||
             !_isIsoDate(data['businessDate']) ||
-            data['businessDate'] != expectedBusinessDate ||
+            data['businessDate'] != initial.businessDate ||
             data['taskId'] is! int ||
             (data['taskId']! as int) <= 0 ||
             data['providerInvocation'] is! bool ||
@@ -1048,6 +1023,39 @@ class BackendCommunityRepository implements CommunityRepository {
       ),
     );
     return raw.map(_activityFromMap).toList(growable: false);
+  }
+
+  static _TodaySignStatus _todaySignStatusFromMap(Map<String, Object?> data) {
+    _requireProviderNotInvoked(data);
+    final bool signedToday = _requiredBoolField(data, 'signedToday');
+    if (_requiredBoolField(data, 'isSign') != signedToday) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '今日签到状态别名不一致',
+      );
+    }
+    final int continuousDays = _requiredNonNegativeIntField(
+      data,
+      'continuousDays',
+    );
+    if (continuousDays > 366) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '连续签到天数超过服务端上限',
+      );
+    }
+    if (_requiredNonNegativeIntField(data, 'consecutiveDays') !=
+        continuousDays) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '连续签到天数别名不一致',
+      );
+    }
+    return _TodaySignStatus(
+      signedToday: signedToday,
+      continuousDays: continuousDays,
+      businessDate: _requiredDateField(data, 'businessDate'),
+    );
   }
 
   Future<_GuildSignStatus> _fetchGuildSignStatus(String guildId) async {
@@ -1135,7 +1143,7 @@ class BackendCommunityRepository implements CommunityRepository {
         !signed ||
         !signedToday ||
         !isSign ||
-        signDate != expectedBusinessDate ||
+        signDate != businessDate ||
         businessDate != expectedBusinessDate ||
         _requiredNonNegativeIntField(data, 'rewardPoints') != 1 ||
         _requiredNonEmptyStringField(data, 'status') != 'SIGNED') {
@@ -2138,20 +2146,6 @@ class BackendCommunityRepository implements CommunityRepository {
     return parsed != null && parsed.toIso8601String().startsWith(value);
   }
 
-  String _currentBusinessDate() {
-    final String date = _businessDateProvider(_clock()).trim();
-    if (!_isIsoDate(date)) {
-      throw const ApiException(
-        kind: ApiFailureKind.configuration,
-        message: '本地业务日期无效，已拒绝签到写入',
-      );
-    }
-    return date;
-  }
-
-  static String _defaultBusinessDate(DateTime now) =>
-      now.toIso8601String().split('T').first;
-
   static bool _hasNonEmptyString(Object? value) =>
       value is String && value.trim().isNotEmpty;
 }
@@ -2195,6 +2189,18 @@ class _GuildSignStatus {
   final String businessDate;
 }
 
+class _TodaySignStatus {
+  const _TodaySignStatus({
+    required this.signedToday,
+    required this.continuousDays,
+    required this.businessDate,
+  });
+
+  final bool signedToday;
+  final int continuousDays;
+  final String businessDate;
+}
+
 class _ParsedTask {
   const _ParsedTask({
     required this.id,
@@ -2228,6 +2234,10 @@ class _CommunityWriteCoordinator {
   final Map<String, Future<Object?>> _inFlight = <String, Future<Object?>>{};
   final Map<String, String> _retainedRequestIds = <String, String>{};
   final Map<String, Future<void>> _serialTails = <String, Future<void>>{};
+
+  void discardRetained(String intentKey) {
+    _retainedRequestIds.remove(intentKey);
+  }
 
   Future<T> run<T>({
     required String intentKey,

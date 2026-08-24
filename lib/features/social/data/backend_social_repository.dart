@@ -592,20 +592,26 @@ class BackendSocialRepository implements SocialRepository {
     required bool alsoBlock,
   }) async {
     final String normalizedTargetId = targetId.trim();
-    final int? numericTargetId = parseCanonicalReportEntityId(
-      normalizedTargetId,
-    );
-    if (numericTargetId == null) {
-      if (targetType == ReportTargetType.room) {
+    late final Object authoritativeTargetId;
+    if (targetType == ReportTargetType.room) {
+      if (!isCanonicalReportRoomId(normalizedTargetId)) {
         throw const ApiException(
-          kind: ApiFailureKind.configuration,
-          message: '当前第一方举报接口只接受数字房间 ID；该房间使用 UUID/public_id，暂不能提交举报。',
+          kind: ApiFailureKind.validation,
+          message: '房间举报目标必须是 lowercase canonical public UUID',
         );
       }
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '用户举报目标 ID 必须是有效的正整数',
+      authoritativeTargetId = normalizedTargetId;
+    } else {
+      final int? numericTargetId = parseCanonicalReportEntityId(
+        normalizedTargetId,
       );
+      if (numericTargetId == null) {
+        throw const ApiException(
+          kind: ApiFailureKind.validation,
+          message: '用户举报目标 ID 必须是有效的正整数',
+        );
+      }
+      authoritativeTargetId = numericTargetId;
     }
     final int currentUserId = _currentUserIdProvider();
     if (currentUserId <= 0) {
@@ -633,7 +639,7 @@ class BackendSocialRepository implements SocialRepository {
         _submitReportOnce(
           currentUserId: currentUserId,
           targetType: targetType,
-          targetId: numericTargetId,
+          targetId: authoritativeTargetId,
           reasonCode: reasonCode,
           description: normalizedDescription,
           alsoBlock: alsoBlock,
@@ -659,7 +665,7 @@ class BackendSocialRepository implements SocialRepository {
   Future<String> _submitReportOnce({
     required int currentUserId,
     required ReportTargetType targetType,
-    required int targetId,
+    required Object targetId,
     required int reasonCode,
     required String description,
     required bool alsoBlock,
@@ -690,6 +696,13 @@ class BackendSocialRepository implements SocialRepository {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '举报响应缺少权威 SUBMITTED 状态',
+      );
+    }
+    if (data['providerInvocation'] is! bool ||
+        data['providerInvocation'] != false) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '举报响应缺少第一方零厂商调用确认',
       );
     }
     return reportId;
