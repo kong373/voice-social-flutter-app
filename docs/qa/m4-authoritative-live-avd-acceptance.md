@@ -231,13 +231,22 @@ export QA_M4_FIXTURE_STATUS="fresh_dedicated"
 # QA_LIVE_PHONE, QA_OAUTH_CLIENT_ID, QA_DB_EVIDENCE_URL, and
 # QA_DB_EVIDENCE_TOKEN come from the protected runner environment.
 
-# Start the helper in the same protected operator shell. These are the default
-# Compose container names for this checkout and the local Colima socket; keep
-# the token in the protected environment and never place its value in docs or
-# shell history.
-export M4_BACKEND_CONTAINER="voice-social-backend-backend-1"
-export M4_MYSQL_CONTAINER="voice-social-backend-mysql-1"
+# Start the helper in the same protected operator shell. Resolve the exact
+# running containers from the authoritative Backend checkout instead of
+# guessing Compose project/container names; keep the token in the protected
+# environment and never place its value in docs or shell history.
 export M4_DOCKER_SOCKET="unix://${HOME}/.colima/default/docker.sock"
+export M4_BACKEND_CONTAINER="$(
+  DOCKER_HOST="$M4_DOCKER_SOCKET" docker compose \
+    --env-file "$QA_BACKEND_REPO/.env.local" \
+    -f "$QA_BACKEND_REPO/compose.dev.yml" ps -q backend
+)"
+export M4_MYSQL_CONTAINER="$(
+  DOCKER_HOST="$M4_DOCKER_SOCKET" docker compose \
+    --env-file "$QA_BACKEND_REPO/.env.local" \
+    -f "$QA_BACKEND_REPO/compose.dev.yml" ps -q mysql
+)"
+[[ -n "$M4_BACKEND_CONTAINER" && -n "$M4_MYSQL_CONTAINER" ]] || exit 1
 : "${QA_DB_EVIDENCE_TOKEN:?set QA_DB_EVIDENCE_TOKEN in the protected runner environment}"
 export M4_DB_EVIDENCE_TOKEN="$QA_DB_EVIDENCE_TOKEN"
 

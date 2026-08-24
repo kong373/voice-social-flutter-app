@@ -13,6 +13,9 @@ void main() {
   final String runnerSource = File(
     'tool/qa/run_m4_authoritative_live_avd.sh',
   ).readAsStringSync();
+  final String acceptanceDocSource = File(
+    'docs/qa/m4-authoritative-live-avd-acceptance.md',
+  ).readAsStringSync();
   final String integrationSource = File(
     'integration_test/m4_first_party_live_integration_test.dart',
   ).readAsStringSync();
@@ -212,7 +215,7 @@ void main() {
     () {
       expect(runnerSource, contains('QA_M4_FIXTURE_ID'));
       expect(runnerSource, contains('QA_M4_FIXTURE_STATUS'));
-      expect(runnerSource, contains("fresh_dedicated"));
+      expect(runnerSource, contains('fresh_dedicated'));
       expect(runnerSource, contains('SMS_COOLDOWN_SECONDS'));
       expect(runnerSource, contains('wait_for_sms_cooldown'));
       expect(runnerSource, contains('sleep "\$nap"'));
@@ -286,6 +289,16 @@ void main() {
       isNot(contains('for name in BACKEND_SHA QA_BACKEND_SHA BUILD_SHA')),
     );
     expect(helperSource, isNot(contains("printf 'S|%s\\n'")));
+    expect(acceptanceDocSource, contains('ps -q backend'));
+    expect(acceptanceDocSource, contains('ps -q mysql'));
+    expect(
+      acceptanceDocSource,
+      isNot(contains('voice-social-backend-backend-1')),
+    );
+    expect(
+      acceptanceDocSource,
+      isNot(contains('voice-social-backend-mysql-1')),
+    );
   });
 
   test('protected artifact values never become grep subprocess argv', () {
