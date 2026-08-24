@@ -88,7 +88,6 @@ class BackendRouteCatalog {
     this.withdrawalApply = '/app-mini-api/mini/v1/withdrawal/apply',
     this.withdrawalRecords = '/app-mini-api/mini/v1/withdrawal/records',
     this.payoutAccounts = '/app-mini-api/mini/v1/withdrawal/accounts',
-    this.walletReconcile = '/app-mini-api/mini/v1/wallet/reconcile',
     this.dynamicPublish = '/app-mini-api/mini/v1/dynamic/publish',
     this.dynamicList = '/app-mini-api/mini/v1/dynamic/list',
     this.dynamicDetail = '/app-mini-api/mini/v1/dynamic/detail',
@@ -261,7 +260,6 @@ class BackendRouteCatalog {
   final String withdrawalApply;
   final String withdrawalRecords;
   final String payoutAccounts;
-  final String walletReconcile;
   final String dynamicPublish;
   final String dynamicList;
   final String dynamicDetail;
