@@ -24,6 +24,7 @@ import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
 import 'package:voice_social_app/features/shell/live_read_only_repository.dart';
+import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 import 'm2_4_test_support.dart';
@@ -322,6 +323,11 @@ void main() {
         rooms: currentUserOwnedRooms,
         currentUserId: currentUserId,
       );
+      await _runCanonicalRoomReportFlow(
+        dependencies,
+        evidence,
+        room: ownedModeRooms.direct,
+      );
 
       await _runSearchFlow(tester, dependencies, evidence);
       await _runDynamicSocialCommunityFlow(
@@ -544,6 +550,36 @@ Future<void> _runSearchFlow(
     () => find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty,
     description: 'home after search',
   );
+}
+
+Future<void> _runCanonicalRoomReportFlow(
+  AppDependencies dependencies,
+  _M4Evidence evidence, {
+  required DiscoveryRoom room,
+}) async {
+  expect(
+    _canonicalRoomUuidPattern.hasMatch(room.id),
+    isTrue,
+    reason: 'room report requires a lowercase canonical public UUID',
+  );
+  final String? reportId = await _probe<String>(
+    evidence,
+    capability: 'social.room.report',
+    method: 'POST',
+    route: const BackendRouteCatalog().reportUserOrRoom,
+    operation: () => dependencies.socialRepository.submitReport(
+      targetType: ReportTargetType.room,
+      targetId: room.id,
+      reasonCode: 1,
+      description: 'M4 first-party room safety acceptance $qaAvdId',
+      alsoBlock: false,
+    ),
+    requiredSuccess: true,
+  );
+  expect(reportId, isNotNull);
+  expect(_canonicalRoomUuidPattern.hasMatch(reportId!), isTrue);
+  evidence.invariant('room_report_uses_canonical_room_and_report_ids');
+  evidence.invariant('room_report_confirms_first_party_provider_zero');
 }
 
 Future<void> _runDynamicSocialCommunityFlow(
@@ -3062,6 +3098,7 @@ class _M4Evidence {
   static const Set<String> _requiredMutationCapabilities = <String>{
     'community.checkin',
     'community.task.claim',
+    'social.room.report',
     'room.moderation.mute',
     'room.moderation.restore',
     'room.seat.up',
