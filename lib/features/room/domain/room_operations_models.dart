@@ -103,7 +103,7 @@ class MicAccessRequest {
 /// This is intentionally separate from [MicAccessRequest].  Approval-room
 /// membership is a first-party HTTP workflow, while microphone coordination
 /// is a different room capability and may remain direct or vendor-blocked.
-enum RoomJoinRequestStatus { pending, approved, rejected }
+enum RoomJoinRequestStatus { pending, cancelled, approved, rejected }
 
 class RoomJoinRequest {
   const RoomJoinRequest({
@@ -123,6 +123,55 @@ class RoomJoinRequest {
   final DateTime? resolvedAt;
 
   bool get isPending => status == RoomJoinRequestStatus.pending;
+}
+
+/// The applicant-facing, privacy-preserving view of one approval-room
+/// request.  Unlike [RoomJoinRequest], this model intentionally contains no
+/// applicant identity fields: the backend only returns the authenticated
+/// user's own request.
+class RoomJoinRequestApplicantStatus {
+  const RoomJoinRequestApplicantStatus({
+    required this.roomId,
+    required this.joinRequestId,
+    required this.status,
+    required this.roomState,
+    required this.banned,
+    required this.canCancel,
+    this.message,
+    this.createdAt,
+    this.resolvedAt,
+  });
+
+  final String roomId;
+  final String joinRequestId;
+  final RoomJoinRequestStatus status;
+  final String roomState;
+  final bool banned;
+  final bool canCancel;
+  final String? message;
+  final DateTime? createdAt;
+  final DateTime? resolvedAt;
+
+  bool get isPending => status == RoomJoinRequestStatus.pending;
+}
+
+/// The authoritative result of the applicant cancel mutation.  The cancel
+/// endpoint deliberately returns only mutation fields; callers should read
+/// [RoomJoinRequestApplicantStatus] afterwards for the full state.
+class RoomJoinRequestCancellation {
+  const RoomJoinRequestCancellation({
+    required this.roomId,
+    required this.joinRequestId,
+    required this.status,
+    required this.cancelled,
+    required this.alreadyCancelled,
+  });
+
+  final String roomId;
+  final String joinRequestId;
+  final RoomJoinRequestStatus status;
+  final bool cancelled;
+  final bool alreadyCancelled;
 }
 
 class RoomJoinRequestPage {

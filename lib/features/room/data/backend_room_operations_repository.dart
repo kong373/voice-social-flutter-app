@@ -168,6 +168,176 @@ class BackendRoomOperationsRepository
   }
 
   @override
+  Future<RoomJoinRequestApplicantStatus> fetchJoinRequestStatus({
+    String? roomId,
+    String? joinRequestId,
+  }) async {
+    final String normalizedRoomId = _optionalIdentifier(roomId, '房间 ID');
+    final String normalizedJoinRequestId = _optionalIdentifier(
+      joinRequestId,
+      '入房申请 ID',
+    );
+    if (normalizedRoomId.isEmpty && normalizedJoinRequestId.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '房间 ID 或入房申请 ID 至少提供一个',
+      );
+    }
+    final Map<String, String> query = <String, String>{
+      if (normalizedRoomId.isNotEmpty) 'roomId': normalizedRoomId,
+      if (normalizedJoinRequestId.isNotEmpty)
+        'joinRequestId': normalizedJoinRequestId,
+    };
+    final ApiResponse response = await _apiClient.get(
+      _routes.roomJoinRequestStatus,
+      query: query,
+    );
+    final Map<String, Object?> data = _requiredResponseMap(
+      response,
+      operation: '查询入房申请状态',
+      requiredFields: const <String>[
+        'roomId',
+        'joinRequestId',
+        'status',
+        'roomState',
+        'banned',
+        'canCancel',
+      ],
+    );
+    final String responseRoomId = _requiredExactNonEmptyString(data, 'roomId');
+    final String responseJoinRequestId = _requiredExactNonEmptyString(
+      data,
+      'joinRequestId',
+    );
+    if (normalizedRoomId.isNotEmpty && responseRoomId != normalizedRoomId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '入房申请状态响应房间 ID 不一致',
+      );
+    }
+    if (normalizedJoinRequestId.isNotEmpty &&
+        responseJoinRequestId != normalizedJoinRequestId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '入房申请状态响应申请 ID 不一致',
+      );
+    }
+    final RoomJoinRequestStatus status = _roomJoinRequestStatusFrom(
+      data['status'],
+    );
+    final String roomState = _requiredExactNonEmptyString(
+      data,
+      'roomState',
+    ).toUpperCase();
+    if (roomState != 'OPEN' && roomState != 'CLOSED') {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '入房申请状态包含未知房间状态',
+      );
+    }
+    final bool banned = _requiredBool(data, 'banned');
+    final bool canCancel = _requiredBool(data, 'canCancel');
+    final bool expectedCanCancel =
+        status == RoomJoinRequestStatus.pending &&
+        roomState == 'OPEN' &&
+        !banned;
+    if (canCancel != expectedCanCancel) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '入房申请状态 canCancel 与权威状态不一致',
+      );
+    }
+    return RoomJoinRequestApplicantStatus(
+      roomId: responseRoomId,
+      joinRequestId: responseJoinRequestId,
+      status: status,
+      roomState: roomState,
+      banned: banned,
+      canCancel: canCancel,
+      message: _optionalString(data['message']),
+      createdAt: _optionalDateTime(data['createdAt']),
+      resolvedAt: _optionalDateTime(data['resolvedAt']),
+    );
+  }
+
+  @override
+  Future<RoomJoinRequestCancellation> cancelJoinRequest({
+    required String roomId,
+    required String joinRequestId,
+    String? requestId,
+  }) async {
+    final String normalizedRoomId = _requiredIdentifier(roomId, '房间 ID');
+    final String normalizedJoinRequestId = _requiredIdentifier(
+      joinRequestId,
+      '入房申请 ID',
+    );
+    return _writeGuard.run<RoomJoinRequestCancellation>(
+      intent:
+          'room-join-request-cancel:$normalizedRoomId:$normalizedJoinRequestId',
+      requestId: requestId,
+      fingerprint:
+          'ROOM_JOIN_REQUEST_CANCEL|$normalizedRoomId|$normalizedJoinRequestId',
+      action: (Map<String, String> headers) async {
+        final ApiResponse response = await _apiClient.post(
+          _routes.cancelRoomJoinRequest,
+          headers: headers,
+          body: <String, Object?>{
+            'roomId': normalizedRoomId,
+            'joinRequestId': normalizedJoinRequestId,
+          },
+        );
+        final Map<String, Object?> data = _requiredResponseMap(
+          response,
+          operation: '撤收入房申请',
+          requiredFields: const <String>[
+            'roomId',
+            'joinRequestId',
+            'status',
+            'cancelled',
+            'alreadyCancelled',
+          ],
+        );
+        if (_requiredExactNonEmptyString(data, 'roomId') != normalizedRoomId) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '撤回申请响应房间 ID 不一致',
+          );
+        }
+        if (_requiredExactNonEmptyString(data, 'joinRequestId') !=
+            normalizedJoinRequestId) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '撤回申请响应申请 ID 不一致',
+          );
+        }
+        final RoomJoinRequestStatus status = _roomJoinRequestStatusFrom(
+          data['status'],
+        );
+        if (status != RoomJoinRequestStatus.cancelled) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '撤回申请响应状态不一致',
+          );
+        }
+        final bool cancelled = _requiredBool(data, 'cancelled');
+        if (!cancelled) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '撤回申请响应未确认已撤回',
+          );
+        }
+        return RoomJoinRequestCancellation(
+          roomId: normalizedRoomId,
+          joinRequestId: normalizedJoinRequestId,
+          status: status,
+          cancelled: cancelled,
+          alreadyCancelled: _requiredBool(data, 'alreadyCancelled'),
+        );
+      },
+    );
+  }
+
+  @override
   Future<void> resolveJoinRequest({
     required String joinRequestId,
     required bool approved,
@@ -707,18 +877,9 @@ class BackendRoomOperationsRepository
 
   static RoomJoinRequest _joinRequestFrom(Map<String, Object?> item) {
     final String id = _requiredExactNonEmptyString(item, 'joinRequestId');
-    final RoomJoinRequestStatus status = switch (_string(
+    final RoomJoinRequestStatus status = _roomJoinRequestStatusFrom(
       item['status'],
-      fallback: '',
-    ).toUpperCase()) {
-      'PENDING' => RoomJoinRequestStatus.pending,
-      'APPROVED' => RoomJoinRequestStatus.approved,
-      'REJECTED' => RoomJoinRequestStatus.rejected,
-      _ => throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '入房申请包含未知状态',
-      ),
-    };
+    );
     final int userId = _requiredMemberId(item);
     return RoomJoinRequest(
       id: id,
@@ -832,6 +993,110 @@ class BackendRoomOperationsRepository
       );
     }
     return data;
+  }
+
+  static Map<String, Object?> _requiredResponseMap(
+    ApiResponse response, {
+    required String operation,
+    required Iterable<String> requiredFields,
+  }) {
+    final Object? rawData = response.data;
+    if (rawData is! Map) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$operation 响应结构无法识别',
+      );
+    }
+    final Map<String, Object?> data = <String, Object?>{
+      for (final MapEntry<Object?, Object?> entry in rawData.entries)
+        entry.key.toString(): entry.value,
+    };
+    if (data.isEmpty) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$operation 响应结构为空',
+      );
+    }
+    for (final String field in requiredFields) {
+      if (!data.containsKey(field) || data[field] == null) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '$operation 响应缺少权威字段 $field',
+        );
+      }
+    }
+    final Object? successValue = data.containsKey('success')
+        ? data['success']
+        : data.containsKey('isSuccess')
+        ? data['isSuccess']
+        : null;
+    if (data.containsKey('success') || data.containsKey('isSuccess')) {
+      if (successValue is! bool) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '$operation 成功字段无法识别',
+        );
+      }
+      if (!successValue) {
+        throw ApiException(
+          kind: ApiFailureKind.business,
+          message: '$operation 未被服务端接受',
+        );
+      }
+    }
+    return data;
+  }
+
+  static RoomJoinRequestStatus _roomJoinRequestStatusFrom(Object? value) {
+    if (value is! String || value.isEmpty || value.trim() != value) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '入房申请状态字段无法识别',
+      );
+    }
+    return switch (value.toUpperCase()) {
+      'PENDING' => RoomJoinRequestStatus.pending,
+      'CANCELLED' => RoomJoinRequestStatus.cancelled,
+      'APPROVED' => RoomJoinRequestStatus.approved,
+      'REJECTED' => RoomJoinRequestStatus.rejected,
+      _ => throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '入房申请包含未知状态',
+      ),
+    };
+  }
+
+  static bool _requiredBool(Map<String, Object?> data, String field) {
+    final Object? value = data[field];
+    if (value is! bool) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '响应字段 $field 必须为布尔值',
+      );
+    }
+    return value;
+  }
+
+  static String _optionalIdentifier(String? value, String label) {
+    if (value == null) {
+      return '';
+    }
+    final String normalized = value.trim();
+    if (normalized.isEmpty) {
+      return '';
+    }
+    if (normalized.length > 64 || normalized != value) {
+      throw ApiException(kind: ApiFailureKind.validation, message: '$label 无效');
+    }
+    return normalized;
+  }
+
+  static String _requiredIdentifier(String value, String label) {
+    final String normalized = _optionalIdentifier(value, label);
+    if (normalized.isEmpty) {
+      throw ApiException(kind: ApiFailureKind.validation, message: '$label 无效');
+    }
+    return normalized;
   }
 
   static void _assertRoom(

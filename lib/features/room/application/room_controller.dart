@@ -64,6 +64,7 @@ class RoomController extends ChangeNotifier {
   int _sessionEpoch = 0;
   Object? _transportLeaseId;
   String? _errorMessage;
+  String? _pendingJoinRequestId;
   ApiFailureKind? _historyErrorKind;
   String? _historyErrorMessage;
   final Map<String, String> _publicMessageRetryIds = <String, String>{};
@@ -94,6 +95,7 @@ class RoomController extends ChangeNotifier {
   bool get canSendPublicMessage =>
       !_mutedInRoom && allows(RoomCapability.sendPublicMessage);
   String? get errorMessage => _errorMessage;
+  String? get pendingJoinRequestId => _pendingJoinRequestId;
   ApiFailureKind? get historyErrorKind => _historyErrorKind;
   String? get historyErrorMessage => _historyErrorMessage;
 
@@ -151,6 +153,7 @@ class RoomController extends ChangeNotifier {
     }
     final int sessionEpoch = ++_sessionEpoch;
     _joinCancelled = false;
+    _pendingJoinRequestId = null;
     _mutedInRoom = false;
     _status = RoomSessionStatus.joining;
     _errorMessage = null;
@@ -248,6 +251,9 @@ class RoomController extends ChangeNotifier {
         transportLease: transportLease,
       );
       _errorMessage = _messageFor(error, fallback: '进入房间失败，请重试');
+      if (error is RoomJoinRequestPendingException) {
+        _pendingJoinRequestId = error.joinRequestId;
+      }
       _status = RoomSessionStatus.failed;
     }
     if (_isCurrent(sessionEpoch)) {

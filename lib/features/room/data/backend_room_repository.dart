@@ -189,9 +189,9 @@ class BackendRoomRepository implements RoomRepository, GiftReceiptRepository {
     final String status = _nonEmptyString(data['status'])?.toUpperCase() ?? '';
     if ((data.containsKey('joined') && !_asBool(data['joined'])) ||
         status == 'PENDING_APPROVAL') {
-      throw const ApiException(
-        kind: ApiFailureKind.business,
-        message: '申请已提交，等待审核',
+      throw RoomJoinRequestPendingException(
+        roomId: _nonEmptyString(data['roomId']) ?? '',
+        joinRequestId: _nonEmptyString(data['joinRequestId']),
       );
     }
     return _snapshotFromData(data, currentUserId: currentUserId);

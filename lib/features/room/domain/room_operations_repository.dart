@@ -91,6 +91,21 @@ abstract interface class RoomJoinRequestRepository {
     required bool approved,
     String? requestId,
   });
+
+  /// Reads only the authenticated applicant's own request. At least one of
+  /// [roomId] or [joinRequestId] must be provided.
+  Future<RoomJoinRequestApplicantStatus> fetchJoinRequestStatus({
+    String? roomId,
+    String? joinRequestId,
+  });
+
+  /// Cancels a pending applicant request. The idempotency key is sent only as
+  /// the X-Request-Id header; it must never be put into the JSON body.
+  Future<RoomJoinRequestCancellation> cancelJoinRequest({
+    required String roomId,
+    required String joinRequestId,
+    String? requestId,
+  });
 }
 
 /// Optional first-party room-ban capability used by RM-007.

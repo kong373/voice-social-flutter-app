@@ -1,6 +1,19 @@
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 
+/// Raised when an approval-only room accepted the applicant's request but did
+/// not create a room session. The request identifiers are retained so the UI
+/// can take the applicant to the authoritative status surface.
+class RoomJoinRequestPendingException extends ApiException {
+  const RoomJoinRequestPendingException({
+    required this.roomId,
+    this.joinRequestId,
+  }) : super(kind: ApiFailureKind.business, message: '申请已提交，等待审核');
+
+  final String roomId;
+  final String? joinRequestId;
+}
+
 abstract interface class RoomRepository {
   Future<RoomSnapshot> enterRoom({
     required String roomId,

@@ -19,6 +19,7 @@ import 'package:voice_social_app/features/room/presentation/room_members_page.da
 import 'package:voice_social_app/features/room/presentation/room_recovery_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_share_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_topic_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_join_request_status_page.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
@@ -173,6 +174,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Widget _failureState() {
+    final bool approvalPending = _controller.pendingJoinRequestId != null;
     return Stack(
       children: <Widget>[
         const _VideoRoomBackground(),
@@ -195,23 +197,50 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                 ),
                 const SizedBox(height: 18),
                 Text(
-                  '暂时无法进入房间',
+                  approvalPending ? '申请已提交，等待审核' : '暂时无法进入房间',
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 10),
-                Text(_controller.errorMessage ?? '请检查网络后重试。'),
-                const SizedBox(height: 22),
-                FilledButton.icon(
-                  onPressed: () => _controller.join(source: widget.entrySource),
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('重新进入'),
+                Text(
+                  approvalPending
+                      ? '房主或房管处理后，你可以再次尝试进入。'
+                      : (_controller.errorMessage ?? '请检查网络后重试。'),
                 ),
+                const SizedBox(height: 22),
+                if (approvalPending)
+                  FilledButton.icon(
+                    onPressed: _openJoinRequestStatus,
+                    icon: const Icon(Icons.assignment_turned_in_outlined),
+                    label: const Text('查看申请状态'),
+                  )
+                else
+                  FilledButton.icon(
+                    onPressed: () =>
+                        _controller.join(source: widget.entrySource),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('重新进入'),
+                  ),
                 const Spacer(),
               ],
             ),
           ),
         ),
       ],
+    );
+  }
+
+  void _openJoinRequestStatus() {
+    if (_controller.pendingJoinRequestId == null) {
+      return;
+    }
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => RoomJoinRequestStatusPage(
+          roomId: _controller.roomId,
+          joinRequestId: _controller.pendingJoinRequestId,
+          roomTitle: _controller.displayTitle,
+        ),
+      ),
     );
   }
 

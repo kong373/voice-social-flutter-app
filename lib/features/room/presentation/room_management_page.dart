@@ -1075,6 +1075,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
   static String _joinRequestStatusLabel(RoomJoinRequestStatus status) {
     return switch (status) {
       RoomJoinRequestStatus.pending => '待审核',
+      RoomJoinRequestStatus.cancelled => '已撤回',
       RoomJoinRequestStatus.approved => '已同意',
       RoomJoinRequestStatus.rejected => '已拒绝',
     };

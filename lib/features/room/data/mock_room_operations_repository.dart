@@ -80,12 +80,29 @@ class MockRoomOperationsRepository
 
   final List<MicAccessRequest> _requests = <MicAccessRequest>[];
   final List<RoomJoinRequest> _joinRequests = <RoomJoinRequest>[];
+  final Map<String, RoomJoinRequestApplicantStatus> _applicantStatuses =
+      <String, RoomJoinRequestApplicantStatus>{};
   final List<RoomBannedUser> _bannedUsers = <RoomBannedUser>[];
 
   void seedJoinRequestForQa(RoomJoinRequest request) {
     _joinRequests
       ..removeWhere((RoomJoinRequest item) => item.id == request.id)
       ..add(request);
+    _applicantStatuses[request.id] = RoomJoinRequestApplicantStatus(
+      roomId: '9527',
+      joinRequestId: request.id,
+      status: request.status,
+      roomState: 'OPEN',
+      banned: false,
+      canCancel: request.status == RoomJoinRequestStatus.pending,
+      message: request.message,
+      createdAt: request.createdAt,
+      resolvedAt: request.resolvedAt,
+    );
+  }
+
+  void seedApplicantStatusForQa(RoomJoinRequestApplicantStatus status) {
+    _applicantStatuses[status.joinRequestId] = status;
   }
 
   void seedBannedUserForQa(RoomBannedUser user) {
@@ -283,6 +300,97 @@ class MockRoomOperationsRepository
       message: current.message,
       createdAt: current.createdAt,
       resolvedAt: DateTime.now(),
+    );
+    final RoomJoinRequestApplicantStatus? applicant =
+        _applicantStatuses[joinRequestId];
+    if (applicant != null) {
+      _applicantStatuses[joinRequestId] = RoomJoinRequestApplicantStatus(
+        roomId: applicant.roomId,
+        joinRequestId: applicant.joinRequestId,
+        status: approved
+            ? RoomJoinRequestStatus.approved
+            : RoomJoinRequestStatus.rejected,
+        roomState: applicant.roomState,
+        banned: applicant.banned,
+        canCancel: false,
+        message: applicant.message,
+        createdAt: applicant.createdAt,
+        resolvedAt: DateTime.now(),
+      );
+    }
+  }
+
+  @override
+  Future<RoomJoinRequestApplicantStatus> fetchJoinRequestStatus({
+    String? roomId,
+    String? joinRequestId,
+  }) async {
+    RoomJoinRequestApplicantStatus? result;
+    if (joinRequestId != null && joinRequestId.trim().isNotEmpty) {
+      result = _applicantStatuses[joinRequestId.trim()];
+    } else if (roomId != null && roomId.trim().isNotEmpty) {
+      result = _applicantStatuses.values
+          .where(
+            (RoomJoinRequestApplicantStatus item) =>
+                item.roomId == roomId.trim(),
+          )
+          .firstOrNull;
+    }
+    if (result == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        message: '入房申请不存在',
+      );
+    }
+    return result;
+  }
+
+  @override
+  Future<RoomJoinRequestCancellation> cancelJoinRequest({
+    required String roomId,
+    required String joinRequestId,
+    String? requestId,
+  }) async {
+    final RoomJoinRequestApplicantStatus? current =
+        _applicantStatuses[joinRequestId];
+    if (current == null || current.roomId != roomId) {
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        message: '入房申请不存在',
+      );
+    }
+    if (current.status == RoomJoinRequestStatus.cancelled) {
+      return RoomJoinRequestCancellation(
+        roomId: roomId,
+        joinRequestId: joinRequestId,
+        status: RoomJoinRequestStatus.cancelled,
+        cancelled: true,
+        alreadyCancelled: true,
+      );
+    }
+    if (!current.canCancel) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '入房申请当前不可撤回',
+      );
+    }
+    _applicantStatuses[joinRequestId] = RoomJoinRequestApplicantStatus(
+      roomId: current.roomId,
+      joinRequestId: current.joinRequestId,
+      status: RoomJoinRequestStatus.cancelled,
+      roomState: current.roomState,
+      banned: current.banned,
+      canCancel: false,
+      message: current.message,
+      createdAt: current.createdAt,
+      resolvedAt: DateTime.now(),
+    );
+    return RoomJoinRequestCancellation(
+      roomId: roomId,
+      joinRequestId: joinRequestId,
+      status: RoomJoinRequestStatus.cancelled,
+      cancelled: true,
+      alreadyCancelled: false,
     );
   }
 
