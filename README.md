@@ -4,11 +4,22 @@ Clean-room Flutter client for the authorized reconstruction of a Chinese voice-s
 
 The product denominator is frozen at **69 Page IDs**. Product scope, authorized backend behavior, authorized APK evidence, and the new Flutter design system are kept separate so legacy or retired capabilities cannot leak into the new app.
 
-## Current checkpoint — M3 authorized development integration
+## Current checkpoint — F3/M4 first-party live integration
 
-M0 through M2.4 are merged into `main`. The mock-backed product baseline includes all 69 Page IDs, fixed root navigation, the fixed eight-seat room, discovery, account/social, messages, commerce, community, room PK, and the Android dual-emulator QA harness.
+The current checkpoint is the F3/M4 first-party live integration boundary. The
+69-page C-end UI scope is implemented and visually/widget-checked as
+`UI_SCOPE=COMPLETE_69_PAGE_C_END`. That is an implementation result, not a
+live-backend or emulator-acceptance result: `LIVE_DUAL_AVD_ACCEPTANCE=PENDING`
+until the same candidate is exercised on both authoritative AVDs. This checkout
+does not claim a live AVD `PASS`.
 
-M3.1 adds a side-effect-free live-readiness layer before any real SMS, login, room, wallet, RTC, IM, or payment call is attempted:
+M0 through M3.3 provide the fixed root navigation, fixed eight-seat room,
+discovery, account/social, messages, commerce, community, room PK, and all 69
+Page IDs. F3 now carries the first-party HTTP/read contracts into the live
+development graph; M4 is the two-AVD live acceptance gate.
+
+The side-effect-free readiness layer still runs before any live authentication
+or business request:
 
 ```text
 runtime configuration validation
@@ -19,6 +30,26 @@ runtime configuration validation
 ```
 
 The default debug build remains **mock mode**. Live mode requires authorized non-production configuration and fails closed when values are missing or unsafe.
+
+### First-party and formal-provider status
+
+The following status is canonical for this checkpoint:
+
+| Capability | Current status | Boundary |
+| --- | --- | --- |
+| First-party HTTP/read contracts | `READY_FOR_F3_LIVE_READS` | Read responses must be server-authoritative and redacted in evidence. |
+| Recharge catalog (`CM-002`) | `FIRST_PARTY_READ_READY` | The catalog can be read from the first-party route. |
+| Recharge order creation / payment launch (`CM-003`) | `VENDOR_BLOCKED` | Creation and channel invocation fail closed until formal payment adapters are approved. |
+| SMS | `VENDOR_BLOCKED` | Development Outbox OTP is test-only and is not formal SMS delivery. |
+| RTC | `VENDOR_BLOCKED` | No live media join or publication is claimed. |
+| IM | `VENDOR_BLOCKED` | No live realtime/private-message transport is claimed. |
+| PAYMENT | `VENDOR_BLOCKED` | No provider order creation, SDK launch, or success is claimed. |
+| PUSH | `VENDOR_BLOCKED` | OS notification permission is not push delivery. |
+| OBJECT_STORAGE | `VENDOR_BLOCKED` | No provider-backed media upload is claimed. |
+
+All six formal provider boundaries are fail-closed. A development Outbox
+response may supply a local development OTP for a controlled test, but it must
+never be described as a formal SMS vendor integration or acceptance.
 
 ### Video-runtime UI preview
 
@@ -36,12 +67,17 @@ This public repository contains no APK source package, decompiled proprietary so
 
 The following capabilities remain excluded even when legacy evidence exists:
 
-- memberships, paid status tiers, and membership privileges;
+- commercial memberships/VIP, paid status tiers, and membership privileges;
 - gift inventory or a gift backpack;
 - red packets;
 - KTV, song requests, singing, and chorus;
 - blind boxes, magic balls, dango, and love letters;
 - random matching, nearby users, scan-to-enter, and unconfirmed games.
+
+Commercial VIP and gift-backpack routes are permanently `RETIRED` /
+`OUT_OF_SCOPE`; they are not routes in the 69-page C-end product. Guild
+membership and guild member/application governance remain in scope under
+`SC-001`/`SC-002` and must not be removed by this commercial exclusion.
 
 ## Local setup
 
@@ -109,6 +145,7 @@ GitHub Actions also generates an isolated Android runner, builds a debug APK, an
 - [Architecture](docs/architecture.md)
 - [M1 backend contract](docs/contracts/m1_backend_contract.md)
 - [M3.1 live readiness](docs/m3-live-backend-readiness.md)
+- [F3/M4 first-party live integration](docs/f3-m4-first-party-live-integration.md)
 - [Live development launcher](docs/live-development.md)
 - [M3.3 video-runtime UI design QA](design-qa.md)
 - [Delivery roadmap](docs/roadmap.md)

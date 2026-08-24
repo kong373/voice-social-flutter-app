@@ -1,5 +1,10 @@
 # Flutter Architecture
 
+Current delivery status is `UI_SCOPE=COMPLETE_69_PAGE_C_END` and
+`FIRST_PARTY_READS=READY`; `LIVE_DUAL_AVD_ACCEPTANCE=PENDING`. These are
+separate states: implemented C-end UI and first-party read contracts do not
+constitute live AVD acceptance or formal provider activation.
+
 ## Source-of-truth order
 
 1. Frozen 69-page scope and explicit product constraints.

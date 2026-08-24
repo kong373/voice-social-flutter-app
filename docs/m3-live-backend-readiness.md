@@ -1,4 +1,4 @@
-# M3.1 — Development gateway readiness
+# M3.1 — Development gateway readiness (F3 prerequisite)
 
 ## Goal
 
@@ -51,14 +51,19 @@ flutter run \
 
 `gatewayReachable` means only that the configured endpoint produced an HTTP response after system TLS verification. A 401, 403, or 404 can still prove transport reachability. It does not prove that SMS, authentication, response envelopes, user data, rooms, wallets, RTC, IM, or payment work.
 
-## Next checkpoint
+## Next checkpoint — F3/M4 first-party live integration
 
-M3.2 will use a dedicated non-production account and the authorized development gateway to validate, in order:
+F3/M4 uses a dedicated development account and the authorized first-party
+gateway to validate, in order:
 
-1. SMS request contract without exposing phone data in logs.
-2. SMS login and secure session persistence.
+1. Development-only Outbox OTP and session contract without exposing phone data
+   in logs; this is not formal SMS delivery.
+2. First-party session persistence and recovery.
 3. DS-001 recommendation and DS-002/003 search reads.
 4. RM-003 validation, RM-004 HTTP room snapshot, and leave behavior without RTC publication.
-5. CM-001 wallet and CM-005 order read-only data.
+5. CM-001 wallet, CM-002 recharge-catalog, and CM-005/CM-006 order read-only data.
 
-RTC, Tencent IM, payment invocation, push, native permissions, and object storage remain blocked until their provider configuration is approved.
+Formal SMS, RTC, Tencent IM, PAYMENT, PUSH, and OBJECT_STORAGE remain
+`VENDOR_BLOCKED` and fail closed until their provider configuration is approved.
+The real two-AVD live acceptance remains `PENDING` until both devices produce
+protected evidence on the same candidate SHA.

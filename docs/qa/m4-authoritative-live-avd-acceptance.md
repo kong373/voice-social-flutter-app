@@ -6,6 +6,13 @@ deterministic contract server, and it does not start SMS, RTC, IM, payment,
 push, or storage vendors. Port `8765` and any `contract-server` target are
 rejected before an emulator is launched.
 
+## Current status
+
+`LIVE_DUAL_AVD_ACCEPTANCE=PENDING`. This file specifies the authoritative
+runner and its evidence contract; it is not evidence that the runner has
+passed. No live AVD `PASS` may be recorded until both AVD-A and AVD-B produce
+protected evidence on the same candidate SHA and the aggregate gate accepts.
+
 ## Matrix and execution order
 
 The script runs the two devices serially:
@@ -67,8 +74,9 @@ test. Domain states such as an absent guild or an ineligible operation may be
 recorded as explicit redacted states. Network, timeout, server, protocol,
 configuration, authorization, unknown-exception, and required-route failures
 fail the run instead of being counted as optional coverage.
-The host must provide Flutter, Android `adb`/emulator tooling, Python 3,
-`curl`, and GNU `timeout` (or macOS `gtimeout`).
+The host must provide Flutter, Android `adb`/emulator tooling, Python 3, and
+`curl`. The runner enforces its process timeout through Python, so a separate
+GNU `timeout` installation is not required on macOS.
 
 ## DB evidence contract
 
