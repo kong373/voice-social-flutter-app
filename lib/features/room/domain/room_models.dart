@@ -227,6 +227,11 @@ class GiftReceipt {
     this.providerInvocation,
     this.providerStatus,
     this.status,
+    this.requestId,
+    this.creatorIncomeMinor,
+    this.charmValue,
+    this.reconciled,
+    this.createdAt,
   });
 
   final bool success;
@@ -243,4 +248,9 @@ class GiftReceipt {
   final bool? providerInvocation;
   final String? providerStatus;
   final String? status;
+  final String? requestId;
+  final int? creatorIncomeMinor;
+  final int? charmValue;
+  final bool? reconciled;
+  final DateTime? createdAt;
 }

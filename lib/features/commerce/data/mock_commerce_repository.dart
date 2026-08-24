@@ -65,6 +65,7 @@ class MockCommerceRepository implements CommerceRepository {
            relatedUserName: '鹿屿',
            businessName: '星河灯',
            rawSubtype: 'gift_income',
+           currency: LedgerCurrency.cashCny,
          ),
          LedgerEntry(
            id: 'income-2',
@@ -76,6 +77,7 @@ class MockCommerceRepository implements CommerceRepository {
            relatedUserName: '',
            businessName: '本周渠道结算',
            rawSubtype: 'agent_income',
+           currency: LedgerCurrency.cashCny,
          ),
        ],
        _expenseEntries = <LedgerEntry>[
@@ -89,6 +91,7 @@ class MockCommerceRepository implements CommerceRepository {
            relatedUserName: '南风',
            businessName: '晚安星光',
            rawSubtype: 'send_gift',
+           currency: LedgerCurrency.giftCoin,
          ),
          LedgerEntry(
            id: 'expense-2',
@@ -100,6 +103,7 @@ class MockCommerceRepository implements CommerceRepository {
            relatedUserName: '',
            businessName: '招商银行 **** 8812',
            rawSubtype: 'withdrawal',
+           currency: LedgerCurrency.cashCny,
          ),
        ];
 
@@ -109,6 +113,16 @@ class MockCommerceRepository implements CommerceRepository {
   final List<WithdrawalRecord> _withdrawals;
   final List<LedgerEntry> _incomeEntries;
   final List<LedgerEntry> _expenseEntries;
+  final List<PayoutAccount> _payoutAccounts = <PayoutAccount>[
+    const PayoutAccount(
+      payoutAccountId: 'card-1',
+      accountType: 'BANK_REFERENCE',
+      accountMasked: '6225 **** **** 8812',
+      holderNameMasked: '晚*',
+      status: PayoutAccountStatus.verified,
+      selectable: true,
+    ),
+  ];
   int _refundSequence = 2;
   int _withdrawalSequence = 2;
   double _cashBalance = 1288.50;
@@ -124,6 +138,9 @@ class MockCommerceRepository implements CommerceRepository {
 
   @override
   bool get supportsWithdrawalApplication => true;
+
+  @override
+  bool get supportsPayoutAccountSelection => false;
 
   @override
   RefundScope get refundScope => RefundScope.accountLegacy;
@@ -352,6 +369,23 @@ class MockCommerceRepository implements CommerceRepository {
         );
 
   @override
+  Future<PayoutAccountSelection> fetchPayoutAccounts() async =>
+      const PayoutAccountSelection(
+        accounts: <PayoutAccount>[
+          PayoutAccount(
+            payoutAccountId: 'card-1',
+            accountType: 'BANK_REFERENCE',
+            accountMasked: '6225 **** **** 8812',
+            holderNameMasked: '晚*',
+            status: PayoutAccountStatus.verified,
+            selectable: true,
+          ),
+        ],
+        selectedPayoutAccountId: 'card-1',
+        selectionRequired: false,
+      );
+
+  @override
   Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount}) async {
     final double scaledAmount = amount * 100;
     if (!amount.isFinite ||
@@ -375,13 +409,28 @@ class MockCommerceRepository implements CommerceRepository {
   }
 
   @override
-  Future<WithdrawalRecord> applyWithdrawal({required double amount}) async {
+  Future<WithdrawalRecord> applyWithdrawal({
+    required double amount,
+    String? payoutAccountId,
+  }) async {
     final WalletSummary wallet = await fetchWalletSummary();
     final WithdrawalQuote quote = await fetchWithdrawalQuote(amount: amount);
     if (!wallet.realNameVerified || wallet.bankCard == null) {
       throw const ApiException(
         kind: ApiFailureKind.business,
         message: '请先完成实名认证并绑定银行卡',
+      );
+    }
+    final String selectedAccount = payoutAccountId?.trim().isNotEmpty == true
+        ? payoutAccountId!.trim()
+        : 'card-1';
+    if (!_payoutAccounts.any(
+      (PayoutAccount account) =>
+          account.payoutAccountId == selectedAccount && account.selectable,
+    )) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '选中的收款账户已失效，请刷新后重新选择',
       );
     }
     if (amount < quote.minimumAmount) {
@@ -408,6 +457,7 @@ class MockCommerceRepository implements CommerceRepository {
       statusText: '待审核',
       createdAt: now,
       rejectedReason: '',
+      payoutAccountId: selectedAccount,
       holderNameMasked: wallet.bankCard!.holderName,
       maskedCard: wallet.bankCard!.maskedNumber,
     );

@@ -11,7 +11,7 @@ import 'package:voice_social_app/features/room/data/room_write_guard.dart';
 ///
 /// It exposes the authoritative HTTP room snapshot and the first-party room
 /// writes. RTC/audio/realtime transport remains explicitly vendor-blocked.
-class BackendRoomRepository implements RoomRepository {
+class BackendRoomRepository implements RoomRepository, GiftReceiptRepository {
   BackendRoomRepository({
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
@@ -614,17 +614,85 @@ class BackendRoomRepository implements RoomRepository {
           giftId: normalizedGiftId,
           receiverUserId: receiverUserIds.first,
           quantity: quantity,
+          expectedRequestId: headers['X-Request-Id'],
         );
       },
     );
   }
 
+  @override
+  Future<GiftReceipt> fetchGiftReceipt({
+    String? transferId,
+    String? requestId,
+    int? participantUserId,
+    int? senderUserId,
+    int? receiverUserId,
+    int? currentUserId,
+  }) async {
+    final String? normalizedTransferId = _optionalTrimmedString(transferId);
+    final String? normalizedRequestId = _optionalTrimmedString(requestId);
+    if (normalizedTransferId == null && normalizedRequestId == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '礼物回执查询至少需要 transferId 或 requestId',
+      );
+    }
+    final int? expectedParticipant =
+        currentUserId ?? participantUserId ?? _activeCurrentUserId;
+    if (expectedParticipant == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '礼物回执查询缺少当前用户参与者上下文',
+      );
+    }
+    final ApiResponse response = await _apiClient.get(
+      _routes.giftReceipt,
+      query: <String, String>{
+        if (normalizedTransferId != null) 'transferId': normalizedTransferId,
+        if (normalizedRequestId != null) 'requestId': normalizedRequestId,
+      },
+    );
+    final Map<String, Object?> data = _asMap(response.data);
+    return _giftReceiptFromData(
+      data,
+      requireReceiptAuthority: true,
+      expectedTransferId: normalizedTransferId,
+      expectedRequestId: normalizedRequestId,
+      expectedParticipantUserId: expectedParticipant,
+      expectedSenderUserId: senderUserId,
+      expectedReceiverUserId: receiverUserId,
+    );
+  }
+
+  @override
+  Future<GiftReceipt> queryGiftReceipt({
+    String? transferId,
+    String? requestId,
+    int? participantUserId,
+    int? senderUserId,
+    int? receiverUserId,
+    int? currentUserId,
+  }) => fetchGiftReceipt(
+    transferId: transferId,
+    requestId: requestId,
+    participantUserId: participantUserId,
+    senderUserId: senderUserId,
+    receiverUserId: receiverUserId,
+    currentUserId: currentUserId,
+  );
+
   GiftReceipt _giftReceiptFromData(
     Map<String, Object?> data, {
-    required String roomId,
-    required String giftId,
-    required int receiverUserId,
-    required int quantity,
+    String? roomId,
+    String? giftId,
+    int? receiverUserId,
+    int? quantity,
+    String? expectedRequestId,
+    String? expectedTransferId,
+    int? expectedParticipantUserId,
+    int? expectedSenderUserId,
+    int? expectedReceiverUserId,
+    bool requireReceiptAuthority = false,
   }) {
     final String transferId = _requiredString(
       data,
@@ -651,6 +719,12 @@ class BackendRoomRepository implements RoomRepository {
       'giftId',
       field: '礼物 ID',
     );
+    if (!_giftUuidPattern.hasMatch(responseGiftId)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '礼物回执 giftId 不是有效 UUID',
+      );
+    }
     final String giftName = _requiredString(data, 'giftName', field: '礼物名称');
     final int responseQuantity = _requiredPositiveInt(
       data,
@@ -672,17 +746,83 @@ class BackendRoomRepository implements RoomRepository {
         ? _requiredString(data, 'status', field: '礼物状态').toUpperCase()
         : null;
     final String? providerStatus = _optionalString(data['providerStatus']);
+    final String? responseRequestId = data.containsKey('requestId')
+        ? _requiredString(data, 'requestId', field: '礼物请求 ID')
+        : null;
+    final int? creatorIncomeMinor = _optionalNonNegativeInt(
+      data['creatorIncomeMinor'],
+      field: '礼物创作者收益',
+    );
+    final int? charmValue = _optionalNonNegativeInt(
+      data['charmValue'],
+      field: '礼物魅力值',
+    );
+    final bool? reconciled = data.containsKey('reconciled')
+        ? _requiredBool(data, 'reconciled', field: '礼物回执 reconciled')
+        : null;
+    final DateTime? createdAt = data.containsKey('createdAt')
+        ? _requiredDateTime(data, 'createdAt', field: '礼物回执时间')
+        : null;
+    if (expectedTransferId != null && transferId != expectedTransferId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '礼物回执 transferId 与请求不一致',
+      );
+    }
+    if (requireReceiptAuthority && responseRequestId == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '礼物回执缺少 requestId 权威',
+      );
+    }
+    if (expectedRequestId != null &&
+        responseRequestId != null &&
+        responseRequestId != expectedRequestId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '礼物回执 requestId 与请求不一致',
+      );
+    }
+    final int? participant = expectedParticipantUserId;
+    if (participant != null &&
+        senderUserId != participant &&
+        responseReceiverUserId != participant) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '礼物回执参与者与当前用户不一致',
+      );
+    }
+    if (expectedSenderUserId != null && senderUserId != expectedSenderUserId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '礼物回执发送者与请求不一致',
+      );
+    }
+    if (expectedReceiverUserId != null &&
+        responseReceiverUserId != expectedReceiverUserId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '礼物回执接收者与请求不一致',
+      );
+    }
+    if (requireReceiptAuthority && reconciled != true) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '礼物回执缺少已对账权威',
+      );
+    }
     if (providerInvocation || source.toUpperCase() == 'BACKPACK') {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
         message: '服务端返回了不支持的礼物来源或渠道状态',
       );
     }
-    if (responseRoomId != roomId ||
-        responseReceiverUserId != receiverUserId ||
-        responseGiftId != giftId ||
-        responseQuantity != quantity ||
-        (_activeCurrentUserId != null &&
+    if ((roomId != null && responseRoomId != roomId) ||
+        (receiverUserId != null && responseReceiverUserId != receiverUserId) ||
+        (giftId != null && responseGiftId != giftId) ||
+        (quantity != null && responseQuantity != quantity) ||
+        (roomId != null &&
+            _activeCurrentUserId != null &&
             senderUserId != _activeCurrentUserId)) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -766,7 +906,11 @@ class BackendRoomRepository implements RoomRepository {
         message: '送礼响应缺少有效服务端状态',
       );
     }
-    if (authoritativeSuccess) {
+    if (authoritativeSuccess &&
+        roomId != null &&
+        giftId != null &&
+        receiverUserId != null &&
+        quantity != null) {
       _validateGiftAmountAuthority(
         data,
         roomId: roomId,
@@ -796,6 +940,11 @@ class BackendRoomRepository implements RoomRepository {
       providerInvocation: providerInvocation,
       providerStatus: providerStatus,
       status: status,
+      requestId: responseRequestId,
+      creatorIncomeMinor: creatorIncomeMinor,
+      charmValue: charmValue,
+      reconciled: reconciled,
+      createdAt: createdAt,
     );
   }
 
@@ -1766,6 +1915,11 @@ class BackendRoomRepository implements RoomRepository {
 
   static String? _optionalString(Object? value) => _nonEmptyString(value);
 
+  static String? _optionalTrimmedString(Object? value) {
+    final String? string = _nonEmptyString(value);
+    return string?.trim().isEmpty == true ? null : string?.trim();
+  }
+
   static int? _optionalInt(Object? value) {
     if (value == null) {
       return null;
@@ -1775,6 +1929,20 @@ class BackendRoomRepository implements RoomRepository {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '服务端余额不是有效非负整数',
+      );
+    }
+    return parsed;
+  }
+
+  static int? _optionalNonNegativeInt(Object? value, {required String field}) {
+    if (value == null) {
+      return null;
+    }
+    final int? parsed = _asInt(value);
+    if (parsed == null || parsed < 0) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field不是有效非负整数',
       );
     }
     return parsed;

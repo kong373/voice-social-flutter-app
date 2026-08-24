@@ -5,6 +5,7 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/data/mock_room_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
+import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
@@ -156,6 +157,48 @@ void main() {
         controller.messages.map((RoomMessage message) => message.messageId),
         <String?>['message-1', 'message-2'],
       );
+    },
+  );
+
+  test(
+    'gift receipt recovery uses the retained request id without a second send',
+    () async {
+      final _ReceiptRecoveryRoomRepository repository =
+          _ReceiptRecoveryRoomRepository();
+      final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
+      final RoomController controller = RoomController(
+        roomId: '880217',
+        title: '深夜温柔陪伴',
+        currentUserId: 10001,
+        accessToken: 'mock-access-token',
+        repository: repository,
+        rtcAdapter: MockRtcAdapter(),
+        realtimeGateway: realtime,
+        requestIdGenerator: (String prefix) => '$prefix-recovery-1',
+      );
+      addTearDown(() async {
+        controller.dispose();
+        await realtime.dispose();
+      });
+
+      await controller.join();
+      expect(
+        await controller.sendGift(
+          giftId: '101',
+          giftName: '玫瑰',
+          receiverUserId: 20001,
+          targetName: '房主 · 鹿屿',
+          quantity: 1,
+        ),
+        isFalse,
+      );
+
+      final GiftReceipt? recovered = await controller.fetchGiftReceipt();
+      expect(recovered?.success, isTrue);
+      expect(repository.sendCalls, 1);
+      expect(repository.receiptRequestIds, <String?>['room-gift-recovery-1']);
+      expect(repository.receiptParticipants, <int?>[10001]);
+      expect(controller.giftBalance, 1189);
     },
   );
 
@@ -723,4 +766,61 @@ class _ConcurrentChatRoomRepository extends MockRoomRepository {
       _concurrentCalls -= 1;
     }
   }
+}
+
+class _ReceiptRecoveryRoomRepository extends MockRoomRepository
+    implements GiftReceiptRepository {
+  int sendCalls = 0;
+  final List<String?> receiptRequestIds = <String?>[];
+  final List<int?> receiptParticipants = <int?>[];
+
+  @override
+  Future<GiftReceipt> sendGift({
+    required String roomId,
+    required String giftId,
+    required List<int> receiverUserIds,
+    required int quantity,
+    required int giftFrom,
+    String? requestId,
+  }) async {
+    sendCalls += 1;
+    throw const ApiException(kind: ApiFailureKind.server, message: '响应未知');
+  }
+
+  @override
+  Future<GiftReceipt> fetchGiftReceipt({
+    String? transferId,
+    String? requestId,
+    int? participantUserId,
+    int? senderUserId,
+    int? receiverUserId,
+    int? currentUserId,
+  }) async {
+    receiptRequestIds.add(requestId);
+    receiptParticipants.add(currentUserId);
+    return const GiftReceipt(
+      success: true,
+      remainingBalance: 1189,
+      transferId: '00000000-0000-0000-0000-00000000c001',
+      requestId: 'room-gift-recovery-1',
+      reconciled: true,
+    );
+  }
+
+  @override
+  Future<GiftReceipt> queryGiftReceipt({
+    String? transferId,
+    String? requestId,
+    int? participantUserId,
+    int? senderUserId,
+    int? receiverUserId,
+    int? currentUserId,
+  }) => fetchGiftReceipt(
+    transferId: transferId,
+    requestId: requestId,
+    participantUserId: participantUserId,
+    senderUserId: senderUserId,
+    receiverUserId: receiverUserId,
+    currentUserId: currentUserId,
+  );
 }

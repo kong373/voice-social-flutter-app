@@ -301,7 +301,7 @@ class _WalletPageState extends State<WalletPage> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${entry.direction == LedgerDirection.income ? '+' : '-'}${entry.amount.toStringAsFixed(0)} 礼物币',
+                  _ledgerAmountText(entry),
                   style: TextStyle(
                     color: entry.direction == LedgerDirection.income
                         ? AppColors.success

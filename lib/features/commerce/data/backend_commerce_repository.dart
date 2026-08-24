@@ -22,6 +22,12 @@ class BackendCommerceRepository implements CommerceRepository {
   final Map<String, String> _retainedRefundRetryRequestIds = <String, String>{};
   final Set<String> _refundSubmissionWritesStarted = <String>{};
   final Set<String> _refundRetryWritesStarted = <String>{};
+  Future<PayoutAccountSelection>? _payoutAccountsInFlight;
+  bool _payoutAccountsEndpointAvailable = false;
+  final Map<String, Future<WithdrawalRecord>> _pendingWithdrawalApplications =
+      <String, Future<WithdrawalRecord>>{};
+  final Map<String, String> _retainedWithdrawalRequestIds = <String, String>{};
+  final Set<String> _withdrawalWritesStarted = <String>{};
 
   static const Set<String> _retiredLedgerSubtypes = <String>{
     'BLIND_BOX',
@@ -45,7 +51,10 @@ class BackendCommerceRepository implements CommerceRepository {
   bool get supportsRefundHistory => false;
 
   @override
-  bool get supportsWithdrawalApplication => false;
+  bool get supportsWithdrawalApplication => _payoutAccountsEndpointAvailable;
+
+  @override
+  bool get supportsPayoutAccountSelection => _payoutAccountsEndpointAvailable;
 
   @override
   RefundScope get refundScope => RefundScope.order;
@@ -438,6 +447,153 @@ class BackendCommerceRepository implements CommerceRepository {
   }
 
   @override
+  Future<PayoutAccountSelection> fetchPayoutAccounts() {
+    final Future<PayoutAccountSelection>? inFlight = _payoutAccountsInFlight;
+    if (inFlight != null) {
+      return inFlight;
+    }
+    late final Future<PayoutAccountSelection> future;
+    future = _fetchPayoutAccounts().whenComplete(() {
+      if (identical(_payoutAccountsInFlight, future)) {
+        _payoutAccountsInFlight = null;
+      }
+    });
+    _payoutAccountsInFlight = future;
+    return future;
+  }
+
+  Future<PayoutAccountSelection> _fetchPayoutAccounts() async {
+    final ApiResponse response = await _apiClient.get(_routes.payoutAccounts);
+    final Map<String, Object?> data = _asMap(response.data);
+    final List<Object?> rawAccounts = _requiredList(data, field: '收款账户列表');
+    final int total = _requiredNonNegativeIntField(
+      data,
+      'total',
+      field: '收款账户总数',
+    );
+    if (rawAccounts.length != total) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '收款账户列表数量与服务端 total 不一致',
+      );
+    }
+    final List<PayoutAccount> accounts = <PayoutAccount>[];
+    final Set<String> seenIds = <String>{};
+    for (final Object? raw in rawAccounts) {
+      if (raw is! Map<String, Object?>) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '收款账户记录结构无法识别',
+        );
+      }
+      final String id = _requiredAliasedString(raw, <String>[
+        'payoutAccountId',
+        'accountId',
+      ], field: '收款账户 ID');
+      if (!seenIds.add(id)) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '收款账户列表包含重复的权威 ID',
+        );
+      }
+      final String accountType = _requiredString(
+        raw,
+        'accountType',
+        field: '收款账户类型',
+      );
+      final String accountMasked = _requiredAliasedString(raw, <String>[
+        'accountMasked',
+        'maskedAccount',
+      ], field: '收款账户脱敏账号');
+      final String holderNameMasked = _requiredAliasedString(raw, <String>[
+        'holderNameMasked',
+        'holderMasked',
+      ], field: '收款账户脱敏姓名');
+      final String rawStatus = _requiredString(
+        raw,
+        'status',
+        field: '收款账户状态',
+      ).toUpperCase();
+      final PayoutAccountStatus status = _payoutAccountStatus(rawStatus);
+      if (status == PayoutAccountStatus.unknown) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '收款账户状态不是受支持的服务端状态',
+        );
+      }
+      final bool selectable = _requiredBool(raw, 'selectable');
+      final bool expectedSelectable = status == PayoutAccountStatus.verified;
+      if (selectable != expectedSelectable) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '收款账户 selectable 与服务端状态不一致',
+        );
+      }
+      accounts.add(
+        PayoutAccount(
+          payoutAccountId: id,
+          accountType: accountType,
+          accountMasked: accountMasked,
+          holderNameMasked: holderNameMasked,
+          status: status,
+          selectable: selectable,
+          createdAt: _optionalDateTime(raw['createdAt']),
+          updatedAt: _optionalDateTime(raw['updatedAt']),
+        ),
+      );
+    }
+    if (data.containsKey('providerInvocation') &&
+        _requiredBool(data, 'providerInvocation')) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '收款账户响应声明了不允许的厂商调用',
+      );
+    }
+    final String? selected = _optionalTrimmedString(
+      data['selectedPayoutAccountId'],
+    );
+    final String? defaultSelected = _optionalTrimmedString(
+      data['defaultPayoutAccountId'],
+    );
+    if (selected != null &&
+        defaultSelected != null &&
+        selected != defaultSelected) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '收款账户 selected 与 default 不一致',
+      );
+    }
+    final String? resolvedSelected = selected ?? defaultSelected;
+    if (resolvedSelected != null) {
+      final PayoutAccount? selectedAccount = _findPayoutAccount(
+        accounts,
+        resolvedSelected,
+      );
+      if (selectedAccount == null || !selectedAccount.selectable) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '服务端选中的收款账户不可提现',
+        );
+      }
+    }
+    final bool selectionRequired = data.containsKey('selectionRequired')
+        ? _requiredBool(data, 'selectionRequired')
+        : resolvedSelected == null;
+    if (selectionRequired != (resolvedSelected == null)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '收款账户 selectionRequired 与选择结果不一致',
+      );
+    }
+    _payoutAccountsEndpointAvailable = true;
+    return PayoutAccountSelection(
+      accounts: List<PayoutAccount>.unmodifiable(accounts),
+      selectedPayoutAccountId: resolvedSelected,
+      selectionRequired: selectionRequired,
+    );
+  }
+
+  @override
   Future<RefundApplication> submitRefund(RefundRequest request) async {
     final String orderNo = request.account.trim();
     final String reason = request.reason.trim();
@@ -752,16 +908,157 @@ class BackendCommerceRepository implements CommerceRepository {
   }
 
   @override
-  Future<WithdrawalRecord> applyWithdrawal({required double amount}) async {
-    if (amount <= 0) {
+  Future<WithdrawalRecord> applyWithdrawal({
+    required double amount,
+    String? payoutAccountId,
+  }) async {
+    final int amountMinor = _validatedMinorAmount(amount, field: '提现金额');
+    final String accountId = payoutAccountId?.trim() ?? '';
+    if (accountId.isEmpty) {
       throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '提现金额必须大于 0',
+        kind: ApiFailureKind.configuration,
+        message: '没有选中的有效收款账户，不能提交提现',
       );
     }
-    throw const ApiException(
-      kind: ApiFailureKind.configuration,
-      message: '当前后端未提供收款账户列表与选择契约，不能伪造 payoutAccountId 提交提现',
+    final String intentKey =
+        'withdrawal:${commerceRefundIntentDigest(scope: 'withdrawal-apply', fields: <String>['$amountMinor', accountId])}';
+    final Future<WithdrawalRecord>? pending =
+        _pendingWithdrawalApplications[intentKey];
+    if (pending != null) {
+      return pending;
+    }
+    final String requestId = _retainedWithdrawalRequestIds.putIfAbsent(
+      intentKey,
+      () => normalizeCommerceRefundRequestId(
+        newCommerceRefundRequestId('flutter-commerce-withdrawal'),
+      ),
+    );
+    final bool replayingRetainedWrite = _withdrawalWritesStarted.contains(
+      intentKey,
+    );
+    late final Future<WithdrawalRecord> future;
+    future =
+        _applyWithdrawalOnce(
+          amountMinor: amountMinor,
+          payoutAccountId: accountId,
+          requestId: requestId,
+          intentKey: intentKey,
+          replayingRetainedWrite: replayingRetainedWrite,
+        ).then<WithdrawalRecord>(
+          (WithdrawalRecord value) {
+            if (identical(_pendingWithdrawalApplications[intentKey], future)) {
+              _pendingWithdrawalApplications.remove(intentKey);
+            }
+            _retainedWithdrawalRequestIds.remove(intentKey);
+            _withdrawalWritesStarted.remove(intentKey);
+            return value;
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (identical(_pendingWithdrawalApplications[intentKey], future)) {
+              _pendingWithdrawalApplications.remove(intentKey);
+            }
+            if (!_shouldRetainWithdrawalRequest(error)) {
+              _retainedWithdrawalRequestIds.remove(intentKey);
+              _withdrawalWritesStarted.remove(intentKey);
+            }
+            Error.throwWithStackTrace(error, stackTrace);
+          },
+        );
+    _pendingWithdrawalApplications[intentKey] = future;
+    return future;
+  }
+
+  Future<WithdrawalRecord> _applyWithdrawalOnce({
+    required int amountMinor,
+    required String payoutAccountId,
+    required String requestId,
+    required String intentKey,
+    required bool replayingRetainedWrite,
+  }) async {
+    if (!replayingRetainedWrite) {
+      final PayoutAccountSelection selection = await fetchPayoutAccounts();
+      final PayoutAccount? account = _findPayoutAccount(
+        selection.accounts,
+        payoutAccountId,
+      );
+      if (account == null || !account.selectable) {
+        throw const ApiException(
+          kind: ApiFailureKind.conflict,
+          message: '选中的收款账户已失效，请刷新后重新选择',
+        );
+      }
+    }
+    _withdrawalWritesStarted.add(intentKey);
+    final ApiResponse response = await _apiClient.post(
+      _routes.withdrawalApply,
+      headers: <String, String>{'X-Request-Id': requestId},
+      body: <String, Object?>{
+        'amountMinor': amountMinor,
+        'payoutAccountId': payoutAccountId,
+      },
+    );
+    final Map<String, Object?> data = _asMap(response.data);
+    final bool providerInvocation = data.containsKey('providerInvocation')
+        ? _requiredBool(data, 'providerInvocation')
+        : false;
+    if (providerInvocation) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '提现厂商状态被阻断，不能当作已提交',
+      );
+    }
+    final String responsePayoutAccountId =
+        _optionalTrimmedString(data['payoutAccountId']) ?? payoutAccountId;
+    if (responsePayoutAccountId != payoutAccountId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现响应与选中的收款账户不一致',
+      );
+    }
+    final int responseAmountMinor = _requiredInt(data, <String>[
+      'amountMinor',
+    ], field: '提现申请金额');
+    if (responseAmountMinor != amountMinor) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现响应与请求金额不一致',
+      );
+    }
+    final int feeMinor = _requiredInt(data, <String>[
+      'feeMinor',
+    ], field: '提现申请手续费');
+    final int netMinor = _requiredInt(data, <String>[
+      'netAmountMinor',
+    ], field: '提现申请到账金额');
+    if (feeMinor < 0 || netMinor < 0 || amountMinor - feeMinor != netMinor) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现申请金额不一致',
+      );
+    }
+    final String status = _requiredString(data, 'status', field: '提现申请状态');
+    final String withdrawalId = _requiredString(
+      data,
+      'withdrawalId',
+      field: '提现申请 ID',
+    );
+    final Object? submittedAt = data['submittedAt'];
+    return WithdrawalRecord(
+      id: withdrawalId,
+      withdrawalNo: withdrawalId,
+      amount: _minorToMajor(amountMinor),
+      fee: _minorToMajor(feeMinor),
+      receivedAmount: _minorToMajor(netMinor),
+      status: _requiredWithdrawalStatus(status),
+      statusText: _withdrawalStatusText(_requiredWithdrawalStatus(status)),
+      createdAt: submittedAt == null
+          ? DateTime.now().toUtc()
+          : _requiredDateTime(data, 'submittedAt', field: '提现申请时间'),
+      rejectedReason: _string(data['resultMessage']),
+      payoutAccountId: responsePayoutAccountId,
+      holderNameMasked: _string(data['holderNameMasked']),
+      maskedCard: _string(data['accountMasked']),
+      currency: LedgerCurrency.cashCny,
     );
   }
 
@@ -1606,6 +1903,122 @@ class BackendCommerceRepository implements CommerceRepository {
       throw ApiException(kind: ApiFailureKind.protocol, message: '$field不能为负数');
     }
     return value;
+  }
+
+  static int _requiredNonNegativeIntField(
+    Map<String, Object?> data,
+    String key, {
+    required String field,
+  }) => _requiredNonNegativeInt(data, <String>[key], field: field);
+
+  static String _requiredAliasedString(
+    Map<String, Object?> data,
+    List<String> keys, {
+    required String field,
+  }) {
+    String? resolved;
+    for (final String key in keys) {
+      if (!data.containsKey(key)) {
+        continue;
+      }
+      final String value = _string(data[key]);
+      if (value.isEmpty) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '$field的 $key 不是有效字符串',
+        );
+      }
+      if (resolved != null && resolved != value) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '$field别名值不一致',
+        );
+      }
+      resolved ??= value;
+    }
+    if (resolved == null) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field缺少有效服务端字符串',
+      );
+    }
+    return resolved;
+  }
+
+  static PayoutAccountStatus _payoutAccountStatus(String value) =>
+      switch (value) {
+        'VERIFIED' || 'ACTIVE' => PayoutAccountStatus.verified,
+        'PENDING' || 'REVIEWING' => PayoutAccountStatus.pending,
+        'DISABLED' || 'REVOKED' => PayoutAccountStatus.disabled,
+        _ => PayoutAccountStatus.unknown,
+      };
+
+  static PayoutAccount? _findPayoutAccount(
+    Iterable<PayoutAccount> accounts,
+    String accountId,
+  ) {
+    for (final PayoutAccount account in accounts) {
+      if (account.payoutAccountId == accountId) {
+        return account;
+      }
+    }
+    return null;
+  }
+
+  static String? _optionalTrimmedString(Object? value) {
+    final String normalized = value?.toString().trim() ?? '';
+    return normalized.isEmpty ? null : normalized;
+  }
+
+  static DateTime? _optionalDateTime(Object? value) {
+    if (value == null) {
+      return null;
+    }
+    final DateTime? parsed = _asDateTime(value);
+    if (parsed == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '收款账户时间不是有效服务端时间',
+      );
+    }
+    return parsed;
+  }
+
+  static int _validatedMinorAmount(double amount, {required String field}) {
+    if (!amount.isFinite || amount <= 0) {
+      throw ApiException(
+        kind: ApiFailureKind.validation,
+        message: '$field必须大于 0',
+      );
+    }
+    final double scaled = amount * 100;
+    final int minor = scaled.round();
+    if (minor <= 0 || (scaled - minor).abs() > 0.000001) {
+      throw ApiException(
+        kind: ApiFailureKind.validation,
+        message: '$field最多保留两位小数',
+      );
+    }
+    return minor;
+  }
+
+  static bool _shouldRetainWithdrawalRequest(Object error) {
+    if (error is! ApiException) {
+      return true;
+    }
+    if (error.code == 40901 || error.code == 40902) {
+      return true;
+    }
+    if (error.code == 40903 || error.kind == ApiFailureKind.conflict) {
+      return false;
+    }
+    return switch (error.kind) {
+      ApiFailureKind.timeout ||
+      ApiFailureKind.network ||
+      ApiFailureKind.protocol ||
+      ApiFailureKind.server => true,
+      _ => false,
+    };
   }
 
   static double _requiredDouble(Map<String, Object?> data, String key) {

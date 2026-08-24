@@ -665,5 +665,13 @@ String _formatDateTime(DateTime value) {
       '${two(local.hour)}:${two(local.minute)}';
 }
 
+String _ledgerAmountText(LedgerEntry entry) {
+  final String sign = entry.direction == LedgerDirection.income ? '+' : '-';
+  return switch (entry.currency) {
+    LedgerCurrency.giftCoin => '$sign${entry.amount.toStringAsFixed(0)} 礼物币',
+    LedgerCurrency.cashCny => '$sign¥${entry.amount.toStringAsFixed(2)}',
+  };
+}
+
 String _messageFor(Object error) =>
     error is ApiException ? error.message : '操作失败，请稍后重试';

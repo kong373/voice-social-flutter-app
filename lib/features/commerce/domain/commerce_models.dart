@@ -1,3 +1,5 @@
+import 'package:voice_social_app/core/network/api_exception.dart';
+
 enum LedgerDirection { income, expense }
 
 enum LedgerCurrency { giftCoin, cashCny }
@@ -40,6 +42,69 @@ class BankCardSummary {
   final String bankName;
   final String maskedNumber;
   final String holderName;
+}
+
+enum PayoutAccountStatus { verified, pending, disabled, unknown }
+
+class PayoutAccount {
+  const PayoutAccount({
+    required this.payoutAccountId,
+    required this.accountType,
+    required this.accountMasked,
+    required this.holderNameMasked,
+    required this.status,
+    required this.selectable,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String payoutAccountId;
+  final String accountType;
+  final String accountMasked;
+  final String holderNameMasked;
+  final PayoutAccountStatus status;
+  final bool selectable;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+}
+
+class PayoutAccountSelection {
+  const PayoutAccountSelection({
+    required this.accounts,
+    required this.selectedPayoutAccountId,
+    required this.selectionRequired,
+  });
+
+  final List<PayoutAccount> accounts;
+  final String? selectedPayoutAccountId;
+  final bool selectionRequired;
+
+  List<PayoutAccount> get selectableAccounts => accounts
+      .where((PayoutAccount account) => account.selectable)
+      .toList(growable: false);
+
+  PayoutAccountSelection select(String payoutAccountId) {
+    final String normalized = payoutAccountId.trim();
+    PayoutAccount? account;
+    for (final PayoutAccount candidate in selectableAccounts) {
+      if (candidate.payoutAccountId == normalized) {
+        account = candidate;
+        break;
+      }
+    }
+    if (account == null) {
+      throw ArgumentError.value(
+        payoutAccountId,
+        'payoutAccountId',
+        '不是当前权威列表中的可用收款账户',
+      );
+    }
+    return PayoutAccountSelection(
+      accounts: accounts,
+      selectedPayoutAccountId: account.payoutAccountId,
+      selectionRequired: false,
+    );
+  }
 }
 
 class WalletSummary {
@@ -308,6 +373,13 @@ abstract interface class CommerceRepository {
   bool get supportsPaymentChannelInvocation;
   bool get supportsRefundHistory;
   bool get supportsWithdrawalApplication;
+
+  /// Whether the UI may expose the first-party payout-account selector.
+  ///
+  /// This is separate from [supportsWithdrawalApplication] so deterministic
+  /// fixtures can retain their compact legacy presentation while live
+  /// repositories opt into the authoritative account picker.
+  bool get supportsPayoutAccountSelection => false;
   RefundScope get refundScope;
 
   Future<WalletSummary> fetchWalletSummary();
@@ -328,6 +400,14 @@ abstract interface class CommerceRepository {
 
   Future<RefundEligibility> checkRefundEligibility(String account);
 
+  /// Returns the authenticated user's masked, first-party payout-account
+  /// projections. Implementations without the live contract fail closed.
+  Future<PayoutAccountSelection> fetchPayoutAccounts() =>
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '当前后端未提供收款账户列表契约',
+      );
+
   Future<RefundApplication> submitRefund(RefundRequest request);
 
   Future<RefundApplication> fetchRefundResult(
@@ -344,7 +424,10 @@ abstract interface class CommerceRepository {
 
   Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount});
 
-  Future<WithdrawalRecord> applyWithdrawal({required double amount});
+  Future<WithdrawalRecord> applyWithdrawal({
+    required double amount,
+    String? payoutAccountId,
+  });
 
   Future<CommercePage<WithdrawalRecord>> fetchWithdrawalRecords({
     WithdrawalStatus? status,

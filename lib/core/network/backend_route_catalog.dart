@@ -14,6 +14,7 @@ class BackendRouteCatalog {
     this.exitRoom = '/app-room-api/room/com/v1/exitRoom',
     this.buildRtcToken = '/app-room-api/room/com/v1/buildAgoraToken',
     this.sendGift = '/app-room-api/room/com/v1/sendGift',
+    this.giftReceipt = '/app-room-api/room/com/v1/giftReceipt',
     this.sendPublicMessage = '/app-room-api/room/com/v1/roomScreenChat',
     this.publicMessages = '/app-mini-api/mini/v1/rooms/public-messages',
     this.userUpMic = '/app-api/micUserBase/userInitiativeUpMic',
@@ -86,6 +87,7 @@ class BackendRouteCatalog {
     this.withdrawalFeeRate = '/app-mini-api/mini/v1/withdrawal/fee-rate',
     this.withdrawalApply = '/app-mini-api/mini/v1/withdrawal/apply',
     this.withdrawalRecords = '/app-mini-api/mini/v1/withdrawal/records',
+    this.payoutAccounts = '/app-mini-api/mini/v1/withdrawal/accounts',
     this.walletReconcile = '/app-mini-api/mini/v1/wallet/reconcile',
     this.dynamicPublish = '/app-mini-api/mini/v1/dynamic/publish',
     this.dynamicList = '/app-mini-api/mini/v1/dynamic/list',
@@ -187,6 +189,7 @@ class BackendRouteCatalog {
   final String exitRoom;
   final String buildRtcToken;
   final String sendGift;
+  final String giftReceipt;
   final String sendPublicMessage;
   final String publicMessages;
   final String userUpMic;
@@ -257,6 +260,7 @@ class BackendRouteCatalog {
   final String withdrawalFeeRate;
   final String withdrawalApply;
   final String withdrawalRecords;
+  final String payoutAccounts;
   final String walletReconcile;
   final String dynamicPublish;
   final String dynamicList;

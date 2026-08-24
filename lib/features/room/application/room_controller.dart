@@ -585,6 +585,60 @@ class RoomController extends ChangeNotifier {
     }
   }
 
+  /// Recovers a first-party gift after an ambiguous send without retrying the
+  /// economic write. When no transfer id is known, the retained send request
+  /// id is used and the authenticated controller user is always forwarded as
+  /// the participant scope.
+  Future<GiftReceipt?> fetchGiftReceipt({
+    String? transferId,
+    String? requestId,
+  }) async {
+    if (_status != RoomSessionStatus.joined || _snapshot == null) {
+      return null;
+    }
+    final int sessionEpoch = _sessionEpoch;
+    final String? normalizedTransferId = transferId?.trim().isEmpty == true
+        ? null
+        : transferId?.trim();
+    final String? normalizedRequestId = requestId?.trim().isEmpty == true
+        ? null
+        : requestId?.trim();
+    final String? recoveryRequestId = normalizedTransferId == null
+        ? (normalizedRequestId ?? _giftRequestId)
+        : normalizedRequestId;
+    try {
+      final GiftReceipt receipt = await _repository.fetchGiftReceipt(
+        transferId: normalizedTransferId,
+        requestId: recoveryRequestId,
+        currentUserId: _currentUserId,
+      );
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return null;
+      }
+      if (receipt.success) {
+        final int? remainingBalance = receipt.remainingBalance;
+        if (remainingBalance != null && _snapshot != null) {
+          _snapshot = _snapshot!.copyWith(giftBalance: remainingBalance);
+        }
+        _giftRequestId = null;
+        _giftRequestKey = null;
+        _notify();
+      }
+      return receipt;
+    } catch (error) {
+      if (_isJoinedEpoch(sessionEpoch)) {
+        _errorMessage = _messageFor(error, fallback: '礼物回执查询失败');
+        _notify();
+      }
+      return null;
+    }
+  }
+
+  Future<GiftReceipt?> queryGiftReceipt({
+    String? transferId,
+    String? requestId,
+  }) => fetchGiftReceipt(transferId: transferId, requestId: requestId);
+
   Future<void> reconnect() async {
     if (_status != RoomSessionStatus.joined) {
       return;

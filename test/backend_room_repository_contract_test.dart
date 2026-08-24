@@ -647,6 +647,141 @@ void main() {
   );
 
   test(
+    'F3-B2 gift receipt reads transfer first and request recovery validates participants',
+    () async {
+      const String giftId = '550e8400-e29b-41d4-a716-446655440000';
+      const String transferId = '00000000-0000-0000-0000-00000000b001';
+      const String requestId = 'f3b2-gift-request-001';
+      int reads = 0;
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        if (request.path == '/app-room-api/room/com/v1/enterRoom') {
+          return const _Reply(data: <String, Object?>{'roomId': '9527'});
+        }
+        expect(request.method, 'GET');
+        expect(request.path, '/app-room-api/room/com/v1/giftReceipt');
+        reads += 1;
+        expect(request.body, isNull);
+        if (request.query.containsKey('transferId')) {
+          expect(request.query, <String, String>{
+            'transferId': transferId,
+            'requestId': requestId,
+          });
+        } else {
+          expect(request.query, <String, String>{'requestId': requestId});
+        }
+        return _Reply(
+          data: <String, Object?>{
+            'transferId': transferId,
+            'roomId': '9527',
+            'senderUserId': 10001,
+            'receiverUserId': 10002,
+            'giftId': giftId,
+            'giftName': '玫瑰',
+            'quantity': 2,
+            'source': 'WALLET',
+            'giftCoinCost': 20,
+            'creatorIncomeMinor': 10,
+            'charmValue': 20,
+            'deliveryMode': 'FIRST_PARTY_LEDGER_COMMITTED',
+            'providerInvocation': false,
+            'status': 'COMPLETED',
+            'success': true,
+            'reconciled': true,
+            'requestId': requestId,
+          },
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomRepository repository = BackendRoomRepository(
+        apiClient: server.client,
+      );
+      await repository.enterRoom(
+        roomId: '9527',
+        password: null,
+        source: RoomEntrySource.home,
+        currentUserId: 10001,
+      );
+
+      final GiftReceipt byTransfer = await repository.fetchGiftReceipt(
+        transferId: transferId,
+        requestId: requestId,
+      );
+      expect(byTransfer.transferId, transferId);
+      expect(byTransfer.requestId, requestId);
+      expect(byTransfer.reconciled, isTrue);
+      expect(byTransfer.creatorIncomeMinor, 10);
+      expect(byTransfer.charmValue, 20);
+
+      final GiftReceipt byRequest = await repository.fetchGiftReceipt(
+        requestId: requestId,
+        participantUserId: 10002,
+      );
+      expect(byRequest.transferId, transferId);
+      expect(reads, 2);
+    },
+  );
+
+  test(
+    'F3-B2 gift receipt rejects an unrelated participant without writing',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        if (request.path == '/app-room-api/room/com/v1/enterRoom') {
+          return const _Reply(data: <String, Object?>{'roomId': '9527'});
+        }
+        expect(request.method, 'GET');
+        return const _Reply(
+          data: <String, Object?>{
+            'transferId': '00000000-0000-0000-0000-00000000b101',
+            'roomId': '9527',
+            'senderUserId': 10001,
+            'receiverUserId': 10002,
+            'giftId': '550e8400-e29b-41d4-a716-446655440000',
+            'giftName': '玫瑰',
+            'quantity': 1,
+            'source': 'WALLET',
+            'deliveryMode': 'FIRST_PARTY_LEDGER_COMMITTED',
+            'providerInvocation': false,
+            'status': 'COMPLETED',
+            'success': true,
+            'reconciled': true,
+            'requestId': 'f3b2-gift-request-002',
+          },
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomRepository repository = BackendRoomRepository(
+        apiClient: server.client,
+      );
+      await repository.enterRoom(
+        roomId: '9527',
+        password: null,
+        source: RoomEntrySource.home,
+        currentUserId: 10003,
+      );
+      await expectLater(
+        repository.fetchGiftReceipt(requestId: 'f3b2-gift-request-002'),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+      expect(
+        server.requests.where(
+          (_CapturedRequest request) => request.method == 'POST',
+        ),
+        isNotEmpty,
+      );
+    },
+  );
+
+  test(
     'gift send rejects non-UUID catalog identifiers before network',
     () async {
       final _RunningServer server = await _RunningServer.start(

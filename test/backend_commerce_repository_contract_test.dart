@@ -920,6 +920,360 @@ void main() {
   );
 
   test(
+    'F3-B2 payout accounts expose only masked selectable authority and apply uses it',
+    () async {
+      const String selectedId = '00000000-0000-0000-0000-00000000a001';
+      const String pendingId = '00000000-0000-0000-0000-00000000a002';
+      int applyCalls = 0;
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        return switch (request.path) {
+          '/app-mini-api/mini/v1/withdrawal/accounts' => _Response.ok(
+            <String, Object?>{
+              'list': <Object?>[
+                <String, Object?>{
+                  'payoutAccountId': selectedId,
+                  'accountId': selectedId,
+                  'accountType': 'MANUAL_SETTLEMENT',
+                  'accountMasked': '****8002',
+                  'holderNameMasked': 'F*2',
+                  'status': 'VERIFIED',
+                  'selectable': true,
+                },
+                <String, Object?>{
+                  'payoutAccountId': pendingId,
+                  'accountType': 'BANK_REFERENCE',
+                  'accountMasked': '****8003',
+                  'holderNameMasked': 'F*2',
+                  'status': 'PENDING',
+                  'selectable': false,
+                },
+              ],
+              'current': 1,
+              'pageSize': 2,
+              'total': 2,
+              'pages': 1,
+              'selectedPayoutAccountId': selectedId,
+              'defaultPayoutAccountId': selectedId,
+              'selectionRequired': false,
+              'providerInvocation': false,
+            },
+          ),
+          '/app-mini-api/mini/v1/withdrawal/apply' => () {
+            applyCalls += 1;
+            expect(request.method, 'POST');
+            expect(request.body, <String, Object?>{
+              'amountMinor': 1000,
+              'payoutAccountId': selectedId,
+            });
+            return _Response.ok(<String, Object?>{
+              'withdrawalId': '00000000-0000-0000-0000-00000000a010',
+              'payoutAccountId': selectedId,
+              'amountMinor': 1000,
+              'feeMinor': 10,
+              'netAmountMinor': 990,
+              'status': 'SUBMITTED',
+              'payoutStatus': 'MANUAL_REVIEW_PENDING',
+              'providerInvocation': false,
+              'submittedAt': '2026-08-24T10:00:00Z',
+            });
+          }(),
+          _ => _Response.ok(<String, Object?>{}),
+        };
+      });
+      addTearDown(harness.close);
+
+      final PayoutAccountSelection selection = await harness.repository
+          .fetchPayoutAccounts();
+      expect(selection.accounts, hasLength(2));
+      expect(selection.selectedPayoutAccountId, selectedId);
+      expect(selection.accounts.first.selectable, isTrue);
+      expect(selection.accounts.last.selectable, isFalse);
+      expect(selection.accounts.first.accountMasked, '****8002');
+      expect(selection.accounts.first.holderNameMasked, 'F*2');
+
+      final WithdrawalRecord record = await harness.repository.applyWithdrawal(
+        amount: 10,
+        payoutAccountId: selectedId,
+      );
+      expect(record.payoutAccountId, selectedId);
+      expect(record.amount, 10);
+      expect(record.receivedAmount, 9.9);
+      expect(applyCalls, 1);
+    },
+  );
+
+  test(
+    'F3-B2 withdrawal fails closed when selected payout account is stale',
+    () async {
+      const String staleId = '00000000-0000-0000-0000-00000000a101';
+      int applyCalls = 0;
+      int accountReads = 0;
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/withdrawal/accounts')) {
+          accountReads += 1;
+          final String id = accountReads == 1
+              ? staleId
+              : '00000000-0000-0000-0000-00000000a102';
+          return _Response.ok(<String, Object?>{
+            'list': <Object?>[
+              <String, Object?>{
+                'payoutAccountId': id,
+                'accountType': 'BANK_REFERENCE',
+                'accountMasked': '****8102',
+                'holderNameMasked': 'F*2',
+                'status': 'VERIFIED',
+                'selectable': true,
+              },
+            ],
+            'total': 1,
+            'selectedPayoutAccountId': id,
+            'selectionRequired': false,
+            'providerInvocation': false,
+          });
+        }
+        if (request.path.endsWith('/withdrawal/apply')) {
+          applyCalls += 1;
+        }
+        return _Response.ok(<String, Object?>{});
+      });
+      addTearDown(harness.close);
+
+      await harness.repository.fetchPayoutAccounts();
+      await expectLater(
+        harness.repository.applyWithdrawal(
+          amount: 10,
+          payoutAccountId: staleId,
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            anyOf(ApiFailureKind.conflict, ApiFailureKind.validation),
+          ),
+        ),
+      );
+      expect(applyCalls, 0);
+    },
+  );
+
+  test(
+    'F3-B2 concurrent withdrawal submissions share one write and request id',
+    () async {
+      const String accountId = '00000000-0000-0000-0000-00000000a201';
+      final List<String> requestIds = <String>[];
+      int applyCalls = 0;
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/withdrawal/accounts')) {
+          return _Response.ok(<String, Object?>{
+            'list': <Object?>[
+              <String, Object?>{
+                'payoutAccountId': accountId,
+                'accountType': 'BANK_REFERENCE',
+                'accountMasked': '****8202',
+                'holderNameMasked': 'F*2',
+                'status': 'VERIFIED',
+                'selectable': true,
+              },
+            ],
+            'total': 1,
+            'selectedPayoutAccountId': accountId,
+            'selectionRequired': false,
+            'providerInvocation': false,
+          });
+        }
+        expect(request.path, '/app-mini-api/mini/v1/withdrawal/apply');
+        applyCalls += 1;
+        requestIds.add(request.requestId);
+        return _Response.ok(<String, Object?>{
+          'withdrawalId': '00000000-0000-0000-0000-00000000a210',
+          'payoutAccountId': accountId,
+          'amountMinor': 1000,
+          'feeMinor': 10,
+          'netAmountMinor': 990,
+          'status': 'SUBMITTED',
+          'providerInvocation': false,
+          'submittedAt': '2026-08-24T10:00:00Z',
+        });
+      });
+      addTearDown(harness.close);
+
+      final List<WithdrawalRecord> records =
+          await Future.wait(<Future<WithdrawalRecord>>[
+            harness.repository.applyWithdrawal(
+              amount: 10,
+              payoutAccountId: accountId,
+            ),
+            harness.repository.applyWithdrawal(
+              amount: 10,
+              payoutAccountId: accountId,
+            ),
+          ]);
+      expect(records, hasLength(2));
+      expect(records[0].id, records[1].id);
+      expect(applyCalls, 1);
+      expect(requestIds, hasLength(1));
+    },
+  );
+
+  test(
+    'F3-B2 pending withdrawal idempotency conflicts retain the request id',
+    () async {
+      const String accountId = '00000000-0000-0000-0000-00000000a251';
+      final List<String> requestIds = <String>[];
+      int applyCalls = 0;
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/withdrawal/accounts')) {
+          return _Response.ok(<String, Object?>{
+            'list': <Object?>[
+              <String, Object?>{
+                'payoutAccountId': accountId,
+                'accountType': 'BANK_REFERENCE',
+                'accountMasked': '****8252',
+                'holderNameMasked': 'F*2',
+                'status': 'VERIFIED',
+                'selectable': true,
+              },
+            ],
+            'total': 1,
+            'selectedPayoutAccountId': accountId,
+            'selectionRequired': false,
+            'providerInvocation': false,
+          });
+        }
+        expect(request.path, '/app-mini-api/mini/v1/withdrawal/apply');
+        requestIds.add(request.requestId);
+        applyCalls += 1;
+        if (applyCalls == 1) {
+          return const _Response(
+            statusCode: 409,
+            code: 40901,
+            message: 'pending',
+            data: null,
+          );
+        }
+        return _Response.ok(<String, Object?>{
+          'withdrawalId': '00000000-0000-0000-0000-00000000a260',
+          'payoutAccountId': accountId,
+          'amountMinor': 1000,
+          'feeMinor': 10,
+          'netAmountMinor': 990,
+          'status': 'SUBMITTED',
+          'providerInvocation': false,
+        });
+      });
+      addTearDown(harness.close);
+
+      await expectLater(
+        harness.repository.applyWithdrawal(
+          amount: 10,
+          payoutAccountId: accountId,
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.code,
+            'code',
+            40901,
+          ),
+        ),
+      );
+      final WithdrawalRecord recovered = await harness.repository
+          .applyWithdrawal(amount: 10, payoutAccountId: accountId);
+
+      expect(recovered.payoutAccountId, accountId);
+      expect(requestIds, hasLength(2));
+      expect(requestIds[0], requestIds[1]);
+    },
+  );
+
+  for (final (int, ApiFailureKind) failure in <(int, ApiFailureKind)>[
+    (403, ApiFailureKind.forbidden),
+    (409, ApiFailureKind.conflict),
+    (422, ApiFailureKind.validation),
+    (500, ApiFailureKind.server),
+  ]) {
+    test(
+      'F3-B2 withdrawal apply preserves ${failure.$1} and does not fake success',
+      () async {
+        const String accountId = '00000000-0000-0000-0000-00000000a301';
+        final _Harness harness = await _Harness.start((RequestRecord request) {
+          if (request.path.endsWith('/withdrawal/accounts')) {
+            return _Response.ok(<String, Object?>{
+              'list': <Object?>[
+                <String, Object?>{
+                  'payoutAccountId': accountId,
+                  'accountType': 'BANK_REFERENCE',
+                  'accountMasked': '****8302',
+                  'holderNameMasked': 'F*2',
+                  'status': 'VERIFIED',
+                  'selectable': true,
+                },
+              ],
+              'total': 1,
+              'selectedPayoutAccountId': accountId,
+              'selectionRequired': false,
+              'providerInvocation': false,
+            });
+          }
+          expect(request.path, '/app-mini-api/mini/v1/withdrawal/apply');
+          return _Response(
+            statusCode: failure.$1,
+            code: failure.$1,
+            message: 'withdrawal-${failure.$1}',
+            data: null,
+          );
+        });
+        addTearDown(harness.close);
+
+        await expectLater(
+          harness.repository.applyWithdrawal(
+            amount: 10,
+            payoutAccountId: accountId,
+          ),
+          throwsA(
+            isA<ApiException>()
+                .having((ApiException error) => error.kind, 'kind', failure.$2)
+                .having(
+                  (ApiException error) => error.httpStatus,
+                  'status',
+                  failure.$1,
+                ),
+          ),
+        );
+        expect(
+          harness.requests.where(
+            (RequestRecord request) =>
+                request.path.endsWith('/withdrawal/apply'),
+          ),
+          hasLength(1),
+        );
+      },
+    );
+  }
+
+  test(
+    'F3-B2 withdrawal apply fails closed while offline before any write',
+    () async {
+      final _Harness harness = await _Harness.start(
+        (RequestRecord request) => _Response.ok(<String, Object?>{}),
+      );
+      await harness.close();
+      await expectLater(
+        harness.repository.applyWithdrawal(
+          amount: 10,
+          payoutAccountId: '00000000-0000-0000-0000-00000000a302',
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.network,
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
     'withdrawal status filtering rejects a page number that makes no progress',
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {
