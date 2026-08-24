@@ -1440,7 +1440,19 @@ Future<T?> _probe<T>(
       status: error.httpStatus ?? 0,
       state: _stateFor(error),
     );
-    if (requiredSuccess) {
+    final bool unsafeFailure = switch (error.kind) {
+      ApiFailureKind.network ||
+      ApiFailureKind.timeout ||
+      ApiFailureKind.protocol ||
+      ApiFailureKind.server ||
+      ApiFailureKind.configuration ||
+      ApiFailureKind.unauthorized ||
+      ApiFailureKind.forbidden => true,
+      ApiFailureKind.business ||
+      ApiFailureKind.validation ||
+      ApiFailureKind.conflict => false,
+    };
+    if (requiredSuccess || unsafeFailure) {
       throw TestFailure(
         '$capability authoritative probe failed with status ${error.httpStatus ?? 0}.',
       );
@@ -1453,9 +1465,9 @@ Future<T?> _probe<T>(
       status: 0,
       state: 'unavailable',
     );
-    if (requiredSuccess) {
-      throw TestFailure('$capability authoritative probe failed.');
-    }
+    // Unknown exceptions are never an acceptable optional-domain state: they
+    // can hide DTO drift, Flutter defects, or an unclassified backend error.
+    throw TestFailure('$capability authoritative probe failed.');
   }
   return null;
 }

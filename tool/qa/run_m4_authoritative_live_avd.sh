@@ -49,10 +49,10 @@ readonly B_DPR='2.40'
 mkdir -p "$ARTIFACT_ROOT"
 readonly SUMMARY_FILE="$ARTIFACT_ROOT/summary.txt"
 readonly MANIFEST_FILE="$ARTIFACT_ROOT/evidence-manifest.sha256"
+readonly STARTED_SERIALS_FILE="$ARTIFACT_ROOT/.started-emulator-serials"
 RELAY_PID=''
 RELAY_PORT=''
 LOGCAT_PID=''
-STARTED_SERIALS=''
 OVERALL_RESULT='PASS'
 
 fail() {
@@ -66,9 +66,13 @@ cleanup() {
   [[ -z "$LOGCAT_PID" ]] || { kill "$LOGCAT_PID" 2>/dev/null || true; wait "$LOGCAT_PID" 2>/dev/null || true; }
   [[ -z "$RELAY_PID" ]] || { kill "$RELAY_PID" 2>/dev/null || true; wait "$RELAY_PID" 2>/dev/null || true; }
   local started_serial
-  for started_serial in $STARTED_SERIALS; do
-    adb -s "$started_serial" emu kill >/dev/null 2>&1 || true
-  done
+  if [[ -f "$STARTED_SERIALS_FILE" ]]; then
+    while IFS= read -r started_serial; do
+      [[ -n "$started_serial" ]] || continue
+      adb -s "$started_serial" emu kill >/dev/null 2>&1 || true
+    done <"$STARTED_SERIALS_FILE"
+    rm -f "$STARTED_SERIALS_FILE"
+  fi
   {
     printf 'M4 authoritative live AVD acceptance\n'
     printf 'conclusion=%s\n' "$OVERALL_RESULT"
@@ -257,7 +261,10 @@ start_emulator() {
   for _ in {1..180}; do
     serial="$(device_for_api "$api" || true)"
     if [[ -n "$serial" ]] && wait_boot "$serial"; then
-      STARTED_SERIALS="${STARTED_SERIALS}${serial}"$'\n'
+      # This function is called through command substitution, so shell state
+      # assigned here cannot reach cleanup. Persist only the non-sensitive
+      # emulator serial in a short-lived file that cleanup removes.
+      printf '%s\n' "$serial" >>"$STARTED_SERIALS_FILE"
       printf '%s\n' "$serial"
       return 0
     fi

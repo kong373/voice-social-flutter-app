@@ -63,8 +63,10 @@ export QA_BACKEND_SHA="$(git -C "$QA_BACKEND_REPO" rev-parse HEAD)"
 `QA_FLUTTER_SHA` and `QA_BACKEND_SHA` are mandatory and are compared with the
 checked-out commits before the run. The API base URL is intentionally not an
 input: it is the fixed authoritative `10.0.2.2:18080` value in the runner and
-test. No current backend response is assumed by the source; a missing route,
-vendor-blocked capability, or backend error is recorded as a redacted state.
+test. Domain states such as an absent guild or an ineligible operation may be
+recorded as explicit redacted states. Network, timeout, server, protocol,
+configuration, authorization, unknown-exception, and required-route failures
+fail the run instead of being counted as optional coverage.
 The host must provide Flutter, Android `adb`/emulator tooling, Python 3,
 `curl`, and GNU `timeout` (or macOS `gtimeout`).
 
