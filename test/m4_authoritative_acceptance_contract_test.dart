@@ -18,6 +18,7 @@ void main() {
     bool dbEvidence = true,
     bool providerCall = false,
     bool avdBPass = true,
+    bool invalidAvdBRouteStatus = false,
   }) {
     final Directory root = Directory.systemTemp.createTempSync(
       'm4-aggregate-contract-',
@@ -45,6 +46,9 @@ void main() {
           ? avdBFlutterSha
           : flutterSha;
       final bool pass = avd != 'AVD-B' || avdBPass;
+      final String routeStatus = avd == 'AVD-B' && invalidAvdBRouteStatus
+          ? '500'
+          : '200';
       File('${dir.path}/result.txt').writeAsStringSync(
         [
           'result=${pass ? 'PASS' : 'FAIL'}',
@@ -67,7 +71,7 @@ void main() {
       );
       File('${dir.path}/logs/flutter-drive.log').writeAsStringSync(
         [
-          '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_ROUTE_STATUS::required::GET::/health::200::success',
+          '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_ROUTE_STATUS::required::GET::/health::$routeStatus::success',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_AUTHORITY_INVARIANT::session_owner_matches_account',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_AUTHORITY_INVARIANT::room_exit_compensates_enter',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_PROVIDER_CALLS::${providerCall ? '1' : '0'}',
@@ -165,6 +169,16 @@ void main() {
 
   test('aggregate rejects an A/B partial failure', () {
     final Directory root = makeEvidence(avdBPass: false);
+    final ProcessResult result = runAggregate(root);
+    expect(result.exitCode, isNot(0));
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('AVD-B=FAIL'),
+    );
+  });
+
+  test('aggregate rejects a prefixed non-success route status', () {
+    final Directory root = makeEvidence(invalidAvdBRouteStatus: true);
     final ProcessResult result = runAggregate(root);
     expect(result.exitCode, isNot(0));
     expect(
