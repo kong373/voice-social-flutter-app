@@ -227,6 +227,7 @@ void main() {
     );
 
     expect(snapshot.publicScreenEnabled, isFalse);
+    expect(snapshot.autoLockMic, isFalse);
     expect(snapshot.giftCatalogAvailable, isFalse);
   });
 
@@ -242,6 +243,7 @@ void main() {
           'roomName': '严格能力房',
           'ownerId': 10001,
           'publicScreenEnabled': callCount == 1 ? 1 : true,
+          'autoLockMic': callCount == 1 ? 'yes' : true,
           'giftCatalogAvailable': callCount == 1 ? 'yes' : false,
         },
       );
@@ -258,6 +260,7 @@ void main() {
       currentUserId: 10001,
     );
     expect(malformed.publicScreenEnabled, isFalse);
+    expect(malformed.autoLockMic, isFalse);
     expect(malformed.giftCatalogAvailable, isFalse);
 
     final RoomSnapshot strict = await repository.enterRoom(
@@ -267,6 +270,7 @@ void main() {
       currentUserId: 10001,
     );
     expect(strict.publicScreenEnabled, isTrue);
+    expect(strict.autoLockMic, isTrue);
     expect(strict.giftCatalogAvailable, isFalse);
   });
 

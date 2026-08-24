@@ -271,11 +271,12 @@ class BackendRoomRepository implements RoomRepository, GiftReceiptRepository {
         userId: currentUserId,
       ),
       transportMode: RoomTransportMode.snapshotOnly,
-      // These are optional server capabilities. Missing or malformed values
-      // must remain disabled until the backend explicitly authorizes them.
+      // These are server-authoritative capabilities. Missing or malformed
+      // values must remain disabled until the backend explicitly authorizes
+      // them for the current member and room snapshot.
       publicScreenEnabled: _strictCapabilityBool(data['publicScreenEnabled']),
       pictureMessagesAllowed: false,
-      autoLockMic: false,
+      autoLockMic: _strictCapabilityBool(data['autoLockMic']),
       giftCatalogAvailable: _strictCapabilityBool(data['giftCatalogAvailable']),
       giftBalance: null,
       onlineCount: _asInt(data['onlineNum']) ?? _asInt(data['liveCount']),
