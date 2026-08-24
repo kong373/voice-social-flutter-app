@@ -7,6 +7,7 @@ import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/data/backend_room_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
+import 'package:voice_social_app/features/room/domain/room_repository.dart';
 
 void main() {
   test(
@@ -2180,7 +2181,7 @@ void main() {
           currentUserId: 10001,
         ),
         throwsA(
-          isA<ApiException>()
+          isA<RoomJoinRequestPendingException>()
               .having(
                 (ApiException error) => error.kind,
                 'kind',
@@ -2190,10 +2191,68 @@ void main() {
                 (ApiException error) => error.message,
                 'message',
                 '申请已提交，等待审核',
+              )
+              .having(
+                (RoomJoinRequestPendingException error) => error.roomId,
+                'roomId',
+                'approval-room',
+              )
+              .having(
+                (RoomJoinRequestPendingException error) => error.joinRequestId,
+                'joinRequestId',
+                'join-request-1',
               ),
         ),
       );
       await repository.setSelfMicrophoneMuted(backendMicIndex: 4, muted: true);
+    },
+  );
+
+  test(
+    'approval pending response must carry the exact requested room identity',
+    () async {
+      for (final Map<String, Object?> data in <Map<String, Object?>>[
+        const <String, Object?>{
+          'roomId': 'different-room',
+          'joined': false,
+          'status': 'PENDING_APPROVAL',
+          'joinRequestId': 'join-request-1',
+        },
+        const <String, Object?>{
+          'joined': false,
+          'status': 'PENDING_APPROVAL',
+          'joinRequestId': 'join-request-1',
+        },
+      ]) {
+        final _RunningServer server = await _RunningServer.start((
+          _CapturedRequest request,
+        ) {
+          expect(request.path, '/app-room-api/room/com/v1/enterRoom');
+          return _Reply(data: data);
+        });
+        try {
+          final BackendRoomRepository repository = BackendRoomRepository(
+            apiClient: server.client,
+          );
+          await expectLater(
+            repository.enterRoom(
+              roomId: 'approval-room',
+              password: null,
+              source: RoomEntrySource.home,
+              currentUserId: 10001,
+            ),
+            throwsA(
+              isA<ApiException>().having(
+                (ApiException error) => error.kind,
+                'kind',
+                ApiFailureKind.protocol,
+              ),
+            ),
+          );
+        } finally {
+          await server.close();
+        }
+      }
     },
   );
 

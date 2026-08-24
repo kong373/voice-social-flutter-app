@@ -161,6 +161,33 @@ void main() {
   );
 
   test(
+    'approval pending retains room identity even without a request id',
+    () async {
+      final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
+      final RoomController controller = RoomController(
+        roomId: 'approval-room',
+        title: '审核房',
+        currentUserId: 10001,
+        accessToken: 'mock-access-token',
+        repository: _PendingApprovalRoomRepository(),
+        rtcAdapter: MockRtcAdapter(),
+        realtimeGateway: realtime,
+      );
+      addTearDown(() async {
+        controller.dispose();
+        await realtime.dispose();
+      });
+
+      await controller.join();
+
+      expect(controller.status, RoomSessionStatus.failed);
+      expect(controller.pendingJoinRequestRoomId, 'approval-room');
+      expect(controller.pendingJoinRequestId, isNull);
+      expect(controller.errorMessage, '申请已提交，等待审核');
+    },
+  );
+
+  test(
     'retryable gift send automatically recovers from authoritative receipt without a second send',
     () async {
       final _SequencedGiftReceiptRecoveryRoomRepository repository =
@@ -643,6 +670,18 @@ void main() {
       expect(repository.requestIds[0], isNot(repository.requestIds[1]));
     },
   );
+}
+
+class _PendingApprovalRoomRepository extends MockRoomRepository {
+  @override
+  Future<RoomSnapshot> enterRoom({
+    required String roomId,
+    required String? password,
+    required RoomEntrySource source,
+    required int currentUserId,
+  }) async {
+    throw RoomJoinRequestPendingException(roomId: roomId);
+  }
 }
 
 class _HistoryRoomRepository extends MockRoomRepository {

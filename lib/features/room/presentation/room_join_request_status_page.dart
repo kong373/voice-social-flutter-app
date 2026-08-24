@@ -37,6 +37,7 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
   String? _error;
   bool _loading = true;
   bool _busy = false;
+  int _operationEpoch = 0;
 
   @override
   void didChangeDependencies() {
@@ -55,6 +56,9 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
 
   Future<void> _load({bool showLoading = true}) async {
     final RoomJoinRequestRepository? repository = _repository;
+    if (_busy) {
+      return;
+    }
     if (repository == null) {
       setState(() {
         _loading = false;
@@ -62,6 +66,7 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
       });
       return;
     }
+    final int operationEpoch = ++_operationEpoch;
     if (showLoading && mounted) {
       setState(() {
         _loading = true;
@@ -74,7 +79,7 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
             roomId: widget.roomId,
             joinRequestId: widget.joinRequestId,
           );
-      if (!mounted) {
+      if (!mounted || operationEpoch != _operationEpoch) {
         return;
       }
       setState(() {
@@ -83,7 +88,7 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
         _error = null;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || operationEpoch != _operationEpoch) {
         return;
       }
       setState(() {
@@ -96,9 +101,14 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
   Future<void> _cancel() async {
     final RoomJoinRequestRepository? repository = _repository;
     final RoomJoinRequestApplicantStatus? current = _status;
-    if (repository == null || current == null || _busy || !current.canCancel) {
+    if (repository == null ||
+        current == null ||
+        _busy ||
+        _loading ||
+        !current.canCancel) {
       return;
     }
+    final int operationEpoch = ++_operationEpoch;
     setState(() {
       _busy = true;
       _error = null;
@@ -115,7 +125,7 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
             roomId: current.roomId,
             joinRequestId: current.joinRequestId,
           );
-      if (!mounted) {
+      if (!mounted || operationEpoch != _operationEpoch) {
         return;
       }
       setState(() {
@@ -127,7 +137,7 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
         _showMessage('入房申请已撤回');
       }
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || operationEpoch != _operationEpoch) {
         return;
       }
       setState(() {
@@ -234,7 +244,7 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: _busy ? null : _cancel,
+              onPressed: _busy || _loading ? null : _cancel,
               icon: _busy
                   ? const SizedBox(
                       width: 17,
@@ -291,7 +301,10 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
           const Icon(Icons.error_outline_rounded, color: RoomColors.error),
           const SizedBox(width: 8),
           Expanded(child: Text(_error!)),
-          TextButton(onPressed: _busy ? null : _load, child: const Text('重试')),
+          TextButton(
+            onPressed: _busy || _loading ? null : _load,
+            child: const Text('重试'),
+          ),
         ],
       ),
     );

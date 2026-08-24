@@ -311,9 +311,8 @@ void main() {
         currentUserOwnedRooms,
         isNotEmpty,
         reason:
-            'M4 development fixture must expose an OPEN room owned by the current user.',
+            'M4 development fixture must expose a room owned by the current user.',
       );
-      evidence.invariant('room_mutations_use_current_user_owned_room');
 
       await _runSearchFlow(tester, dependencies, evidence);
       await _runDynamicSocialCommunityFlow(
@@ -795,9 +794,9 @@ Future<_LiveRoomContext?> _runRoomFlow(
     ),
   );
   if (entered != null) {
-    final RoomSnapshot snapshot = entered;
+    final RoomSnapshot enteredSnapshot = entered;
     evidence.invariant(
-      snapshot.isSnapshotOnly
+      enteredSnapshot.isSnapshotOnly
           ? 'room_snapshot_only_no_rtc_transport'
           : 'room_transport_state_authoritative',
     );
@@ -808,7 +807,7 @@ Future<_LiveRoomContext?> _runRoomFlow(
       route: const BackendRouteCatalog().publicMessages,
       operation: () => dependencies.roomRepository.fetchPublicMessages(roomId),
     );
-    await _probe(
+    final RoomSnapshot? reconnectedSnapshot = await _probe<RoomSnapshot>(
       evidence,
       capability: 'room.reconnect',
       method: 'POST',
@@ -817,7 +816,19 @@ Future<_LiveRoomContext?> _runRoomFlow(
         roomId: roomId,
         currentUserId: currentUserId,
       ),
+      requiredSuccess: true,
     );
+    if (reconnectedSnapshot == null ||
+        reconnectedSnapshot.roomId != roomId ||
+        reconnectedSnapshot.ownerId != currentUserId ||
+        reconnectedSnapshot.role != RoomRole.owner) {
+      throw TestFailure(
+        'Room reconnect did not confirm an OPEN room owned by the current user.',
+      );
+    }
+    final RoomSnapshot snapshot = reconnectedSnapshot;
+    evidence.invariant('room_mutations_use_current_user_owned_room');
+    evidence.invariant('room_open_authority_confirmed_by_enter_and_reconnect');
     final RoomMemberPage? onlineMembers = await _probe<RoomMemberPage>(
       evidence,
       capability: 'room.seats',
@@ -2754,6 +2765,7 @@ class _M4Evidence {
     'vendor_runtime_adapters_are_fail_closed',
     'home_uses_authoritative_room_ids',
     'room_mutations_use_current_user_owned_room',
+    'room_open_authority_confirmed_by_enter_and_reconnect',
     'session_refresh_persists_rotated_session',
     'restart_restores_consent_and_session',
     'search_route_is_reachable_from_home',

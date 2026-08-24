@@ -134,6 +134,10 @@ class BackendRoomRepository implements RoomRepository, GiftReceiptRepository {
           body: body,
         );
         RoomWriteGuard.validateMutationResponse(response, operation: '进入房间');
+        _assertRawRequestedRoomIdentity(
+          response,
+          requestedRoomId: normalizedRoomId,
+        );
         final RoomSnapshot snapshot = _snapshotFromResponse(
           response,
           currentUserId: currentUserId,
@@ -165,6 +169,10 @@ class BackendRoomRepository implements RoomRepository, GiftReceiptRepository {
           body: <String, Object?>{'roomId': normalizedRoomId},
         );
         RoomWriteGuard.validateMutationResponse(response, operation: '恢复房间会话');
+        _assertRawRequestedRoomIdentity(
+          response,
+          requestedRoomId: normalizedRoomId,
+        );
         final RoomSnapshot snapshot = _snapshotFromResponse(
           response,
           currentUserId: currentUserId,
@@ -210,6 +218,26 @@ class BackendRoomRepository implements RoomRepository, GiftReceiptRepository {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '房间快照响应与请求房间不一致',
+      );
+    }
+  }
+
+  static void _assertRawRequestedRoomIdentity(
+    ApiResponse response, {
+    required String requestedRoomId,
+  }) {
+    final Map<String, Object?> data = _asMap(response.data);
+    final List<String> identities = <String>[
+      for (final String key in <String>['roomIdStr', 'roomId', 'id'])
+        if (data.containsKey(key)) _nonEmptyString(data[key]) ?? '',
+    ];
+    if (identities.isEmpty ||
+        identities.any(
+          (String identity) => identity.isEmpty || identity != requestedRoomId,
+        )) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '房间响应与请求房间不一致',
       );
     }
   }

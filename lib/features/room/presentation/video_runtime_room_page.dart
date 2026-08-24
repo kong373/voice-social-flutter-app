@@ -174,7 +174,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Widget _failureState() {
-    final bool approvalPending = _controller.pendingJoinRequestId != null;
+    final bool approvalPending = _controller.pendingJoinRequestRoomId != null;
     return Stack(
       children: <Widget>[
         const _VideoRoomBackground(),
@@ -230,13 +230,14 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   void _openJoinRequestStatus() {
-    if (_controller.pendingJoinRequestId == null) {
+    final String? pendingRoomId = _controller.pendingJoinRequestRoomId;
+    if (pendingRoomId == null) {
       return;
     }
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (BuildContext context) => RoomJoinRequestStatusPage(
-          roomId: _controller.roomId,
+          roomId: pendingRoomId,
           joinRequestId: _controller.pendingJoinRequestId,
           roomTitle: _controller.displayTitle,
         ),

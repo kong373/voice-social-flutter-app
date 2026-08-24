@@ -82,6 +82,63 @@ void main() {
       expect(find.text('已撤回'), findsNothing);
     },
   );
+
+  testWidgets(
+    'RM-007 refresh and cancel are serialized against stale authority',
+    (WidgetTester tester) async {
+      final _ApplicantRepository repository = _ApplicantRepository(
+        RoomJoinRequestApplicantStatus(
+          roomId: 'room-9527',
+          joinRequestId: 'join-request-1',
+          status: RoomJoinRequestStatus.pending,
+          roomState: 'OPEN',
+          banned: false,
+          canCancel: true,
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(),
+          home: RoomJoinRequestStatusPage(
+            roomId: 'room-9527',
+            repositoryOverride: repository,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      repository.delayNextStatusFetch();
+      await tester.tap(find.byTooltip('刷新权威状态'));
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, '撤回申请'))
+            .onPressed,
+        isNull,
+      );
+      expect(repository.cancelCalls, 0);
+
+      repository.completeDelayedStatusFetch();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('撤回申请'));
+      await tester.pump();
+      expect(repository.cancelCalls, 1);
+      expect(
+        tester
+            .widget<IconButton>(
+              find.widgetWithIcon(IconButton, Icons.refresh_rounded),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      repository.completeCancel();
+      await tester.pumpAndSettle();
+      expect(find.text('已撤回'), findsNWidgets(2));
+      expect(find.text('撤回申请'), findsNothing);
+    },
+  );
 }
 
 class _ApplicantRepository implements RoomJoinRequestRepository {
@@ -94,6 +151,21 @@ class _ApplicantRepository implements RoomJoinRequestRepository {
   int statusCalls = 0;
   int cancelCalls = 0;
   Completer<RoomJoinRequestCancellation>? cancelCompleter;
+  Completer<RoomJoinRequestApplicantStatus>? delayedStatusCompleter;
+
+  void delayNextStatusFetch() {
+    delayedStatusCompleter = Completer<RoomJoinRequestApplicantStatus>();
+  }
+
+  void completeDelayedStatusFetch() {
+    final Completer<RoomJoinRequestApplicantStatus>? completer =
+        delayedStatusCompleter;
+    delayedStatusCompleter = null;
+    if (completer == null || completer.isCompleted || status == null) {
+      return;
+    }
+    completer.complete(status!);
+  }
 
   void completeCancel() {
     final Completer<RoomJoinRequestCancellation>? completer = cancelCompleter;
@@ -127,6 +199,11 @@ class _ApplicantRepository implements RoomJoinRequestRepository {
     statusCalls += 1;
     if (failure != null) {
       throw failure!;
+    }
+    final Completer<RoomJoinRequestApplicantStatus>? delayed =
+        delayedStatusCompleter;
+    if (delayed != null) {
+      return delayed.future;
     }
     return status!;
   }
