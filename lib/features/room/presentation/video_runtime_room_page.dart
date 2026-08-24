@@ -401,7 +401,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Widget _publicScreen() {
-    final List<RoomMessage> feedMessages = _controller.messages.length > 1
+    final List<RoomMessage> feedMessages =
+        !_controller.allowsSyntheticPublicMessages
+        ? _controller.messages
+        : _controller.messages.length > 1
         ? _controller.messages
         : <RoomMessage>[
             for (final MicSeat seat

@@ -28,6 +28,7 @@ class RoomController extends ChangeNotifier {
     required RtcAdapter rtcAdapter,
     required RoomRealtimeGateway realtimeGateway,
     RoomPermissionPolicy permissionPolicy = const RoomPermissionPolicy(),
+    bool allowSyntheticPublicMessages = true,
     String Function(String prefix)? requestIdGenerator,
   }) : _currentUserId = currentUserId,
        _accessToken = accessToken,
@@ -35,6 +36,7 @@ class RoomController extends ChangeNotifier {
        _rtcAdapter = rtcAdapter,
        _realtimeGateway = realtimeGateway,
        _permissionPolicy = permissionPolicy,
+       _allowSyntheticPublicMessages = allowSyntheticPublicMessages,
        _requestIdGenerator = requestIdGenerator ?? _secureRequestId;
 
   final String roomId;
@@ -45,6 +47,7 @@ class RoomController extends ChangeNotifier {
   final RtcAdapter _rtcAdapter;
   final RoomRealtimeGateway _realtimeGateway;
   final RoomPermissionPolicy _permissionPolicy;
+  final bool _allowSyntheticPublicMessages;
   final String Function(String prefix) _requestIdGenerator;
 
   RoomSnapshot? _snapshot;
@@ -85,6 +88,8 @@ class RoomController extends ChangeNotifier {
   bool get giftSubmitting => _giftSubmitting;
   bool get realtimeDegraded => _realtimeDegraded;
   bool get isSnapshotOnly => _snapshot?.isSnapshotOnly ?? false;
+  bool get allowsSyntheticPublicMessages =>
+      _allowSyntheticPublicMessages && !isSnapshotOnly;
   bool get mutedInRoom => _mutedInRoom;
   bool get canSendPublicMessage =>
       !_mutedInRoom && allows(RoomCapability.sendPublicMessage);
@@ -200,12 +205,15 @@ class RoomController extends ChangeNotifier {
       _messages
         ..clear()
         ..addAll(<RoomMessage>[
-          const RoomMessage(
-            sender: '系统',
-            content: '欢迎进入房间，请友善交流。',
-            isSystem: true,
-          ),
-          if (!snapshot.isSnapshotOnly && _realtimeDegraded)
+          if (_allowSyntheticPublicMessages && !snapshot.isSnapshotOnly)
+            const RoomMessage(
+              sender: '系统',
+              content: '欢迎进入房间，请友善交流。',
+              isSystem: true,
+            ),
+          if (_allowSyntheticPublicMessages &&
+              !snapshot.isSnapshotOnly &&
+              _realtimeDegraded)
             const RoomMessage(
               sender: '系统',
               content: '实时消息通道暂未连接，房间状态可能延迟。',
@@ -269,7 +277,9 @@ class RoomController extends ChangeNotifier {
       _messages
         ..clear()
         ..addAll(history);
-      if (!snapshot.isSnapshotOnly && _realtimeDegraded) {
+      if (_allowSyntheticPublicMessages &&
+          !snapshot.isSnapshotOnly &&
+          _realtimeDegraded) {
         _messages.add(
           const RoomMessage(
             sender: '系统',
@@ -332,13 +342,15 @@ class RoomController extends ChangeNotifier {
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
-      _messages.add(
-        RoomMessage(
-          sender: '系统',
-          content: '你已上 $seatNumber 号麦。',
-          isSystem: true,
-        ),
-      );
+      if (allowsSyntheticPublicMessages) {
+        _messages.add(
+          RoomMessage(
+            sender: '系统',
+            content: '你已上 $seatNumber 号麦。',
+            isSystem: true,
+          ),
+        );
+      }
       return true;
     } catch (error) {
       if (!_isJoinedEpoch(sessionEpoch)) {
@@ -377,9 +389,11 @@ class RoomController extends ChangeNotifier {
         return false;
       }
       _snapshot = refreshed;
-      _messages.add(
-        const RoomMessage(sender: '系统', content: '你已离开麦位。', isSystem: true),
-      );
+      if (allowsSyntheticPublicMessages) {
+        _messages.add(
+          const RoomMessage(sender: '系统', content: '你已离开麦位。', isSystem: true),
+        );
+      }
       _notify();
       return true;
     } catch (error) {
@@ -678,13 +692,15 @@ class RoomController extends ChangeNotifier {
         return;
       }
       _snapshot = snapshot;
-      _messages.add(
-        const RoomMessage(
-          sender: '系统',
-          content: '已恢复连接。断线期间公屏消息可能未显示。',
-          isSystem: true,
-        ),
-      );
+      if (_allowSyntheticPublicMessages && !snapshot.isSnapshotOnly) {
+        _messages.add(
+          const RoomMessage(
+            sender: '系统',
+            content: '已恢复连接。断线期间公屏消息可能未显示。',
+            isSystem: true,
+          ),
+        );
+      }
       _status = RoomSessionStatus.joined;
     } catch (error) {
       if (!_isCurrent(sessionEpoch)) {

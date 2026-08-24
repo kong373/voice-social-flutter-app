@@ -146,6 +146,29 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'live room public screen never renders client-generated history fixtures',
+    (WidgetTester tester) async {
+      final RoomController controller = _snapshotOnlyController(
+        allowSyntheticPublicMessages: false,
+      );
+      addTearDown(controller.dispose);
+      await controller.join();
+
+      expect(controller.messages, isEmpty);
+
+      await tester.pumpWidget(
+        MaterialApp(home: VideoRuntimeRoomPage(controller: controller)),
+      );
+      await tester.pump();
+
+      expect(find.text('欢迎进入房间，请友善交流。'), findsNothing);
+      expect(find.text('实时消息通道暂未连接，房间状态可能延迟。'), findsNothing);
+      expect(find.text('麦位动态'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 class _UnknownCountDiscoveryRepository extends MockDiscoveryRepository {
@@ -167,7 +190,9 @@ class _UnknownCountDiscoveryRepository extends MockDiscoveryRepository {
   ];
 }
 
-RoomController _snapshotOnlyController() {
+RoomController _snapshotOnlyController({
+  bool allowSyntheticPublicMessages = true,
+}) {
   final _SnapshotOnlyRoomRepository repository = _SnapshotOnlyRoomRepository();
   return RoomController(
     roomId: 'live-room',
@@ -177,6 +202,7 @@ RoomController _snapshotOnlyController() {
     repository: repository,
     rtcAdapter: const SnapshotOnlyRtcAdapter(),
     realtimeGateway: const SnapshotOnlyRoomRealtimeGateway(),
+    allowSyntheticPublicMessages: allowSyntheticPublicMessages,
   );
 }
 

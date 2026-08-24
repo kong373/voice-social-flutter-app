@@ -252,7 +252,7 @@ class _MessageCenterPageState extends State<MessageCenterPage>
                             onTap: () => Navigator.of(context).push<void>(
                               MaterialPageRoute<void>(
                                 builder: (BuildContext context) =>
-                                    const RelationsPage(),
+                                    const FriendRequestsPage(),
                               ),
                             ),
                           ),

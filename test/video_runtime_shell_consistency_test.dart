@@ -51,8 +51,9 @@ void main() {
     await tester.tap(find.text('好友请求').hitTestable());
     await tester.pumpAndSettle();
 
-    expect(find.byType(RelationsPage), findsOneWidget);
-    expect(find.text('关注、粉丝与好友'), findsOneWidget);
+    expect(find.byType(FriendRequestsPage), findsOneWidget);
+    expect(find.text('好友请求'), findsOneWidget);
+    expect(find.text('关注、粉丝与好友'), findsNothing);
   });
 
   testWidgets('mine root and account detail use one repository profile', (

@@ -302,6 +302,7 @@ class AppDependencies {
       repository: roomRepository,
       rtcAdapter: rtcAdapter,
       realtimeGateway: realtimeGateway,
+      allowSyntheticPublicMessages: !environment.isLive,
     );
   }
 }

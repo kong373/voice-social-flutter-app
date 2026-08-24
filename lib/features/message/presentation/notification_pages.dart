@@ -292,7 +292,7 @@ class _NotificationDetailPageState extends State<NotificationDetailPage> {
       ),
       NotificationTargetType.room => RoomDeepLinkPage(input: targetId),
       NotificationTargetType.dynamicPost => DynamicDetailPage(postId: targetId),
-      NotificationTargetType.order => const OrdersPage(),
+      NotificationTargetType.order => OrdersPage(initialOrderNo: targetId),
       NotificationTargetType.none => NotificationTargetUnavailablePage(
         reason: notification.unavailableReason.isEmpty
             ? '当前通知没有可打开的业务目标'

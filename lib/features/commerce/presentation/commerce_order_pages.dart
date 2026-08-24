@@ -1,7 +1,11 @@
 part of 'commerce_pages.dart';
 
 class OrdersPage extends StatefulWidget {
-  const OrdersPage({super.key});
+  const OrdersPage({this.initialOrderNo, super.key});
+
+  /// When present, the page is opened from a notification and must resolve
+  /// this exact server order before showing its detail page.
+  final String? initialOrderNo;
 
   @override
   State<OrdersPage> createState() => _OrdersPageState();
@@ -10,6 +14,7 @@ class OrdersPage extends StatefulWidget {
 class _OrdersPageState extends State<OrdersPage> {
   List<PaymentOrder>? _orders;
   String? _error;
+  bool _initialOrderOpened = false;
 
   @override
   void didChangeDependencies() {
@@ -20,21 +25,103 @@ class _OrdersPageState extends State<OrdersPage> {
   }
 
   Future<void> _load() async {
+    final String? targetOrderNo = _targetOrderNo;
+    final CommerceRepository repository = AppDependencyScope.of(
+      context,
+    ).commerceRepository;
     try {
-      final CommercePage<PaymentOrder> page = await AppDependencyScope.of(
-        context,
-      ).commerceRepository.fetchOrders(page: 1, pageSize: 50);
+      CommercePage<PaymentOrder> page = await repository.fetchOrders(
+        page: 1,
+        pageSize: 50,
+      );
+      final List<PaymentOrder> orders = <PaymentOrder>[...page.items];
+      PaymentOrder? targetOrder;
+      if (targetOrderNo != null) {
+        targetOrder = _findOrder(orders, targetOrderNo);
+        while (targetOrder == null && page.hasMore) {
+          final int nextPage = page.page + 1;
+          final CommercePage<PaymentOrder> next = await repository.fetchOrders(
+            page: nextPage,
+            pageSize: 50,
+          );
+          if (next.page <= page.page) {
+            break;
+          }
+          page = next;
+          orders.addAll(next.items);
+          targetOrder = _findOrder(orders, targetOrderNo);
+        }
+      }
       if (mounted) {
+        if (targetOrderNo != null && targetOrder == null) {
+          setState(() {
+            _orders = null;
+            _error = '订单 ${_targetOrderLabel} 不存在或不可访问';
+          });
+          return;
+        }
         setState(() {
-          _orders = page.items;
+          _orders = orders;
           _error = null;
         });
+        if (targetOrder != null) {
+          _openInitialOrder(targetOrder);
+        }
       }
     } catch (error) {
       if (mounted) {
-        setState(() => _error = _messageFor(error));
+        final String message = _messageFor(error);
+        setState(
+          () => _error = targetOrderNo == null
+              ? message
+              : '订单 $_targetOrderLabel 加载失败：$message',
+        );
       }
     }
+  }
+
+  String? get _targetOrderNo {
+    final String? raw = widget.initialOrderNo;
+    return raw == null ? null : raw.trim();
+  }
+
+  String get _targetOrderLabel {
+    final String? targetOrderNo = _targetOrderNo;
+    return targetOrderNo == null || targetOrderNo.isEmpty
+        ? '（订单号为空）'
+        : targetOrderNo;
+  }
+
+  static PaymentOrder? _findOrder(
+    Iterable<PaymentOrder> orders,
+    String orderNo,
+  ) {
+    for (final PaymentOrder order in orders) {
+      if (order.orderNo == orderNo) {
+        return order;
+      }
+    }
+    return null;
+  }
+
+  void _openInitialOrder(PaymentOrder order) {
+    if (_initialOrderOpened || !mounted) {
+      return;
+    }
+    _initialOrderOpened = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        return;
+      }
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (BuildContext context) => OrderDetailPage(order: order),
+        ),
+      );
+      if (mounted) {
+        await _load();
+      }
+    });
   }
 
   @override
