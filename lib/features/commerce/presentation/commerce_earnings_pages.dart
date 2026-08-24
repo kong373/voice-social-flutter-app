@@ -148,6 +148,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   double? _quotedAmount;
   String? _quoteError;
   String? _error;
+  String? _payoutAccountsUnavailableMessage;
 
   CommerceRepository get _repository =>
       widget.repository ?? AppDependencyScope.of(context).commerceRepository;
@@ -170,6 +171,17 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       _repository.supportsWithdrawalApplication &&
       _selectedPayoutAccount != null;
 
+  String get _withdrawalBlockerMessage {
+    final String? unavailable = _payoutAccountsUnavailableMessage;
+    if (unavailable != null) {
+      return '$unavailable；提现申请已安全禁用，报价和历史记录仍可查看。';
+    }
+    if (!_repository.supportsWithdrawalApplication) {
+      return '当前第一方实现未启用基于 payoutAccountId 的提现申请；报价和历史记录仍可查看。';
+    }
+    return '当前没有可用的已验证收款账户。提现申请已安全禁用；报价和历史记录仍可查看。';
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -188,6 +200,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
     setState(() {
       _loading = true;
       _error = null;
+      _payoutAccountsUnavailableMessage = null;
     });
     try {
       final List<Object> values = await Future.wait<Object>(<Future<Object>>[
@@ -197,10 +210,16 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       PayoutAccountSelection? payoutSelection;
       try {
         payoutSelection = await _repository.fetchPayoutAccounts();
-      } catch (_) {
-        // Unsupported, offline, or forbidden account reads keep the page
-        // usable for quote/history, but never leave a stale account selected.
+      } on ApiException catch (error) {
+        if (error.kind != ApiFailureKind.configuration &&
+            error.kind != ApiFailureKind.forbidden) {
+          rethrow;
+        }
+        // Explicitly unsupported and domain-level authorization outcomes may
+        // keep quote/history usable. Retryable transport/server failures and
+        // malformed authority responses must remain visible to the user.
         payoutSelection = null;
+        _payoutAccountsUnavailableMessage = error.message;
       }
       if (mounted) {
         setState(() {
@@ -439,10 +458,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                             .selectableAccounts
                             .isEmpty) ...<Widget>[
                       const SizedBox(height: 10),
-                      const _CommerceInfoBanner(
-                        text:
-                            '当前第一方后端尚未提供 payoutAccountId 的账户列表与选择接口，或没有可用账户。银行卡摘要仅供展示，提现申请已安全禁用；报价和历史记录仍可查看。',
-                      ),
+                      _CommerceInfoBanner(text: _withdrawalBlockerMessage),
                     ],
                     if (_payoutSelection != null &&
                         _repository.supportsPayoutAccountSelection &&

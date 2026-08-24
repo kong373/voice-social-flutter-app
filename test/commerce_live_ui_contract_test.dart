@@ -86,7 +86,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
 
-      expect(find.textContaining('payoutAccountId 的账户列表与选择接口'), findsOneWidget);
+      expect(find.textContaining('基于 payoutAccountId 的提现申请'), findsOneWidget);
       expect(find.text('计算到账金额'), findsOneWidget);
       expect(find.text('提现记录'), findsOneWidget);
 
@@ -100,6 +100,25 @@ void main() {
         find.widgetWithText(FilledButton, '申请提现'),
       );
       expect(apply.onPressed, isNull);
+    },
+  );
+
+  testWidgets(
+    'payout account transport failures remain visible and retryable',
+    (WidgetTester tester) async {
+      final _FailingPayoutAccountRepository repository =
+          _FailingPayoutAccountRepository();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.social(),
+          home: WithdrawalPage(repository: repository),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('收款账户服务连接失败'), findsOneWidget);
+      expect(find.text('重试'), findsOneWidget);
+      expect(find.textContaining('尚未提供 payoutAccountId'), findsNothing);
     },
   );
 
@@ -491,4 +510,18 @@ class _WithdrawalUiSpyRepository extends MockCommerceRepository {
       minimumAmount: 10,
     );
   }
+}
+
+class _FailingPayoutAccountRepository extends MockCommerceRepository {
+  @override
+  bool get supportsWithdrawalApplication => true;
+
+  @override
+  bool get supportsPayoutAccountSelection => true;
+
+  @override
+  Future<PayoutAccountSelection> fetchPayoutAccounts() =>
+      Future<PayoutAccountSelection>.error(
+        const ApiException(kind: ApiFailureKind.network, message: '收款账户服务连接失败'),
+      );
 }
