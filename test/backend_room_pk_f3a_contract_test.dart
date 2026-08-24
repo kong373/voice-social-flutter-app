@@ -299,6 +299,176 @@ void main() {
   });
 
   test(
+    'F3-A retains the same request id for idempotency pending conflicts',
+    () async {
+      for (final int code in <int>[40901, 40902]) {
+        int calls = 0;
+        final _RunningServer server = await _RunningServer.start((
+          _CapturedRequest request,
+        ) {
+          expect(request.method, 'POST');
+          expect(request.path, '/app-api/activityPk/inviteRoomPk');
+          calls += 1;
+          return calls == 1
+              ? _Reply(
+                  code: code,
+                  message: 'idempotency pending',
+                  httpStatus: 409,
+                )
+              : _Reply(data: _invitationProjection());
+        });
+        addTearDown(server.close);
+        final BackendRoomPkRepository repository = BackendRoomPkRepository(
+          apiClient: server.client,
+          routes: const BackendRouteCatalog(),
+        );
+        const RoomPkOpponent target = RoomPkOpponent(
+          roomId: _targetRoomId,
+          roomCode: 'R222',
+          roomName: '目标房',
+        );
+
+        await expectLater(
+          repository.sendInvitation(
+            roomId: _roomId,
+            inviterUserId: 10,
+            opponent: target,
+            punishmentTheme: '主题',
+            durationMinutes: 5,
+          ),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.conflict,
+            ),
+          ),
+        );
+        await repository.sendInvitation(
+          roomId: _roomId,
+          inviterUserId: 10,
+          opponent: target,
+          punishmentTheme: '主题',
+          durationMinutes: 5,
+        );
+        expect(server.requests, hasLength(2));
+        expect(server.requests[0].requestId, isNotEmpty);
+        expect(server.requests[1].requestId, server.requests[0].requestId);
+        await server.close();
+      }
+    },
+  );
+
+  test(
+    'F3-A accepts inviter-oriented mutation projections for an incoming invitation',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        switch (request.path) {
+          case '/app-api/activityPk/acceptRoomPkInvitation':
+            return _Reply(
+              data: _battleProjection(
+                roomId: _roomId,
+                targetRoomId: _targetRoomId,
+              ),
+            );
+          case '/app-api/activityPk/rejectRoomPkInvitation':
+            return _Reply(
+              data: _invitationProjection(
+                status: 'REJECTED',
+                roomId: _roomId,
+                targetRoomId: _targetRoomId,
+              ),
+            );
+          default:
+            fail('unexpected incoming projection route: ${request.path}');
+        }
+      });
+      addTearDown(server.close);
+      final BackendRoomPkRepository repository = BackendRoomPkRepository(
+        apiClient: server.client,
+        routes: const BackendRouteCatalog(),
+      );
+      final RoomPkInvitation incoming = RoomPkInvitation(
+        id: _invitationId,
+        direction: RoomPkInvitationDirection.incoming,
+        currentRoomId: _targetRoomId,
+        opponent: const RoomPkOpponent(
+          roomId: _roomId,
+          roomCode: 'R111',
+          roomName: '邀请方房间',
+        ),
+        punishmentTheme: '主题',
+        durationMinutes: 5,
+        status: RoomPkInvitationStatus.pending,
+        createdAt: DateTime.utc(2030, 8, 21, 11, 59),
+      );
+
+      final RoomPkBattle accepted = await repository.acceptInvitation(incoming);
+      expect(accepted.currentRoomId, _targetRoomId);
+      expect(accepted.targetRoomId, _roomId);
+      await repository.rejectInvitation(incoming);
+    },
+  );
+
+  test(
+    'F3-A rotates request id after a definitive idempotency conflict',
+    () async {
+      int calls = 0;
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        expect(request.path, '/app-api/activityPk/inviteRoomPk');
+        calls += 1;
+        return calls == 1
+            ? const _Reply(
+                code: 40903,
+                message: 'request fingerprint mismatch',
+                httpStatus: 409,
+              )
+            : _Reply(data: _invitationProjection());
+      });
+      addTearDown(server.close);
+      final BackendRoomPkRepository repository = BackendRoomPkRepository(
+        apiClient: server.client,
+        routes: const BackendRouteCatalog(),
+      );
+      const RoomPkOpponent target = RoomPkOpponent(
+        roomId: _targetRoomId,
+        roomCode: 'R222',
+        roomName: '目标房',
+      );
+
+      await expectLater(
+        repository.sendInvitation(
+          roomId: _roomId,
+          inviterUserId: 10,
+          opponent: target,
+          punishmentTheme: '主题',
+          durationMinutes: 5,
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.conflict,
+          ),
+        ),
+      );
+      await repository.sendInvitation(
+        roomId: _roomId,
+        inviterUserId: 10,
+        opponent: target,
+        punishmentTheme: '主题',
+        durationMinutes: 5,
+      );
+      expect(server.requests, hasLength(2));
+      expect(server.requests[0].requestId, isNot(server.requests[1].requestId));
+    },
+  );
+
+  test(
     'F3-A maps backend 400/401/403/404/409/5xx without synthetic success',
     () async {
       const List<(int, ApiFailureKind)> failures = <(int, ApiFailureKind)>[
@@ -398,29 +568,41 @@ void main() {
   );
 }
 
-Map<String, Object?> _invitationProjection({String status = 'PENDING'}) =>
-    <String, Object?>{
-      'roomId': _roomId,
-      'invitationId': _invitationId,
-      'invitationStatus': status,
-      'targetRoomId': _targetRoomId,
-      'createdAt': '2030-08-21T11:59:00Z',
-      'expiresAt': '2030-08-21T12:14:00Z',
-      'resolvedAt': status == 'PENDING' ? null : '2030-08-21T12:00:00Z',
-      'status': status,
-      'state': status,
-      'providerInvocation': false,
-      'vendorInvocation': false,
-      'rtcStatus': 'VENDOR_BLOCKED',
-      'imStatus': 'VENDOR_BLOCKED',
-      'realtimeProvisioned': false,
-    };
+Map<String, Object?> _invitationProjection({
+  String status = 'PENDING',
+  String roomId = _roomId,
+  String targetRoomId = _targetRoomId,
+  String invitationId = _invitationId,
+}) => <String, Object?>{
+  'roomId': roomId,
+  'invitationId': invitationId,
+  'invitationStatus': status,
+  'targetRoomId': targetRoomId,
+  'createdAt': '2030-08-21T11:59:00Z',
+  'expiresAt': '2030-08-21T12:14:00Z',
+  'resolvedAt': status == 'PENDING' ? null : '2030-08-21T12:00:00Z',
+  'status': status,
+  'state': status,
+  'providerInvocation': false,
+  'vendorInvocation': false,
+  'rtcStatus': 'VENDOR_BLOCKED',
+  'imStatus': 'VENDOR_BLOCKED',
+  'realtimeProvisioned': false,
+};
 
 Map<String, Object?> _battleProjection({
   String status = 'IN_PROGRESS',
   String battleId = _battleId,
+  String roomId = _roomId,
+  String targetRoomId = _targetRoomId,
+  String invitationId = _invitationId,
 }) => <String, Object?>{
-  ..._invitationProjection(status: 'ACCEPTED'),
+  ..._invitationProjection(
+    status: 'ACCEPTED',
+    roomId: roomId,
+    targetRoomId: targetRoomId,
+    invitationId: invitationId,
+  ),
   'battleId': battleId,
   'battleStatus': status,
   'resultCode': status == 'SURRENDERED' ? 'LEFT_WIN' : 'UNDECIDED',

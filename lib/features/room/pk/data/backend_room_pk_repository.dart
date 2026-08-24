@@ -207,6 +207,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
           response.data,
           expectedRoomId: currentRoomId,
           expectedInvitationId: invitationId,
+          expectedTargetRoomId: invitation.opponent.roomId,
           expectedBattleStatus: 'IN_PROGRESS',
         );
       },
@@ -408,7 +409,11 @@ class BackendRoomPkRepository implements RoomPkRepository {
       _requiredText(data['invitationId'], '邀请 ID'),
       '邀请 ID',
     );
-    if (roomId != expectedRoomId || targetRoomId != expectedTargetRoomId) {
+    final bool directOrientation =
+        roomId == expectedRoomId && targetRoomId == expectedTargetRoomId;
+    final bool reversedOrientation =
+        roomId == expectedTargetRoomId && targetRoomId == expectedRoomId;
+    if (!directOrientation && !reversedOrientation) {
       throw const ApiException(
         kind: ApiFailureKind.conflict,
         message: 'PK 邀请响应的房间已变化',
@@ -435,7 +440,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
     return RoomPkInvitation(
       id: invitationId,
       direction: direction,
-      currentRoomId: roomId,
+      currentRoomId: expectedRoomId,
       opponent: opponent,
       punishmentTheme: punishmentTheme,
       durationMinutes: durationMinutes,
@@ -451,15 +456,16 @@ class BackendRoomPkRepository implements RoomPkRepository {
     required String expectedRoomId,
     String? expectedInvitationId,
     String? expectedBattleId,
+    String? expectedTargetRoomId,
     String? expectedBattleStatus,
   }) {
     final Map<String, Object?> data = _requiredMap(raw, 'PK 对战响应');
     _assertVendorBlocked(data);
-    final String roomId = _uuid(
+    final String responseRoomId = _uuid(
       _requiredText(data['roomId'], '房间 ID'),
       '房间 ID',
     );
-    final String targetRoomId = _uuid(
+    final String responseTargetRoomId = _uuid(
       _requiredText(data['targetRoomId'], '目标房间 ID'),
       '目标房间 ID',
     );
@@ -468,12 +474,28 @@ class BackendRoomPkRepository implements RoomPkRepository {
       '对战 ID',
     );
     final String? invitationId = _optionalUuid(data['invitationId'], '邀请 ID');
-    if (roomId != expectedRoomId || roomId == targetRoomId) {
+    final bool directOrientation =
+        responseRoomId == expectedRoomId &&
+        (expectedTargetRoomId == null ||
+            responseTargetRoomId == expectedTargetRoomId);
+    final bool reversedOrientation =
+        responseTargetRoomId == expectedRoomId &&
+        (expectedTargetRoomId == null ||
+            responseRoomId == expectedTargetRoomId);
+    if (responseRoomId == responseTargetRoomId ||
+        (!directOrientation && !reversedOrientation)) {
       throw const ApiException(
         kind: ApiFailureKind.conflict,
         message: 'PK 对战响应的房间已变化',
       );
     }
+    // Mutation projections are rooted at the inviter/left room, while a
+    // caller may be the invited/right room. Normalize both orientations to
+    // the caller before deriving sides and result ownership.
+    final String roomId = expectedRoomId;
+    final String targetRoomId = directOrientation
+        ? responseTargetRoomId
+        : responseRoomId;
     if (expectedInvitationId != null && invitationId != expectedInvitationId) {
       throw const ApiException(
         kind: ApiFailureKind.conflict,
@@ -712,6 +734,13 @@ class BackendRoomPkRepository implements RoomPkRepository {
   static bool _retainRequestId(Object error) {
     if (error is! ApiException) {
       return true;
+    }
+    if (error.kind == ApiFailureKind.conflict) {
+      // F3-A 40901/40902 mean the original operation is still unknown or in
+      // progress. Rotating the key could execute the same state transition
+      // twice. 40903 and state/business conflicts are definitive and must
+      // release the key for a later, new intent.
+      return error.code == 40901 || error.code == 40902;
     }
     return switch (error.kind) {
       ApiFailureKind.network ||
