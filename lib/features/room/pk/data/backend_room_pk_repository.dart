@@ -110,11 +110,74 @@ class BackendRoomPkRepository implements RoomPkRepository {
   Future<RoomPkInvitation?> fetchIncomingInvitation({
     required String roomId,
   }) async {
-    // The HTTP projection does not identify inviter vs invitee. Returning an
-    // invented direction would allow the UI to accept an invitation it does
-    // not own, so the real-time inbox remains explicitly unavailable.
-    _roomId(roomId, '当前房间 ID');
-    return null;
+    final String currentRoomId = _roomId(roomId, '当前房间 ID');
+    final Map<String, Object?> projection = await _process(
+      roomId: currentRoomId,
+    );
+    final String? invitationId = _optionalUuid(
+      projection['invitationId'],
+      '邀请 ID',
+    );
+    if (invitationId == null) {
+      return null;
+    }
+    final String direction = _requiredStatus(
+      projection['invitationDirection'],
+      '邀请方向',
+    );
+    if (direction != 'INCOMING' && direction != 'OUTGOING') {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'PK 邀请方向无效',
+      );
+    }
+    final String inviterRoomId = _uuid(
+      _requiredText(projection['inviterRoomId'], '邀请方房间 ID'),
+      '邀请方房间 ID',
+    );
+    final String inviteeRoomId = _uuid(
+      _requiredText(projection['inviteeRoomId'], '受邀方房间 ID'),
+      '受邀方房间 ID',
+    );
+    if (inviterRoomId == inviteeRoomId ||
+        (direction == 'INCOMING' && inviteeRoomId != currentRoomId) ||
+        (direction == 'OUTGOING' && inviterRoomId != currentRoomId)) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: 'PK 邀请方向与当前房间不一致',
+      );
+    }
+    final RoomPkInvitationStatus? status = _invitationStatus(
+      projection['invitationStatus'],
+    );
+    if (status == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'PK 邀请状态无效',
+      );
+    }
+    if (direction == 'OUTGOING' || status != RoomPkInvitationStatus.pending) {
+      return null;
+    }
+    final RoomPkOpponent opponent = _opponentFromMap(
+      _requiredMap(projection['opponentRoom'], '邀请方房间'),
+    );
+    if (opponent.roomId != inviterRoomId) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: 'PK 邀请方房间与权威方向不一致',
+      );
+    }
+    return _invitationFromProjection(
+      projection,
+      expectedRoomId: currentRoomId,
+      expectedTargetRoomId: inviterRoomId,
+      expectedInvitationId: invitationId,
+      direction: RoomPkInvitationDirection.incoming,
+      opponent: opponent,
+      punishmentTheme: _requiredText(projection['punishmentTheme'], '惩罚主题'),
+      durationMinutes: _requiredInt(projection['durationMinutes'], 'PK 时长'),
+    );
   }
 
   @override

@@ -591,6 +591,63 @@ void main() {
       );
     },
   );
+
+  test(
+    'F3-A polls an authoritative incoming invitation without claiming realtime delivery',
+    () async {
+      int calls = 0;
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        expect(request.method, 'GET');
+        expect(request.path, '/app-api/activityPk/queryRoomPkProcess');
+        expect(request.query, <String, String>{'roomId': _roomId});
+        calls += 1;
+        final bool incoming = calls == 1;
+        return _Reply(
+          data: <String, Object?>{
+            ..._invitationProjection(
+              roomId: _roomId,
+              targetRoomId: _targetRoomId,
+            ),
+            'inviterRoomId': incoming ? _targetRoomId : _roomId,
+            'inviteeRoomId': incoming ? _roomId : _targetRoomId,
+            'invitationDirection': incoming ? 'INCOMING' : 'OUTGOING',
+            'opponentRoom': <String, Object?>{
+              'roomId': _targetRoomId,
+              'roomCode': 'R222',
+              'roomName': '目标房',
+              'coverImgUrl': 'https://cdn.example/target.png',
+              'onlineNum': 33,
+              'hasActivePk': false,
+              'providerInvocation': false,
+              'rtcStatus': 'VENDOR_BLOCKED',
+              'imStatus': 'VENDOR_BLOCKED',
+              'realtimeProvisioned': false,
+            },
+          },
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomPkRepository repository = BackendRoomPkRepository(
+        apiClient: server.client,
+        routes: const BackendRouteCatalog(),
+      );
+
+      expect(repository.supportsRealtimeInvitations, isFalse);
+      final RoomPkInvitation? incoming = await repository
+          .fetchIncomingInvitation(roomId: _roomId);
+      expect(incoming, isNotNull);
+      expect(incoming!.direction, RoomPkInvitationDirection.incoming);
+      expect(incoming.currentRoomId, _roomId);
+      expect(incoming.opponent.roomId, _targetRoomId);
+      expect(incoming.opponent.roomName, '目标房');
+      expect(incoming.status, RoomPkInvitationStatus.pending);
+
+      expect(await repository.fetchIncomingInvitation(roomId: _roomId), isNull);
+      expect(calls, 2);
+    },
+  );
 }
 
 Map<String, Object?> _invitationProjection({
