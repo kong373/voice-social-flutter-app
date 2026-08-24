@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show kReleaseMode;
+
 enum BackendMode { mock, live }
 
 enum DeploymentEnvironment {
@@ -86,10 +88,21 @@ class AppEnvironment {
     required String realtimeEndpoint,
     required String liveProbePath,
     required bool allowInsecureHttp,
+    bool releaseBuild = kReleaseMode,
   }) {
     final DeploymentEnvironment deploymentEnvironment =
         _parseDeploymentEnvironment(deploymentValue);
+    final bool deploymentEnvironmentConfigured = _isValidDeploymentEnvironment(
+      deploymentValue,
+    );
     final String normalizedBackendMode = backendModeValue.trim().toLowerCase();
+    if (releaseBuild &&
+        (!deploymentEnvironmentConfigured || normalizedBackendMode != 'live')) {
+      throw StateError(
+        'Release 构建要求显式配置合法 APP_ENV 和 BACKEND_MODE=live；'
+        '缺失或 Mock 后端会被拒绝。',
+      );
+    }
     if ((deploymentEnvironment == DeploymentEnvironment.staging ||
             deploymentEnvironment == DeploymentEnvironment.production) &&
         normalizedBackendMode != 'live') {
@@ -110,9 +123,7 @@ class AppEnvironment {
       oauthClientId: oauthClientId,
       realtimeEndpoint: realtimeEndpoint,
       deploymentEnvironment: deploymentEnvironment,
-      deploymentEnvironmentConfigured: _isValidDeploymentEnvironment(
-        deploymentValue,
-      ),
+      deploymentEnvironmentConfigured: deploymentEnvironmentConfigured,
       apiTimeout: Duration(seconds: timeoutSeconds),
       liveProbePath: liveProbePath,
       allowInsecureHttp: allowInsecureHttp,

@@ -28,8 +28,16 @@ void main() {
     expect(flutterCi, isNot(contains('contents: write')));
   });
 
-  test('autofix workflows pin actions and scope write permission to the job', () {
+  test('autofix workflows are manual-only and scope write permission', () {
     for (final String workflow in <String>[formatAutofix, snapshotAutofix]) {
+      expect(workflow, contains('on:\n  workflow_dispatch:'));
+      expect(workflow, isNot(contains('  push:')));
+      expect(
+        workflow,
+        contains(
+          "if: github.ref == 'refs/heads/feat/m3-2a-live-auth-readonly'",
+        ),
+      );
       expect(workflow, contains('permissions:\n  contents: read'));
       expect(workflow, contains('    permissions:\n      contents: write'));
       expect(workflow, contains('concurrency:'));
@@ -59,6 +67,21 @@ void main() {
     expect(
       reviewPublisher,
       contains("github.event.workflow_run.conclusion == 'success' &&"),
+    );
+    expect(
+      reviewPublisher,
+      contains("github.event.workflow_run.event == 'push' &&"),
+    );
+    expect(
+      reviewPublisher,
+      contains(
+        'github.event.workflow_run.head_repository.full_name == '
+        'github.repository &&',
+      ),
+    );
+    expect(
+      reviewPublisher,
+      contains('ref: \${{ github.event.repository.default_branch }}'),
     );
     expect(
       reviewPublisher,

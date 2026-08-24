@@ -252,4 +252,46 @@ void main() {
     );
     expect(stagingLive.backendMode, BackendMode.live);
   });
+
+  test('every release build rejects implicit environment or mock backend', () {
+    for (final ({String mode, String env}) scenario
+        in <({String mode, String env})>[
+          (mode: '', env: ''),
+          (mode: 'mock', env: 'development'),
+          (mode: 'live', env: 'unknown'),
+        ]) {
+      expect(
+        () => AppEnvironment.fromResolvedValues(
+          backendModeValue: scenario.mode,
+          deploymentValue: scenario.env,
+          timeoutValue: '15',
+          apiBaseUrl: 'https://example.com',
+          clientType: 'Android',
+          clientInnerVersion: '1',
+          oauthClientId: 'public-client',
+          realtimeEndpoint: '',
+          liveProbePath: '/',
+          allowInsecureHttp: false,
+          releaseBuild: true,
+        ),
+        throwsA(isA<StateError>()),
+        reason: '${scenario.env}:${scenario.mode}',
+      );
+    }
+
+    final AppEnvironment releaseLive = AppEnvironment.fromResolvedValues(
+      backendModeValue: 'live',
+      deploymentValue: 'development',
+      timeoutValue: '15',
+      apiBaseUrl: 'http://10.0.2.2:18080',
+      clientType: 'Android',
+      clientInnerVersion: '1',
+      oauthClientId: 'public-client',
+      realtimeEndpoint: '',
+      liveProbePath: '/',
+      allowInsecureHttp: true,
+      releaseBuild: true,
+    );
+    expect(releaseLive.backendMode, BackendMode.live);
+  });
 }

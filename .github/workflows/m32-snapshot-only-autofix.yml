@@ -1,11 +1,7 @@
 name: M3.2 one-shot snapshot-only room autofix
 
 on:
-  push:
-    branches:
-      - feat/m3-2a-live-auth-readonly
-    paths:
-      - tool/review/apply_snapshot_only_fix.py
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,6 +12,7 @@ concurrency:
 
 jobs:
   apply:
+    if: github.ref == 'refs/heads/feat/m3-2a-live-auth-readonly'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
