@@ -585,7 +585,16 @@ class RoomController extends ChangeNotifier {
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
-      if (!_isRetryableRequestError(error)) {
+      if (_isRetryableRequestError(error)) {
+        final bool recovered = await _recoverGiftAfterRetryableFailure(
+          snapshot: snapshot,
+          sessionEpoch: sessionEpoch,
+          requestId: requestId,
+        );
+        if (recovered) {
+          return true;
+        }
+      } else {
         _giftRequestId = null;
         _giftRequestKey = null;
       }
@@ -607,45 +616,36 @@ class RoomController extends ChangeNotifier {
     String? transferId,
     String? requestId,
   }) async {
-    if (_status != RoomSessionStatus.joined || _snapshot == null) {
+    final RoomSnapshot? snapshot = _snapshot;
+    if (_status != RoomSessionStatus.joined || snapshot == null) {
       return null;
     }
     final int sessionEpoch = _sessionEpoch;
-    final String? normalizedTransferId = transferId?.trim().isEmpty == true
-        ? null
-        : transferId?.trim();
-    final String? normalizedRequestId = requestId?.trim().isEmpty == true
-        ? null
-        : requestId?.trim();
-    final String? recoveryRequestId = normalizedTransferId == null
-        ? (normalizedRequestId ?? _giftRequestId)
-        : normalizedRequestId;
-    try {
-      final GiftReceipt receipt = await _repository.fetchGiftReceipt(
-        transferId: normalizedTransferId,
-        requestId: recoveryRequestId,
-        currentUserId: _currentUserId,
-      );
-      if (!_isJoinedEpoch(sessionEpoch)) {
-        return null;
-      }
-      if (receipt.success) {
-        final int? remainingBalance = receipt.remainingBalance;
-        if (remainingBalance != null && _snapshot != null) {
-          _snapshot = _snapshot!.copyWith(giftBalance: remainingBalance);
-        }
-        _giftRequestId = null;
-        _giftRequestKey = null;
-        _notify();
-      }
-      return receipt;
-    } catch (error) {
+    final GiftReceipt? receipt = await _readGiftReceipt(
+      sessionEpoch: sessionEpoch,
+      transferId: transferId,
+      requestId: requestId,
+      failureFallback: '礼物回执查询失败',
+      setErrorOnFailure: true,
+    );
+    if (receipt == null) {
       if (_isJoinedEpoch(sessionEpoch)) {
-        _errorMessage = _messageFor(error, fallback: '礼物回执查询失败');
         _notify();
       }
       return null;
     }
+    if (receipt.success) {
+      await _applySuccessfulGiftReceipt(
+        receipt,
+        snapshot: snapshot,
+        sessionEpoch: sessionEpoch,
+        refreshHistory: true,
+      );
+      if (_isJoinedEpoch(sessionEpoch)) {
+        _notify();
+      }
+    }
+    return _isJoinedEpoch(sessionEpoch) ? receipt : null;
   }
 
   Future<GiftReceipt?> queryGiftReceipt({
@@ -1099,6 +1099,81 @@ class RoomController extends ChangeNotifier {
       ApiFailureKind.conflict ||
       ApiFailureKind.business => false,
     };
+  }
+
+  Future<bool> _recoverGiftAfterRetryableFailure({
+    required RoomSnapshot snapshot,
+    required int sessionEpoch,
+    required String requestId,
+  }) async {
+    final GiftReceipt? receipt = await _readGiftReceipt(
+      sessionEpoch: sessionEpoch,
+      requestId: requestId,
+      setErrorOnFailure: false,
+    );
+    if (receipt == null || !receipt.success || !_isJoinedEpoch(sessionEpoch)) {
+      return false;
+    }
+    await _applySuccessfulGiftReceipt(
+      receipt,
+      snapshot: snapshot,
+      sessionEpoch: sessionEpoch,
+      refreshHistory: true,
+    );
+    return _isJoinedEpoch(sessionEpoch);
+  }
+
+  Future<GiftReceipt?> _readGiftReceipt({
+    required int sessionEpoch,
+    String? transferId,
+    String? requestId,
+    String failureFallback = '礼物回执查询失败',
+    bool setErrorOnFailure = true,
+  }) async {
+    final String? normalizedTransferId = transferId?.trim().isEmpty == true
+        ? null
+        : transferId?.trim();
+    final String? normalizedRequestId = requestId?.trim().isEmpty == true
+        ? null
+        : requestId?.trim();
+    final String? recoveryRequestId = normalizedTransferId == null
+        ? (normalizedRequestId ?? _giftRequestId)
+        : normalizedRequestId;
+    try {
+      final GiftReceipt receipt = await _repository.fetchGiftReceipt(
+        transferId: normalizedTransferId,
+        requestId: recoveryRequestId,
+        currentUserId: _currentUserId,
+      );
+      return _isJoinedEpoch(sessionEpoch) ? receipt : null;
+    } catch (error) {
+      if (setErrorOnFailure && _isJoinedEpoch(sessionEpoch)) {
+        _errorMessage = _messageFor(error, fallback: failureFallback);
+      }
+      return null;
+    }
+  }
+
+  Future<void> _applySuccessfulGiftReceipt(
+    GiftReceipt receipt, {
+    required RoomSnapshot snapshot,
+    required int sessionEpoch,
+    bool refreshHistory = false,
+  }) async {
+    if (!_isJoinedEpoch(sessionEpoch)) {
+      return;
+    }
+    final RoomSnapshot? currentSnapshot = _snapshot;
+    final int? remainingBalance = receipt.remainingBalance;
+    if (remainingBalance != null && currentSnapshot != null) {
+      _snapshot = currentSnapshot.copyWith(giftBalance: remainingBalance);
+    }
+    _giftRequestId = null;
+    _giftRequestKey = null;
+    _errorMessage = null;
+    if (refreshHistory) {
+      await _loadPublicHistory(snapshot, sessionEpoch: sessionEpoch);
+    }
   }
 
   String _newRequestId(String prefix) {
