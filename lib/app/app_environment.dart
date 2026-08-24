@@ -46,18 +46,16 @@ class AppEnvironment {
   });
 
   factory AppEnvironment.fromDefines() {
-    const String modeValue = String.fromEnvironment(
-      'BACKEND_MODE',
-      defaultValue: 'mock',
-    );
+    const String modeValue = String.fromEnvironment('BACKEND_MODE');
     const String deploymentValue = String.fromEnvironment('APP_ENV');
     const String timeoutValue = String.fromEnvironment(
       'API_TIMEOUT_SECONDS',
       defaultValue: '15',
     );
-    final int timeoutSeconds = int.tryParse(timeoutValue) ?? 15;
-    return AppEnvironment(
-      backendMode: modeValue == 'live' ? BackendMode.live : BackendMode.mock,
+    return AppEnvironment.fromResolvedValues(
+      backendModeValue: modeValue,
+      deploymentValue: deploymentValue,
+      timeoutValue: timeoutValue,
       apiBaseUrl: const String.fromEnvironment('API_BASE_URL'),
       clientType: const String.fromEnvironment(
         'CLIENT_TYPE',
@@ -69,16 +67,55 @@ class AppEnvironment {
       ),
       oauthClientId: const String.fromEnvironment('OAUTH_CLIENT_ID'),
       realtimeEndpoint: const String.fromEnvironment('ROOM_REALTIME_ENDPOINT'),
-      deploymentEnvironment: _parseDeploymentEnvironment(deploymentValue),
-      deploymentEnvironmentConfigured: _isValidDeploymentEnvironment(
-        deploymentValue,
-      ),
-      apiTimeout: Duration(seconds: timeoutSeconds),
       liveProbePath: const String.fromEnvironment(
         'LIVE_PROBE_PATH',
         defaultValue: '/',
       ),
       allowInsecureHttp: const bool.fromEnvironment('ALLOW_INSECURE_HTTP'),
+    );
+  }
+
+  factory AppEnvironment.fromResolvedValues({
+    required String backendModeValue,
+    required String deploymentValue,
+    required String timeoutValue,
+    required String apiBaseUrl,
+    required String clientType,
+    required String clientInnerVersion,
+    required String oauthClientId,
+    required String realtimeEndpoint,
+    required String liveProbePath,
+    required bool allowInsecureHttp,
+  }) {
+    final DeploymentEnvironment deploymentEnvironment =
+        _parseDeploymentEnvironment(deploymentValue);
+    final String normalizedBackendMode = backendModeValue.trim().toLowerCase();
+    if ((deploymentEnvironment == DeploymentEnvironment.staging ||
+            deploymentEnvironment == DeploymentEnvironment.production) &&
+        normalizedBackendMode != 'live') {
+      throw StateError(
+        'APP_ENV=${deploymentEnvironment.name} 发布构建要求显式 '
+        'BACKEND_MODE=live；缺失或非 live 会被拒绝。',
+      );
+    }
+
+    final int timeoutSeconds = int.tryParse(timeoutValue) ?? 15;
+    return AppEnvironment(
+      backendMode: normalizedBackendMode == 'live'
+          ? BackendMode.live
+          : BackendMode.mock,
+      apiBaseUrl: apiBaseUrl,
+      clientType: clientType,
+      clientInnerVersion: clientInnerVersion,
+      oauthClientId: oauthClientId,
+      realtimeEndpoint: realtimeEndpoint,
+      deploymentEnvironment: deploymentEnvironment,
+      deploymentEnvironmentConfigured: _isValidDeploymentEnvironment(
+        deploymentValue,
+      ),
+      apiTimeout: Duration(seconds: timeoutSeconds),
+      liveProbePath: liveProbePath,
+      allowInsecureHttp: allowInsecureHttp,
     );
   }
 

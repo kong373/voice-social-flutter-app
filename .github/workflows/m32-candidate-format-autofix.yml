@@ -8,21 +8,27 @@ on:
       - tool/review/format_candidate.sh
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: m32-candidate-format-autofix-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   format:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
       - name: Checkout feature branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: feat/m3-2a-live-auth-readonly
           fetch-depth: 0
 
       - name: Install Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
         with:
           flutter-version: 3.44.7
           channel: stable

@@ -176,4 +176,80 @@ void main() {
       ),
     );
   });
+
+  test('local and development builds keep mock compatibility by default', () {
+    final AppEnvironment local = AppEnvironment.fromResolvedValues(
+      backendModeValue: '',
+      deploymentValue: 'local',
+      timeoutValue: '15',
+      apiBaseUrl: '',
+      clientType: 'Android',
+      clientInnerVersion: '1',
+      oauthClientId: '',
+      realtimeEndpoint: '',
+      liveProbePath: '/',
+      allowInsecureHttp: false,
+    );
+    final AppEnvironment development = AppEnvironment.fromResolvedValues(
+      backendModeValue: 'mock',
+      deploymentValue: 'development',
+      timeoutValue: '15',
+      apiBaseUrl: '',
+      clientType: 'Android',
+      clientInnerVersion: '1',
+      oauthClientId: '',
+      realtimeEndpoint: '',
+      liveProbePath: '/',
+      allowInsecureHttp: false,
+    );
+
+    expect(local.backendMode, BackendMode.mock);
+    expect(development.backendMode, BackendMode.mock);
+  });
+
+  test('staging and production builds require explicit live backend mode', () {
+    for (final ({String mode, String env}) scenario
+        in <({String mode, String env})>[
+          (mode: '', env: 'staging'),
+          (mode: 'mock', env: 'production'),
+          (mode: 'qa', env: 'stage'),
+        ]) {
+      expect(
+        () => AppEnvironment.fromResolvedValues(
+          backendModeValue: scenario.mode,
+          deploymentValue: scenario.env,
+          timeoutValue: '15',
+          apiBaseUrl: 'https://example.com',
+          clientType: 'Android',
+          clientInnerVersion: '1',
+          oauthClientId: 'client-id',
+          realtimeEndpoint: '',
+          liveProbePath: '/',
+          allowInsecureHttp: false,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (StateError error) => error.toString(),
+            'message',
+            contains('BACKEND_MODE=live'),
+          ),
+        ),
+        reason: '${scenario.env}:${scenario.mode}',
+      );
+    }
+
+    final AppEnvironment stagingLive = AppEnvironment.fromResolvedValues(
+      backendModeValue: 'live',
+      deploymentValue: 'staging',
+      timeoutValue: '15',
+      apiBaseUrl: 'https://example.com',
+      clientType: 'Android',
+      clientInnerVersion: '1',
+      oauthClientId: 'client-id',
+      realtimeEndpoint: '',
+      liveProbePath: '/',
+      allowInsecureHttp: false,
+    );
+    expect(stagingLive.backendMode, BackendMode.live);
+  });
 }
