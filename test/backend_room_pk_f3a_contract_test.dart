@@ -104,8 +104,12 @@ void main() {
             expect(request.body, <String, Object?>{
               'roomId': _roomId,
               'targetRoomId': _targetRoomId,
+              'punishmentTheme': '分享今天最开心的事',
+              'durationMinutes': 5,
             });
-            return _Reply(data: _invitationProjection());
+            return _Reply(
+              data: _invitationProjection(punishmentTheme: '分享今天最开心的事'),
+            );
           case '/app-api/activityPk/acceptRoomPkInvitation':
             expect(request.method, 'POST');
             expect(request.query, isEmpty);
@@ -160,6 +164,20 @@ void main() {
                     'endsAt': '2030-08-21T12:09:00Z',
                     'completedAt': '2030-08-21T12:09:01Z',
                     'endedAt': '2030-08-21T12:09:01Z',
+                    'punishmentTheme': '主题',
+                    'durationMinutes': 5,
+                    'leftRoom': _sideProjection(
+                      roomId: _roomId,
+                      roomCode: 'R111',
+                      roomName: '当前房',
+                      score: 120,
+                    ),
+                    'rightRoom': _sideProjection(
+                      roomId: _targetRoomId,
+                      roomCode: 'R222',
+                      roomName: '目标房',
+                      score: 80,
+                    ),
                   },
                 ],
                 current: 3,
@@ -186,8 +204,8 @@ void main() {
         direction: RoomPkInvitationDirection.incoming,
         currentRoomId: _roomId,
         opponent: target,
-        punishmentTheme: '',
-        durationMinutes: 0,
+        punishmentTheme: '主题',
+        durationMinutes: 5,
         status: RoomPkInvitationStatus.pending,
         createdAt: DateTime.utc(2030, 8, 21, 11, 59),
         expiresAt: DateTime.utc(2030, 8, 21, 12, 14),
@@ -210,7 +228,7 @@ void main() {
         roomId: _roomId,
         inviterUserId: 10,
         opponent: target,
-        punishmentTheme: 'ignored by F3-A backend',
+        punishmentTheme: '分享今天最开心的事',
         durationMinutes: 5,
       );
       expect(sent.id, _invitationId);
@@ -228,6 +246,10 @@ void main() {
       expect(active.remainingSeconds, 120);
       expect(active.currentSide.roomId, _roomId);
       expect(active.opponentSide.roomId, _targetRoomId);
+      expect(active.currentSide.score, 120);
+      expect(active.opponentSide.score, 80);
+      expect(active.currentSide.supporters.single.userId, 101);
+      expect(active.punishmentTheme, '主题');
       expect(
         (await repository.refreshBattle(
           roomId: _roomId,
@@ -250,6 +272,9 @@ void main() {
       );
       expect(history.single.id, _battleId);
       expect(history.single.result, RoomPkResult.draw);
+      expect(history.single.currentScore, 120);
+      expect(history.single.opponentScore, 80);
+      expect(history.single.opponentRoomName, '目标房');
       expect(
         history.single.completedAt.toUtc(),
         DateTime.utc(2030, 8, 21, 12, 9, 1),
@@ -573,6 +598,8 @@ Map<String, Object?> _invitationProjection({
   String roomId = _roomId,
   String targetRoomId = _targetRoomId,
   String invitationId = _invitationId,
+  String punishmentTheme = '主题',
+  int durationMinutes = 5,
 }) => <String, Object?>{
   'roomId': roomId,
   'invitationId': invitationId,
@@ -581,6 +608,8 @@ Map<String, Object?> _invitationProjection({
   'createdAt': '2030-08-21T11:59:00Z',
   'expiresAt': '2030-08-21T12:14:00Z',
   'resolvedAt': status == 'PENDING' ? null : '2030-08-21T12:00:00Z',
+  'punishmentTheme': punishmentTheme,
+  'durationMinutes': durationMinutes,
   'status': status,
   'state': status,
   'providerInvocation': false,
@@ -616,6 +645,41 @@ Map<String, Object?> _battleProjection({
   'endedAt': status == 'IN_PROGRESS' ? null : '2030-08-21T12:01:00Z',
   'winnerRoomId': status == 'SURRENDERED' ? _targetRoomId : null,
   'surrenderedRoomId': status == 'SURRENDERED' ? _roomId : null,
+  'leftRoomId': _roomId,
+  'rightRoomId': _targetRoomId,
+  'leftRoom': _sideProjection(
+    roomId: _roomId,
+    roomCode: 'R111',
+    roomName: '当前房',
+    score: 120,
+  ),
+  'rightRoom': _sideProjection(
+    roomId: _targetRoomId,
+    roomCode: 'R222',
+    roomName: '目标房',
+    score: 80,
+  ),
+};
+
+Map<String, Object?> _sideProjection({
+  required String roomId,
+  required String roomCode,
+  required String roomName,
+  required int score,
+}) => <String, Object?>{
+  'roomId': roomId,
+  'roomCode': roomCode,
+  'roomName': roomName,
+  'coverUrl': null,
+  'score': score,
+  'supporters': <Map<String, Object?>>[
+    <String, Object?>{
+      'userId': roomId == _roomId ? 101 : 202,
+      'nickname': roomId == _roomId ? '左侧支持者' : '右侧支持者',
+      'avatarUrl': null,
+      'value': score,
+    },
+  ],
 };
 
 Map<String, Object?> _page(

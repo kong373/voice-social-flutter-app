@@ -133,11 +133,27 @@ class BackendRoomPkRepository implements RoomPkRepository {
         message: '不能邀请同一个房间进行 PK',
       );
     }
-    // These values belong to the old numeric PK contract. The authoritative
-    // F3-A endpoint accepts exactly the two canonical room UUIDs.
+    final String punishment = punishmentTheme.trim();
+    if (punishment.isEmpty || punishment.length > 20) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '惩罚主题需为 1～20 个字',
+      );
+    }
+    if (!const <int>{5, 10, 15}.contains(durationMinutes)) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: 'PK 时长仅支持 5、10 或 15 分钟',
+      );
+    }
     return _runWrite<RoomPkInvitation>(
       operation: 'invite',
-      intentParts: <Object?>[currentRoomId, targetRoomId],
+      intentParts: <Object?>[
+        currentRoomId,
+        targetRoomId,
+        punishment,
+        durationMinutes,
+      ],
       action: (Map<String, String> headers) async {
         final ApiResponse response = await _apiClient.post(
           _route(_routes.roomPkInvite, _invitePath),
@@ -145,6 +161,8 @@ class BackendRoomPkRepository implements RoomPkRepository {
           body: <String, Object?>{
             'roomId': currentRoomId,
             'targetRoomId': targetRoomId,
+            'punishmentTheme': punishment,
+            'durationMinutes': durationMinutes,
           },
         );
         return _invitationFromProjection(
@@ -153,7 +171,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
           expectedTargetRoomId: targetRoomId,
           direction: RoomPkInvitationDirection.outgoing,
           opponent: opponent,
-          punishmentTheme: punishmentTheme.trim(),
+          punishmentTheme: punishment,
           durationMinutes: durationMinutes,
         );
       },
@@ -431,10 +449,26 @@ class BackendRoomPkRepository implements RoomPkRepository {
     final DateTime createdAt = _requiredDate(data['createdAt'], '创建时间');
     final DateTime? expiresAt = _optionalDate(data['expiresAt'], '过期时间');
     final DateTime? resolvedAt = _optionalDate(data['resolvedAt'], '处理时间');
+    final String authoritativePunishment = _requiredText(
+      data['punishmentTheme'],
+      '惩罚主题',
+    );
+    final int authoritativeDuration = _requiredInt(
+      data['durationMinutes'],
+      'PK 时长',
+    );
     if (status == null) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: 'PK 邀请响应缺少有效 invitationStatus',
+      );
+    }
+    if (authoritativePunishment != punishmentTheme ||
+        authoritativeDuration != durationMinutes ||
+        !const <int>{5, 10, 15}.contains(authoritativeDuration)) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: 'PK 邀请响应的惩罚主题或时长已变化',
       );
     }
     return RoomPkInvitation(
@@ -442,8 +476,8 @@ class BackendRoomPkRepository implements RoomPkRepository {
       direction: direction,
       currentRoomId: expectedRoomId,
       opponent: opponent,
-      punishmentTheme: punishmentTheme,
-      durationMinutes: durationMinutes,
+      punishmentTheme: authoritativePunishment,
+      durationMinutes: authoritativeDuration,
       status: status,
       createdAt: createdAt,
       expiresAt: expiresAt,
@@ -536,27 +570,38 @@ class BackendRoomPkRepository implements RoomPkRepository {
       currentRoomId: roomId,
       targetRoomId: targetRoomId,
     );
-    final RoomPkSide current = RoomPkSide(
-      roomId: roomId,
-      roomCode: '',
-      roomName: '当前房间',
-      score: 0,
+    final RoomPkSide left = _sideFromProjection(data['leftRoom'], '左侧房间');
+    final RoomPkSide right = _sideFromProjection(data['rightRoom'], '右侧房间');
+    if (left.roomId == right.roomId ||
+        !<String>{left.roomId, right.roomId}.contains(roomId) ||
+        !<String>{left.roomId, right.roomId}.contains(targetRoomId) ||
+        _uuid(data['leftRoomId'], '左侧房间 ID') != left.roomId ||
+        _uuid(data['rightRoomId'], '右侧房间 ID') != right.roomId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'PK 对战双方权威投影不一致',
+      );
+    }
+    final String punishmentTheme = _requiredText(
+      data['punishmentTheme'],
+      '惩罚主题',
     );
-    final RoomPkSide target = RoomPkSide(
-      roomId: targetRoomId,
-      roomCode: '',
-      roomName: '对方房间',
-      score: 0,
-    );
+    final int durationMinutes = _requiredInt(data['durationMinutes'], 'PK 时长');
+    if (!const <int>{5, 10, 15}.contains(durationMinutes)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'PK 对战响应的时长无效',
+      );
+    }
     return RoomPkBattle(
       id: battleId,
       invitationId: invitationId,
       currentRoomId: roomId,
       targetRoomId: targetRoomId,
-      sender: current,
-      receiver: target,
+      sender: left,
+      receiver: right,
       remainingSeconds: remainingSeconds,
-      punishmentTheme: '',
+      punishmentTheme: punishmentTheme,
       stage: stage,
       result: result,
       resultCode: _optionalText(data['resultCode']),
@@ -616,17 +661,88 @@ class BackendRoomPkRepository implements RoomPkRepository {
         message: 'PK 历史记录缺少有效 resultCode',
       );
     }
+    final RoomPkSide left = _sideFromProjection(data['leftRoom'], '历史左侧房间');
+    final RoomPkSide right = _sideFromProjection(data['rightRoom'], '历史右侧房间');
+    if (left.roomId != leftRoomId ||
+        right.roomId != rightRoomId ||
+        left.roomId == right.roomId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'PK 历史双方权威投影不一致',
+      );
+    }
+    final RoomPkSide currentSide = left.roomId == currentRoomId ? left : right;
+    final RoomPkSide opponentSide = left.roomId == targetRoomId ? left : right;
     return RoomPkRecord(
       id: battleId,
       invitationId: invitationId,
       targetRoomId: targetRoomId,
       battleStatus: status,
       resultCode: _requiredText(data['resultCode'], '结果编码'),
-      opponentRoomName: '对方房间',
+      opponentRoomName: opponentSide.roomName,
+      opponentCoverUrl: opponentSide.coverUrl,
       completedAt: completedAt,
       result: result,
-      currentScore: 0,
-      opponentScore: 0,
+      currentScore: currentSide.score,
+      opponentScore: opponentSide.score,
+    );
+  }
+
+  static RoomPkSide _sideFromProjection(Object? raw, String label) {
+    final Map<String, Object?> data = _requiredMap(raw, '$label投影');
+    final String roomId = _uuid(data['roomId'], '$label ID');
+    final String roomCode = _requiredText(data['roomCode'], '$label房间号');
+    final String roomName = _requiredText(data['roomName'], '$label名称');
+    final int score = _requiredInt(data['score'], '$label比分');
+    if (score < 0) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$label比分不能为负数',
+      );
+    }
+    final Object? rawSupporters = data['supporters'];
+    if (rawSupporters is! List) {
+      throw ApiException(kind: ApiFailureKind.protocol, message: '$label缺少支持榜');
+    }
+    final List<RoomPkSupporter> supporters = <RoomPkSupporter>[];
+    final Set<int> seenUsers = <int>{};
+    num? previousValue;
+    for (final Object? rawSupporter in rawSupporters) {
+      final Map<String, Object?> supporter = _requiredMap(
+        rawSupporter,
+        '$label支持者',
+      );
+      final int userId = _requiredInt(supporter['userId'], '$label支持者 ID');
+      final int value = _requiredInt(supporter['value'], '$label支持值');
+      if (userId <= 0 || value < 0 || !seenUsers.add(userId)) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '$label支持榜包含无效记录',
+        );
+      }
+      if (previousValue != null && value > previousValue) {
+        throw ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '$label支持榜排序无效',
+        );
+      }
+      previousValue = value;
+      supporters.add(
+        RoomPkSupporter(
+          userId: userId,
+          nickname: _requiredText(supporter['nickname'], '$label支持者昵称'),
+          value: value,
+          avatarUrl: _optionalText(supporter['avatarUrl']),
+        ),
+      );
+    }
+    return RoomPkSide(
+      roomId: roomId,
+      roomCode: roomCode,
+      roomName: roomName,
+      score: score,
+      coverUrl: _optionalText(data['coverUrl']),
+      supporters: List<RoomPkSupporter>.unmodifiable(supporters),
     );
   }
 
