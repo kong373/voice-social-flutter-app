@@ -291,6 +291,30 @@ void main() {
       expect(homeRooms, isNotNull);
       evidence.invariant('home_uses_authoritative_room_ids');
 
+      final RoomCollectionSnapshot? roomCollections = await _probe(
+        evidence,
+        capability: 'room.owned',
+        method: 'GET',
+        route: routes.ownedRooms,
+        operation: () => dependencies.discoveryRepository.fetchRoomCollections(
+          page: 1,
+          pageSize: 30,
+        ),
+        requiredSuccess: true,
+      );
+      expect(roomCollections, isNotNull);
+      final List<DiscoveryRoom> currentUserOwnedRooms = roomCollections!
+          .ownedRooms
+          .where((DiscoveryRoom room) => room.ownerUserId == currentUserId)
+          .toList(growable: false);
+      expect(
+        currentUserOwnedRooms,
+        isNotEmpty,
+        reason:
+            'M4 development fixture must expose an OPEN room owned by the current user.',
+      );
+      evidence.invariant('room_mutations_use_current_user_owned_room');
+
       await _runSearchFlow(tester, dependencies, evidence);
       await _runDynamicSocialCommunityFlow(
         tester,
@@ -302,7 +326,7 @@ void main() {
         tester,
         dependencies,
         evidence,
-        room: homeRooms!.isEmpty ? null : homeRooms.first,
+        room: currentUserOwnedRooms.first,
         currentUserId: currentUserId,
       );
       await _runMessagesFlow(
@@ -2673,6 +2697,7 @@ class _M4Evidence {
     'auth.logout',
     'vendor.readiness',
     'home.recommendations',
+    'room.owned',
     'search.suggestions',
     'search.results',
     'dynamic.feed',
@@ -2728,6 +2753,7 @@ class _M4Evidence {
     'vendor_readiness_observed_without_client_provider',
     'vendor_runtime_adapters_are_fail_closed',
     'home_uses_authoritative_room_ids',
+    'room_mutations_use_current_user_owned_room',
     'session_refresh_persists_rotated_session',
     'restart_restores_consent_and_session',
     'search_route_is_reachable_from_home',
