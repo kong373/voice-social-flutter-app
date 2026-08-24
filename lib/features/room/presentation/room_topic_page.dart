@@ -13,12 +13,14 @@ class RoomTopicPage extends StatefulWidget {
     required this.roomId,
     required this.canEdit,
     this.roomTitle,
+    this.repositoryOverride,
     super.key,
   });
 
   final String roomId;
   final bool canEdit;
   final String? roomTitle;
+  final RoomOperationsRepository? repositoryOverride;
 
   @override
   State<RoomTopicPage> createState() => _RoomTopicPageState();
@@ -31,6 +33,7 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
   RoomOperationsRepository? _repositoryInstance;
   RoomOperationsRepository get _repository => _repositoryInstance!;
   RoomTopic? _topic;
+  _TopicConflictReview? _conflictReview;
   bool _loading = true;
   bool _submitting = false;
   String? _error;
@@ -41,9 +44,9 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
     if (_repositoryInstance != null) {
       return;
     }
-    _repositoryInstance = AppDependencyScope.of(
-      context,
-    ).roomOperationsRepository;
+    _repositoryInstance =
+        widget.repositoryOverride ??
+        AppDependencyScope.of(context).roomOperationsRepository;
     _load();
   }
 
@@ -64,10 +67,10 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
       if (!mounted) {
         return;
       }
-      _titleController.text = topic.title;
-      _contentController.text = topic.content;
-      _topic = topic;
-      setState(() => _loading = false);
+      setState(() {
+        _applyAuthoritativeTopic(topic);
+        _loading = false;
+      });
     } catch (error) {
       if (!mounted) {
         return;
@@ -113,11 +116,66 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
       if (!mounted) {
         return;
       }
+      if (_isVersionConflict(error)) {
+        await _recoverFromConflict(requested);
+        return;
+      }
       setState(() {
         _submitting = false;
         _error = _messageFor(error);
       });
     }
+  }
+
+  Future<void> _recoverFromConflict(RoomTopic draft) async {
+    try {
+      final RoomTopic authoritative = await _repository.fetchTopic(
+        widget.roomId,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _applyAuthoritativeTopic(authoritative, draft: draft);
+        _submitting = false;
+        _error = '内容已更新，请重新确认后提交';
+        _conflictReview = _TopicConflictReview(
+          authoritative: authoritative,
+          draft: draft,
+        );
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _submitting = false;
+        _error = _messageFor(error);
+      });
+    }
+  }
+
+  void _applyAuthoritativeTopic(RoomTopic topic, {RoomTopic? draft}) {
+    _topic = topic;
+    if (draft == null) {
+      _titleController.text = topic.title;
+      _contentController.text = topic.content;
+      _conflictReview = null;
+      return;
+    }
+    _titleController.text = draft.title;
+    _contentController.text = draft.content;
+  }
+
+  void _loadAuthoritativeTopic() {
+    final RoomTopic? authoritative = _conflictReview?.authoritative;
+    if (authoritative == null) {
+      return;
+    }
+    setState(() {
+      _applyAuthoritativeTopic(authoritative);
+      _error = null;
+    });
   }
 
   @override
@@ -182,6 +240,13 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
                       ],
                     ),
                   ),
+                  if (_conflictReview != null) ...<Widget>[
+                    const SizedBox(height: 12),
+                    _TopicConflictCard(
+                      review: _conflictReview!,
+                      onLoadAuthoritative: _loadAuthoritativeTopic,
+                    ),
+                  ],
                   if (_error != null) ...<Widget>[
                     const SizedBox(height: 12),
                     RoomOxygenNotice(
@@ -195,6 +260,7 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
+                        key: const Key('room-topic-submit-button'),
                         onPressed: _submitting ? null : _save,
                         icon: _submitting
                             ? const SizedBox.square(
@@ -204,7 +270,13 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
                                 ),
                               )
                             : const Icon(Icons.save_outlined),
-                        label: Text(_submitting ? '正在保存' : '保存公告'),
+                        label: Text(
+                          _submitting
+                              ? '正在保存'
+                              : _conflictReview != null
+                              ? '重新确认后提交'
+                              : '保存公告',
+                        ),
                       ),
                     )
                   else
@@ -221,6 +293,116 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
 
   static String _messageFor(Object error) {
     return error is ApiException ? error.message : '公告加载或保存失败，请重试';
+  }
+
+  static bool _isVersionConflict(Object error) =>
+      error is ApiException &&
+      (error.code == 40945 || error.kind == ApiFailureKind.conflict);
+}
+
+class _TopicConflictReview {
+  const _TopicConflictReview({
+    required this.authoritative,
+    required this.draft,
+  });
+
+  final RoomTopic authoritative;
+  final RoomTopic draft;
+}
+
+class _TopicConflictCard extends StatelessWidget {
+  const _TopicConflictCard({
+    required this.review,
+    required this.onLoadAuthoritative,
+  });
+
+  final _TopicConflictReview review;
+  final VoidCallback onLoadAuthoritative;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const RoomOxygenNotice(
+          icon: Icons.sync_problem_rounded,
+          title: '已同步最新内容',
+          message: '内容已更新，请重新确认后提交。当前输入仍保留在表单中。',
+          accent: RoomColors.warning,
+        ),
+        const SizedBox(height: 12),
+        RoomOxygenSection(
+          title: '最新内容对照',
+          subtitle: '需要放弃当前输入时，可直接载入最新内容。',
+          icon: Icons.compare_arrows_rounded,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _ConflictField(
+                label: '服务端公告标题',
+                authoritative: review.authoritative.title,
+                draft: review.draft.title,
+              ),
+              const SizedBox(height: 12),
+              _ConflictField(
+                label: '服务端公告内容',
+                authoritative: review.authoritative.content,
+                draft: review.draft.content,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '最新版本 ${review.authoritative.version ?? '-'}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: onLoadAuthoritative,
+                  icon: const Icon(Icons.download_rounded),
+                  label: const Text('载入最新内容'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ConflictField extends StatelessWidget {
+  const _ConflictField({
+    required this.label,
+    required this.authoritative,
+    required this.draft,
+  });
+
+  final String label;
+  final String authoritative;
+  final String draft;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool same = authoritative == draft;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(label, style: Theme.of(context).textTheme.titleSmall),
+        const SizedBox(height: 6),
+        Text(
+          '服务端：${authoritative.isEmpty ? '未填写' : authoritative}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          same ? '当前输入：与服务端一致' : '当前输入：${draft.isEmpty ? '未填写' : draft}',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: same ? RoomColors.success : RoomColors.warning,
+          ),
+        ),
+      ],
+    );
   }
 }
 
