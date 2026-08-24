@@ -162,6 +162,7 @@ class AccountComplianceSnapshot {
   const AccountComplianceSnapshot({
     required this.account,
     required this.nickname,
+    required this.accountUsable,
     required this.verificationState,
     required this.youthModeEnabled,
     required this.restriction,
@@ -173,6 +174,10 @@ class AccountComplianceSnapshot {
 
   final String account;
   final String nickname;
+
+  /// Server-owned access decision. Every adapter must provide this value;
+  /// missing/failed live responses are rejected before this model is built.
+  final bool accountUsable;
   final VerificationState verificationState;
   final bool youthModeEnabled;
   final AccountRestriction restriction;
@@ -185,6 +190,7 @@ class AccountComplianceSnapshot {
     VerificationState? verificationState,
     bool? youthModeEnabled,
     AccountRestriction? restriction,
+    bool? accountUsable,
     CancellationEligibility? cancellation,
     VersionUpdateInfo? versionInfo,
     List<DeviceSession>? sessions,
@@ -193,6 +199,7 @@ class AccountComplianceSnapshot {
     return AccountComplianceSnapshot(
       account: account,
       nickname: nickname,
+      accountUsable: accountUsable ?? this.accountUsable,
       verificationState: verificationState ?? this.verificationState,
       youthModeEnabled: youthModeEnabled ?? this.youthModeEnabled,
       restriction: restriction ?? this.restriction,

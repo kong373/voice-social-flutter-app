@@ -119,6 +119,7 @@ class _UnavailablePermissionRepository extends MockAccountComplianceRepository {
     return AccountComplianceSnapshot(
       account: account,
       nickname: '用户',
+      accountUsable: true,
       verificationState: VerificationState.unverified,
       youthModeEnabled: false,
       restriction: const AccountRestriction(
@@ -186,6 +187,7 @@ class _PermanentPermissionRepository extends _UnavailablePermissionRepository {
     return AccountComplianceSnapshot(
       account: account,
       nickname: '用户',
+      accountUsable: true,
       verificationState: VerificationState.unverified,
       youthModeEnabled: false,
       restriction: const AccountRestriction(

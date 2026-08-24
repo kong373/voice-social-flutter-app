@@ -20,6 +20,7 @@ class MockAccountComplianceRepository implements AccountComplianceRepository {
     _snapshot ??= AccountComplianceSnapshot(
       account: account,
       nickname: '晚星',
+      accountUsable: true,
       verificationState: VerificationState.unverified,
       youthModeEnabled: false,
       restriction: const AccountRestriction(

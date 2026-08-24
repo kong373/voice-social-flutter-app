@@ -147,7 +147,7 @@ void main() {
       );
 
       expect(repository.supportsDeviceSessionManagement, isTrue);
-      expect(repository.supportsRealNameSubmission, isTrue);
+      expect(repository.supportsRealNameSubmission, isFalse);
       expect(snapshot.account, 'user-public-1');
       expect(snapshot.nickname, '晚星');
       expect(snapshot.verificationState, VerificationState.verified);
@@ -625,7 +625,10 @@ void main() {
       addTearDown(() => server.close(force: true));
 
       final BackendAccountComplianceRepository repository =
-          BackendAccountComplianceRepository(apiClient: client(server));
+          BackendAccountComplianceRepository(
+            apiClient: client(server),
+            supportsRealNameSubmission: true,
+          );
       await repository.submitRealName(
         realName: '张三',
         idNumber: '42010619960820123X',

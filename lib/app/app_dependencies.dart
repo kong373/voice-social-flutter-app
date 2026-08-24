@@ -156,6 +156,10 @@ class AppDependencies {
                 currentDeviceIdProvider: () =>
                     sessionManager.session?.deviceId ?? '',
                 nativePermissionAdapter: nativePermissionAdapter,
+                // Formal identity-vendor submission is not wired in this
+                // client. Live must expose status only and never upload an
+                // ID number through the repository.
+                supportsRealNameSubmission: false,
               )
             : MockAccountComplianceRepository());
     final DiscoveryRepository discoveryRepository =
@@ -246,6 +250,8 @@ class AppDependencies {
       repository: authRepository,
       sessionManager: sessionManager,
       deviceIdentityProvider: deviceIdentityProvider,
+      allowsDevelopmentTools:
+          environment.deploymentEnvironment.allowsDevelopmentTools,
     );
     apiClient.setUnauthorizedRecovery(authController.refreshSession);
     return AppDependencies._(

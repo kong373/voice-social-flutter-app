@@ -44,7 +44,10 @@ void main() {
       addTearDown(() => server.close(force: true));
 
       final BackendAccountComplianceRepository repository =
-          BackendAccountComplianceRepository(apiClient: _client(server));
+          BackendAccountComplianceRepository(
+            apiClient: _client(server),
+            supportsRealNameSubmission: true,
+          );
       await expectLater(
         repository.submitRealName(
           realName: '张三',
@@ -88,7 +91,10 @@ void main() {
     addTearDown(() => server.close(force: true));
 
     final BackendAccountComplianceRepository repository =
-        BackendAccountComplianceRepository(apiClient: _client(server));
+        BackendAccountComplianceRepository(
+          apiClient: _client(server),
+          supportsRealNameSubmission: true,
+        );
     final Future<void> first = repository.submitRealName(
       realName: '张三',
       idNumber: '42010619960820123X',
@@ -159,7 +165,10 @@ void main() {
       addTearDown(() => server.close(force: true));
 
       final BackendAccountComplianceRepository repository =
-          BackendAccountComplianceRepository(apiClient: _client(server));
+          BackendAccountComplianceRepository(
+            apiClient: _client(server),
+            supportsRealNameSubmission: true,
+          );
       await repository.submitRealName(
         realName: '张三',
         idNumber: '42010619960820123X',
@@ -205,7 +214,10 @@ void main() {
       addTearDown(() => server.close(force: true));
 
       final BackendAccountComplianceRepository repository =
-          BackendAccountComplianceRepository(apiClient: _client(server));
+          BackendAccountComplianceRepository(
+            apiClient: _client(server),
+            supportsRealNameSubmission: true,
+          );
       for (int attempt = 0; attempt < 2; attempt++) {
         await expectLater(
           repository.submitRealName(

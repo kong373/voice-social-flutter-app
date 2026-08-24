@@ -44,7 +44,7 @@ void main() {
       );
       await announceQaEvidence(tester, 'M32_CONSENT_READY');
 
-      await tester.tap(find.text('同意并继续').hitTestable());
+      await acceptConsentIfVisible(tester);
       await _waitFor(
         tester,
         () => find.text('登录 / 注册').evaluate().isNotEmpty,

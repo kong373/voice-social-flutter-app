@@ -67,7 +67,9 @@ class BackendAuthRepository implements AuthRepository {
       challengeId: challengeId,
       expiresAt: DateTime.now().add(Duration(seconds: expiresIn)),
       retryAfter: retryAfter < 1 ? 1 : retryAfter,
-      developmentCode: RegExp(r'^\d{6}$').hasMatch(developmentCode)
+      developmentCode:
+          _environment.deploymentEnvironment.allowsDevelopmentTools &&
+              RegExp(r'^\d{6}$').hasMatch(developmentCode)
           ? developmentCode
           : null,
     );

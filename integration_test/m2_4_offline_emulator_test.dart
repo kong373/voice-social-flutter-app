@@ -75,10 +75,7 @@ void main() {
       // persists privacy consent. FLOW-002 resets only authentication so it
       // can exercise the unregistered-account branch without pretending the
       // user must accept the same agreement twice.
-      if (find.text('同意并继续').evaluate().isNotEmpty) {
-        await tester.tap(find.text('同意并继续'));
-        await tester.pumpAndSettle();
-      }
+      await acceptConsentIfVisible(tester);
 
       expect(find.text('手机号登录'), findsOneWidget);
       await tester.enterText(

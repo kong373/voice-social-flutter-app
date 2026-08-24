@@ -87,10 +87,7 @@ Future<AppDependencies> launchAndAuthenticate(WidgetTester tester) async {
   );
   await tester.pumpAndSettle();
 
-  if (find.text('同意并继续').evaluate().isNotEmpty) {
-    await tester.tap(find.text('同意并继续'));
-    await tester.pumpAndSettle();
-  }
+  await acceptConsentIfVisible(tester);
   if (find.text('登录 / 注册').evaluate().isNotEmpty) {
     await tester.enterText(
       find.widgetWithText(TextFormField, '手机号码'),
@@ -113,6 +110,32 @@ Future<AppDependencies> launchAndAuthenticate(WidgetTester tester) async {
   }
   expect(find.text('此刻适合你的房间'), findsOneWidget);
   return dependencies;
+}
+
+/// Accepts the current versioned app-owned agreement in an integration run.
+/// The production gate intentionally requires both an end-of-document scroll
+/// and an explicit checkbox before enabling the continue action.
+Future<void> acceptConsentIfVisible(WidgetTester tester) async {
+  if (find.text('同意并继续').evaluate().isEmpty) {
+    return;
+  }
+  await tester.drag(
+    find.byKey(const Key('consent-scroll')),
+    const Offset(0, -1200),
+  );
+  await tester.pumpAndSettle();
+  final Finder consentTile = find.byKey(
+    const Key('consent-agreement-checkbox'),
+  );
+  await tester.ensureVisible(consentTile);
+  final Finder consentCheckbox = find.descendant(
+    of: consentTile,
+    matching: find.byType(Checkbox),
+  );
+  await tester.tap(consentCheckbox);
+  await tester.pump();
+  await tester.tap(find.text('同意并继续').hitTestable());
+  await tester.pumpAndSettle();
 }
 
 Future<void> showQaImeAndWait(WidgetTester tester, Finder input) async {

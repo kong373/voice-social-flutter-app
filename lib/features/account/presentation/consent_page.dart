@@ -1,62 +1,113 @@
 import 'package:flutter/material.dart';
+import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
+import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/account/presentation/account_oxygen_components.dart';
 
-class ConsentPage extends StatelessWidget {
+/// The first-party agreement gate.
+///
+/// This is an app-owned, versioned consent document. It is intentionally not
+/// presented as a third-party legal review or certification. A caller must
+/// persist the acknowledgement before the app can leave this gate.
+class ConsentPage extends StatefulWidget {
   const ConsentPage({required this.onAccept, super.key});
 
   final Future<void> Function() onAccept;
+
+  @override
+  State<ConsentPage> createState() => _ConsentPageState();
+}
+
+class _ConsentPageState extends State<ConsentPage> {
+  final ScrollController _scrollController = ScrollController();
+  bool _hasReachedEnd = false;
+  bool _checked = false;
+  bool _submitting = false;
+  String? _error;
+
+  bool get _canContinue => _hasReachedEnd && _checked && !_submitting;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_handleScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_handleScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients || _hasReachedEnd) {
+      return;
+    }
+    if (_scrollController.position.extentAfter <= 24) {
+      setState(() => _hasReachedEnd = true);
+    }
+  }
+
+  Future<void> _submit() async {
+    if (!_canContinue) {
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await widget.onAccept();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _error = '协议保存失败，请重试。${error is Error ? '' : '当前未进入应用。'}';
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return SocialPageScaffold(
       bottomNavigationBar: AccountBottomActionBar(
         child: AccountPrimaryAction(
-          label: '同意并继续',
-          icon: Icons.arrow_forward_rounded,
-          onPressed: onAccept,
+          key: const Key('consent-submit'),
+          label: _submitting ? '保存中…' : '同意并继续',
+          icon: _submitting
+              ? Icons.hourglass_top_rounded
+              : Icons.arrow_forward_rounded,
+          busy: _submitting,
+          onPressed: _canContinue ? _submit : null,
         ),
       ),
       body: SafeArea(
         child: ListView(
+          key: const Key('consent-scroll'),
+          controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(22, 30, 22, 32),
           children: <Widget>[
             const AccountMistHero(
               eyebrow: 'WELCOME',
               title: '欢迎使用',
-              subtitle: '先确认必要的信息使用边界，之后每项系统权限仍会在实际使用时单独询问。',
+              subtitle: '请阅读应用内协议正文，滚动至文末并确认后继续。',
               markSize: 60,
               centered: false,
             ),
             const SizedBox(height: 25),
-            const AccountSectionLabel(text: '我们如何使用权限'),
+            const AccountSectionLabel(text: '应用协议 · App-owned v1'),
             const AccountSheet(
-              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-              child: Column(
-                children: <Widget>[
-                  _ConsentPoint(
-                    icon: Icons.mic_none_rounded,
-                    title: '麦克风权限',
-                    description: '仅在你申请上麦或发送语音时申请。',
-                  ),
-                  _ConsentPoint(
-                    icon: Icons.notifications_none_rounded,
-                    title: '通知权限',
-                    description: '用于私聊、好友互动和房间邀请提醒。',
-                  ),
-                  _ConsentPoint(
-                    icon: Icons.lock_outline_rounded,
-                    title: '账号与设备信息',
-                    description: '用于登录安全、异常会话识别和账号保护。',
-                    showDivider: false,
-                  ),
-                ],
-              ),
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 18),
+              child: _ConsentBody(),
             ),
             const SizedBox(height: 18),
             AccountNoticeStrip(
               icon: Icons.privacy_tip_outlined,
-              text: '在开始使用前，请阅读并同意用户协议与隐私政策。我们只在账号、语音房、消息与支付等功能所必需的范围内处理信息。',
+              text:
+                  '本协议由本应用以 App-owned v1 版本发布和留档，不代表第三方法律审核或认证。协议更新后，应用会再次请求你的确认。',
               tone: AccountOxygenColors.cyan,
             ),
             const SizedBox(height: 8),
@@ -64,32 +115,59 @@ class ConsentPage extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
                 TextButton(
+                  key: const Key('consent-user-agreement'),
                   onPressed: () => _showDocument(context, '用户协议'),
-                  child: const Text('用户协议'),
+                  child: const Text('查看用户协议正文'),
                 ),
                 Text('和', style: Theme.of(context).textTheme.bodySmall),
                 TextButton(
+                  key: const Key('consent-privacy-policy'),
                   onPressed: () => _showDocument(context, '隐私政策'),
-                  child: const Text('隐私政策'),
+                  child: const Text('查看隐私政策正文'),
                 ),
               ],
             ),
+            const SizedBox(height: 6),
+            CheckboxListTile(
+              key: const Key('consent-agreement-checkbox'),
+              value: _checked,
+              onChanged: _hasReachedEnd && !_submitting
+                  ? (bool? value) {
+                      setState(() => _checked = value ?? false);
+                    }
+                  : null,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: const Text('我已阅读并同意 App-owned v1 用户协议与隐私政策'),
+              subtitle: Text(_hasReachedEnd ? '已读到正文末尾，可以确认。' : '请先滚动到正文末尾。'),
+            ),
+            if (_error != null) ...<Widget>[
+              const SizedBox(height: 10),
+              AccountNoticeStrip(
+                key: const Key('consent-error'),
+                icon: Icons.error_outline_rounded,
+                text: _error!,
+                tone: AppColors.error,
+              ),
+            ],
+            const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
               child: TextButton(
-                onPressed: () => showDialog<void>(
-                  context: context,
-                  builder: (BuildContext context) => AlertDialog(
-                    title: const Text('暂不使用'),
-                    content: const Text('不同意协议将无法进入应用。你可以关闭应用后再决定。'),
-                    actions: <Widget>[
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('返回'),
+                onPressed: _submitting
+                    ? null
+                    : () => showDialog<void>(
+                        context: context,
+                        builder: (BuildContext context) => AlertDialog(
+                          title: const Text('暂不使用'),
+                          content: const Text('不同意协议将无法进入应用。你可以关闭应用后再决定。'),
+                          actions: <Widget>[
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text('返回'),
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
-                ),
                 child: const Text('暂不使用'),
               ),
             ),
@@ -104,50 +182,85 @@ class ConsentPage extends StatelessWidget {
         context: context,
         useSafeArea: true,
         isScrollControlled: true,
-        builder: (BuildContext context) => Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(title, style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 14),
-              const Text('当前为研发阶段的协议入口。正式版本将加载经法务审核并按版本留档的完整文本。'),
-              const SizedBox(height: 20),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('知道了'),
-                ),
+        builder: (BuildContext context) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    '$title · ${AuthSessionManager.consentVersion}',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 14),
+                  const _ConsentBody(showTitle: false),
+                  const SizedBox(height: 18),
+                  const Text('这是应用自行发布的版本化文本，不是第三方法律审核证明。'),
+                  const SizedBox(height: 20),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('知道了'),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       );
 }
 
-class _ConsentPoint extends StatelessWidget {
-  const _ConsentPoint({
-    required this.icon,
-    required this.title,
-    required this.description,
-    this.showDivider = true,
-  });
+class _ConsentBody extends StatelessWidget {
+  const _ConsentBody({this.showTitle = true});
 
-  final IconData icon;
-  final String title;
-  final String description;
-  final bool showDivider;
+  final bool showTitle;
 
   @override
   Widget build(BuildContext context) {
-    return AccountSettingRow(
-      icon: icon,
-      title: title,
-      subtitle: description,
-      tone: AccountOxygenColors.violet,
-      showDivider: showDivider,
+    final TextStyle? heading = Theme.of(context).textTheme.titleSmall;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        if (showTitle) ...<Widget>[
+          Text('用户协议与隐私政策正文', style: heading),
+          const SizedBox(height: 12),
+        ],
+        Text('1. 服务范围', style: heading),
+        const SizedBox(height: 5),
+        const Text('本应用提供声音房间、动态、关系和消息等产品功能。具体功能是否可用，以服务端返回的账号状态和能力状态为准。'),
+        const SizedBox(height: 12),
+        Text('2. 信息处理边界', style: heading),
+        const SizedBox(height: 5),
+        const Text(
+          '应用会在登录安全、账号保护、房间互动和消息通知所必需的范围内处理账号、设备和操作信息。系统权限只会在对应功能需要时请求。',
+        ),
+        const SizedBox(height: 12),
+        Text('3. 账号与内容责任', style: heading),
+        const SizedBox(height: 5),
+        const Text(
+          '你应当保护登录凭据并对自行发布的内容负责。平台可以依据服务端规则限制违反法律、协议或社区规则的账号，并提供可用时的申诉入口。',
+        ),
+        const SizedBox(height: 12),
+        Text('4. 版本与变更', style: heading),
+        const SizedBox(height: 5),
+        const Text(
+          '本次确认绑定 App-owned v1。后续版本发生实质变更时，应用会清除旧版本的确认效力，在进入主要功能前重新展示对应版本正文。',
+        ),
+        const SizedBox(height: 12),
+        Text('5. 厂商能力边界', style: heading),
+        const SizedBox(height: 5),
+        const Text(
+          '未接入的短信、实时音视频、即时通讯、支付、推送或对象存储能力会显示不可用状态。应用不会把本地演示、开发验证码或缺失适配器描述为正式厂商成功。',
+        ),
+        // Keep the document long enough that the user must deliberately reach
+        // the end on a phone-sized viewport.
+        const SizedBox(height: 260),
+        const Text('正文结束 · App-owned v1'),
+      ],
     );
   }
 }

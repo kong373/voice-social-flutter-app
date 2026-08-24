@@ -33,6 +33,13 @@ HOME = "/app-api/rooms/v1/getRecommendRooms"
 SEARCH = "/app-api/es/getSearchESResult"
 ROOM = "/app-api/rooms/getRoomById"
 CURRENT_USER = "/app-register-api/userAccount/v1/current"
+PERSONAL_DATA = "/app-api/user/getPersonalData"
+YOUTH_MODE = "/app-api/user/other/getMatchButtonAndYouthMode"
+ACCOUNT_CANCELLATION = "/app-api/user/queryUserLogout"
+VERSION_INFORMATION = "/app-api/appBase/getVersionInformation"
+ACCOUNT_REAL_NAME = "/app-mini-api/mini/v1/account/real-name"
+ACCOUNT_SESSIONS = "/app-mini-api/mini/v1/account/sessions"
+ACCOUNT_RESTRICTIONS = "/app-mini-api/mini/v1/account/restrictions"
 NCOIN = "/app-economy-api/ncoin"
 WALLET = "/app-mini-api/mini/v1/wallet/overview"
 ORDERS = "/app-economy-api/pay/getOrders"
@@ -47,6 +54,13 @@ REQUIRED_ENDPOINTS = {
     SEARCH,
     ROOM,
     CURRENT_USER,
+    PERSONAL_DATA,
+    YOUTH_MODE,
+    ACCOUNT_CANCELLATION,
+    VERSION_INFORMATION,
+    ACCOUNT_REAL_NAME,
+    ACCOUNT_SESSIONS,
+    ACCOUNT_RESTRICTIONS,
     NCOIN,
     WALLET,
     ORDERS,
@@ -441,6 +455,52 @@ class ContractHandler(BaseHTTPRequestHandler):
                 "mobile": "138****8000",
                 "roles": "ROLE_USER",
                 "status": "ACTIVE",
+            }
+        if path == PERSONAL_DATA:
+            return {
+                "loginName": "13800138000",
+                "nickName": "岛民小新",
+            }
+        if path == YOUTH_MODE:
+            return {
+                "isYouthMode": 0,
+                "youthModeEnabled": False,
+            }
+        if path == ACCOUNT_CANCELLATION:
+            return {
+                "canLogout": True,
+                "eligible": True,
+                "status": "NONE",
+                "latestRequest": {},
+                "requiresConfirmation": True,
+                "immediateDeletion": False,
+            }
+        if path == VERSION_INFORMATION:
+            return {
+                "isUpdate": 0,
+                "latest": {},
+                "providerInvocation": False,
+            }
+        if path == ACCOUNT_REAL_NAME:
+            return {
+                "status": "UNVERIFIED",
+                "statusCode": 0,
+                "providerStatus": "FIRST_PARTY_REVIEW",
+                "reviewStatus": "FIRST_PARTY_REVIEW",
+                "reviewMode": "FIRST_PARTY_MANUAL_REVIEW",
+                "providerInvocation": False,
+            }
+        if path == ACCOUNT_SESSIONS:
+            return {
+                "total": 0,
+                "list": [],
+            }
+        if path == ACCOUNT_RESTRICTIONS:
+            return {
+                "restricted": False,
+                "accountUsable": True,
+                "total": 0,
+                "list": [],
             }
         if path == NCOIN:
             return {"integer": 12600, "value": 12600}

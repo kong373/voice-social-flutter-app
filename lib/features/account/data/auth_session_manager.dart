@@ -7,7 +7,15 @@ class AuthSessionManager {
 
   static const String _sessionKey = 'auth.session.v2';
   static const String _legacySessionKey = 'auth.session.v1';
-  static const String _consentKey = 'compliance.consent.v1';
+
+  /// The consent is owned by this app and is version-bound.
+  ///
+  /// Keeping the version in the value (rather than treating a historical
+  /// `accepted` flag as permanent) makes a changed agreement invalidate the
+  /// old acknowledgement on the next cold start.
+  static const String consentVersion = 'app-owned-v1';
+  static const String consentStorageKey = 'compliance.consent.v1';
+  static const String consentStorageValue = 'accepted:$consentVersion';
   static const String _installIdKey = 'device.install-id.v1';
   static const String pendingRefreshStorageKey = 'auth.refresh.pending.v1';
   static const Duration refreshRecoveryWindow = Duration(seconds: 30);
@@ -210,9 +218,10 @@ class AuthSessionManager {
   }
 
   Future<bool> hasAcceptedConsent() async =>
-      await _store.read(_consentKey) == 'accepted';
+      await _store.read(consentStorageKey) == consentStorageValue;
 
-  Future<void> acceptConsent() => _store.write(_consentKey, 'accepted');
+  Future<void> acceptConsent() =>
+      _store.write(consentStorageKey, consentStorageValue);
 
   Future<String?> readInstallId() => _store.read(_installIdKey);
 

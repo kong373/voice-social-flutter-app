@@ -21,16 +21,19 @@ class BackendAccountComplianceRepository
     BackendRouteCatalog routes = const BackendRouteCatalog(),
     String Function()? currentDeviceIdProvider,
     NativePermissionAdapter? nativePermissionAdapter,
+    bool supportsRealNameSubmission = false,
   }) : _apiClient = apiClient,
        _routes = routes,
        _currentDeviceIdProvider = currentDeviceIdProvider ?? (() => ''),
        _nativePermissionAdapter =
-           nativePermissionAdapter ?? MethodChannelNativePermissionAdapter();
+           nativePermissionAdapter ?? MethodChannelNativePermissionAdapter(),
+       _supportsRealNameSubmission = supportsRealNameSubmission;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
   final String Function() _currentDeviceIdProvider;
   final NativePermissionAdapter _nativePermissionAdapter;
+  final bool _supportsRealNameSubmission;
   final Map<String, Future<void>> _pendingRealNameSubmissions =
       <String, Future<void>>{};
   final Map<String, String> _retainedRealNameRequestIds = <String, String>{};
@@ -54,7 +57,7 @@ class BackendAccountComplianceRepository
   bool get supportsDeviceSessionManagement => true;
 
   @override
-  bool get supportsRealNameSubmission => true;
+  bool get supportsRealNameSubmission => _supportsRealNameSubmission;
 
   @override
   Future<AccountComplianceSnapshot> fetchSnapshot({
@@ -134,7 +137,11 @@ class BackendAccountComplianceRepository
       );
     }
     final bool isRestricted = _requiredBool(restrictions, 'restricted', '账户限制');
-    _requiredBool(restrictions, 'accountUsable', '账户限制');
+    final bool accountUsable = _requiredBool(
+      restrictions,
+      'accountUsable',
+      '账户限制',
+    );
     if (isRestricted != restrictionList.isNotEmpty) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -161,6 +168,7 @@ class BackendAccountComplianceRepository
     return AccountComplianceSnapshot(
       account: loginName,
       nickname: nickName,
+      accountUsable: accountUsable,
       verificationState: _verificationState(verificationCode),
       youthModeEnabled: youthModeEnabled,
       restriction: AccountRestriction(
@@ -257,6 +265,14 @@ class BackendAccountComplianceRepository
     required String realName,
     required String idNumber,
   }) {
+    if (!supportsRealNameSubmission) {
+      return Future<void>.error(
+        const ApiException(
+          kind: ApiFailureKind.business,
+          message: 'VENDOR_BLOCKED：正式实名厂商尚未接入，当前不会提交身份证号',
+        ),
+      );
+    }
     final String normalizedName = realName.trim();
     final String normalizedId = idNumber
         .replaceAll(' ', '')

@@ -21,6 +21,7 @@ void main() {
         environment: AppEnvironment.mock(),
         sessionManager: sessionManager,
       ),
+      allowsDevelopmentTools: true,
     );
     addTearDown(controller.dispose);
 
@@ -51,6 +52,29 @@ void main() {
     expect(controller.stage, AuthFlowStage.signedOut);
     expect(sessionManager.session, isNull);
   });
+
+  test(
+    'auth controller drops development OTP outside an allowed environment',
+    () async {
+      final AuthSessionManager sessionManager = AuthSessionManager(
+        MemoryKeyValueStore(),
+      );
+      final AuthController controller = AuthController(
+        repository: const MockAuthRepository(),
+        sessionManager: sessionManager,
+        deviceIdentityProvider: DeviceIdentityProvider(
+          environment: AppEnvironment.mock(),
+          sessionManager: sessionManager,
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await controller.sendSmsCode('13800138000');
+
+      expect(controller.lastSmsChallenge?.developmentCode, isNull);
+      expect(controller.developmentSmsCode, isNull);
+    },
+  );
 
   test('expired access token is refreshed during startup', () async {
     final AuthSessionManager sessionManager = AuthSessionManager(

@@ -87,6 +87,19 @@ void main() {
         binding,
         'm4-${qaAvdId.toLowerCase()}-01-consent',
       );
+      await tester.drag(
+        find.byKey(const Key('consent-scroll')),
+        const Offset(0, -1200),
+      );
+      await tester.pumpAndSettle();
+      final Finder consentTile = find.byKey(
+        const Key('consent-agreement-checkbox'),
+      );
+      await tester.ensureVisible(consentTile);
+      await tester.tap(
+        find.descendant(of: consentTile, matching: find.byType(Checkbox)),
+      );
+      await tester.pump();
       await tester.tap(find.text('同意并继续').hitTestable());
 
       await _waitFor(
@@ -205,7 +218,7 @@ void main() {
         environment: environment,
         initialStorage: <String, String>{
           'auth.session.v2': refreshedSession.encode(),
-          'compliance.consent.v1': 'accepted',
+          'compliance.consent.v1': 'accepted:app-owned-v1',
         },
       );
       await _pumpGate(tester, dependencies);

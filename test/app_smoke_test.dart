@@ -16,6 +16,35 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('欢迎使用'), findsOneWidget);
+    await tester.drag(
+      find.byKey(const Key('consent-scroll')),
+      const Offset(0, -1200),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('已读到正文末尾，可以确认。'), findsOneWidget);
+    await tester.ensureVisible(
+      find.byKey(const Key('consent-agreement-checkbox')),
+    );
+    final CheckboxListTile consentCheckbox = tester.widget<CheckboxListTile>(
+      find.byKey(const Key('consent-agreement-checkbox')),
+    );
+    expect(consentCheckbox.onChanged, isNotNull);
+    final Finder checkbox = find.descendant(
+      of: find.byKey(const Key('consent-agreement-checkbox')),
+      matching: find.byType(Checkbox),
+    );
+    expect(checkbox, findsOneWidget);
+    expect(tester.widget<Checkbox>(checkbox).onChanged, isNotNull);
+    await tester.tap(checkbox);
+    await tester.pump();
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.byKey(const Key('consent-agreement-checkbox')),
+          )
+          .value,
+      isTrue,
+    );
     await tester.tap(find.text('同意并继续'));
     await tester.pumpAndSettle();
 

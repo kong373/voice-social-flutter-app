@@ -156,6 +156,38 @@ void main() {
   );
 
   test(
+    'staging auth drops developmentCode even when backend returns one',
+    () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => server.close(force: true));
+      server.listen((HttpRequest request) async {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode(<String, Object?>{
+            'code': 200,
+            'message': 'OK',
+            'data': _authResponseFor(request.uri.path),
+          }),
+        );
+        await request.response.close();
+      });
+
+      final AppEnvironment environment = _testEnvironment(
+        server,
+        deploymentEnvironment: DeploymentEnvironment.staging,
+      );
+      final SmsChallenge challenge = await _testRepository(
+        environment,
+      ).sendSmsCode(phone: '13800138000', device: _testDevice);
+
+      expect(challenge.developmentCode, isNull);
+    },
+  );
+
+  test(
     'ambiguous SMS response is surfaced once without unsafe automatic replay',
     () async {
       final HttpServer server = await HttpServer.bind(
@@ -536,14 +568,18 @@ void main() {
   );
 }
 
-AppEnvironment _testEnvironment(HttpServer server) => AppEnvironment(
+AppEnvironment _testEnvironment(
+  HttpServer server, {
+  DeploymentEnvironment deploymentEnvironment =
+      DeploymentEnvironment.development,
+}) => AppEnvironment(
   backendMode: BackendMode.live,
   apiBaseUrl: 'http://${server.address.address}:${server.port}/',
   clientType: 'Android',
   clientInnerVersion: '6',
   oauthClientId: 'voice-social-mobile-public',
   realtimeEndpoint: '',
-  deploymentEnvironment: DeploymentEnvironment.development,
+  deploymentEnvironment: deploymentEnvironment,
   allowInsecureHttp: true,
 );
 

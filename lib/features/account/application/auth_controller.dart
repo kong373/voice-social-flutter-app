@@ -21,13 +21,16 @@ class AuthController extends ChangeNotifier {
     required AuthRepository repository,
     required AuthSessionManager sessionManager,
     required DeviceIdentityProvider deviceIdentityProvider,
+    bool allowsDevelopmentTools = false,
   }) : _repository = repository,
        _sessionManager = sessionManager,
-       _deviceIdentityProvider = deviceIdentityProvider;
+       _deviceIdentityProvider = deviceIdentityProvider,
+       _allowsDevelopmentTools = allowsDevelopmentTools;
 
   final AuthRepository _repository;
   final AuthSessionManager _sessionManager;
   final DeviceIdentityProvider _deviceIdentityProvider;
+  final bool _allowsDevelopmentTools;
 
   AuthFlowStage _stage = AuthFlowStage.initializing;
   bool _busy = false;
@@ -47,7 +50,12 @@ class AuthController extends ChangeNotifier {
   AuthSession? get session => _sessionManager.session;
   String get pendingPhone => _pendingPhone ?? '';
   SmsChallenge? get lastSmsChallenge => _lastSmsChallenge;
-  String? get developmentSmsCode => _lastSmsChallenge?.developmentCode;
+
+  /// Development OTPs are intentionally exposed only to local/development
+  /// builds.  The controller is the final presentation-layer guard even when
+  /// a test repository or a malformed live response supplies a code.
+  String? get developmentSmsCode =>
+      _allowsDevelopmentTools ? _lastSmsChallenge?.developmentCode : null;
 
   Future<void> initialize() async {
     _stage = AuthFlowStage.initializing;
@@ -108,7 +116,14 @@ class AuthController extends ChangeNotifier {
       if (operationGeneration != _sessionGeneration) {
         return false;
       }
-      _lastSmsChallenge = challenge;
+      _lastSmsChallenge = SmsChallenge(
+        challengeId: challenge.challengeId,
+        expiresAt: challenge.expiresAt,
+        retryAfter: challenge.retryAfter,
+        developmentCode: _allowsDevelopmentTools
+            ? challenge.developmentCode
+            : null,
+      );
       return true;
     } catch (error) {
       _setError(error);

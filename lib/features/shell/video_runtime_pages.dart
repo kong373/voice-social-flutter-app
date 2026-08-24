@@ -868,6 +868,15 @@ class _VideoRuntimeDiscoveryPageState extends State<VideoRuntimeDiscoveryPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.dependencies.environment.isLive) {
+      // Live uses the dynamic repository's server-authoritative feed and
+      // actions. The mock-only local follow filter and published-post list
+      // must not be mounted in a live session.
+      return const KeyedSubtree(
+        key: Key('video-runtime-discovery'),
+        child: DiscoveryFeedPage(),
+      );
+    }
     final List<_MockPost> visiblePosts = _visiblePosts;
     return SocialSkySurface(
       child: SafeArea(
@@ -879,9 +888,7 @@ class _VideoRuntimeDiscoveryPageState extends State<VideoRuntimeDiscoveryPage> {
               padding: const EdgeInsets.fromLTRB(15, 9, 10, 8),
               sliver: SliverToBoxAdapter(child: _header()),
             ),
-            if (widget.dependencies.environment.isLive)
-              const SliverFillRemaining(child: DiscoveryFeedPage())
-            else ...<Widget>[
+            ...<Widget>[
               const SliverPadding(
                 padding: EdgeInsets.fromLTRB(12, 2, 12, 10),
                 sliver: SliverToBoxAdapter(child: _MomentBanner()),

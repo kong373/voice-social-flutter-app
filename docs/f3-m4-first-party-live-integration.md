@@ -45,6 +45,21 @@ The `VENDOR_BLOCKED` state is fail-closed: the client shows an explicit
 unavailable/recovery state and must not turn a mock or missing adapter into a
 success claim.
 
+## Flutter live entry gates
+
+The client-side live path is also fail-closed and is checked before `MainShell`:
+
+| Gate | Client contract |
+| --- | --- |
+| `AC-002` consent | The app-owned `app-owned-v1` document must be read to its end and checked. Stored acceptance includes the version; an old `accepted` value is invalid. |
+| `AC-003` development OTP | `developmentCode` is retained or auto-filled only for `local`/`development` environments with `allowsDevelopmentTools`; staging and production discard it. |
+| `AC-006` real name | Until the formal identity vendor is wired, live reports `VENDOR_BLOCKED`, hides the ID form, and never uploads an ID number. |
+| `AC-008` account access | Session restore performs a server-authoritative restrictions and `accountUsable` read. Restricted, unusable, missing, or failed reads stay behind a retry/appeal/sign-out gate. |
+| `AC-011` version policy | Mandatory updates block entry. Optional updates offer `稍后`; an unapproved or invalid package opener fails closed and cannot claim installation success. |
+| `DS-004` live discovery | Live discovery renders the backend feed/action surface. Local follow and publish injections remain mock-only. |
+
+These checks do not activate a third-party SDK or identity/payment provider.
+
 ## Permanent route exclusions
 
 The following legacy commercial routes are historical references only and are

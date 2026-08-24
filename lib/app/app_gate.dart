@@ -1,14 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/live_backend_readiness.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
+import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
+import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/account/presentation/account_oxygen_components.dart';
+import 'package:voice_social_app/features/account/presentation/account_access_gate_page.dart';
 import 'package:voice_social_app/features/account/presentation/consent_page.dart';
 import 'package:voice_social_app/features/account/presentation/login_page.dart';
 import 'package:voice_social_app/features/account/presentation/registration_page.dart';
 import 'package:voice_social_app/features/shell/main_shell.dart';
+import 'package:voice_social_app/features/version/presentation/app_version_gate_page.dart';
 
 class AppGate extends StatefulWidget {
   const AppGate({required this.dependencies, super.key});
@@ -22,6 +29,11 @@ class AppGate extends StatefulWidget {
 class _AppGateState extends State<AppGate> {
   late final AuthController _controller;
   late final LiveBackendReadinessService _liveReadinessService;
+  Future<void>? _livePreflight;
+  AccountComplianceSnapshot? _liveCompliance;
+  String? _livePreflightError;
+  bool _versionDeferred = false;
+  AuthSession? _preflightSession;
 
   @override
   void initState() {
@@ -46,6 +58,141 @@ class _AppGateState extends State<AppGate> {
     if (mounted) {
       setState(() {});
     }
+    if (_controller.stage == AuthFlowStage.signedIn) {
+      _startLivePreflightIfNeeded();
+    } else {
+      _resetLivePreflight();
+    }
+  }
+
+  void _resetLivePreflight() {
+    if (_controller.stage == AuthFlowStage.signedIn) {
+      return;
+    }
+    _liveCompliance = null;
+    _livePreflightError = null;
+    _versionDeferred = false;
+    _preflightSession = null;
+  }
+
+  void _startLivePreflightIfNeeded({bool force = false}) {
+    if (!widget.dependencies.environment.isLive ||
+        _controller.stage != AuthFlowStage.signedIn) {
+      return;
+    }
+    final AuthSession? session = _controller.session;
+    if (session == null) {
+      return;
+    }
+    if (force) {
+      _liveCompliance = null;
+      _livePreflightError = null;
+      _versionDeferred = false;
+      _preflightSession = null;
+    }
+    if ((_livePreflight != null && identical(_preflightSession, session)) ||
+        (_liveCompliance != null && identical(_preflightSession, session))) {
+      return;
+    }
+    _preflightSession = session;
+    final Future<void> request = _runLivePreflight(session);
+    _livePreflight = request;
+    unawaited(
+      request.whenComplete(() {
+        if (identical(_livePreflight, request)) {
+          _livePreflight = null;
+        }
+        if (mounted) {
+          setState(() {});
+        }
+      }),
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _runLivePreflight(AuthSession session) async {
+    try {
+      final AccountComplianceSnapshot snapshot = await widget
+          .dependencies
+          .accountComplianceRepository
+          .fetchSnapshot(
+            account: session.mobile,
+            currentVersion: widget.dependencies.environment.currentVersion,
+            platformType: widget.dependencies.environment.platformType,
+          );
+      if (!mounted ||
+          _controller.stage != AuthFlowStage.signedIn ||
+          !identical(_controller.session, session)) {
+        return;
+      }
+      setState(() {
+        _liveCompliance = snapshot;
+        _livePreflightError = null;
+        _versionDeferred = false;
+      });
+    } catch (error) {
+      if (!mounted ||
+          _controller.stage != AuthFlowStage.signedIn ||
+          !identical(_controller.session, session)) {
+        return;
+      }
+      setState(() {
+        _liveCompliance = null;
+        _livePreflightError = error is ApiException
+            ? error.message
+            : '账号状态检查失败，请重试。';
+      });
+    }
+  }
+
+  Widget _buildLiveEntryGate() {
+    final AuthSession? session = _controller.session;
+    if (session == null) {
+      return SessionRestorePage(key: const Key('live-session-missing'));
+    }
+    final AccountComplianceSnapshot? snapshot = _liveCompliance;
+    if (snapshot == null) {
+      return AccountAccessGatePage(
+        key: const Key('live-account-preflight'),
+        account: session.mobile,
+        errorMessage: _livePreflightError,
+        loading: _livePreflight != null,
+        onRetry: () => _startLivePreflightIfNeeded(force: true),
+        onSignOut: _controller.signOut,
+      );
+    }
+    if (snapshot.restriction.isRestricted || !snapshot.accountUsable) {
+      return AccountAccessGatePage(
+        key: const Key('live-account-restricted'),
+        account: session.mobile,
+        restriction: snapshot.restriction,
+        accountUsable: snapshot.accountUsable,
+        onRetry: () => _startLivePreflightIfNeeded(force: true),
+        onSignOut: _controller.signOut,
+      );
+    }
+    final VersionUpdateInfo versionInfo = snapshot.versionInfo;
+    if (versionInfo.hasUpdate &&
+        (versionInfo.forceUpdate || !_versionDeferred)) {
+      return AppVersionGatePage(
+        key: const Key('live-version-policy'),
+        info: versionInfo,
+        mandatory: versionInfo.forceUpdate,
+        onRetry: () async {
+          _startLivePreflightIfNeeded(force: true);
+        },
+        onLater: versionInfo.forceUpdate
+            ? null
+            : () => setState(() => _versionDeferred = true),
+        onSignOut: _controller.signOut,
+      );
+    }
+    return MainShell(
+      dependencies: widget.dependencies,
+      onSignOut: _controller.signOut,
+    );
   }
 
   @override
@@ -69,10 +216,13 @@ class _AppGateState extends State<AppGate> {
         onRetry: _controller.retrySessionRecovery,
         onSignOut: _controller.discardSessionAndSignOut,
       ),
-      AuthFlowStage.signedIn => MainShell(
-        dependencies: widget.dependencies,
-        onSignOut: _controller.signOut,
-      ),
+      AuthFlowStage.signedIn =>
+        widget.dependencies.environment.isLive
+            ? _buildLiveEntryGate()
+            : MainShell(
+                dependencies: widget.dependencies,
+                onSignOut: _controller.signOut,
+              ),
     };
   }
 }

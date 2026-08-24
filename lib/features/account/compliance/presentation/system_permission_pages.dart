@@ -372,13 +372,13 @@ class _RealNamePageState extends State<RealNamePage> {
                   title: _verificationLabel(_state!),
                   description: repository.supportsRealNameSubmission
                       ? '认证信息只用于法定实名和资金安全校验。'
-                      : '认证服务正在接入。Live 模式不会把本地填写冒充为认证成功。',
+                      : 'VENDOR_BLOCKED：正式实名厂商尚未接入。Live 模式仅展示服务端状态，不会收集或上传身份证号。',
                   tone: _state == VerificationState.verified
                       ? AppColors.success
                       : AccountOxygenColors.violet,
                   badge: repository.supportsRealNameSubmission
                       ? '安全提交'
-                      : '服务未接入',
+                      : 'VENDOR_BLOCKED',
                 ),
                 if (_state == VerificationState.unverified &&
                     repository.supportsRealNameSubmission) ...<Widget>[

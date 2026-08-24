@@ -112,6 +112,14 @@ class AppEnvironment {
 
   bool get isLive => backendMode == BackendMode.live;
 
+  /// Numeric version code sent to the first-party version policy endpoint.
+  /// Invalid build metadata is represented as zero so the live gate can fail
+  /// closed instead of silently skipping the policy check.
+  int get currentVersion => int.tryParse(clientInnerVersion.trim()) ?? 0;
+
+  /// The backend contract uses 1 for Android and 2 for iOS.
+  int get platformType => clientType.trim().toLowerCase() == 'ios' ? 2 : 1;
+
   Uri? get apiBaseUri {
     final String normalized = apiBaseUrl.trim();
     return normalized.isEmpty ? null : Uri.tryParse(normalized);
