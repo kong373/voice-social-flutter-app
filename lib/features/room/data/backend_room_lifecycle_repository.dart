@@ -312,7 +312,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
           );
         }
         if (configuration.availability == RoomAvailability.closed) {
-          await _reopenRoom(roomId, headers);
+          await _ensureRoomOpenForUpdate(roomId, headers);
         }
         // updateRoomInformation is authoritative for the complete editable
         // room configuration, including topic and welcomeText. Do not follow
@@ -410,6 +410,27 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
         kind: ApiFailureKind.protocol,
         message: '重新开放房间响应与请求不一致',
       );
+    }
+  }
+
+  Future<void> _ensureRoomOpenForUpdate(
+    String roomId,
+    Map<String, String> headers,
+  ) async {
+    try {
+      await _reopenRoom(roomId, headers);
+    } on ApiException catch (error, stackTrace) {
+      if (error.code != 40933) {
+        rethrow;
+      }
+      // A previous save can reopen successfully and then fail while updating
+      // the editable configuration. The page still carries the last closed
+      // snapshot in that case. Only treat the duplicate-open response as
+      // recovered after an authoritative read proves the room is now open.
+      final RoomConfiguration authoritative = await fetchRoom(roomId);
+      if (authoritative.availability != RoomAvailability.open) {
+        Error.throwWithStackTrace(error, stackTrace);
+      }
     }
   }
 

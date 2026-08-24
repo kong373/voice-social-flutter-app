@@ -1577,6 +1577,122 @@ void main() {
       );
     },
   );
+
+  test(
+    'closed live room recovers when reopen committed before update failed',
+    () async {
+      int reopenCalls = 0;
+      int updateCalls = 0;
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        switch (request.path) {
+          case '/app-mini-api/mini/v1/rooms/reopen':
+            reopenCalls += 1;
+            if (reopenCalls == 1) {
+              return const _Reply(
+                data: <String, Object?>{
+                  'roomId': '9527',
+                  'status': 'OPEN',
+                  'reopened': true,
+                  'providerInvocation': false,
+                },
+              );
+            }
+            return const _Reply(
+              code: 40933,
+              message: '房间当前已开放，不能重复开放',
+              httpStatus: 409,
+            );
+          case '/app-api/rooms/updateRoomInformation':
+            updateCalls += 1;
+            if (updateCalls == 1) {
+              return const _Reply(
+                code: 42201,
+                message: '模拟一次可修正的资料更新失败',
+                httpStatus: 422,
+              );
+            }
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'topicTitle': '新标题',
+                'autoLockMic': true,
+                'status': 'OPEN',
+                'rtcStatus': 'VENDOR_BLOCKED',
+                'imStatus': 'VENDOR_BLOCKED',
+                'providerInvocation': false,
+              },
+            );
+          case '/app-api/rooms/getRoomSelectByUserId':
+            return _Reply(
+              data: _ownerPage(
+                row: const <String, Object?>{
+                  'roomId': '9527',
+                  'roomCode': 'R9527',
+                  'roomName': '重新开放房间',
+                  'topic': '新内容',
+                  'topicTitle': '新标题',
+                  'autoLockMic': true,
+                  'accessMode': 'APPROVAL',
+                  'hallVisible': true,
+                  'status': 'OPEN',
+                },
+              ),
+            );
+          case '/app-api/rooms/getRoomTopics':
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'topicTitle': '新标题',
+                'topic': '新内容',
+                'welcomeText': '新欢迎语',
+                'autoLockMic': true,
+                'canEdit': true,
+                'version': 6,
+              },
+            );
+          default:
+            fail('unexpected lifecycle route: ${request.path}');
+        }
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+      const RoomConfiguration configuration = RoomConfiguration(
+        roomId: '9527',
+        roomCode: 'R9527',
+        title: '重新开放房间',
+        topicTitle: '新标题',
+        topicContent: '新内容',
+        welcomeMessage: '新欢迎语',
+        accessMode: RoomAccessMode.approval,
+        password: '',
+        showInHall: true,
+        autoLockMic: true,
+        availability: RoomAvailability.closed,
+      );
+
+      await expectLater(
+        repository.saveRoom(configuration),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.code,
+            'code',
+            42201,
+          ),
+        ),
+      );
+
+      final RoomLifecycleSaveResult recovered = await repository.saveRoom(
+        configuration,
+      );
+      expect(recovered.roomId, '9527');
+      expect(recovered.created, isFalse);
+      expect(reopenCalls, 2);
+      expect(updateCalls, 2);
+    },
+  );
 }
 
 RoomConfiguration _newPublicRoom() => const RoomConfiguration(
