@@ -170,6 +170,9 @@ Required to run:
 - `QA_LIVE_PHONE` is the development-profile test account phone.
 - `QA_OAUTH_CLIENT_ID` is the public OAuth client ID used by the development
   account.
+- `QA_M4_FIXTURE_ID` identifies the newly provisioned, dedicated M4 fixture and
+  must match `m4-fresh-*`; `QA_M4_FIXTURE_STATUS` must be the literal
+  `fresh_dedicated`. A legacy account is not an acceptable substitute.
 
 Required for collected DB evidence and an aggregate pass:
 
@@ -205,6 +208,8 @@ export QA_RUN_ID="m4-$(date +%Y%m%d%H%M%S)"
 export QA_FLUTTER_SHA="$(git rev-parse HEAD)"
 export QA_BACKEND_REPO="/secure/path/to/authoritative-backend"
 export QA_BACKEND_SHA="$(git -C "$QA_BACKEND_REPO" rev-parse HEAD)"
+export QA_M4_FIXTURE_ID="m4-fresh-YYYYMMDD"
+export QA_M4_FIXTURE_STATUS="fresh_dedicated"
 # QA_LIVE_PHONE, QA_OAUTH_CLIENT_ID, QA_DB_EVIDENCE_URL, and
 # QA_DB_EVIDENCE_TOKEN come from the protected runner environment.
 
@@ -223,6 +228,13 @@ the fixed `10.0.2.2:18080` value in both the runner and test. The runner
 requires Flutter, Android `adb`/emulator tooling, Python 3, `curl`, and the
 standard file/scan utilities; its timeout is implemented through Python.
 
+The AVDs use one dedicated QA phone, so the runner treats the development SMS
+challenge limit as an explicit 60-second cooldown. It records the AVD-A
+challenge window, waits only the residual window before AVD-B in bounded short
+sleeps, and records the wait in `sms-cooldown.txt`. A rerun should use a new
+`QA_RUN_ID` and fresh fixture attestation; it never reuses a legacy account or
+bypasses the cooldown with a second phone value.
+
 ## Current-run DB evidence contract
 
 `QA_DB_EVIDENCE_URL` must return redacted aggregate JSON from the authoritative
@@ -233,29 +245,64 @@ The accepted shape is exactly:
 {
   "status": "OK",
   "writeCounters": {
-    "auth_session": 1,
-    "room_enter_exit": 1
+    "auth_sessions": 1,
+    "room_activity": 0,
+    "commerce_activity": 0,
+    "social_community_messages": 0,
+    "social_user_reports": 1,
+    "idempotency_audit": 1
   },
   "authorityInvariants": {
-    "first_party_writes_observed_since_start": true,
-    "session_owner_matches_account": true,
-    "room_exit_compensates_enter": true
+    "core_schema_present": true,
+    "provider_outbox_allowed_states": true,
+    "provider_outbox_attempts_zero": true,
+    "private_message_delivery_blocked": true,
+    "adapter_status_projection_blocked": true,
+    "backend_environment_development": true,
+    "backend_profile_development": true,
+    "development_outbox_or_blocked_sms": true,
+    "formal_vendor_adapters_blocked": true,
+    "provider_invocation_rows_zero": true,
+    "first_party_writes_observed_since_start": true
   },
   "providerCalls": 0,
-  "secrets": false
+  "secrets": false,
+  "evidenceBinding": {
+    "runId": "m4-YYYYMMDDHHMMSS",
+    "avd": "AVD-A",
+    "startNonce": "opaque-per-AVD-start-nonce",
+    "mutationKeys": [
+      "auth_sessions",
+      "room_activity",
+      "commerce_activity",
+      "social_community_messages",
+      "social_user_reports",
+      "idempotency_audit"
+    ]
+  }
 }
 ```
 
+The runner first sends an authenticated `GET` with
+`X-M4-Evidence-Phase: start`, `X-M4-Run-ID`, and `X-M4-AVD`. The helper takes a
+read-only snapshot and returns a one-shot opaque `startNonce`. After that AVD's
+Flutter run, the runner sends the nonce back with
+`X-M4-Evidence-Phase: collect`; the helper computes the delta from that exact
+start snapshot and echoes `evidenceBinding`. A nonce can be collected only
+once for its exact run/AVD pair. Missing, duplicate, stale, cross-AVD, or
+cross-run contexts return unavailable and cannot produce a pass.
+
 The names and counts in the example are illustrative only; the endpoint must
-return current-run counters. The runner and aggregate gate require `status` to
-be `OK`, a non-empty `writeCounters` object of non-negative integers whose sum
-is greater than zero, a non-empty `authorityInvariants` object whose values are
-all `true` (including `first_party_writes_observed_since_start=true`),
-`providerCalls` equal to zero, and `secrets=false`. The allowed top-level keys
-are exactly `status`, `writeCounters`, `authorityInvariants`, `providerCalls`,
-and `secrets`. A missing URL/token pair, failed endpoint, invalid response, or
-`NOT_CONFIGURED` file is a failed AVD, never a passing substitute. The token is
-sent through an in-memory Python request and never appears in an argument.
+return current-run counters. The runner and aggregate gate require exactly the
+six fixed `writeCounters` keys above, non-negative integer deltas with a
+positive total, and a positive `social_user_reports` delta for the required
+current-run room-report mutation, the fixed invariant set (plus the optional
+backend-SHA attestation), the exact binding fields and mutation-key list,
+`status=OK`,
+`providerCalls=0`, and `secrets=false`. A missing URL/token pair, failed
+endpoint, invalid response, or `NOT_CONFIGURED` file is a failed AVD, never a
+passing substitute. The token is sent through an in-memory Python request and
+never appears in an argument.
 
 ## Evidence layout and strict aggregate gate
 
@@ -281,6 +328,7 @@ $QA_ARTIFACT_ROOT/
     apk-secret-scan.txt
   AVD-B/                         # same layout
   config-relay/relay.log
+  sms-cooldown.txt
   summary.txt
   evidence-manifest.sha256
 ```
@@ -300,7 +348,8 @@ client-observed write marker count and points to `db-evidence.json`; it is not
 a substitute for the operator DB response.
 
 Each `result.txt` must report `result=PASS`, `acceptance_status=PASS`, matching
-`run_id`, tested Flutter SHA, backend SHA, `provider_calls_made=false`,
+`run_id`, fresh `fixture_id`/`fixture_status`, a per-AVD `db_start_nonce`, tested
+Flutter SHA, backend SHA, `provider_calls_made=false`,
 `db_evidence=COLLECTED`, passing secret/APK scans, zero hard findings and
 crash/ANR findings, at least four non-empty screenshots, at least ten unique
 route markers, and at least five authority-invariant markers. Its log must
@@ -311,9 +360,10 @@ present and empty.
 
 `tool/qa/aggregate_m4_authoritative_live_avd.sh` is the only command allowed
 to emit `ANDROID_EMULATOR_PASS`. It requires both AVD result files to pass,
-the same `QA_RUN_ID`, exact matching Flutter and backend SHAs, valid route and
-authority evidence, current-run DB evidence for both AVDs, zero provider
-calls, clean hard-error/crash/secret scans, and the exact AVD matrix evidence.
+the same `QA_RUN_ID`, matching fresh fixture attestation, exact matching
+Flutter and backend SHAs, valid route and authority evidence, current-run
+run/AVD/nonce-bound DB evidence for both AVDs, zero provider calls, clean
+hard-error/crash/secret scans, and the exact AVD matrix evidence.
 It writes `aggregate-verdict.txt` and `aggregate-verdict.json`; any missing,
 stale, partial, provider-tainted, secret-tainted, or non-current-run evidence
 emits `ANDROID_EMULATOR_FAIL` and exits nonzero. The runner's final

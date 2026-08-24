@@ -23,6 +23,11 @@ void main() {
     bool avdBPass = true,
     bool invalidAvdBRouteStatus = false,
     bool zeroWriteDelta = false,
+    bool staleDbBinding = false,
+    bool extraMutationKey = false,
+    bool missingMutationKey = false,
+    String fixtureId = 'm4-fresh-test-fixture',
+    String fixtureStatus = 'fresh_dedicated',
   }) {
     final Directory root = Directory.systemTemp.createTempSync(
       'm4-aggregate-contract-',
@@ -53,11 +58,51 @@ void main() {
       final String routeStatus = avd == 'AVD-B' && invalidAvdBRouteStatus
           ? '500'
           : '200';
+      final String dbStartNonce = avd == 'AVD-B' && staleDbBinding
+          ? 'm4-stale-nonce-000000000000'
+          : 'm4-start-nonce-000000000000';
+      final String bindingRunId = avd == 'AVD-B' && staleDbBinding
+          ? 'm4-old-run'
+          : 'm4-test-run';
+      final String bindingAvd = avd == 'AVD-B' && staleDbBinding
+          ? 'AVD-A'
+          : avd;
+      final List<String> mutationKeys = <String>[
+        'auth_sessions',
+        'room_activity',
+        'commerce_activity',
+        'social_community_messages',
+        'social_user_reports',
+        'idempotency_audit',
+      ];
+      if (extraMutationKey) {
+        mutationKeys.add('unexpected_mutation');
+      }
+      if (missingMutationKey) {
+        mutationKeys.removeLast();
+      }
+      final Map<String, Object?> writeCounters = <String, Object?>{
+        'auth_sessions': zeroWriteDelta ? 0 : 1,
+        'room_activity': 0,
+        'commerce_activity': 0,
+        'social_community_messages': 0,
+        'social_user_reports': zeroWriteDelta ? 0 : 1,
+        'idempotency_audit': 0,
+      };
+      if (extraMutationKey) {
+        writeCounters['unexpected_mutation'] = 1;
+      }
+      if (missingMutationKey) {
+        writeCounters.remove('idempotency_audit');
+      }
       File('${dir.path}/result.txt').writeAsStringSync(
         [
           'result=${pass ? 'PASS' : 'FAIL'}',
           'acceptance_status=${pass ? 'PASS' : 'FAIL'}',
           'run_id=m4-test-run',
+          'fixture_id=$fixtureId',
+          'fixture_status=$fixtureStatus',
+          'db_start_nonce=$dbStartNonce',
           'tested_git_sha=$testedSha',
           'flutter_sha=$testedSha',
           'backend_sha=$backendSha',
@@ -87,15 +132,28 @@ void main() {
         File('${dir.path}/db-evidence.json').writeAsStringSync(
           jsonEncode(<String, Object?>{
             'status': 'OK',
-            'writeCounters': <String, Object?>{
-              'auth_session': zeroWriteDelta ? 0 : 1,
-            },
+            'writeCounters': writeCounters,
             'authorityInvariants': <String, Object?>{
-              'session_owner_matches_account': true,
+              'core_schema_present': true,
+              'provider_outbox_allowed_states': true,
+              'provider_outbox_attempts_zero': true,
+              'private_message_delivery_blocked': true,
+              'adapter_status_projection_blocked': true,
+              'backend_environment_development': true,
+              'backend_profile_development': true,
+              'development_outbox_or_blocked_sms': true,
+              'formal_vendor_adapters_blocked': true,
+              'provider_invocation_rows_zero': true,
               'first_party_writes_observed_since_start': !zeroWriteDelta,
             },
             'providerCalls': 0,
             'secrets': false,
+            'evidenceBinding': <String, Object?>{
+              'runId': bindingRunId,
+              'avd': bindingAvd,
+              'startNonce': dbStartNonce,
+              'mutationKeys': mutationKeys,
+            },
           }),
         );
       }
@@ -112,6 +170,8 @@ void main() {
       'QA_FLUTTER_SHA': flutterSha,
       'QA_BACKEND_SHA': backendSha,
       'QA_RUN_ID': 'm4-test-run',
+      'QA_M4_FIXTURE_ID': 'm4-fresh-test-fixture',
+      'QA_M4_FIXTURE_STATUS': 'fresh_dedicated',
     },
   );
 
@@ -127,6 +187,30 @@ void main() {
   test('cold-start emulator discovery restores adb whitespace parsing', () {
     expect(runnerSource, contains("while IFS=\$' \\t' read -r serial _state"));
     expect(runnerSource, isNot(contains('while read -r serial _state; do')));
+  });
+
+  test(
+    'runner requires a fresh dedicated fixture and bounds same-phone cooldown',
+    () {
+      expect(runnerSource, contains('QA_M4_FIXTURE_ID'));
+      expect(runnerSource, contains('QA_M4_FIXTURE_STATUS'));
+      expect(runnerSource, contains("fresh_dedicated"));
+      expect(runnerSource, contains('SMS_COOLDOWN_SECONDS'));
+      expect(runnerSource, contains('wait_for_sms_cooldown'));
+      expect(runnerSource, contains('sleep "\$nap"'));
+      expect(runnerSource, isNot(contains('sleep 65')));
+    },
+  );
+
+  test('DB evidence is bound to run, AVD, nonce, and fixed mutation keys', () {
+    expect(runnerSource, contains('X-M4-Run-ID'));
+    expect(runnerSource, contains('X-M4-AVD'));
+    expect(runnerSource, contains('X-M4-Start-Nonce'));
+    expect(runnerSource, contains('required_counter_keys'));
+    expect(runnerSource, contains('social_user_reports'));
+    expect(runnerSource, contains('payload["writeCounters"]["social_user_reports"] <= 0'));
+    expect(runnerSource, contains('mutationKeys'));
+    expect(runnerSource, contains('evidenceBinding'));
   });
 
   test('logcat capture is bounded and cannot block after Flutter exits', () {
@@ -246,6 +330,47 @@ void main() {
     expect(
       File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
       contains('ANDROID_EMULATOR_FAIL'),
+    );
+  });
+
+  test('aggregate rejects stale or unrelated DB evidence binding', () {
+    final Directory root = makeEvidence(staleDbBinding: true);
+    final ProcessResult result = runAggregate(root);
+    expect(result.exitCode, isNot(0));
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('AVD-B=FAIL'),
+    );
+  });
+
+  test('aggregate rejects missing or extra mutation keys', () {
+    for (final Map<String, bool> option in <Map<String, bool>>[
+      <String, bool>{'missingMutationKey': true},
+      <String, bool>{'extraMutationKey': true},
+    ]) {
+      final Directory root = makeEvidence(
+        missingMutationKey: option['missingMutationKey'] ?? false,
+        extraMutationKey: option['extraMutationKey'] ?? false,
+      );
+      final ProcessResult result = runAggregate(root);
+      expect(result.exitCode, isNot(0));
+      expect(
+        File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+        contains('ANDROID_EMULATOR_FAIL'),
+      );
+    }
+  });
+
+  test('aggregate rejects a legacy or non-fresh fixture attestation', () {
+    final Directory root = makeEvidence(
+      fixtureId: 'm4-fresh-test-fixture',
+      fixtureStatus: 'legacy',
+    );
+    final ProcessResult result = runAggregate(root);
+    expect(result.exitCode, isNot(0));
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('fixture_status_mismatch'),
     );
   });
 }

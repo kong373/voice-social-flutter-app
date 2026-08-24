@@ -23,9 +23,12 @@ readonly BACKEND_SHA_EXPECTED="$(required QA_BACKEND_SHA)"
 readonly BACKEND_REPO="$(required QA_BACKEND_REPO)"
 readonly LIVE_PHONE="$(required QA_LIVE_PHONE)"
 readonly OAUTH_CLIENT_ID="$(required QA_OAUTH_CLIENT_ID)"
-readonly DB_TOKEN="$(printenv QA_DB_EVIDENCE_TOKEN || true)"
+readonly FIXTURE_ID="$(required QA_M4_FIXTURE_ID)"
+readonly FIXTURE_STATUS="$(required QA_M4_FIXTURE_STATUS)"
+readonly DB_URL="$(required QA_DB_EVIDENCE_URL)"
+readonly DB_TOKEN="$(required QA_DB_EVIDENCE_TOKEN)"
 readonly BACKEND_BASE_URL='http://10.0.2.2:18080/'
-readonly RUN_ID="$(printenv QA_RUN_ID || printf m4-local)"
+readonly RUN_ID="$(required QA_RUN_ID)"
 readonly AVD_A_SERIAL="$(printenv QA_AVD_A_SERIAL || true)"
 readonly AVD_B_SERIAL="$(printenv QA_AVD_B_SERIAL || true)"
 readonly AVD_A_NAME="$(printenv QA_AVD_A_NAME || printf pixel_7_pro)"
@@ -45,13 +48,21 @@ readonly B_DENSITY='384'
 readonly B_WIDTH='360'
 readonly B_HEIGHT='800'
 readonly B_DPR='2.40'
+readonly SMS_COOLDOWN_SECONDS='60'
+readonly SMS_COOLDOWN_BUFFER_SECONDS='5'
 
-mkdir -p "$ARTIFACT_ROOT"
 readonly SUMMARY_FILE="$ARTIFACT_ROOT/summary.txt"
 readonly MANIFEST_FILE="$ARTIFACT_ROOT/evidence-manifest.sha256"
 readonly STARTED_SERIALS_FILE="$ARTIFACT_ROOT/.started-emulator-serials"
+[[ -n "$ARTIFACT_ROOT" && -n "$FLUTTER_SHA_EXPECTED" && -n "$BACKEND_SHA_EXPECTED" &&
+  -n "$BACKEND_REPO" && -n "$LIVE_PHONE" && -n "$OAUTH_CLIENT_ID" &&
+  -n "$FIXTURE_ID" && -n "$FIXTURE_STATUS" && -n "$DB_URL" &&
+  -n "$DB_TOKEN" && -n "$RUN_ID" ]] || exit 64
+mkdir -p "$ARTIFACT_ROOT"
 RELAY_PID=''
 RELAY_PORT=''
+DB_START_NONCE=''
+SMS_COOLDOWN_STARTED_AT=''
 OVERALL_RESULT='PASS'
 
 fail() {
@@ -82,6 +93,7 @@ cleanup() {
     printf 'formal_im_vendor_started=false\nformal_payment_vendor_started=false\n'
     printf 'formal_push_vendor_started=false\nformal_storage_vendor_started=false\n'
     printf 'development_outbox_key_to_flutter=false\nrun_id=%s\n' "$RUN_ID"
+    printf 'fixture_id=%s\nfixture_status=%s\n' "$FIXTURE_ID" "$FIXTURE_STATUS"
     for avd in AVD-A AVD-B; do
       if [[ -f "$ARTIFACT_ROOT/$avd/result.txt" ]]; then
         sed "s/^/$avd./" "$ARTIFACT_ROOT/$avd/result.txt"
@@ -113,13 +125,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for command_name in adb flutter git python3 curl find sort awk grep unzip; do
+for command_name in adb flutter git python3 curl find sort awk grep unzip date sleep; do
   command -v "$command_name" >/dev/null 2>&1 || fail "missing command: $command_name"
 done
 [[ -f "$PROJECT_ROOT/pubspec.yaml" ]] || fail 'not a Flutter checkout'
 [[ -d "$BACKEND_REPO/.git" || -f "$BACKEND_REPO/.git" ]] || fail 'QA_BACKEND_REPO is not Git'
 [[ "$LIVE_PHONE" =~ ^1[3-9][0-9]{9}$ ]] || fail 'QA_LIVE_PHONE is invalid'
 [[ -n "$OAUTH_CLIENT_ID" ]] || fail 'QA_OAUTH_CLIENT_ID is empty'
+[[ "$FIXTURE_ID" =~ ^m4-fresh-[A-Za-z0-9_.:-]{1,64}$ ]] || fail 'QA_M4_FIXTURE_ID must identify a fresh M4 fixture'
+[[ "$FIXTURE_ID" != *legacy* && "$FIXTURE_ID" != *LEGACY* ]] || fail 'QA_M4_FIXTURE_ID may not identify a legacy fixture'
+[[ "$FIXTURE_STATUS" == 'fresh_dedicated' ]] || fail 'QA_M4_FIXTURE_STATUS must be fresh_dedicated'
+[[ "$DB_URL" =~ ^https?:// ]] || fail 'QA_DB_EVIDENCE_URL must be an HTTP(S) endpoint'
+[[ "$DB_URL" != *'?'* && "$DB_URL" != *'@'* ]] || fail 'QA_DB_EVIDENCE_URL may not contain query credentials'
 [[ "$RUN_ID" =~ ^[A-Za-z0-9_.:-]{1,80}$ ]] || fail 'QA_RUN_ID contains unsafe characters'
 [[ -z "$AVD_A_SERIAL" || "$AVD_A_SERIAL" =~ ^[A-Za-z0-9_.:-]{1,80}$ ]] || fail 'QA_AVD_A_SERIAL contains unsafe characters'
 [[ -z "$AVD_B_SERIAL" || "$AVD_B_SERIAL" =~ ^[A-Za-z0-9_.:-]{1,80}$ ]] || fail 'QA_AVD_B_SERIAL contains unsafe characters'
@@ -165,6 +182,104 @@ except subprocess.TimeoutExpired:
         process.wait()
     raise SystemExit(124)
 PY
+}
+
+wait_for_sms_cooldown() {
+  [[ -n "$SMS_COOLDOWN_STARTED_AT" ]] || return 0
+  local now required_until remaining nap
+  now="$(date +%s)"
+  required_until=$((SMS_COOLDOWN_STARTED_AT + SMS_COOLDOWN_SECONDS + SMS_COOLDOWN_BUFFER_SECONDS))
+  remaining=$((required_until - now))
+  [[ "$remaining" -gt 0 ]] || return 0
+  # The development backend enforces a 60-second per-phone challenge window.
+  # Wait only the residual window, in short bounded sleeps, so a rerun never
+  # launches AVD-B into a known cooldown rejection or blocks in one long sleep.
+  while [[ "$remaining" -gt 0 ]]; do
+    if [[ "$remaining" -gt 10 ]]; then
+      nap=10
+    else
+      nap="$remaining"
+    fi
+    sleep "$nap"
+    now="$(date +%s)"
+    remaining=$((required_until - now))
+  done
+  printf 'sms_cooldown_waited_until=%s\n' "$required_until" >>"$ARTIFACT_ROOT/sms-cooldown.txt"
+}
+
+record_sms_cooldown_start() {
+  local avd="$1"
+  SMS_COOLDOWN_STARTED_AT="$(date +%s)"
+  local output_mode='>>'
+  [[ "$avd" == 'AVD-A' ]] && output_mode='>'
+  if [[ "$output_mode" == '>' ]]; then
+    {
+      printf 'run_id=%s\nfixture_id=%s\n' "$RUN_ID" "$FIXTURE_ID"
+      printf 'sms_cooldown_seconds=%s\nbuffer_seconds=%s\n' \
+        "$SMS_COOLDOWN_SECONDS" "$SMS_COOLDOWN_BUFFER_SECONDS"
+      printf 'last_challenge_window_avd=%s\nlast_challenge_window_started_at=%s\n' \
+        "$avd" "$SMS_COOLDOWN_STARTED_AT"
+    } >"$ARTIFACT_ROOT/sms-cooldown.txt"
+    return 0
+  fi
+  {
+    printf 'run_id=%s\nfixture_id=%s\n' "$RUN_ID" "$FIXTURE_ID"
+    printf 'sms_cooldown_seconds=%s\nbuffer_seconds=%s\n' \
+      "$SMS_COOLDOWN_SECONDS" "$SMS_COOLDOWN_BUFFER_SECONDS"
+    printf 'last_challenge_window_avd=%s\nlast_challenge_window_started_at=%s\n' \
+      "$avd" "$SMS_COOLDOWN_STARTED_AT"
+  } >>"$ARTIFACT_ROOT/sms-cooldown.txt"
+}
+
+db_evidence_start() {
+  local dir="$1"
+  local avd="$2"
+  local nonce status
+  nonce=''
+  set +e
+  nonce="$(QA_M4_DB_TOKEN="$DB_TOKEN" QA_M4_DB_URL="$DB_URL" \
+    QA_M4_RUN_ID="$RUN_ID" QA_M4_AVD="$avd" python3 -u - <<'PY'
+import json
+import os
+import urllib.error
+import urllib.request
+
+request = urllib.request.Request(
+    os.environ["QA_M4_DB_URL"],
+    headers={
+        "Authorization": "Bearer " + os.environ["QA_M4_DB_TOKEN"],
+        "Accept": "application/json",
+        "X-M4-Evidence-Phase": "start",
+        "X-M4-Run-ID": os.environ["QA_M4_RUN_ID"],
+        "X-M4-AVD": os.environ["QA_M4_AVD"],
+    },
+)
+try:
+    with urllib.request.urlopen(request, timeout=20) as response:
+        if response.status < 200 or response.status >= 300:
+            raise RuntimeError("db evidence start returned non-success status")
+        payload = json.loads(response.read())
+    if (
+        not isinstance(payload, dict)
+        or payload.get("status") != "STARTED"
+        or payload.get("runId") != os.environ["QA_M4_RUN_ID"]
+        or payload.get("avd") != os.environ["QA_M4_AVD"]
+        or not isinstance(payload.get("startNonce"), str)
+    ):
+        raise RuntimeError("db evidence start contract invalid")
+    print(payload["startNonce"])
+except (OSError, ValueError, urllib.error.URLError, RuntimeError):
+    raise SystemExit(1)
+PY
+  )"
+  status=$?
+  set -e
+  if [[ "$status" -ne 0 || ! "$nonce" =~ ^[A-Za-z0-9_.~=-]{16,255}$ ]]; then
+    printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"
+    return 1
+  fi
+  DB_START_NONCE="$nonce"
+  return 0
 }
 
 sanitize() {
@@ -346,6 +461,7 @@ write_environment() {
   local viewport="$1"
   {
     printf 'avd=%s\napi_level=%s\nprofile=%s\nserial=%s\n' "$avd" "$api" "$profile" "$serial"
+    printf 'run_id=%s\nfixture_id=%s\nfixture_status=%s\n' "$RUN_ID" "$FIXTURE_ID" "$FIXTURE_STATUS"
     printf 'expected_viewport=%sx%s\nexpected_dpr=%s\n' "$width" "$height" "$dpr"
     printf 'backend_mode=live\nbackend_base_url=%s\n' "$BACKEND_BASE_URL"
     printf 'flutter_sha=%s\nbackend_sha=%s\n' "$FLUTTER_SHA_ACTUAL" "$BACKEND_SHA_ACTUAL"
@@ -377,14 +493,20 @@ write_route_evidence() {
 
 db_evidence() {
   local dir="$1"
-  local url
-  url="$(printenv QA_DB_EVIDENCE_URL || true)"
-  if [[ -n "$url" || -n "$DB_TOKEN" ]]; then
-    [[ -n "$url" && -n "$DB_TOKEN" ]] || { printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"; return 1; }
-    [[ "$url" != *':8765'* && "$url" != *'contract-server'* ]] || { printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"; return 1; }
-    set +e
-    QA_M4_DB_TOKEN="$DB_TOKEN" QA_M4_DB_URL="$url" \
-      python3 -u - 2>"$dir/db-evidence-curl.stderr" <<'PY' | sanitize >"$dir/db-evidence.json"
+  local avd="$2"
+  local nonce="$3"
+  [[ "$DB_URL" != *':8765'* && "$DB_URL" != *'contract-server'* ]] || {
+    printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"
+    return 1
+  }
+  [[ "$nonce" =~ ^[A-Za-z0-9_.~=-]{16,255}$ ]] || {
+    printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"
+    return 1
+  }
+  set +e
+  QA_M4_DB_TOKEN="$DB_TOKEN" QA_M4_DB_URL="$DB_URL" \
+    QA_M4_RUN_ID="$RUN_ID" QA_M4_AVD="$avd" QA_M4_START_NONCE="$nonce" \
+    python3 -u - 2>"$dir/db-evidence-curl.stderr" <<'PY' | sanitize >"$dir/db-evidence.json"
 import os
 import sys
 import urllib.error
@@ -395,6 +517,10 @@ request = urllib.request.Request(
     headers={
         "Authorization": "Bearer " + os.environ["QA_M4_DB_TOKEN"],
         "Accept": "application/json",
+        "X-M4-Evidence-Phase": "collect",
+        "X-M4-Run-ID": os.environ["QA_M4_RUN_ID"],
+        "X-M4-AVD": os.environ["QA_M4_AVD"],
+        "X-M4-Start-Nonce": os.environ["QA_M4_START_NONCE"],
     },
 )
 try:
@@ -402,41 +528,73 @@ try:
         if response.status < 200 or response.status >= 300:
             raise RuntimeError("db evidence returned non-success status")
         sys.stdout.buffer.write(response.read())
-except (OSError, urllib.error.URLError, RuntimeError) as error:
+except (OSError, urllib.error.URLError, RuntimeError):
     print("db evidence request failed", file=sys.stderr)
-    raise SystemExit(1) from error
+    raise SystemExit(1)
 PY
-    local status=${PIPESTATUS[0]}
-    set -e
-    [[ "$status" -eq 0 && -s "$dir/db-evidence.json" ]] || { printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"; return 1; }
-    if ! python3 - "$dir/db-evidence.json" 2>"$dir/db-evidence-validation.stderr" <<'PY'
+  local status=${PIPESTATUS[0]}
+  set -e
+  [[ "$status" -eq 0 && -s "$dir/db-evidence.json" ]] || {
+    printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"
+    return 1
+  }
+  if ! python3 - "$dir/db-evidence.json" "$avd" "$nonce" "$RUN_ID" \
+    2>"$dir/db-evidence-validation.stderr" <<'PY'
 import json
 import sys
 
-with open(sys.argv[1], encoding="utf-8") as stream:
+path, expected_avd, expected_nonce, expected_run_id = sys.argv[1:]
+with open(path, encoding="utf-8") as stream:
     payload = json.load(stream)
 if not isinstance(payload, dict):
     raise SystemExit(1)
-allowed = {"status", "writeCounters", "authorityInvariants", "providerCalls", "secrets"}
-if set(payload) - allowed:
+required_counter_keys = {
+    "auth_sessions",
+    "room_activity",
+    "commerce_activity",
+    "social_community_messages",
+    "social_user_reports",
+    "idempotency_audit",
+}
+required_invariant_keys = {
+    "core_schema_present",
+    "provider_outbox_allowed_states",
+    "provider_outbox_attempts_zero",
+    "private_message_delivery_blocked",
+    "adapter_status_projection_blocked",
+    "backend_environment_development",
+    "backend_profile_development",
+    "development_outbox_or_blocked_sms",
+    "formal_vendor_adapters_blocked",
+    "provider_invocation_rows_zero",
+    "first_party_writes_observed_since_start",
+}
+if set(payload) != {
+    "status",
+    "writeCounters",
+    "authorityInvariants",
+    "providerCalls",
+    "secrets",
+    "evidenceBinding",
+}:
     raise SystemExit(1)
 if payload.get("status") != "OK":
     raise SystemExit(1)
-if (
-    "writeCounters" not in payload
-    or "authorityInvariants" not in payload
-    or "providerCalls" not in payload
+if set(payload["writeCounters"]) != required_counter_keys:
+    raise SystemExit(1)
+if any(
+    type(value) is not int or value < 0
+    for value in payload["writeCounters"].values()
 ):
-    raise SystemExit(1)
-if not isinstance(payload["writeCounters"], dict) or not payload["writeCounters"]:
-    raise SystemExit(1)
-if not isinstance(payload["authorityInvariants"], dict) or not payload["authorityInvariants"]:
-    raise SystemExit(1)
-if any(type(value) is not int or value < 0 for value in payload["writeCounters"].values()):
     raise SystemExit(1)
 if sum(payload["writeCounters"].values()) <= 0:
     raise SystemExit(1)
-if payload["authorityInvariants"].get("first_party_writes_observed_since_start") is not True:
+if payload["writeCounters"]["social_user_reports"] <= 0:
+    raise SystemExit(1)
+actual_invariant_keys = set(payload["authorityInvariants"])
+if actual_invariant_keys != required_invariant_keys and actual_invariant_keys != (
+    required_invariant_keys | {"expected_backend_sha_matches"}
+):
     raise SystemExit(1)
 if any(value is not True for value in payload["authorityInvariants"].values()):
     raise SystemExit(1)
@@ -444,16 +602,30 @@ if payload["providerCalls"] not in (0, False, "0"):
     raise SystemExit(1)
 if payload.get("secrets") is not False:
     raise SystemExit(1)
+binding = payload.get("evidenceBinding")
+if not isinstance(binding, dict) or set(binding) != {
+    "runId", "avd", "startNonce", "mutationKeys"
+}:
+    raise SystemExit(1)
+if binding["runId"] != expected_run_id or binding["avd"] != expected_avd:
+    raise SystemExit(1)
+if binding["startNonce"] != expected_nonce:
+    raise SystemExit(1)
+if binding["mutationKeys"] != [
+    "auth_sessions",
+    "room_activity",
+    "commerce_activity",
+    "social_community_messages",
+    "social_user_reports",
+    "idempotency_audit",
+]:
+    raise SystemExit(1)
 PY
-    then
-      printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"
-      return 1
-    fi
-    printf 'db_evidence_status=COLLECTED\n' >"$dir/db-evidence-status.txt"
-  else
-    printf '{"status":"NOT_CONFIGURED","source":"none","writeCounters":"unknown","authorityInvariants":"see authority-invariants.txt","providerCalls":"unknown"}\n' >"$dir/db-evidence.json"
-    printf 'db_evidence_status=NOT_CONFIGURED\n' >"$dir/db-evidence-status.txt"
+  then
+    printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"
+    return 1
   fi
+  printf 'db_evidence_status=COLLECTED\n' >"$dir/db-evidence-status.txt"
 }
 
 secret_scan() {
@@ -542,6 +714,16 @@ run_one() {
   [[ -n "$viewport" ]] || { printf 'result=FAIL\nreason=viewport_override_rejected\n' >"$dir/result.txt"; OVERALL_RESULT='FAIL'; return 1; }
   write_environment "$dir" "$avd" "$api" "$profile" "$width" "$height" "$dpr" "$serial" "$viewport"
 
+  if [[ "$avd" == 'AVD-B' ]]; then
+    wait_for_sms_cooldown
+  fi
+  db_evidence_start "$dir" "$avd" || {
+    printf 'result=FAIL\nreason=db_evidence_start_failed\n' >"$dir/result.txt"
+    OVERALL_RESULT='FAIL'
+    return 1
+  }
+  record_sms_cooldown_start "$avd"
+
   # A bounded post-run dump avoids leaving a background `adb logcat` process
   # that can ignore TERM and block the evidence lane after Flutter exits.
   adb -s "$serial" logcat -G 16M >/dev/null 2>&1 || true
@@ -576,7 +758,7 @@ run_one() {
 
   write_route_evidence "$dir"
   local db_status='FAIL'
-  if db_evidence "$dir"; then
+  if db_evidence "$dir" "$avd" "$DB_START_NONCE"; then
     db_status="$(sed -n 's/^db_evidence_status=//p' "$dir/db-evidence-status.txt" 2>/dev/null || printf FAIL)"
   fi
   local screenshot_count marker_count provider_count invariant_count hard_count crash_count
@@ -617,7 +799,8 @@ run_one() {
   fi
   {
     printf 'result=%s\nreason=%s\navd=%s\napi_level=%s\nprofile=%s\nserial=%s\n' "$result" "$reason" "$avd" "$api" "$profile" "$serial"
-    printf 'run_id=%s\ntested_git_sha=%s\nflutter_sha=%s\nbackend_sha=%s\nhttp_route_marker_count=%s\nauthority_invariant_count=%s\n' "$RUN_ID" "$FLUTTER_SHA_ACTUAL" "$FLUTTER_SHA_ACTUAL" "$BACKEND_SHA_ACTUAL" "$marker_count" "$invariant_count"
+    printf 'run_id=%s\nfixture_id=%s\nfixture_status=%s\ndb_start_nonce=%s\ntested_git_sha=%s\nflutter_sha=%s\nbackend_sha=%s\nhttp_route_marker_count=%s\nauthority_invariant_count=%s\n' \
+      "$RUN_ID" "$FIXTURE_ID" "$FIXTURE_STATUS" "$DB_START_NONCE" "$FLUTTER_SHA_ACTUAL" "$FLUTTER_SHA_ACTUAL" "$BACKEND_SHA_ACTUAL" "$marker_count" "$invariant_count"
     printf 'screenshot_count=%s\nhard_finding_count=%s\ncrash_anr_count=%s\n' "$screenshot_count" "$hard_count" "$crash_count"
     printf 'acceptance_status=%s\nprovider_calls_made=false\ndb_evidence=%s\nsecret_scan=%s\napk_secret_scan=%s\n' "$([[ "$result" == PASS ]] && printf PASS || printf FAIL)" "$db_status" "$secret_status" "$apk_status"
   } >"$dir/result.txt"
