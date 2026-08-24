@@ -52,7 +52,6 @@ readonly MANIFEST_FILE="$ARTIFACT_ROOT/evidence-manifest.sha256"
 readonly STARTED_SERIALS_FILE="$ARTIFACT_ROOT/.started-emulator-serials"
 RELAY_PID=''
 RELAY_PORT=''
-LOGCAT_PID=''
 OVERALL_RESULT='PASS'
 
 fail() {
@@ -63,7 +62,6 @@ fail() {
 
 cleanup() {
   set +e
-  [[ -z "$LOGCAT_PID" ]] || { kill "$LOGCAT_PID" 2>/dev/null || true; wait "$LOGCAT_PID" 2>/dev/null || true; }
   [[ -z "$RELAY_PID" ]] || { kill "$RELAY_PID" 2>/dev/null || true; wait "$RELAY_PID" 2>/dev/null || true; }
   local started_serial
   if [[ -f "$STARTED_SERIALS_FILE" ]]; then
@@ -544,11 +542,10 @@ run_one() {
   [[ -n "$viewport" ]] || { printf 'result=FAIL\nreason=viewport_override_rejected\n' >"$dir/result.txt"; OVERALL_RESULT='FAIL'; return 1; }
   write_environment "$dir" "$avd" "$api" "$profile" "$width" "$height" "$dpr" "$serial" "$viewport"
 
+  # A bounded post-run dump avoids leaving a background `adb logcat` process
+  # that can ignore TERM and block the evidence lane after Flutter exits.
+  adb -s "$serial" logcat -G 16M >/dev/null 2>&1 || true
   adb -s "$serial" logcat -c >/dev/null 2>&1 || true
-  set +e
-  adb -s "$serial" logcat -v threadtime | sanitize >"$dir/logs/logcat-full.txt" 2>"$dir/logs/logcat-sanitizer.stderr" &
-  LOGCAT_PID=$!
-  set -e
   set +e
   run_with_timeout 1500 30 \
     env -u QA_LIVE_PHONE -u QA_OAUTH_CLIENT_ID \
@@ -570,10 +567,12 @@ run_one() {
       --dart-define=QA_EXPECTED_VIEWPORT_HEIGHT="$height" \
       --dart-define=QA_EXPECTED_DPR="$dpr" 2>&1 | sanitize >"$dir/logs/flutter-drive.log"
   local drive_status=${PIPESTATUS[0]}
+  adb -s "$serial" logcat -d -v threadtime \
+    2>"$dir/logs/logcat-adb.stderr" | \
+    sanitize >"$dir/logs/logcat-full.txt" \
+      2>"$dir/logs/logcat-sanitizer.stderr"
+  local logcat_status=${PIPESTATUS[0]}
   set -e
-  kill "$LOGCAT_PID" 2>/dev/null || true
-  wait "$LOGCAT_PID" 2>/dev/null || true
-  LOGCAT_PID=''
 
   write_route_evidence "$dir"
   local db_status='FAIL'
@@ -604,6 +603,7 @@ run_one() {
   local result='PASS'
   local reason='complete'
   if [[ "$drive_status" -ne 0 ]]; then result='FAIL'; reason="flutter_drive_exit_$drive_status"
+  elif [[ "$logcat_status" -ne 0 || ! -s "$dir/logs/logcat-full.txt" ]]; then result='FAIL'; reason='logcat_capture_failed'
   elif [[ "$marker_count" -lt 10 ]]; then result='FAIL'; reason='insufficient_http_route_markers'
   elif [[ "$provider_marker_count" -ne 1 || "$provider_count" -ne 1 || "$provider_nonzero_count" -ne 0 ]]; then result='FAIL'; reason='provider_calls_marker_missing_or_nonzero'
   elif [[ "$invariant_count" -lt 5 ]]; then result='FAIL'; reason='insufficient_authority_invariants'

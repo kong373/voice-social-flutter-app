@@ -129,6 +129,14 @@ void main() {
     expect(runnerSource, isNot(contains('while read -r serial _state; do')));
   });
 
+  test('logcat capture is bounded and cannot block after Flutter exits', () {
+    expect(runnerSource, contains('logcat -G 16M'));
+    expect(runnerSource, contains('logcat -d -v threadtime'));
+    expect(runnerSource, contains("reason='logcat_capture_failed'"));
+    expect(runnerSource, isNot(contains('logcat -v threadtime | sanitize')));
+    expect(runnerSource, isNot(contains('LOGCAT_PID')));
+  });
+
   test(
     'live integration covers first-party mutations without vendor success',
     () {
