@@ -52,7 +52,7 @@ jobs:
             test_name: CM-002 through CM-004 enforce platform channels and authority
           - label: M2.4 catalog widget pages
             file: test/m24_pages_test.dart
-            test_name: CM-009 and CM-010 expose only ordinary assets
+            test_name: CM-009 and CM-010 expose gifts and pure decorations only
           - label: M2.4 message widget pages
             file: test/m24_pages_test.dart
             test_name: MS-001 through MS-006 preserve honest messaging boundaries
