@@ -67,11 +67,11 @@ void main() {
       );
       File('${dir.path}/logs/flutter-drive.log').writeAsStringSync(
         [
-          'M4_ROUTE_STATUS::required::GET::/health::200::success',
-          'M4_AUTHORITY_INVARIANT::session_owner_matches_account',
-          'M4_AUTHORITY_INVARIANT::room_exit_compensates_enter',
-          'M4_PROVIDER_CALLS::${providerCall ? '1' : '0'}',
-          'M4_ACCEPTANCE::${pass ? 'PASS' : 'FAIL'}',
+          '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_ROUTE_STATUS::required::GET::/health::200::success',
+          '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_AUTHORITY_INVARIANT::session_owner_matches_account',
+          '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_AUTHORITY_INVARIANT::room_exit_compensates_enter',
+          '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_PROVIDER_CALLS::${providerCall ? '1' : '0'}',
+          '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_ACCEPTANCE::${pass ? 'PASS' : 'FAIL'}',
           '',
         ].join('\n'),
       );

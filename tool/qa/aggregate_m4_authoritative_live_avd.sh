@@ -88,14 +88,14 @@ validate_log_evidence() {
   local log="$dir/logs/flutter-drive.log"
   [[ -s "$log" ]] || return 1
   local acceptance_count provider_count provider_nonzero bad_status
-  acceptance_count="$(grep -Ec '^M4_ACCEPTANCE::PASS($|[[:space:]])' "$log" || true)"
-  provider_count="$(grep -Ec '^M4_PROVIDER_CALLS::0($|[[:space:]])' "$log" || true)"
-  provider_nonzero="$(awk '/^M4_PROVIDER_CALLS::/ && $0 !~ /^M4_PROVIDER_CALLS::0([[:space:]]|$)/ {count += 1} END {print count + 0}' "$log")"
+  acceptance_count="$(grep -Ec '(^|[[:space:]])M4_ACCEPTANCE::PASS($|[[:space:]])' "$log" || true)"
+  provider_count="$(grep -Ec '(^|[[:space:]])M4_PROVIDER_CALLS::0($|[[:space:]])' "$log" || true)"
+  provider_nonzero="$(awk '/M4_PROVIDER_CALLS::/ && $0 !~ /M4_PROVIDER_CALLS::0([[:space:]]|$)/ {count += 1} END {print count + 0}' "$log")"
   bad_status="$(awk -F '::' '/^M4_ROUTE_STATUS::/ {if ($5 !~ /^[2-4][0-9][0-9]$/) count += 1} END {print count + 0}' "$log")"
   [[ "$acceptance_count" -eq 1 ]] || return 1
   [[ "$provider_count" -eq 1 && "$provider_nonzero" -eq 0 ]] || return 1
   [[ "$bad_status" -eq 0 ]] || return 1
-  [[ "$(grep -Ec '^M4_ACCEPTANCE::FAIL($|[[:space:]])' "$log" || true)" -eq 0 ]] || return 1
+  [[ "$(grep -Ec '(^|[[:space:]])M4_ACCEPTANCE::FAIL($|[[:space:]])' "$log" || true)" -eq 0 ]] || return 1
   return 0
 }
 

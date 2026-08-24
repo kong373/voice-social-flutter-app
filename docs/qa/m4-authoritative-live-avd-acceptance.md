@@ -153,10 +153,10 @@ wallet/ledger/orders/gift catalog/withdraw/refund reads, support/compliance,
 vendor-boundary UI, and final product logout. Gift sending, payment launch,
 withdrawal/refund writes, task claims, moderation writes, seat changes, PK
 start, media upload, and every provider invocation are intentionally not
-attempted. Logout is asserted as successful local credential clearing; the
-production controller intentionally swallows a server logout error, so its
-route marker is labeled local-success with an unobserved HTTP status rather
-than inventing a `200`. Each high-risk room write is scoped to a discovered
+attempted. Logout requires both a confirmed backend response and successful
+local credential deletion. If the backend response is not confirmed, local
+credentials are still cleared for safety, but the controller exposes that
+outcome and M4 fails instead of inventing a `200`. Each high-risk room write is scoped to a discovered
 authoritative room and compensated by exit; no fixed fixture ID is used.
 
 Each AVD directory contains:

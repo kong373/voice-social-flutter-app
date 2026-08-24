@@ -573,8 +573,8 @@ run_one() {
   screenshot_count="$(find "$dir/screenshots" -type f -name '*.png' -size +0c | wc -l | tr -d ' ')"
   marker_count="$(awk -F '::' '/M4_ROUTE_STATUS::/ {print $2 "::" $3 "::" $4 "::" $5 "::" $6}' "$dir/logs/flutter-drive.log" | sort -u | wc -l | tr -d ' ')"
   provider_marker_count="$(grep -Ec 'M4_PROVIDER_CALLS::' "$dir/logs/flutter-drive.log" || true)"
-  provider_count="$(grep -Ec '^M4_PROVIDER_CALLS::0($|[[:space:]])' "$dir/logs/flutter-drive.log" || true)"
-  provider_nonzero_count="$(awk '/^M4_PROVIDER_CALLS::/ && $0 !~ /^M4_PROVIDER_CALLS::0([[:space:]]|$)/ {count += 1} END {print count + 0}' "$dir/logs/flutter-drive.log")"
+  provider_count="$(grep -Ec '(^|[[:space:]])M4_PROVIDER_CALLS::0($|[[:space:]])' "$dir/logs/flutter-drive.log" || true)"
+  provider_nonzero_count="$(awk '/M4_PROVIDER_CALLS::/ && $0 !~ /M4_PROVIDER_CALLS::0([[:space:]]|$)/ {count += 1} END {print count + 0}' "$dir/logs/flutter-drive.log")"
   invariant_count="$(grep -Ec 'M4_AUTHORITY_INVARIANT::' "$dir/logs/flutter-drive.log" || true)"
   hard_count="$(cat "$dir/logs/logcat-full.txt" "$dir/logs/flutter-drive.log" | grep -Eci 'FATAL EXCEPTION|AndroidRuntime|Fatal signal [0-9]+|ANR in com\.kong373\.voice_social_app|MissingPluginException|RenderFlex overflow|Unhandled Exception|EXCEPTION CAUGHT BY|Failed assertion' || true)"
   crash_count="$(grep -Eci 'FATAL EXCEPTION|Fatal signal [0-9]+|ANR in com\.kong373\.voice_social_app' "$dir/logs/logcat-full.txt" "$dir/logs/flutter-drive.log" || true)"
@@ -583,8 +583,8 @@ run_one() {
 
   local expected_marker="M4_VIEWPORT::$avd::"$width"x"$height"::$dpr"
   local acceptance_marker
-  acceptance_marker="$(grep -Ec '^M4_ACCEPTANCE::PASS($|[[:space:]])' "$dir/logs/flutter-drive.log" || true)"
-  acceptance_failure_marker="$(grep -Ec '^M4_ACCEPTANCE::FAIL($|[[:space:]])' "$dir/logs/flutter-drive.log" || true)"
+  acceptance_marker="$(grep -Ec '(^|[[:space:]])M4_ACCEPTANCE::PASS($|[[:space:]])' "$dir/logs/flutter-drive.log" || true)"
+  acceptance_failure_marker="$(grep -Ec '(^|[[:space:]])M4_ACCEPTANCE::FAIL($|[[:space:]])' "$dir/logs/flutter-drive.log" || true)"
   bad_route_status_count="$(awk -F '::' '/M4_ROUTE_STATUS::/ {if ($5 !~ /^[2-4][0-9][0-9]$/) count += 1} END {print count + 0}' "$dir/logs/flutter-drive.log")"
   local secret_status='PASS'
   local apk_status='PASS'
