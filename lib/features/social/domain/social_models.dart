@@ -122,7 +122,12 @@ class SocialProfile {
   final int followerCount;
   final int friendCount;
   final int postCount;
-  final int level;
+
+  /// The first-party backend can explicitly report that no authoritative
+  /// global level formula exists. In that state [level] remains null instead
+  /// of manufacturing a numeric value for the UI.
+  final int? level;
+  bool get levelAvailable => level != null;
 
   SocialProfile copyWith({
     SocialUser? user,
@@ -135,7 +140,9 @@ class SocialProfile {
     int? friendCount,
     int? postCount,
     int? level,
+    bool clearLevel = false,
   }) {
+    final int? resolvedLevel = clearLevel ? null : level ?? this.level;
     return SocialProfile(
       user: user ?? this.user,
       account: account,
@@ -147,7 +154,7 @@ class SocialProfile {
       followerCount: followerCount ?? this.followerCount,
       friendCount: friendCount ?? this.friendCount,
       postCount: postCount ?? this.postCount,
-      level: level ?? this.level,
+      level: resolvedLevel,
     );
   }
 }

@@ -188,6 +188,136 @@ void main() {
     },
   );
 
+  test('profile preserves an explicit unavailable level authority', () async {
+    final Map<String, Object?> personal = <String, Object?>{
+      'userId': 10001,
+      'loginName': 'public-10001',
+      'nickName': '新用户',
+      'headImageUrl': '',
+      'sex': 0,
+      'birthday': '',
+    };
+    final Map<String, Object?> homepage = <String, Object?>{
+      'id': 10001,
+      'loginName': 'public-10001',
+      'nickName': '新用户',
+      'signature': '',
+      'headImgUrl': '',
+      'piAddress': '',
+      'sex': 0,
+      'birthday': '',
+      'coverImgUrl': '',
+      'attentionNum': 0,
+      'fansNum': 0,
+      'playmateNum': 0,
+      'dynamicNum': 0,
+      'level': null,
+      'levelAvailable': false,
+      'levelStatus': 'UNAVAILABLE',
+      'isAttention': 0,
+      'isBlacklist': false,
+      'isOnline': 1,
+      'isInRoom': 0,
+      'roomId': '',
+    };
+    final HttpServer server = await _startServer((
+      HttpRequest request,
+      Object? body,
+    ) async {
+      return _reply(
+        request,
+        data: request.uri.path == '/app-api/user/getPersonalData'
+            ? personal
+            : homepage,
+      );
+    });
+    addTearDown(() => server.close(force: true));
+    final BackendSocialRepository repository = BackendSocialRepository(
+      apiClient: _client(server),
+      currentUserIdProvider: () => 10001,
+    );
+
+    final SocialProfile profile = await repository.fetchMyProfile();
+
+    expect(profile.level, isNull);
+    expect(profile.levelAvailable, isFalse);
+    final SocialProfile available = profile.copyWith(level: 3);
+    expect(available.level, 3);
+    expect(available.levelAvailable, isTrue);
+    final SocialProfile unavailable = available.copyWith(clearLevel: true);
+    expect(unavailable.level, isNull);
+    expect(unavailable.levelAvailable, isFalse);
+  });
+
+  test('unavailable level authority fails closed when contradictory', () async {
+    final Map<String, Object?> personal = <String, Object?>{
+      'userId': 10001,
+      'loginName': 'public-10001',
+      'nickName': '新用户',
+      'headImageUrl': '',
+      'sex': 0,
+      'birthday': '',
+    };
+    final Map<String, Object?> baseHomepage = <String, Object?>{
+      'id': 10001,
+      'loginName': 'public-10001',
+      'nickName': '新用户',
+      'signature': '',
+      'headImgUrl': '',
+      'piAddress': '',
+      'sex': 0,
+      'birthday': '',
+      'coverImgUrl': '',
+      'attentionNum': 0,
+      'fansNum': 0,
+      'playmateNum': 0,
+      'dynamicNum': 0,
+      'level': null,
+      'levelAvailable': false,
+      'levelStatus': 'UNAVAILABLE',
+      'isAttention': 0,
+      'isBlacklist': false,
+      'isOnline': 1,
+      'isInRoom': 0,
+      'roomId': '',
+    };
+    final List<Map<String, Object?>> malformed = <Map<String, Object?>>[
+      <String, Object?>{...baseHomepage}..remove('levelAvailable'),
+      <String, Object?>{...baseHomepage}..remove('levelStatus'),
+      <String, Object?>{...baseHomepage, 'levelAvailable': true},
+      <String, Object?>{...baseHomepage, 'levelStatus': 'AVAILABLE'},
+      <String, Object?>{...baseHomepage, 'level': 1, 'levelAvailable': false},
+    ];
+    final HttpServer server = await _startServer((
+      HttpRequest request,
+      Object? body,
+    ) async {
+      if (request.uri.path == '/app-api/user/getPersonalData') {
+        return _reply(request, data: personal);
+      }
+      return _reply(request, data: malformed.removeAt(0));
+    });
+    addTearDown(() => server.close(force: true));
+    final BackendSocialRepository repository = BackendSocialRepository(
+      apiClient: _client(server),
+      currentUserIdProvider: () => 10001,
+    );
+
+    for (int index = 0; index < 5; index += 1) {
+      await expectLater(
+        repository.fetchMyProfile(),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+    }
+    expect(malformed, isEmpty);
+  });
+
   test(
     'social writes reuse one id after ambiguity and rotate for a new intent',
     () async {
@@ -1218,6 +1348,8 @@ void main() {
 
     final SocialProfile fallback = await repository.fetchMyProfile();
     expect(fallback.user.userId, 10001);
+    expect(fallback.level, isNull);
+    expect(fallback.levelAvailable, isFalse);
     for (final int status in homepageStatuses.skip(1)) {
       await expectLater(
         repository.fetchMyProfile(),

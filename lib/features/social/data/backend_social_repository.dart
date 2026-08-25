@@ -832,7 +832,8 @@ class BackendSocialRepository implements SocialRepository {
     final int followerCount;
     final int friendCount;
     final int postCount;
-    final int level;
+    final int? level;
+    final bool levelAvailable;
     final bool isFollowing;
     final bool isFriend;
     final bool isBlocked;
@@ -859,7 +860,41 @@ class BackendSocialRepository implements SocialRepository {
       followerCount = _requiredNonNegativeInt(homepage, 'fansNum');
       friendCount = _requiredNonNegativeInt(homepage, 'playmateNum');
       postCount = _requiredNonNegativeInt(homepage, 'dynamicNum');
-      level = _requiredNonNegativeInt(homepage, 'level');
+      final Object? rawLevel = homepage['level'];
+      if (!homepage.containsKey('level')) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '用户主页响应缺少 level 权威状态',
+        );
+      }
+      if (rawLevel == null) {
+        levelAvailable = _requiredBool(homepage, 'levelAvailable');
+        final String levelStatus = _requiredNonEmptyString(
+          homepage,
+          'levelStatus',
+        );
+        if (levelAvailable || levelStatus != 'UNAVAILABLE') {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '用户主页响应 level 不可用状态不一致',
+          );
+        }
+        level = null;
+      } else {
+        level = _requiredNonNegativeInt(homepage, 'level');
+        levelAvailable = homepage.containsKey('levelAvailable')
+            ? _requiredBool(homepage, 'levelAvailable')
+            : true;
+        if (!levelAvailable ||
+            (homepage.containsKey('levelStatus') &&
+                _requiredNonEmptyString(homepage, 'levelStatus') !=
+                    'AVAILABLE')) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '用户主页响应 level 可用状态不一致',
+          );
+        }
+      }
       final int relationCode = _requiredInt(homepage, 'isAttention');
       if (relationCode < 0 || relationCode > 2) {
         throw const ApiException(
@@ -902,7 +937,8 @@ class BackendSocialRepository implements SocialRepository {
       followerCount = 0;
       friendCount = 0;
       postCount = 0;
-      level = 0;
+      level = null;
+      levelAvailable = false;
       isFollowing = false;
       isFriend = false;
       isBlocked = false;
