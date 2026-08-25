@@ -3114,9 +3114,15 @@ Future<void> _waitForAuthenticatedHome(
   if (find.byKey(const Key('live-home-ready')).evaluate().isNotEmpty) {
     return;
   }
+  final Finder preflightError = find.byKey(
+    const Key('account-access-gate-error'),
+  );
+  final String preflightDetail = preflightError.evaluate().isEmpty
+      ? ''
+      : tester.widget<Text>(preflightError).data?.trim() ?? '';
   final String failureState = controller.errorMessage != null
       ? 'auth_error'
-      : find.byKey(const Key('account-access-gate-error')).evaluate().isNotEmpty
+      : preflightError.evaluate().isNotEmpty
       ? 'account_preflight_error'
       : find.byKey(const Key('account-restricted-status')).evaluate().isNotEmpty
       ? 'account_restricted'
@@ -3127,7 +3133,8 @@ Future<void> _waitForAuthenticatedHome(
       : 'unknown_gate';
   throw TestFailure(
     'Authentication did not reach the live home: '
-    'stage=${controller.stage.name}, state=$failureState.',
+    'stage=${controller.stage.name}, state=$failureState'
+    '${preflightDetail.isEmpty ? '' : ', detail=$preflightDetail'}.',
   );
 }
 

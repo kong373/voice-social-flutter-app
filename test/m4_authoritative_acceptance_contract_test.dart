@@ -203,6 +203,11 @@ void main() {
     expect(integrationSource, contains('sha256.convert'));
     expect(integrationSource, contains('m4-runtime-relay-token'));
     expect(integrationSource, contains('HttpHeaders.authorizationHeader'));
+    expect(
+      integrationSource,
+      contains("', detail=\$preflightDetail'"),
+      reason: 'live gate failures must retain their user-visible diagnosis',
+    );
   });
 
   test('cold-start emulator discovery restores adb whitespace parsing', () {
