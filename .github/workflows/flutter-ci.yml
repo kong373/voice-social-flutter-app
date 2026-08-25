@@ -136,6 +136,7 @@ jobs:
             format.log
             analyze.log
             test.log
+            test/failures/
             coverage/
             ci-evidence/
           if-no-files-found: warn
