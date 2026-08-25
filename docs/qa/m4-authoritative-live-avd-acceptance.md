@@ -252,7 +252,8 @@ export QA_BACKEND_SHA="$(git -C "$QA_BACKEND_REPO" rev-parse HEAD)"
 export QA_M4_FIXTURE_ID="m4-fresh-YYYYMMDD"
 export QA_M4_FIXTURE_STATUS="fresh_dedicated"
 # QA_M4_FIXTURE_ID is passed as a non-secret dart-define only. The integration
-# test derives nickname m4-<first-16-lowercase-hex-of-sha256(fixture-id)>.
+# test derives nickname m4-<first-13-lowercase-hex-of-sha256(fixture-id)>;
+# the prefix plus digest is exactly the registration UI's 16-character limit.
 # QA_LIVE_PHONE, QA_OAUTH_CLIENT_ID, QA_DB_EVIDENCE_URL, and
 # QA_DB_EVIDENCE_TOKEN come from the protected runner environment.
 

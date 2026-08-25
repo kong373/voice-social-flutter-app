@@ -102,7 +102,7 @@ SCOPED_COUNTER_KEYS = (
     "operation_idempotency_actor",
 )
 FIXTURE_ID_RE = re.compile(r"^m4-fresh-[A-Za-z0-9_.:-]{1,64}$")
-FIXTURE_NICKNAME_RE = re.compile(r"^m4-[0-9a-f]{16}$")
+FIXTURE_NICKNAME_RE = re.compile(r"^m4-[0-9a-f]{13}$")
 REQUIRED_INVARIANT_KEYS = frozenset(
     {
         "core_schema_present",
@@ -150,7 +150,7 @@ def _fixture_nickname(fixture_id: str) -> str:
     if not FIXTURE_ID_RE.fullmatch(fixture_id):
         raise EvidenceError("invalid fixture id")
     digest = hashlib.sha256(fixture_id.encode("utf-8")).hexdigest()
-    nickname = "m4-" + digest[:16]
+    nickname = "m4-" + digest[:13]
     if not FIXTURE_NICKNAME_RE.fullmatch(nickname):
         raise EvidenceError("fixture nickname derivation failed")
     return nickname
@@ -446,7 +446,7 @@ valid_name() {
 
 fixture_nickname="\${M4_FIXTURE_NICKNAME:-m4-no-fixture}"
 case "\$fixture_nickname" in
-  m4-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+  m4-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
   m4-no-fixture) ;;
   *) exit 29 ;;
 esac

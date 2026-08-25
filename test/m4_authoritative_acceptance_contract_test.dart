@@ -19,6 +19,9 @@ void main() {
   final String integrationSource = File(
     'integration_test/m4_first_party_live_integration_test.dart',
   ).readAsStringSync();
+  final String registrationSource = File(
+    'lib/features/account/presentation/registration_page.dart',
+  ).readAsStringSync();
   const String flutterSha = '1111111111111111111111111111111111111111';
   const String backendSha = '2222222222222222222222222222222222222222';
   const String androidHostSha =
@@ -824,6 +827,19 @@ printf 'sdk.dir=/development/android\nflutter.sdk=/development/flutter\n' >"$tar
       expect(runnerSource, contains('--dart-define=QA_M4_FIXTURE_ID'));
     },
   );
+
+  test('fixture nickname fits the registration UI limit end to end', () {
+    final String helperSource = dbEvidenceHelper.readAsStringSync();
+    expect(registrationSource, contains('maxLength: 16'));
+    expect(integrationSource, contains("RegExp(r'^m4-[0-9a-f]{13}\$')"));
+    expect(integrationSource, contains('digest.substring(0, 13)'));
+    expect(
+      helperSource,
+      contains('FIXTURE_NICKNAME_RE = re.compile(r"^m4-[0-9a-f]{13}\$")'),
+    );
+    expect(helperSource, contains('digest[:13]'));
+    expect(acceptanceDocSource, contains('first-13-lowercase-hex-of-sha256'));
+  });
 
   test(
     'bundled DB evidence helper is self-contained and passes its self-test',

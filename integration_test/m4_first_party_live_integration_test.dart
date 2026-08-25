@@ -93,7 +93,7 @@ void main() {
     (WidgetTester tester) async {
       final _M4Evidence evidence = _M4Evidence(avd: qaAvdId, binding: binding);
       final String fixtureNickname = _fixtureNickname();
-      expect(fixtureNickname, matches(RegExp(r'^m4-[0-9a-f]{16}$')));
+      expect(fixtureNickname, matches(RegExp(r'^m4-[0-9a-f]{13}$')));
       final _RuntimeConfig config = await _fetchRuntimeConfig();
       final AppEnvironment environment = _liveEnvironment(config.oauthClientId);
       environment.validateLiveConfiguration();
@@ -440,7 +440,7 @@ String _fixtureNickname() {
     throw TestFailure('M4 fixture identity is missing or invalid.');
   }
   final String digest = sha256.convert(utf8.encode(_fixtureId)).toString();
-  return 'm4-${digest.substring(0, 16)}';
+  return 'm4-${digest.substring(0, 13)}';
 }
 
 Future<_RuntimeConfig> _fetchRuntimeConfig() async {
