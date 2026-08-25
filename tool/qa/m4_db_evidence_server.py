@@ -488,7 +488,7 @@ scoped_count() {
   column="\$3"
   value=0
   if [ "\$fixture_account_count" -gt 0 ] && [ "\$(table_exists "\$table")" = 1 ] && column_exists "\$table" "\$column" && [ "\$(table_exists m4_development_fixture_user)" = 1 ] && [ "\$(table_exists app_user)" = 1 ]; then
-    value="\$(mysql_query "SELECT COUNT(*) FROM \$table WHERE \$column IN (SELECT f.user_id FROM m4_development_fixture_user f JOIN app_user u ON u.id = f.user_id WHERE u.nickname = '\$fixture_nickname'")"
+    value="\$(mysql_query "SELECT COUNT(*) FROM \$table WHERE \$column IN (SELECT f.user_id FROM m4_development_fixture_user f JOIN app_user u ON u.id = f.user_id WHERE u.nickname = '\$fixture_nickname')")"
     case "\$value" in *[!0-9]*|"") exit 35 ;; esac
   fi
   printf 'S|%s|%s\n' "\$label" "\$value"
@@ -1198,6 +1198,9 @@ class EvidenceServer(http.server.ThreadingHTTPServer):
 
 def _self_test() -> int:
     token = "A9" * 32
+    scoped_sql_closure = "WHERE u.nickname = '$fixture_nickname')"
+    if MYSQL_EVIDENCE_SCRIPT.count(scoped_sql_closure) != 1:
+        raise AssertionError("fixture-scoped SQL subquery is not closed exactly once")
     if not _constant_time_equal(token, token) or _constant_time_equal(token, "B" * 64):
         raise AssertionError("constant-time token helper failed")
     if not _valid_bearer_header(["Bearer " + token], token):
