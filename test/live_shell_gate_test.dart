@@ -56,6 +56,7 @@ void main() {
     WidgetTester tester, {
     required ThemeData outerTheme,
     AppDependencies? scopeDependencies,
+    Future<void> Function()? onSignOut,
   }) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
@@ -76,7 +77,7 @@ void main() {
             body: VideoRuntimeAccountPage(
               dependencies: dependencies,
               onOpenRoom: (_) {},
-              onSignOut: () async {},
+              onSignOut: onSignOut ?? () async {},
               profileRepository: _LiveProfileRepository(),
               liveReadOnlyRepository: _DeterministicLiveReadOnlyRepository(),
             ),
@@ -120,7 +121,13 @@ void main() {
     testWidgets(
       'live account root keeps real profile entry points in ${themeCase.name}',
       (WidgetTester tester) async {
-        await pumpLiveAccountRoot(tester, outerTheme: themeCase.theme);
+        var signOutCalls = 0;
+        await pumpLiveAccountRoot(
+          tester,
+          outerTheme: themeCase.theme,
+          scopeDependencies: AppDependencies.mock(),
+          onSignOut: () async => signOutCalls += 1,
+        );
 
         expect(find.byType(VideoRuntimeAccountPage), findsOneWidget);
         expect(find.byKey(const Key('live-account-overview')), findsNothing);
@@ -137,6 +144,19 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.byType(PersonalCenterPage), findsOneWidget);
+        final Finder logout = find.text('退出登录');
+        await tester.scrollUntilVisible(
+          logout,
+          240,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(logout.hitTestable());
+        await tester.pumpAndSettle();
+
+        expect(signOutCalls, 1);
+        expect(find.byType(PersonalCenterPage), findsNothing);
+        expect(find.byKey(const Key('video-runtime-account')), findsOneWidget);
       },
     );
 

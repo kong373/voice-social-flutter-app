@@ -58,9 +58,16 @@ class _PersonalCenterPageState extends State<PersonalCenterPage> {
   Future<void> _signOut() async {
     setState(() => _signingOut = true);
     await widget.onSignOut();
-    if (mounted) {
-      setState(() => _signingOut = false);
+    if (!mounted) {
+      return;
     }
+    final NavigatorState navigator = Navigator.of(context);
+    setState(() => _signingOut = false);
+    // Authentication state is owned by AppGate on the first route. Leaving a
+    // pushed account page above it would keep authenticated UI visible after
+    // local credentials have been cleared (or hide session recovery). Always
+    // reveal the gate that reflects the authoritative sign-out outcome.
+    navigator.popUntil((Route<dynamic> route) => route.isFirst);
   }
 
   @override
