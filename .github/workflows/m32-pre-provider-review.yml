@@ -57,6 +57,12 @@ jobs:
           test "${#dart_files[@]}" -gt 0
           dart format --output=none --set-exit-if-changed "${dart_files[@]}"
 
+      - name: Validate deterministic M3.2 contract server
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 tool/qa/m32_review_contract_server_test.py
+
       - name: Verify public-client and provider-secret hygiene
         shell: bash
         run: |

@@ -31,7 +31,9 @@ REFRESH = "/app-register-api/userAccount/v1/refreshSession"
 LOGOUT = "/app-register-api/userAccount/v1/logout"
 HOME = "/app-api/rooms/v1/getRecommendRooms"
 SEARCH = "/app-api/es/getSearchESResult"
-ROOM = "/app-api/rooms/getRoomById"
+LEGACY_ROOM_SNAPSHOT = "/app-api/rooms/getRoomById"
+ENTER_ROOM = "/app-room-api/room/com/v1/enterRoom"
+EXIT_ROOM = "/app-room-api/room/com/v1/exitRoom"
 CURRENT_USER = "/app-register-api/userAccount/v1/current"
 PERSONAL_DATA = "/app-api/user/getPersonalData"
 YOUTH_MODE = "/app-api/user/other/getMatchButtonAndYouthMode"
@@ -52,7 +54,8 @@ REQUIRED_ENDPOINTS = {
     LOGIN,
     HOME,
     SEARCH,
-    ROOM,
+    ENTER_ROOM,
+    EXIT_ROOM,
     CURRENT_USER,
     PERSONAL_DATA,
     YOUTH_MODE,
@@ -128,7 +131,7 @@ class ServerState:
     def _snapshot_locked(self) -> dict[str, Any]:
         missing = sorted(REQUIRED_ENDPOINTS - self.observed)
         return {
-            "contractVersion": "m3.2-review-contract-v2",
+            "contractVersion": "m3.2-review-contract-v3",
             "providerCallsMade": False,
             "publicClientSecretObserved": False,
             "developmentOutboxSecretObserved": False,
@@ -149,7 +152,7 @@ class ServerState:
 
 
 class ContractHandler(BaseHTTPRequestHandler):
-    server_version = "VoiceSocialM32Review/2.0"
+    server_version = "VoiceSocialM32Review/3.0"
     protocol_version = "HTTP/1.1"
 
     @property
@@ -317,6 +320,8 @@ class ContractHandler(BaseHTTPRequestHandler):
             return "PUBLIC_AUTH_ENDPOINT_MUST_NOT_SEND_BEARER"
 
         expected_method = {
+            ENTER_ROOM: "POST",
+            EXIT_ROOM: "POST",
             PERSONAL_DATA: "GET",
             YOUTH_MODE: "GET",
             ACCOUNT_CANCELLATION: "GET",
@@ -326,6 +331,15 @@ class ContractHandler(BaseHTTPRequestHandler):
         }.get(path)
         if expected_method is not None and self.command != expected_method:
             return f"{path}_REQUIRES_{expected_method}"
+        if path in {ENTER_ROOM, EXIT_ROOM}:
+            if not isinstance(body, dict):
+                return f"{path}_REQUIRES_JSON_OBJECT"
+            if body.get("roomId") != "880217":
+                return f"{path}_ROOM_ID_INVALID"
+            if not headers.get("x-request-id"):
+                return f"{path}_REQUEST_ID_REQUIRED"
+        if path == ENTER_ROOM and body.get("source") != 0:
+            return "ENTER_ROOM_SOURCE_INVALID"
         if path == ACCOUNT_REAL_NAME:
             if self.command not in {"GET", "POST"}:
                 return "ACCOUNT_REAL_NAME_REQUIRES_GET_OR_POST"
@@ -455,8 +469,8 @@ class ContractHandler(BaseHTTPRequestHandler):
                 "pageNo": 1,
                 "pageSize": 20,
             }
-        if path == ROOM:
-            if query.get("roomId", [""])[0] != "880217":
+        if path in {LEGACY_ROOM_SNAPSHOT, ENTER_ROOM}:
+            if path == LEGACY_ROOM_SNAPSHOT and query.get("roomId", [""])[0] != "880217":
                 raise KeyError(path)
             seats = [
                 {
@@ -485,6 +499,12 @@ class ContractHandler(BaseHTTPRequestHandler):
                 "realtimeMode": "HTTP_SNAPSHOT_ONLY",
                 "rtcStatus": "VENDOR_BLOCKED",
                 "imStatus": "VENDOR_BLOCKED",
+            }
+        if path == EXIT_ROOM:
+            return {
+                "roomId": "880217",
+                "exited": True,
+                "status": "EXITED",
             }
         if path == CURRENT_USER:
             return {

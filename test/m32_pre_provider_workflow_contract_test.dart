@@ -6,6 +6,9 @@ void main() {
   final String workflow = File(
     '.github/workflows/m32-pre-provider-review.yml',
   ).readAsStringSync();
+  final String contractServer = File(
+    'tool/qa/m32_review_contract_server.py',
+  ).readAsStringSync();
 
   test('M3.2 review workflow pins every action to an immutable commit', () {
     for (final String pinnedAction in <String>[
@@ -29,5 +32,29 @@ void main() {
     expect(workflow, isNot(contains('target: google_apis')));
     expect(workflow, contains('disable-animations: true'));
     expect(workflow, contains('disable-spellchecker: true'));
+  });
+
+  test('M3.2 room flow follows the authoritative lifecycle contract', () {
+    expect(
+      workflow,
+      contains('python3 tool/qa/m32_review_contract_server_test.py'),
+    );
+    expect(
+      contractServer,
+      contains('ENTER_ROOM = "/app-room-api/room/com/v1/enterRoom"'),
+    );
+    expect(
+      contractServer,
+      contains('EXIT_ROOM = "/app-room-api/room/com/v1/exitRoom"'),
+    );
+    expect(
+      contractServer,
+      contains('"contractVersion": "m3.2-review-contract-v3"'),
+    );
+    expect(
+      contractServer,
+      contains('if path in {LEGACY_ROOM_SNAPSHOT, ENTER_ROOM}:'),
+    );
+    expect(contractServer, contains('if path == EXIT_ROOM:'));
   });
 }
