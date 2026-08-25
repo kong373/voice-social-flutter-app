@@ -1569,6 +1569,7 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
                     ),
                     const Spacer(),
                     _RoundHeaderButton(
+                      key: const Key('open-personal-center'),
                       icon: Icons.settings_outlined,
                       tooltip: '设置',
                       onTap: () =>

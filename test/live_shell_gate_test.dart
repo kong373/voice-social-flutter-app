@@ -131,8 +131,9 @@ void main() {
         expect(find.text('通知中心'), findsOneWidget);
         expect(find.text('帮助与反馈'), findsOneWidget);
         expect(find.text('开发环境接入诊断'), findsOneWidget);
+        expect(find.byKey(const Key('open-personal-center')), findsOneWidget);
 
-        await tester.tap(find.byTooltip('设置'));
+        await tester.tap(find.byKey(const Key('open-personal-center')));
         await tester.pumpAndSettle();
 
         expect(find.byType(PersonalCenterPage), findsOneWidget);

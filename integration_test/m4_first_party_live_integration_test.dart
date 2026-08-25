@@ -26,7 +26,6 @@ import 'package:voice_social_app/features/room/presentation/room_page.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
 import 'package:voice_social_app/features/shell/live_read_only_repository.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
-import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 import 'm2_4_test_support.dart';
 
@@ -380,7 +379,7 @@ void main() {
 
       // The final UI action is a real logout. It is safe and idempotent; no
       // vendor call is made by AuthController.signOut.
-      await _openPersonalCenterForLogout(tester, dependencies);
+      await _openPersonalCenterForLogout(tester);
       final Finder logout = find.text('退出登录').hitTestable();
       expect(logout, findsOneWidget);
       await tester.tap(logout);
@@ -2964,13 +2963,10 @@ Future<void> _runComplianceAndSupportFlow(
   }
 }
 
-Future<void> _openPersonalCenterForLogout(
-  WidgetTester tester,
-  AppDependencies dependencies,
-) async {
-  // The personal center is also the product-owned logout surface. It is
-  // opened through the account page's visible privacy/security entry, so the
-  // test does not manipulate secure storage directly.
+Future<void> _openPersonalCenterForLogout(WidgetTester tester) async {
+  // The personal center is the product-owned logout surface. First revisit
+  // the account compliance route, then return and open the visible settings
+  // entry; the test never manipulates secure storage directly.
   await tester.tap(find.text('我的').last.hitTestable());
   await _waitFor(
     tester,
@@ -2990,21 +2986,29 @@ Future<void> _openPersonalCenterForLogout(
   );
   await tester.pageBack();
   await tester.pumpAndSettle();
-  // The account page itself may retain its scroll offset. Push the product's
-  // own personal-center route from the visible account shell, then exercise
-  // its real logout control. No secure-storage value is manipulated here.
+  // The account page retains its scroll offset after returning from the
+  // compliance hub. Reset the real product scroll surface, then use its
+  // visible settings action to enter the personal center. No route, session,
+  // or secure-storage state is injected by the test.
   final Finder accountPage = find.byKey(const Key('video-runtime-account'));
-  if (accountPage.evaluate().isNotEmpty) {
-    final NavigatorState navigator = Navigator.of(tester.element(accountPage));
-    await navigator.push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => PersonalCenterPage(
-          session: dependencies.sessionManager.session,
-          onSignOut: dependencies.authController.signOut,
-        ),
-      ),
-    );
-  }
+  expect(accountPage, findsOneWidget);
+  final Finder accountScrollable = find.descendant(
+    of: accountPage,
+    matching: find.byType(Scrollable),
+  );
+  expect(accountScrollable, findsOneWidget);
+  final ScrollableState scrollable = tester.state<ScrollableState>(
+    accountScrollable,
+  );
+  scrollable.position.jumpTo(scrollable.position.minScrollExtent);
+  await tester.pumpAndSettle();
+  final Finder personalCenter = find.byKey(const Key('open-personal-center'));
+  await _waitFor(
+    tester,
+    () => personalCenter.hitTestable().evaluate().isNotEmpty,
+    description: 'visible personal center action after account scroll reset',
+  );
+  await tester.tap(personalCenter.hitTestable());
   await _waitFor(
     tester,
     () => find.text('退出登录').evaluate().isNotEmpty,
