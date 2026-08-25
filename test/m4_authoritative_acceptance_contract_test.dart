@@ -692,6 +692,34 @@ printf 'sdk.dir=/development/android\nflutter.sdk=/development/flutter\n' >"$tar
       expect(secretOutput.statSync().type, FileSystemEntityType.file);
       secretOutput.deleteSync();
 
+      final File androidNumericLog =
+          File('${evidence.path}/android-numeric.log')..writeAsStringSync(
+            'iccId=89860313999999999897 timestamp=313999999999\n',
+          );
+      final ProcessResult androidNumericResult = runScanner(
+        mode: 'secret',
+        projectRoot: fixture,
+        target: evidence,
+      );
+      expect(
+        androidNumericResult.exitCode,
+        0,
+        reason:
+            '${androidNumericResult.stdout}\n${androidNumericResult.stderr}',
+      );
+      androidNumericLog.writeAsStringSync('phone=13999999999\n');
+      final ProcessResult standalonePhoneResult = runScanner(
+        mode: 'secret',
+        projectRoot: fixture,
+        target: evidence,
+      );
+      expect(standalonePhoneResult.exitCode, isNot(0));
+      expect(
+        File('${evidence.path}/secret-scan.txt').readAsStringSync(),
+        contains('credential_like_value_found=true'),
+      );
+      androidNumericLog.deleteSync();
+
       final Directory apkOutput = Directory(
         '${fixture.path}/build/app/outputs/flutter-apk',
       )..createSync(recursive: true);

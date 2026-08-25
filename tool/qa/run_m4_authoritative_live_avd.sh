@@ -1068,7 +1068,7 @@ path_contains_protected_value() {
     "$RELAY_TOKEN_A" "$RELAY_TOKEN_B"; do
     [[ -z "$protected_value" || "$path" != *"$protected_value"* ]] || return 0
   done
-  [[ "$path" =~ 1[3-9][0-9]{9} ]] && return 0
+  [[ "$path" =~ (^|[^0-9])1[3-9][0-9]{9}([^0-9]|$) ]] && return 0
   return 1
 }
 
@@ -1177,7 +1177,7 @@ secret_scan() {
         fi
       fi
     done
-    if grep -aEiq '1[3-9][0-9]{9}|Bearer[[:space:]]+[A-Za-z0-9._~+/=-]{12,}' "$path" 2>/dev/null; then
+    if grep -aEiq '(^|[^0-9])1[3-9][0-9]{9}([^0-9]|$)|Bearer[[:space:]]+[A-Za-z0-9._~+/=-]{12,}' "$path" 2>/dev/null; then
       printf 'credential_like_value_found=true\n' >>"$output" || return 1
       bad=1
     else
