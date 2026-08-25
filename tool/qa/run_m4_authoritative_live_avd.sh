@@ -748,7 +748,7 @@ device_for_api() {
   # delimiter only for this parser so a cold-started emulator is discoverable.
   while IFS=$' \t' read -r serial _state; do
     [[ "$serial" == emulator-* ]] || continue
-    sdk="$(adb -s "$serial" shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r')"
+    sdk="$(adb -s "$serial" shell getprop ro.build.version.sdk </dev/null 2>/dev/null | tr -d '\r')"
     [[ "$sdk" == "$1" ]] && { printf '%s\n' "$serial"; return 0; }
   done < <(adb devices | awk 'NR > 1 && $2 == "device" {print $1, $2}')
   return 1

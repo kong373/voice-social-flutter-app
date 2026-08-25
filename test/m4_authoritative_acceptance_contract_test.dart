@@ -385,9 +385,51 @@ exit "\$status"
     );
   });
 
-  test('cold-start emulator discovery restores adb whitespace parsing', () {
+  test('multi-device emulator discovery preserves unread device rows', () {
     expect(runnerSource, contains("while IFS=\$' \\t' read -r serial _state"));
     expect(runnerSource, isNot(contains('while read -r serial _state; do')));
+    expect(
+      runnerSource,
+      contains('getprop ro.build.version.sdk </dev/null 2>/dev/null'),
+    );
+
+    final Directory fixture = Directory.systemTemp.createTempSync(
+      'm4-multi-device-discovery-',
+    );
+    addTearDown(() => fixture.deleteSync(recursive: true));
+    final File adb = File('${fixture.path}/adb')
+      ..writeAsStringSync('''#!/bin/sh
+if [ "\$1" = devices ]; then
+  printf 'List of devices attached\\nemulator-5554\\tdevice\\nemulator-5556\\tdevice\\n\\n'
+  exit 0
+fi
+serial="\$2"
+cat >/dev/null
+case "\$serial" in
+  emulator-5554) printf '36\\r\\n' ;;
+  emulator-5556) printf '35\\r\\n' ;;
+  *) exit 1 ;;
+esac
+''');
+    expect(Process.runSync('chmod', <String>['700', adb.path]).exitCode, 0);
+    final String script =
+        '''
+set -Eeuo pipefail
+IFS=\$'\\n\\t'
+${runnerBlock('device_for_api() {', '\nwait_boot() {')}
+device_for_api 35
+''';
+    final ProcessResult result = Process.runSync(
+      '/bin/bash',
+      <String>['-c', script],
+      environment: <String, String>{
+        ...Platform.environment,
+        'PATH':
+            '${fixture.path}:${Platform.environment['PATH'] ?? '/usr/bin:/bin'}',
+      },
+    );
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect((result.stdout as String).trim(), 'emulator-5556');
   });
 
   test('runner binds a clean Flutter checkout before generated outputs', () {
