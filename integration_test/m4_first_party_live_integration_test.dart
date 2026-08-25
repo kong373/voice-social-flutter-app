@@ -2992,10 +2992,9 @@ Future<void> _openPersonalCenterForLogout(WidgetTester tester) async {
   // or secure-storage state is injected by the test.
   final Finder accountPage = find.byKey(const Key('video-runtime-account'));
   expect(accountPage, findsOneWidget);
-  final Finder accountScrollable = find.descendant(
-    of: accountPage,
-    matching: find.byType(Scrollable),
-  );
+  final Finder accountScrollable = find
+      .descendant(of: accountPage, matching: find.byType(Scrollable))
+      .first;
   expect(accountScrollable, findsOneWidget);
   final ScrollableState scrollable = tester.state<ScrollableState>(
     accountScrollable,

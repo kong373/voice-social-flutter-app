@@ -183,6 +183,47 @@ void main() {
     );
 
     testWidgets(
+      'live account restores the visible personal-center entry after compliance in ${themeCase.name}',
+      (WidgetTester tester) async {
+        await pumpLiveAccountRoot(tester, outerTheme: themeCase.theme);
+
+        final Finder accountPage = find.byKey(
+          const Key('video-runtime-account'),
+        );
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('open-account-compliance')),
+          240,
+          scrollable: find
+              .descendant(of: accountPage, matching: find.byType(Scrollable))
+              .first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('隐私与安全').hitTestable());
+        await tester.pumpAndSettle();
+        expect(find.text('账号与安全'), findsOneWidget);
+
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        final Finder accountScrollable = find
+            .descendant(of: accountPage, matching: find.byType(Scrollable))
+            .first;
+        final ScrollableState scrollable = tester.state<ScrollableState>(
+          accountScrollable,
+        );
+        scrollable.position.jumpTo(scrollable.position.minScrollExtent);
+        await tester.pumpAndSettle();
+
+        final Finder personalCenter = find.byKey(
+          const Key('open-personal-center'),
+        );
+        expect(personalCenter.hitTestable(), findsOneWidget);
+        await tester.tap(personalCenter.hitTestable());
+        await tester.pumpAndSettle();
+        expect(find.byType(PersonalCenterPage), findsOneWidget);
+      },
+    );
+
+    testWidgets(
       'live account root keeps safe commerce reads reachable in ${themeCase.name}',
       (WidgetTester tester) async {
         await pumpLiveAccountRoot(
