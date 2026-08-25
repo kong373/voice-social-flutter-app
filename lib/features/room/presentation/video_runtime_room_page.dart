@@ -623,7 +623,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                         onSubmitted: (_) => _sendMessage(),
                         decoration: InputDecoration(
                           filled: false,
-                          hintText: canChat ? '聊聊天…' : '当前不可发言',
+                          hintText: canChat ? '聊聊天…' : '当前不可发送公屏消息',
                           hintStyle: const TextStyle(
                             color: RoomColors.textSecondary,
                             fontSize: 11,

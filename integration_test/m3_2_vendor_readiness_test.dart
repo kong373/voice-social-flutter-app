@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:voice_social_app/features/commerce/presentation/commerce_pages.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
 import 'package:voice_social_app/main.dart' as app;
 
@@ -164,6 +165,13 @@ void main() {
       await tester.tap(find.byTooltip('离开房间').first.hitTestable());
       await _waitFor(
         tester,
+        () => find.text('结束本次收听').evaluate().isNotEmpty,
+        description: 'leave-room choices',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('结束本次收听'));
+      await _waitFor(
+        tester,
         () => find.text('离开房间？').evaluate().isNotEmpty,
         description: 'leave-room confirmation',
       );
@@ -175,19 +183,15 @@ void main() {
             find.byKey(const Key('live-room-880217')).evaluate().isNotEmpty,
         description: 'home after room snapshot',
       );
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('我的').hitTestable());
+      await tester.tap(find.text('我的').last.hitTestable());
       await _waitFor(
         tester,
-        () =>
-            find
-                .byKey(const Key('live-account-overview'))
-                .evaluate()
-                .isNotEmpty &&
-            find
-                .byKey(const Key('open-vendor-diagnostics'))
-                .evaluate()
-                .isNotEmpty,
+        () => find
+            .byKey(const Key('video-runtime-account'))
+            .evaluate()
+            .isNotEmpty,
         description: 'account overview before developer diagnostics',
       );
       final Finder vendorDiagnostics = find.byKey(
@@ -198,7 +202,8 @@ void main() {
         240,
         scrollable: find.byType(Scrollable).first,
       );
-      await tester.tap(vendorDiagnostics.hitTestable());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('开发环境接入诊断').hitTestable());
       await _waitFor(
         tester,
         () => find
@@ -244,39 +249,31 @@ void main() {
       await _waitFor(
         tester,
         () => find
-            .byKey(const Key('live-account-overview'))
+            .byKey(const Key('video-runtime-account'))
             .evaluate()
             .isNotEmpty,
         description: 'account overview after developer diagnostics',
       );
-      await tester.fling(
-        find.byKey(const Key('live-account-overview')),
-        const Offset(0, 1200),
-        2000,
-      );
-      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('消息').last.hitTestable());
       await _waitFor(
         tester,
         () =>
             find
-                .byKey(const Key('current-user-contract-ready'))
+                .byKey(const Key('video-runtime-messages'))
                 .evaluate()
                 .isNotEmpty &&
             find
-                .byKey(const Key('wallet-contract-ready'))
+                .textContaining('腾讯 IM 实时投递仍为 VENDOR_BLOCKED')
                 .evaluate()
                 .isNotEmpty,
-        description: 'account overview reset after developer diagnostics',
-      );
-
-      await tester.tap(find.text('消息').hitTestable());
-      await _waitFor(
-        tester,
-        () => find.byKey(const Key('im-vendor-blocked')).evaluate().isNotEmpty,
         description: 'IM fail-closed page',
       );
-      expect(find.text('消息服务正在准备'), findsOneWidget);
-      expect(find.textContaining('暂不能收发私聊'), findsOneWidget);
+      expect(find.text('暂无可展示会话'), findsOneWidget);
+      expect(
+        find.textContaining('腾讯 IM 实时投递仍为 VENDOR_BLOCKED'),
+        findsOneWidget,
+      );
       await captureQaScreenshot(
         tester,
         binding,
@@ -284,43 +281,103 @@ void main() {
       );
       await announceQaEvidence(tester, 'M32_IM_FAIL_CLOSED');
 
-      await tester.tap(find.text('我的').hitTestable());
+      await tester.tap(find.text('我的').last.hitTestable());
       await _waitFor(
         tester,
         () =>
             find
-                .byKey(const Key('current-user-contract-ready'))
+                .byKey(const Key('video-runtime-account'))
                 .evaluate()
                 .isNotEmpty &&
             find
-                .byKey(const Key('wallet-contract-ready'))
+                .byKey(const Key('live-account-boundary'))
                 .evaluate()
                 .isNotEmpty,
         description: 'current-user wallet and order overview',
       );
-      expect(find.byKey(const Key('wallet-contract-ready')), findsOneWidget);
-      final Finder order = find.text('P202608180001');
-      await tester.scrollUntilVisible(
-        order,
-        200,
-        scrollable: find.byType(Scrollable).first,
+      final Finder wallet = find.text('钱包').first;
+      await tester.ensureVisible(wallet);
+      await tester.tap(wallet.hitTestable());
+      await _waitFor(
+        tester,
+        () =>
+            find.text('钱包与商城').evaluate().isNotEmpty &&
+            find.text('充值订单').evaluate().isNotEmpty &&
+            find.byType(Scrollable).evaluate().isNotEmpty,
+        description: 'authoritative wallet and commerce content',
       );
+      final Finder commerceScrollable = find
+          .descendant(
+            of: find.byType(CommerceHubPage),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      final Finder paymentBoundary = find.textContaining('微信支付、支付宝和 Apple IAP');
+      await tester.scrollUntilVisible(
+        paymentBoundary,
+        180,
+        scrollable: commerceScrollable,
+      );
+      expect(paymentBoundary, findsOneWidget);
+      final Finder orders = find.text('充值订单');
+      await tester.scrollUntilVisible(
+        orders,
+        -180,
+        scrollable: commerceScrollable,
+      );
+      await tester.tap(orders.hitTestable());
+      await _waitFor(
+        tester,
+        () =>
+            find.text('订单列表').evaluate().isNotEmpty &&
+            find.textContaining('P202608180001').evaluate().isNotEmpty &&
+            find.byType(Scrollable).evaluate().isNotEmpty,
+        description: 'authoritative order list',
+      );
+      final Finder orderScrollable = find
+          .descendant(
+            of: find.byType(OrdersPage),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      final Finder order = find.textContaining('P202608180001');
+      await tester.scrollUntilVisible(order, 200, scrollable: orderScrollable);
       expect(order, findsOneWidget);
-      final Finder paymentBlocked = find.byKey(
-        const Key('payment-initiation-blocked'),
-      );
-      await tester.scrollUntilVisible(
-        paymentBlocked,
-        240,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(paymentBlocked, findsOneWidget);
       await captureQaScreenshot(
         tester,
         binding,
         'm32-${qaAvdId.toLowerCase()}-08-wallet-orders-payment-blocked',
       );
       await announceQaEvidence(tester, 'M32_PAYMENT_READ_ONLY_READY');
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      final Finder accountPage = find.byKey(const Key('video-runtime-account'));
+      expect(accountPage, findsOneWidget);
+      final Finder accountScrollable = find
+          .descendant(of: accountPage, matching: find.byType(Scrollable))
+          .first;
+      final ScrollableState scrollable = tester.state<ScrollableState>(
+        accountScrollable,
+      );
+      scrollable.position.jumpTo(scrollable.position.minScrollExtent);
+      await tester.pumpAndSettle();
+      final Finder personalCenter = find.byKey(
+        const Key('open-personal-center'),
+      );
+      await _waitFor(
+        tester,
+        () => personalCenter.hitTestable().evaluate().isNotEmpty,
+        description: 'visible personal center action',
+      );
+      await tester.tap(personalCenter.hitTestable());
+      await _waitFor(
+        tester,
+        () => find.text('退出登录').evaluate().isNotEmpty,
+        description: 'personal center logout action',
+      );
 
       await tester.ensureVisible(find.text('退出登录'));
       await tester.tap(find.text('退出登录').hitTestable());

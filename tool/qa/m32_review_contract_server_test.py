@@ -6,11 +6,16 @@ from __future__ import annotations
 import unittest
 
 from m32_review_contract_server import (
+    CONVERSATIONS,
     ENTER_ROOM,
     EXIT_ROOM,
     LEGACY_ROOM_SNAPSHOT,
+    ORDERS,
+    PERSONAL_DATA,
+    PUBLIC_MESSAGES,
     PUBLIC_CLIENT_ID,
     REQUIRED_ENDPOINTS,
+    WALLET,
     ContractHandler,
 )
 
@@ -30,6 +35,8 @@ class RoomLifecycleContractTest(unittest.TestCase):
     def test_authoritative_room_lifecycle_is_required(self) -> None:
         self.assertIn(ENTER_ROOM, REQUIRED_ENDPOINTS)
         self.assertIn(EXIT_ROOM, REQUIRED_ENDPOINTS)
+        self.assertIn(PUBLIC_MESSAGES, REQUIRED_ENDPOINTS)
+        self.assertIn(CONVERSATIONS, REQUIRED_ENDPOINTS)
         self.assertNotIn(LEGACY_ROOM_SNAPSHOT, REQUIRED_ENDPOINTS)
 
     def test_enter_room_validates_method_authority_and_source(self) -> None:
@@ -84,6 +91,87 @@ class RoomLifecycleContractTest(unittest.TestCase):
             exited,
             {"roomId": "880217", "exited": True, "status": "EXITED"},
         )
+
+    def test_public_message_history_is_an_authoritative_empty_page(self) -> None:
+        self.handler.command = "GET"
+        self.handler.path = (
+            f"{PUBLIC_MESSAGES}?roomId=880217&pageNum=1&pageSize=50"
+        )
+        self.assertIsNone(
+            self.handler._validate_request(PUBLIC_MESSAGES, self.headers, None)
+        )
+        self.handler.path = f"{PUBLIC_MESSAGES}?roomId=880217&pageNum=2&pageSize=50"
+        self.assertEqual(
+            self.handler._validate_request(PUBLIC_MESSAGES, self.headers, None),
+            "PUBLIC_MESSAGES_PAGE_NUM_INVALID",
+        )
+        self.assertEqual(
+            self.handler._data_for(
+                PUBLIC_MESSAGES,
+                "roomId=880217&pageNum=1&pageSize=50",
+                None,
+            ),
+            {"current": 1, "size": 50, "total": 0, "pages": 0, "list": []},
+        )
+
+    def test_conversation_list_is_first_party_empty_page(self) -> None:
+        self.handler.command = "GET"
+        self.handler.path = f"{CONVERSATIONS}?pageNum=1&pageSize=100"
+        self.assertIsNone(
+            self.handler._validate_request(CONVERSATIONS, self.headers, None)
+        )
+        self.handler.path = f"{CONVERSATIONS}?pageNum=1&pageSize=99"
+        self.assertEqual(
+            self.handler._validate_request(CONVERSATIONS, self.headers, None),
+            "CONVERSATIONS_PAGE_SIZE_INVALID",
+        )
+        self.assertEqual(
+            self.handler._data_for(
+                CONVERSATIONS,
+                "pageNum=1&pageSize=100",
+                None,
+            ),
+            {
+                "pageNum": 1,
+                "pageSize": 100,
+                "total": 0,
+                "pages": 0,
+                "hasMore": False,
+                "list": [],
+            },
+        )
+
+    def test_personal_data_contains_the_profile_fallback_authority(self) -> None:
+        profile = self.handler._data_for(PERSONAL_DATA, "", None)
+        self.assertEqual(profile["userId"], 30001)
+        self.assertEqual(profile["nickName"], "岛民小新")
+        self.assertEqual(profile["headImageUrl"], "")
+        self.assertEqual(profile["sex"], 1)
+        self.assertEqual(profile["birthday"], "1999-04-02")
+
+    def test_wallet_contains_explicit_optional_authority(self) -> None:
+        wallet = self.handler._data_for(WALLET, "", None)
+        self.assertEqual(wallet["balance"], 35.80)
+        self.assertEqual(wallet["frozenBalance"], 0)
+        self.assertEqual(wallet["yesterdayEarnings"], 0)
+        self.assertEqual(wallet["totalWithdraw"], 0)
+        self.assertFalse(wallet["isRealName"])
+        self.assertIsNone(wallet["agentEarnings"])
+        self.assertEqual(wallet["agentEarningsStatus"], "UNAVAILABLE")
+        self.assertIsNone(wallet["superAgentEarnings"])
+        self.assertEqual(wallet["superAgentEarningsStatus"], "UNAVAILABLE")
+
+    def test_orders_echo_the_authoritative_requested_page_size(self) -> None:
+        for page_size in (20, 50):
+            orders = self.handler._data_for(
+                ORDERS,
+                "",
+                {"pageNum": 1, "pageSize": page_size},
+            )
+            self.assertEqual(orders["current"], 1)
+            self.assertEqual(orders["pageSize"], page_size)
+            self.assertEqual(orders["total"], 1)
+            self.assertEqual(orders["list"][0]["orderNo"], "P202608180001")
 
 
 if __name__ == "__main__":

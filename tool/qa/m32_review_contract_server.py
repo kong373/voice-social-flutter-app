@@ -34,6 +34,8 @@ SEARCH = "/app-api/es/getSearchESResult"
 LEGACY_ROOM_SNAPSHOT = "/app-api/rooms/getRoomById"
 ENTER_ROOM = "/app-room-api/room/com/v1/enterRoom"
 EXIT_ROOM = "/app-room-api/room/com/v1/exitRoom"
+PUBLIC_MESSAGES = "/app-mini-api/mini/v1/rooms/public-messages"
+CONVERSATIONS = "/app-mini-api/mini/v1/message/conversations"
 CURRENT_USER = "/app-register-api/userAccount/v1/current"
 PERSONAL_DATA = "/app-api/user/getPersonalData"
 YOUTH_MODE = "/app-api/user/other/getMatchButtonAndYouthMode"
@@ -56,6 +58,8 @@ REQUIRED_ENDPOINTS = {
     SEARCH,
     ENTER_ROOM,
     EXIT_ROOM,
+    PUBLIC_MESSAGES,
+    CONVERSATIONS,
     CURRENT_USER,
     PERSONAL_DATA,
     YOUTH_MODE,
@@ -322,6 +326,8 @@ class ContractHandler(BaseHTTPRequestHandler):
         expected_method = {
             ENTER_ROOM: "POST",
             EXIT_ROOM: "POST",
+            PUBLIC_MESSAGES: "GET",
+            CONVERSATIONS: "GET",
             PERSONAL_DATA: "GET",
             YOUTH_MODE: "GET",
             ACCOUNT_CANCELLATION: "GET",
@@ -340,6 +346,20 @@ class ContractHandler(BaseHTTPRequestHandler):
                 return f"{path}_REQUEST_ID_REQUIRED"
         if path == ENTER_ROOM and body.get("source") != 0:
             return "ENTER_ROOM_SOURCE_INVALID"
+        if path == PUBLIC_MESSAGES:
+            query = parse_qs(urlparse(self.path).query)
+            if query.get("roomId") != ["880217"]:
+                return "PUBLIC_MESSAGES_ROOM_ID_INVALID"
+            if query.get("pageNum") != ["1"]:
+                return "PUBLIC_MESSAGES_PAGE_NUM_INVALID"
+            if query.get("pageSize") != ["50"]:
+                return "PUBLIC_MESSAGES_PAGE_SIZE_INVALID"
+        if path == CONVERSATIONS:
+            query = parse_qs(urlparse(self.path).query)
+            if query.get("pageNum") != ["1"]:
+                return "CONVERSATIONS_PAGE_NUM_INVALID"
+            if query.get("pageSize") != ["100"]:
+                return "CONVERSATIONS_PAGE_SIZE_INVALID"
         if path == ACCOUNT_REAL_NAME:
             if self.command not in {"GET", "POST"}:
                 return "ACCOUNT_REAL_NAME_REQUIRES_GET_OR_POST"
@@ -506,6 +526,23 @@ class ContractHandler(BaseHTTPRequestHandler):
                 "exited": True,
                 "status": "EXITED",
             }
+        if path == PUBLIC_MESSAGES:
+            return {
+                "current": 1,
+                "size": 50,
+                "total": 0,
+                "pages": 0,
+                "list": [],
+            }
+        if path == CONVERSATIONS:
+            return {
+                "pageNum": 1,
+                "pageSize": 100,
+                "total": 0,
+                "pages": 0,
+                "hasMore": False,
+                "list": [],
+            }
         if path == CURRENT_USER:
             return {
                 "userId": 30001,
@@ -520,6 +557,9 @@ class ContractHandler(BaseHTTPRequestHandler):
                 "userId": 30001,
                 "loginName": "13800138000",
                 "nickName": "岛民小新",
+                "headImageUrl": "",
+                "sex": 1,
+                "birthday": "1999-04-02",
             }
         if path == YOUTH_MODE:
             return {
@@ -580,8 +620,23 @@ class ContractHandler(BaseHTTPRequestHandler):
                 "frozenBalanceMinor": 0,
                 "frozenBalance": 0,
                 "totalEarnings": 0,
+                "yesterdayEarnings": 0,
+                "totalWithdraw": 0,
+                "isRealName": False,
+                "agentEarnings": None,
+                "agentEarningsStatus": "UNAVAILABLE",
+                "superAgentEarnings": None,
+                "superAgentEarningsStatus": "UNAVAILABLE",
             }
         if path == ORDERS:
+            if not isinstance(body, dict):
+                raise ValueError("ORDERS_REQUIRES_JSON_OBJECT")
+            page_num = body.get("pageNum")
+            page_size = body.get("pageSize")
+            if not isinstance(page_num, int) or page_num != 1:
+                raise ValueError("ORDERS_PAGE_NUM_INVALID")
+            if not isinstance(page_size, int) or page_size <= 0:
+                raise ValueError("ORDERS_PAGE_SIZE_INVALID")
             return {
                 "list": [
                     {
@@ -594,8 +649,8 @@ class ContractHandler(BaseHTTPRequestHandler):
                         "createDate": "2026-08-18T12:00:00Z",
                     }
                 ],
-                "current": 1,
-                "pageSize": 20,
+                "current": page_num,
+                "pageSize": page_size,
                 "total": 1,
             }
         if path == VENDOR_READINESS:
