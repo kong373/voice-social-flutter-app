@@ -920,8 +920,11 @@ class BackendAccountComplianceRepository
           message: '设备会话第 ${index + 1} 项缺少 sessionId 或 deviceId',
         );
       }
+      final String lastUsedAtValue = _string(item['lastUsedAt']);
       final DateTime? lastActiveAt = DateTime.tryParse(
-        _string(item['lastUsedAt'] ?? item['createdAt']),
+        lastUsedAtValue.isEmpty
+            ? _string(item['createdAt'])
+            : lastUsedAtValue,
       );
       if (lastActiveAt == null) {
         throw ApiException(

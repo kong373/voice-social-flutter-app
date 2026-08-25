@@ -119,7 +119,12 @@ void main() {
                     'sessionId': currentSessionId,
                     'deviceId': 'pixel-9',
                     'active': true,
-                    'lastUsedAt': '2026-08-22T08:00:00Z',
+                    'createdAt': '2026-08-22T08:00:00Z',
+                    // A fresh backend session has not been refreshed yet and
+                    // therefore serializes its nullable last-used time as an
+                    // empty string. The authoritative creation time remains
+                    // the correct fallback.
+                    'lastUsedAt': '',
                   },
                   <String, Object?>{
                     'sessionId': oldSessionId,
@@ -165,6 +170,10 @@ void main() {
       expect(snapshot.sessions, hasLength(2));
       expect(snapshot.sessions.first.isCurrent, isTrue);
       expect(snapshot.sessions.first.canRevoke, isFalse);
+      expect(
+        snapshot.sessions.first.lastActiveAt,
+        DateTime.parse('2026-08-22T08:00:00Z'),
+      );
       expect(snapshot.sessions.last.isCurrent, isFalse);
       expect(snapshot.sessions.last.canRevoke, isTrue);
 
