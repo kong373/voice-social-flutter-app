@@ -973,6 +973,18 @@ printf '%s\n' 'safe prefix; $(touch should-not-run)' | contains_literal_stream "
       }
       expect(integrationSource, contains('requireCapability'));
       expect(integrationSource, contains('already_authoritative'));
+      expect(
+        integrationSource,
+        contains('pkRecoveryRoomId: ownedModeRooms.approval.id'),
+      );
+      expect(
+        integrationSource,
+        contains('item.roomId == pkRecoveryRoomId && !item.isInPk'),
+      );
+      expect(
+        integrationSource,
+        contains('pk_recovery_uses_distinct_current_user_owned_room'),
+      );
       expect(integrationSource, contains('providerInvocation != false'));
       expect(integrationSource, contains('M4_PROVIDER_CALLS::0'));
       expect(

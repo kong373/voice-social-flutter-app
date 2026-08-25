@@ -131,6 +131,14 @@ the queue to verify that request, cancels it, and exits. The invariant marker
 for the compensated queue flow is
 `M4_AUTHORITY_INVARIANT::approval_mic_queue_action_compensated`.
 
+For a new outgoing PK invitation, the runner must select that distinct owned
+approval room from the authoritative hot-opponent response. The same fixture
+principal is therefore independently authorized as the inviter-room owner and
+the invitee-room owner, so a pending invitation can be rejected through the
+invitee-only endpoint as a real compensating action. It must not invite an
+arbitrary foreign room and then treat the inviter's expected `403` rejection
+as recovery evidence.
+
 ## Formal vendor boundary
 
 The live integration expects the first-party readiness document to report

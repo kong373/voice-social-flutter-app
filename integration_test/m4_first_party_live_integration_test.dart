@@ -353,6 +353,7 @@ void main() {
         dependencies,
         evidence,
         room: ownedModeRooms.direct,
+        pkRecoveryRoomId: ownedModeRooms.approval.id,
         currentUserId: currentUserId,
       );
       await _runApprovalMicQueueFlow(
@@ -1163,6 +1164,7 @@ Future<_LiveRoomContext?> _runRoomFlow(
   AppDependencies dependencies,
   _M4Evidence evidence, {
   required DiscoveryRoom? room,
+  required String pkRecoveryRoomId,
   required int currentUserId,
 }) async {
   if (room == null) {
@@ -1321,6 +1323,7 @@ Future<_LiveRoomContext?> _runRoomFlow(
         dependencies,
         evidence,
         snapshot: snapshot,
+        pkRecoveryRoomId: pkRecoveryRoomId,
         currentUserId: currentUserId,
         targetUserId: targetUserId,
       );
@@ -1484,6 +1487,7 @@ Future<void> _runRoomMutationFlow(
   AppDependencies dependencies,
   _M4Evidence evidence, {
   required RoomSnapshot snapshot,
+  required String pkRecoveryRoomId,
   required int currentUserId,
   required int? targetUserId,
 }) async {
@@ -1678,6 +1682,7 @@ Future<void> _runRoomMutationFlow(
     dependencies,
     evidence,
     snapshot: snapshot,
+    pkRecoveryRoomId: pkRecoveryRoomId,
     currentUserId: currentUserId,
   );
 }
@@ -1800,6 +1805,7 @@ Future<void> _runRoomPkMutation(
   AppDependencies dependencies,
   _M4Evidence evidence, {
   required RoomSnapshot snapshot,
+  required String pkRecoveryRoomId,
   required int currentUserId,
 }) async {
   final BackendRouteCatalog routes = const BackendRouteCatalog();
@@ -1864,6 +1870,12 @@ Future<void> _runRoomPkMutation(
     );
     return;
   }
+  if (!_canonicalRoomUuidPattern.hasMatch(pkRecoveryRoomId) ||
+      pkRecoveryRoomId == snapshot.roomId) {
+    throw TestFailure(
+      'PK recovery room must be a distinct authoritative owned-room UUID.',
+    );
+  }
   final List<RoomPkOpponent>? opponents = await _probe<List<RoomPkOpponent>>(
     evidence,
     capability: 'room.pk.opponents',
@@ -1876,23 +1888,16 @@ Future<void> _runRoomPkMutation(
   );
   RoomPkOpponent? opponent;
   for (final RoomPkOpponent item in opponents ?? const <RoomPkOpponent>[]) {
-    if (item.roomId != snapshot.roomId && !item.isInPk) {
+    if (item.roomId == pkRecoveryRoomId && !item.isInPk) {
       opponent = item;
       break;
     }
   }
   if (opponent == null) {
-    evidence.local(
-      'room.pk.invite',
-      routes.roomPkInvite,
-      'no_authoritative_opponent_room',
+    throw TestFailure(
+      'PK recovery room was not present as an available authoritative '
+      'opponent.',
     );
-    evidence.local(
-      'room.pk.recovery',
-      routes.roomPkReject,
-      'invite_not_attempted_without_opponent',
-    );
-    return;
   }
   final RoomPkOpponent selectedOpponent = opponent;
   evidence.requireCapability('room.pk.invite');
@@ -1932,6 +1937,7 @@ Future<void> _runRoomPkMutation(
       );
     }
     evidence.invariant('pk_invite_rejected_as_safe_recovery');
+    evidence.invariant('pk_recovery_uses_distinct_current_user_owned_room');
     evidence.invariant('pk_mutation_path_confirmed');
   } else if (invitation.status == RoomPkInvitationStatus.accepted) {
     final RoomPkBattle? battle = await _probe<RoomPkBattle>(
