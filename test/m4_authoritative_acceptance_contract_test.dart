@@ -875,6 +875,166 @@ printf 'sdk.dir=/development/android\nflutter.sdk=/development/flutter\n' >"$tar
     );
   });
 
+  test('structured DB evidence is validated before immutable publication', () {
+    expect(
+      runnerSource,
+      isNot(contains('| sanitize >"\$dir/db-evidence.json"')),
+    );
+    expect(
+      runnerSource,
+      contains('raw="\$(mktemp "\$dir/.m4-db-evidence.XXXXXX")"'),
+    );
+    expect(runnerSource, contains('DB_EVIDENCE_RAW_FILES+=("\$raw")'));
+    expect(
+      runnerSource,
+      contains('for raw_evidence_file in "\${DB_EVIDENCE_RAW_FILES[@]}"'),
+    );
+    expect(runnerSource, contains('python3 -u - >"\$raw"'));
+    expect(runnerSource, contains('python3 - "\$raw"'));
+    expect(runnerSource, contains('protected_values = ('));
+    expect(
+      runnerSource,
+      contains(
+        'if any(value and value in encoded for value in protected_values):',
+      ),
+    );
+    expect(runnerSource, contains('! mv "\$raw" "\$dir/db-evidence.json"'));
+  });
+
+  test(
+    'DB evidence publication preserves timestamp-shaped binding fields',
+    () async {
+      final Directory directory = Directory.systemTemp.createTempSync(
+        'm4-db-publication-contract-',
+      );
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() async {
+        await server.close(force: true);
+        if (directory.existsSync()) {
+          directory.deleteSync(recursive: true);
+        }
+      });
+      const String runId = 'm4-final-20260825T080331Z-contract';
+      const String fixtureId = 'm4-fresh-m4-final-20260825T080331Z-contract';
+      const String nonce = 'm4-start-nonce-000000000000';
+      const String token = 'db-evidence-contract-token';
+      final Map<String, Object?> payload = <String, Object?>{
+        'status': 'OK',
+        'writeCounters': <String, int>{
+          'auth_sessions': 1,
+          'room_activity': 1,
+          'commerce_activity': 1,
+          'social_community_messages': 1,
+          'social_user_reports': 1,
+          'idempotency_audit': 1,
+        },
+        'scopedCounters': <String, int>{
+          'refresh_session_user': 1,
+          'user_report_reporter': 1,
+          'operation_idempotency_actor': 1,
+        },
+        'authorityInvariants': <String, bool>{
+          'core_schema_present': true,
+          'provider_outbox_allowed_states': true,
+          'provider_outbox_attempts_zero': true,
+          'private_message_delivery_blocked': true,
+          'adapter_status_projection_blocked': true,
+          'backend_environment_development': true,
+          'backend_profile_development': true,
+          'development_outbox_or_blocked_sms': true,
+          'formal_vendor_adapters_blocked': true,
+          'provider_invocation_rows_zero': true,
+          'first_party_writes_observed_since_start': true,
+          'expected_backend_sha_matches': true,
+        },
+        'providerCalls': 0,
+        'secrets': false,
+        'evidenceBinding': <String, Object?>{
+          'runId': runId,
+          'avd': 'AVD-A',
+          'startNonce': nonce,
+          'fixtureId': fixtureId,
+          'fixtureAccountState': 'created_during_run',
+          'mutationKeys': <String>[
+            'auth_sessions',
+            'room_activity',
+            'commerce_activity',
+            'social_community_messages',
+            'social_user_reports',
+            'idempotency_audit',
+          ],
+        },
+      };
+      final subscription = server.listen((HttpRequest request) async {
+        final bool valid =
+            request.method == 'GET' &&
+            request.uri.path == '/m4/db-evidence' &&
+            request.headers.value(HttpHeaders.authorizationHeader) ==
+                'Bearer $token' &&
+            request.headers.value('X-M4-Evidence-Phase') == 'collect';
+        request.response.statusCode = valid
+            ? HttpStatus.ok
+            : HttpStatus.forbidden;
+        if (valid) {
+          request.response.write(jsonEncode(payload));
+        }
+        await request.response.close();
+      });
+      addTearDown(subscription.cancel);
+      final String script =
+          '''
+set -Eeuo pipefail
+IFS=\$'\\n\\t'
+DB_URL="\$M4_TEST_DB_URL"
+DB_TOKEN="\$M4_TEST_DB_TOKEN"
+RUN_ID="\$M4_TEST_RUN_ID"
+FIXTURE_ID="\$M4_TEST_FIXTURE_ID"
+LIVE_PHONE='18800000000'
+OAUTH_CLIENT_ID='public-client-contract'
+RELAY_TOKEN_A='relay-contract-a'
+RELAY_TOKEN_B='relay-contract-b'
+DB_EVIDENCE_RAW_FILES=()
+${runnerBlock('db_evidence() {', '\ncontains_literal_file() {')}
+db_evidence "\$M4_TEST_DIR" AVD-A "\$M4_TEST_NONCE"
+''';
+      final ProcessResult result = await Process.run(
+        '/bin/bash',
+        <String>['-c', script],
+        environment: <String, String>{
+          ...Platform.environment,
+          'M4_TEST_DB_URL':
+              'http://${InternetAddress.loopbackIPv4.address}:${server.port}/m4/db-evidence',
+          'M4_TEST_DB_TOKEN': token,
+          'M4_TEST_RUN_ID': runId,
+          'M4_TEST_FIXTURE_ID': fixtureId,
+          'M4_TEST_NONCE': nonce,
+          'M4_TEST_DIR': directory.path,
+        },
+      );
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      final File published = File('${directory.path}/db-evidence.json');
+      expect(published.existsSync(), isTrue);
+      final String encoded = published.readAsStringSync();
+      expect(encoded, contains(runId));
+      expect(encoded, contains(fixtureId));
+      expect(encoded, isNot(contains('[REDACTED_OTP]')));
+      expect(
+        File('${directory.path}/db-evidence-status.txt').readAsStringSync(),
+        'db_evidence_status=COLLECTED\n',
+      );
+      expect(
+        directory.listSync().where(
+          (FileSystemEntity item) =>
+              item.uri.pathSegments.last.startsWith('.m4-db-evidence.'),
+        ),
+        isEmpty,
+      );
+    },
+  );
+
   test('DB evidence is bound to run, AVD, nonce, and fixed mutation keys', () {
     expect(runnerSource, contains('X-M4-Run-ID'));
     expect(runnerSource, contains('X-M4-AVD'));

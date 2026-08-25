@@ -78,6 +78,7 @@ FLUTTER_DART_VERSION=''
 FLUTTER_FRAMEWORK_REVISION=''
 ANDROID_HOST_SOURCE_SHA256=''
 OVERALL_RESULT='PASS'
+DB_EVIDENCE_RAW_FILES=()
 
 fail() {
   OVERALL_RESULT='FAIL'
@@ -287,6 +288,14 @@ cleanup() {
     kill "$RUNTIME_TOKEN_FEEDER_PID" 2>/dev/null || true
     wait "$RUNTIME_TOKEN_FEEDER_PID" 2>/dev/null || true
   }
+  local raw_evidence_file
+  for raw_evidence_file in "${DB_EVIDENCE_RAW_FILES[@]}"; do
+    if [[ "$raw_evidence_file" == "$ARTIFACT_ROOT"/AVD-[AB]/.m4-db-evidence.* ]]; then
+      rm -f -- "$raw_evidence_file" || cleanup_failed=1
+    else
+      cleanup_failed=1
+    fi
+  done
   local started_serial
   if [[ -f "$STARTED_SERIALS_FILE" ]]; then
     while IFS= read -r started_serial; do
@@ -877,6 +886,7 @@ db_evidence() {
   local dir="$1"
   local avd="$2"
   local nonce="$3"
+  local raw
   [[ "$DB_URL" != *':8765'* && "$DB_URL" != *'contract-server'* ]] || {
     printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"
     return 1
@@ -885,11 +895,16 @@ db_evidence() {
     printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"
     return 1
   }
+  raw="$(mktemp "$dir/.m4-db-evidence.XXXXXX")" || {
+    printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"
+    return 1
+  }
+  DB_EVIDENCE_RAW_FILES+=("$raw")
   set +e
   QA_M4_DB_TOKEN="$DB_TOKEN" QA_M4_DB_URL="$DB_URL" \
     QA_M4_RUN_ID="$RUN_ID" QA_M4_AVD="$avd" QA_M4_FIXTURE_ID="$FIXTURE_ID" \
     QA_M4_START_NONCE="$nonce" \
-    python3 -u - 2>"$dir/db-evidence-curl.stderr" <<'PY' | sanitize >"$dir/db-evidence.json"
+    python3 -u - >"$raw" 2>"$dir/db-evidence-curl.stderr" <<'PY'
 import os
 import sys
 import urllib.error
@@ -917,15 +932,22 @@ except (OSError, urllib.error.URLError, RuntimeError):
     print("db evidence request failed", file=sys.stderr)
     raise SystemExit(1)
 PY
-  local status=${PIPESTATUS[0]}
+  local status=$?
   set -e
-  [[ "$status" -eq 0 && -s "$dir/db-evidence.json" ]] || {
+  [[ "$status" -eq 0 && -s "$raw" ]] || {
+    rm -f "$raw"
     printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"
     return 1
   }
-  if ! python3 - "$dir/db-evidence.json" "$avd" "$nonce" "$RUN_ID" "$FIXTURE_ID" \
+  if ! QA_M4_SECRET_PHONE="$LIVE_PHONE" \
+    QA_M4_SECRET_CLIENT="$OAUTH_CLIENT_ID" \
+    QA_M4_SECRET_DB_TOKEN="$DB_TOKEN" \
+    QA_M4_SECRET_RELAY_A="$RELAY_TOKEN_A" \
+    QA_M4_SECRET_RELAY_B="$RELAY_TOKEN_B" \
+    python3 - "$raw" "$avd" "$nonce" "$RUN_ID" "$FIXTURE_ID" \
     2>"$dir/db-evidence-validation.stderr" <<'PY'
 import json
+import os
 import sys
 
 path, expected_avd, expected_nonce, expected_run_id, expected_fixture_id = sys.argv[1:]
@@ -1021,8 +1043,24 @@ if binding["mutationKeys"] != [
     "idempotency_audit",
 ]:
     raise SystemExit(1)
+encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+protected_values = (
+    os.environ.get("QA_M4_SECRET_PHONE", ""),
+    os.environ.get("QA_M4_SECRET_CLIENT", ""),
+    os.environ.get("QA_M4_SECRET_DB_TOKEN", ""),
+    os.environ.get("QA_M4_SECRET_RELAY_A", ""),
+    os.environ.get("QA_M4_SECRET_RELAY_B", ""),
+)
+if any(value and value in encoded for value in protected_values):
+    raise SystemExit(1)
 PY
   then
+    rm -f "$raw"
+    printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"
+    return 1
+  fi
+  if [[ -e "$dir/db-evidence.json" ]] || ! mv "$raw" "$dir/db-evidence.json"; then
+    rm -f "$raw"
     printf 'db_evidence_status=FAIL\n' >"$dir/db-evidence-error.txt"
     return 1
   fi
