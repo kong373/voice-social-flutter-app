@@ -264,7 +264,8 @@ request = urllib.request.Request(
     },
 )
 try:
-    with urllib.request.urlopen(request, timeout=20) as response:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=20) as response:
         if response.status < 200 or response.status >= 300:
             raise RuntimeError("db evidence start returned non-success status")
         payload = json.loads(response.read())
@@ -616,7 +617,8 @@ request = urllib.request.Request(
     },
 )
 try:
-    with urllib.request.urlopen(request, timeout=20) as response:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=20) as response:
         if response.status < 200 or response.status >= 300:
             raise RuntimeError("db evidence returned non-success status")
         sys.stdout.buffer.write(response.read())

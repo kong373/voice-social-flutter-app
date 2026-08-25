@@ -243,6 +243,25 @@ void main() {
     },
   );
 
+  test('loopback DB evidence requests bypass host proxy configuration', () {
+    expect(
+      RegExp(
+        r'urllib\.request\.ProxyHandler\(\{\}\)',
+      ).allMatches(runnerSource).length,
+      2,
+    );
+    expect(
+      RegExp(
+        r'with opener\.open\(request, timeout=20\) as response:',
+      ).allMatches(runnerSource).length,
+      2,
+    );
+    expect(
+      runnerSource,
+      isNot(contains('urllib.request.urlopen(request, timeout=20)')),
+    );
+  });
+
   test('DB evidence is bound to run, AVD, nonce, and fixed mutation keys', () {
     expect(runnerSource, contains('X-M4-Run-ID'));
     expect(runnerSource, contains('X-M4-AVD'));
