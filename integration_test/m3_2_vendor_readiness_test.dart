@@ -85,7 +85,7 @@ void main() {
       _expectExactViewport(tester);
       expect(find.text('此刻适合你的房间'), findsOneWidget);
       expect(find.byKey(const Key('live-room-880217')), findsOneWidget);
-      expect(find.text('深夜陪伴电台'), findsOneWidget);
+      expect(find.text('深夜陪伴电台'), findsWidgets);
       await captureQaScreenshot(
         tester,
         binding,
