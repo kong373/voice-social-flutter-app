@@ -65,6 +65,7 @@ void main() {
       // The trusted contract runner knows the deterministic test code. The
       // app itself never receives or embeds development-outbox credentials.
       await tester.enterText(codeField, '123456');
+      await dismissQaImeAndWait(tester);
       await captureQaScreenshot(
         tester,
         binding,

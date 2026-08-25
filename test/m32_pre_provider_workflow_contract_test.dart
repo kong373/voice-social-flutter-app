@@ -23,4 +23,11 @@ void main() {
       isFalse,
     );
   });
+
+  test('M3.2 AVD review avoids nonessential Google background services', () {
+    expect(workflow, contains('target: default'));
+    expect(workflow, isNot(contains('target: google_apis')));
+    expect(workflow, contains('disable-animations: true'));
+    expect(workflow, contains('disable-spellchecker: true'));
+  });
 }

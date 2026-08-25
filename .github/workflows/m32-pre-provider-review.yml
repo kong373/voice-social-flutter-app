@@ -284,7 +284,7 @@ jobs:
           QA_EXPECTED_DPR: ${{ matrix.dpr }}
         with:
           api-level: ${{ matrix.api }}
-          target: google_apis
+          target: default
           arch: x86_64
           profile: ${{ matrix.profile }}
           avd-name: m32-review-${{ matrix.id }}-api-${{ matrix.api }}
@@ -295,7 +295,8 @@ jobs:
           force-avd-creation: true
           emulator-boot-timeout: 600
           disable-linux-hw-accel: false
-          disable-animations: false
+          disable-animations: true
+          disable-spellchecker: true
           emulator-options: >-
             -no-window
             -gpu swiftshader_indirect
