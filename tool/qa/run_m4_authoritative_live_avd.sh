@@ -53,6 +53,7 @@ readonly SMS_COOLDOWN_SECONDS='60'
 readonly SMS_COOLDOWN_BUFFER_SECONDS='5'
 readonly APP_PACKAGE='com.kong373.voice_social_app'
 readonly RUNTIME_TOKEN_FILE='cache/m4-runtime-relay-token'
+readonly RUNTIME_TOKEN_TMP_FILE="$RUNTIME_TOKEN_FILE.tmp"
 
 readonly SUMMARY_FILE="$ARTIFACT_ROOT/summary.txt"
 readonly MANIFEST_FILE="$ARTIFACT_ROOT/evidence-manifest.sha256"
@@ -88,7 +89,8 @@ cleanup() {
   if [[ -f "$STARTED_SERIALS_FILE" ]]; then
     while IFS= read -r started_serial; do
       [[ -n "$started_serial" ]] || continue
-      adb -s "$started_serial" shell run-as "$APP_PACKAGE" rm -f "$RUNTIME_TOKEN_FILE" >/dev/null 2>&1 || true
+      adb -s "$started_serial" shell run-as "$APP_PACKAGE" rm -f \
+        "$RUNTIME_TOKEN_FILE" "$RUNTIME_TOKEN_TMP_FILE" >/dev/null 2>&1 || true
       adb -s "$started_serial" emu kill >/dev/null 2>&1 || true
     done <"$STARTED_SERIALS_FILE"
     rm -f "$STARTED_SERIALS_FILE"
@@ -421,8 +423,11 @@ feed_runtime_relay_token() {
     # bearer through dart-define, process arguments, logs, or artifacts.
     for _ in {1..240}; do
       printf '%s' "$token" |
-        adb -s "$serial" shell run-as "$APP_PACKAGE" sh -c \
-          "umask 077; cat > '$RUNTIME_TOKEN_FILE'; chmod 600 '$RUNTIME_TOKEN_FILE'" \
+        adb -s "$serial" shell run-as "$APP_PACKAGE" tee "$RUNTIME_TOKEN_TMP_FILE" \
+          >/dev/null 2>&1 &&
+        adb -s "$serial" shell run-as "$APP_PACKAGE" chmod 600 "$RUNTIME_TOKEN_TMP_FILE" \
+          >/dev/null 2>&1 &&
+        adb -s "$serial" shell run-as "$APP_PACKAGE" mv "$RUNTIME_TOKEN_TMP_FILE" "$RUNTIME_TOKEN_FILE" \
           >/dev/null 2>&1 || true
       sleep 0.25
     done
@@ -440,7 +445,8 @@ stop_runtime_relay_token_feeder() {
 
 clear_runtime_relay_token() {
   local serial="$1"
-  adb -s "$serial" shell run-as "$APP_PACKAGE" rm -f "$RUNTIME_TOKEN_FILE" \
+  adb -s "$serial" shell run-as "$APP_PACKAGE" rm -f \
+    "$RUNTIME_TOKEN_FILE" "$RUNTIME_TOKEN_TMP_FILE" \
     >/dev/null 2>&1 || true
 }
 
@@ -905,7 +911,7 @@ run_one() {
   provider_nonzero_count="$(awk '/M4_PROVIDER_CALLS::/ && $0 !~ /M4_PROVIDER_CALLS::0([[:space:]]|$)/ {count += 1} END {print count + 0}' "$dir/logs/flutter-drive.log")"
   invariant_count="$(grep -Ec 'M4_AUTHORITY_INVARIANT::' "$dir/logs/flutter-drive.log" || true)"
   hard_count="$(cat "$dir/logs/logcat-full.txt" "$dir/logs/flutter-drive.log" | grep -Eci 'FATAL EXCEPTION|AndroidRuntime|Fatal signal [0-9]+|ANR in com\.kong373\.voice_social_app|MissingPluginException|RenderFlex overflow|Unhandled Exception|EXCEPTION CAUGHT BY|Failed assertion' || true)"
-  crash_count="$(grep -Eci 'FATAL EXCEPTION|Fatal signal [0-9]+|ANR in com\.kong373\.voice_social_app' "$dir/logs/logcat-full.txt" "$dir/logs/flutter-drive.log" || true)"
+  crash_count="$(cat "$dir/logs/logcat-full.txt" "$dir/logs/flutter-drive.log" | grep -Eci 'FATAL EXCEPTION|Fatal signal [0-9]+|ANR in com\.kong373\.voice_social_app' || true)"
   grep -Ei 'EXCEPTION CAUGHT BY|Unhandled Exception|Failed assertion|RenderFlex overflow' "$dir/logs/flutter-drive.log" >"$dir/logs/flutter-errors.txt" || true
   grep -Ei 'FATAL EXCEPTION|AndroidRuntime|Fatal signal [0-9]+|ANR in com\.kong373\.voice_social_app' "$dir/logs/logcat-full.txt" "$dir/logs/flutter-drive.log" >"$dir/logs/crash-anr.txt" || true
 

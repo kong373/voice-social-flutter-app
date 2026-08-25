@@ -222,6 +222,27 @@ void main() {
       expect(runnerSource, isNot(contains('sleep 65')));
       expect(runnerSource, contains('feed_runtime_relay_token'));
       expect(runnerSource, contains('run-as "\$APP_PACKAGE"'));
+      expect(
+        runnerSource,
+        contains('run-as "\$APP_PACKAGE" tee "\$RUNTIME_TOKEN_TMP_FILE"'),
+      );
+      expect(
+        runnerSource,
+        contains('run-as "\$APP_PACKAGE" chmod 600 "\$RUNTIME_TOKEN_TMP_FILE"'),
+      );
+      expect(
+        runnerSource,
+        contains(
+          'run-as "\$APP_PACKAGE" mv "\$RUNTIME_TOKEN_TMP_FILE" "\$RUNTIME_TOKEN_FILE"',
+        ),
+      );
+      expect(
+        RegExp(
+          r'"\$RUNTIME_TOKEN_FILE" "\$RUNTIME_TOKEN_TMP_FILE"',
+        ).allMatches(runnerSource).length,
+        greaterThanOrEqualTo(2),
+      );
+      expect(runnerSource, isNot(contains('run-as "\$APP_PACKAGE" sh -c')));
       expect(runnerSource, contains('RELAY_TOKEN_A'));
       expect(runnerSource, contains('RELAY_TOKEN_B'));
       expect(runnerSource, contains('--dart-define=QA_M4_FIXTURE_ID'));
@@ -369,6 +390,20 @@ printf '%s\n' 'safe prefix; $(touch should-not-run)' | contains_literal_stream "
     expect(runnerSource, contains("reason='logcat_capture_failed'"));
     expect(runnerSource, isNot(contains('logcat -v threadtime | sanitize')));
     expect(runnerSource, isNot(contains('LOGCAT_PID')));
+    expect(
+      runnerSource,
+      contains(
+        'cat "\$dir/logs/logcat-full.txt" "\$dir/logs/flutter-drive.log" | grep -Eci',
+      ),
+    );
+    expect(
+      runnerSource,
+      isNot(
+        contains(
+          'grep -Eci \'FATAL EXCEPTION|Fatal signal [0-9]+|ANR in com\\.kong373\\.voice_social_app\' "\$dir/logs/logcat-full.txt" "\$dir/logs/flutter-drive.log"',
+        ),
+      ),
+    );
   });
 
   test(
