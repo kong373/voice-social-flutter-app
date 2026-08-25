@@ -64,7 +64,10 @@ The current required mutation capabilities are:
 - `room.enter`, `room.reconnect`, and `room.exit.cleanup`, plus direct-room
   moderation mute/restore, seat up/down compensation, public-message reads,
   and room PK recovery. The room writes are bound to the current user's own
-  authoritative room and are compensated before the flow ends.
+  authoritative room and are compensated before the flow ends. PK recovery
+  probes the authoritative hot-opponent page first; when the known approval
+  room is not present on that page, it performs a targeted first-party search
+  using the room's canonical discovery UUID.
 - `room.mic_requests.submit`, `room.mic_requests.get`, and
   `room.mic_requests.cancel` in a separate approval-mode room. The required
   sequence is submit → GET and verify the own pending request → cancel, then
@@ -84,7 +87,7 @@ The principal M4 live write/read witnesses use these catalog routes:
 | Refund / result / retry | `POST /app-api/refund/application`; `GET /app-api/refund/result`; `POST /app-api/refund/repeat` |
 | Room lifecycle | `POST /app-room-api/room/com/v1/enterRoom`; `POST /app-room-api/room/com/v1/reConnectRoomInfo`; `POST /app-room-api/room/com/v1/exitRoom` |
 | Room moderation / seat compensation | `POST /app-api/roomUsers/setMuted`; `POST /app-api/micUserBase/userInitiativeUpMic`; `POST /app-api/micUserBase/leaveMic` |
-| PK recovery | `POST /app-api/activityPk/inviteRoomPk`; `POST /app-api/activityPk/acceptRoomPkInvitation`; `POST /app-api/activityPk/rejectRoomPkInvitation`; `POST /app-api/activityPk/surrenderRoomPk` |
+| PK recovery | `GET /app-api/activityPk/getRoomPkHotRoomList`; `GET /app-api/activityPk/searchRoomPk` (only after a hot-page miss, keyed by canonical room UUID); `POST /app-api/activityPk/inviteRoomPk`; `POST /app-api/activityPk/acceptRoomPkInvitation`; `POST /app-api/activityPk/rejectRoomPkInvitation`; `POST /app-api/activityPk/surrenderRoomPk` |
 | Approval microphone queue | `GET/POST /app-mini-api/mini/v1/rooms/mic-requests`; `POST /app-mini-api/mini/v1/rooms/mic-requests/cancel` |
 | Private message / history | `POST /app-mini-api/mini/v1/message/send`; `GET /app-api/user/imMessage/queryChat` |
 | Notification read / clear | `POST /app-mini-api/mini/v1/notifications/read`; `POST /app-api/dynamic/emptyUserDynamicNotify` |
@@ -138,6 +141,20 @@ the invitee-room owner, so a pending invitation can be rejected through the
 invitee-only endpoint as a real compensating action. It must not invite an
 arbitrary foreign room and then treat the inviter's expected `403` rejection
 as recovery evidence.
+
+The hot-opponent response is a first-page projection, not proof that a known
+room is unavailable. If the current-user-owned approval room is missing from
+that response, the harness calls `RoomPkRepository.searchOpponents` through
+`GET /app-api/activityPk/searchRoomPk` with the approval room's canonical
+`DiscoveryRoom.id` (the room's `code` is retained as part of the complete
+authoritative identity). The result is usable only when one item has the exact
+approval `roomId` and `isInPk == false`. A missing item, malformed response,
+network/protocol failure, or `403` remains a failed authoritative probe; none
+may be converted into an invite or a successful recovery. A successful
+targeted lookup emits
+`M4_ROUTE_STATUS::room.pk.search::GET::/app-api/activityPk/searchRoomPk::200::success`
+and
+`M4_AUTHORITY_INVARIANT::pk_recovery_targeted_search_uses_canonical_room_id`.
 
 ## Formal vendor boundary
 

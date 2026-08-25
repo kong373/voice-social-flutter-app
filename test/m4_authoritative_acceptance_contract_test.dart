@@ -975,15 +975,25 @@ printf '%s\n' 'safe prefix; $(touch should-not-run)' | contains_literal_stream "
       expect(integrationSource, contains('already_authoritative'));
       expect(
         integrationSource,
-        contains('pkRecoveryRoomId: ownedModeRooms.approval.id'),
+        contains('pkRecoveryRoom: ownedModeRooms.approval'),
       );
       expect(
         integrationSource,
-        contains('item.roomId == pkRecoveryRoomId && !item.isInPk'),
+        contains('required DiscoveryRoom pkRecoveryRoom'),
       );
       expect(
         integrationSource,
-        contains('pk_recovery_uses_distinct_current_user_owned_room'),
+        contains('dependencies.roomPkRepository.searchOpponents'),
+      );
+      expect(integrationSource, contains("capability: 'room.pk.search'"));
+      expect(integrationSource, contains('keyword: pkRecoveryRoom.id'));
+      expect(
+        integrationSource,
+        contains('item.roomId == pkRecoveryRoom.id && !item.isInPk'),
+      );
+      expect(
+        integrationSource,
+        contains('pk_recovery_targeted_search_uses_canonical_room_id'),
       );
       expect(integrationSource, contains('providerInvocation != false'));
       expect(integrationSource, contains('M4_PROVIDER_CALLS::0'));

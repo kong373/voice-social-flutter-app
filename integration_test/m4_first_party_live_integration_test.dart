@@ -353,7 +353,7 @@ void main() {
         dependencies,
         evidence,
         room: ownedModeRooms.direct,
-        pkRecoveryRoomId: ownedModeRooms.approval.id,
+        pkRecoveryRoom: ownedModeRooms.approval,
         currentUserId: currentUserId,
       );
       await _runApprovalMicQueueFlow(
@@ -1164,7 +1164,7 @@ Future<_LiveRoomContext?> _runRoomFlow(
   AppDependencies dependencies,
   _M4Evidence evidence, {
   required DiscoveryRoom? room,
-  required String pkRecoveryRoomId,
+  required DiscoveryRoom pkRecoveryRoom,
   required int currentUserId,
 }) async {
   if (room == null) {
@@ -1323,7 +1323,7 @@ Future<_LiveRoomContext?> _runRoomFlow(
         dependencies,
         evidence,
         snapshot: snapshot,
-        pkRecoveryRoomId: pkRecoveryRoomId,
+        pkRecoveryRoom: pkRecoveryRoom,
         currentUserId: currentUserId,
         targetUserId: targetUserId,
       );
@@ -1487,7 +1487,7 @@ Future<void> _runRoomMutationFlow(
   AppDependencies dependencies,
   _M4Evidence evidence, {
   required RoomSnapshot snapshot,
-  required String pkRecoveryRoomId,
+  required DiscoveryRoom pkRecoveryRoom,
   required int currentUserId,
   required int? targetUserId,
 }) async {
@@ -1682,7 +1682,7 @@ Future<void> _runRoomMutationFlow(
     dependencies,
     evidence,
     snapshot: snapshot,
-    pkRecoveryRoomId: pkRecoveryRoomId,
+    pkRecoveryRoom: pkRecoveryRoom,
     currentUserId: currentUserId,
   );
 }
@@ -1805,7 +1805,7 @@ Future<void> _runRoomPkMutation(
   AppDependencies dependencies,
   _M4Evidence evidence, {
   required RoomSnapshot snapshot,
-  required String pkRecoveryRoomId,
+  required DiscoveryRoom pkRecoveryRoom,
   required int currentUserId,
 }) async {
   final BackendRouteCatalog routes = const BackendRouteCatalog();
@@ -1870,10 +1870,13 @@ Future<void> _runRoomPkMutation(
     );
     return;
   }
+  final String pkRecoveryRoomId = pkRecoveryRoom.id;
+  final String pkRecoveryRoomCode = pkRecoveryRoom.code.trim();
   if (!_canonicalRoomUuidPattern.hasMatch(pkRecoveryRoomId) ||
-      pkRecoveryRoomId == snapshot.roomId) {
+      pkRecoveryRoomId == snapshot.roomId ||
+      pkRecoveryRoomCode.isEmpty) {
     throw TestFailure(
-      'PK recovery room must be a distinct authoritative owned-room UUID.',
+      'PK recovery room must have a distinct canonical UUID and room code.',
     );
   }
   final List<RoomPkOpponent>? opponents = await _probe<List<RoomPkOpponent>>(
@@ -1888,9 +1891,40 @@ Future<void> _runRoomPkMutation(
   );
   RoomPkOpponent? opponent;
   for (final RoomPkOpponent item in opponents ?? const <RoomPkOpponent>[]) {
-    if (item.roomId == pkRecoveryRoomId && !item.isInPk) {
+    if (item.roomId == pkRecoveryRoom.id && !item.isInPk) {
       opponent = item;
       break;
+    }
+  }
+  if (opponent == null) {
+    // The hot endpoint is authoritative but paginated.  A known owned
+    // approval room may be absent from page one, so target the backend search
+    // with its canonical discovery UUID.  Search failures and non-exact
+    // results remain fail-closed; no arbitrary opponent may be substituted.
+    evidence.requireCapability('room.pk.search');
+    final List<RoomPkOpponent>? searchedOpponents =
+        await _probe<List<RoomPkOpponent>>(
+          evidence,
+          capability: 'room.pk.search',
+          method: 'GET',
+          route: routes.roomPkSearch,
+          operation: () => dependencies.roomPkRepository.searchOpponents(
+            roomId: snapshot.roomId,
+            keyword: pkRecoveryRoom.id,
+            pageNum: 1,
+            pageSize: 20,
+          ),
+          requiredSuccess: true,
+        );
+    for (final RoomPkOpponent item
+        in searchedOpponents ?? const <RoomPkOpponent>[]) {
+      if (item.roomId == pkRecoveryRoom.id && !item.isInPk) {
+        opponent = item;
+        break;
+      }
+    }
+    if (opponent != null) {
+      evidence.invariant('pk_recovery_targeted_search_uses_canonical_room_id');
     }
   }
   if (opponent == null) {
