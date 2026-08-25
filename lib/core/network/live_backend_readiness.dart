@@ -8,6 +8,7 @@ enum LiveBackendReadinessStatus {
   mockMode,
   configurationInvalid,
   gatewayReachable,
+  gatewayRejected,
   networkUnavailable,
   tlsRejected,
   timedOut,
@@ -16,14 +17,15 @@ enum LiveBackendReadinessStatus {
 
 extension LiveBackendReadinessStatusLabel on LiveBackendReadinessStatus {
   String get label => switch (this) {
-        LiveBackendReadinessStatus.mockMode => 'Mock 模式',
-        LiveBackendReadinessStatus.configurationInvalid => '配置无效',
-        LiveBackendReadinessStatus.gatewayReachable => '网关可达',
-        LiveBackendReadinessStatus.networkUnavailable => '网络不可达',
-        LiveBackendReadinessStatus.tlsRejected => 'TLS 校验失败',
-        LiveBackendReadinessStatus.timedOut => '连接超时',
-        LiveBackendReadinessStatus.unexpectedFailure => '探测失败',
-      };
+    LiveBackendReadinessStatus.mockMode => 'Mock 模式',
+    LiveBackendReadinessStatus.configurationInvalid => '配置无效',
+    LiveBackendReadinessStatus.gatewayReachable => '网关可达',
+    LiveBackendReadinessStatus.gatewayRejected => '网关状态异常',
+    LiveBackendReadinessStatus.networkUnavailable => '网络不可达',
+    LiveBackendReadinessStatus.tlsRejected => 'TLS 校验失败',
+    LiveBackendReadinessStatus.timedOut => '连接超时',
+    LiveBackendReadinessStatus.unexpectedFailure => '探测失败',
+  };
 }
 
 class GatewayProbeResult {
@@ -62,18 +64,40 @@ class HttpGatewayProbe implements GatewayProbe {
           .getUrl(target)
           .timeout(environment.apiTimeout);
       request.followRedirects = false;
+      request.maxRedirects = 0;
       request.headers
         ..set(HttpHeaders.acceptHeader, 'application/json')
         ..set('Client-Type', environment.clientType)
-        ..set('Client-Inner-Version', environment.clientInnerVersion);
-      final HttpClientResponse response = await request
-          .close()
-          .timeout(environment.apiTimeout);
+        ..set('Client-Inner-Version', environment.clientInnerVersion)
+        ..set('Client-Id', environment.oauthClientId);
+      final HttpClientResponse response = await request.close().timeout(
+        environment.apiTimeout,
+      );
       await response.drain<void>().timeout(environment.apiTimeout);
       stopwatch.stop();
+
+      if (response.statusCode == HttpStatus.unauthorized ||
+          response.statusCode == HttpStatus.forbidden) {
+        return GatewayProbeResult(
+          status: LiveBackendReadinessStatus.gatewayReachable,
+          message: '网关已返回有效的鉴权响应，可以进入认证阶段。',
+          checkedAt: DateTime.now().toUtc(),
+          latency: stopwatch.elapsed,
+          httpStatus: response.statusCode,
+        );
+      }
+      if (response.statusCode != HttpStatus.ok) {
+        return GatewayProbeResult(
+          status: LiveBackendReadinessStatus.gatewayReachable,
+          message: '网关已返回 HTTP ${response.statusCode}，传输链路可达；业务权限由认证请求确认。',
+          checkedAt: DateTime.now().toUtc(),
+          latency: stopwatch.elapsed,
+          httpStatus: response.statusCode,
+        );
+      }
       return GatewayProbeResult(
         status: LiveBackendReadinessStatus.gatewayReachable,
-        message: '网关已返回 HTTP ${response.statusCode}，传输链路可达。',
+        message: '网关健康检查通过。',
         checkedAt: DateTime.now().toUtc(),
         latency: stopwatch.elapsed,
         httpStatus: response.statusCode,
@@ -132,8 +156,8 @@ class LiveBackendReadinessSnapshot {
     required this.deploymentEnvironment,
     required this.apiOrigin,
     required this.probePath,
-    required this.oauthClientIdConfigured,
-    required this.oauthClientSecretConfigured,
+    required this.publicClientConfigured,
+    required this.developmentOutboxConfigured,
     required this.realtimeEndpointConfigured,
     this.latency,
     this.httpStatus,
@@ -145,30 +169,39 @@ class LiveBackendReadinessSnapshot {
   final DeploymentEnvironment deploymentEnvironment;
   final String apiOrigin;
   final String probePath;
-  final bool oauthClientIdConfigured;
-  final bool oauthClientSecretConfigured;
+  final bool publicClientConfigured;
+  final bool developmentOutboxConfigured;
   final bool realtimeEndpointConfigured;
   final Duration? latency;
   final int? httpStatus;
 
+  @Deprecated('Use publicClientConfigured.')
+  bool get oauthClientIdConfigured => publicClientConfigured;
+
+  @Deprecated('Mobile public clients never carry a secret.')
+  bool get oauthClientSecretConfigured => false;
+
   bool get canAttemptAuthentication =>
-      status == LiveBackendReadinessStatus.gatewayReachable;
+      status == LiveBackendReadinessStatus.gatewayReachable &&
+      httpStatus != null &&
+      publicClientConfigured;
 
   Map<String, Object?> toRedactedJson() => <String, Object?>{
-        'status': status.name,
-        'statusLabel': status.label,
-        'message': message,
-        'checkedAt': checkedAt.toIso8601String(),
-        'deploymentEnvironment': deploymentEnvironment.name,
-        'apiOrigin': apiOrigin,
-        'probePath': probePath,
-        'oauthClientIdConfigured': oauthClientIdConfigured,
-        'oauthClientSecretConfigured': oauthClientSecretConfigured,
-        'realtimeEndpointConfigured': realtimeEndpointConfigured,
-        'latencyMs': latency?.inMilliseconds,
-        'httpStatus': httpStatus,
-        'canAttemptAuthentication': canAttemptAuthentication,
-      };
+    'status': status.name,
+    'statusLabel': status.label,
+    'message': message,
+    'checkedAt': checkedAt.toIso8601String(),
+    'deploymentEnvironment': deploymentEnvironment.name,
+    'apiOrigin': apiOrigin,
+    'probePath': probePath,
+    'publicClientConfigured': publicClientConfigured,
+    'mobileClientSecretPresent': false,
+    'developmentOutboxConfigured': developmentOutboxConfigured,
+    'realtimeEndpointConfigured': realtimeEndpointConfigured,
+    'latencyMs': latency?.inMilliseconds,
+    'httpStatus': httpStatus,
+    'canAttemptAuthentication': canAttemptAuthentication,
+  };
 
   String toRedactedText() =>
       const JsonEncoder.withIndent('  ').convert(toRedactedJson());
@@ -227,10 +260,9 @@ class LiveBackendReadinessService {
       deploymentEnvironment: environment.deploymentEnvironment,
       apiOrigin: environment.redactedApiOrigin,
       probePath: environment.liveProbePath,
-      oauthClientIdConfigured:
+      publicClientConfigured:
           summary['oauthClientIdConfigured'] as bool? ?? false,
-      oauthClientSecretConfigured:
-          summary['oauthClientSecretConfigured'] as bool? ?? false,
+      developmentOutboxConfigured: false,
       realtimeEndpointConfigured:
           summary['realtimeEndpointConfigured'] as bool? ?? false,
       latency: latency,

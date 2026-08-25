@@ -142,23 +142,23 @@ class MockDiscoveryRepository implements DiscoveryRepository {
     final List<DiscoveryRoom> matchingRooms = type == SearchEntityType.users
         ? <DiscoveryRoom>[]
         : _rooms
-            .where(
-              (DiscoveryRoom room) =>
-                  room.title.toLowerCase().contains(normalized) ||
-                  room.topic.toLowerCase().contains(normalized) ||
-                  room.code.toLowerCase().contains(normalized),
-            )
-            .toList(growable: false);
+              .where(
+                (DiscoveryRoom room) =>
+                    room.title.toLowerCase().contains(normalized) ||
+                    room.topic.toLowerCase().contains(normalized) ||
+                    room.code.toLowerCase().contains(normalized),
+              )
+              .toList(growable: false);
     final List<DiscoveryUser> matchingUsers = type == SearchEntityType.rooms
         ? <DiscoveryUser>[]
         : _users
-            .where(
-              (DiscoveryUser user) =>
-                  user.name.toLowerCase().contains(normalized) ||
-                  user.loginName.toLowerCase().contains(normalized) ||
-                  (user.bio ?? '').toLowerCase().contains(normalized),
-            )
-            .toList(growable: false);
+              .where(
+                (DiscoveryUser user) =>
+                    user.name.toLowerCase().contains(normalized) ||
+                    user.loginName.toLowerCase().contains(normalized) ||
+                    (user.bio ?? '').toLowerCase().contains(normalized),
+              )
+              .toList(growable: false);
     final List<DiscoveryRoom> rooms = _slice(
       matchingRooms,
       page: page,
@@ -177,6 +177,38 @@ class MockDiscoveryRepository implements DiscoveryRepository {
       pageSize: pageSize,
       hasMore: page * pageSize < total,
     );
+  }
+
+  @override
+  Future<List<DiscoverySearchSuggestion>> fetchSearchSuggestions({
+    int limit = 10,
+  }) async {
+    if (limit < 1 || limit > 20) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '搜索建议数量必须为 1 至 20',
+      );
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    const List<DiscoverySearchSuggestion> values = <DiscoverySearchSuggestion>[
+      DiscoverySearchSuggestion(
+        keyword: '深夜陪伴',
+        source: DiscoverySuggestionSource.roomHotTitle,
+      ),
+      DiscoverySearchSuggestion(
+        keyword: '音乐点唱',
+        source: DiscoverySuggestionSource.roomHotTopic,
+      ),
+      DiscoverySearchSuggestion(
+        keyword: '轻松闲聊',
+        source: DiscoverySuggestionSource.curatedSeed,
+      ),
+      DiscoverySearchSuggestion(
+        keyword: '新朋友',
+        source: DiscoverySuggestionSource.curatedSeed,
+      ),
+    ];
+    return values.take(limit).toList(growable: false);
   }
 
   @override
@@ -202,7 +234,9 @@ class MockDiscoveryRepository implements DiscoveryRepository {
     required String roomId,
     required bool favorite,
   }) async {
-    final int index = _rooms.indexWhere((DiscoveryRoom room) => room.id == roomId);
+    final int index = _rooms.indexWhere(
+      (DiscoveryRoom room) => room.id == roomId,
+    );
     if (index < 0) {
       throw const ApiException(
         kind: ApiFailureKind.business,

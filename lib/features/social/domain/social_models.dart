@@ -6,7 +6,36 @@ enum VisitorRecordType { viewedMe, viewedByMe }
 
 enum ReportTargetType { user, room }
 
-enum SupportTicketStatus { submitted, processing, resolved, rejected, unavailable }
+final RegExp _canonicalReportRoomIdPattern = RegExp(
+  r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+);
+final RegExp _canonicalReportUserIdPattern = RegExp(r'^[1-9][0-9]*$');
+const int _maxBackendEntityId = 9223372036854775807;
+
+int? parseCanonicalReportEntityId(String value) {
+  final String normalized = value.trim();
+  if (!_canonicalReportUserIdPattern.hasMatch(normalized)) {
+    return null;
+  }
+  final int? parsed = int.tryParse(normalized);
+  if (parsed == null || parsed > _maxBackendEntityId) {
+    return null;
+  }
+  return parsed;
+}
+
+/// Returns whether [value] is the lowercase canonical public UUID accepted by
+/// the first-party room-report endpoint.
+bool isCanonicalReportRoomId(String value) =>
+    _canonicalReportRoomIdPattern.hasMatch(value.trim());
+
+enum SupportTicketStatus {
+  submitted,
+  processing,
+  resolved,
+  rejected,
+  unavailable,
+}
 
 class SocialUser {
   const SocialUser({
@@ -93,7 +122,12 @@ class SocialProfile {
   final int followerCount;
   final int friendCount;
   final int postCount;
-  final int level;
+
+  /// The first-party backend can explicitly report that no authoritative
+  /// global level formula exists. In that state [level] remains null instead
+  /// of manufacturing a numeric value for the UI.
+  final int? level;
+  bool get levelAvailable => level != null;
 
   SocialProfile copyWith({
     SocialUser? user,
@@ -106,7 +140,9 @@ class SocialProfile {
     int? friendCount,
     int? postCount,
     int? level,
+    bool clearLevel = false,
   }) {
+    final int? resolvedLevel = clearLevel ? null : level ?? this.level;
     return SocialProfile(
       user: user ?? this.user,
       account: account,
@@ -118,7 +154,7 @@ class SocialProfile {
       followerCount: followerCount ?? this.followerCount,
       friendCount: friendCount ?? this.friendCount,
       postCount: postCount ?? this.postCount,
-      level: level ?? this.level,
+      level: resolvedLevel,
     );
   }
 }
@@ -147,6 +183,22 @@ class FriendRequest {
       status: status ?? this.status,
     );
   }
+}
+
+/// The server-authoritative result returned after creating a friend request.
+///
+/// A send response does not contain the target profile, so it must not be
+/// represented as a synthetic [FriendRequest]. Keeping the request id and
+/// status together also lets the UI distinguish a confirmed pending request
+/// from a locally assumed success.
+class FriendRequestSendResult {
+  const FriendRequestSendResult({
+    required this.requestId,
+    required this.status,
+  });
+
+  final String requestId;
+  final FriendRequestStatus status;
 }
 
 class PrivacySettings {
@@ -242,9 +294,11 @@ abstract interface class SocialRepository {
     required int pageSize,
   });
 
-  Future<void> setFollowing({
+  Future<void> setFollowing({required int userId, required bool following});
+
+  Future<FriendRequestSendResult> sendFriendRequest({
     required int userId,
-    required bool following,
+    required String message,
   });
 
   Future<List<FriendRequest>> fetchFriendRequests();
@@ -271,10 +325,7 @@ abstract interface class SocialRepository {
     required int pageSize,
   });
 
-  Future<void> setBlocked({
-    required int userId,
-    required bool blocked,
-  });
+  Future<void> setBlocked({required int userId, required bool blocked});
 
   Future<String> submitReport({
     required ReportTargetType targetType,

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
+import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
 
 class RoomDeepLinkPage extends StatefulWidget {
@@ -36,7 +38,9 @@ class _RoomDeepLinkPageState extends State<RoomDeepLinkPage> {
     if (_repositoryInstance != null) {
       return;
     }
-    _repositoryInstance = AppDependencyScope.of(context).roomLifecycleRepository;
+    _repositoryInstance = AppDependencyScope.of(
+      context,
+    ).roomLifecycleRepository;
     _resolve();
   }
 
@@ -53,8 +57,9 @@ class _RoomDeepLinkPageState extends State<RoomDeepLinkPage> {
       _resolution = null;
     });
     try {
-      final RoomLinkResolution resolution =
-          await _repository.resolveRoomLink(_controller.text);
+      final RoomLinkResolution resolution = await _repository.resolveRoomLink(
+        _controller.text,
+      );
       if (!mounted) {
         return;
       }
@@ -81,9 +86,7 @@ class _RoomDeepLinkPageState extends State<RoomDeepLinkPage> {
       }
       setState(() {
         _resolving = false;
-        _error = error is ApiException
-            ? error.message
-            : '房间链接校验失败，请检查网络后重试';
+        _error = error is ApiException ? error.message : '房间链接校验失败，请检查网络后重试';
       });
     }
   }
@@ -91,7 +94,7 @@ class _RoomDeepLinkPageState extends State<RoomDeepLinkPage> {
   @override
   Widget build(BuildContext context) {
     if (_resolving) {
-      return const Scaffold(body: SizedBox.expand());
+      return const RoomPageScaffold(body: SizedBox.expand());
     }
     final RoomLinkResolution? resolution = _resolution;
     final String title = switch (resolution?.status) {
@@ -106,56 +109,75 @@ class _RoomDeepLinkPageState extends State<RoomDeepLinkPage> {
       RoomLinkStatus.invalid => Icons.link_off_rounded,
       _ => Icons.cloud_off_rounded,
     };
-    return Scaffold(
-      appBar: AppBar(title: const Text('房间直达')),
+    return RoomPageScaffold(
+      appBar: roomOxygenAppBar(title: '房间直达'),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(24),
-          children: <Widget>[
-            Icon(icon, size: 52, color: AppColors.warning),
-            const SizedBox(height: 20),
-            Text(title, style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 10),
-            Text(
-              _error ?? resolution?.message ?? '请确认房间号后重试。',
-              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: AppColors.textSecondary,
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+            child: RoomGlassCard(
+              padding: const EdgeInsets.fromLTRB(18, 20, 18, 18),
+              child: Column(
+                children: <Widget>[
+                  Container(
+                    width: 58,
+                    height: 58,
+                    decoration: BoxDecoration(
+                      color: RoomColors.warning.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: RoomColors.warning.withValues(alpha: 0.24),
+                      ),
+                    ),
+                    child: Icon(icon, size: 29, color: RoomColors.warning),
                   ),
-            ),
-            const SizedBox(height: 28),
-            TextField(
-              controller: _controller,
-              keyboardType: TextInputType.url,
-              textInputAction: TextInputAction.go,
-              onSubmitted: (_) => _resolve(),
-              decoration: const InputDecoration(
-                labelText: '房间号或完整链接',
-                prefixIcon: Icon(Icons.meeting_room_outlined),
+                  const SizedBox(height: 14),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _error ?? resolution?.message ?? '请确认房间号后重试。',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: _controller,
+                    keyboardType: TextInputType.url,
+                    textInputAction: TextInputAction.go,
+                    onSubmitted: (_) => _resolve(),
+                    decoration: const InputDecoration(
+                      labelText: '房间号或完整链接',
+                      prefixIcon: Icon(Icons.meeting_room_outlined),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _resolve,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('重新校验'),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('返回上一页'),
+                  ),
+                  const SizedBox(height: 10),
+                  const RoomOxygenNotice(
+                    icon: Icons.shield_outlined,
+                    title: '安全校验',
+                    message: '有效链接会直接进入房间；关闭、失效或不可用的目标不会进入中间页。',
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: _resolve,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('重新校验'),
-            ),
-            const SizedBox(height: 10),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('返回上一页'),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceHigh,
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: const Text(
-                '有效链接会直接进入房间；只有链接无效、房间关闭或不可用时才显示当前恢复界面。',
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

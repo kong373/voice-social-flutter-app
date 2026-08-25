@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_configuration_form.dart';
+import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
 
 class CreateRoomPage extends StatefulWidget {
@@ -24,6 +26,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
 
   RoomLifecycleRepository? _repositoryInstance;
   RoomLifecycleRepository get _repository => _repositoryInstance!;
+  RoomLifecycleCapabilities get _capabilities => _repository.capabilities;
   RoomConfiguration? _existing;
   RoomAccessMode _accessMode = RoomAccessMode.publicRoom;
   bool _showInHall = true;
@@ -38,7 +41,9 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
     if (_repositoryInstance != null) {
       return;
     }
-    _repositoryInstance = AppDependencyScope.of(context).roomLifecycleRepository;
+    _repositoryInstance = AppDependencyScope.of(
+      context,
+    ).roomLifecycleRepository;
     _load();
   }
 
@@ -91,13 +96,13 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('创建房间')),
+    return RoomPageScaffold(
+      appBar: roomOxygenAppBar(title: '创建房间'),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null && _existing == null
-              ? _buildFailure()
-              : _buildForm(),
+          ? _buildFailure()
+          : _buildForm(),
     );
   }
 
@@ -110,10 +115,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
           children: <Widget>[
             const Icon(Icons.cloud_off_rounded, size: 48),
             const SizedBox(height: 18),
-            Text(
-              _error ?? '房间配置加载失败',
-              textAlign: TextAlign.center,
-            ),
+            Text(_error ?? '房间配置加载失败', textAlign: TextAlign.center),
             const SizedBox(height: 20),
             FilledButton.tonal(onPressed: _load, child: const Text('重新加载')),
           ],
@@ -129,34 +131,39 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
         children: <Widget>[
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               children: <Widget>[
                 if (existing != null) ...<Widget>[
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        const Icon(
-                          Icons.meeting_room_outlined,
-                          color: AppColors.primary,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            existing.isOpen
-                                ? '当前账号已有个人房 ${existing.roomCode ?? existing.roomId}。保存后直接进入，不重复创建房间。'
-                                : '当前个人房已关闭。保存后会重新开放并进入房间。',
-                          ),
-                        ),
-                      ],
-                    ),
+                  RoomOxygenContextBar(
+                    title: existing.title,
+                    subtitle:
+                        '房间号 ${existing.roomCode ?? existing.roomId} · ${existing.isOpen
+                            ? '保存后直接进入'
+                            : _capabilities.supportsReopen
+                            ? '保存后重新开放'
+                            : '当前仅可查看'}',
+                    seed: existing.roomId ?? existing.roomCode ?? 'owned-room',
+                    status: existing.isOpen ? '已开放' : '已关闭',
+                    statusColor: existing.isOpen
+                        ? RoomColors.success
+                        : RoomColors.warning,
                   ),
-                  const SizedBox(height: 22),
+                  if (!existing.isOpen &&
+                      !_capabilities.supportsReopen) ...<Widget>[
+                    const SizedBox(height: 12),
+                    const RoomOxygenNotice(
+                      icon: Icons.info_outline_rounded,
+                      message: '当前 development 后端尚未提供重新开放接口，已关闭房间仅可查看。',
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                ] else ...<Widget>[
+                  const RoomOxygenNotice(
+                    icon: Icons.meeting_room_outlined,
+                    title: '创建固定 8 麦房',
+                    message: '填写基本信息后直接进入房间，不会创建重复个人房。',
+                  ),
+                  const SizedBox(height: 18),
                 ],
                 if (_error != null) ...<Widget>[
                   _InlineError(message: _error!),
@@ -169,9 +176,14 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
                   topicContentController: _topicContentController,
                   welcomeController: _welcomeController,
                   passwordController: _passwordController,
+                  allowExistingPassword: existing?.passwordConfigured ?? false,
                   accessMode: _accessMode,
                   showInHall: _showInHall,
                   autoLockMic: _autoLockMic,
+                  supportsApprovalAccessMode:
+                      _capabilities.supportsApprovalAccessMode,
+                  supportsTopicTitle: _capabilities.supportsTopicTitle,
+                  supportsAutoLockMic: _capabilities.supportsAutoLockMic,
                   enabled: !_saving,
                   onAccessModeChanged: (RoomAccessMode value) {
                     setState(() => _accessMode = value);
@@ -187,18 +199,29 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed: _saving ? null : _save,
+                onPressed:
+                    _saving ||
+                        (existing != null &&
+                            !existing.isOpen &&
+                            !_capabilities.supportsReopen)
+                    ? null
+                    : _save,
                 icon: _saving
                     ? const SizedBox.square(
                         dimension: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.arrow_forward_rounded),
-                label: Text(_buttonLabel(existing)),
+                label: Text(
+                  _buttonLabel(
+                    existing,
+                    canReopen: _capabilities.supportsReopen,
+                  ),
+                ),
               ),
             ),
           ),
@@ -208,6 +231,13 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
   }
 
   Future<void> _save() async {
+    final RoomConfiguration? existing = _existing;
+    if (existing != null && !existing.isOpen && !_capabilities.supportsReopen) {
+      setState(() {
+        _error = '当前 development 后端尚未提供重新开放房间接口。';
+      });
+      return;
+    }
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
@@ -219,30 +249,33 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
       roomId: _existing?.roomId,
       roomCode: _existing?.roomCode,
       title: _titleController.text.trim(),
-      topicTitle: _topicTitleController.text.trim(),
+      topicTitle: _capabilities.supportsTopicTitle
+          ? _topicTitleController.text.trim()
+          : '',
       topicContent: _topicContentController.text.trim(),
       welcomeMessage: _welcomeController.text.trim(),
       accessMode: _accessMode,
       password: _accessMode == RoomAccessMode.password
           ? _passwordController.text
           : '',
+      passwordConfigured: _existing?.passwordConfigured ?? false,
       showInHall: _showInHall,
-      autoLockMic: _autoLockMic,
-      availability: RoomAvailability.open,
+      autoLockMic: _capabilities.supportsAutoLockMic ? _autoLockMic : false,
+      availability: _existing?.availability ?? RoomAvailability.open,
       coverUrl: _existing?.coverUrl,
+      version: _existing?.version,
     );
     try {
-      final RoomLifecycleSaveResult result =
-          await _repository.saveRoom(configuration);
+      final RoomLifecycleSaveResult result = await _repository.saveRoom(
+        configuration,
+      );
       if (!mounted) {
         return;
       }
       Navigator.of(context).pushReplacement<void, void>(
         MaterialPageRoute<void>(
-          builder: (BuildContext context) => RoomPage(
-            roomId: result.roomId,
-            title: configuration.title,
-          ),
+          builder: (BuildContext context) =>
+              RoomPage(roomId: result.roomId, title: configuration.title),
         ),
       );
     } catch (error) {
@@ -256,12 +289,15 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
     }
   }
 
-  static String _buttonLabel(RoomConfiguration? existing) {
+  static String _buttonLabel(
+    RoomConfiguration? existing, {
+    required bool canReopen,
+  }) {
     if (existing == null) {
       return '创建并进入房间';
     }
     if (!existing.isOpen) {
-      return '重新开放并进入房间';
+      return canReopen ? '重新开放并进入房间' : '暂不支持重新开放';
     }
     return '保存并进入房间';
   }
@@ -278,20 +314,10 @@ class _InlineError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.warning.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const Icon(Icons.error_outline_rounded, color: AppColors.warning),
-          const SizedBox(width: 10),
-          Expanded(child: Text(message)),
-        ],
-      ),
+    return RoomOxygenNotice(
+      icon: Icons.error_outline_rounded,
+      message: message,
+      accent: RoomColors.warning,
     );
   }
 }

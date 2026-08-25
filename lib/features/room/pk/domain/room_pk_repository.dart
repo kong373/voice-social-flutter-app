@@ -4,18 +4,16 @@ abstract interface class RoomPkRepository {
   bool get supportsRealtimeInvitations;
   bool get supportsSurrender;
 
-  Future<List<RoomPkOpponent>> fetchHotOpponents({
-    required String roomId,
-  });
+  Future<List<RoomPkOpponent>> fetchHotOpponents({required String roomId});
 
   Future<List<RoomPkOpponent>> searchOpponents({
     required String roomId,
     required String keyword,
+    int pageNum = 1,
+    int pageSize = 20,
   });
 
-  Future<RoomPkInvitation?> fetchIncomingInvitation({
-    required String roomId,
-  });
+  Future<RoomPkInvitation?> fetchIncomingInvitation({required String roomId});
 
   Future<RoomPkInvitation> sendInvitation({
     required String roomId,
@@ -43,5 +41,11 @@ abstract interface class RoomPkRepository {
     required String battleId,
   });
 
-  Future<List<RoomPkRecord>> fetchHistory({required String roomId});
+  Future<RoomPkBattle> end({required String roomId, required String battleId});
+
+  Future<List<RoomPkRecord>> fetchHistory({
+    required String roomId,
+    int pageNum = 1,
+    int pageSize = 20,
+  });
 }

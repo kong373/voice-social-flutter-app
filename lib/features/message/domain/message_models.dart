@@ -1,6 +1,12 @@
 enum ConversationKind { privateChat }
 
-enum ChatMessageStatus { sending, sent, failed, received }
+enum ChatMessageStatus {
+  sending,
+  sent,
+  storedPendingDelivery,
+  failed,
+  received,
+}
 
 class ConversationSummary {
   const ConversationSummary({
@@ -16,16 +22,57 @@ class ConversationSummary {
     this.unavailableReason = '',
   });
 
-  final String id;
+  /// Null until the first-party backend gives this draft a public ID.
+  ///
+  /// A newly opened private chat must not invent a conversation identifier.
+  final String? id;
   final ConversationKind kind;
   final String title;
   final String? avatarUrl;
   final String lastMessage;
-  final DateTime updatedAt;
+
+  /// Null for a draft because the client has no authoritative server time yet.
+  final DateTime? updatedAt;
   final int unreadCount;
   final int targetUserId;
   final bool available;
   final String unavailableReason;
+
+  bool get isDraft => id == null || id!.trim().isEmpty;
+
+  const ConversationSummary.draft({
+    required this.kind,
+    required this.title,
+    required this.lastMessage,
+    required this.unreadCount,
+    required this.targetUserId,
+    this.avatarUrl,
+    this.available = true,
+    this.unavailableReason = '',
+  }) : id = null,
+       updatedAt = null;
+
+  ConversationSummary withServerIdentity({
+    required String conversationId,
+    required DateTime serverUpdatedAt,
+  }) {
+    final String normalizedId = conversationId.trim();
+    if (normalizedId.isEmpty) {
+      throw ArgumentError.value(conversationId, 'conversationId');
+    }
+    return ConversationSummary(
+      id: normalizedId,
+      kind: kind,
+      title: title,
+      avatarUrl: avatarUrl,
+      lastMessage: lastMessage,
+      updatedAt: serverUpdatedAt,
+      unreadCount: unreadCount,
+      targetUserId: targetUserId,
+      available: available,
+      unavailableReason: unavailableReason,
+    );
+  }
 
   ConversationSummary copyWith({
     String? lastMessage,
@@ -62,7 +109,7 @@ class ChatMessage {
   });
 
   final String id;
-  final String conversationId;
+  final String? conversationId;
   final int senderUserId;
   final String senderName;
   final String content;
@@ -70,10 +117,10 @@ class ChatMessage {
   final bool isMine;
   final ChatMessageStatus status;
 
-  ChatMessage copyWith({ChatMessageStatus? status}) {
+  ChatMessage copyWith({ChatMessageStatus? status, String? conversationId}) {
     return ChatMessage(
       id: id,
-      conversationId: conversationId,
+      conversationId: conversationId ?? this.conversationId,
       senderUserId: senderUserId,
       senderName: senderName,
       content: content,
@@ -146,6 +193,7 @@ enum NativeNotificationPermissionState {
   unknown,
   allowed,
   denied,
+  permanentlyDenied,
   restricted,
   unavailable,
 }

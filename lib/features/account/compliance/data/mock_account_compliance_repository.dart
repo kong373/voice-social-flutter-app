@@ -14,12 +14,14 @@ class MockAccountComplianceRepository implements AccountComplianceRepository {
   @override
   Future<AccountComplianceSnapshot> fetchSnapshot({
     required String account,
+    int? expectedUserId,
     required int currentVersion,
     required int platformType,
   }) async {
     _snapshot ??= AccountComplianceSnapshot(
       account: account,
       nickname: '晚星',
+      accountUsable: true,
       verificationState: VerificationState.unverified,
       youthModeEnabled: false,
       restriction: const AccountRestriction(
@@ -31,6 +33,8 @@ class MockAccountComplianceRepository implements AccountComplianceRepository {
         message: '账号满足注销条件。注销后资料、关系与钱包记录将按平台规则处理。',
         mobile: '138****8000',
         requiresSmsCode: true,
+        status: 'NONE',
+        canCancel: false,
       ),
       versionInfo: const VersionUpdateInfo(
         hasUpdate: true,
@@ -97,6 +101,9 @@ class MockAccountComplianceRepository implements AccountComplianceRepository {
       ],
     );
   }
+
+  @override
+  Future<void> openPermissionSettings() async {}
 
   @override
   Future<void> submitRealName({
@@ -216,19 +223,43 @@ class MockAccountComplianceRepository implements AccountComplianceRepository {
     _snapshot = snapshot.copyWith(
       cancellation: const CancellationEligibility(
         allowed: false,
-        message: '注销申请已提交，当前会话已进入退出流程。',
+        message: '注销申请已提交，当前处于 7 天冷静期。',
         mobile: '138****8000',
         requiresSmsCode: false,
+        status: 'COOLING_OFF',
+        canCancel: true,
+        coolingEndsAt: '2026-08-29T00:00:00Z',
       ),
     );
+  }
+
+  @override
+  Future<CancellationEligibility> cancelDeletion() async {
+    final AccountComplianceSnapshot snapshot = _requireSnapshot();
+    if (!snapshot.cancellation.canCancel) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '当前没有可撤销的注销申请',
+      );
+    }
+    _snapshot = snapshot.copyWith(
+      cancellation: const CancellationEligibility(
+        allowed: true,
+        message: '注销申请已撤销，账号恢复正常状态。',
+        mobile: '138****8000',
+        requiresSmsCode: false,
+        status: 'NONE',
+        canCancel: false,
+      ),
+    );
+    return _snapshot!.cancellation;
   }
 
   @override
   Future<VersionUpdateInfo> checkVersion({
     required int currentVersion,
     required int platformType,
-  }) async =>
-      _requireSnapshot().versionInfo;
+  }) async => _requireSnapshot().versionInfo;
 
   @override
   Future<bool> setYouthMode({

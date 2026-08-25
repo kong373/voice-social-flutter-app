@@ -1,19 +1,23 @@
 part of 'community_pages.dart';
 
 class GuardianFanPage extends StatefulWidget {
-  const GuardianFanPage({super.key});
+  const GuardianFanPage({super.key, this.initialAnchorUserId});
+
+  /// A caller may provide a verified anchor context (for example, from a
+  /// room or an anchor profile). Live mode must not invent one on its own.
+  final int? initialAnchorUserId;
 
   @override
   State<GuardianFanPage> createState() => _GuardianFanPageState();
 }
 
 class _GuardianFanPageState extends State<GuardianFanPage> {
-  final TextEditingController _anchorController =
-      TextEditingController(text: '20001');
+  final TextEditingController _anchorController = TextEditingController();
   GuardianFanSnapshot? _snapshot;
-  bool _loading = true;
+  bool _loading = false;
   bool _busy = false;
   String? _error;
+  bool _initialized = false;
 
   CommunityRepository get _repository =>
       AppDependencyScope.of(context).communityRepository;
@@ -21,7 +25,18 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_snapshot == null && _loading) {
+    if (_initialized) {
+      return;
+    }
+    _initialized = true;
+    final bool isLive = AppDependencyScope.of(context).environment.isLive;
+    if (widget.initialAnchorUserId != null) {
+      _anchorController.text = '${widget.initialAnchorUserId}';
+      _load();
+    } else if (!isLive) {
+      // Mock/QA keeps its explicit fixture behavior. Live mode has no
+      // implicit business identity and waits for a real anchor context.
+      _anchorController.text = '20001';
       _load();
     }
   }
@@ -46,8 +61,9 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
       _error = null;
     });
     try {
-      final GuardianFanSnapshot value =
-          await _repository.fetchGuardianFan(anchorId);
+      final GuardianFanSnapshot value = await _repository.fetchGuardianFan(
+        anchorId,
+      );
       if (mounted) {
         setState(() {
           _snapshot = value;
@@ -99,9 +115,9 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -122,9 +138,9 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -133,34 +149,165 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final GuardianFanSnapshot? snapshot = _snapshot;
-    return Scaffold(
-      appBar: AppBar(title: const Text('守护与粉团')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+  Widget _guardianLevelCard(GuardianLevel level) {
+    return _CommunitySection(
+      tint: const Color(0xFFF9F6FF),
+      padding: const EdgeInsets.fromLTRB(12, 13, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
-              Expanded(
-                child: TextField(
-                  controller: _anchorController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: '主播用户 ID',
-                    prefixIcon: Icon(Icons.person_search_outlined),
-                  ),
-                ),
+              const _CommunityGlyph(
+                icon: Icons.shield_rounded,
+                tint: _CommunityPalette.violet,
+                size: 38,
               ),
-              const SizedBox(width: 8),
-              FilledButton.tonal(
-                onPressed: _loading ? null : _load,
-                child: const Text('查询'),
+              const Spacer(),
+              _SmallTag(
+                label: '${level.durationDays} 天',
+                tint: _CommunityPalette.violet,
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 11),
+          Text(
+            level.name,
+            style: const TextStyle(
+              color: _CommunityPalette.ink,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '${level.price} 礼物币',
+            style: const TextStyle(
+              color: _CommunityPalette.muted,
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 11),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: _busy ? null : () => _guard(level),
+              child: const Text('开通'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _fansTaskCard(FansTask task) {
+    final double progress = task.target == 0 ? 0 : task.progress / task.target;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: _CommunitySection(
+        padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
+        child: Row(
+          children: <Widget>[
+            _CommunityGlyph(
+              icon: task.claimed
+                  ? Icons.check_rounded
+                  : Icons.auto_awesome_rounded,
+              tint: task.claimed ? AppColors.success : _CommunityPalette.gold,
+              size: 38,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    task.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _CommunityPalette.ink,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  _ProgressLine(value: progress),
+                  const SizedBox(height: 4),
+                  Text(
+                    '${task.progress}/${task.target}  ·  ${task.reward}',
+                    style: const TextStyle(
+                      color: _CommunityPalette.muted,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (task.claimed) ...<Widget>[
+              const SizedBox(width: 8),
+              const _SmallTag(label: '已完成', tint: AppColors.success),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final GuardianFanSnapshot? snapshot = _snapshot;
+    final bool isLive = AppDependencyScope.of(context).environment.isLive;
+    return SocialPageScaffold(
+      appBar: AppBar(title: const Text('守护与粉团')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+        children: <Widget>[
+          if (!_loading && _error == null && snapshot != null) ...<Widget>[
+            _CommunityHero(
+              eyebrow: 'GUARDIAN SPACE · ${snapshot.anchorUserId}',
+              title: snapshot.anchorName,
+              subtitle: snapshot.currentGuardianLevel == null
+                  ? '当前未开通守护 · 先从陪伴开始'
+                  : '当前守护：${snapshot.currentGuardianLevel!.name}',
+              icon: Icons.shield_rounded,
+              colors: const <Color>[
+                Color(0xFF3A2E76),
+                Color(0xFF6953C6),
+                Color(0xFFE17EA8),
+              ],
+              trailing: _LetterAvatar(
+                label: snapshot.anchorName,
+                prominent: true,
+                imagePath: isLive ? null : 'assets/runtime/avatar-rose.png',
+                size: 66,
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          _CommunitySection(
+            padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: TextField(
+                    controller: _anchorController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '主播用户 ID',
+                      prefixIcon: Icon(Icons.person_search_outlined),
+                      fillColor: Color(0xFFF7F5FF),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonal(
+                  onPressed: _loading ? null : _load,
+                  child: const Text('查询'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
           if (_loading)
             const Padding(
               padding: EdgeInsets.all(40),
@@ -168,99 +315,85 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
             )
           else if (_error != null)
             _StateError(message: _error!, onRetry: _load)
-          else if (snapshot != null) ...<Widget>[
-            Material(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(22),
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(snapshot.anchorName,
-                        style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 6),
-                    Text('主播 ID ${snapshot.anchorUserId}'),
-                    const SizedBox(height: 10),
-                    Text(
-                      snapshot.currentGuardianLevel == null
-                          ? '当前未开通守护'
-                          : '当前守护：${snapshot.currentGuardianLevel!.name}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
+          else if (snapshot == null)
+            KeyedSubtree(
+              key: const Key('guardian-anchor-required'),
+              child: const _InfoCard(
+                icon: Icons.person_search_outlined,
+                text: '请先输入主播用户 ID，再查询服务端确认的守护与粉团信息。',
               ),
-            ),
-            const SizedBox(height: 20),
-            Text('守护档位', style: Theme.of(context).textTheme.titleLarge),
+            )
+          else ...<Widget>[
+            const _SectionHeading(title: '守护档位', subtitle: '开通前会再次确认消耗与时长'),
             const SizedBox(height: 10),
             if (snapshot.guardianLevels.isEmpty)
-              const _InfoCard(
-                icon: Icons.shield_outlined,
-                text: '当前没有可用守护档位。',
-              )
+              const _InfoCard(icon: Icons.shield_outlined, text: '当前没有可用守护档位。')
             else
-              for (final GuardianLevel level in snapshot.guardianLevels)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Material(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(18),
-                    child: ListTile(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      leading: const Icon(Icons.shield_outlined),
-                      title: Text(level.name),
-                      subtitle: Text('${level.durationDays} 天 · ${level.price} 礼物币'),
-                      trailing: FilledButton.tonal(
-                        onPressed: _busy ? null : () => _guard(level),
-                        child: const Text('开通'),
-                      ),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: snapshot.guardianLevels.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 9,
+                  crossAxisSpacing: 9,
+                  mainAxisExtent: 188,
+                ),
+                itemBuilder: (BuildContext context, int index) =>
+                    _guardianLevelCard(snapshot.guardianLevels[index]),
+              ),
+            const SizedBox(height: 20),
+            _CommunitySection(
+              tint: const Color(0xFFF8F5FF),
+              child: Row(
+                children: <Widget>[
+                  const _CommunityGlyph(
+                    icon: Icons.auto_awesome_rounded,
+                    tint: _CommunityPalette.gold,
+                    size: 46,
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          snapshot.fansTeamName,
+                          style: const TextStyle(
+                            color: _CommunityPalette.ink,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          snapshot.joinedFansTeam
+                              ? '粉团等级 ${snapshot.fansLevel} · 亲密值 ${snapshot.intimacy}'
+                              : '尚未加入粉团',
+                          style: const TextStyle(
+                            color: _CommunityPalette.muted,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-            const SizedBox(height: 20),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(snapshot.fansTeamName,
-                          style: Theme.of(context).textTheme.titleLarge),
-                      const SizedBox(height: 4),
-                      Text(
-                        snapshot.joinedFansTeam
-                            ? '粉团等级 ${snapshot.fansLevel} · 亲密值 ${snapshot.intimacy}'
-                            : '尚未加入粉团',
-                      ),
-                    ],
+                  FilledButton(
+                    onPressed: _busy || snapshot.joinedFansTeam
+                        ? null
+                        : _joinFans,
+                    child: Text(snapshot.joinedFansTeam ? '已加入' : '加入粉团'),
                   ),
-                ),
-                FilledButton(
-                  onPressed: _busy || snapshot.joinedFansTeam ? null : _joinFans,
-                  child: Text(snapshot.joinedFansTeam ? '已加入' : '加入粉团'),
-                ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 18),
+            const _SectionHeading(title: '粉团任务', subtitle: '完成互动累积亲密值'),
+            const SizedBox(height: 10),
             if (snapshot.tasks.isEmpty)
-              const _InfoCard(
-                icon: Icons.task_alt_outlined,
-                text: '当前没有粉团任务。',
-              )
+              const _InfoCard(icon: Icons.task_alt_outlined, text: '当前没有粉团任务。')
             else
-              for (final FansTask task in snapshot.tasks)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(task.title),
-                  subtitle: Text('${task.progress}/${task.target} · ${task.reward}'),
-                  trailing: task.claimed
-                      ? const Icon(Icons.check_circle_rounded, color: AppColors.success)
-                      : null,
-                ),
+              for (final FansTask task in snapshot.tasks) _fansTaskCard(task),
           ],
         ],
       ),

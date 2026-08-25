@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/live_backend_readiness.dart';
+import 'package:voice_social_app/features/account/presentation/account_oxygen_components.dart';
 
 class LiveBackendReadinessPage extends StatefulWidget {
   const LiveBackendReadinessPage({required this.service, super.key});
@@ -13,8 +15,7 @@ class LiveBackendReadinessPage extends StatefulWidget {
       _LiveBackendReadinessPageState();
 }
 
-class _LiveBackendReadinessPageState
-    extends State<LiveBackendReadinessPage> {
+class _LiveBackendReadinessPageState extends State<LiveBackendReadinessPage> {
   LiveBackendReadinessSnapshot? _snapshot;
   bool _busy = false;
 
@@ -29,8 +30,7 @@ class _LiveBackendReadinessPageState
       return;
     }
     setState(() => _busy = true);
-    final LiveBackendReadinessSnapshot snapshot =
-        await widget.service.check();
+    final LiveBackendReadinessSnapshot snapshot = await widget.service.check();
     if (!mounted) {
       return;
     }
@@ -45,13 +45,11 @@ class _LiveBackendReadinessPageState
     if (snapshot == null) {
       return;
     }
-    await Clipboard.setData(
-      ClipboardData(text: snapshot.toRedactedText()),
-    );
+    await Clipboard.setData(ClipboardData(text: snapshot.toRedactedText()));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已复制脱敏诊断摘要')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已复制脱敏诊断摘要')));
     }
   }
 
@@ -60,14 +58,14 @@ class _LiveBackendReadinessPageState
     final LiveBackendReadinessSnapshot? snapshot = _snapshot;
     final Map<String, Object?> environment =
         widget.service.environment.redactedSummary;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('开发环境联调诊断')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
         children: <Widget>[
           const _NoticeCard(
             icon: Icons.security_rounded,
-            text: '本页只探测配置、DNS、TLS 和 HTTP 网关可达性，不发送短信、不登录、不调用支付，也不会显示任何密钥。',
+            text: '本页只探测配置、DNS、TLS 和 HTTP 网关可达性，不调用正式短信、RTC、IM 或支付，也不会显示任何密钥。',
           ),
           const SizedBox(height: 16),
           Text('运行配置', style: Theme.of(context).textTheme.titleLarge),
@@ -99,11 +97,17 @@ class _LiveBackendReadinessPageState
                 environment['liveProbePath'].toString(),
               ),
               MapEntry<String, String>(
-                '认证参数',
-                environment['oauthClientIdConfigured'] == true &&
-                        environment['oauthClientSecretConfigured'] == true
+                '公开 Client ID',
+                environment['oauthClientIdConfigured'] == true
                     ? '已配置（值已隐藏）'
-                    : '未完整配置',
+                    : '未配置',
+              ),
+              const MapEntry<String, String>('移动端 Client Secret', '未携带（正确）'),
+              MapEntry<String, String>(
+                '开发验证码回读',
+                environment['developmentOutboxConfigured'] == true
+                    ? '已配置（仅本地/开发）'
+                    : '未启用',
               ),
             ],
           ),
@@ -140,12 +144,13 @@ class _LiveBackendReadinessPageState
           const SizedBox(height: 20),
           const _NoticeCard(
             icon: Icons.info_outline_rounded,
-            text: '“网关可达”只代表网络传输链路已收到 HTTP 响应，不等于短信、登录、首页、房间、钱包或第三方能力已经联调通过。',
+            text: '“网关可达”只代表网络传输链路已收到 HTTP 响应，不等于业务接口或第三方能力已经联调通过。',
           ),
           const SizedBox(height: 10),
           const _NoticeCard(
             icon: Icons.extension_off_outlined,
-            text: 'RTC、腾讯 IM、微信支付、支付宝、Apple IAP、推送和对象存储仍保持 VENDOR_BLOCKED。',
+            text:
+                '正式短信、RTC、腾讯 IM、微信支付、支付宝、Apple IAP、推送和对象存储在厂商配置完成前保持 VENDOR_BLOCKED。',
           ),
         ],
       ),
@@ -160,32 +165,27 @@ class _DetailsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: <Widget>[
-            for (int index = 0; index < entries.length; index += 1) ...<Widget>[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  SizedBox(
-                    width: 84,
-                    child: Text(
-                      entries[index].key,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+    return AccountSheet(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: <Widget>[
+          for (int index = 0; index < entries.length; index += 1) ...<Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SizedBox(
+                  width: 112,
+                  child: Text(
+                    entries[index].key,
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
-                  Expanded(child: Text(entries[index].value)),
-                ],
-              ),
-              if (index != entries.length - 1)
-                const Divider(height: 22),
-            ],
+                ),
+                Expanded(child: Text(entries[index].value)),
+              ],
+            ),
+            if (index != entries.length - 1) const Divider(height: 22),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -194,9 +194,7 @@ class _DetailsCard extends StatelessWidget {
 class _ResultCard extends StatelessWidget {
   const _ResultCard({required this.snapshot}) : loading = false;
 
-  const _ResultCard.loading()
-      : snapshot = null,
-        loading = true;
+  const _ResultCard.loading() : snapshot = null, loading = true;
 
   final LiveBackendReadinessSnapshot? snapshot;
   final bool loading;
@@ -204,51 +202,54 @@ class _ResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const Material(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.all(Radius.circular(20)),
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Center(child: CircularProgressIndicator()),
-        ),
+      return const AccountSheet(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator()),
       );
     }
     final LiveBackendReadinessSnapshot value = snapshot!;
     final Color color = _statusColor(value.status);
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Icon(_statusIcon(value.status), color: color),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    value.status.label,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
+    return AccountSheet(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(value.message),
-            const SizedBox(height: 10),
-            Text(
-              <String>[
-                if (value.httpStatus != null) 'HTTP ${value.httpStatus}',
-                if (value.latency != null)
-                  '${value.latency!.inMilliseconds} ms',
-                value.checkedAt.toLocal().toIso8601String(),
-              ].join(' · '),
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
+                child: Icon(_statusIcon(value.status), color: color, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  value.status.label,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              AccountStatusPill(
+                label: _statusBadgeLabel(value.status),
+                color: color,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(value.message),
+          const SizedBox(height: 10),
+          Text(
+            <String>[
+              if (value.httpStatus != null) 'HTTP ${value.httpStatus}',
+              if (value.latency != null) '${value.latency!.inMilliseconds} ms',
+              value.checkedAt.toLocal().toIso8601String(),
+            ].join(' · '),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
       ),
     );
   }
@@ -262,45 +263,44 @@ class _NoticeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surfaceHigh,
-      borderRadius: BorderRadius.circular(18),
-      child: Padding(
-        padding: const EdgeInsets.all(15),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Icon(icon, color: AppColors.accent),
-            const SizedBox(width: 12),
-            Expanded(child: Text(text)),
-          ],
-        ),
-      ),
+    return AccountNoticeStrip(
+      icon: icon,
+      text: text,
+      tone: AccountOxygenColors.cyan,
     );
   }
 }
 
+String _statusBadgeLabel(LiveBackendReadinessStatus status) => switch (status) {
+  LiveBackendReadinessStatus.gatewayReachable => '传输链路',
+  LiveBackendReadinessStatus.mockMode => '本地模式',
+  LiveBackendReadinessStatus.configurationInvalid => '配置异常',
+  LiveBackendReadinessStatus.gatewayRejected => '网关拒绝',
+  LiveBackendReadinessStatus.tlsRejected => 'TLS 失败',
+  LiveBackendReadinessStatus.networkUnavailable => '网络异常',
+  LiveBackendReadinessStatus.timedOut => '请求超时',
+  LiveBackendReadinessStatus.unexpectedFailure => '未知异常',
+};
+
 Color _statusColor(LiveBackendReadinessStatus status) => switch (status) {
-      LiveBackendReadinessStatus.gatewayReachable => AppColors.success,
-      LiveBackendReadinessStatus.mockMode => AppColors.accent,
-      LiveBackendReadinessStatus.configurationInvalid ||
-      LiveBackendReadinessStatus.tlsRejected =>
-        AppColors.error,
-      LiveBackendReadinessStatus.networkUnavailable ||
-      LiveBackendReadinessStatus.timedOut ||
-      LiveBackendReadinessStatus.unexpectedFailure =>
-        AppColors.warning,
-    };
+  LiveBackendReadinessStatus.gatewayReachable => AppColors.success,
+  LiveBackendReadinessStatus.mockMode => AppColors.accent,
+  LiveBackendReadinessStatus.configurationInvalid ||
+  LiveBackendReadinessStatus.gatewayRejected ||
+  LiveBackendReadinessStatus.tlsRejected => AppColors.error,
+  LiveBackendReadinessStatus.networkUnavailable ||
+  LiveBackendReadinessStatus.timedOut ||
+  LiveBackendReadinessStatus.unexpectedFailure => AppColors.warning,
+};
 
 IconData _statusIcon(LiveBackendReadinessStatus status) => switch (status) {
-      LiveBackendReadinessStatus.gatewayReachable => Icons.cloud_done_outlined,
-      LiveBackendReadinessStatus.mockMode => Icons.science_outlined,
-      LiveBackendReadinessStatus.configurationInvalid =>
-        Icons.settings_suggest_outlined,
-      LiveBackendReadinessStatus.tlsRejected => Icons.gpp_bad_outlined,
-      LiveBackendReadinessStatus.networkUnavailable =>
-        Icons.cloud_off_outlined,
-      LiveBackendReadinessStatus.timedOut => Icons.timer_off_outlined,
-      LiveBackendReadinessStatus.unexpectedFailure =>
-        Icons.error_outline_rounded,
-    };
+  LiveBackendReadinessStatus.gatewayReachable => Icons.cloud_done_outlined,
+  LiveBackendReadinessStatus.mockMode => Icons.science_outlined,
+  LiveBackendReadinessStatus.configurationInvalid =>
+    Icons.settings_suggest_outlined,
+  LiveBackendReadinessStatus.gatewayRejected => Icons.cloud_off_outlined,
+  LiveBackendReadinessStatus.tlsRejected => Icons.gpp_bad_outlined,
+  LiveBackendReadinessStatus.networkUnavailable => Icons.cloud_off_outlined,
+  LiveBackendReadinessStatus.timedOut => Icons.timer_off_outlined,
+  LiveBackendReadinessStatus.unexpectedFailure => Icons.error_outline_rounded,
+};

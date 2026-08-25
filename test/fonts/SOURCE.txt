@@ -1,0 +1,40 @@
+{
+  "upstream_repo": "https://github.com/notofonts/noto-cjk",
+  "upstream_commit": "f8d157532fbfaeda587e826d4cd5b21a49186f7c",
+  "fonttools_version": "4.63.0",
+  "license": {
+    "path": "Sans/LICENSE",
+    "blob_sha": "d952d62c065f3f35fb83a173496e90b21525aef3",
+    "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
+    "size": 4301
+  },
+  "upstream_sources": [
+    {
+      "path": "Sans/SubsetOTF/SC/NotoSansSC-Regular.otf",
+      "blob_sha": "fc0fda9394367c16c1af7555a2ae4d5e2e6a6f02",
+      "sha256": "faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9",
+      "size": 8331336
+    },
+    {
+      "path": "Sans/SubsetOTF/SC/NotoSansSC-Bold.otf",
+      "blob_sha": "bcc11bc30e65b69b9e5a508c3e2138197c5543cf",
+      "sha256": "c6cb5a93abaa9edc8ee7463b7ebb7f42d618d40e6ed2f7a5371c97b0b64767c0",
+      "size": 8543168
+    }
+  ],
+  "subset_outputs": [
+    {
+      "path": "M3GoldenCjkRegular.otf",
+      "sha256": "fa1f8c5a04404a330d4967e2fc908bcf02a9e10c8442d1a63a32382f27d9c01b",
+      "size": 242992
+    },
+    {
+      "path": "M3GoldenCjkBold.otf",
+      "sha256": "4b57c661e14244d24cb687ac79cd7dc0d5bd412e03e3135de48295de5745d529",
+      "size": 243836
+    }
+  ],
+  "charset_file": "M3GoldenCjk.charset.txt",
+  "generated_with": "pyftsubset",
+  "source_date_epoch": "0"
+}

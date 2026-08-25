@@ -96,7 +96,8 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
     sourcePath:
         'lib/features/account/presentation/third_party_authorization_page.dart',
     userEntry: '我的 → 账号与安全 → 第三方账号绑定与分享授权',
-    vendorBoundary: '第三方账号及原生分享 SDK 未接入',
+    vendorBoundary:
+        'account-vendor-boundary-v1：SOCIAL_ACCOUNT_BINDING 与 NATIVE_SHARE 均 VENDOR_BLOCKED，providerInvocation=false',
     builder: (_, __) => const ThirdPartyAuthorizationPage(),
   ),
   QaPageEntry(
@@ -113,7 +114,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
       QaPageState.permissionDenied,
       QaPageState.unavailable,
     ],
-    vendorBoundary: '原生权限适配器未接入',
+    vendorBoundary: '第一方 Android/iOS 系统权限桥；未注册原生 host 时显示不可用',
     builder: (_, __) => const SystemPermissionCenterPage(
       account: '13800138000',
       currentVersion: 5,
@@ -129,7 +130,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
         'lib/features/account/compliance/presentation/system_permission_pages.dart',
     userEntry: '我的 → 账号与安全 → 实名认证',
     requiredStates: _formStates,
-    vendorBoundary: '第三方实名认证服务未接入',
+    vendorBoundary: '第一方人工审核；状态由服务端返回 PENDING/APPROVED/REJECTED',
     builder: (_, __) => const RealNamePage(
       account: '13800138000',
       currentVersion: 5,
@@ -255,7 +256,10 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
     sourcePath: 'lib/features/discovery/presentation/global_search_page.dart',
     userEntry: '首页 → 搜索',
     requiredStates: _formStates,
-    builder: (_, __) => const GlobalSearchPage(),
+    builder: (_, __) => const GlobalSearchPage(
+      initialRecent: <String>['深夜陪伴', '880217', '南风'],
+      suggestions: <String>['深夜陪伴', '音乐点唱', '轻松闲聊', '新朋友'],
+    ),
   ),
   QaPageEntry(
     id: 'DS-003',
@@ -525,6 +529,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
       currentUserId: 10001,
       currentRole: _roomRole(scenario.role),
       seats: qaEightSeats,
+      roomTitle: '深夜温柔陪伴',
     ),
   ),
   QaPageEntry(
@@ -545,6 +550,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
       currentUserId: 10001,
       currentRole: _managementRole(scenario.role),
       seats: qaEightSeats,
+      roomTitle: '深夜温柔陪伴',
     ),
   ),
   QaPageEntry(
@@ -561,6 +567,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
           scenario.role == QaRole.owner ||
           scenario.role == QaRole.moderator ||
           scenario.role == QaRole.platformModerator,
+      roomTitle: '深夜温柔陪伴',
     ),
   ),
   QaPageEntry(
@@ -595,6 +602,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
           scenario.role == QaRole.speaker ||
           scenario.role == QaRole.owner ||
           scenario.role == QaRole.moderator,
+      roomTitle: '深夜温柔陪伴',
     ),
   ),
   QaPageEntry(
@@ -614,7 +622,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
     builder: (AppDependencies dependencies, _) => _QaControllerPage(
       dependencies: dependencies,
       childBuilder: (RoomController controller) =>
-          RoomRecoveryPage(controller: controller),
+          RoomRecoveryPage(controller: controller, roomTitle: '深夜温柔陪伴'),
     ),
   ),
   QaPageEntry(
@@ -633,7 +641,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
     builder: (AppDependencies dependencies, _) => _QaControllerPage(
       dependencies: dependencies,
       childBuilder: (RoomController controller) =>
-          RoomDiagnosticsPage(controller: controller),
+          RoomDiagnosticsPage(controller: controller, roomTitle: '深夜温柔陪伴'),
     ),
   ),
   QaPageEntry(
@@ -873,18 +881,19 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
         'lib/features/commerce/presentation/commerce_catalog_pages.dart',
     userEntry: 'RM-004 → 礼物 Bottom Sheet；钱包 → 礼物目录',
     requiredStates: _repositoryStates,
-    builder: (_, __) => const GiftCatalogPage(),
+    builder: (_, __) =>
+        const GiftCatalogPage(initialGifts: qaReviewedPopularGiftCatalog),
   ),
   QaPageEntry(
     id: 'CM-010',
-    name: '会员装扮与背包',
+    name: '装扮中心',
     area: ProductArea.commerce,
-    widgetClass: 'MembershipBackpackPage',
+    widgetClass: 'DecorationPage',
     sourcePath:
         'lib/features/commerce/presentation/commerce_catalog_pages.dart',
-    userEntry: '钱包、订单与收益 → 会员装扮与背包',
+    userEntry: '我的 → 装扮；钱包与商业化 → 装扮中心',
     requiredStates: _repositoryStates,
-    builder: (_, __) => const MembershipBackpackPage(),
+    builder: (_, __) => const DecorationPage(),
   ),
   QaPageEntry(
     id: 'CM-011',

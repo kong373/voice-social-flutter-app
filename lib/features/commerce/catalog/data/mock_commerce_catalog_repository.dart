@@ -33,81 +33,98 @@ class MockCommerceCatalogRepository implements CommerceCatalogRepository {
            owned: true,
            equipped: false,
          ),
-       ],
-       _backpack = <BackpackGiftItem>[
-         BackpackGiftItem(
-           id: 'pack-rose',
-           gift: const GiftCatalogItem(
-             id: 101,
-             name: '玫瑰',
-             price: 10,
-             category: GiftCatalogCategory.companionship,
-           ),
-           quantity: 12,
-           expiresAt: DateTime.now().add(const Duration(days: 20)),
-         ),
-         BackpackGiftItem(
-           id: 'pack-star',
-           gift: const GiftCatalogItem(
-             id: 102,
-             name: '星光',
-             price: 66,
-             category: GiftCatalogCategory.popular,
-           ),
-           quantity: 3,
-         ),
        ];
 
   final List<RechargeOrder> _orders = <RechargeOrder>[];
   final void Function(RechargeOrder order)? _onRechargeOrderChanged;
   final List<DecorationItem> _decorations;
-  final List<BackpackGiftItem> _backpack;
   final Map<String, int> _orderQueries = <String, int>{};
   int _giftCoinBalance = 1680;
-  bool _membershipActive = false;
-  DateTime? _membershipExpiresAt;
 
   static const List<GiftCatalogItem> _gifts = <GiftCatalogItem>[
     GiftCatalogItem(
-      id: 101,
+      id: 'mock-gift-101',
       name: '玫瑰',
       price: 10,
       category: GiftCatalogCategory.companionship,
     ),
     GiftCatalogItem(
-      id: 102,
+      id: 'mock-gift-102',
       name: '星光',
       price: 66,
       category: GiftCatalogCategory.popular,
     ),
     GiftCatalogItem(
-      id: 103,
+      id: 'mock-gift-103',
       name: '晚安灯',
       price: 188,
       category: GiftCatalogCategory.companionship,
     ),
     GiftCatalogItem(
-      id: 104,
+      id: 'mock-gift-104',
       name: '庆祝烟花',
       price: 520,
       category: GiftCatalogCategory.celebration,
     ),
-  ];
-
-  static const List<MembershipPlan> _plans = <MembershipPlan>[
-    MembershipPlan(
-      id: 'vip-30',
-      name: '月度会员',
-      priceGiftCoins: 880,
-      durationDays: 30,
-      benefits: <String>['会员标识', '专属昵称样式', '每月装扮体验卡'],
+    GiftCatalogItem(
+      id: 'mock-gift-105',
+      name: '流星票',
+      price: 100,
+      category: GiftCatalogCategory.popular,
     ),
-    MembershipPlan(
-      id: 'vip-90',
-      name: '季度会员',
-      priceGiftCoins: 2280,
-      durationDays: 90,
-      benefits: <String>['会员标识', '专属昵称样式', '季度头像框'],
+    GiftCatalogItem(
+      id: 'mock-gift-106',
+      name: '心意彩虹',
+      price: 266,
+      category: GiftCatalogCategory.companionship,
+    ),
+    GiftCatalogItem(
+      id: 'mock-gift-107',
+      name: '星河小鲸',
+      price: 1314,
+      category: GiftCatalogCategory.celebration,
+    ),
+    GiftCatalogItem(
+      id: 'mock-gift-108',
+      name: '纸飞机',
+      price: 20,
+      category: GiftCatalogCategory.popular,
+    ),
+    GiftCatalogItem(
+      id: 'mock-gift-109',
+      name: '月光花',
+      price: 188,
+      category: GiftCatalogCategory.companionship,
+    ),
+    GiftCatalogItem(
+      id: 'mock-gift-110',
+      name: '星空音符',
+      price: 520,
+      category: GiftCatalogCategory.celebration,
+    ),
+    GiftCatalogItem(
+      id: 'mock-gift-111',
+      name: '云朵拥抱',
+      price: 52,
+      category: GiftCatalogCategory.companionship,
+    ),
+    GiftCatalogItem(
+      id: 'mock-gift-112',
+      name: '心动信号',
+      price: 99,
+      category: GiftCatalogCategory.companionship,
+    ),
+    GiftCatalogItem(
+      id: 'mock-gift-113',
+      name: '暖阳',
+      price: 199,
+      category: GiftCatalogCategory.companionship,
+    ),
+    GiftCatalogItem(
+      id: 'mock-gift-114',
+      name: '星月',
+      price: 520,
+      category: GiftCatalogCategory.companionship,
     ),
   ];
 
@@ -274,56 +291,9 @@ class MockCommerceCatalogRepository implements CommerceCatalogRepository {
   }
 
   @override
-  Future<List<BackpackGiftItem>> fetchBackpackGifts() async {
+  Future<List<DecorationItem>> fetchDecorations() async {
     await _delay();
-    return List<BackpackGiftItem>.unmodifiable(_backpack);
-  }
-
-  @override
-  Future<MembershipSnapshot> fetchMembershipSnapshot() async {
-    await _delay();
-    return MembershipSnapshot(
-      giftCoinBalance: _giftCoinBalance,
-      active: _membershipActive,
-      levelName: _membershipActive ? '会员' : '普通用户',
-      expiresAt: _membershipExpiresAt,
-      plans: _plans,
-      decorations: List<DecorationItem>.unmodifiable(_decorations),
-      backpack: List<BackpackGiftItem>.unmodifiable(_backpack),
-    );
-  }
-
-  @override
-  Future<MembershipSnapshot> purchaseMembership(String planId) async {
-    await _delay();
-    MembershipPlan? plan;
-    for (final MembershipPlan item in _plans) {
-      if (item.id == planId) {
-        plan = item;
-        break;
-      }
-    }
-    if (plan == null) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '会员商品已失效',
-      );
-    }
-    if (_giftCoinBalance < plan.priceGiftCoins) {
-      throw const ApiException(
-        kind: ApiFailureKind.business,
-        message: '礼物币余额不足',
-      );
-    }
-    _giftCoinBalance -= plan.priceGiftCoins;
-    _membershipActive = true;
-    final DateTime base =
-        _membershipExpiresAt != null &&
-            _membershipExpiresAt!.isAfter(DateTime.now())
-        ? _membershipExpiresAt!
-        : DateTime.now();
-    _membershipExpiresAt = base.add(Duration(days: plan.durationDays));
-    return fetchMembershipSnapshot();
+    return List<DecorationItem>.unmodifiable(_decorations);
   }
 
   @override

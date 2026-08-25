@@ -228,6 +228,7 @@ void main() {
       final CommercePage<LedgerEntry> incomePage = await dependencies
           .commerceRepository
           .fetchLedger(
+            currency: LedgerCurrency.cashCny,
             direction: LedgerDirection.income,
             page: 1,
             pageSize: 50,
@@ -254,7 +255,7 @@ void main() {
       await _scrollToAndTap(tester, find.text('结算与提现'));
       await pumpUntilVisible(tester, find.byType(WithdrawalPage));
       final WithdrawalQuote quote = await dependencies.commerceRepository
-          .fetchWithdrawalQuote();
+          .fetchWithdrawalQuote(amount: 100);
       final CommercePage<WithdrawalRecord> withdrawalsBefore =
           await dependencies.commerceRepository.fetchWithdrawalRecords(
             page: 1,
@@ -416,16 +417,10 @@ void main() {
     final Future<List<GiftCatalogItem>> giftsFuture = dependencies
         .commerceCatalogRepository
         .fetchGiftCatalog();
-    final Future<List<BackpackGiftItem>> backpackFuture = dependencies
-        .commerceCatalogRepository
-        .fetchBackpackGifts();
     await tester.pump(const Duration(milliseconds: 100));
     final List<GiftCatalogItem> gifts = await giftsFuture;
-    final List<BackpackGiftItem> backpack = await backpackFuture;
     _expectNoRetiredTokens(<String>[
       for (final GiftCatalogItem gift in gifts) '${gift.id} ${gift.name}',
-      for (final BackpackGiftItem item in backpack)
-        '${item.id} ${item.gift.id} ${item.gift.name}',
     ]);
   });
 }

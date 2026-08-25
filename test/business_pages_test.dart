@@ -4,12 +4,35 @@ import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/features/discovery/presentation/global_search_page.dart';
+import 'package:voice_social_app/features/discovery/home_page.dart';
 import 'package:voice_social_app/features/discovery/presentation/saved_rooms_page.dart';
 import 'package:voice_social_app/features/discovery/presentation/search_results_page.dart';
 import 'package:voice_social_app/features/room/presentation/create_room_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_deep_link_page.dart';
 
 void main() {
+  testWidgets('discovery home renders an authoritative room count', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final AppDependencies dependencies = AppDependencies.mock();
+
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: dependencies,
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: const Scaffold(body: HomePage()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('36 人在线'), findsWidgets);
+    expect(find.textContaining('在线人数未知'), findsNothing);
+  });
+
   testWidgets('DS-003 renders room and user search results', (
     WidgetTester tester,
   ) async {
@@ -30,6 +53,7 @@ void main() {
 
     expect(find.text('房间'), findsWidgets);
     expect(find.text('深夜温柔陪伴'), findsOneWidget);
+    expect(find.text('36 人在线'), findsOneWidget);
   });
 
   testWidgets('DS-008 separates favorites and owned rooms', (
@@ -51,6 +75,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('深夜温柔陪伴'), findsOneWidget);
+    expect(find.text('36 人在线 · 3/8 麦'), findsOneWidget);
     await tester.tap(find.text('我的房间'));
     await tester.pumpAndSettle();
     expect(find.text('周末松弛聊天局'), findsOneWidget);

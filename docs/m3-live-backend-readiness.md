@@ -1,4 +1,4 @@
-# M3.1 — Development gateway readiness
+# M3.1 — Development gateway readiness (F3 prerequisite)
 
 ## Goal
 
@@ -11,22 +11,27 @@ This checkpoint is deliberately side-effect-free. It validates runtime configura
 - Explicit deployment profiles: local, development, staging, and production.
 - HTTPS enforcement for staging and production.
 - Explicit opt-in for local/development HTTP through `ALLOW_INSECURE_HTTP=true`.
+- Self-hosted preflight rejects public HTTP origins; insecure HTTP is limited to loopback or private development hosts.
 - Bounded API/probe timeout between 5 and 60 seconds.
-- Redacted runtime summary that never emits OAuth values or gateway paths.
+- Redacted runtime summary that never emits OAuth values or secret values.
 - DNS, TCP, TLS, and HTTP reachability probe with distinct failure states.
 - Live-mode login entry for an in-app redacted diagnostics page.
 - Manual GitHub Actions workflow for the protected `development` environment.
 - CLI preflight that produces a redacted JSON artifact and performs no business mutation.
+- Self-hosted preflight uploads only allowlisted redacted evidence files; the raw `/health` response body is not retained as an artifact.
 
-## Required development secrets
+## Required development public-client configuration
 
-Configure these only in the GitHub `development` environment or a local secret store:
+Provide these two values to the preflight in the GitHub `development` environment or a local configuration store:
 
 - `M3_API_BASE_URL`
 - `M3_OAUTH_CLIENT_ID`
-- `M3_OAUTH_CLIENT_SECRET`
 
-Do not add their values to issues, pull requests, workflow YAML, screenshots, logs, or the repository.
+The Flutter app and both preflight workflows are OAuth public clients: they need only the API base URL and public client ID. The OAuth client secret is backend-only and must never be supplied as a mobile or preflight input. Do not add either configuration value to issues, pull requests, workflow YAML, screenshots, logs, or the repository.
+
+For the self-hosted preflight, `M3_API_BASE_URL` may use `http://` only when it targets loopback or a private development host such as RFC1918, link-local, ULA, `.local`, `.lan`, or `.internal`. Any public HTTP origin fails closed and must be upgraded to HTTPS.
+
+The self-hosted workflow publishes only allowlisted redacted evidence files: tested commit, runner metadata, Flutter runtime metadata, backend HTTP status, a redacted backend health summary, and the redacted preflight JSON. It must not upload the raw backend health body or any secret-bearing file.
 
 ## Runtime example
 
@@ -38,7 +43,6 @@ flutter run \
   --dart-define=CLIENT_TYPE=Android \
   --dart-define=CLIENT_INNER_VERSION=6 \
   --dart-define=OAUTH_CLIENT_ID=... \
-  --dart-define=OAUTH_CLIENT_SECRET=... \
   --dart-define=API_TIMEOUT_SECONDS=15 \
   --dart-define=LIVE_PROBE_PATH=/
 ```
@@ -47,14 +51,19 @@ flutter run \
 
 `gatewayReachable` means only that the configured endpoint produced an HTTP response after system TLS verification. A 401, 403, or 404 can still prove transport reachability. It does not prove that SMS, authentication, response envelopes, user data, rooms, wallets, RTC, IM, or payment work.
 
-## Next checkpoint
+## Next checkpoint — F3/M4 first-party live integration
 
-M3.2 will use a dedicated non-production account and the authorized development gateway to validate, in order:
+F3/M4 uses a dedicated development account and the authorized first-party
+gateway to validate, in order:
 
-1. SMS request contract without exposing phone data in logs.
-2. SMS login and secure session persistence.
+1. Development-only Outbox OTP and session contract without exposing phone data
+   in logs; this is not formal SMS delivery.
+2. First-party session persistence and recovery.
 3. DS-001 recommendation and DS-002/003 search reads.
 4. RM-003 validation, RM-004 HTTP room snapshot, and leave behavior without RTC publication.
-5. CM-001 wallet and CM-005 order read-only data.
+5. CM-001 wallet, CM-002 recharge-catalog, and CM-005/CM-006 order read-only data.
 
-RTC, Tencent IM, payment invocation, push, native permissions, and object storage remain blocked until their provider configuration is approved.
+Formal SMS, RTC, Tencent IM, PAYMENT, PUSH, and OBJECT_STORAGE remain
+`VENDOR_BLOCKED` and fail closed until their provider configuration is approved.
+The real two-AVD live acceptance remains `PENDING` until both devices produce
+protected evidence on the same candidate SHA.

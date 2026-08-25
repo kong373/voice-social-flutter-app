@@ -15,7 +15,6 @@ void main() {
       clientType: 'Android',
       clientInnerVersion: '6',
       oauthClientId: 'client-id-value',
-      oauthClientSecret: 'secret-value',
       realtimeEndpoint: '',
       deploymentEnvironment: DeploymentEnvironment.development,
     );
@@ -33,11 +32,19 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('开发环境联调诊断'), findsOneWidget);
-    expect(find.text('网关可达'), findsOneWidget);
     expect(find.text('https://dev.example.com'), findsOneWidget);
+    expect(find.text('未携带（正确）'), findsOneWidget);
+    expect(find.text('未启用'), findsOneWidget);
 
-    final Finder businessBoundary =
-        find.textContaining('不等于短信、登录、首页');
+    final Finder probeResult = find.text('网关可达');
+    await tester.scrollUntilVisible(
+      probeResult,
+      220,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(probeResult, findsOneWidget);
+
+    final Finder businessBoundary = find.textContaining('只代表网络传输链路已收到 HTTP 响应');
     await tester.scrollUntilVisible(
       businessBoundary,
       240,
@@ -53,7 +60,6 @@ void main() {
     );
     expect(vendorBoundary, findsOneWidget);
 
-    expect(find.textContaining('secret-value'), findsNothing);
     expect(find.textContaining('client-id-value'), findsNothing);
     expect(find.textContaining('/private/gateway/'), findsNothing);
   });
@@ -64,10 +70,10 @@ class _FakeGatewayProbe implements GatewayProbe {
   Future<GatewayProbeResult> probe(AppEnvironment environment) async {
     return GatewayProbeResult(
       status: LiveBackendReadinessStatus.gatewayReachable,
-      message: '网关已返回 HTTP 401，传输链路可达。',
+      message: '网关健康检查通过。',
       checkedAt: DateTime.utc(2026, 8, 17),
       latency: const Duration(milliseconds: 73),
-      httpStatus: 401,
+      httpStatus: 200,
     );
   }
 }

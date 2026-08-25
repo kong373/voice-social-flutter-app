@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
@@ -24,6 +25,7 @@ class _HomePageState extends State<HomePage> {
   int _rotation = 0;
   bool _loading = true;
   String? _error;
+  int _loadGeneration = 0;
 
   @override
   void didChangeDependencies() {
@@ -36,13 +38,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _load() async {
+    final int generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final List<DiscoveryRoom> rooms = await _repository.fetchHomeRooms();
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -53,7 +56,7 @@ class _HomePageState extends State<HomePage> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -76,18 +79,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final List<DiscoveryRoom> rooms = _rotatedRooms;
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: <Color>[
-            Color(0xFF15112E),
-            AppColors.background,
-            AppColors.background,
-          ],
-        ),
-      ),
+    return SocialSkySurface(
       child: SafeArea(
         bottom: false,
         child: RefreshIndicator(
@@ -316,94 +308,89 @@ class _HeroRoomCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[Color(0xFF31245D), Color(0xFF161A35)],
-        ),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.14),
-            blurRadius: 32,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
+    final String? fontFamily = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.fontFamily;
+    return Theme(
+      data: AppTheme.room(fontFamily: fontFamily),
+      child: OriginalRoomArtwork(
+        seed: room.id,
+        height: 280,
+        borderRadius: const BorderRadius.all(Radius.circular(28)),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Icon(
-                      room.isSpeaking
-                          ? Icons.graphic_eq_rounded
-                          : Icons.headphones_rounded,
-                      size: 16,
-                      color: AppColors.success,
+              Row(
+                children: <Widget>[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
                     ),
-                    const SizedBox(width: 5),
-                    Text(
-                      room.isSpeaking ? '正在热聊' : '正在收听',
-                      style: const TextStyle(color: AppColors.success),
+                    decoration: BoxDecoration(
+                      color: RoomColors.success.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(999),
                     ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          room.isSpeaking
+                              ? Icons.graphic_eq_rounded
+                              : Icons.headphones_rounded,
+                          size: 16,
+                          color: RoomColors.success,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          room.isSpeaking ? '正在热聊' : '正在收听',
+                          style: const TextStyle(color: RoomColors.success),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  if (room.isLocked) ...<Widget>[
+                    const Icon(Icons.lock_outline_rounded, size: 17),
+                    const SizedBox(width: 6),
                   ],
-                ),
+                  Text(discoveryOnlineCountLabel(room.onlineCount)),
+                ],
               ),
               const Spacer(),
-              if (room.isLocked) ...<Widget>[
-                const Icon(Icons.lock_outline_rounded, size: 17),
-                const SizedBox(width: 6),
-              ],
-              Text('${room.onlineCount} 人在线'),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Text(room.title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 7),
-          Text(
-            room.topic,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 16),
-          _SeatSummary(occupiedSeats: room.occupiedSeats),
-          const SizedBox(height: 14),
-          Row(
-            children: <Widget>[
-              const Icon(
-                Icons.people_alt_rounded,
-                size: 18,
-                color: AppColors.accent,
-              ),
-              const SizedBox(width: 7),
-              Expanded(
-                child: Text(
-                  room.relationReason ?? '根据当前活跃度推荐',
-                  style: Theme.of(context).textTheme.bodySmall,
+              Text(room.title, style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 7),
+              Text(
+                room.topic,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: RoomColors.textSecondary,
                 ),
               ),
-              FilledButton(onPressed: onEnter, child: const Text('进入房间')),
+              const SizedBox(height: 12),
+              _SeatSummary(occupiedSeats: room.occupiedSeats),
+              const SizedBox(height: 9),
+              Row(
+                children: <Widget>[
+                  const Icon(
+                    Icons.people_alt_rounded,
+                    size: 18,
+                    color: RoomColors.accent,
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      room.relationReason ?? '根据当前活跃度推荐',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  FilledButton(onPressed: onEnter, child: const Text('进入房间')),
+                ],
+              ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -471,7 +458,7 @@ class _LiveRoomCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 7),
                     Text(
-                      '${room.occupiedSeats}/8 麦 · ${room.onlineCount} 人在线 · ${room.relationReason ?? '实时推荐'}',
+                      '${room.occupiedSeats}/8 麦 · ${discoveryOnlineCountLabel(room.onlineCount)} · ${room.relationReason ?? '实时推荐'}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall,
@@ -513,11 +500,11 @@ class _SeatSummary extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: index < safeOccupied
-                        ? AppColors.primary.withValues(alpha: 0.28)
+                        ? RoomColors.primary.withValues(alpha: 0.28)
                         : Colors.white.withValues(alpha: 0.07),
                     border: Border.all(
                       color: index < safeOccupied
-                          ? AppColors.primary
+                          ? RoomColors.primary
                           : Colors.white.withValues(alpha: 0.12),
                     ),
                   ),
@@ -527,8 +514,8 @@ class _SeatSummary extends StatelessWidget {
                         : Icons.add_rounded,
                     size: 12,
                     color: index < safeOccupied
-                        ? AppColors.textPrimary
-                        : AppColors.textSecondary,
+                        ? RoomColors.textPrimary
+                        : RoomColors.textSecondary,
                   ),
                 ),
             ],

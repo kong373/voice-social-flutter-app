@@ -1,0 +1,455 @@
+name: M3.2 pre-provider comprehensive review
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - feat/m3-2a-live-auth-readonly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m32-pre-provider-review-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+  JAVA_VERSION: "17"
+  PUBLIC_CLIENT_ID: voice-social-mobile-public
+  CONTRACT_PORT: "18081"
+  CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  quality:
+    name: Strict format, analyze, tests, APK and secret hygiene
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          ref: ${{ env.CANDIDATE_SHA }}
+
+      - name: Verify exact candidate checkout
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          test "$actual_sha" = "$CANDIDATE_SHA"
+          mkdir -p review-evidence
+          printf 'tested_git_sha=%s\n' "$actual_sha" > review-evidence/tested-git-sha.txt
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Verify locked dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -f pubspec.lock
+          flutter pub get --enforce-lockfile
+
+      - name: Strict source formatting
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mapfile -d '' dart_files < <(
+            find lib test integration_test tool -type f -name '*.dart' -print0 | sort -z
+          )
+          test "${#dart_files[@]}" -gt 0
+          dart format --output=none --set-exit-if-changed "${dart_files[@]}"
+
+      - name: Validate deterministic M3.2 contract server
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 tool/qa/m32_review_contract_server_test.py
+
+      - name: Verify public-client and provider-secret hygiene
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p review-evidence
+          forbidden='OAUTH_CLIENT_SECRET|DEVELOPMENT_OUTBOX_KEY|X-Development-Outbox-Key|Client-Secret|access-key-secret|app-certificate|secret-key|private-key|webhook-secret'
+          if grep -RInE "$forbidden" lib; then
+            echo 'A server-only credential name is referenced by mobile application source.' >&2
+            exit 1
+          fi
+          if grep -RInE 'ci-development-outbox|never-expose-|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' . \
+              --exclude-dir=.git --exclude='m32-pre-provider-review.yml'; then
+            echo 'Secret-like fixture or private key marker is tracked.' >&2
+            exit 1
+          fi
+          {
+            echo 'mobile_oauth_client=PUBLIC'
+            echo 'oauth_client_secret_present=false'
+            echo 'development_outbox_secret_present=false'
+            echo 'provider_secret_present=false'
+          } | tee review-evidence/secret-hygiene.txt
+
+      - name: Analyze
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter analyze 2>&1 | tee review-evidence/analyze.log
+
+      - name: Run all Dart and widget tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter test \
+            --coverage \
+            --concurrency=1 \
+            --timeout=90s \
+            --reporter=expanded \
+            2>&1 | tee review-evidence/flutter-test.log
+
+      - name: Generate isolated Android host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test ! -e .review_app
+          flutter create \
+            --platforms=android \
+            --org=com.kong373 \
+            --project-name=voice_social_app \
+            --no-pub \
+            .review_app
+          rsync -a \
+            --exclude=.dart_tool \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=.review_app \
+            --exclude=artifacts \
+            --exclude=build \
+            ./ .review_app/
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.review_app/android/app/src/main/AndroidManifest.xml')
+          text = path.read_text(encoding='utf-8')
+          if 'android:usesCleartextTraffic=' not in text:
+              text = text.replace('<application', '<application android:usesCleartextTraffic="true"', 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          (cd .review_app && flutter pub get --enforce-lockfile)
+
+      - name: Build live public-client Android debug APK
+        working-directory: .review_app
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter build apk \
+            --debug \
+            --no-pub \
+            --dart-define=BACKEND_MODE=live \
+            --dart-define=APP_ENV=development \
+            --dart-define=API_BASE_URL=http://10.0.2.2:${CONTRACT_PORT} \
+            --dart-define=ALLOW_INSECURE_HTTP=true \
+            --dart-define=OAUTH_CLIENT_ID=${PUBLIC_CLIENT_ID} \
+            --dart-define=CLIENT_TYPE=Android \
+            --dart-define=CLIENT_INNER_VERSION=1 \
+            --dart-define=LIVE_PROBE_PATH=/health \
+            --dart-define=ENABLE_QA_CONSOLE=false
+          cp build/app/outputs/flutter-apk/app-debug.apk ../review-evidence/m32-live-public-client.apk
+          sha256sum ../review-evidence/m32-live-public-client.apk | \
+            tee ../review-evidence/apk-sha256.txt
+
+      - name: Inspect APK for forbidden credential markers
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p /tmp/m32-apk
+          unzip -qq review-evidence/m32-live-public-client.apk -d /tmp/m32-apk
+          forbidden='OAUTH_CLIENT_SECRET|DEVELOPMENT_OUTBOX_KEY|X-Development-Outbox-Key|ci-development-outbox|never-expose-|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY'
+          if grep -RInaE "$forbidden" /tmp/m32-apk; then
+            echo 'Forbidden credential marker found in APK.' >&2
+            exit 1
+          fi
+          echo 'apk_secret_markers=0' | tee review-evidence/apk-secret-scan.txt
+
+      - name: Upload quality evidence and APK
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: m32-review-quality-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            review-evidence/
+            coverage/
+          if-no-files-found: warn
+          retention-days: 30
+
+  avd:
+    name: ${{ matrix.id }} API ${{ matrix.api }} exact live review
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 95
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: AVD-A
+            api: "36"
+            profile: pixel_7_pro
+            physical: 1170x2532
+            density: "480"
+            width: "390"
+            height: "844"
+            dpr: "3.0"
+          - id: AVD-B
+            api: "35"
+            profile: pixel_2
+            physical: 864x1920
+            density: "384"
+            width: "360"
+            height: "800"
+            dpr: "2.4"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+
+      - name: Verify exact candidate checkout
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+
+      - name: Install Java
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Generate isolated Android host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter create \
+            --platforms=android \
+            --org=com.kong373 \
+            --project-name=voice_social_app \
+            --no-pub \
+            .review_app
+          rsync -a \
+            --exclude=.dart_tool \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=.review_app \
+            --exclude=artifacts \
+            --exclude=build \
+            ./ .review_app/
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.review_app/android/app/src/main/AndroidManifest.xml')
+          text = path.read_text(encoding='utf-8')
+          if 'android:usesCleartextTraffic=' not in text:
+              text = text.replace('<application', '<application android:usesCleartextTraffic="true"', 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          (cd .review_app && flutter pub get --enforce-lockfile)
+          mkdir -p evidence/${{ matrix.id }}/screenshots evidence/${{ matrix.id }}/logs
+
+      - name: Start deterministic first-party contract server
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 .review_app/tool/qa/m32_review_contract_server.py \
+            --host 0.0.0.0 \
+            --port "$CONTRACT_PORT" \
+            --request-log "evidence/${{ matrix.id }}/request-log.jsonl" \
+            --summary-file "evidence/${{ matrix.id }}/contract-summary.json" \
+            --ready-file "evidence/${{ matrix.id }}/server-ready.txt" \
+            >"evidence/${{ matrix.id }}/logs/contract-server.log" 2>&1 &
+          echo $! > "evidence/${{ matrix.id }}/server.pid"
+          for attempt in $(seq 1 100); do
+            if curl --fail --silent --max-time 2 \
+                "http://127.0.0.1:${CONTRACT_PORT}/health" >/dev/null; then
+              exit 0
+            fi
+            sleep 0.2
+          done
+          cat "evidence/${{ matrix.id }}/logs/contract-server.log" >&2
+          exit 1
+
+      - name: Require KVM
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -c /dev/kvm
+          sudo chmod 0666 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
+      - name: Run exact-viewport live public-client flow
+        uses: ReactiveCircus/android-emulator-runner@324029e2f414c084d8b15ba075288885e74aef9c # v2.34.0
+        env:
+          QA_SCREENSHOT_DIR: ${{ github.workspace }}/evidence/${{ matrix.id }}/screenshots
+          QA_AVD_ID: ${{ matrix.id }}
+          QA_PHYSICAL_RESOLUTION: ${{ matrix.physical }}
+          QA_DENSITY: ${{ matrix.density }}
+          QA_EXPECTED_VIEWPORT_WIDTH: ${{ matrix.width }}
+          QA_EXPECTED_VIEWPORT_HEIGHT: ${{ matrix.height }}
+          QA_EXPECTED_DPR: ${{ matrix.dpr }}
+        with:
+          api-level: ${{ matrix.api }}
+          target: default
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          avd-name: m32-review-${{ matrix.id }}-api-${{ matrix.api }}
+          cores: 2
+          ram-size: 4096M
+          heap-size: 512M
+          disk-size: 6144M
+          force-avd-creation: true
+          emulator-boot-timeout: 600
+          disable-linux-hw-accel: false
+          disable-animations: true
+          disable-spellchecker: true
+          emulator-options: >-
+            -no-window
+            -gpu swiftshader_indirect
+            -noaudio
+            -no-boot-anim
+            -no-snapshot
+            -wipe-data
+            -no-metrics
+            -camera-back none
+            -camera-front none
+          working-directory: .review_app
+          script: bash tool/qa/run_m32_review_flow.sh
+
+      - name: Validate contract, screenshots and Android logs
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          root="evidence/${{ matrix.id }}"
+          curl --fail --silent --max-time 5 \
+            "http://127.0.0.1:${CONTRACT_PORT}/__qa__/summary" \
+            > "$root/contract-summary.json"
+          jq -e '
+            .conclusion == "PASS" and
+            .providerCallsMade == false and
+            .publicClientSecretObserved == false and
+            .developmentOutboxSecretObserved == false and
+            (.missingEndpoints | length) == 0 and
+            (.violations | length) == 0
+          ' "$root/contract-summary.json"
+          screenshot_count="$(find "$root/screenshots" -type f -name '*.png' | wc -l | tr -d ' ')"
+          test "$screenshot_count" -ge 9
+          if grep -E 'FATAL EXCEPTION|AndroidRuntime.*FATAL|ANR in com\.kong373|MissingPluginException|RenderFlex overflowed|Unhandled Exception' \
+              "$root/logs/logcat.txt"; then
+            echo 'Android hard error detected.' >&2
+            exit 1
+          fi
+          python3 - <<PY
+          import json
+          from pathlib import Path
+          root = Path('$root')
+          result = {
+              'runId': '${{ github.run_id }}',
+              'runAttempt': '${{ github.run_attempt }}',
+              'gitSha': '${{ env.CANDIDATE_SHA }}',
+              'avd': '${{ matrix.id }}',
+              'apiLevel': ${{ matrix.api }},
+              'logicalViewport': '${{ matrix.width }}x${{ matrix.height }}',
+              'physicalResolution': '${{ matrix.physical }}',
+              'density': ${{ matrix.density }},
+              'devicePixelRatio': ${{ matrix.dpr }},
+              'screenshots': int('$screenshot_count'),
+              'providerCallsMade': False,
+              'secretLeakage': 0,
+              'hardErrors': 0,
+              'result': 'PASS',
+          }
+          (root / 'result.json').write_text(
+              json.dumps(result, indent=2, sort_keys=True), encoding='utf-8')
+          PY
+
+      - name: Stop contract server
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          pid_file="evidence/${{ matrix.id }}/server.pid"
+          if [[ -f "$pid_file" ]]; then
+            kill "$(cat "$pid_file")" 2>/dev/null || true
+          fi
+
+      - name: Upload AVD evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: m32-review-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/${{ matrix.id }}/
+          if-no-files-found: error
+          retention-days: 30
+
+  verdict:
+    name: Strict two-AVD review verdict
+    if: always()
+    needs:
+      - quality
+      - avd
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download AVD evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: m32-review-AVD-*
+          path: evidence
+          merge-multiple: false
+
+      - name: Assemble strict verdict
+        shell: bash
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          AVD_RESULT: ${{ needs.avd.result }}
+        run: |
+          set -Eeuo pipefail
+          test "$QUALITY_RESULT" = success
+          test "$AVD_RESULT" = success
+          mapfile -t results < <(find evidence -type f -name result.json | sort)
+          test "${#results[@]}" -eq 2
+          jq -s -e --arg sha "$CANDIDATE_SHA" '
+            length == 2 and
+            (map(.avd) | sort) == ["AVD-A", "AVD-B"] and
+            all(.gitSha == $sha) and
+            all(.result == "PASS") and
+            all(.providerCallsMade == false) and
+            all(.secretLeakage == 0) and
+            all(.hardErrors == 0)
+          ' "${results[@]}"
+          jq -s --arg sha "$CANDIDATE_SHA" '{
+            conclusion: "PRE_PROVIDER_REVIEW_PASS",
+            testedGitSha: $sha,
+            avds: .,
+            providerCallsMade: false,
+            secretLeakage: 0
+          }' "${results[@]}" > review-verdict.json
+
+      - name: Upload aggregate verdict
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: m32-review-verdict-${{ github.run_id }}-${{ github.run_attempt }}
+          path: review-verdict.json
+          if-no-files-found: error
+          retention-days: 30

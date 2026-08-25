@@ -1,14 +1,26 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/room/domain/room_intent_digest.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_permission_policy.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
+import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
+import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
 class RoomController extends ChangeNotifier {
+  static final Random _secureRandom = Random.secure();
+  static final Expando<Object> _rtcTransportOwners = Expando<Object>(
+    'roomRtcTransportOwner',
+  );
+  static final Expando<Object> _realtimeTransportOwners = Expando<Object>(
+    'roomRealtimeTransportOwner',
+  );
+
   RoomController({
     required this.roomId,
     required this.title,
@@ -17,13 +29,19 @@ class RoomController extends ChangeNotifier {
     required RoomRepository repository,
     required RtcAdapter rtcAdapter,
     required RoomRealtimeGateway realtimeGateway,
+    RoomOperationsRepository? roomOperationsRepository,
     RoomPermissionPolicy permissionPolicy = const RoomPermissionPolicy(),
+    bool allowSyntheticPublicMessages = true,
+    String Function(String prefix)? requestIdGenerator,
   }) : _currentUserId = currentUserId,
        _accessToken = accessToken,
        _repository = repository,
        _rtcAdapter = rtcAdapter,
        _realtimeGateway = realtimeGateway,
-       _permissionPolicy = permissionPolicy;
+       _roomOperationsRepository = roomOperationsRepository,
+       _permissionPolicy = permissionPolicy,
+       _allowSyntheticPublicMessages = allowSyntheticPublicMessages,
+       _requestIdGenerator = requestIdGenerator ?? _secureRequestId;
 
   final String roomId;
   final String title;
@@ -32,20 +50,38 @@ class RoomController extends ChangeNotifier {
   final RoomRepository _repository;
   final RtcAdapter _rtcAdapter;
   final RoomRealtimeGateway _realtimeGateway;
+  final RoomOperationsRepository? _roomOperationsRepository;
   final RoomPermissionPolicy _permissionPolicy;
+  final bool _allowSyntheticPublicMessages;
+  final String Function(String prefix) _requestIdGenerator;
 
   RoomSnapshot? _snapshot;
   final List<RoomMessage> _messages = <RoomMessage>[];
   RoomSessionStatus _status = RoomSessionStatus.idle;
   StreamSubscription<RoomRealtimeEvent>? _realtimeSubscription;
   bool _micRequestPending = false;
+  bool _micQueueLoading = false;
+  final List<MicAccessRequest> _micRequests = <MicAccessRequest>[];
+  int _micQueueEpoch = 0;
   bool _giftSubmitting = false;
   bool _realtimeDegraded = false;
   bool _mutedInRoom = false;
   bool _refreshingFromEvent = false;
   bool _joinCancelled = false;
   bool _disposed = false;
+  int _sessionEpoch = 0;
+  Object? _transportLeaseId;
   String? _errorMessage;
+  String? _pendingJoinRequestRoomId;
+  String? _pendingJoinRequestId;
+  ApiFailureKind? _historyErrorKind;
+  String? _historyErrorMessage;
+  final Map<String, String> _publicMessageRetryIds = <String, String>{};
+  final Map<String, _PublicMessageSubmission> _publicMessageInFlight =
+      <String, _PublicMessageSubmission>{};
+  Future<void> _publicMessageTail = Future<void>.value();
+  String? _giftRequestId;
+  String? _giftRequestKey;
 
   RoomSnapshot? get snapshot => _snapshot;
   RoomSessionStatus get status => _status;
@@ -59,12 +95,34 @@ class RoomController extends ChangeNotifier {
   RoomRole get role => _snapshot?.role ?? RoomRole.listener;
   int? get giftBalance => _snapshot?.giftBalance;
   bool get micRequestPending => _micRequestPending;
+  bool get micQueueLoading => _micQueueLoading;
+  List<MicAccessRequest> get micRequests =>
+      List<MicAccessRequest>.unmodifiable(_micRequests);
+  MicCoordinationMode get micCoordinationMode {
+    final String mode = _snapshot?.accessMode.trim().toUpperCase() ?? '';
+    if (mode == 'APPROVAL') {
+      return MicCoordinationMode.approval;
+    }
+    if (mode == 'PUBLIC' || mode == 'PASSWORD' || mode == 'DIRECT') {
+      return MicCoordinationMode.direct;
+    }
+    return _roomOperationsRepository?.micCoordinationMode ??
+        MicCoordinationMode.unavailable;
+  }
+
   bool get giftSubmitting => _giftSubmitting;
   bool get realtimeDegraded => _realtimeDegraded;
+  bool get isSnapshotOnly => _snapshot?.isSnapshotOnly ?? false;
+  bool get allowsSyntheticPublicMessages =>
+      _allowSyntheticPublicMessages && !isSnapshotOnly;
   bool get mutedInRoom => _mutedInRoom;
   bool get canSendPublicMessage =>
       !_mutedInRoom && allows(RoomCapability.sendPublicMessage);
   String? get errorMessage => _errorMessage;
+  String? get pendingJoinRequestRoomId => _pendingJoinRequestRoomId;
+  String? get pendingJoinRequestId => _pendingJoinRequestId;
+  ApiFailureKind? get historyErrorKind => _historyErrorKind;
+  String? get historyErrorMessage => _historyErrorMessage;
 
   void applyAuthoritativeTopic(String topic) {
     final RoomSnapshot? snapshot = _snapshot;
@@ -109,20 +167,29 @@ class RoomController extends ChangeNotifier {
     RoomEntrySource source = RoomEntrySource.home,
     String? password,
   }) async {
+    if (_disposed) {
+      return;
+    }
     if (_status == RoomSessionStatus.joining ||
         _status == RoomSessionStatus.joined ||
         _status == RoomSessionStatus.reconnecting ||
         _status == RoomSessionStatus.leaving) {
       return;
     }
+    final int sessionEpoch = ++_sessionEpoch;
     _joinCancelled = false;
+    _pendingJoinRequestRoomId = null;
+    _pendingJoinRequestId = null;
     _mutedInRoom = false;
     _status = RoomSessionStatus.joining;
     _errorMessage = null;
+    _historyErrorKind = null;
+    _historyErrorMessage = null;
     _realtimeDegraded = false;
     _notify();
 
     RoomSnapshot? enteredSnapshot;
+    Object? transportLease;
     try {
       final RoomSnapshot snapshot = await _repository.enterRoom(
         roomId: roomId,
@@ -131,39 +198,51 @@ class RoomController extends ChangeNotifier {
         currentUserId: _currentUserId,
       );
       enteredSnapshot = snapshot;
-      if (_joinCancelled || _disposed) {
-        await _abandonEnteredRoom(snapshot);
+      if (!_isCurrent(sessionEpoch) || _joinCancelled) {
+        await _abandonEnteredRoom(snapshot, sessionEpoch: sessionEpoch);
         return;
       }
-      await _rtcAdapter.join(snapshot.rtc);
-      if (_joinCancelled || _disposed) {
-        await _abandonEnteredRoom(snapshot);
-        return;
+      if (!snapshot.isSnapshotOnly) {
+        transportLease = _claimTransportLease();
+        await _rtcAdapter.join(snapshot.rtc);
+        if (!_isCurrent(sessionEpoch) || _joinCancelled) {
+          await _abandonEnteredRoom(snapshot, sessionEpoch: sessionEpoch);
+          return;
+        }
+        await _replaceRealtimeSubscription(sessionEpoch: sessionEpoch);
+        if (!_isCurrent(sessionEpoch) || _joinCancelled) {
+          await _abandonEnteredRoom(snapshot, sessionEpoch: sessionEpoch);
+          return;
+        }
+        try {
+          await _realtimeGateway.connect(
+            roomId: snapshot.roomId,
+            userId: _currentUserId,
+            accessToken: _accessToken,
+          );
+        } catch (_) {
+          if (_isCurrent(sessionEpoch)) {
+            _realtimeDegraded = true;
+          }
+        }
       }
-      await _replaceRealtimeSubscription();
-      try {
-        await _realtimeGateway.connect(
-          roomId: snapshot.roomId,
-          userId: _currentUserId,
-          accessToken: _accessToken,
-        );
-      } catch (_) {
-        _realtimeDegraded = true;
-      }
-      if (_joinCancelled || _disposed) {
-        await _abandonEnteredRoom(snapshot);
+      if (!_isCurrent(sessionEpoch) || _joinCancelled) {
+        await _abandonEnteredRoom(snapshot, sessionEpoch: sessionEpoch);
         return;
       }
       _snapshot = snapshot;
       _messages
         ..clear()
         ..addAll(<RoomMessage>[
-          const RoomMessage(
-            sender: '系统',
-            content: '欢迎进入房间，请友善交流。',
-            isSystem: true,
-          ),
-          if (_realtimeDegraded)
+          if (_allowSyntheticPublicMessages && !snapshot.isSnapshotOnly)
+            const RoomMessage(
+              sender: '系统',
+              content: '欢迎进入房间，请友善交流。',
+              isSystem: true,
+            ),
+          if (_allowSyntheticPublicMessages &&
+              !snapshot.isSnapshotOnly &&
+              _realtimeDegraded)
             const RoomMessage(
               sender: '系统',
               content: '实时消息通道暂未连接，房间状态可能延迟。',
@@ -171,26 +250,91 @@ class RoomController extends ChangeNotifier {
             ),
         ]);
       _status = RoomSessionStatus.joined;
+      await _loadPublicHistory(snapshot, sessionEpoch: sessionEpoch);
+      if (micCoordinationMode == MicCoordinationMode.approval) {
+        await _loadMicRequests(sessionEpoch: sessionEpoch);
+      }
     } catch (error) {
-      if (_joinCancelled || _disposed) {
-        await _cleanupTransport(swallowErrors: true);
-        _status = RoomSessionStatus.left;
-        _notify();
+      if (!_isCurrent(sessionEpoch) || _joinCancelled) {
+        final RoomSnapshot? snapshot = enteredSnapshot;
+        if (snapshot != null && _canCompensateJoin(sessionEpoch)) {
+          try {
+            await _repository.exitRoom(snapshot.roomId);
+          } catch (_) {
+            // The invalidating leave/dispose owns transport cleanup. Keep this
+            // server-side compensation best effort and session-local.
+          }
+        }
         return;
       }
       final RoomSnapshot? snapshot = enteredSnapshot;
-      if (snapshot != null) {
+      if (snapshot != null && _canCompensateJoin(sessionEpoch)) {
         try {
           await _repository.exitRoom(snapshot.roomId);
         } catch (_) {
           // Preserve the original join failure while cleanup remains best effort.
         }
       }
-      await _cleanupTransport(swallowErrors: true);
+      await _cleanupTransport(
+        swallowErrors: true,
+        transportLease: transportLease,
+      );
       _errorMessage = _messageFor(error, fallback: '进入房间失败，请重试');
+      if (error is RoomJoinRequestPendingException) {
+        _pendingJoinRequestRoomId = error.roomId;
+        _pendingJoinRequestId = error.joinRequestId;
+      }
       _status = RoomSessionStatus.failed;
     }
-    _notify();
+    if (_isCurrent(sessionEpoch)) {
+      _notify();
+    }
+  }
+
+  Future<void> _loadPublicHistory(
+    RoomSnapshot snapshot, {
+    required int sessionEpoch,
+  }) async {
+    if (!_isJoinedEpoch(sessionEpoch)) {
+      return;
+    }
+    try {
+      final List<RoomMessage> history = await _repository.fetchPublicMessages(
+        snapshot.roomId,
+      );
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return;
+      }
+      _historyErrorKind = null;
+      _historyErrorMessage = null;
+      if (history.isEmpty) {
+        return;
+      }
+      _messages
+        ..clear()
+        ..addAll(history);
+      if (_allowSyntheticPublicMessages &&
+          !snapshot.isSnapshotOnly &&
+          _realtimeDegraded) {
+        _messages.add(
+          const RoomMessage(
+            sender: '系统',
+            content: '实时消息通道暂未连接，房间状态可能延迟。',
+            isSystem: true,
+          ),
+        );
+      }
+    } catch (error) {
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return;
+      }
+      _historyErrorKind = error is ApiException
+          ? error.kind
+          : ApiFailureKind.protocol;
+      _historyErrorMessage = error is ApiException
+          ? error.message
+          : '公屏历史暂时不可用';
+    }
   }
 
   Future<bool> requestMic(int seatNumber) async {
@@ -199,21 +343,66 @@ class RoomController extends ChangeNotifier {
         _status != RoomSessionStatus.joined) {
       return false;
     }
+    final int sessionEpoch = _sessionEpoch;
     final MicSeat? seat = _seatByNumber(seatNumber);
     if (seat == null || !seat.isAvailable) {
       _errorMessage = '麦位状态已变化，请重新选择';
       _notify();
       return false;
     }
+    if (micCoordinationMode == MicCoordinationMode.approval) {
+      _invalidateMicQueueReads();
+    }
     _micRequestPending = true;
     _errorMessage = null;
     _notify();
     try {
+      if (micCoordinationMode == MicCoordinationMode.approval) {
+        final RoomOperationsRepository? operations = _roomOperationsRepository;
+        if (operations == null) {
+          throw const ApiException(
+            kind: ApiFailureKind.configuration,
+            message: '审批房缺少上麦申请能力',
+          );
+        }
+        await operations.submitMicRequest(
+          roomId: roomId,
+          userId: _currentUserId,
+          seatNumber: seat.backendIndex,
+        );
+        if (!_isJoinedEpoch(sessionEpoch)) {
+          return false;
+        }
+        await _loadMicRequests(sessionEpoch: sessionEpoch);
+        if (allowsSyntheticPublicMessages) {
+          _messages.add(
+            RoomMessage(
+              sender: '系统',
+              content: '已提交 $seatNumber 号麦申请，等待房主或房管审批。',
+              isSystem: true,
+            ),
+          );
+        }
+        return true;
+      }
+      if (micCoordinationMode == MicCoordinationMode.unavailable &&
+          _roomOperationsRepository != null) {
+        throw const ApiException(
+          kind: ApiFailureKind.configuration,
+          message: '房间未返回权威上麦协调能力',
+        );
+      }
       await _repository.requestMic(seat.backendIndex);
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
       final RoomSnapshot refreshed = await _repository.reconnectRoom(
         roomId: roomId,
         currentUserId: _currentUserId,
       );
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
       if (!refreshed.seats.any(
         (MicSeat item) => item.userId == _currentUserId && item.isOccupied,
       )) {
@@ -223,22 +412,168 @@ class RoomController extends ChangeNotifier {
         );
       }
       _snapshot = refreshed;
-      await _rtcAdapter.setLocalAudioEnabled(true);
-      _messages.add(
-        RoomMessage(
-          sender: '系统',
-          content: '你已上 $seatNumber 号麦。',
-          isSystem: true,
-        ),
-      );
+      // A live HTTP_STATE_ONLY room can persist the seat transition without
+      // claiming that an RTC engine joined. Audio remains vendor-blocked.
+      if (!_snapshot!.isSnapshotOnly) {
+        await _rtcAdapter.setLocalAudioEnabled(true);
+      }
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
+      if (allowsSyntheticPublicMessages) {
+        _messages.add(
+          RoomMessage(
+            sender: '系统',
+            content: '你已上 $seatNumber 号麦。',
+            isSystem: true,
+          ),
+        );
+      }
       return true;
     } catch (error) {
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
       _errorMessage = _messageFor(error, fallback: '申请上麦失败');
       return false;
     } finally {
-      _micRequestPending = false;
-      _notify();
+      if (_isCurrent(sessionEpoch)) {
+        _micRequestPending = false;
+        _notify();
+      }
     }
+  }
+
+  /// Reloads the authenticated member's queue projection. The backend
+  /// intentionally scopes regular members to their own REQUEST/INVITE rows,
+  /// so this is safe to call on every foreground refresh.
+  Future<void> refreshMicRequests() async {
+    if (_status != RoomSessionStatus.joined) {
+      return;
+    }
+    await _loadMicRequests(sessionEpoch: _sessionEpoch);
+  }
+
+  Future<bool> cancelMicRequest(String requestId) async {
+    if (_micRequestPending || _status != RoomSessionStatus.joined) {
+      return false;
+    }
+    final RoomOperationsRepository? operations = _roomOperationsRepository;
+    if (operations == null ||
+        micCoordinationMode != MicCoordinationMode.approval) {
+      return false;
+    }
+    final int sessionEpoch = _sessionEpoch;
+    _invalidateMicQueueReads();
+    _micRequestPending = true;
+    _errorMessage = null;
+    _notify();
+    try {
+      await operations.cancelMicRequest(requestId: requestId);
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
+      await _loadMicRequests(sessionEpoch: sessionEpoch);
+      return true;
+    } catch (error) {
+      if (_isJoinedEpoch(sessionEpoch)) {
+        _errorMessage = _messageFor(error, fallback: '撤回上麦申请失败');
+      }
+      return false;
+    } finally {
+      if (_isCurrent(sessionEpoch)) {
+        _micRequestPending = false;
+        _notify();
+      }
+    }
+  }
+
+  Future<bool> resolveMicInvite({
+    required String requestId,
+    required bool accepted,
+  }) async {
+    if (_micRequestPending || _status != RoomSessionStatus.joined) {
+      return false;
+    }
+    final RoomOperationsRepository? operations = _roomOperationsRepository;
+    if (operations == null ||
+        micCoordinationMode != MicCoordinationMode.approval) {
+      return false;
+    }
+    final int sessionEpoch = _sessionEpoch;
+    _invalidateMicQueueReads();
+    _micRequestPending = true;
+    _errorMessage = null;
+    _notify();
+    try {
+      await operations.resolveMicRequest(
+        requestId: requestId,
+        accepted: accepted,
+      );
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
+      // Accept confirms only the first-party seat row. No RTC/provider call
+      // is made here; the live adapter remains VENDOR_BLOCKED.
+      if (accepted) {
+        final RoomSnapshot refreshed = await _repository.reconnectRoom(
+          roomId: roomId,
+          currentUserId: _currentUserId,
+        );
+        if (!_isJoinedEpoch(sessionEpoch)) {
+          return false;
+        }
+        _snapshot = refreshed;
+      }
+      await _loadMicRequests(sessionEpoch: sessionEpoch);
+      return true;
+    } catch (error) {
+      if (_isJoinedEpoch(sessionEpoch)) {
+        _errorMessage = _messageFor(error, fallback: '处理上麦邀请失败');
+      }
+      return false;
+    } finally {
+      if (_isCurrent(sessionEpoch)) {
+        _micRequestPending = false;
+        _notify();
+      }
+    }
+  }
+
+  Future<void> _loadMicRequests({required int sessionEpoch}) async {
+    final RoomOperationsRepository? operations = _roomOperationsRepository;
+    if (operations == null ||
+        !_isJoinedEpoch(sessionEpoch) ||
+        micCoordinationMode != MicCoordinationMode.approval) {
+      return;
+    }
+    final int queueEpoch = ++_micQueueEpoch;
+    _micQueueLoading = true;
+    _notify();
+    try {
+      final List<MicAccessRequest> requests = await operations.fetchMicRequests(
+        roomId,
+      );
+      if (_isJoinedEpoch(sessionEpoch) && queueEpoch == _micQueueEpoch) {
+        _micRequests
+          ..clear()
+          ..addAll(requests);
+      }
+    } catch (error) {
+      if (_isJoinedEpoch(sessionEpoch) && queueEpoch == _micQueueEpoch) {
+        _errorMessage = _messageFor(error, fallback: '上麦申请状态暂时不可用');
+      }
+    } finally {
+      if (_isCurrent(sessionEpoch) && queueEpoch == _micQueueEpoch) {
+        _micQueueLoading = false;
+        _notify();
+      }
+    }
+  }
+
+  void _invalidateMicQueueReads() {
+    _micQueueEpoch += 1;
+    _micQueueLoading = false;
   }
 
   Future<bool> leaveMic() async {
@@ -246,19 +581,37 @@ class RoomController extends ChangeNotifier {
         _status != RoomSessionStatus.joined) {
       return false;
     }
+    final int sessionEpoch = _sessionEpoch;
     try {
       await _repository.leaveMic();
-      await _rtcAdapter.setLocalAudioEnabled(false);
-      _snapshot = await _repository.reconnectRoom(
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
+      if (!_snapshot!.isSnapshotOnly) {
+        await _rtcAdapter.setLocalAudioEnabled(false);
+      }
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
+      final RoomSnapshot refreshed = await _repository.reconnectRoom(
         roomId: roomId,
         currentUserId: _currentUserId,
       );
-      _messages.add(
-        const RoomMessage(sender: '系统', content: '你已离开麦位。', isSystem: true),
-      );
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
+      _snapshot = refreshed;
+      if (allowsSyntheticPublicMessages) {
+        _messages.add(
+          const RoomMessage(sender: '系统', content: '你已离开麦位。', isSystem: true),
+        );
+      }
       _notify();
       return true;
     } catch (error) {
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
       _errorMessage = _messageFor(error, fallback: '下麦失败');
       _notify();
       return false;
@@ -270,6 +623,7 @@ class RoomController extends ChangeNotifier {
         _status != RoomSessionStatus.joined) {
       return false;
     }
+    final int sessionEpoch = _sessionEpoch;
     final MicSeat? ownSeat = _ownSeat();
     if (ownSeat == null) {
       return false;
@@ -280,7 +634,13 @@ class RoomController extends ChangeNotifier {
         backendMicIndex: ownSeat.backendIndex,
         muted: nextMuted,
       );
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
       await _rtcAdapter.setLocalAudioEnabled(!nextMuted);
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
       final RoomSnapshot? snapshot = _snapshot;
       if (snapshot != null) {
         final List<MicSeat> updated = <MicSeat>[
@@ -299,45 +659,82 @@ class RoomController extends ChangeNotifier {
       _notify();
       return true;
     } catch (error) {
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
       _errorMessage = _messageFor(error, fallback: '麦克风状态更新失败');
       _notify();
       return false;
     }
   }
 
-  Future<bool> sendPublicMessage(String content) async {
+  Future<bool> sendPublicMessage(String content) {
     final String normalized = content.trim();
     final RoomSnapshot? snapshot = _snapshot;
     if (normalized.isEmpty ||
         snapshot == null ||
         _status != RoomSessionStatus.joined ||
         !canSendPublicMessage) {
-      return false;
+      return Future<bool>.value(false);
     }
-    try {
-      await _repository.sendPublicMessage(
-        roomId: snapshot.roomId,
-        content: normalized,
-      );
-      _messages.add(
-        RoomMessage(
-          senderId: _currentUserId,
-          sender: '我',
+    final String intentKey = roomIntentDigest(
+      scope: 'public-message',
+      fields: <String>[snapshot.roomId, normalized],
+    );
+    final _PublicMessageSubmission? existing =
+        _publicMessageInFlight[intentKey];
+    if (existing != null) {
+      return existing.future;
+    }
+
+    final int sessionEpoch = _sessionEpoch;
+    final String requestId =
+        _publicMessageRetryIds.remove(intentKey) ?? _newRequestId('room-chat');
+    late final _PublicMessageSubmission submission;
+    final Future<bool> operation = _publicMessageTail.then<bool>((_) async {
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
+      try {
+        final RoomMessage message = await _repository.sendPublicMessage(
+          roomId: snapshot.roomId,
           content: normalized,
-          createdAt: DateTime.now(),
-        ),
-      );
-      _notify();
-      return true;
-    } catch (error) {
-      _errorMessage = _messageFor(error, fallback: '消息发送失败');
-      _notify();
-      return false;
-    }
+          requestId: requestId,
+        );
+        if (!_isJoinedEpoch(sessionEpoch)) {
+          return false;
+        }
+        _appendAuthoritativeMessage(message);
+        _publicMessageRetryIds.remove(intentKey);
+        _notify();
+        return true;
+      } catch (error) {
+        if (!_isJoinedEpoch(sessionEpoch)) {
+          return false;
+        }
+        if (_isRetryableRequestError(error)) {
+          _publicMessageRetryIds[intentKey] = requestId;
+        } else {
+          _publicMessageRetryIds.remove(intentKey);
+        }
+        _errorMessage = _messageFor(error, fallback: '消息发送失败');
+        _notify();
+        return false;
+      }
+    });
+    submission = _PublicMessageSubmission(operation);
+    _publicMessageInFlight[intentKey] = submission;
+    operation.whenComplete(() {
+      if (identical(_publicMessageInFlight[intentKey], submission)) {
+        _publicMessageInFlight.remove(intentKey);
+      }
+    });
+    _publicMessageTail = operation.then<void>((_) {});
+    return operation;
   }
 
   Future<bool> sendGift({
-    required int giftId,
+    required String giftId,
     required String giftName,
     required int receiverUserId,
     required String targetName,
@@ -351,6 +748,22 @@ class RoomController extends ChangeNotifier {
         !allows(RoomCapability.sendGift)) {
       return false;
     }
+    final int sessionEpoch = _sessionEpoch;
+    final String requestKey = roomIntentDigest(
+      scope: 'controller-gift',
+      fields: <String>[
+        snapshot.roomId,
+        giftId.trim(),
+        '$receiverUserId',
+        '$quantity',
+        '$giftFrom',
+      ],
+    );
+    if (_giftRequestKey != requestKey || _giftRequestId == null) {
+      _giftRequestKey = requestKey;
+      _giftRequestId = _newRequestId('room-gift');
+    }
+    final String requestId = _giftRequestId!;
     _giftSubmitting = true;
     _errorMessage = null;
     _notify();
@@ -361,8 +774,14 @@ class RoomController extends ChangeNotifier {
         receiverUserIds: <int>[receiverUserId],
         quantity: quantity,
         giftFrom: giftFrom,
+        requestId: requestId,
       );
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
       if (!receipt.success) {
+        _giftRequestId = null;
+        _giftRequestKey = null;
         _errorMessage = '礼物赠送未完成，请刷新余额后重试';
         return false;
       }
@@ -370,28 +789,87 @@ class RoomController extends ChangeNotifier {
       if (remainingBalance != null) {
         _snapshot = snapshot.copyWith(giftBalance: remainingBalance);
       }
-      _messages.add(
-        RoomMessage(
-          sender: '系统',
-          content: '我送给 $targetName $giftName ×$quantity',
-          isSystem: true,
-          createdAt: DateTime.now(),
-        ),
-      );
+      _giftRequestId = null;
+      _giftRequestKey = null;
+      await _loadPublicHistory(snapshot, sessionEpoch: sessionEpoch);
       return true;
     } catch (error) {
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
+      if (_isRetryableRequestError(error)) {
+        final bool recovered = await _recoverGiftAfterRetryableFailure(
+          snapshot: snapshot,
+          sessionEpoch: sessionEpoch,
+          requestId: requestId,
+        );
+        if (recovered) {
+          return true;
+        }
+      } else {
+        _giftRequestId = null;
+        _giftRequestKey = null;
+      }
       _errorMessage = _messageFor(error, fallback: '礼物赠送失败');
       return false;
     } finally {
-      _giftSubmitting = false;
-      _notify();
+      if (_isCurrent(sessionEpoch)) {
+        _giftSubmitting = false;
+        _notify();
+      }
     }
   }
+
+  /// Recovers a first-party gift after an ambiguous send without retrying the
+  /// economic write. When no transfer id is known, the retained send request
+  /// id is used and the authenticated controller user is always forwarded as
+  /// the participant scope.
+  Future<GiftReceipt?> fetchGiftReceipt({
+    String? transferId,
+    String? requestId,
+  }) async {
+    final RoomSnapshot? snapshot = _snapshot;
+    if (_status != RoomSessionStatus.joined || snapshot == null) {
+      return null;
+    }
+    final int sessionEpoch = _sessionEpoch;
+    final GiftReceipt? receipt = await _readGiftReceipt(
+      sessionEpoch: sessionEpoch,
+      transferId: transferId,
+      requestId: requestId,
+      failureFallback: '礼物回执查询失败',
+      setErrorOnFailure: true,
+    );
+    if (receipt == null) {
+      if (_isJoinedEpoch(sessionEpoch)) {
+        _notify();
+      }
+      return null;
+    }
+    if (receipt.success) {
+      await _applySuccessfulGiftReceipt(
+        receipt,
+        snapshot: snapshot,
+        sessionEpoch: sessionEpoch,
+        refreshHistory: true,
+      );
+      if (_isJoinedEpoch(sessionEpoch)) {
+        _notify();
+      }
+    }
+    return _isJoinedEpoch(sessionEpoch) ? receipt : null;
+  }
+
+  Future<GiftReceipt?> queryGiftReceipt({
+    String? transferId,
+    String? requestId,
+  }) => fetchGiftReceipt(transferId: transferId, requestId: requestId);
 
   Future<void> reconnect() async {
     if (_status != RoomSessionStatus.joined) {
       return;
     }
+    final int sessionEpoch = _sessionEpoch;
     _status = RoomSessionStatus.reconnecting;
     _errorMessage = null;
     _notify();
@@ -400,30 +878,55 @@ class RoomController extends ChangeNotifier {
         roomId: roomId,
         currentUserId: _currentUserId,
       );
-      await _rtcAdapter.reconnect(snapshot.rtc);
-      try {
-        await _realtimeGateway.reconnect();
+      if (!_isCurrent(sessionEpoch)) {
+        return;
+      }
+      if (!snapshot.isSnapshotOnly) {
+        _claimTransportLease();
+        await _rtcAdapter.reconnect(snapshot.rtc);
+        if (!_isCurrent(sessionEpoch)) {
+          return;
+        }
+        try {
+          await _realtimeGateway.reconnect();
+          if (_isCurrent(sessionEpoch)) {
+            _realtimeDegraded = false;
+          }
+        } catch (_) {
+          if (_isCurrent(sessionEpoch)) {
+            _realtimeDegraded = true;
+          }
+        }
+      } else {
         _realtimeDegraded = false;
-      } catch (_) {
-        _realtimeDegraded = true;
+      }
+      if (!_isCurrent(sessionEpoch)) {
+        return;
       }
       _snapshot = snapshot;
-      _messages.add(
-        const RoomMessage(
-          sender: '系统',
-          content: '已恢复连接。断线期间公屏消息可能未显示。',
-          isSystem: true,
-        ),
-      );
+      if (_allowSyntheticPublicMessages && !snapshot.isSnapshotOnly) {
+        _messages.add(
+          const RoomMessage(
+            sender: '系统',
+            content: '已恢复连接。断线期间公屏消息可能未显示。',
+            isSystem: true,
+          ),
+        );
+      }
       _status = RoomSessionStatus.joined;
     } catch (error) {
+      if (!_isCurrent(sessionEpoch)) {
+        return;
+      }
       _errorMessage = _messageFor(error, fallback: '房间恢复失败，请重试');
       _realtimeDegraded = true;
       _status = _snapshot == null
           ? RoomSessionStatus.failed
           : RoomSessionStatus.joined;
     }
-    _notify();
+    if (_isCurrent(sessionEpoch)) {
+      _notify();
+    }
   }
 
   Future<bool> leaveRoom() async {
@@ -431,12 +934,21 @@ class RoomController extends ChangeNotifier {
         _status == RoomSessionStatus.left) {
       return false;
     }
+    final RoomSessionStatus previousStatus = _status;
+    final Object? transportLease = _transportLeaseId;
+    final int sessionEpoch = _invalidateSession();
     if (_status == RoomSessionStatus.joining ||
         _status == RoomSessionStatus.idle ||
         (_status == RoomSessionStatus.failed && _snapshot == null)) {
       _joinCancelled = true;
       _status = RoomSessionStatus.left;
-      await _cleanupTransport(swallowErrors: true);
+      await _cleanupTransport(
+        swallowErrors: true,
+        transportLease: transportLease,
+      );
+      if (!_isCurrent(sessionEpoch)) {
+        return false;
+      }
       _notify();
       return true;
     }
@@ -445,41 +957,79 @@ class RoomController extends ChangeNotifier {
     _notify();
     try {
       await _repository.exitRoom(_snapshot?.roomId ?? roomId);
-      await _cleanupTransport(swallowErrors: true);
+      if (!_isCurrent(sessionEpoch)) {
+        return false;
+      }
+      await _cleanupTransport(
+        swallowErrors: true,
+        transportLease: transportLease,
+      );
+      if (!_isCurrent(sessionEpoch)) {
+        return false;
+      }
       _status = RoomSessionStatus.left;
       _notify();
       return true;
     } catch (error) {
+      if (!_isCurrent(sessionEpoch)) {
+        return false;
+      }
       _errorMessage = _messageFor(error, fallback: '离开房间失败，请重试');
-      _status = RoomSessionStatus.joined;
+      _status = previousStatus;
       _notify();
       return false;
     }
   }
 
   void clearError() {
-    if (_errorMessage == null) {
+    if (_errorMessage == null &&
+        _historyErrorKind == null &&
+        _historyErrorMessage == null) {
       return;
     }
     _errorMessage = null;
+    _historyErrorKind = null;
+    _historyErrorMessage = null;
     _notify();
   }
 
-  Future<void> _replaceRealtimeSubscription() async {
-    await _realtimeSubscription?.cancel();
-    _realtimeSubscription = _realtimeGateway.events.listen(
-      _handleRealtimeEvent,
-      onError: (Object _, StackTrace __) {
-        _realtimeDegraded = true;
-        _notify();
-      },
-    );
+  Future<void> _replaceRealtimeSubscription({required int sessionEpoch}) async {
+    final StreamSubscription<RoomRealtimeEvent>? previous =
+        _realtimeSubscription;
+    _realtimeSubscription = null;
+    await previous?.cancel();
+    if (!_isCurrent(sessionEpoch)) {
+      return;
+    }
+    final StreamSubscription<RoomRealtimeEvent> subscription = _realtimeGateway
+        .events
+        .listen(
+          (RoomRealtimeEvent event) =>
+              _handleRealtimeEvent(event, sessionEpoch: sessionEpoch),
+          onError: (Object _, StackTrace __) {
+            if (_isCurrent(sessionEpoch)) {
+              _realtimeDegraded = true;
+              _notify();
+            }
+          },
+        );
+    if (!_isCurrent(sessionEpoch)) {
+      unawaited(subscription.cancel());
+      return;
+    }
+    _realtimeSubscription = subscription;
   }
 
-  void _handleRealtimeEvent(RoomRealtimeEvent event) {
+  void _handleRealtimeEvent(RoomRealtimeEvent event, {int? sessionEpoch}) {
+    if (_disposed ||
+        (sessionEpoch != null && !_isCurrent(sessionEpoch)) ||
+        (sessionEpoch == null && !_isCurrent(_sessionEpoch))) {
+      return;
+    }
     if (!RoomRealtimeEventCodes.allowed.contains(event.code)) {
       return;
     }
+    final int activeEpoch = sessionEpoch ?? _sessionEpoch;
     switch (event.code) {
       case RoomRealtimeEventCodes.publicChat:
         final String content = event.payload['message']?.toString() ?? '';
@@ -505,15 +1055,29 @@ class RoomController extends ChangeNotifier {
         _notify();
         return;
       case RoomRealtimeEventCodes.kickedOut:
+        final Object? transportLease = _transportLeaseId;
+        _invalidateSession();
         _status = RoomSessionStatus.kicked;
         _errorMessage = '你已被移出房间';
-        unawaited(_cleanupTransport(swallowErrors: true));
+        unawaited(
+          _cleanupTransport(
+            swallowErrors: true,
+            transportLease: transportLease,
+          ),
+        );
         _notify();
         return;
       case RoomRealtimeEventCodes.roomBanned:
+        final Object? transportLease = _transportLeaseId;
+        _invalidateSession();
         _status = RoomSessionStatus.closed;
         _errorMessage = '房间当前不可用';
-        unawaited(_cleanupTransport(swallowErrors: true));
+        unawaited(
+          _cleanupTransport(
+            swallowErrors: true,
+            transportLease: transportLease,
+          ),
+        );
         _notify();
         return;
       case RoomRealtimeEventCodes.mutedInRoom:
@@ -542,7 +1106,7 @@ class RoomController extends ChangeNotifier {
       case RoomRealtimeEventCodes.roomTopic:
       case RoomRealtimeEventCodes.roomName:
       case RoomRealtimeEventCodes.roomAutoLock:
-        unawaited(_refreshAfterRealtimeEvent());
+        unawaited(_refreshAfterRealtimeEvent(sessionEpoch: activeEpoch));
         return;
       case RoomRealtimeEventCodes.pkInvited:
       case RoomRealtimeEventCodes.pkAccepted:
@@ -553,35 +1117,107 @@ class RoomController extends ChangeNotifier {
     }
   }
 
-  Future<void> _refreshAfterRealtimeEvent() async {
-    if (_refreshingFromEvent || _status != RoomSessionStatus.joined) {
+  Future<void> _refreshAfterRealtimeEvent({required int sessionEpoch}) async {
+    if (_refreshingFromEvent || !_isJoinedEpoch(sessionEpoch)) {
       return;
     }
     _refreshingFromEvent = true;
     try {
-      _snapshot = await _repository.reconnectRoom(
+      final RoomSnapshot refreshed = await _repository.reconnectRoom(
         roomId: roomId,
         currentUserId: _currentUserId,
       );
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return;
+      }
+      _snapshot = refreshed;
       _notify();
     } catch (_) {
-      _realtimeDegraded = true;
-      _notify();
+      if (_isJoinedEpoch(sessionEpoch)) {
+        _realtimeDegraded = true;
+        _notify();
+      }
     } finally {
-      _refreshingFromEvent = false;
+      if (_isCurrent(sessionEpoch)) {
+        _refreshingFromEvent = false;
+      }
     }
   }
 
-  Future<void> _abandonEnteredRoom(RoomSnapshot snapshot) async {
-    try {
-      await _repository.exitRoom(snapshot.roomId);
-    } catch (_) {
-      // The route has already been abandoned. Best-effort server cleanup only.
+  Future<void> _abandonEnteredRoom(
+    RoomSnapshot snapshot, {
+    required int sessionEpoch,
+  }) async {
+    if (_canCompensateJoin(sessionEpoch)) {
+      try {
+        await _repository.exitRoom(snapshot.roomId);
+      } catch (_) {
+        // The route has already been abandoned. Best-effort server cleanup only.
+      }
     }
-    await _cleanupTransport(swallowErrors: true);
-    _status = RoomSessionStatus.left;
-    _notify();
+    // The invalidating leave, kick/close, or dispose owns transport cleanup.
+    // Cleaning it here could disconnect a newer session that reused the
+    // shared adapter while this stale join was compensating on the server.
+    if (_isCurrent(sessionEpoch)) {
+      await _cleanupTransport(
+        swallowErrors: true,
+        transportLease: _transportLeaseId,
+      );
+      _status = RoomSessionStatus.left;
+      _notify();
+    }
   }
+
+  bool _canCompensateJoin(int sessionEpoch) {
+    if (_sessionEpoch == sessionEpoch || _disposed) {
+      return true;
+    }
+    return _status == RoomSessionStatus.leaving ||
+        _status == RoomSessionStatus.left ||
+        _status == RoomSessionStatus.closed ||
+        _status == RoomSessionStatus.kicked;
+  }
+
+  int _invalidateSession() {
+    _sessionEpoch += 1;
+    _micQueueEpoch += 1;
+    _joinCancelled = true;
+    _micRequestPending = false;
+    _micQueueLoading = false;
+    _micRequests.clear();
+    _giftSubmitting = false;
+    _publicMessageRetryIds.clear();
+    _publicMessageInFlight.clear();
+    _publicMessageTail = Future<void>.value();
+    _giftRequestId = null;
+    _giftRequestKey = null;
+    _historyErrorKind = null;
+    _historyErrorMessage = null;
+    _refreshingFromEvent = false;
+    return _sessionEpoch;
+  }
+
+  bool _isCurrent(int sessionEpoch) =>
+      !_disposed && sessionEpoch == _sessionEpoch;
+
+  bool _isJoinedEpoch(int sessionEpoch) =>
+      _isCurrent(sessionEpoch) && _status == RoomSessionStatus.joined;
+
+  Object _claimTransportLease() {
+    final Object lease = Object();
+    _transportLeaseId = lease;
+    _rtcTransportOwners[_rtcAdapter] = lease;
+    _realtimeTransportOwners[_realtimeGateway] = lease;
+    return lease;
+  }
+
+  bool _ownsRtcTransport(Object? transportLease) =>
+      transportLease != null &&
+      _rtcTransportOwners[_rtcAdapter] == transportLease;
+
+  bool _ownsRealtimeTransport(Object? transportLease) =>
+      transportLease != null &&
+      _realtimeTransportOwners[_realtimeGateway] == transportLease;
 
   void _notify() {
     if (!_disposed) {
@@ -589,7 +1225,10 @@ class RoomController extends ChangeNotifier {
     }
   }
 
-  Future<void> _cleanupTransport({required bool swallowErrors}) async {
+  Future<void> _cleanupTransport({
+    required bool swallowErrors,
+    Object? transportLease,
+  }) async {
     Object? firstError;
     final StreamSubscription<RoomRealtimeEvent>? subscription =
         _realtimeSubscription;
@@ -601,15 +1240,28 @@ class RoomController extends ChangeNotifier {
         firstError ??= error;
       }
     }
-    try {
-      await _realtimeGateway.disconnect();
-    } catch (error) {
-      firstError ??= error;
+    if (_ownsRealtimeTransport(transportLease)) {
+      try {
+        await _realtimeGateway.disconnect();
+      } catch (error) {
+        firstError ??= error;
+      }
+      if (_ownsRealtimeTransport(transportLease)) {
+        _realtimeTransportOwners[_realtimeGateway] = null;
+      }
     }
-    try {
-      await _rtcAdapter.leave();
-    } catch (error) {
-      firstError ??= error;
+    if (_ownsRtcTransport(transportLease)) {
+      try {
+        await _rtcAdapter.leave();
+      } catch (error) {
+        firstError ??= error;
+      }
+      if (_ownsRtcTransport(transportLease)) {
+        _rtcTransportOwners[_rtcAdapter] = null;
+      }
+    }
+    if (_transportLeaseId == transportLease) {
+      _transportLeaseId = null;
     }
     if (!swallowErrors && firstError != null) {
       throw firstError;
@@ -637,17 +1289,188 @@ class RoomController extends ChangeNotifier {
   static String _messageFor(Object error, {required String fallback}) =>
       error is ApiException ? error.message : fallback;
 
+  static bool _isRetryableRequestError(Object error) {
+    if (error is! ApiException) {
+      // A transport/client exception without a classified kind may have
+      // happened after the server committed the write. Preserve the same
+      // idempotency key until the caller gets an authoritative answer.
+      return true;
+    }
+    if (error.code == 40901 || error.code == 40902) {
+      return true;
+    }
+    if (error.code == 40903) {
+      return false;
+    }
+    return switch (error.kind) {
+      ApiFailureKind.timeout ||
+      ApiFailureKind.network ||
+      ApiFailureKind.protocol ||
+      ApiFailureKind.server => true,
+      ApiFailureKind.configuration ||
+      ApiFailureKind.unauthorized ||
+      ApiFailureKind.forbidden ||
+      ApiFailureKind.validation ||
+      ApiFailureKind.conflict ||
+      ApiFailureKind.business => false,
+    };
+  }
+
+  Future<bool> _recoverGiftAfterRetryableFailure({
+    required RoomSnapshot snapshot,
+    required int sessionEpoch,
+    required String requestId,
+  }) async {
+    final GiftReceipt? receipt = await _readGiftReceipt(
+      sessionEpoch: sessionEpoch,
+      requestId: requestId,
+      setErrorOnFailure: false,
+    );
+    if (receipt == null || !receipt.success || !_isJoinedEpoch(sessionEpoch)) {
+      return false;
+    }
+    await _applySuccessfulGiftReceipt(
+      receipt,
+      snapshot: snapshot,
+      sessionEpoch: sessionEpoch,
+      refreshHistory: true,
+    );
+    return _isJoinedEpoch(sessionEpoch);
+  }
+
+  Future<GiftReceipt?> _readGiftReceipt({
+    required int sessionEpoch,
+    String? transferId,
+    String? requestId,
+    String failureFallback = '礼物回执查询失败',
+    bool setErrorOnFailure = true,
+  }) async {
+    final String? normalizedTransferId = transferId?.trim().isEmpty == true
+        ? null
+        : transferId?.trim();
+    final String? normalizedRequestId = requestId?.trim().isEmpty == true
+        ? null
+        : requestId?.trim();
+    final String? recoveryRequestId = normalizedTransferId == null
+        ? (normalizedRequestId ?? _giftRequestId)
+        : normalizedRequestId;
+    try {
+      final GiftReceipt receipt = await _repository.fetchGiftReceipt(
+        transferId: normalizedTransferId,
+        requestId: recoveryRequestId,
+        currentUserId: _currentUserId,
+      );
+      return _isJoinedEpoch(sessionEpoch) ? receipt : null;
+    } catch (error) {
+      if (setErrorOnFailure && _isJoinedEpoch(sessionEpoch)) {
+        _errorMessage = _messageFor(error, fallback: failureFallback);
+      }
+      return null;
+    }
+  }
+
+  Future<void> _applySuccessfulGiftReceipt(
+    GiftReceipt receipt, {
+    required RoomSnapshot snapshot,
+    required int sessionEpoch,
+    bool refreshHistory = false,
+  }) async {
+    if (!_isJoinedEpoch(sessionEpoch)) {
+      return;
+    }
+    final RoomSnapshot? currentSnapshot = _snapshot;
+    final int? remainingBalance = receipt.remainingBalance;
+    if (remainingBalance != null && currentSnapshot != null) {
+      _snapshot = currentSnapshot.copyWith(giftBalance: remainingBalance);
+    }
+    _giftRequestId = null;
+    _giftRequestKey = null;
+    _errorMessage = null;
+    if (refreshHistory) {
+      await _loadPublicHistory(snapshot, sessionEpoch: sessionEpoch);
+    }
+  }
+
+  String _newRequestId(String prefix) {
+    final String value = _requestIdGenerator(prefix).trim();
+    if (value.isEmpty ||
+        value.length > 128 ||
+        !RegExp(r'^[A-Za-z0-9._:-]{1,128}$').hasMatch(value)) {
+      throw StateError('请求幂等 ID 生成器返回了无效值');
+    }
+    return value;
+  }
+
+  static String _secureRequestId(String prefix) {
+    final String entropy = List<String>.generate(
+      32,
+      (_) => _secureRandom.nextInt(16).toRadixString(16),
+      growable: false,
+    ).join();
+    return '$prefix-$entropy';
+  }
+
+  void _appendAuthoritativeMessage(RoomMessage message) {
+    final String? messageId = message.messageId?.trim();
+    if (messageId == null || messageId.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '服务端消息缺少消息 ID',
+      );
+    }
+    if (message.roomId != null && message.roomId != roomId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '服务端消息房间 ID 与当前房间不一致',
+      );
+    }
+    if (_messages.any((RoomMessage item) => item.messageId == messageId)) {
+      return;
+    }
+    _messages.add(message);
+  }
+
   @override
   void dispose() {
+    if (_disposed) {
+      return;
+    }
+    _sessionEpoch += 1;
+    _micQueueEpoch += 1;
     _disposed = true;
     _joinCancelled = true;
+    _micRequestPending = false;
+    _giftSubmitting = false;
+    _publicMessageRetryIds.clear();
+    _publicMessageInFlight.clear();
+    _publicMessageTail = Future<void>.value();
+    _giftRequestId = null;
+    _giftRequestKey = null;
+    _refreshingFromEvent = false;
+    final Object? transportLease = _transportLeaseId;
     final StreamSubscription<RoomRealtimeEvent>? subscription =
         _realtimeSubscription;
+    _realtimeSubscription = null;
     if (subscription != null) {
       unawaited(subscription.cancel());
     }
-    unawaited(_realtimeGateway.disconnect());
-    unawaited(_rtcAdapter.leave());
+    if (_ownsRealtimeTransport(transportLease)) {
+      _realtimeTransportOwners[_realtimeGateway] = null;
+      unawaited(_realtimeGateway.disconnect());
+    }
+    if (_ownsRtcTransport(transportLease)) {
+      _rtcTransportOwners[_rtcAdapter] = null;
+      unawaited(_rtcAdapter.leave());
+    }
+    if (_transportLeaseId == transportLease) {
+      _transportLeaseId = null;
+    }
     super.dispose();
   }
+}
+
+class _PublicMessageSubmission {
+  const _PublicMessageSubmission(this.future);
+
+  final Future<bool> future;
 }

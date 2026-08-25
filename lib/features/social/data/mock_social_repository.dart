@@ -76,12 +76,19 @@ class MockSocialRepository implements SocialRepository {
 
   final Map<int, SocialUser> _users;
   final List<FriendRequest> _requests = <FriendRequest>[];
+  final Map<int, FriendRequestSendResult> _outgoingFriendRequests =
+      <int, FriendRequestSendResult>{};
   final Map<String, SupportTicket> _tickets = <String, SupportTicket>{};
+  Duration friendRequestSendDelay = Duration.zero;
   PrivacySettings _privacy = const PrivacySettings(
     onlyFollowedCanFollow: false,
     serverValueKnown: true,
   );
   int _ticketSequence = 1;
+  int _friendRequestSendCount = 0;
+  int _friendRequestSequence = 1;
+
+  int get friendRequestSendCount => _friendRequestSendCount;
 
   @override
   bool get supportsFriendRequestWorkflow => true;
@@ -229,6 +236,55 @@ class MockSocialRepository implements SocialRepository {
       isFollowing: following,
       isFriend: following && user.isFollower,
     );
+  }
+
+  @override
+  Future<FriendRequestSendResult> sendFriendRequest({
+    required int userId,
+    required String message,
+  }) async {
+    if (userId <= 0 || userId == 10001) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '不能向自己发起好友申请',
+      );
+    }
+    final String normalizedMessage = message.trim();
+    if (normalizedMessage.length > 160) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '好友申请留言不能超过 160 个字符',
+      );
+    }
+    final SocialUser target = _requireUser(userId);
+    if (target.isBlocked) {
+      throw const ApiException(
+        kind: ApiFailureKind.forbidden,
+        message: '该用户当前不可申请好友',
+      );
+    }
+    if (target.isFriend) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '你们已经是好友',
+      );
+    }
+    final FriendRequestSendResult? existing = _outgoingFriendRequests[userId];
+    if (existing != null) {
+      return existing;
+    }
+    final FriendRequestSendResult result = FriendRequestSendResult(
+      requestId: 'friend-request-${_friendRequestSequence++}',
+      status: FriendRequestStatus.pending,
+    );
+    // Store before yielding so concurrent callers observe the same
+    // server-authoritative pending request instead of creating duplicates.
+    _outgoingFriendRequests[userId] = result;
+    _friendRequestSendCount += 1;
+    if (friendRequestSendDelay > Duration.zero) {
+      await Future<void>.delayed(friendRequestSendDelay);
+    }
+    return result;
   }
 
   @override

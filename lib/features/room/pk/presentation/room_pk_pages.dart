@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_repository.dart';
+import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
 class RoomPkPreparationPage extends StatefulWidget {
   const RoomPkPreparationPage({
@@ -270,8 +272,8 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('PK 邀请与准备')),
+    return RoomPageScaffold(
+      appBar: roomOxygenAppBar(title: 'PK 邀请与准备'),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -279,8 +281,16 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
                 children: <Widget>[
+                  RoomOxygenContextBar(
+                    title: widget.roomTitle,
+                    subtitle: '房间号 ${widget.roomId} · 普通房 PK',
+                    seed: widget.roomId,
+                    status: '准备中',
+                    statusColor: RoomColors.secondary,
+                  ),
+                  const SizedBox(height: 12),
                   const _PkInfoCard(
                     icon: Icons.info_outline_rounded,
                     text: '只保留普通房间 PK：邀请、接受或拒绝、计时比分和结算。其他未确认玩法均不提供。',
@@ -567,10 +577,14 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
     final double currentRatio = totalScore == 0
         ? 0.5
         : current.score / totalScore;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('PK 对战与结算'),
+    return RoomPageScaffold(
+      appBar: roomOxygenAppBar(
+        title: 'PK 对战与结算',
         actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('返回房间'),
+          ),
           IconButton(
             tooltip: '刷新比分',
             onPressed: _refreshing ? null : _refresh,
@@ -584,8 +598,21 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: <Widget>[
+          RoomOxygenContextBar(
+            title: current.roomName,
+            subtitle:
+                '房间号 ${widget.roomId} · ${_battle.stage == RoomPkBattleStage.completed ? '服务端已结算' : '对战进行中'}',
+            seed: widget.roomId,
+            status: _battle.stage == RoomPkBattleStage.completed
+                ? '已结束'
+                : 'PK 中',
+            statusColor: _battle.stage == RoomPkBattleStage.completed
+                ? RoomColors.success
+                : RoomColors.secondary,
+          ),
+          const SizedBox(height: 12),
           if (!_repository.supportsRealtimeInvitations)
             const _PkInfoCard(
               icon: Icons.sync_rounded,
@@ -604,7 +631,7 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
             child: LinearProgressIndicator(
               minHeight: 12,
               value: currentRatio.clamp(0, 1),
-              backgroundColor: AppColors.secondary.withValues(alpha: 0.28),
+              backgroundColor: RoomColors.secondary.withValues(alpha: 0.28),
             ),
           ),
           const SizedBox(height: 14),
@@ -641,11 +668,6 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('返回房间'),
-          ),
         ],
       ),
     );
@@ -665,15 +687,16 @@ class _OpponentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: selected
-          ? AppColors.primary.withValues(alpha: 0.18)
-          : AppColors.surface,
-      borderRadius: BorderRadius.circular(18),
+    return RoomGlassCard(
+      padding: EdgeInsets.zero,
+      radius: 16,
+      onTap: onSelect,
       child: ListTile(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        onTap: onSelect,
-        leading: CircleAvatar(child: Text(_initial(opponent.roomName))),
+        leading: RuntimeAvatar(
+          seed: opponent.roomId,
+          size: 42,
+          ringColor: selected ? RoomColors.secondary : RoomColors.primary,
+        ),
         title: Text(opponent.roomName),
         subtitle: Text(
           '房间号 ${opponent.roomCode} · ${opponent.onlineUsers} 人在线'
@@ -685,7 +708,7 @@ class _OpponentTile extends StatelessWidget {
                 selected
                     ? Icons.check_circle_rounded
                     : Icons.radio_button_unchecked_rounded,
-                color: selected ? AppColors.primary : AppColors.textSecondary,
+                color: selected ? RoomColors.primary : RoomColors.textSecondary,
               ),
       ),
     );
@@ -707,42 +730,39 @@ class _IncomingInvitationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(
-              invitation.opponent.roomName,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '${invitation.durationMinutes} 分钟 · ${invitation.punishmentTheme}',
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: busy ? null : onReject,
-                    child: const Text('拒绝'),
-                  ),
+    return RoomGlassCard(
+      padding: const EdgeInsets.all(14),
+      radius: 16,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            invitation.opponent.roomName,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${invitation.durationMinutes} 分钟 · ${invitation.punishmentTheme}',
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: busy ? null : onReject,
+                  child: const Text('拒绝'),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: busy ? null : onAccept,
-                    child: const Text('接受并准备'),
-                  ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: busy ? null : onAccept,
+                  child: const Text('接受并准备'),
                 ),
-              ],
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -761,38 +781,35 @@ class _OutgoingInvitationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surfaceHigh,
-      borderRadius: BorderRadius.circular(18),
-      child: Padding(
-        padding: const EdgeInsets.all(15),
-        child: Row(
-          children: <Widget>[
-            const Icon(Icons.outgoing_mail, color: AppColors.accent),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text('已邀请 ${invitation.opponent.roomName}'),
-                  const SizedBox(height: 4),
-                  Text(
-                    _invitationStatusText(invitation.status),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
+    return RoomGlassCard(
+      padding: const EdgeInsets.all(13),
+      radius: 16,
+      child: Row(
+        children: <Widget>[
+          const Icon(Icons.outgoing_mail, color: RoomColors.accent),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text('已邀请 ${invitation.opponent.roomName}'),
+                const SizedBox(height: 4),
+                Text(
+                  _invitationStatusText(invitation.status),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
             ),
-            IconButton(
-              tooltip: '刷新邀请状态',
-              onPressed:
-                  busy || invitation.status != RoomPkInvitationStatus.pending
-                  ? null
-                  : onRefresh,
-              icon: const Icon(Icons.refresh_rounded),
-            ),
-          ],
-        ),
+          ),
+          IconButton(
+            tooltip: '刷新邀请状态',
+            onPressed:
+                busy || invitation.status != RoomPkInvitationStatus.pending
+                ? null
+                : onRefresh,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
     );
   }
@@ -806,18 +823,17 @@ class _ActiveBattleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.primary.withValues(alpha: 0.16),
-      borderRadius: BorderRadius.circular(20),
+    return RoomGlassCard(
+      padding: EdgeInsets.zero,
+      radius: 16,
+      onTap: onOpen,
       child: ListTile(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         leading: const Icon(Icons.sports_kabaddi_rounded),
         title: const Text('当前房间正在 PK'),
         subtitle: Text(
           '${battle.currentSide.score} : ${battle.opponentSide.score} · ${_formatDuration(battle.remainingSeconds)}',
         ),
         trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: onOpen,
       ),
     );
   }
@@ -838,36 +854,33 @@ class _BattleHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(24),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Expanded(child: _PkSideCard(side: current, mine: true)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Column(
-                    children: <Widget>[
-                      Text(
-                        stage == RoomPkBattleStage.completed
-                            ? '已结束'
-                            : _formatDuration(remainingSeconds),
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 4),
-                      const Text('VS'),
-                    ],
-                  ),
+    return RoomGlassCard(
+      padding: const EdgeInsets.all(16),
+      radius: 18,
+      child: Column(
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(child: _PkSideCard(side: current, mine: true)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Column(
+                  children: <Widget>[
+                    Text(
+                      stage == RoomPkBattleStage.completed
+                          ? '已结束'
+                          : _formatDuration(remainingSeconds),
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    const Text('VS'),
+                  ],
                 ),
-                Expanded(child: _PkSideCard(side: opponent, mine: false)),
-              ],
-            ),
-          ],
-        ),
+              ),
+              Expanded(child: _PkSideCard(side: opponent, mine: false)),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -883,7 +896,11 @@ class _PkSideCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: <Widget>[
-        CircleAvatar(radius: 28, child: Text(_initial(side.roomName))),
+        RuntimeAvatar(
+          seed: side.roomId,
+          size: 56,
+          ringColor: mine ? RoomColors.accent : RoomColors.secondary,
+        ),
         const SizedBox(height: 8),
         Text(
           side.roomName,
@@ -895,7 +912,7 @@ class _PkSideCard extends StatelessWidget {
         Text(
           '${side.score}',
           style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-            color: mine ? AppColors.accent : AppColors.secondary,
+            color: mine ? RoomColors.accent : RoomColors.secondary,
           ),
         ),
       ],
@@ -911,32 +928,34 @@ class _SupporterSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 10),
-            if (side.supporters.isEmpty)
-              Text('当前暂无有效贡献数据', style: Theme.of(context).textTheme.bodySmall)
-            else
-              for (int index = 0; index < side.supporters.length; index += 1)
-                ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    radius: 18,
-                    child: Text('${index + 1}'),
-                  ),
-                  title: Text(side.supporters[index].nickname),
-                  trailing: Text('${side.supporters[index].value}'),
+    return RoomGlassCard(
+      padding: const EdgeInsets.all(14),
+      radius: 16,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 10),
+          if (side.supporters.isEmpty)
+            Text('当前暂无有效贡献数据', style: Theme.of(context).textTheme.bodySmall)
+          else
+            for (int index = 0; index < side.supporters.length; index += 1)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: RuntimeAvatar(
+                  seed: '${side.roomId}-${side.supporters[index].nickname}',
+                  size: 36,
+                  ringColor: index == 0 ? RoomColors.gold : RoomColors.primary,
                 ),
-          ],
-        ),
+                title: Text(side.supporters[index].nickname),
+                trailing: RoomOxygenPill(
+                  label: '${side.supporters[index].value}',
+                  active: index == 0,
+                  accent: RoomColors.gold,
+                ),
+              ),
+        ],
       ),
     );
   }
@@ -957,40 +976,37 @@ class _ResultCard extends StatelessWidget {
       RoomPkResult.surrendered => '本房主动认输',
       RoomPkResult.canceled => '本场已取消',
     };
-    return Material(
-      color: AppColors.surfaceHigh,
-      borderRadius: BorderRadius.circular(22),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: <Widget>[
-            Icon(
-              result == RoomPkResult.win
-                  ? Icons.emoji_events_rounded
-                  : Icons.flag_rounded,
-              size: 42,
-              color: result == RoomPkResult.win
-                  ? AppColors.warning
-                  : AppColors.textSecondary,
-            ),
+    return RoomGlassCard(
+      padding: const EdgeInsets.all(18),
+      radius: 18,
+      child: Column(
+        children: <Widget>[
+          Icon(
+            result == RoomPkResult.win
+                ? Icons.emoji_events_rounded
+                : Icons.flag_rounded,
+            size: 42,
+            color: result == RoomPkResult.win
+                ? RoomColors.warning
+                : RoomColors.textSecondary,
+          ),
+          const SizedBox(height: 10),
+          Text(title, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 6),
+          Text(
+            '${battle.currentSide.score} : ${battle.opponentSide.score}',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          if (battle.punishmentTheme.isNotEmpty) ...<Widget>[
             const SizedBox(height: 10),
-            Text(title, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 6),
             Text(
-              '${battle.currentSide.score} : ${battle.opponentSide.score}',
-              style: Theme.of(context).textTheme.headlineSmall,
+              result == RoomPkResult.win
+                  ? '对方执行：${battle.punishmentTheme}'
+                  : '本房执行：${battle.punishmentTheme}',
+              textAlign: TextAlign.center,
             ),
-            if (battle.punishmentTheme.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 10),
-              Text(
-                result == RoomPkResult.win
-                    ? '对方执行：${battle.punishmentTheme}'
-                    : '本房执行：${battle.punishmentTheme}',
-                textAlign: TextAlign.center,
-              ),
-            ],
           ],
-        ),
+        ],
       ),
     );
   }
@@ -1028,20 +1044,12 @@ class _PkInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(18),
-      child: Padding(
-        padding: const EdgeInsets.all(15),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Icon(icon, color: AppColors.accent),
-            const SizedBox(width: 12),
-            Expanded(child: Text(text)),
-          ],
-        ),
-      ),
+    return RoomOxygenNotice(
+      icon: icon,
+      message: text,
+      accent: icon == Icons.warning_amber_rounded
+          ? RoomColors.warning
+          : RoomColors.accent,
     );
   }
 }
@@ -1082,7 +1090,7 @@ class _PkTag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.16),
+        color: RoomColors.primary.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(label, style: Theme.of(context).textTheme.bodySmall),
@@ -1092,11 +1100,6 @@ class _PkTag extends StatelessWidget {
 
 String _messageFor(Object error) =>
     error is ApiException ? error.message : '操作失败，请稍后重试';
-
-String _initial(String source) {
-  final String value = source.trim();
-  return value.isEmpty ? '?' : String.fromCharCode(value.runes.first);
-}
 
 String _invitationStatusText(RoomPkInvitationStatus status) => switch (status) {
   RoomPkInvitationStatus.pending => '等待对方确认',

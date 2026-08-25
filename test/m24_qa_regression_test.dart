@@ -27,8 +27,20 @@ void main() {
     await _pumpScoped(tester, const ThirdPartyAuthorizationPage());
 
     expect(find.text('第三方账号绑定与分享授权'), findsWidgets);
-    expect(find.text('VENDOR_BLOCKED'), findsNWidgets(3));
-    expect(find.textContaining('不会伪造绑定成功'), findsOneWidget);
+    expect(accountVendorBoundaryContractVersion, 'account-vendor-boundary-v1');
+    expect(accountVendorBoundaryContracts, hasLength(2));
+    for (final AccountVendorBoundaryContract contract
+        in accountVendorBoundaryContracts) {
+      expect(contract.status, 'VENDOR_BLOCKED');
+      expect(contract.providerInvocation, isFalse);
+      expect(contract.successClaimAllowed, isFalse);
+      expect(
+        find.byKey(ValueKey<String>('ac004-${contract.capability}')),
+        findsOneWidget,
+      );
+    }
+    expect(find.text('VENDOR_BLOCKED'), findsNWidgets(2));
+    expect(find.textContaining('不会伪造绑定或分享成功'), findsOneWidget);
   });
 
   testWidgets('QA page frame reflects the selected role and scenario', (

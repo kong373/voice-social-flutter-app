@@ -6,7 +6,26 @@ enum AppealState { none, pending, approved, rejected }
 
 enum PermissionKind { microphone, notifications, photos }
 
-enum PermissionState { notDetermined, granted, denied, restricted }
+/// State returned by the authoritative permission source.
+///
+/// `notDetermined` is only valid after a native platform adapter has actually
+/// queried the OS. Live HTTP data cannot infer it. Until that adapter exists,
+/// the backend repository must use [unavailable] and leave platform ownership
+/// unknown.
+/// Status reported by the operating system permission authority.
+///
+/// `granted` covers Android granted and iOS authorized/limited states. A
+/// permanently denied state is intentionally separate from a first denial so
+/// the UI can route the user to the app settings page instead of repeatedly
+/// presenting a request that the OS will never show.
+enum PermissionState {
+  notDetermined,
+  granted,
+  denied,
+  permanentlyDenied,
+  restricted,
+  unavailable,
+}
 
 class PermissionSetting {
   const PermissionSetting({
@@ -21,7 +40,12 @@ class PermissionSetting {
   final PermissionState state;
   final String title;
   final String purpose;
-  final bool managedByPlatform;
+
+  /// Whether the OS/native adapter owns this state. `null` means that no
+  /// native authority is connected yet; it is intentionally different from
+  /// `false`, which would claim that the platform does not manage the
+  /// permission.
+  final bool? managedByPlatform;
 
   PermissionSetting copyWith({
     PermissionState? state,
@@ -95,12 +119,27 @@ class CancellationEligibility {
     required this.message,
     required this.mobile,
     required this.requiresSmsCode,
+    this.status = 'NONE',
+    this.canCancel = false,
+    this.coolingEndsAt = '',
   });
 
   final bool allowed;
   final String message;
   final String mobile;
   final bool requiresSmsCode;
+
+  /// The server-owned deletion request state, for example `NONE` or
+  /// `COOLING_OFF`.
+  final String status;
+
+  /// Whether the server currently permits cancelling the deletion request.
+  /// This is intentionally separate from [allowed], which means that a new
+  /// deletion request may be submitted.
+  final bool canCancel;
+
+  /// The server-provided cooling-off deadline, if one exists.
+  final String coolingEndsAt;
 }
 
 class VersionUpdateInfo {
@@ -123,6 +162,7 @@ class AccountComplianceSnapshot {
   const AccountComplianceSnapshot({
     required this.account,
     required this.nickname,
+    required this.accountUsable,
     required this.verificationState,
     required this.youthModeEnabled,
     required this.restriction,
@@ -134,6 +174,10 @@ class AccountComplianceSnapshot {
 
   final String account;
   final String nickname;
+
+  /// Server-owned access decision. Every adapter must provide this value;
+  /// missing/failed live responses are rejected before this model is built.
+  final bool accountUsable;
   final VerificationState verificationState;
   final bool youthModeEnabled;
   final AccountRestriction restriction;
@@ -146,6 +190,7 @@ class AccountComplianceSnapshot {
     VerificationState? verificationState,
     bool? youthModeEnabled,
     AccountRestriction? restriction,
+    bool? accountUsable,
     CancellationEligibility? cancellation,
     VersionUpdateInfo? versionInfo,
     List<DeviceSession>? sessions,
@@ -154,6 +199,7 @@ class AccountComplianceSnapshot {
     return AccountComplianceSnapshot(
       account: account,
       nickname: nickname,
+      accountUsable: accountUsable ?? this.accountUsable,
       verificationState: verificationState ?? this.verificationState,
       youthModeEnabled: youthModeEnabled ?? this.youthModeEnabled,
       restriction: restriction ?? this.restriction,
@@ -171,6 +217,7 @@ abstract interface class AccountComplianceRepository {
 
   Future<AccountComplianceSnapshot> fetchSnapshot({
     required String account,
+    int? expectedUserId,
     required int currentVersion,
     required int platformType,
   });
@@ -179,6 +226,8 @@ abstract interface class AccountComplianceRepository {
     required PermissionKind kind,
     required PermissionState state,
   });
+
+  Future<void> openPermissionSettings();
 
   Future<void> submitRealName({
     required String realName,
@@ -206,13 +255,12 @@ abstract interface class AccountComplianceRepository {
 
   Future<void> requestCancellation({required String smsCode});
 
+  Future<CancellationEligibility> cancelDeletion();
+
   Future<VersionUpdateInfo> checkVersion({
     required int currentVersion,
     required int platformType,
   });
 
-  Future<bool> setYouthMode({
-    required bool enabled,
-    required String pin,
-  });
+  Future<bool> setYouthMode({required bool enabled, required String pin});
 }

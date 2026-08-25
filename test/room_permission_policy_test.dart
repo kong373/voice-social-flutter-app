@@ -8,28 +8,29 @@ void main() {
   RoomSnapshot snapshot(
     RoomRole role, {
     bool giftCatalogAvailable = true,
-  }) =>
-      RoomSnapshot(
-        roomId: '1',
-        roomCode: '1',
-        title: '房间',
-        topic: '',
-        ownerId: 1,
-        role: role,
-        seats: const <MicSeat>[],
-        rtc: const RtcCredentials(
-          solution: RtcSolution.agora,
-          token: 'token',
-          channelId: '1',
-          userId: 2,
-        ),
-        publicScreenEnabled: true,
-        pictureMessagesAllowed: false,
-        autoLockMic: false,
-        giftCatalogAvailable: giftCatalogAvailable,
-        giftBalance: 100,
-        onlineCount: 1,
-      );
+    RoomTransportMode transportMode = RoomTransportMode.interactive,
+  }) => RoomSnapshot(
+    roomId: '1',
+    roomCode: '1',
+    title: '房间',
+    topic: '',
+    ownerId: 1,
+    role: role,
+    seats: const <MicSeat>[],
+    rtc: const RtcCredentials(
+      solution: RtcSolution.agora,
+      token: 'token',
+      channelId: '1',
+      userId: 2,
+    ),
+    transportMode: transportMode,
+    publicScreenEnabled: true,
+    pictureMessagesAllowed: false,
+    autoLockMic: false,
+    giftCatalogAvailable: giftCatalogAvailable,
+    giftBalance: 100,
+    onlineCount: 1,
+  );
 
   test('listener can socialize but cannot manage the room', () {
     final RoomSnapshot room = snapshot(RoomRole.listener);
@@ -80,6 +81,61 @@ void main() {
       policy.allows(
         snapshot: room,
         capability: RoomCapability.closeRoom,
+        isOnMic: true,
+      ),
+      isTrue,
+    );
+  });
+
+  test('snapshot-only room keeps HTTP capabilities and blocks RTC mute', () {
+    final RoomSnapshot room = snapshot(
+      RoomRole.owner,
+      transportMode: RoomTransportMode.snapshotOnly,
+    );
+    expect(
+      policy.allows(
+        snapshot: room,
+        capability: RoomCapability.sendPublicMessage,
+        isOnMic: false,
+      ),
+      isTrue,
+    );
+    expect(
+      policy.allows(
+        snapshot: room,
+        capability: RoomCapability.requestMic,
+        isOnMic: false,
+      ),
+      isTrue,
+    );
+    expect(
+      policy.allows(
+        snapshot: room,
+        capability: RoomCapability.leaveMic,
+        isOnMic: true,
+      ),
+      isTrue,
+    );
+    expect(
+      policy.allows(
+        snapshot: room,
+        capability: RoomCapability.toggleMicrophone,
+        isOnMic: true,
+      ),
+      isFalse,
+    );
+    expect(
+      policy.allows(
+        snapshot: room,
+        capability: RoomCapability.manageMembers,
+        isOnMic: true,
+      ),
+      isTrue,
+    );
+    expect(
+      policy.allows(
+        snapshot: room,
+        capability: RoomCapability.startPk,
         isOnMic: true,
       ),
       isTrue,

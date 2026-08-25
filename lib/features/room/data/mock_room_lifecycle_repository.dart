@@ -5,6 +5,15 @@ import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.
 class MockRoomLifecycleRepository implements RoomLifecycleRepository {
   MockRoomLifecycleRepository();
 
+  @override
+  final RoomLifecycleCapabilities capabilities =
+      const RoomLifecycleCapabilities(
+        supportsApprovalAccessMode: true,
+        supportsTopicTitle: true,
+        supportsAutoLockMic: true,
+        supportsReopen: true,
+      );
+
   RoomConfiguration? _ownedRoom = const RoomConfiguration(
     roomId: '952700',
     roomCode: '952700',
@@ -17,6 +26,7 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
     showInHall: true,
     autoLockMic: false,
     availability: RoomAvailability.open,
+    version: 0,
   );
 
   @override
@@ -51,6 +61,9 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
       roomId: roomId,
       roomCode: roomCode,
       availability: RoomAvailability.open,
+      version: created
+          ? (configuration.version ?? 0)
+          : (configuration.version ?? 0) + 1,
     );
     return RoomLifecycleSaveResult(
       roomId: roomId,
@@ -60,7 +73,7 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
   }
 
   @override
-  Future<void> closeRoom(String roomId) async {
+  Future<void> closeRoom(String roomId, {int? expectedVersion}) async {
     final RoomConfiguration? room = _ownedRoom;
     if (room == null || room.roomId != roomId) {
       throw const ApiException(
@@ -69,7 +82,10 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
       );
     }
     await Future<void>.delayed(const Duration(milliseconds: 200));
-    _ownedRoom = room.copyWith(availability: RoomAvailability.closed);
+    _ownedRoom = room.copyWith(
+      availability: RoomAvailability.closed,
+      version: (expectedVersion ?? room.version ?? 0) + 1,
+    );
   }
 
   @override
@@ -116,6 +132,7 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
           showInHall: true,
           autoLockMic: false,
           availability: RoomAvailability.open,
+          version: 0,
         ),
       );
     }
@@ -148,7 +165,10 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
       );
     }
     if (configuration.accessMode == RoomAccessMode.password &&
-        !RegExp(r'^\d{4}$').hasMatch(configuration.password)) {
+        ((!configuration.passwordConfigured &&
+                configuration.password.isEmpty) ||
+            (configuration.password.isNotEmpty &&
+                !RegExp(r'^\d{4}$').hasMatch(configuration.password)))) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
         message: '密码房需要设置 4 位数字密码',

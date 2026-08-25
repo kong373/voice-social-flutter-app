@@ -1,11 +1,4 @@
-enum RoomRole {
-  guest,
-  listener,
-  speaker,
-  moderator,
-  owner,
-  platformModerator,
-}
+enum RoomRole { guest, listener, speaker, moderator, owner, platformModerator }
 
 enum RoomSessionStatus {
   idle,
@@ -19,15 +12,11 @@ enum RoomSessionStatus {
   failed,
 }
 
-enum MicSeatState {
-  available,
-  locked,
-  mutedAvailable,
-  occupied,
-  occupiedMuted,
-}
+enum MicSeatState { available, locked, mutedAvailable, occupied, occupiedMuted }
 
 enum RtcSolution { agora, zego, unknown }
+
+enum RoomTransportMode { interactive, snapshotOnly }
 
 enum RoomEntrySource {
   home(0),
@@ -122,16 +111,26 @@ class RoomMessage {
   const RoomMessage({
     required this.sender,
     required this.content,
+    this.roomId,
+    this.messageId,
     this.senderId,
+    this.type,
     this.isSystem = false,
     this.createdAt,
+    this.deliveryMode,
+    this.realtimeStatus,
   });
 
+  final String? roomId;
+  final String? messageId;
   final int? senderId;
   final String sender;
+  final String? type;
   final String content;
   final bool isSystem;
   final DateTime? createdAt;
+  final String? deliveryMode;
+  final String? realtimeStatus;
 }
 
 class RoomSnapshot {
@@ -149,6 +148,8 @@ class RoomSnapshot {
     required this.autoLockMic,
     required this.giftCatalogAvailable,
     required this.giftBalance,
+    this.accessMode = '',
+    this.transportMode = RoomTransportMode.interactive,
     this.onlineCount,
     this.coverUrl,
     this.backgroundUrl,
@@ -162,14 +163,22 @@ class RoomSnapshot {
   final RoomRole role;
   final List<MicSeat> seats;
   final RtcCredentials rtc;
+  final RoomTransportMode transportMode;
   final bool publicScreenEnabled;
   final bool pictureMessagesAllowed;
   final bool autoLockMic;
   final bool giftCatalogAvailable;
   final int? giftBalance;
+
+  /// Server-authoritative room access mode. APPROVAL is the only mode that
+  /// may use the first-party microphone queue; an empty value is unknown and
+  /// must not be guessed as direct or approval by callers.
+  final String accessMode;
   final int? onlineCount;
   final String? coverUrl;
   final String? backgroundUrl;
+
+  bool get isSnapshotOnly => transportMode == RoomTransportMode.snapshotOnly;
 
   RoomSnapshot copyWith({
     String? title,
@@ -177,11 +186,13 @@ class RoomSnapshot {
     RoomRole? role,
     List<MicSeat>? seats,
     RtcCredentials? rtc,
+    RoomTransportMode? transportMode,
     bool? publicScreenEnabled,
     bool? pictureMessagesAllowed,
     bool? autoLockMic,
     bool? giftCatalogAvailable,
     int? giftBalance,
+    String? accessMode,
     int? onlineCount,
   }) {
     return RoomSnapshot(
@@ -193,13 +204,14 @@ class RoomSnapshot {
       role: role ?? this.role,
       seats: seats ?? this.seats,
       rtc: rtc ?? this.rtc,
+      transportMode: transportMode ?? this.transportMode,
       publicScreenEnabled: publicScreenEnabled ?? this.publicScreenEnabled,
       pictureMessagesAllowed:
           pictureMessagesAllowed ?? this.pictureMessagesAllowed,
       autoLockMic: autoLockMic ?? this.autoLockMic,
-      giftCatalogAvailable:
-          giftCatalogAvailable ?? this.giftCatalogAvailable,
+      giftCatalogAvailable: giftCatalogAvailable ?? this.giftCatalogAvailable,
       giftBalance: giftBalance ?? this.giftBalance,
+      accessMode: accessMode ?? this.accessMode,
       onlineCount: onlineCount ?? this.onlineCount,
       coverUrl: coverUrl ?? this.coverUrl,
       backgroundUrl: backgroundUrl ?? this.backgroundUrl,
@@ -211,8 +223,42 @@ class GiftReceipt {
   const GiftReceipt({
     required this.success,
     required this.remainingBalance,
+    this.transferId,
+    this.roomId,
+    this.senderUserId,
+    this.receiverUserId,
+    this.giftId,
+    this.giftName,
+    this.quantity,
+    this.source,
+    this.deliveryMode,
+    this.providerInvocation,
+    this.providerStatus,
+    this.status,
+    this.requestId,
+    this.creatorIncomeMinor,
+    this.charmValue,
+    this.reconciled,
+    this.createdAt,
   });
 
   final bool success;
   final int? remainingBalance;
+  final String? transferId;
+  final String? roomId;
+  final int? senderUserId;
+  final int? receiverUserId;
+  final String? giftId;
+  final String? giftName;
+  final int? quantity;
+  final String? source;
+  final String? deliveryMode;
+  final bool? providerInvocation;
+  final String? providerStatus;
+  final String? status;
+  final String? requestId;
+  final int? creatorIncomeMinor;
+  final int? charmValue;
+  final bool? reconciled;
+  final DateTime? createdAt;
 }

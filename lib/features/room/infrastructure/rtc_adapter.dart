@@ -45,6 +45,30 @@ class MockRtcAdapter implements RtcAdapter {
   }
 }
 
+/// Transport used only for an authoritative HTTP room snapshot.
+///
+/// It lets the room controller display the read-only page without pretending
+/// that an RTC engine joined. Audio enablement remains fail-closed.
+class SnapshotOnlyRtcAdapter implements RtcAdapter {
+  const SnapshotOnlyRtcAdapter();
+
+  @override
+  Future<void> join(RtcCredentials credentials) async {}
+
+  @override
+  Future<void> reconnect(RtcCredentials credentials) async {}
+
+  @override
+  Future<void> setLocalAudioEnabled(bool enabled) async {
+    if (enabled) {
+      throw StateError('VENDOR_BLOCKED：RTC 适配器尚未配置');
+    }
+  }
+
+  @override
+  Future<void> leave() async {}
+}
+
 class UnavailableRtcAdapter implements RtcAdapter {
   const UnavailableRtcAdapter();
 

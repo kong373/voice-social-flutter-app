@@ -1,11 +1,32 @@
 enum SearchEntityType {
-  all(3),
-  users(1),
-  rooms(2);
+  all(0),
+  users(2),
+  rooms(1);
 
   const SearchEntityType(this.backendCode);
 
   final int backendCode;
+}
+
+enum DiscoverySuggestionSource { roomHotTitle, roomHotTopic, curatedSeed }
+
+class DiscoverySearchSuggestion {
+  const DiscoverySearchSuggestion({
+    required this.keyword,
+    required this.source,
+  });
+
+  final String keyword;
+  final DiscoverySuggestionSource source;
+}
+
+/// Formats a server-authoritative online count without treating unavailable
+/// data as zero.
+String discoveryOnlineCountLabel(int? onlineCount, {String suffix = '人在线'}) {
+  if (onlineCount == null || onlineCount < 0) {
+    return '在线人数未知';
+  }
+  return '$onlineCount $suffix';
 }
 
 class DiscoveryRoom {
@@ -14,7 +35,7 @@ class DiscoveryRoom {
     required this.code,
     required this.title,
     required this.topic,
-    required this.onlineCount,
+    this.onlineCount,
     required this.occupiedSeats,
     required this.isSpeaking,
     required this.isFavorite,
@@ -29,7 +50,11 @@ class DiscoveryRoom {
   final String code;
   final String title;
   final String topic;
-  final int onlineCount;
+
+  /// The last server-authoritative online count, when the snapshot includes
+  /// one. A missing or malformed live field is intentionally represented as
+  /// `null` instead of being mistaken for zero.
+  final int? onlineCount;
   final int occupiedSeats;
   final bool isSpeaking;
   final bool isFavorite;

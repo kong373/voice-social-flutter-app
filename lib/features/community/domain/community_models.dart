@@ -1,31 +1,27 @@
-enum GuildRole {
-  visitor,
-  member,
-  manager,
-  owner,
-}
+enum GuildRole { visitor, member, manager, owner }
+
+enum GuildStatus { active, closed }
 
 extension GuildRoleLabel on GuildRole {
   String get label => switch (this) {
-        GuildRole.visitor => '未加入',
-        GuildRole.member => '成员',
-        GuildRole.manager => '管理员',
-        GuildRole.owner => '会长',
-      };
+    GuildRole.visitor => '未加入',
+    GuildRole.member => '成员',
+    GuildRole.manager => '管理员',
+    GuildRole.owner => '会长',
+  };
 
   bool get canManage => this == GuildRole.manager || this == GuildRole.owner;
 }
 
 class GuildRoom {
-  const GuildRoom({
-    required this.roomId,
-    required this.name,
-    this.onlineUsers = 0,
-  });
+  const GuildRoom({required this.roomId, required this.name, this.onlineUsers});
 
   final String roomId;
   final String name;
-  final int onlineUsers;
+
+  /// The first-party guild payload provides the authoritative live count.
+  /// Null is reserved for mock/offline models that have no server row.
+  final int? onlineUsers;
 }
 
 class GuildSummary {
@@ -33,6 +29,7 @@ class GuildSummary {
     required this.id,
     required this.code,
     required this.name,
+    required this.status,
     this.avatarUrl,
     this.description = '',
     this.memberCount = 0,
@@ -40,15 +37,19 @@ class GuildSummary {
     this.ownerName = '',
     this.role = GuildRole.visitor,
     this.joined = false,
-    this.applicationPending = false,
-    this.hasNewApplications = false,
-    this.hasSignedToday = false,
+    this.applicationPending,
+    this.hasNewApplications,
+    this.hasSignedToday,
     this.rooms = const <GuildRoom>[],
   });
 
   final String id;
-  final String code;
+
+  /// First-party guild code. A room code is a different identifier and must
+  /// not be substituted here.
+  final String? code;
   final String name;
+  final GuildStatus status;
   final String? avatarUrl;
   final String description;
   final int memberCount;
@@ -56,12 +57,17 @@ class GuildSummary {
   final String ownerName;
   final GuildRole role;
   final bool joined;
-  final bool applicationPending;
-  final bool hasNewApplications;
-  final bool hasSignedToday;
+
+  /// `applicationPending` and `hasSignedToday` are homepage-only fields;
+  /// recommendation/search rows keep them unknown. `hasNewApplications` is
+  /// part of every first-party guild projection.
+  final bool? applicationPending;
+  final bool? hasNewApplications;
+  final bool? hasSignedToday;
   final List<GuildRoom> rooms;
 
   GuildSummary copyWith({
+    GuildStatus? status,
     GuildRole? role,
     bool? joined,
     bool? applicationPending,
@@ -73,6 +79,7 @@ class GuildSummary {
       id: id,
       code: code,
       name: name,
+      status: status ?? this.status,
       avatarUrl: avatarUrl,
       description: description,
       memberCount: memberCount ?? this.memberCount,
@@ -88,13 +95,20 @@ class GuildSummary {
   }
 }
 
+enum GuildCurrentAuthority { unavailable, authoritative }
+
 class GuildHomeSnapshot {
   const GuildHomeSnapshot({
     this.currentGuild,
+    this.currentGuildAuthority = GuildCurrentAuthority.unavailable,
     this.recommended = const <GuildSummary>[],
-  });
+  }) : assert(
+         currentGuild == null ||
+             currentGuildAuthority == GuildCurrentAuthority.authoritative,
+       );
 
   final GuildSummary? currentGuild;
+  final GuildCurrentAuthority currentGuildAuthority;
   final List<GuildSummary> recommended;
 }
 
@@ -106,7 +120,7 @@ class GuildMember {
     this.avatarUrl,
     this.role = GuildRole.member,
     this.isMuted = false,
-    this.isSigned = false,
+    this.isSigned,
     this.roomId,
   });
 
@@ -116,13 +130,13 @@ class GuildMember {
   final String? avatarUrl;
   final GuildRole role;
   final bool isMuted;
-  final bool isSigned;
+
+  /// The current first-party member endpoint exposes the authoritative
+  /// current-business-day sign-in state.
+  final bool? isSigned;
   final String? roomId;
 
-  GuildMember copyWith({
-    GuildRole? role,
-    bool? isMuted,
-  }) {
+  GuildMember copyWith({GuildRole? role, bool? isMuted}) {
     return GuildMember(
       recordId: recordId,
       userId: userId,
@@ -136,12 +150,7 @@ class GuildMember {
   }
 }
 
-enum GuildApplicationStatus {
-  pending,
-  accepted,
-  rejected,
-  expired,
-}
+enum GuildApplicationStatus { pending, accepted, rejected, expired }
 
 class GuildApplication {
   const GuildApplication({
@@ -167,7 +176,7 @@ class InviteAttribution {
     this.inviteCode = '',
     this.channelName = '',
     this.boundAt = '',
-    this.invitedUsers = 0,
+    this.invitedUsers,
     this.message = '',
   });
 
@@ -175,7 +184,9 @@ class InviteAttribution {
   final String inviteCode;
   final String channelName;
   final String boundAt;
-  final int invitedUsers;
+
+  /// Null means the attribution endpoint did not expose an invitation count.
+  final int? invitedUsers;
   final String message;
 }
 
@@ -184,7 +195,7 @@ class CpRelation {
     required this.relationId,
     required this.userId,
     required this.nickname,
-    required this.days,
+    this.days,
     this.avatarUrl,
     this.boundAt = '',
   });
@@ -193,7 +204,7 @@ class CpRelation {
   final int userId;
   final String nickname;
   final String? avatarUrl;
-  final int days;
+  final int? days;
   final String boundAt;
 }
 
@@ -214,10 +225,7 @@ class CpInvitation {
 }
 
 class CpEligibility {
-  const CpEligibility({
-    required this.allowed,
-    required this.message,
-  });
+  const CpEligibility({required this.allowed, required this.message});
 
   final bool allowed;
   final String message;
@@ -290,8 +298,7 @@ class GuardianFanSnapshot {
       anchorUserId: anchorUserId,
       anchorName: anchorName,
       guardianLevels: guardianLevels,
-      currentGuardianLevel:
-          currentGuardianLevel ?? this.currentGuardianLevel,
+      currentGuardianLevel: currentGuardianLevel ?? this.currentGuardianLevel,
       fansTeamName: fansTeamName,
       fansLevel: fansLevel ?? this.fansLevel,
       intimacy: intimacy ?? this.intimacy,
@@ -301,12 +308,7 @@ class GuardianFanSnapshot {
   }
 }
 
-enum TaskState {
-  inProgress,
-  claimable,
-  claimed,
-  expired,
-}
+enum TaskState { inProgress, claimable, claimed, expired }
 
 class TaskItem {
   const TaskItem({
@@ -382,18 +384,14 @@ class TaskCenterSnapshot {
   }
 }
 
-enum ThemeActivityStatus {
-  upcoming,
-  active,
-  ended,
-}
+enum ThemeActivityStatus { upcoming, active, ended }
 
 extension ThemeActivityStatusLabel on ThemeActivityStatus {
   String get label => switch (this) {
-        ThemeActivityStatus.upcoming => '即将开始',
-        ThemeActivityStatus.active => '进行中',
-        ThemeActivityStatus.ended => '已结束',
-      };
+    ThemeActivityStatus.upcoming => '即将开始',
+    ThemeActivityStatus.active => '进行中',
+    ThemeActivityStatus.ended => '已结束',
+  };
 }
 
 class ThemeActivity {

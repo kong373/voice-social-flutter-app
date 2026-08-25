@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
@@ -24,6 +25,7 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
   bool _loading = true;
   String? _error;
   String? _busyRoomId;
+  int _loadGeneration = 0;
 
   @override
   void didChangeDependencies() {
@@ -36,14 +38,15 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
   }
 
   Future<void> _load() async {
+    final int generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final RoomCollectionSnapshot snapshot =
-          await _repository.fetchRoomCollections();
-      if (!mounted) {
+      final RoomCollectionSnapshot snapshot = await _repository
+          .fetchRoomCollections();
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -51,27 +54,28 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
         _loading = false;
-        _error = error is ApiException
-            ? error.message
-            : '房间收藏暂时无法加载，请稍后重试';
+        _error = error is ApiException ? error.message : '房间收藏暂时无法加载，请稍后重试';
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('收藏与我的房间'),
         actions: <Widget>[
           IconButton(
             tooltip: '刷新',
-            onPressed: _loading ? null : _load,
+            // Refresh remains available while a previous request is pending;
+            // generation checks ensure an older response cannot replace the
+            // newest collection snapshot.
+            onPressed: _load,
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
@@ -80,24 +84,24 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: SegmentedButton<_SavedRoomSection>(
-              showSelectedIcon: false,
-              segments: const <ButtonSegment<_SavedRoomSection>>[
-                ButtonSegment<_SavedRoomSection>(
-                  value: _SavedRoomSection.favorites,
-                  label: Text('收藏房间'),
-                  icon: Icon(Icons.bookmark_outline_rounded),
+            child: Row(
+              children: <Widget>[
+                SocialPill(
+                  label: '收藏房间',
+                  icon: Icons.bookmark_outline_rounded,
+                  active: _section == _SavedRoomSection.favorites,
+                  onTap: () =>
+                      setState(() => _section = _SavedRoomSection.favorites),
                 ),
-                ButtonSegment<_SavedRoomSection>(
-                  value: _SavedRoomSection.owned,
-                  label: Text('我的房间'),
-                  icon: Icon(Icons.meeting_room_outlined),
+                const SizedBox(width: 8),
+                SocialPill(
+                  label: '我的房间',
+                  icon: Icons.meeting_room_outlined,
+                  active: _section == _SavedRoomSection.owned,
+                  onTap: () =>
+                      setState(() => _section = _SavedRoomSection.owned),
                 ),
               ],
-              selected: <_SavedRoomSection>{_section},
-              onSelectionChanged: (Set<_SavedRoomSection> value) {
-                setState(() => _section = value.first);
-              },
             ),
           ),
           Expanded(child: _buildBody()),
@@ -119,7 +123,8 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
         onAction: _load,
       );
     }
-    final RoomCollectionSnapshot snapshot = _snapshot ??
+    final RoomCollectionSnapshot snapshot =
+        _snapshot ??
         const RoomCollectionSnapshot(
           favorites: <DiscoveryRoom>[],
           ownedRooms: <DiscoveryRoom>[],
@@ -180,9 +185,7 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            error is ApiException ? error.message : '取消收藏失败，请重试',
-          ),
+          content: Text(error is ApiException ? error.message : '取消收藏失败，请重试'),
         ),
       );
     } finally {
@@ -195,10 +198,8 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
   void _enterRoom(DiscoveryRoom room) {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomPage(
-          roomId: room.id,
-          title: room.title,
-        ),
+        builder: (BuildContext context) =>
+            RoomPage(roomId: room.id, title: room.title),
       ),
     );
   }
@@ -232,61 +233,94 @@ class _SavedRoomCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return OriginalRoomArtwork(
+      seed: room.id,
+      height: 174,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(14, 13, 12, 11),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Row(
               children: <Widget>[
-                Expanded(
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.34),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                   child: Text(
-                    room.title,
-                    style: Theme.of(context).textTheme.titleMedium,
+                    '${discoveryOnlineCountLabel(room.onlineCount)} · ${room.occupiedSeats}/8 麦',
+                    style: const TextStyle(color: Colors.white, fontSize: 9),
                   ),
                 ),
+                const Spacer(),
                 if (room.isLocked)
-                  const Padding(
-                    padding: EdgeInsets.only(left: 8),
-                    child: Icon(Icons.lock_outline_rounded, size: 18),
+                  const Icon(
+                    Icons.lock_outline_rounded,
+                    color: Colors.white,
+                    size: 17,
                   ),
               ],
             ),
-            const SizedBox(height: 6),
+            const Spacer(),
+            Text(
+              room.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
             Text(
               room.topic,
-              maxLines: 2,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
+              style: const TextStyle(color: Color(0xDDFFFFFF), fontSize: 10),
             ),
-            const SizedBox(height: 12),
-            Text(
-              '房间号 ${room.code} · ${room.occupiedSeats}/8 麦 · ${room.onlineCount} 人在线',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 9),
             Row(
               children: <Widget>[
                 if (onFavorite != null)
-                  TextButton.icon(
+                  TextButton(
                     onPressed: busy ? null : onFavorite,
-                    icon: busy
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.black.withValues(alpha: 0.24),
+                    ),
+                    child: busy
                         ? const SizedBox.square(
                             dimension: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.bookmark_remove_outlined),
-                    label: const Text('取消收藏'),
+                        : const Text('取消收藏'),
                   ),
                 if (onManage != null)
-                  TextButton.icon(
+                  TextButton(
                     onPressed: onManage,
-                    icon: const Icon(Icons.tune_rounded),
-                    label: const Text('管理'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.black.withValues(alpha: 0.24),
+                    ),
+                    child: const Text('管理'),
                   ),
                 const Spacer(),
-                FilledButton(onPressed: onEnter, child: const Text('进入房间')),
+                FilledButton.icon(
+                  onPressed: onEnter,
+                  icon: const Icon(Icons.graphic_eq_rounded, size: 17),
+                  label: const Text('进入房间'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: SocialColors.primary.withValues(
+                      alpha: 0.9,
+                    ),
+                  ),
+                ),
               ],
             ),
           ],

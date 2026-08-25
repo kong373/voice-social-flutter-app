@@ -1,28 +1,10 @@
 enum RoomPkInvitationDirection { outgoing, incoming }
 
-enum RoomPkInvitationStatus {
-  pending,
-  accepted,
-  rejected,
-  expired,
-  canceled,
-}
+enum RoomPkInvitationStatus { pending, accepted, rejected, expired, canceled }
 
-enum RoomPkBattleStage {
-  preparing,
-  fighting,
-  settling,
-  completed,
-  canceled,
-}
+enum RoomPkBattleStage { preparing, fighting, settling, completed, canceled }
 
-enum RoomPkResult {
-  win,
-  lose,
-  draw,
-  surrendered,
-  canceled,
-}
+enum RoomPkResult { win, lose, draw, surrendered, canceled }
 
 class RoomPkOpponent {
   const RoomPkOpponent({
@@ -55,6 +37,7 @@ class RoomPkInvitation {
     required this.status,
     required this.createdAt,
     this.expiresAt,
+    this.resolvedAt,
   });
 
   final String id;
@@ -66,10 +49,12 @@ class RoomPkInvitation {
   final RoomPkInvitationStatus status;
   final DateTime createdAt;
   final DateTime? expiresAt;
+  final DateTime? resolvedAt;
 
   RoomPkInvitation copyWith({
     RoomPkInvitationStatus? status,
     DateTime? expiresAt,
+    DateTime? resolvedAt,
   }) {
     return RoomPkInvitation(
       id: id,
@@ -81,6 +66,7 @@ class RoomPkInvitation {
       status: status ?? this.status,
       createdAt: createdAt,
       expiresAt: expiresAt ?? this.expiresAt,
+      resolvedAt: resolvedAt ?? this.resolvedAt,
     );
   }
 }
@@ -138,16 +124,30 @@ class RoomPkBattle {
     required this.punishmentTheme,
     required this.stage,
     required this.updatedAt,
+    this.invitationId,
+    this.targetRoomId,
+    this.status,
+    this.resultCode,
+    this.startedAt,
+    this.endsAt,
+    this.completedAt,
     this.result,
   });
 
   final String id;
+  final String? invitationId;
   final String currentRoomId;
+  final String? targetRoomId;
   final RoomPkSide sender;
   final RoomPkSide receiver;
   final int remainingSeconds;
   final String punishmentTheme;
   final RoomPkBattleStage stage;
+  final String? status;
+  final String? resultCode;
+  final DateTime? startedAt;
+  final DateTime? endsAt;
+  final DateTime? completedAt;
   final RoomPkResult? result;
   final DateTime updatedAt;
 
@@ -157,7 +157,8 @@ class RoomPkBattle {
   RoomPkSide get opponentSide =>
       sender.roomId == currentRoomId ? receiver : sender;
 
-  bool get isActive => stage == RoomPkBattleStage.preparing ||
+  bool get isActive =>
+      stage == RoomPkBattleStage.preparing ||
       stage == RoomPkBattleStage.fighting ||
       stage == RoomPkBattleStage.settling;
 
@@ -168,15 +169,27 @@ class RoomPkBattle {
     RoomPkBattleStage? stage,
     RoomPkResult? result,
     DateTime? updatedAt,
+    String? status,
+    String? resultCode,
+    DateTime? startedAt,
+    DateTime? endsAt,
+    DateTime? completedAt,
   }) {
     return RoomPkBattle(
       id: id,
+      invitationId: invitationId,
       currentRoomId: currentRoomId,
+      targetRoomId: targetRoomId,
       sender: sender ?? this.sender,
       receiver: receiver ?? this.receiver,
       remainingSeconds: remainingSeconds ?? this.remainingSeconds,
       punishmentTheme: punishmentTheme,
       stage: stage ?? this.stage,
+      status: status ?? this.status,
+      resultCode: resultCode ?? this.resultCode,
+      startedAt: startedAt ?? this.startedAt,
+      endsAt: endsAt ?? this.endsAt,
+      completedAt: completedAt ?? this.completedAt,
       result: result ?? this.result,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -191,10 +204,18 @@ class RoomPkRecord {
     required this.result,
     required this.currentScore,
     required this.opponentScore,
+    this.invitationId,
+    this.targetRoomId,
+    this.battleStatus,
+    this.resultCode,
     this.opponentCoverUrl,
   });
 
   final String id;
+  final String? invitationId;
+  final String? targetRoomId;
+  final String? battleStatus;
+  final String? resultCode;
   final String opponentRoomName;
   final String? opponentCoverUrl;
   final DateTime completedAt;

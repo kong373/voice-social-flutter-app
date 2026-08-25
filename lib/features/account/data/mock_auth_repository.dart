@@ -6,7 +6,10 @@ class MockAuthRepository implements AuthRepository {
   const MockAuthRepository();
 
   @override
-  Future<void> sendSmsCode(String phone) async {
+  Future<SmsChallenge> sendSmsCode({
+    required String phone,
+    required ClientDevice device,
+  }) async {
     await Future<void>.delayed(const Duration(milliseconds: 250));
     if (!_isPhoneValid(phone)) {
       throw const ApiException(
@@ -15,6 +18,12 @@ class MockAuthRepository implements AuthRepository {
         message: '请输入正确的手机号码',
       );
     }
+    return SmsChallenge(
+      challengeId: 'mock-${DateTime.now().millisecondsSinceEpoch}',
+      expiresAt: DateTime.now().add(const Duration(minutes: 5)),
+      retryAfter: 60,
+      developmentCode: '123456',
+    );
   }
 
   @override
@@ -34,7 +43,7 @@ class MockAuthRepository implements AuthRepository {
     if (phone == '13900000000') {
       return const AuthOutcome.registrationRequired();
     }
-    return AuthOutcome.authenticated(_session(phone));
+    return AuthOutcome.authenticated(_session(phone, device.deviceId));
   }
 
   @override
@@ -52,17 +61,43 @@ class MockAuthRepository implements AuthRepository {
         message: '昵称至少需要 2 个字',
       );
     }
-    return _session(phone);
+    return _session(phone, device.deviceId);
   }
 
-  static AuthSession _session(String phone) => AuthSession(
-        accessToken: 'mock-access-token',
-        tokenType: 'Bearer',
-        expiresAt: DateTime.now().add(const Duration(days: 7)),
-        userId: 10001,
-        mobile: phone,
-        roles: 'USER',
+  @override
+  Future<AuthSession> refreshSession(AuthSession session) async {
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    if (!session.canRefresh) {
+      throw const ApiException(
+        kind: ApiFailureKind.unauthorized,
+        code: 401,
+        httpStatus: 401,
+        message: '刷新会话已失效',
       );
+    }
+    return _session(session.mobile, session.deviceId);
+  }
+
+  @override
+  Future<void> logout(AuthSession session) async {
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+  }
+
+  static AuthSession _session(String phone, String deviceId) {
+    final DateTime now = DateTime.now();
+    return AuthSession(
+      accessToken: 'mock-access-token',
+      tokenType: 'Bearer',
+      expiresAt: now.add(const Duration(hours: 1)),
+      refreshToken: 'mock-refresh-token',
+      refreshExpiresAt: now.add(const Duration(days: 30)),
+      deviceId: deviceId,
+      clientId: 'mock-client',
+      userId: 10001,
+      mobile: phone,
+      roles: 'USER',
+    );
+  }
 
   static bool _isPhoneValid(String phone) =>
       RegExp(r'^1[3-9]\d{9}$').hasMatch(phone);

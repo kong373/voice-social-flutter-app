@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_audio_service.dart';
+import 'package:voice_social_app/features/room/presentation/room_authority_display.dart';
+import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
 class RoomAudioPage extends StatefulWidget {
-  const RoomAudioPage({required this.isOnMic, super.key});
+  const RoomAudioPage({required this.isOnMic, this.roomTitle, super.key});
 
   final bool isOnMic;
+  final String? roomTitle;
 
   @override
   State<RoomAudioPage> createState() => _RoomAudioPageState();
@@ -50,8 +54,9 @@ class _RoomAudioPageState extends State<RoomAudioPage> {
   }
 
   Future<void> _toggleMicrophone(bool enabled) async {
-    final RoomAudioSnapshot snapshot =
-        await _service.setMicrophoneEnabled(enabled);
+    final RoomAudioSnapshot snapshot = await _service.setMicrophoneEnabled(
+      enabled,
+    );
     if (!mounted) {
       return;
     }
@@ -61,9 +66,9 @@ class _RoomAudioPageState extends State<RoomAudioPage> {
   @override
   Widget build(BuildContext context) {
     final RoomAudioSnapshot? snapshot = _snapshot;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('音频与麦克风'),
+    return RoomPageScaffold(
+      appBar: roomOxygenAppBar(
+        title: '音频与麦克风',
         actions: <Widget>[
           IconButton(
             tooltip: '刷新设备状态',
@@ -75,63 +80,89 @@ class _RoomAudioPageState extends State<RoomAudioPage> {
       body: _loading || snapshot == null
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
               children: <Widget>[
-                if (!snapshot.configured)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.warning.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: const Text(
-                      '当前构建尚未接入设备音频能力，不会伪造路由切换或麦克风授权结果。',
-                    ),
-                  ),
-                const SizedBox(height: 18),
-                Text(
-                  '播放设备',
-                  style: Theme.of(context).textTheme.titleMedium,
+                RoomOxygenContextBar(
+                  title: roomAuthorityTitle(widget.roomTitle),
+                  subtitle: widget.isOnMic ? '麦上发言中 · 音频控制' : '听众模式 · 音频控制',
+                  status: widget.isOnMic ? '麦上' : '听众',
+                  statusColor: widget.isOnMic
+                      ? RoomColors.success
+                      : RoomColors.accent,
                 ),
-                const SizedBox(height: 10),
-                for (final RoomAudioRoute route in RoomAudioRoute.values)
-                  ListTile(
-                    leading: Icon(
-                      snapshot.route == route
-                          ? Icons.radio_button_checked_rounded
-                          : Icons.radio_button_off_rounded,
-                      color: snapshot.route == route ? AppColors.primary : null,
-                    ),
-                    title: Text(_routeLabel(route)),
-                    subtitle: Text(_routeDescription(route)),
-                    enabled: snapshot.configured &&
-                        snapshot.availableRoutes.contains(route),
-                    onTap: snapshot.configured &&
-                            snapshot.availableRoutes.contains(route)
-                        ? () => _selectRoute(route)
-                        : null,
+                const SizedBox(height: 14),
+                if (!snapshot.configured)
+                  const RoomOxygenNotice(
+                    icon: Icons.info_outline_rounded,
+                    title: '音频能力未配置',
+                    message: '当前构建不会伪造路由切换或麦克风授权结果。',
+                    accent: RoomColors.warning,
                   ),
-                const Divider(height: 32),
-                SwitchListTile(
-                  value: snapshot.microphoneEnabled,
-                  title: const Text('麦克风'),
-                  subtitle: Text(
-                    !widget.isOnMic
-                        ? '上麦后才能打开麦克风'
-                        : snapshot.microphonePermissionGranted
-                            ? '用于在当前语音房发言'
-                            : '需要系统麦克风权限',
+                if (!snapshot.configured) const SizedBox(height: 14),
+                RoomOxygenSection(
+                  title: '播放设备',
+                  subtitle: '只展示当前设备真实可用的音频路由。',
+                  icon: Icons.speaker_group_outlined,
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: <Widget>[
+                      for (final RoomAudioRoute route in RoomAudioRoute.values)
+                        ListTile(
+                          leading: Icon(
+                            snapshot.route == route
+                                ? Icons.radio_button_checked_rounded
+                                : Icons.radio_button_off_rounded,
+                            color: snapshot.route == route
+                                ? RoomColors.accent
+                                : null,
+                          ),
+                          title: Text(_routeLabel(route)),
+                          subtitle: Text(_routeDescription(route)),
+                          trailing: snapshot.route == route
+                              ? const RoomOxygenPill(
+                                  label: '当前',
+                                  active: true,
+                                  accent: RoomColors.accent,
+                                )
+                              : null,
+                          enabled:
+                              snapshot.configured &&
+                              snapshot.availableRoutes.contains(route),
+                          onTap:
+                              snapshot.configured &&
+                                  snapshot.availableRoutes.contains(route)
+                              ? () => _selectRoute(route)
+                              : null,
+                        ),
+                    ],
                   ),
-                  onChanged: snapshot.configured &&
-                          widget.isOnMic &&
-                          snapshot.microphonePermissionGranted
-                      ? _toggleMicrophone
-                      : null,
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  '蓝牙或有线耳机不可用时，对应选项会禁用而不是静默切换。',
-                  style: Theme.of(context).textTheme.bodySmall,
+                RoomOxygenSection(
+                  title: '麦克风',
+                  subtitle: !widget.isOnMic
+                      ? '上麦后才能打开麦克风。'
+                      : snapshot.microphonePermissionGranted
+                      ? '用于在当前语音房发言。'
+                      : '需要系统麦克风权限。',
+                  icon: Icons.mic_none_rounded,
+                  padding: EdgeInsets.zero,
+                  child: SwitchListTile(
+                    value: snapshot.microphoneEnabled,
+                    title: Text(snapshot.microphoneEnabled ? '已打开' : '已关闭'),
+                    subtitle: const Text('状态仅作用于当前房间会话'),
+                    onChanged:
+                        snapshot.configured &&
+                            widget.isOnMic &&
+                            snapshot.microphonePermissionGranted
+                        ? _toggleMicrophone
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                const RoomOxygenNotice(
+                  icon: Icons.headphones_rounded,
+                  message: '蓝牙或有线耳机不可用时，对应选项会禁用，不会静默切换。',
                 ),
               ],
             ),

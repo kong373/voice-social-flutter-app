@@ -1,10 +1,7 @@
 import 'dart:async';
 
 class RoomRealtimeEvent {
-  const RoomRealtimeEvent({
-    required this.code,
-    required this.payload,
-  });
+  const RoomRealtimeEvent({required this.code, required this.payload});
 
   final int code;
   final Map<String, Object?> payload;
@@ -64,11 +61,38 @@ class MockRoomRealtimeGateway implements RoomRealtimeGateway {
   Future<void> dispose() => _controller.close();
 }
 
+/// No-op transport for the explicit HTTP snapshot mode.
+///
+/// Unlike the unavailable adapter this is an intentional product state, not a
+/// degraded realtime connection. It never sends or receives a message and
+/// therefore must only be paired with a snapshot-only RoomSnapshot.
+class SnapshotOnlyRoomRealtimeGateway implements RoomRealtimeGateway {
+  const SnapshotOnlyRoomRealtimeGateway();
+
+  @override
+  Stream<RoomRealtimeEvent> get events =>
+      const Stream<RoomRealtimeEvent>.empty();
+
+  @override
+  Future<void> connect({
+    required String roomId,
+    required int userId,
+    required String accessToken,
+  }) async {}
+
+  @override
+  Future<void> reconnect() async {}
+
+  @override
+  Future<void> disconnect() async {}
+}
+
 class UnavailableRoomRealtimeGateway implements RoomRealtimeGateway {
   const UnavailableRoomRealtimeGateway();
 
   @override
-  Stream<RoomRealtimeEvent> get events => const Stream<RoomRealtimeEvent>.empty();
+  Stream<RoomRealtimeEvent> get events =>
+      const Stream<RoomRealtimeEvent>.empty();
 
   @override
   Future<void> connect({

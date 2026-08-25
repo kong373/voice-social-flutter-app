@@ -26,11 +26,15 @@ abstract interface class CommunityRepository {
   });
 
   Future<void> setGuildMemberMuted({
-    required String memberRecordId,
+    required String guildId,
+    required int userId,
     required bool muted,
   });
 
-  Future<void> removeGuildMember(String memberRecordId);
+  Future<void> removeGuildMember({
+    required String guildId,
+    required int userId,
+  });
 
   Future<InviteAttribution> fetchInviteAttribution();
 
@@ -46,6 +50,8 @@ abstract interface class CommunityRepository {
     required String invitationId,
     required bool accepted,
   });
+
+  Future<void> endCpRelation(String relationId);
 
   Future<GuardianFanSnapshot> fetchGuardianFan(int anchorUserId);
 

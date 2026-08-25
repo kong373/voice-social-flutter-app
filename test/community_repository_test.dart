@@ -9,6 +9,7 @@ void main() {
     () async {
       final MockCommunityRepository repository = MockCommunityRepository();
       final GuildHomeSnapshot home = await repository.fetchGuildHome();
+      expect(home.currentGuildAuthority, GuildCurrentAuthority.authoritative);
       final String guildId = home.currentGuild!.id;
       final List<GuildApplication> applications = await repository
           .fetchGuildApplications(guildId);
@@ -21,8 +22,10 @@ void main() {
       final List<GuildApplication> remaining = await repository
           .fetchGuildApplications(guildId);
       expect(
-        remaining.any((GuildApplication item) => item.id == secondId),
-        isFalse,
+        remaining
+            .firstWhere((GuildApplication item) => item.id == secondId)
+            .status,
+        GuildApplicationStatus.accepted,
       );
       expect(
         remaining.any(
@@ -35,7 +38,8 @@ void main() {
         guildId,
       )).firstWhere((GuildMember item) => item.recordId == 'member-3');
       await repository.setGuildMemberMuted(
-        memberRecordId: target.recordId,
+        guildId: guildId,
+        userId: target.userId,
         muted: true,
       );
       expect(
@@ -81,6 +85,19 @@ void main() {
           (CpRelation relation) => relation.userId == rejected.userId,
         ),
         isEmpty,
+      );
+
+      final CpRelation active = (await repository.fetchCpRelations()).first;
+      await repository.endCpRelation(active.relationId);
+      expect(
+        (await repository.fetchCpRelations()).where(
+          (CpRelation relation) => relation.relationId == active.relationId,
+        ),
+        isEmpty,
+      );
+      await expectLater(
+        repository.endCpRelation(active.relationId),
+        throwsA(isA<ApiException>()),
       );
 
       final String outgoingId = await repository.requestCp(20011);

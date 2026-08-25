@@ -1,4 +1,8 @@
+import 'package:voice_social_app/core/network/api_exception.dart';
+
 enum LedgerDirection { income, expense }
+
+enum LedgerCurrency { giftCoin, cashCny }
 
 enum LedgerKind {
   giftIncome,
@@ -24,27 +28,83 @@ enum RefundStatus { reviewing, approved, rejected, resubmitted, unavailable }
 
 enum RefundScope { accountLegacy, order }
 
-enum WithdrawalStatus {
-  pending,
-  approved,
-  rejected,
-  paying,
-  succeeded,
-  failed,
-}
+enum WithdrawalStatus { pending, approved, rejected, paying, succeeded, failed }
 
 class BankCardSummary {
   const BankCardSummary({
     required this.id,
-    required this.bankName,
-    required this.maskedNumber,
-    required this.holderName,
+    required this.accountType,
+    required this.maskedAccount,
+    required this.holderNameMasked,
   });
 
   final String id;
-  final String bankName;
-  final String maskedNumber;
-  final String holderName;
+  final String accountType;
+  final String maskedAccount;
+  final String holderNameMasked;
+}
+
+enum PayoutAccountStatus { verified, pending, disabled, unknown }
+
+class PayoutAccount {
+  const PayoutAccount({
+    required this.payoutAccountId,
+    required this.accountType,
+    required this.accountMasked,
+    required this.holderNameMasked,
+    required this.status,
+    required this.selectable,
+    this.createdAt,
+    this.updatedAt,
+  });
+
+  final String payoutAccountId;
+  final String accountType;
+  final String accountMasked;
+  final String holderNameMasked;
+  final PayoutAccountStatus status;
+  final bool selectable;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
+}
+
+class PayoutAccountSelection {
+  const PayoutAccountSelection({
+    required this.accounts,
+    required this.selectedPayoutAccountId,
+    required this.selectionRequired,
+  });
+
+  final List<PayoutAccount> accounts;
+  final String? selectedPayoutAccountId;
+  final bool selectionRequired;
+
+  List<PayoutAccount> get selectableAccounts => accounts
+      .where((PayoutAccount account) => account.selectable)
+      .toList(growable: false);
+
+  PayoutAccountSelection select(String payoutAccountId) {
+    final String normalized = payoutAccountId.trim();
+    PayoutAccount? account;
+    for (final PayoutAccount candidate in selectableAccounts) {
+      if (candidate.payoutAccountId == normalized) {
+        account = candidate;
+        break;
+      }
+    }
+    if (account == null) {
+      throw ArgumentError.value(
+        payoutAccountId,
+        'payoutAccountId',
+        '不是当前权威列表中的可用收款账户',
+      );
+    }
+    return PayoutAccountSelection(
+      accounts: accounts,
+      selectedPayoutAccountId: account.payoutAccountId,
+      selectionRequired: false,
+    );
+  }
 }
 
 class WalletSummary {
@@ -69,8 +129,11 @@ class WalletSummary {
   final double totalWithdrawn;
   final bool realNameVerified;
   final BankCardSummary? bankCard;
-  final double agentEarnings;
-  final double superAgentEarnings;
+
+  /// Null means the first-party backend explicitly reported that no
+  /// authoritative commission ledger exists for this amount.
+  final double? agentEarnings;
+  final double? superAgentEarnings;
 }
 
 class LedgerEntry {
@@ -84,6 +147,7 @@ class LedgerEntry {
     required this.relatedUserName,
     required this.businessName,
     required this.rawSubtype,
+    this.currency = LedgerCurrency.giftCoin,
   });
 
   final String id;
@@ -95,6 +159,7 @@ class LedgerEntry {
   final String relatedUserName;
   final String businessName;
   final String rawSubtype;
+  final LedgerCurrency currency;
 }
 
 class PaymentOrder {
@@ -105,6 +170,7 @@ class PaymentOrder {
     required this.channelName,
     required this.createdAt,
     required this.status,
+    this.currency = LedgerCurrency.giftCoin,
   });
 
   final String orderNo;
@@ -113,6 +179,7 @@ class PaymentOrder {
   final String channelName;
   final DateTime createdAt;
   final PaymentOrderStatus status;
+  final LedgerCurrency currency;
 
   PaymentOrder copyWith({PaymentOrderStatus? status}) {
     return PaymentOrder(
@@ -122,6 +189,7 @@ class PaymentOrder {
       channelName: channelName,
       createdAt: createdAt,
       status: status ?? this.status,
+      currency: currency,
     );
   }
 }
@@ -171,6 +239,7 @@ class RefundApplication {
     required this.statusText,
     required this.rejectedReason,
     required this.createdAt,
+    this.currency = LedgerCurrency.cashCny,
   });
 
   final String id;
@@ -180,6 +249,7 @@ class RefundApplication {
   final String statusText;
   final String rejectedReason;
   final DateTime createdAt;
+  final LedgerCurrency currency;
 
   RefundApplication copyWith({
     RefundStatus? status,
@@ -194,23 +264,43 @@ class RefundApplication {
       statusText: statusText ?? this.statusText,
       rejectedReason: rejectedReason ?? this.rejectedReason,
       createdAt: createdAt,
+      currency: currency,
     );
   }
 }
 
 class WithdrawalQuote {
   const WithdrawalQuote({
+    required this.quotedAmount,
+    required this.feeAmount,
+    required this.receivedAmount,
     required this.feeRate,
     required this.feeRateText,
     required this.minimumAmount,
+    this.currency = LedgerCurrency.cashCny,
   });
 
+  final double quotedAmount;
+  final double feeAmount;
+  final double receivedAmount;
   final double feeRate;
   final String feeRateText;
   final double minimumAmount;
+  final LedgerCurrency currency;
 
-  double feeFor(double amount) => amount * feeRate;
-  double receivedFor(double amount) => amount - feeFor(amount);
+  double feeFor(double amount) {
+    if ((amount - quotedAmount).abs() > 0.000001) {
+      throw StateError('提现报价只适用于服务端已确认的金额');
+    }
+    return feeAmount;
+  }
+
+  double receivedFor(double amount) {
+    if ((amount - quotedAmount).abs() > 0.000001) {
+      throw StateError('提现报价只适用于服务端已确认的金额');
+    }
+    return receivedAmount;
+  }
 }
 
 class WithdrawalRecord {
@@ -224,8 +314,10 @@ class WithdrawalRecord {
     required this.statusText,
     required this.createdAt,
     required this.rejectedReason,
-    required this.bankName,
+    this.payoutAccountId = '',
+    required this.holderNameMasked,
     required this.maskedCard,
+    this.currency = LedgerCurrency.cashCny,
   });
 
   final String id;
@@ -237,8 +329,19 @@ class WithdrawalRecord {
   final String statusText;
   final DateTime createdAt;
   final String rejectedReason;
-  final String bankName;
+
+  /// Stable first-party payout-account identity returned with a withdrawal
+  /// record. An empty value is retained only for Mock-mode fixtures; the live
+  /// backend parser requires this authority before accepting a record.
+  final String payoutAccountId;
+
+  /// Masked payout-account holder name from the first-party backend.
+  ///
+  /// This is deliberately not a bank name and must never contain an
+  /// unmasked account holder or account number.
+  final String holderNameMasked;
   final String maskedCard;
+  final LedgerCurrency currency;
 }
 
 class CommercePage<T> {
@@ -272,11 +375,20 @@ class YouthModeCommercePolicy {
 abstract interface class CommerceRepository {
   bool get supportsPaymentChannelInvocation;
   bool get supportsRefundHistory;
+  bool get supportsWithdrawalApplication;
+
+  /// Whether the UI may expose the first-party payout-account selector.
+  ///
+  /// This is separate from [supportsWithdrawalApplication] so deterministic
+  /// fixtures can retain their compact legacy presentation while live
+  /// repositories opt into the authoritative account picker.
+  bool get supportsPayoutAccountSelection => false;
   RefundScope get refundScope;
 
   Future<WalletSummary> fetchWalletSummary();
 
   Future<CommercePage<LedgerEntry>> fetchLedger({
+    required LedgerCurrency currency,
     required LedgerDirection direction,
     required int page,
     required int pageSize,
@@ -291,17 +403,34 @@ abstract interface class CommerceRepository {
 
   Future<RefundEligibility> checkRefundEligibility(String account);
 
+  /// Returns the authenticated user's masked, first-party payout-account
+  /// projections. Implementations without the live contract fail closed.
+  Future<PayoutAccountSelection> fetchPayoutAccounts() =>
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '当前后端未提供收款账户列表契约',
+      );
+
   Future<RefundApplication> submitRefund(RefundRequest request);
 
-  Future<RefundApplication> fetchRefundResult(String applicationId);
+  Future<RefundApplication> fetchRefundResult(
+    String applicationId, {
+    String? expectedOrderNo,
+  });
 
-  Future<RefundApplication> resubmitRefund(String applicationId);
+  Future<RefundApplication> resubmitRefund(
+    String applicationId, {
+    String? expectedOrderNo,
+  });
 
   Future<List<RefundApplication>> fetchRefundApplications(String account);
 
-  Future<WithdrawalQuote> fetchWithdrawalQuote();
+  Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount});
 
-  Future<WithdrawalRecord> applyWithdrawal({required double amount});
+  Future<WithdrawalRecord> applyWithdrawal({
+    required double amount,
+    String? payoutAccountId,
+  });
 
   Future<CommercePage<WithdrawalRecord>> fetchWithdrawalRecords({
     WithdrawalStatus? status,

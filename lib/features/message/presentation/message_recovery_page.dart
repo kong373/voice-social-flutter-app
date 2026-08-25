@@ -9,7 +9,8 @@ class MessagePermissionRecoveryPage extends StatefulWidget {
 }
 
 class _MessagePermissionRecoveryPageState
-    extends State<MessagePermissionRecoveryPage> {
+    extends State<MessagePermissionRecoveryPage>
+    with WidgetsBindingObserver {
   MessageRecoverySnapshot? _snapshot;
   bool _loading = true;
   bool _requesting = false;
@@ -17,6 +18,25 @@ class _MessagePermissionRecoveryPageState
 
   MessageRepository get _repository =>
       AppDependencyScope.of(context).messageRepository;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _snapshot != null) {
+      _load();
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -32,8 +52,8 @@ class _MessagePermissionRecoveryPageState
       _error = null;
     });
     try {
-      final MessageRecoverySnapshot value =
-          await _repository.fetchRecoverySnapshot();
+      final MessageRecoverySnapshot value = await _repository
+          .fetchRecoverySnapshot();
       if (mounted) {
         setState(() {
           _snapshot = value;
@@ -56,16 +76,16 @@ class _MessagePermissionRecoveryPageState
     }
     setState(() => _requesting = true);
     try {
-      final MessageRecoverySnapshot value =
-          await _repository.requestNotificationPermission();
+      final MessageRecoverySnapshot value = await _repository
+          .requestNotificationPermission();
       if (mounted) {
         setState(() => _snapshot = value);
       }
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_messageFor(error))),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
@@ -76,113 +96,166 @@ class _MessagePermissionRecoveryPageState
 
   @override
   Widget build(BuildContext context) {
+    final DateTime now = AppDependencyScope.of(context).currentTime();
     final MessageRecoverySnapshot? snapshot = _snapshot;
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(title: const Text('通知权限与消息恢复')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? _MessageError(message: _error!, onRetry: _load)
-              : snapshot == null
-                  ? const Center(child: Text('消息恢复状态不可用'))
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
-                        children: <Widget>[
-                          _MessageInfoCard(
-                            icon: snapshot.privateRealtimeAvailable
-                                ? Icons.cloud_done_outlined
-                                : Icons.cloud_off_outlined,
-                            text: snapshot.message,
+          ? _MessageError(message: _error!, onRetry: _load)
+          : snapshot == null
+          ? const Center(child: Text('消息恢复状态不可用'))
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(14, 6, 14, 28),
+                children: <Widget>[
+                  _MessageInfoCard(
+                    icon: snapshot.privateRealtimeAvailable
+                        ? Icons.cloud_done_outlined
+                        : Icons.cloud_off_outlined,
+                    text: snapshot.message,
+                  ),
+                  const SizedBox(height: 14),
+                  _MessageListPanel(
+                    child: Column(
+                      children: <Widget>[
+                        _RecoveryStatusRow(
+                          icon: Icons.chat_bubble_outline_rounded,
+                          title: '私聊实时通道',
+                          value: snapshot.privateRealtimeAvailable
+                              ? '当前可用'
+                              : '腾讯 IM 尚未接入',
+                        ),
+                        const Divider(height: 1),
+                        _RecoveryStatusRow(
+                          icon: Icons.notifications_none_rounded,
+                          title: '系统通知权限',
+                          value: _permissionLabel(
+                            snapshot.notificationPermission,
                           ),
-                          const SizedBox(height: 14),
-                          Material(
-                            color: AppColors.surface,
-                            borderRadius: BorderRadius.circular(20),
-                            child: Padding(
-                              padding: const EdgeInsets.all(18),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: <Widget>[
-                                  Text(
-                                    '私聊实时通道',
-                                    style: Theme.of(context).textTheme.titleMedium,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(snapshot.privateRealtimeAvailable
-                                      ? '当前可用'
-                                      : '腾讯 IM 尚未接入'),
-                                  const Divider(height: 26),
-                                  Text(
-                                    '系统通知权限',
-                                    style: Theme.of(context).textTheme.titleMedium,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(_permissionLabel(
-                                      snapshot.notificationPermission)),
-                                  const Divider(height: 26),
-                                  Text(
-                                    '最近通知同步',
-                                    style: Theme.of(context).textTheme.titleMedium,
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(snapshot.lastNotificationSyncAt == null
-                                      ? '尚未完成同步'
-                                      : _formatMessageTime(
-                                          snapshot.lastNotificationSyncAt!,
-                                        )),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          const _MessageInfoCard(
-                            icon: Icons.history_toggle_off_rounded,
-                            text: '恢复只刷新服务端确认存在的会话和通知。不会编造断线期间私聊、补出不存在的历史正文，也不会把互动通知当成腾讯 IM 消息。',
-                          ),
-                          const SizedBox(height: 18),
-                          if (_repository.supportsNativeNotificationPermission)
-                            FilledButton.icon(
-                              onPressed:
-                                  _requesting ? null : _requestPermission,
-                              icon: _requesting
-                                  ? const SizedBox.square(
-                                      dimension: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.notifications_active_outlined),
-                              label: Text(
-                                _requesting ? '请求中…' : '请求系统通知权限',
-                              ),
-                            )
-                          else
-                            const _MessageInfoCard(
-                              icon: Icons.settings_outlined,
-                              text: '原生通知权限适配器尚未接入，Live 模式不会把未知状态显示成已授权。',
-                            ),
-                          const SizedBox(height: 10),
-                          OutlinedButton.icon(
-                            onPressed: _load,
-                            icon: const Icon(Icons.refresh_rounded),
-                            label: const Text('刷新恢复状态'),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const Divider(height: 1),
+                        _RecoveryStatusRow(
+                          icon: Icons.sync_rounded,
+                          title: '最近通知同步',
+                          value: snapshot.lastNotificationSyncAt == null
+                              ? '尚未完成同步'
+                              : _formatMessageTime(
+                                  snapshot.lastNotificationSyncAt!,
+                                  now,
+                                ),
+                        ),
+                      ],
                     ),
+                  ),
+                  const SizedBox(height: 14),
+                  const _MessageInfoCard(
+                    icon: Icons.history_toggle_off_rounded,
+                    text:
+                        '恢复只刷新服务端确认存在的会话和通知。不会编造断线期间私聊、补出不存在的历史正文，也不会把互动通知当成腾讯 IM 消息。',
+                  ),
+                  const SizedBox(height: 18),
+                  if (_repository
+                      .supportsNativeNotificationPermission) ...<Widget>[
+                    FilledButton.icon(
+                      onPressed: _requesting ? null : _requestPermission,
+                      icon: _requesting
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.notifications_active_outlined),
+                      label: Text(_requesting ? '请求中…' : '请求系统通知权限'),
+                    ),
+                    if (snapshot.notificationPermission ==
+                        NativeNotificationPermissionState.permanentlyDenied)
+                      OutlinedButton.icon(
+                        onPressed: _repository.openNotificationSettings,
+                        icon: const Icon(Icons.settings_outlined),
+                        label: const Text('打开系统设置'),
+                      ),
+                  ] else
+                    const _MessageInfoCard(
+                      icon: Icons.settings_outlined,
+                      text: '原生通知权限适配器尚未接入，Live 模式不会把未知状态显示成已授权。',
+                    ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('刷新恢复状态'),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 
-  static String _permissionLabel(
-    NativeNotificationPermissionState state,
-  ) =>
+  static String _permissionLabel(NativeNotificationPermissionState state) =>
       switch (state) {
         NativeNotificationPermissionState.unknown => '尚未请求',
         NativeNotificationPermissionState.allowed => '已允许',
         NativeNotificationPermissionState.denied => '已拒绝',
+        NativeNotificationPermissionState.permanentlyDenied => '已永久拒绝',
         NativeNotificationPermissionState.restricted => '受系统限制',
         NativeNotificationPermissionState.unavailable => '适配器未接入',
       };
+}
+
+class _RecoveryStatusRow extends StatelessWidget {
+  const _RecoveryStatusRow({
+    required this.icon,
+    required this.title,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String title;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 13),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 40,
+            height: 40,
+            decoration: const BoxDecoration(
+              color: Color(0xFFEAE6FF),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: SocialColors.primary, size: 20),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: SocialColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: SocialColors.textSecondary,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

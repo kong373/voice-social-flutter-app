@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
@@ -6,6 +7,7 @@ import 'package:voice_social_app/features/account/application/auth_controller.da
 import 'package:voice_social_app/features/account/compliance/data/backend_account_compliance_repository.dart';
 import 'package:voice_social_app/features/account/compliance/data/mock_account_compliance_repository.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
+import 'package:voice_social_app/features/account/compliance/infrastructure/native_permission_adapter.dart';
 import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/account/data/backend_auth_repository.dart';
 import 'package:voice_social_app/features/account/data/device_identity_provider.dart';
@@ -46,6 +48,7 @@ import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 import 'package:voice_social_app/features/room/pk/data/backend_room_pk_repository.dart';
 import 'package:voice_social_app/features/room/pk/data/mock_room_pk_repository.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_repository.dart';
+import 'package:voice_social_app/features/shell/live_read_only_repository.dart';
 import 'package:voice_social_app/features/social/data/backend_social_repository.dart';
 import 'package:voice_social_app/features/social/data/mock_social_repository.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
@@ -55,6 +58,8 @@ class AppDependencies {
     required this.environment,
     required this.sessionManager,
     required this.authController,
+    required this.currentTime,
+    required this.liveReadOnlyRepository,
     required this.accountComplianceRepository,
     required this.discoveryRepository,
     required this.dynamicRepository,
@@ -70,6 +75,7 @@ class AppDependencies {
     required this.rtcAdapter,
     required this.realtimeGateway,
     required this.roomAudioService,
+    required this.externalUrlOpener,
   });
 
   factory AppDependencies.fromEnvironment() {
@@ -78,16 +84,49 @@ class AppDependencies {
     return _build(environment: environment, store: store);
   }
 
-  factory AppDependencies.mock({Map<String, String>? initialStorage}) {
+  factory AppDependencies.mock({
+    Map<String, String>? initialStorage,
+    DateTime? mockNow,
+  }) {
     return _build(
       environment: AppEnvironment.mock(),
       store: MemoryKeyValueStore(initialStorage),
+      mockNow: mockNow,
+    );
+  }
+
+  @visibleForTesting
+  factory AppDependencies.forTestEnvironment({
+    required AppEnvironment environment,
+    Map<String, String>? initialStorage,
+    DateTime? mockNow,
+    AccountComplianceRepository? accountComplianceRepository,
+    DiscoveryRepository? discoveryRepository,
+    DynamicRepository? dynamicRepository,
+    MessageRepository? messageRepository,
+    ExternalUrlOpener? externalUrlOpener,
+  }) {
+    return _build(
+      environment: environment,
+      store: MemoryKeyValueStore(initialStorage),
+      mockNow: mockNow,
+      accountComplianceRepositoryOverride: accountComplianceRepository,
+      discoveryRepositoryOverride: discoveryRepository,
+      dynamicRepositoryOverride: dynamicRepository,
+      messageRepositoryOverride: messageRepository,
+      externalUrlOpenerOverride: externalUrlOpener,
     );
   }
 
   static AppDependencies _build({
     required AppEnvironment environment,
     required KeyValueStore store,
+    DateTime? mockNow,
+    AccountComplianceRepository? accountComplianceRepositoryOverride,
+    DiscoveryRepository? discoveryRepositoryOverride,
+    DynamicRepository? dynamicRepositoryOverride,
+    MessageRepository? messageRepositoryOverride,
+    ExternalUrlOpener? externalUrlOpenerOverride,
   }) {
     final AuthSessionManager sessionManager = AuthSessionManager(store);
     final ApiClient apiClient = ApiClient(
@@ -95,36 +134,60 @@ class AppDependencies {
       clientType: environment.clientType,
       clientInnerVersion: environment.clientInnerVersion,
       authorizationProvider: () => sessionManager.authorizationHeader,
+      requestHeadersProvider: () => <String, String>{
+        if (environment.oauthClientId.trim().isNotEmpty)
+          'Client-Id': environment.oauthClientId,
+      },
+      timeout: environment.apiTimeout,
     );
+    final LiveReadOnlyRepository liveReadOnlyRepository =
+        LiveReadOnlyRepository(apiClient);
     const BackendRouteCatalog routes = BackendRouteCatalog();
+    final NativePermissionAdapter? nativePermissionAdapter = environment.isLive
+        ? MethodChannelNativePermissionAdapter()
+        : null;
     final AuthRepository authRepository = environment.isLive
         ? BackendAuthRepository(
             apiClient: apiClient,
             environment: environment,
+            sessionManager: sessionManager,
             routes: routes,
           )
         : const MockAuthRepository();
     final AccountComplianceRepository accountComplianceRepository =
-        environment.isLive
-        ? BackendAccountComplianceRepository(
-            apiClient: apiClient,
-            routes: routes,
-          )
-        : MockAccountComplianceRepository();
-    final DiscoveryRepository discoveryRepository = environment.isLive
-        ? BackendDiscoveryRepository(
-            apiClient: apiClient,
-            clientType: environment.clientType,
-            routes: routes,
-          )
-        : MockDiscoveryRepository();
-    final DynamicRepository dynamicRepository = environment.isLive
-        ? BackendDynamicRepository(
-            apiClient: apiClient,
-            routes: routes,
-            currentUserIdProvider: () => sessionManager.session?.userId ?? 0,
-          )
-        : MockDynamicRepository();
+        accountComplianceRepositoryOverride ??
+        (environment.isLive
+            ? BackendAccountComplianceRepository(
+                apiClient: apiClient,
+                routes: routes,
+                currentDeviceIdProvider: () =>
+                    sessionManager.session?.deviceId ?? '',
+                nativePermissionAdapter: nativePermissionAdapter,
+                // AC-006 is first-party manual review. It does not invoke a
+                // formal identity vendor; the backend owns redaction and
+                // persists only its first-party review result.
+                supportsRealNameSubmission: true,
+              )
+            : MockAccountComplianceRepository());
+    final DiscoveryRepository discoveryRepository =
+        discoveryRepositoryOverride ??
+        (environment.isLive
+            ? BackendDiscoveryRepository(
+                apiClient: apiClient,
+                clientType: environment.clientType,
+                routes: routes,
+              )
+            : MockDiscoveryRepository());
+    final DynamicRepository dynamicRepository =
+        dynamicRepositoryOverride ??
+        (environment.isLive
+            ? BackendDynamicRepository(
+                apiClient: apiClient,
+                routes: routes,
+                currentUserIdProvider: () =>
+                    sessionManager.session?.userId ?? 0,
+              )
+            : MockDynamicRepository());
     final SocialRepository socialRepository = environment.isLive
         ? BackendSocialRepository(
             apiClient: apiClient,
@@ -148,19 +211,23 @@ class AppDependencies {
       );
     } else {
       final MockCommerceRepository mockCommerceRepository =
-          MockCommerceRepository();
+          MockCommerceRepository(now: mockNow);
       commerceRepository = mockCommerceRepository;
       commerceCatalogRepository = MockCommerceCatalogRepository(
         onRechargeOrderChanged: mockCommerceRepository.syncRechargeOrder,
       );
     }
-    final MessageRepository messageRepository = environment.isLive
-        ? BackendMessageRepository(
-            apiClient: apiClient,
-            routes: routes,
-            currentUserIdProvider: () => sessionManager.session?.userId ?? 0,
-          )
-        : MockMessageRepository();
+    final MessageRepository messageRepository =
+        messageRepositoryOverride ??
+        (environment.isLive
+            ? BackendMessageRepository(
+                apiClient: apiClient,
+                routes: routes,
+                currentUserIdProvider: () =>
+                    sessionManager.session?.userId ?? 0,
+                nativePermissionAdapter: nativePermissionAdapter,
+              )
+            : MockMessageRepository(now: mockNow));
     final RoomRepository roomRepository = environment.isLive
         ? BackendRoomRepository(apiClient: apiClient, routes: routes)
         : MockRoomRepository();
@@ -176,14 +243,14 @@ class AppDependencies {
         ? BackendRoomPkRepository(apiClient: apiClient, routes: routes)
         : MockRoomPkRepository();
     final RtcAdapter rtcAdapter = environment.isLive
-        ? const UnavailableRtcAdapter()
+        ? const SnapshotOnlyRtcAdapter()
         : MockRtcAdapter();
     final RoomRealtimeGateway realtimeGateway = environment.isLive
-        ? const UnavailableRoomRealtimeGateway()
+        ? const SnapshotOnlyRoomRealtimeGateway()
         : MockRoomRealtimeGateway();
     final RoomAudioService roomAudioService = environment.isLive
         ? const UnavailableRoomAudioService()
-        : MockRoomAudioService();
+        : MockRoomAudioService(now: mockNow);
     final DeviceIdentityProvider deviceIdentityProvider =
         DeviceIdentityProvider(
           environment: environment,
@@ -193,11 +260,18 @@ class AppDependencies {
       repository: authRepository,
       sessionManager: sessionManager,
       deviceIdentityProvider: deviceIdentityProvider,
+      allowsDevelopmentTools:
+          environment.deploymentEnvironment.allowsDevelopmentTools,
     );
+    final ExternalUrlOpener externalUrlOpener =
+        externalUrlOpenerOverride ?? MethodChannelExternalUrlOpener();
+    apiClient.setUnauthorizedRecovery(authController.refreshSession);
     return AppDependencies._(
       environment: environment,
       sessionManager: sessionManager,
       authController: authController,
+      currentTime: () => mockNow ?? DateTime.now(),
+      liveReadOnlyRepository: liveReadOnlyRepository,
       accountComplianceRepository: accountComplianceRepository,
       discoveryRepository: discoveryRepository,
       dynamicRepository: dynamicRepository,
@@ -213,12 +287,15 @@ class AppDependencies {
       rtcAdapter: rtcAdapter,
       realtimeGateway: realtimeGateway,
       roomAudioService: roomAudioService,
+      externalUrlOpener: externalUrlOpener,
     );
   }
 
   final AppEnvironment environment;
   final AuthSessionManager sessionManager;
   final AuthController authController;
+  final DateTime Function() currentTime;
+  final LiveReadOnlyRepository liveReadOnlyRepository;
   final AccountComplianceRepository accountComplianceRepository;
   final DiscoveryRepository discoveryRepository;
   final DynamicRepository dynamicRepository;
@@ -234,23 +311,26 @@ class AppDependencies {
   final RtcAdapter rtcAdapter;
   final RoomRealtimeGateway realtimeGateway;
   final RoomAudioService roomAudioService;
+  final ExternalUrlOpener externalUrlOpener;
 
   RoomController createRoomController({
     required String roomId,
     required String title,
   }) {
     final session = sessionManager.session;
-    if (session == null) {
+    if (session == null && environment.isLive) {
       throw StateError('用户未登录，不能创建房间会话');
     }
     return RoomController(
       roomId: roomId,
       title: title,
-      currentUserId: session.userId,
-      accessToken: session.accessToken,
+      currentUserId: session?.userId ?? 10001,
+      accessToken: session?.accessToken ?? 'mock-local-session',
       repository: roomRepository,
+      roomOperationsRepository: roomOperationsRepository,
       rtcAdapter: rtcAdapter,
       realtimeGateway: realtimeGateway,
+      allowSyntheticPublicMessages: !environment.isLive,
     );
   }
 }

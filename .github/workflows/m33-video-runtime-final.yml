@@ -1,0 +1,371 @@
+name: M3.3 video-runtime UI final acceptance
+
+on:
+  push:
+    branches:
+      - feat/m3-3-video-runtime-ui
+    paths:
+      - 'lib/**'
+      - 'test/**'
+      - 'integration_test/m3_3_video_runtime_ui_test.dart'
+      - 'tool/qa/run_m33_android_acceptance.sh'
+      - '.github/workflows/m33-video-runtime-final.yml'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m33-video-runtime-final-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.44.7'
+  JAVA_VERSION: '17'
+  UI_BASE_SHA: '9fa9466e3049d963c199b0f8ea0b3e4b0e49f65f'
+
+jobs:
+  quality:
+    name: Candidate format, analyze, tests and APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+      - name: Check candidate formatting
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git cat-file -e "${UI_BASE_SHA}^{commit}"
+          mapfile -d '' files < <(
+            git diff --name-only -z --diff-filter=ACMR "$UI_BASE_SHA" HEAD -- '*.dart'
+          )
+          printf 'candidate_dart_files=%s\n' "${#files[@]}"
+          if (( ${#files[@]} > 0 )); then
+            dart format --output=none --set-exit-if-changed "${files[@]}"
+          fi
+      - name: Analyze
+        run: flutter analyze
+      - name: Run all Dart and widget tests
+        run: flutter test --concurrency=1 --timeout=90s --reporter=expanded
+      - name: Create isolated Android host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test ! -e ci_app
+          flutter create --platforms=android --org=com.kong373 --project-name=voice_social_app --no-pub ci_app
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.dart_tool' \
+            --exclude='ci_app' \
+            --exclude='artifacts' \
+            --exclude='build' \
+            --exclude='test/failures' \
+            --exclude='android' \
+            ./ ci_app/
+          (cd ci_app && flutter pub get --enforce-lockfile)
+      - name: Build Android debug APK
+        run: |
+          cd ci_app
+          flutter build apk --debug \
+            --dart-define=BACKEND_MODE=mock \
+            --dart-define=ENABLE_VIDEO_RUNTIME_DEMO=true
+      - name: Record APK SHA-256
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd ci_app/build/app/outputs/flutter-apk
+          shasum -a 256 app-debug.apk > apk-sha256.txt
+          shasum -a 256 -c apk-sha256.txt
+      - name: Verify page denominator, roots, forbidden entries and secrets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter test --no-pub test/page_manifest_test.dart test/live_shell_gate_test.dart
+          ! grep -RInE \
+            '(会员|VIP|礼物背包|背包|红包|KTV|点歌|演唱|合唱|盲盒|魔法球|团子|情书|随机遇见|附近的人)' \
+            ci_app/lib/core/design_system/runtime_surfaces.dart \
+            ci_app/lib/features/shell/main_shell.dart \
+            ci_app/lib/features/shell/video_runtime_pages.dart \
+            ci_app/lib/features/room/presentation/video_runtime_room_page.dart
+          test -d ci_app/android
+          test -d ci_app/lib
+          secret_roots=(ci_app/lib ci_app/android)
+          [[ -d ci_app/ios ]] && secret_roots+=(ci_app/ios)
+          ! grep -RInE \
+            '(M3_OAUTH_CLIENT_SECRET|OAUTH_CLIENT_SECRET|RTC_APP_CERTIFICATE|IM_ADMIN_SECRET|PAYMENT_PRIVATE_KEY|BEGIN (RSA |EC )?PRIVATE KEY)' \
+            "${secret_roots[@]}"
+      - name: Require quality evidence files
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -s ci_app/build/app/outputs/flutter-apk/app-debug.apk
+          test -s ci_app/build/app/outputs/flutter-apk/apk-sha256.txt
+          (
+            cd ci_app/build/app/outputs/flutter-apk
+            shasum -a 256 -c apk-sha256.txt
+          )
+          test -s pubspec.lock
+      - name: Upload quality evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: m33-final-quality-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ci_app/build/app/outputs/flutter-apk/app-debug.apk
+            ci_app/build/app/outputs/flutter-apk/apk-sha256.txt
+            pubspec.lock
+            test/failures/**
+          if-no-files-found: error
+          retention-days: 14
+
+  avd:
+    name: ${{ matrix.id }} API ${{ matrix.api }} ${{ matrix.viewport }}
+    needs: quality
+    if: ${{ needs.quality.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - id: AVD-A
+            api: 36
+            profile: pixel_7_pro
+            viewport: 390x844
+            width: 390
+            height: 844
+            physical: 1170x2532
+            density: 480
+            dpr: '3'
+          - id: AVD-B
+            api: 35
+            profile: pixel_2
+            viewport: 360x800
+            width: 360
+            height: 800
+            physical: 900x2000
+            density: 400
+            dpr: '2.5'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Create isolated Android host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test ! -e ci_app
+          flutter create --platforms=android --org=com.kong373 --project-name=voice_social_app --no-pub ci_app
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.dart_tool' \
+            --exclude='ci_app' \
+            --exclude='artifacts' \
+            --exclude='build' \
+            --exclude='test/failures' \
+            --exclude='android' \
+            ./ ci_app/
+      - name: Resolve locked dependencies
+        run: |
+          cd ci_app
+          flutter pub get --enforce-lockfile
+      - name: Require KVM
+        run: |
+          test -c /dev/kvm
+          sudo chmod 0666 /dev/kvm
+      - name: Run exact-viewport interaction acceptance
+        uses: ReactiveCircus/android-emulator-runner@324029e2f414c084d8b15ba075288885e74aef9c # v2.34.0
+        env:
+          EVIDENCE_ROOT: ${{ github.workspace }}/artifacts/m3.3/${{ matrix.id }}
+          QA_AVD_ID: ${{ matrix.id }}
+          QA_API_LEVEL: ${{ matrix.api }}
+          QA_VIEWPORT: ${{ matrix.viewport }}
+          QA_WIDTH: ${{ matrix.width }}
+          QA_HEIGHT: ${{ matrix.height }}
+          QA_PHYSICAL: ${{ matrix.physical }}
+          QA_DENSITY: ${{ matrix.density }}
+          QA_DPR: ${{ matrix.dpr }}
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          cores: 2
+          ram-size: 4096M
+          heap-size: 512M
+          disk-size: 6144M
+          force-avd-creation: true
+          emulator-boot-timeout: 600
+          disable-linux-hw-accel: false
+          disable-animations: false
+          emulator-options: >-
+            -no-window
+            -gpu swiftshader_indirect
+            -noaudio
+            -no-boot-anim
+            -no-snapshot
+            -wipe-data
+            -no-metrics
+            -camera-back none
+            -camera-front none
+          script: bash tool/qa/run_m33_android_acceptance.sh
+      - name: Upload AVD evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: m33-final-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/m3.3/${{ matrix.id }}/
+          if-no-files-found: error
+          retention-days: 30
+
+  verdict:
+    name: Strict two-AVD verdict
+    needs: [quality, avd]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download quality evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: m33-final-quality-*
+          path: quality
+          merge-multiple: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: m33-final-AVD-*
+          path: evidence
+          merge-multiple: false
+      - name: Verify quality APK and lockfile
+        id: quality_verify
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mapfile -t quality_artifacts < <(
+            find quality -mindepth 1 -maxdepth 1 -type d \
+              -name 'm33-final-quality-*' | sort
+          )
+          test "${#quality_artifacts[@]}" -eq 1
+          quality_root="${quality_artifacts[0]}"
+          mapfile -t quality_apks < <(
+            find "$quality_root" -type f \
+              -path '*/build/app/outputs/flutter-apk/app-debug.apk' | sort
+          )
+          mapfile -t quality_lockfiles < <(
+            find "$quality_root" -type f -name pubspec.lock | sort
+          )
+          mapfile -t quality_hashes < <(
+            find "$quality_root" -type f -name apk-sha256.txt | sort
+          )
+          test "${#quality_apks[@]}" -eq 1
+          test "${#quality_lockfiles[@]}" -eq 1
+          test "${#quality_hashes[@]}" -eq 1
+          test -s "${quality_apks[0]}"
+          test -s "${quality_lockfiles[0]}"
+          test -s "${quality_hashes[0]}"
+          unzip -t "${quality_apks[0]}" >/dev/null
+          grep -q '^packages:' "${quality_lockfiles[0]}"
+          test "$(dirname "${quality_apks[0]}")" = \
+            "$(dirname "${quality_hashes[0]}")"
+          (
+            cd "$(dirname "${quality_apks[0]}")"
+            shasum -a 256 -c apk-sha256.txt
+          )
+          apk_sha256="$(awk '{print $1}' "${quality_hashes[0]}")"
+          test "${#apk_sha256}" -eq 64
+          echo "apk_sha256=$apk_sha256" >> "$GITHUB_OUTPUT"
+      - name: Verify both exact-viewport runs
+        shell: bash
+        env:
+          QUALITY: ${{ needs.quality.result }}
+          AVD: ${{ needs.avd.result }}
+          APK_SHA256: ${{ steps.quality_verify.outputs.apk_sha256 }}
+        run: |
+          set -Eeuo pipefail
+          test "$QUALITY" = success
+          test "$AVD" = success
+          mapfile -t summaries < <(find evidence -type f -name summary.txt | sort)
+          test "${#summaries[@]}" -eq 2
+          expected_sha='${{ github.sha }}'
+          for summary in "${summaries[@]}"; do
+            test "$(grep -c '^git_sha=' "$summary")" -eq 1
+            actual_sha="$(sed -n 's/^git_sha=//p' "$summary")"
+            test -n "$actual_sha"
+            test "$actual_sha" = "$expected_sha"
+          done
+          grep -R '^avd=AVD-A$' evidence
+          grep -R '^avd=AVD-B$' evidence
+          grep -R '^viewport=390x844$' evidence
+          grep -R '^viewport=360x800$' evidence
+          test "$(grep -R '^conclusion=PASS$' evidence | wc -l | tr -d ' ')" -eq 2
+          test "$(grep -R '^hard_errors=0$' evidence | wc -l | tr -d ' ')" -eq 2
+          for summary in "${summaries[@]}"; do
+            mapfile -t provider_values < <(
+              sed -n 's/^provider_calls_made=//p' "$summary"
+            )
+            test "${#provider_values[@]}" -eq 1
+            test "${provider_values[0]}" = false
+            mapfile -t graph_values < <(
+              sed -n 's/^provider_dependency_graph=//p' "$summary"
+            )
+            test "${#graph_values[@]}" -eq 1
+            test "${graph_values[0]}" = true
+            mapfile -t scope_values < <(
+              sed -n 's/^provider_evidence_scope=//p' "$summary"
+            )
+            test "${#scope_values[@]}" -eq 1
+            test "${scope_values[0]}" = \
+              m33_video_runtime_mock_graph_and_http_outbound_guard
+            mapfile -t guard_attempt_values < <(
+              sed -n 's/^provider_guard_connection_attempts=//p' "$summary"
+            )
+            test "${#guard_attempt_values[@]}" -eq 1
+            test "${guard_attempt_values[0]}" -eq 0
+            mapfile -t video_values < <(
+              sed -n 's/^videos=//p' "$summary"
+            )
+            test "${#video_values[@]}" -eq 1
+            test "${video_values[0]}" -ge 1
+          done
+          {
+            echo "tested_git_sha=${{ github.sha }}"
+            echo "quality=$QUALITY"
+            echo "avd_matrix=$AVD"
+            echo "apk_sha256=$APK_SHA256"
+            echo "conclusion=VIDEO_RUNTIME_UI_PASS"
+          } | tee aggregate-verdict.txt
+      - name: Upload aggregate verdict
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: m33-final-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: aggregate-verdict.txt
+          if-no-files-found: error
+          retention-days: 30

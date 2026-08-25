@@ -22,6 +22,8 @@ if [[ ! -d android || ! -d ios ]]; then
   cp -R "$TEMP_DIR/generated/ios" "$ROOT_DIR/ios"
 fi
 
+bash "$ROOT_DIR/tool/apply_native_permissions.sh" "$ROOT_DIR"
+
 flutter pub get
 flutter analyze
 flutter test

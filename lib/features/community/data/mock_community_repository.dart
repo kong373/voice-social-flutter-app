@@ -11,13 +11,16 @@ class MockCommunityRepository implements CommunityRepository {
           id: 'guild-1',
           code: 'G10086',
           name: '晚风陪伴社',
+          status: GuildStatus.active,
           description: '认真聊天、彼此尊重，不用热闹证明关系。',
           memberCount: 128,
           ownerUserId: 20001,
           ownerName: '晚星',
           role: GuildRole.manager,
           joined: true,
+          applicationPending: false,
           hasNewApplications: true,
+          hasSignedToday: false,
           rooms: <GuildRoom>[
             GuildRoom(roomId: '880217', name: '深夜温柔陪伴', onlineUsers: 36),
             GuildRoom(roomId: '520906', name: '安静音乐电台', onlineUsers: 18),
@@ -27,19 +30,27 @@ class MockCommunityRepository implements CommunityRepository {
           id: 'guild-2',
           code: 'G20018',
           name: '松弛生活局',
+          status: GuildStatus.active,
           description: '下班后慢一点，分享普通但真实的生活。',
           memberCount: 86,
           ownerUserId: 20003,
           ownerName: '阿岚',
+          applicationPending: false,
+          hasNewApplications: false,
+          hasSignedToday: false,
         ),
         'guild-3': const GuildSummary(
           id: 'guild-3',
           code: 'G31007',
           name: '城市夜谈',
+          status: GuildStatus.active,
           description: '从一座城市出发，聊工作、情绪与成长。',
           memberCount: 74,
           ownerUserId: 20006,
           ownerName: '十一',
+          applicationPending: false,
+          hasNewApplications: false,
+          hasSignedToday: false,
         ),
       },
       _members = <GuildMember>[
@@ -87,6 +98,27 @@ class MockCommunityRepository implements CommunityRepository {
           nickname: '弥生',
           appliedAt: '昨天 22:16',
           message: '经常参加陪伴主题房。',
+        ),
+        const GuildApplication(
+          id: 'application-3',
+          userId: 20013,
+          nickname: '星野',
+          appliedAt: '8 月 20 日',
+          status: GuildApplicationStatus.accepted,
+        ),
+        const GuildApplication(
+          id: 'application-4',
+          userId: 20014,
+          nickname: '青岚',
+          appliedAt: '8 月 19 日',
+          status: GuildApplicationStatus.rejected,
+        ),
+        const GuildApplication(
+          id: 'application-5',
+          userId: 20015,
+          nickname: '冬青',
+          appliedAt: '8 月 18 日',
+          status: GuildApplicationStatus.expired,
         ),
       ];
 
@@ -209,6 +241,7 @@ class MockCommunityRepository implements CommunityRepository {
         .firstOrNull;
     return GuildHomeSnapshot(
       currentGuild: current,
+      currentGuildAuthority: GuildCurrentAuthority.authoritative,
       recommended: _guilds.values
           .where((GuildSummary guild) => !guild.joined)
           .toList(growable: false),
@@ -226,7 +259,7 @@ class MockCommunityRepository implements CommunityRepository {
         .where(
           (GuildSummary guild) =>
               guild.name.toLowerCase().contains(query) ||
-              guild.code.toLowerCase().contains(query),
+              (guild.code?.toLowerCase().contains(query) ?? false),
         )
         .toList(growable: false);
   }
@@ -248,7 +281,8 @@ class MockCommunityRepository implements CommunityRepository {
   Future<void> applyToJoinGuild(String guildId) async {
     await _delay();
     final GuildSummary guild = await fetchGuild(guildId);
-    if (guild.joined || guild.applicationPending) {
+    _requireActiveGuild(guild);
+    if (guild.joined || guild.applicationPending == true) {
       throw const ApiException(
         kind: ApiFailureKind.business,
         message: '当前公会申请状态已变化，请刷新后重试',
@@ -261,6 +295,7 @@ class MockCommunityRepository implements CommunityRepository {
   Future<void> quitGuild(String guildId) async {
     await _delay();
     final GuildSummary guild = await fetchGuild(guildId);
+    _requireActiveGuild(guild);
     if (!guild.joined || guild.role == GuildRole.owner) {
       throw const ApiException(
         kind: ApiFailureKind.business,
@@ -278,13 +313,14 @@ class MockCommunityRepository implements CommunityRepository {
   Future<void> signGuild(String guildId) async {
     await _delay();
     final GuildSummary guild = await fetchGuild(guildId);
+    _requireActiveGuild(guild);
     if (!guild.joined) {
       throw const ApiException(
         kind: ApiFailureKind.forbidden,
         message: '加入公会后才能签到',
       );
     }
-    if (guild.hasSignedToday) {
+    if (guild.hasSignedToday == true) {
       throw const ApiException(
         kind: ApiFailureKind.business,
         message: '今天已经签到',
@@ -310,12 +346,7 @@ class MockCommunityRepository implements CommunityRepository {
         message: '只有公会管理员可以查看申请',
       );
     }
-    return _applications
-        .where(
-          (GuildApplication item) =>
-              item.status == GuildApplicationStatus.pending,
-        )
-        .toList(growable: false);
+    return List<GuildApplication>.unmodifiable(_applications);
   }
 
   @override
@@ -324,6 +355,12 @@ class MockCommunityRepository implements CommunityRepository {
     required bool accepted,
   }) async {
     await _delay();
+    final GuildSummary? managedGuild = _guilds.values
+        .where((GuildSummary guild) => guild.role.canManage)
+        .firstOrNull;
+    if (managedGuild != null) {
+      _requireActiveGuild(managedGuild);
+    }
     final int index = _applications.indexWhere(
       (GuildApplication item) => item.id == applicationId,
     );
@@ -358,12 +395,14 @@ class MockCommunityRepository implements CommunityRepository {
 
   @override
   Future<void> setGuildMemberMuted({
-    required String memberRecordId,
+    required String guildId,
+    required int userId,
     required bool muted,
   }) async {
     await _delay();
+    _requireActiveGuild(await fetchGuild(guildId));
     final int index = _members.indexWhere(
-      (GuildMember member) => member.recordId == memberRecordId,
+      (GuildMember member) => member.userId == userId,
     );
     if (index < 0) {
       throw const ApiException(
@@ -381,10 +420,14 @@ class MockCommunityRepository implements CommunityRepository {
   }
 
   @override
-  Future<void> removeGuildMember(String memberRecordId) async {
+  Future<void> removeGuildMember({
+    required String guildId,
+    required int userId,
+  }) async {
     await _delay();
+    _requireActiveGuild(await fetchGuild(guildId));
     final int index = _members.indexWhere(
-      (GuildMember member) => member.recordId == memberRecordId,
+      (GuildMember member) => member.userId == userId,
     );
     if (index < 0) {
       throw const ApiException(
@@ -487,6 +530,21 @@ class MockCommunityRepository implements CommunityRepository {
         ),
       );
     }
+  }
+
+  @override
+  Future<void> endCpRelation(String relationId) async {
+    await _delay();
+    final int index = _cpRelations.indexWhere(
+      (CpRelation relation) => relation.relationId == relationId,
+    );
+    if (index < 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        message: 'CP 关系不存在或已解除',
+      );
+    }
+    _cpRelations.removeAt(index);
   }
 
   @override
@@ -627,6 +685,15 @@ class MockCommunityRepository implements CommunityRepository {
         rules: <String>['动态内容需由用户主动发布', '不提供基于位置或偶遇的推荐'],
       ),
     ];
+  }
+
+  static void _requireActiveGuild(GuildSummary guild) {
+    if (guild.status == GuildStatus.closed) {
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        message: '公会已关闭，不能执行该操作',
+      );
+    }
   }
 
   static Future<void> _delay() =>

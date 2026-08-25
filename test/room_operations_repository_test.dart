@@ -14,29 +14,27 @@ void main() {
     );
     expect(page.total, greaterThan(3));
 
-    await repository.setUserMuted(
-      roomId: '9527',
-      userId: 20005,
-      muted: true,
-    );
+    await repository.setUserMuted(roomId: '9527', userId: 20005, muted: true);
     expect(
-      (await repository.fetchMutedUsers('9527'))
-          .any((RoomMember member) => member.userId == 20005),
+      (await repository.fetchMutedUsers(
+        '9527',
+      )).any((RoomMember member) => member.userId == 20005),
       isTrue,
     );
 
-    await repository.setUserRole(
-      roomId: '9527',
-      userId: 20005,
-      manager: true,
-    );
+    await repository.setUserRole(roomId: '9527', userId: 20005, manager: true);
     expect(
-      (await repository.fetchManagers('9527'))
-          .any((RoomMember member) => member.userId == 20005),
+      (await repository.fetchManagers(
+        '9527',
+      )).any((RoomMember member) => member.userId == 20005),
       isTrue,
     );
 
-    await repository.takeUserOffMic(backendMicIndex: 2, userId: 20002);
+    await repository.takeUserOffMic(
+      roomId: '9527',
+      backendMicIndex: 2,
+      userId: 20002,
+    );
     page = await repository.fetchOnlineMembers(roomId: '9527', page: 1);
     final RoomMember moved = page.items.firstWhere(
       (RoomMember member) => member.userId == 20002,
@@ -57,8 +55,7 @@ void main() {
         MockRoomOperationsRepository();
     expect(repository.micCoordinationMode, MicCoordinationMode.approval);
 
-    const RoomTopic topic =
-        RoomTopic(title: '新的话题', content: '请友善交流');
+    const RoomTopic topic = RoomTopic(title: '新的话题', content: '请友善交流');
     await repository.updateTopic(roomId: '9527', topic: topic);
     final RoomTopic loaded = await repository.fetchTopic('9527');
     expect(loaded.title, topic.title);
@@ -69,8 +66,9 @@ void main() {
       userId: 10001,
       seatNumber: 6,
     );
-    final MicAccessRequest ownRequest =
-        (await repository.fetchMicRequests('9527')).single;
+    final MicAccessRequest ownRequest = (await repository.fetchMicRequests(
+      '9527',
+    )).single;
     expect(ownRequest.status, MicRequestStatus.pending);
     await repository.cancelMicRequest(requestId: ownRequest.id);
     expect(
@@ -83,8 +81,9 @@ void main() {
       userId: 20005,
       seatNumber: 4,
     );
-    final List<MicAccessRequest> requests =
-        await repository.fetchMicRequests('9527');
+    final List<MicAccessRequest> requests = await repository.fetchMicRequests(
+      '9527',
+    );
     expect(requests, hasLength(2));
     final MicAccessRequest pendingInvite = requests.last;
     expect(pendingInvite.status, MicRequestStatus.pending);

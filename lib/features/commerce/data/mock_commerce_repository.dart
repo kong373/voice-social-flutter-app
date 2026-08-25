@@ -3,115 +3,144 @@ import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catal
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 
 class MockCommerceRepository implements CommerceRepository {
-  MockCommerceRepository()
-    : _orders = <PaymentOrder>[
-        PaymentOrder(
-          orderNo: 'MOCK202608150001',
-          amount: 30,
-          giftCoinAmount: 300,
-          channelName: '微信支付',
-          createdAt: DateTime.now().subtract(const Duration(days: 2)),
-          status: PaymentOrderStatus.succeeded,
-        ),
-        PaymentOrder(
-          orderNo: 'MOCK202608150002',
-          amount: 68,
-          giftCoinAmount: 700,
-          channelName: '支付宝',
-          createdAt: DateTime.now().subtract(const Duration(hours: 3)),
-          status: PaymentOrderStatus.confirming,
-        ),
-      ],
-      _refunds = <String, RefundApplication>{
-        'refund-1': RefundApplication(
-          id: 'refund-1',
-          account: '13800138000',
-          amount: 30,
-          status: RefundStatus.reviewing,
-          statusText: '审核中',
-          rejectedReason: '',
-          createdAt: DateTime.now().subtract(const Duration(days: 1)),
-        ),
-      },
-      _withdrawals = <WithdrawalRecord>[
-        WithdrawalRecord(
-          id: 'withdraw-1',
-          withdrawalNo: 'WD202608120001',
-          amount: 200,
-          fee: 2,
-          receivedAmount: 198,
-          status: WithdrawalStatus.succeeded,
-          statusText: '已到账',
-          createdAt: DateTime.now().subtract(const Duration(days: 3)),
-          rejectedReason: '',
-          bankName: '招商银行',
-          maskedCard: '**** 8812',
-        ),
-      ];
+  MockCommerceRepository({DateTime? now})
+    : this._seeded(seedNow: now ?? DateTime.now(), fixedNow: now);
 
+  MockCommerceRepository._seeded({
+    required DateTime seedNow,
+    required DateTime? fixedNow,
+  }) : _fixedNow = fixedNow,
+       _orders = <PaymentOrder>[
+         PaymentOrder(
+           orderNo: 'MOCK202608150001',
+           amount: 30,
+           giftCoinAmount: 300,
+           channelName: '微信支付',
+           createdAt: seedNow.subtract(const Duration(days: 2)),
+           status: PaymentOrderStatus.succeeded,
+         ),
+         PaymentOrder(
+           orderNo: 'MOCK202608150002',
+           amount: 68,
+           giftCoinAmount: 700,
+           channelName: '支付宝',
+           createdAt: seedNow.subtract(const Duration(hours: 3)),
+           status: PaymentOrderStatus.confirming,
+         ),
+       ],
+       _refunds = <String, RefundApplication>{
+         'refund-1': RefundApplication(
+           id: 'refund-1',
+           account: '13800138000',
+           amount: 30,
+           status: RefundStatus.reviewing,
+           statusText: '审核中',
+           rejectedReason: '',
+           createdAt: seedNow.subtract(const Duration(days: 1)),
+         ),
+       },
+       _withdrawals = <WithdrawalRecord>[
+         WithdrawalRecord(
+           id: 'withdraw-1',
+           withdrawalNo: 'WD202608120001',
+           amount: 200,
+           fee: 2,
+           receivedAmount: 198,
+           status: WithdrawalStatus.succeeded,
+           statusText: '已到账',
+           createdAt: seedNow.subtract(const Duration(days: 3)),
+           rejectedReason: '',
+           holderNameMasked: '晚*',
+           maskedCard: '**** 8812',
+         ),
+       ],
+       _incomeEntries = <LedgerEntry>[
+         LedgerEntry(
+           id: 'income-1',
+           direction: LedgerDirection.income,
+           kind: LedgerKind.giftIncome,
+           title: '普通礼物收益',
+           amount: 68,
+           createdAt: seedNow.subtract(const Duration(hours: 2)),
+           relatedUserName: '鹿屿',
+           businessName: '星河灯',
+           rawSubtype: 'gift_income',
+           currency: LedgerCurrency.cashCny,
+         ),
+         LedgerEntry(
+           id: 'income-2',
+           direction: LedgerDirection.income,
+           kind: LedgerKind.agentIncome,
+           title: '渠道结算收益',
+           amount: 120,
+           createdAt: seedNow.subtract(const Duration(days: 1)),
+           relatedUserName: '',
+           businessName: '本周渠道结算',
+           rawSubtype: 'agent_income',
+           currency: LedgerCurrency.cashCny,
+         ),
+       ],
+       _expenseEntries = <LedgerEntry>[
+         LedgerEntry(
+           id: 'expense-1',
+           direction: LedgerDirection.expense,
+           kind: LedgerKind.giftExpense,
+           title: '赠送普通礼物',
+           amount: 12,
+           createdAt: seedNow.subtract(const Duration(hours: 5)),
+           relatedUserName: '南风',
+           businessName: '晚安星光',
+           rawSubtype: 'send_gift',
+           currency: LedgerCurrency.giftCoin,
+         ),
+         LedgerEntry(
+           id: 'expense-2',
+           direction: LedgerDirection.expense,
+           kind: LedgerKind.withdrawal,
+           title: '提现申请',
+           amount: 200,
+           createdAt: seedNow.subtract(const Duration(days: 3)),
+           relatedUserName: '',
+           businessName: '招商银行 **** 8812',
+           rawSubtype: 'withdrawal',
+           currency: LedgerCurrency.cashCny,
+         ),
+       ];
+
+  final DateTime? _fixedNow;
   final List<PaymentOrder> _orders;
   final Map<String, RefundApplication> _refunds;
   final List<WithdrawalRecord> _withdrawals;
+  final List<LedgerEntry> _incomeEntries;
+  final List<LedgerEntry> _expenseEntries;
+  final List<PayoutAccount> _payoutAccounts = <PayoutAccount>[
+    const PayoutAccount(
+      payoutAccountId: 'card-1',
+      accountType: 'BANK_REFERENCE',
+      accountMasked: '6225 **** **** 8812',
+      holderNameMasked: '晚*',
+      status: PayoutAccountStatus.verified,
+      selectable: true,
+    ),
+  ];
   int _refundSequence = 2;
   int _withdrawalSequence = 2;
   double _cashBalance = 1288.50;
   double _frozenBalance = 200;
 
-  static final List<LedgerEntry> _incomeEntries = <LedgerEntry>[
-    LedgerEntry(
-      id: 'income-1',
-      direction: LedgerDirection.income,
-      kind: LedgerKind.giftIncome,
-      title: '普通礼物收益',
-      amount: 68,
-      createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-      relatedUserName: '鹿屿',
-      businessName: '星河灯',
-      rawSubtype: 'gift_income',
-    ),
-    LedgerEntry(
-      id: 'income-2',
-      direction: LedgerDirection.income,
-      kind: LedgerKind.agentIncome,
-      title: '渠道结算收益',
-      amount: 120,
-      createdAt: DateTime.now().subtract(const Duration(days: 1)),
-      relatedUserName: '',
-      businessName: '本周渠道结算',
-      rawSubtype: 'agent_income',
-    ),
-  ];
-
-  static final List<LedgerEntry> _expenseEntries = <LedgerEntry>[
-    LedgerEntry(
-      id: 'expense-1',
-      direction: LedgerDirection.expense,
-      kind: LedgerKind.giftExpense,
-      title: '赠送普通礼物',
-      amount: 12,
-      createdAt: DateTime.now().subtract(const Duration(hours: 5)),
-      relatedUserName: '南风',
-      businessName: '晚安星光',
-      rawSubtype: 'send_gift',
-    ),
-    LedgerEntry(
-      id: 'expense-2',
-      direction: LedgerDirection.expense,
-      kind: LedgerKind.withdrawal,
-      title: '提现申请',
-      amount: 200,
-      createdAt: DateTime.now().subtract(const Duration(days: 3)),
-      relatedUserName: '',
-      businessName: '招商银行 **** 8812',
-      rawSubtype: 'withdrawal',
-    ),
-  ];
+  DateTime get _currentTime => _fixedNow ?? DateTime.now();
 
   @override
   bool get supportsPaymentChannelInvocation => false;
 
   @override
   bool get supportsRefundHistory => true;
+
+  @override
+  bool get supportsWithdrawalApplication => true;
+
+  @override
+  bool get supportsPayoutAccountSelection => false;
 
   @override
   RefundScope get refundScope => RefundScope.accountLegacy;
@@ -163,9 +192,9 @@ class MockCommerceRepository implements CommerceRepository {
     realNameVerified: true,
     bankCard: const BankCardSummary(
       id: 'card-1',
-      bankName: '招商银行',
-      maskedNumber: '6225 **** **** 8812',
-      holderName: '晚星',
+      accountType: '银行卡',
+      maskedAccount: '6225 **** **** 8812',
+      holderNameMasked: '晚*',
     ),
     agentEarnings: 500,
     superAgentEarnings: 300,
@@ -173,13 +202,35 @@ class MockCommerceRepository implements CommerceRepository {
 
   @override
   Future<CommercePage<LedgerEntry>> fetchLedger({
+    required LedgerCurrency currency,
     required LedgerDirection direction,
     required int page,
     required int pageSize,
   }) async {
-    final List<LedgerEntry> source = direction == LedgerDirection.income
-        ? _incomeEntries
-        : _expenseEntries;
+    final List<LedgerEntry> source = switch ((currency, direction)) {
+      (LedgerCurrency.giftCoin, LedgerDirection.income) => <LedgerEntry>[
+        LedgerEntry(
+          id: 'gift-coin-income-1',
+          direction: LedgerDirection.income,
+          kind: LedgerKind.recharge,
+          title: '充值到账',
+          amount: 300,
+          createdAt: _currentTime.subtract(const Duration(hours: 1)),
+          relatedUserName: '',
+          businessName: '礼物币充值',
+          rawSubtype: 'recharge_credit',
+        ),
+      ],
+      (LedgerCurrency.giftCoin, LedgerDirection.expense) =>
+        _expenseEntries
+            .where((LedgerEntry item) => item.kind == LedgerKind.giftExpense)
+            .toList(growable: false),
+      (LedgerCurrency.cashCny, LedgerDirection.income) => _incomeEntries,
+      (LedgerCurrency.cashCny, LedgerDirection.expense) =>
+        _expenseEntries
+            .where((LedgerEntry item) => item.kind == LedgerKind.withdrawal)
+            .toList(growable: false),
+    };
     return _page(source, page: page, pageSize: pageSize);
   }
 
@@ -254,14 +305,17 @@ class MockCommerceRepository implements CommerceRepository {
       status: RefundStatus.reviewing,
       statusText: '审核中',
       rejectedReason: '',
-      createdAt: DateTime.now(),
+      createdAt: _currentTime,
     );
     _refunds[id] = application;
     return application;
   }
 
   @override
-  Future<RefundApplication> fetchRefundResult(String applicationId) async {
+  Future<RefundApplication> fetchRefundResult(
+    String applicationId, {
+    String? expectedOrderNo,
+  }) async {
     final RefundApplication? application = _refunds[applicationId];
     if (application == null) {
       throw const ApiException(
@@ -269,13 +323,23 @@ class MockCommerceRepository implements CommerceRepository {
         message: '退款申请不存在',
       );
     }
+    if (expectedOrderNo != null && application.account != expectedOrderNo) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '退款结果与选中订单不一致',
+      );
+    }
     return application;
   }
 
   @override
-  Future<RefundApplication> resubmitRefund(String applicationId) async {
+  Future<RefundApplication> resubmitRefund(
+    String applicationId, {
+    String? expectedOrderNo,
+  }) async {
     final RefundApplication application = await fetchRefundResult(
       applicationId,
+      expectedOrderNo: expectedOrderNo,
     );
     if (application.status != RefundStatus.rejected) {
       throw const ApiException(
@@ -305,20 +369,68 @@ class MockCommerceRepository implements CommerceRepository {
         );
 
   @override
-  Future<WithdrawalQuote> fetchWithdrawalQuote() async => const WithdrawalQuote(
-    feeRate: 0.01,
-    feeRateText: '1%',
-    minimumAmount: 100,
-  );
+  Future<PayoutAccountSelection> fetchPayoutAccounts() async =>
+      const PayoutAccountSelection(
+        accounts: <PayoutAccount>[
+          PayoutAccount(
+            payoutAccountId: 'card-1',
+            accountType: 'BANK_REFERENCE',
+            accountMasked: '6225 **** **** 8812',
+            holderNameMasked: '晚*',
+            status: PayoutAccountStatus.verified,
+            selectable: true,
+          ),
+        ],
+        selectedPayoutAccountId: 'card-1',
+        selectionRequired: false,
+      );
 
   @override
-  Future<WithdrawalRecord> applyWithdrawal({required double amount}) async {
+  Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount}) async {
+    final double scaledAmount = amount * 100;
+    if (!amount.isFinite ||
+        amount < 10 ||
+        (scaledAmount - scaledAmount.round()).abs() > 0.000001) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '单笔提现金额不得少于 10 元且最多保留两位小数',
+      );
+    }
+    final int amountMinor = scaledAmount.round();
+    final int feeMinor = (amountMinor * 200 + 9999) ~/ 10000;
+    return WithdrawalQuote(
+      quotedAmount: amountMinor / 100,
+      feeAmount: feeMinor / 100,
+      receivedAmount: (amountMinor - feeMinor) / 100,
+      feeRate: 0.02,
+      feeRateText: '2.00%',
+      minimumAmount: 10,
+    );
+  }
+
+  @override
+  Future<WithdrawalRecord> applyWithdrawal({
+    required double amount,
+    String? payoutAccountId,
+  }) async {
     final WalletSummary wallet = await fetchWalletSummary();
-    final WithdrawalQuote quote = await fetchWithdrawalQuote();
+    final WithdrawalQuote quote = await fetchWithdrawalQuote(amount: amount);
     if (!wallet.realNameVerified || wallet.bankCard == null) {
       throw const ApiException(
         kind: ApiFailureKind.business,
         message: '请先完成实名认证并绑定银行卡',
+      );
+    }
+    final String selectedAccount = payoutAccountId?.trim().isNotEmpty == true
+        ? payoutAccountId!.trim()
+        : 'card-1';
+    if (!_payoutAccounts.any(
+      (PayoutAccount account) =>
+          account.payoutAccountId == selectedAccount && account.selectable,
+    )) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '选中的收款账户已失效，请刷新后重新选择',
       );
     }
     if (amount < quote.minimumAmount) {
@@ -334,18 +446,20 @@ class MockCommerceRepository implements CommerceRepository {
       );
     }
     final double fee = quote.feeFor(amount);
+    final DateTime now = _currentTime;
     final WithdrawalRecord record = WithdrawalRecord(
       id: 'withdraw-${_withdrawalSequence++}',
-      withdrawalNo: 'WD${DateTime.now().millisecondsSinceEpoch}',
+      withdrawalNo: 'WD${now.millisecondsSinceEpoch}',
       amount: amount,
       fee: fee,
       receivedAmount: amount - fee,
       status: WithdrawalStatus.pending,
       statusText: '待审核',
-      createdAt: DateTime.now(),
+      createdAt: now,
       rejectedReason: '',
-      bankName: wallet.bankCard!.bankName,
-      maskedCard: wallet.bankCard!.maskedNumber,
+      payoutAccountId: selectedAccount,
+      holderNameMasked: wallet.bankCard!.holderNameMasked,
+      maskedCard: wallet.bankCard!.maskedAccount,
     );
     _withdrawals.insert(0, record);
     _cashBalance -= amount;

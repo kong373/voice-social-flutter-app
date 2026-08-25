@@ -4,6 +4,7 @@ abstract interface class MessageRepository {
   bool get supportsConversationList;
   bool get supportsPrivateHistory;
   bool get supportsPrivateSend;
+  bool get supportsPrivateRealtime;
   bool get supportsSystemNotificationList;
   bool get supportsNativeNotificationPermission;
 
@@ -16,6 +17,7 @@ abstract interface class MessageRepository {
   Future<ChatMessage> sendPrivateMessage({
     required ConversationSummary conversation,
     required String content,
+    String? requestId,
   });
 
   Future<List<AppNotification>> fetchNotifications(
@@ -31,4 +33,6 @@ abstract interface class MessageRepository {
   Future<MessageRecoverySnapshot> fetchRecoverySnapshot();
 
   Future<MessageRecoverySnapshot> requestNotificationPermission();
+
+  Future<void> openNotificationSettings();
 }

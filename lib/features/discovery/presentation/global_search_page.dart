@@ -1,10 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
+import 'package:voice_social_app/app/app_dependency_scope.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
+import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
 import 'package:voice_social_app/features/discovery/presentation/search_results_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_deep_link_page.dart';
 
 class GlobalSearchPage extends StatefulWidget {
-  const GlobalSearchPage({super.key});
+  const GlobalSearchPage({
+    super.key,
+    this.initialRecent = const <String>[],
+    this.suggestions = const <String>[],
+    this.repository,
+  });
+
+  /// Mock/QA callers may provide an explicit fixture. Production and live
+  /// callers default to an empty list and only retain searches made this run.
+  final List<String> initialRecent;
+
+  /// Suggestions are server-owned content. Production and live callers keep
+  /// this empty until the backend supplies an approved list; QA may pass a
+  /// visual fixture explicitly.
+  final List<String> suggestions;
+  final DiscoveryRepository? repository;
 
   @override
   State<GlobalSearchPage> createState() => _GlobalSearchPageState();
@@ -13,7 +33,13 @@ class GlobalSearchPage extends StatefulWidget {
 class _GlobalSearchPageState extends State<GlobalSearchPage> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-  final List<String> _recent = <String>['深夜陪伴', '880217', '南风'];
+  final List<String> _recent = <String>[];
+  List<String> _suggestions = const <String>[];
+  DiscoveryRepository? _repository;
+  bool _suggestionsStarted = false;
+  bool _suggestionsLoading = false;
+  String? _suggestionsError;
+  int _suggestionsGeneration = 0;
 
   bool get _canDirectRoom =>
       RegExp(r'^\d{4,18}$').hasMatch(_controller.text.trim());
@@ -21,6 +47,8 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
   @override
   void initState() {
     super.initState();
+    _recent.addAll(widget.initialRecent);
+    _suggestions = List<String>.unmodifiable(widget.suggestions);
     _controller.addListener(_handleTextChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -30,7 +58,27 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_suggestionsStarted || widget.suggestions.isNotEmpty) {
+      return;
+    }
+    _suggestionsStarted = true;
+    _repository = widget.repository;
+    if (_repository == null) {
+      try {
+        _repository = AppDependencyScope.of(context).discoveryRepository;
+      } on StateError {
+        // Standalone visual/widget hosts intentionally have no runtime scope.
+        return;
+      }
+    }
+    Future<void>.microtask(_loadSuggestions);
+  }
+
+  @override
   void dispose() {
+    _suggestionsGeneration++;
     _controller
       ..removeListener(_handleTextChanged)
       ..dispose();
@@ -40,12 +88,44 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
 
   void _handleTextChanged() => setState(() {});
 
+  Future<void> _loadSuggestions() async {
+    final DiscoveryRepository? repository = _repository;
+    if (repository == null) return;
+    final int generation = ++_suggestionsGeneration;
+    if (mounted) {
+      setState(() {
+        _suggestionsLoading = true;
+        _suggestionsError = null;
+      });
+    }
+    try {
+      final List<DiscoverySearchSuggestion> values = await repository
+          .fetchSearchSuggestions();
+      if (!mounted || generation != _suggestionsGeneration) return;
+      setState(() {
+        _suggestions = List<String>.unmodifiable(
+          values.map((DiscoverySearchSuggestion item) => item.keyword),
+        );
+        _suggestionsLoading = false;
+      });
+    } catch (error) {
+      if (!mounted || generation != _suggestionsGeneration) return;
+      setState(() {
+        _suggestionsLoading = false;
+        _suggestionsError = error is ApiException
+            ? error.message
+            : '搜索建议暂时无法加载';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SocialPageScaffold(
       appBar: AppBar(
         titleSpacing: 0,
         title: TextField(
+          key: const Key('global-search-field'),
           controller: _controller,
           focusNode: _focusNode,
           textInputAction: TextInputAction.search,
@@ -71,12 +151,16 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: <Widget>[
+          const _SearchDiscoveryHero(),
+          const SizedBox(height: 18),
           if (_canDirectRoom) ...<Widget>[
-            Material(
-              color: AppColors.primary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(18),
+            SocialCard(
+              padding: EdgeInsets.zero,
+              radius: 18,
+              onTap: _openRoomDirect,
+              color: const Color(0xFFF0ECFF),
               child: ListTile(
                 leading: const Icon(
                   Icons.meeting_room_outlined,
@@ -85,10 +169,9 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
                 title: Text('直达房间 ${_controller.text.trim()}'),
                 subtitle: const Text('校验成功后直接进入，不展示普通中间页'),
                 trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: _openRoomDirect,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 18),
           ],
           Row(
             children: <Widget>[
@@ -126,8 +209,48 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
                   ),
               ],
             ),
-          const SizedBox(height: 30),
-          Text('搜索说明', style: Theme.of(context).textTheme.titleMedium),
+          if (_suggestionsLoading) ...<Widget>[
+            const SizedBox(height: 24),
+            const LinearProgressIndicator(minHeight: 2),
+          ],
+          if (_suggestionsError != null) ...<Widget>[
+            const SizedBox(height: 24),
+            SocialCard(
+              child: Row(
+                children: <Widget>[
+                  const Icon(Icons.cloud_off_rounded),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(_suggestionsError!)),
+                  TextButton(
+                    onPressed: _loadSuggestions,
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (_suggestions.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 24),
+            Text('你可能想找', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                for (final String item in _suggestions)
+                  SocialPill(
+                    label: item,
+                    icon: Icons.auto_awesome_rounded,
+                    onTap: () {
+                      _controller.text = item;
+                      _search();
+                    },
+                  ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 24),
+          Text('搜索范围', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
           const _SearchGuide(
             icon: Icons.graphic_eq_rounded,
@@ -172,9 +295,8 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
   void _openRoomDirect() {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomDeepLinkPage(
-          input: _controller.text.trim(),
-        ),
+        builder: (BuildContext context) =>
+            RoomDeepLinkPage(input: _controller.text.trim()),
       ),
     );
   }
@@ -193,33 +315,107 @@ class _SearchGuide extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.58),
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Container(
-            width: 42,
-            height: 42,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
-              color: AppColors.surfaceHigh,
-              borderRadius: BorderRadius.circular(14),
+              gradient: SocialColors.brandGradient,
+              borderRadius: BorderRadius.circular(13),
             ),
-            child: Icon(icon, color: AppColors.accent),
+            child: Icon(icon, color: Colors.white, size: 20),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(title, style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+                const SizedBox(height: 2),
+                Text(description, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchDiscoveryHero extends StatelessWidget {
+  const _SearchDiscoveryHero();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 118,
+      padding: const EdgeInsets.fromLTRB(18, 16, 16, 14),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            Color(0xFF7768F4),
+            Color(0xFF9B78F4),
+            Color(0xFFFF99BE),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x305E4ACD),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: const Stack(
+        children: <Widget>[
+          Positioned(
+            right: -4,
+            top: -10,
+            child: Icon(
+              Icons.travel_explore_rounded,
+              size: 92,
+              color: Color(0x29FFFFFF),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                '找到此刻同频的人',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              SizedBox(height: 7),
+              Text(
+                '搜索房间、用户或输入房间号直达',
+                style: TextStyle(color: Color(0xE8FFFFFF), fontSize: 11),
+              ),
+              Spacer(),
+              Row(
+                children: <Widget>[
+                  Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 15),
+                  SizedBox(width: 5),
+                  Text(
+                    '实时房间正在发生',
+                    style: TextStyle(color: Colors.white, fontSize: 10),
+                  ),
+                ],
+              ),
+            ],
           ),
         ],
       ),

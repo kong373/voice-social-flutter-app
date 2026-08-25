@@ -3,7 +3,11 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 
-class MockRoomOperationsRepository implements RoomOperationsRepository {
+class MockRoomOperationsRepository
+    implements
+        RoomOperationsRepository,
+        RoomJoinRequestRepository,
+        RoomBanRepository {
   MockRoomOperationsRepository({
     this.micCoordinationMode = MicCoordinationMode.approval,
   });
@@ -11,7 +15,11 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
   @override
   final MicCoordinationMode micCoordinationMode;
 
-  RoomTopic _topic = const RoomTopic(title: '今晚话题', content: '最近让你觉得被治愈的一件小事');
+  RoomTopic _topic = const RoomTopic(
+    title: '今晚话题',
+    content: '最近让你觉得被治愈的一件小事',
+    version: 0,
+  );
 
   final List<RoomMember> _members = <RoomMember>[
     const RoomMember(
@@ -71,6 +79,48 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
   ];
 
   final List<MicAccessRequest> _requests = <MicAccessRequest>[];
+  final List<RoomJoinRequest> _joinRequests = <RoomJoinRequest>[];
+  final Map<String, RoomJoinRequestApplicantStatus> _applicantStatuses =
+      <String, RoomJoinRequestApplicantStatus>{};
+  final List<RoomBannedUser> _bannedUsers = <RoomBannedUser>[];
+
+  void seedJoinRequestForQa(RoomJoinRequest request) {
+    _joinRequests
+      ..removeWhere((RoomJoinRequest item) => item.id == request.id)
+      ..add(request);
+    _applicantStatuses[request.id] = RoomJoinRequestApplicantStatus(
+      roomId: '9527',
+      joinRequestId: request.id,
+      status: request.status,
+      roomState: 'OPEN',
+      banned: false,
+      canCancel: request.status == RoomJoinRequestStatus.pending,
+      message: request.message,
+      createdAt: request.createdAt,
+      resolvedAt: request.resolvedAt,
+    );
+  }
+
+  void seedApplicantStatusForQa(RoomJoinRequestApplicantStatus status) {
+    _applicantStatuses[status.joinRequestId] = status;
+  }
+
+  void seedBannedUserForQa(RoomBannedUser user) {
+    _bannedUsers
+      ..removeWhere(
+        (RoomBannedUser item) => item.member.userId == user.member.userId,
+      )
+      ..add(user);
+  }
+
+  /// Seeds an authoritative queue projection for widget and lifecycle tests.
+  /// Keeping this hook on the mock preserves the same REQUEST/INVITE shape
+  /// used by the live repository without exposing its private storage.
+  void seedMicRequestForQa(MicAccessRequest request) {
+    _requests
+      ..removeWhere((MicAccessRequest item) => item.id == request.id)
+      ..add(request);
+  }
 
   @override
   Future<RoomMemberPage> fetchOnlineMembers({
@@ -127,7 +177,11 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
     required String roomId,
     required RoomTopic topic,
   }) async {
-    _topic = topic;
+    _topic = RoomTopic(
+      title: topic.title,
+      content: topic.content,
+      version: (topic.version ?? _topic.version ?? 0) + 1,
+    );
   }
 
   @override
@@ -163,6 +217,7 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
 
   @override
   Future<void> takeUserOffMic({
+    required String roomId,
     required int backendMicIndex,
     required int userId,
   }) async {
@@ -178,12 +233,14 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
 
   @override
   Future<void> setSeatLocked({
+    required String roomId,
     required int backendMicIndex,
     required bool locked,
   }) async {}
 
   @override
   Future<void> setSeatMuted({
+    required String roomId,
     required int backendMicIndex,
     required bool muted,
   }) async {
@@ -198,6 +255,199 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
   @override
   Future<List<MicAccessRequest>> fetchMicRequests(String roomId) async =>
       List<MicAccessRequest>.unmodifiable(_requests);
+
+  @override
+  Future<RoomJoinRequestPage> fetchJoinRequests({
+    required String roomId,
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    if (page < 1 || pageSize < 1) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '入房申请分页参数无效',
+      );
+    }
+    final int start = (page - 1) * pageSize;
+    final int end = (start + pageSize).clamp(0, _joinRequests.length).toInt();
+    final List<RoomJoinRequest> items = start >= _joinRequests.length
+        ? const <RoomJoinRequest>[]
+        : _joinRequests.sublist(start, end);
+    final int pages = _joinRequests.isEmpty
+        ? 0
+        : (_joinRequests.length / pageSize).ceil();
+    return RoomJoinRequestPage(
+      items: List<RoomJoinRequest>.unmodifiable(items),
+      page: page,
+      total: _joinRequests.length,
+      pages: pages,
+    );
+  }
+
+  @override
+  Future<void> resolveJoinRequest({
+    required String joinRequestId,
+    required bool approved,
+    String? requestId,
+  }) async {
+    final int index = _joinRequests.indexWhere(
+      (RoomJoinRequest request) => request.id == joinRequestId,
+    );
+    if (index < 0 || !_joinRequests[index].isPending) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '入房申请状态已变化，请刷新后重试',
+      );
+    }
+    final RoomJoinRequest current = _joinRequests[index];
+    _joinRequests[index] = RoomJoinRequest(
+      id: current.id,
+      member: current.member,
+      status: approved
+          ? RoomJoinRequestStatus.approved
+          : RoomJoinRequestStatus.rejected,
+      message: current.message,
+      createdAt: current.createdAt,
+      resolvedAt: DateTime.now(),
+    );
+    final RoomJoinRequestApplicantStatus? applicant =
+        _applicantStatuses[joinRequestId];
+    if (applicant != null) {
+      _applicantStatuses[joinRequestId] = RoomJoinRequestApplicantStatus(
+        roomId: applicant.roomId,
+        joinRequestId: applicant.joinRequestId,
+        status: approved
+            ? RoomJoinRequestStatus.approved
+            : RoomJoinRequestStatus.rejected,
+        roomState: applicant.roomState,
+        banned: applicant.banned,
+        canCancel: false,
+        message: applicant.message,
+        createdAt: applicant.createdAt,
+        resolvedAt: DateTime.now(),
+      );
+    }
+  }
+
+  @override
+  Future<RoomJoinRequestApplicantStatus> fetchJoinRequestStatus({
+    String? roomId,
+    String? joinRequestId,
+  }) async {
+    RoomJoinRequestApplicantStatus? result;
+    if (joinRequestId != null && joinRequestId.trim().isNotEmpty) {
+      result = _applicantStatuses[joinRequestId.trim()];
+    } else if (roomId != null && roomId.trim().isNotEmpty) {
+      result = _applicantStatuses.values
+          .where(
+            (RoomJoinRequestApplicantStatus item) =>
+                item.roomId == roomId.trim(),
+          )
+          .firstOrNull;
+    }
+    if (result == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        message: '入房申请不存在',
+      );
+    }
+    return result;
+  }
+
+  @override
+  Future<RoomJoinRequestCancellation> cancelJoinRequest({
+    required String roomId,
+    required String joinRequestId,
+    String? requestId,
+  }) async {
+    final RoomJoinRequestApplicantStatus? current =
+        _applicantStatuses[joinRequestId];
+    if (current == null || current.roomId != roomId) {
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        message: '入房申请不存在',
+      );
+    }
+    if (current.status == RoomJoinRequestStatus.cancelled) {
+      return RoomJoinRequestCancellation(
+        roomId: roomId,
+        joinRequestId: joinRequestId,
+        status: RoomJoinRequestStatus.cancelled,
+        cancelled: true,
+        alreadyCancelled: true,
+      );
+    }
+    if (!current.canCancel) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '入房申请当前不可撤回',
+      );
+    }
+    _applicantStatuses[joinRequestId] = RoomJoinRequestApplicantStatus(
+      roomId: current.roomId,
+      joinRequestId: current.joinRequestId,
+      status: RoomJoinRequestStatus.cancelled,
+      roomState: current.roomState,
+      banned: current.banned,
+      canCancel: false,
+      message: current.message,
+      createdAt: current.createdAt,
+      resolvedAt: DateTime.now(),
+    );
+    return RoomJoinRequestCancellation(
+      roomId: roomId,
+      joinRequestId: joinRequestId,
+      status: RoomJoinRequestStatus.cancelled,
+      cancelled: true,
+      alreadyCancelled: false,
+    );
+  }
+
+  @override
+  Future<RoomBannedUserPage> fetchBannedUsers({
+    required String roomId,
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    if (page < 1 || pageSize < 1) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '房间限制分页参数无效',
+      );
+    }
+    final int start = (page - 1) * pageSize;
+    final int end = (start + pageSize).clamp(0, _bannedUsers.length).toInt();
+    final List<RoomBannedUser> items = start >= _bannedUsers.length
+        ? const <RoomBannedUser>[]
+        : _bannedUsers.sublist(start, end);
+    final int pages = _bannedUsers.isEmpty
+        ? 0
+        : (_bannedUsers.length / pageSize).ceil();
+    return RoomBannedUserPage(
+      items: List<RoomBannedUser>.unmodifiable(items),
+      page: page,
+      total: _bannedUsers.length,
+      pages: pages,
+    );
+  }
+
+  @override
+  Future<void> unbanUser({
+    required String roomId,
+    required int userId,
+    String? requestId,
+  }) async {
+    final int before = _bannedUsers.length;
+    _bannedUsers.removeWhere(
+      (RoomBannedUser banned) => banned.member.userId == userId,
+    );
+    if (_bannedUsers.length == before) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '该用户当前不在房间限制列表中',
+      );
+    }
+  }
 
   @override
   Future<void> submitMicRequest({
@@ -226,10 +476,15 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
     _requests.add(
       MicAccessRequest(
         id: 'request-$userId-$seatNumber',
+        roomId: roomId,
         member: member,
         seatNumber: seatNumber,
         status: MicRequestStatus.pending,
         createdAt: DateTime.now(),
+        type: MicRequestType.request,
+        requestedByUserId: userId,
+        subjectUserId: userId,
+        targetAction: MicRequestTargetAction.cancel,
       ),
     );
   }
@@ -248,10 +503,15 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
     final MicAccessRequest request = _requests[index];
     _requests[index] = MicAccessRequest(
       id: request.id,
+      roomId: request.roomId,
       member: request.member,
       seatNumber: request.seatNumber,
       status: MicRequestStatus.cancelled,
       createdAt: request.createdAt,
+      type: request.type,
+      requestedByUserId: request.requestedByUserId,
+      subjectUserId: request.subjectUserId,
+      targetAction: MicRequestTargetAction.none,
     );
   }
 
@@ -272,10 +532,15 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
     final MicAccessRequest request = _requests[index];
     _requests[index] = MicAccessRequest(
       id: request.id,
+      roomId: request.roomId,
       member: request.member,
       seatNumber: request.seatNumber,
       status: accepted ? MicRequestStatus.accepted : MicRequestStatus.rejected,
       createdAt: request.createdAt,
+      type: request.type,
+      requestedByUserId: request.requestedByUserId,
+      subjectUserId: request.subjectUserId,
+      targetAction: MicRequestTargetAction.none,
     );
   }
 
@@ -295,10 +560,15 @@ class MockRoomOperationsRepository implements RoomOperationsRepository {
     _requests.add(
       MicAccessRequest(
         id: 'invite-$userId-$seatNumber',
+        roomId: roomId,
         member: member,
         seatNumber: seatNumber,
         status: MicRequestStatus.pending,
         createdAt: DateTime.now(),
+        type: MicRequestType.invite,
+        requestedByUserId: 20001,
+        subjectUserId: userId,
+        targetAction: MicRequestTargetAction.accept,
       ),
     );
   }

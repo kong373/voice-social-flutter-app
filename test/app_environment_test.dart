@@ -4,7 +4,9 @@ import 'package:voice_social_app/app/app_environment.dart';
 void main() {
   AppEnvironment liveEnvironment({
     String apiBaseUrl = 'https://dev.example.com:8443/gateway/',
+    String clientInnerVersion = '6',
     DeploymentEnvironment deployment = DeploymentEnvironment.development,
+    bool deploymentEnvironmentConfigured = true,
     bool allowInsecureHttp = false,
     String liveProbePath = '/',
   }) {
@@ -12,29 +14,39 @@ void main() {
       backendMode: BackendMode.live,
       apiBaseUrl: apiBaseUrl,
       clientType: 'Android',
-      clientInnerVersion: '6',
+      clientInnerVersion: clientInnerVersion,
       oauthClientId: 'client-id-value',
-      oauthClientSecret: 'secret-value',
       realtimeEndpoint: '',
       deploymentEnvironment: deployment,
+      deploymentEnvironmentConfigured: deploymentEnvironmentConfigured,
       allowInsecureHttp: allowInsecureHttp,
       liveProbePath: liveProbePath,
     );
   }
 
-  test('redacted summary never exposes OAuth values or gateway path', () {
+  test('redacted summary never exposes client id or gateway path', () {
     final AppEnvironment environment = liveEnvironment();
     final String summary = environment.redactedSummary.toString();
 
     expect(environment.redactedApiOrigin, 'https://dev.example.com:8443');
     expect(summary, isNot(contains('client-id-value')));
-    expect(summary, isNot(contains('secret-value')));
     expect(summary, isNot(contains('/gateway/')));
     expect(environment.redactedSummary['oauthClientIdConfigured'], isTrue);
-    expect(
-      environment.redactedSummary['oauthClientSecretConfigured'],
-      isTrue,
-    );
+    expect(environment.redactedSummary['oauthClientSecretConfigured'], isFalse);
+  });
+
+  test('mobile public client never loads confidential credentials', () {
+    final AppEnvironment environment = liveEnvironment();
+    expect(environment.oauthClientSecret, isEmpty);
+    expect(environment.canReadDevelopmentSmsOutbox, isFalse);
+    expect(environment.redactedSummary['developmentOutboxConfigured'], isFalse);
+  });
+
+  test('development tools are limited to local and development', () {
+    expect(DeploymentEnvironment.local.allowsDevelopmentTools, isTrue);
+    expect(DeploymentEnvironment.development.allowsDevelopmentTools, isTrue);
+    expect(DeploymentEnvironment.staging.allowsDevelopmentTools, isFalse);
+    expect(DeploymentEnvironment.production.allowsDevelopmentTools, isFalse);
   });
 
   test('development HTTP requires an explicit insecure override', () {
@@ -77,10 +89,26 @@ void main() {
     );
   });
 
-  test('probe path must be absolute and timeout must be bounded', () {
-    final AppEnvironment invalidPath = liveEnvironment(
-      liveProbePath: 'health',
+  test('mobile client never exposes development outbox configuration', () {
+    final AppEnvironment environment = liveEnvironment(
+      deployment: DeploymentEnvironment.staging,
     );
+    expect(environment.canReadDevelopmentSmsOutbox, isFalse);
+    expect(environment.redactedSummary['developmentOutboxConfigured'], isFalse);
+  });
+
+  test(
+    'development tools are limited to local and development environments',
+    () {
+      expect(DeploymentEnvironment.local.allowsDevelopmentTools, isTrue);
+      expect(DeploymentEnvironment.development.allowsDevelopmentTools, isTrue);
+      expect(DeploymentEnvironment.staging.allowsDevelopmentTools, isFalse);
+      expect(DeploymentEnvironment.production.allowsDevelopmentTools, isFalse);
+    },
+  );
+
+  test('probe path must be absolute and timeout must be bounded', () {
+    final AppEnvironment invalidPath = liveEnvironment(liveProbePath: 'health');
     expect(
       invalidPath.validateLiveConfiguration,
       throwsA(
@@ -98,7 +126,6 @@ void main() {
       clientType: 'Android',
       clientInnerVersion: '6',
       oauthClientId: 'client',
-      oauthClientSecret: 'secret',
       realtimeEndpoint: '',
       deploymentEnvironment: DeploymentEnvironment.development,
       apiTimeout: const Duration(seconds: 2),
@@ -113,5 +140,158 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('live version code must be a positive integer', () {
+    for (final String value in <String>['0', '-1', '6.1', 'six']) {
+      final AppEnvironment environment = liveEnvironment(
+        clientInnerVersion: value,
+      );
+      expect(
+        environment.validateLiveConfiguration,
+        throwsA(
+          isA<StateError>().having(
+            (StateError error) => error.toString(),
+            'message',
+            contains('CLIENT_INNER_VERSION'),
+          ),
+        ),
+        reason: value,
+      );
+    }
+  });
+
+  test('live mode rejects missing or misspelled APP_ENV', () {
+    final AppEnvironment environment = liveEnvironment(
+      deploymentEnvironmentConfigured: false,
+    );
+    expect(
+      environment.validateLiveConfiguration,
+      throwsA(
+        isA<StateError>().having(
+          (StateError error) => error.toString(),
+          'message',
+          contains('APP_ENV'),
+        ),
+      ),
+    );
+  });
+
+  test('local and development builds keep mock compatibility by default', () {
+    final AppEnvironment local = AppEnvironment.fromResolvedValues(
+      backendModeValue: '',
+      deploymentValue: 'local',
+      timeoutValue: '15',
+      apiBaseUrl: '',
+      clientType: 'Android',
+      clientInnerVersion: '1',
+      oauthClientId: '',
+      realtimeEndpoint: '',
+      liveProbePath: '/',
+      allowInsecureHttp: false,
+    );
+    final AppEnvironment development = AppEnvironment.fromResolvedValues(
+      backendModeValue: 'mock',
+      deploymentValue: 'development',
+      timeoutValue: '15',
+      apiBaseUrl: '',
+      clientType: 'Android',
+      clientInnerVersion: '1',
+      oauthClientId: '',
+      realtimeEndpoint: '',
+      liveProbePath: '/',
+      allowInsecureHttp: false,
+    );
+
+    expect(local.backendMode, BackendMode.mock);
+    expect(development.backendMode, BackendMode.mock);
+  });
+
+  test('staging and production builds require explicit live backend mode', () {
+    for (final ({String mode, String env}) scenario
+        in <({String mode, String env})>[
+          (mode: '', env: 'staging'),
+          (mode: 'mock', env: 'production'),
+          (mode: 'qa', env: 'stage'),
+        ]) {
+      expect(
+        () => AppEnvironment.fromResolvedValues(
+          backendModeValue: scenario.mode,
+          deploymentValue: scenario.env,
+          timeoutValue: '15',
+          apiBaseUrl: 'https://example.com',
+          clientType: 'Android',
+          clientInnerVersion: '1',
+          oauthClientId: 'client-id',
+          realtimeEndpoint: '',
+          liveProbePath: '/',
+          allowInsecureHttp: false,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (StateError error) => error.toString(),
+            'message',
+            contains('BACKEND_MODE=live'),
+          ),
+        ),
+        reason: '${scenario.env}:${scenario.mode}',
+      );
+    }
+
+    final AppEnvironment stagingLive = AppEnvironment.fromResolvedValues(
+      backendModeValue: 'live',
+      deploymentValue: 'staging',
+      timeoutValue: '15',
+      apiBaseUrl: 'https://example.com',
+      clientType: 'Android',
+      clientInnerVersion: '1',
+      oauthClientId: 'client-id',
+      realtimeEndpoint: '',
+      liveProbePath: '/',
+      allowInsecureHttp: false,
+    );
+    expect(stagingLive.backendMode, BackendMode.live);
+  });
+
+  test('every release build rejects implicit environment or mock backend', () {
+    for (final ({String mode, String env}) scenario
+        in <({String mode, String env})>[
+          (mode: '', env: ''),
+          (mode: 'mock', env: 'development'),
+          (mode: 'live', env: 'unknown'),
+        ]) {
+      expect(
+        () => AppEnvironment.fromResolvedValues(
+          backendModeValue: scenario.mode,
+          deploymentValue: scenario.env,
+          timeoutValue: '15',
+          apiBaseUrl: 'https://example.com',
+          clientType: 'Android',
+          clientInnerVersion: '1',
+          oauthClientId: 'public-client',
+          realtimeEndpoint: '',
+          liveProbePath: '/',
+          allowInsecureHttp: false,
+          releaseBuild: true,
+        ),
+        throwsA(isA<StateError>()),
+        reason: '${scenario.env}:${scenario.mode}',
+      );
+    }
+
+    final AppEnvironment releaseLive = AppEnvironment.fromResolvedValues(
+      backendModeValue: 'live',
+      deploymentValue: 'development',
+      timeoutValue: '15',
+      apiBaseUrl: 'http://10.0.2.2:18080',
+      clientType: 'Android',
+      clientInnerVersion: '1',
+      oauthClientId: 'public-client',
+      realtimeEndpoint: '',
+      liveProbePath: '/',
+      allowInsecureHttp: true,
+      releaseBuild: true,
+    );
+    expect(releaseLive.backendMode, BackendMode.live);
   });
 }

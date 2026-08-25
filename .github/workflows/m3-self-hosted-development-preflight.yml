@@ -20,13 +20,13 @@ jobs:
       TESTED_GIT_SHA: f323b9abc1e0f77a1972b34e9190563681168b97
       M3_API_BASE_URL: ${{ secrets.M3_API_BASE_URL }}
       M3_OAUTH_CLIENT_ID: ${{ secrets.M3_OAUTH_CLIENT_ID }}
-      M3_OAUTH_CLIENT_SECRET: ${{ secrets.M3_OAUTH_CLIENT_SECRET }}
       M3_CLIENT_TYPE: Android
       M3_CLIENT_INNER_VERSION: "1"
       M3_APP_ENV: development
       M3_API_TIMEOUT_SECONDS: "15"
       M3_PROBE_PATH: /health
       M3_ALLOW_INSECURE_HTTP: "true"
+      M3_ALLOW_PRIVATE_HTTP_ONLY: "true"
       CI: "true"
       FLUTTER_SUPPRESS_ANALYTICS: "true"
 
@@ -41,7 +41,7 @@ jobs:
           echo "EVIDENCE_DIR=$evidence_dir" >> "$GITHUB_ENV"
 
       - name: Checkout reviewed candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: f323b9abc1e0f77a1972b34e9190563681168b97
           persist-credentials: false
@@ -130,14 +130,19 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          health_summary="$EVIDENCE_DIR/backend-health-summary.json"
+          health_body_tmp="$(mktemp "$RUNNER_TEMP/m3-health-body.XXXXXX.json")"
+          trap 'rm -f "$health_body_tmp"' EXIT
           http_status="$(curl --silent --show-error \
-            --output "$EVIDENCE_DIR/backend-health.json" \
+            --output "$health_body_tmp" \
             --write-out '%{http_code}' \
             --max-time 10 \
             "$M3_API_BASE_URL/health")"
           test "$http_status" = "200"
+          jq '{code, data: {status: .data.status, environment: .data.environment}}' \
+            "$health_body_tmp" > "$health_summary"
           jq -e '.code == 200 and .data.status == "UP" and .data.environment == "development"' \
-            "$EVIDENCE_DIR/backend-health.json" >/dev/null
+            "$health_summary" >/dev/null
           printf 'backend_http_status=%s\n' "$http_status" > "$EVIDENCE_DIR/backend-status.txt"
 
       - name: Resolve locked Flutter dependencies
@@ -157,10 +162,16 @@ jobs:
             "$EVIDENCE_DIR/flutter-preflight-redacted.json" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload redacted evidence only
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: m3-self-hosted-preflight-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ env.EVIDENCE_DIR }}
+          path: |
+            ${{ env.EVIDENCE_DIR }}/tested-git-sha.txt
+            ${{ env.EVIDENCE_DIR }}/runner-redacted.txt
+            ${{ env.EVIDENCE_DIR }}/flutter-runtime.txt
+            ${{ env.EVIDENCE_DIR }}/backend-status.txt
+            ${{ env.EVIDENCE_DIR }}/backend-health-summary.json
+            ${{ env.EVIDENCE_DIR }}/flutter-preflight-redacted.json
           if-no-files-found: error
           retention-days: 7
 
