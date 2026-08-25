@@ -27,6 +27,23 @@ void main() {
     );
   });
 
+  test('M3.2 review binds evidence to the exact candidate commit', () {
+    expect(
+      workflow,
+      contains(
+        r"CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}",
+      ),
+    );
+    expect(
+      RegExp(
+        r'ref: \$\{\{ env\.CANDIDATE_SHA \}\}',
+      ).allMatches(workflow).length,
+      2,
+    );
+    expect(workflow, contains('all(.gitSha == \$sha)'));
+    expect(workflow, contains('testedGitSha: \$sha'));
+  });
+
   test('M3.2 AVD review avoids nonessential Google background services', () {
     expect(workflow, contains('target: default'));
     expect(workflow, isNot(contains('target: google_apis')));

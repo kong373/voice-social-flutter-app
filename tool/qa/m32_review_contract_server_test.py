@@ -68,6 +68,12 @@ class RoomLifecycleContractTest(unittest.TestCase):
         self.assertEqual(entered["realtimeMode"], "HTTP_SNAPSHOT_ONLY")
         self.assertEqual(entered["rtcStatus"], "VENDOR_BLOCKED")
         self.assertEqual(entered["imStatus"], "VENDOR_BLOCKED")
+        self.assertEqual(len(entered["seats"]), 8)
+        for seat in entered["seats"]:
+            if seat["userId"] is None:
+                self.assertEqual(seat["status"], 0)
+            else:
+                self.assertEqual(seat["status"], 3)
 
         exited = self.handler._data_for(
             EXIT_ROOM,

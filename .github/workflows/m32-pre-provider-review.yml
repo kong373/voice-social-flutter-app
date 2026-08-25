@@ -21,6 +21,7 @@ env:
   JAVA_VERSION: "17"
   PUBLIC_CLIENT_ID: voice-social-mobile-public
   CONTRACT_PORT: "18081"
+  CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   quality:
@@ -32,6 +33,16 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          ref: ${{ env.CANDIDATE_SHA }}
+
+      - name: Verify exact candidate checkout
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          test "$actual_sha" = "$CANDIDATE_SHA"
+          mkdir -p review-evidence
+          printf 'tested_git_sha=%s\n' "$actual_sha" > review-evidence/tested-git-sha.txt
 
       - name: Install Flutter
         uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
@@ -204,6 +215,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.CANDIDATE_SHA }}
+
+      - name: Verify exact candidate checkout
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
 
       - name: Install Java
         uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
@@ -347,7 +366,7 @@ jobs:
           result = {
               'runId': '${{ github.run_id }}',
               'runAttempt': '${{ github.run_attempt }}',
-              'gitSha': '${{ github.sha }}',
+              'gitSha': '${{ env.CANDIDATE_SHA }}',
               'avd': '${{ matrix.id }}',
               'apiLevel': ${{ matrix.api }},
               'logicalViewport': '${{ matrix.width }}x${{ matrix.height }}',
@@ -410,17 +429,18 @@ jobs:
           test "$AVD_RESULT" = success
           mapfile -t results < <(find evidence -type f -name result.json | sort)
           test "${#results[@]}" -eq 2
-          jq -s -e '
+          jq -s -e --arg sha "$CANDIDATE_SHA" '
             length == 2 and
             (map(.avd) | sort) == ["AVD-A", "AVD-B"] and
+            all(.gitSha == $sha) and
             all(.result == "PASS") and
             all(.providerCallsMade == false) and
             all(.secretLeakage == 0) and
             all(.hardErrors == 0)
           ' "${results[@]}"
-          jq -s '{
+          jq -s --arg sha "$CANDIDATE_SHA" '{
             conclusion: "PRE_PROVIDER_REVIEW_PASS",
-            testedGitSha: .[0].gitSha,
+            testedGitSha: $sha,
             avds: .,
             providerCallsMade: false,
             secretLeakage: 0

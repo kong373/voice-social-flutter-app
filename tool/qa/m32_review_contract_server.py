@@ -475,7 +475,7 @@ class ContractHandler(BaseHTTPRequestHandler):
             seats = [
                 {
                     "index": index,
-                    "status": 1 if index <= 3 else 0,
+                    "status": 3 if index <= 3 else 0,
                     "userId": 20000 + index if index <= 3 else None,
                     "userName": ["", "南风", "晚安", "小岛"][index]
                     if index <= 3
