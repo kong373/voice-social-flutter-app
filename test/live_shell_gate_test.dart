@@ -140,6 +140,29 @@ void main() {
     );
 
     testWidgets(
+      'live account developer diagnostics remains tappable above the bottom navigation in ${themeCase.name}',
+      (WidgetTester tester) async {
+        await pumpLiveAccountRoot(tester, outerTheme: themeCase.theme);
+
+        final Finder vendorDiagnostics = find.byKey(
+          const Key('open-vendor-diagnostics'),
+        );
+        await tester.scrollUntilVisible(
+          vendorDiagnostics,
+          240,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        expect(vendorDiagnostics.hitTestable(), findsOneWidget);
+        await tester.tap(find.text('开发环境接入诊断').hitTestable());
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+
+        expect(find.byKey(const Key('vendor-readiness-page')), findsOneWidget);
+      },
+    );
+
+    testWidgets(
       'live account root keeps safe commerce reads reachable in ${themeCase.name}',
       (WidgetTester tester) async {
         await pumpLiveAccountRoot(

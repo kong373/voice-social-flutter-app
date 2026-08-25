@@ -2876,8 +2876,19 @@ Future<void> _runComplianceAndSupportFlow(
     const Key('open-vendor-diagnostics'),
   );
   if (vendorDiagnostics.evaluate().isNotEmpty) {
-    await tester.ensureVisible(vendorDiagnostics);
-    await tester.tap(vendorDiagnostics.hitTestable());
+    await tester.scrollUntilVisible(
+      vendorDiagnostics,
+      240,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    final Finder vendorDiagnosticsAction = find.text('开发环境接入诊断').hitTestable();
+    if (vendorDiagnosticsAction.evaluate().isEmpty) {
+      throw TestFailure(
+        'Developer diagnostics remained covered after account-page scroll',
+      );
+    }
+    await tester.tap(vendorDiagnosticsAction);
     await _waitFor(
       tester,
       () =>

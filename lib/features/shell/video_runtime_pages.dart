@@ -1516,6 +1516,8 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
   @override
   Widget build(BuildContext context) {
     final bool live = widget.dependencies.environment.isLive;
+    final double bottomNavigationClearance =
+        MediaQuery.paddingOf(context).bottom + 76;
     final SocialProfile? profile = _profile;
     if (profile == null) {
       return SocialSkySurface(
@@ -1708,7 +1710,12 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
               ),
             ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 34),
+              padding: EdgeInsets.fromLTRB(
+                14,
+                0,
+                14,
+                bottomNavigationClearance,
+              ),
               sliver: SliverToBoxAdapter(
                 child: SocialCard(
                   padding: const EdgeInsets.symmetric(
