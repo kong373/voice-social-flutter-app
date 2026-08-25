@@ -2941,7 +2941,7 @@ Future<void> _runComplianceAndSupportFlow(
     evidence.invariant('support_channel_backend_blocked');
   }
   await tester.scrollUntilVisible(
-    find.text('隐私与安全'),
+    find.byKey(const Key('open-account-compliance')),
     260,
     scrollable: find.byType(Scrollable).first,
   );
@@ -2978,7 +2978,7 @@ Future<void> _openPersonalCenterForLogout(
     description: 'account page before logout',
   );
   await tester.scrollUntilVisible(
-    find.text('隐私与安全'),
+    find.byKey(const Key('open-account-compliance')),
     260,
     scrollable: find.byType(Scrollable).first,
   );

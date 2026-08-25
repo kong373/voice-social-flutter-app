@@ -163,6 +163,25 @@ void main() {
     );
 
     testWidgets(
+      'live account privacy entry opens the account compliance hub in ${themeCase.name}',
+      (WidgetTester tester) async {
+        await pumpLiveAccountRoot(tester, outerTheme: themeCase.theme);
+
+        await tester.scrollUntilVisible(
+          find.byKey(const Key('open-account-compliance')),
+          240,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('隐私与安全').hitTestable());
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+
+        expect(find.text('账号与安全'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
       'live account root keeps safe commerce reads reachable in ${themeCase.name}',
       (WidgetTester tester) async {
         await pumpLiveAccountRoot(

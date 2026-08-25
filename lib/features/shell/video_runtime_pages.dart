@@ -6,6 +6,7 @@ import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/account/compliance/presentation/account_compliance_pages.dart';
 import 'package:voice_social_app/features/commerce/presentation/commerce_pages.dart';
 import 'package:voice_social_app/features/community/presentation/community_pages.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
@@ -1536,9 +1537,20 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
     }
     final String account =
         widget.dependencies.sessionManager.session?.mobile ?? profile.account;
+    final int currentVersion =
+        int.tryParse(widget.dependencies.environment.clientInnerVersion) ?? 1;
+    final int platformType =
+        widget.dependencies.environment.clientType.toLowerCase().contains('ios')
+        ? 2
+        : 1;
     final Widget accountPage = PersonalCenterPage(
       session: widget.dependencies.sessionManager.session,
       onSignOut: widget.onSignOut,
+    );
+    final Widget accountCompliancePage = AccountComplianceHubPage(
+      account: account,
+      currentVersion: currentVersion,
+      platformType: platformType,
     );
     return SocialSkySurface(
       child: SafeArea(
@@ -1770,13 +1782,10 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
                             onTap: () => _open(context, const HelpCenterPage()),
                           ),
                           _AccountTool(
+                            key: const Key('open-account-compliance'),
                             icon: Icons.verified_user_outlined,
                             label: '隐私与安全',
-                            onTap: () => _open(
-                              context,
-                              accountPage,
-                              refreshProfile: true,
-                            ),
+                            onTap: () => _open(context, accountCompliancePage),
                           ),
                           _AccountTool(
                             icon: Icons.more_horiz_rounded,
@@ -2136,6 +2145,7 @@ class _AccountTool extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    super.key,
   });
 
   final IconData icon;
