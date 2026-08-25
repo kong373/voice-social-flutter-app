@@ -765,6 +765,38 @@ wait_boot() {
   return 1
 }
 
+wait_android_host_endpoint() {
+  local serial="$1"
+  local port="$2"
+  [[ "$serial" =~ ^[A-Za-z0-9_.:-]{1,80}$ ]] || return 1
+  [[ "$port" =~ ^[0-9]{1,5}$ && "$port" -ge 1 && "$port" -le 65535 ]] || return 1
+  local attempt
+  for attempt in {1..90}; do
+    if adb -s "$serial" shell toybox nc -w 2 10.0.2.2 "$port" \
+      </dev/null >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+stop_latest_started_emulator() {
+  [[ -f "$STARTED_SERIALS_FILE" ]] || return 0
+  local serial
+  serial="$(awk 'NF { value = $0 } END { print value }' "$STARTED_SERIALS_FILE")"
+  [[ "$serial" =~ ^emulator-[0-9]+$ ]] || return 1
+  adb -s "$serial" emu kill </dev/null >/dev/null 2>&1 || true
+  local attempt
+  for attempt in {1..30}; do
+    if ! adb devices | awk 'NR > 1 && $2 == "device" {print $1}' | grep -Fxq -- "$serial"; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 start_emulator() {
   local api="$1"
   local name="$2"
@@ -1360,6 +1392,17 @@ run_one() {
   [[ -n "$viewport" ]] || { printf 'result=FAIL\nreason=viewport_override_rejected\n' >"$dir/result.txt"; OVERALL_RESULT='FAIL'; return 1; }
   write_environment "$dir" "$avd" "$api" "$profile" "$width" "$height" "$dpr" "$serial" "$viewport"
 
+  if ! wait_android_host_endpoint "$serial" "$RELAY_PORT"; then
+    printf 'result=FAIL\nreason=runtime_relay_network_unreachable\n' >"$dir/result.txt"
+    OVERALL_RESULT='FAIL'
+    return 1
+  fi
+  if ! wait_android_host_endpoint "$serial" 18080; then
+    printf 'result=FAIL\nreason=backend_network_unreachable\n' >"$dir/result.txt"
+    OVERALL_RESULT='FAIL'
+    return 1
+  fi
+
   if [[ "$avd" == 'AVD-B' ]]; then
     wait_for_sms_cooldown
   fi
@@ -1467,7 +1510,9 @@ start_relay
 # AVD-A then AVD-B is intentional and produces independent API36 and API35
 # evidence even when only one emulator slot is available.
 run_one AVD-A "$A_API" "$A_PROFILE" "$A_PHYSICAL" "$A_DENSITY" "$A_WIDTH" "$A_HEIGHT" "$A_DPR" "$AVD_A_SERIAL" "$AVD_A_NAME" || true
+stop_latest_started_emulator || OVERALL_RESULT='FAIL'
 run_one AVD-B "$B_API" "$B_PROFILE" "$B_PHYSICAL" "$B_DENSITY" "$B_WIDTH" "$B_HEIGHT" "$B_DPR" "$AVD_B_SERIAL" "$AVD_B_NAME" || true
+stop_latest_started_emulator || OVERALL_RESULT='FAIL'
 if ! secret_scan "$ARTIFACT_ROOT"; then
   OVERALL_RESULT='FAIL'
 fi

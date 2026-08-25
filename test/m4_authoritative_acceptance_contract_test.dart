@@ -432,6 +432,54 @@ device_for_api 35
     expect((result.stdout as String).trim(), 'emulator-5556');
   });
 
+  test('cold-start AVD waits for Android host ports before Flutter', () {
+    final Directory fixture = Directory.systemTemp.createTempSync(
+      'm4-android-network-gate-',
+    );
+    addTearDown(() => fixture.deleteSync(recursive: true));
+    final File counter = File('${fixture.path}/counter')
+      ..writeAsStringSync('0');
+    final File adb = File('${fixture.path}/adb')
+      ..writeAsStringSync('''#!/bin/sh
+cat >/dev/null
+count="\$(cat "\$M4_TEST_COUNTER")"
+count=\$((count + 1))
+printf '%s' "\$count" >"\$M4_TEST_COUNTER"
+[ "\$count" -ge 2 ]
+''');
+    expect(Process.runSync('chmod', <String>['700', adb.path]).exitCode, 0);
+    final String script =
+        '''
+set -Eeuo pipefail
+${runnerBlock('wait_android_host_endpoint() {', '\nstart_emulator() {')}
+wait_android_host_endpoint emulator-5556 18080
+''';
+    final ProcessResult result = Process.runSync(
+      '/bin/bash',
+      <String>['-c', script],
+      environment: <String, String>{
+        ...Platform.environment,
+        'PATH':
+            '${fixture.path}:${Platform.environment['PATH'] ?? '/usr/bin:/bin'}',
+        'M4_TEST_COUNTER': counter.path,
+      },
+    );
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(counter.readAsStringSync(), '2');
+    expect(
+      runnerSource,
+      contains('wait_android_host_endpoint "\$serial" "\$RELAY_PORT"'),
+    );
+    expect(
+      runnerSource,
+      contains('wait_android_host_endpoint "\$serial" 18080'),
+    );
+    expect(
+      runnerSource,
+      contains('stop_latest_started_emulator || OVERALL_RESULT='),
+    );
+  });
+
   test('runner binds a clean Flutter checkout before generated outputs', () {
     expect(runnerSource, contains('assert_flutter_checkout_clean()'));
     expect(runnerSource, contains('--untracked-files=all'));
