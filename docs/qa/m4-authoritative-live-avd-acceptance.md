@@ -219,8 +219,8 @@ export ANDROID_SDK_ROOT="/Users/kongzheng/Library/Android/sdk"
 export PATH="$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
 export QA_AVD_A_NAME="voice_social_m4_avd_a_api36"
 export QA_AVD_B_NAME="voice_social_m4_avd_b_api35"
-export QA_ARTIFACT_ROOT="$PWD/artifacts/qa/m4-authoritative-live-avd"
 export QA_RUN_ID="m4-$(date +%Y%m%d%H%M%S)"
+export QA_ARTIFACT_ROOT="$PWD/artifacts/qa/m4-authoritative-live-avd/$QA_RUN_ID"
 export QA_FLUTTER_SHA="$(git rev-parse HEAD)"
 export QA_BACKEND_REPO="/secure/path/to/authoritative-backend"
 export QA_BACKEND_SHA="$(git -C "$QA_BACKEND_REPO" rev-parse HEAD)"
@@ -285,6 +285,25 @@ replace the checkout and file digest. The API base URL is not an input: it is
 the fixed `10.0.2.2:18080` value in both the runner and test. The runner
 requires Flutter, Android `adb`/emulator tooling, Python 3, `curl`, and the
 standard file/scan utilities; its timeout is implemented through Python.
+
+The Flutter checkout must be clean before any artifact or build output is
+created. `QA_ARTIFACT_ROOT` must be a new absolute path whose existing parent
+chain contains no symlink; scan reports are written to exclusive temporary
+files and atomically published. Because this repository intentionally generates and ignores
+`android/`, the runner also creates a fresh Android host with the selected
+Flutter SDK and compares every APK-affecting Gradle, manifest, wrapper, Kotlin,
+and resource input. Only tool caches, IDE metadata, machine-local properties,
+and the generated plugin registrant are excluded. Local properties are then
+replaced from the fresh template and the registrant is removed so Flutter must
+regenerate it. Any missing, changed, additional, non-regular, or symlinked host
+input fails closed. The resulting `android_host_source_sha256` is recorded in
+both AVD results and must match across the aggregate verdict. The selected SDK
+must report Flutter `3.44.7`, Dart `3.12.2`, and framework revision
+`84fc5cbb223bc12f83d65b647ff8a56caf779ffd`; the runner uses that one resolved
+binary for template generation, cleanup, dependency resolution, and both AVD
+drives. It runs `flutter clean` and `flutter pub get --enforce-lockfile` before
+the first drive, so ignored package/plugin metadata cannot be reused as an
+unbound build input.
 
 The AVDs use one dedicated QA phone, so the runner treats the development SMS
 challenge limit as an explicit 60-second cooldown. It records the AVD-A
@@ -423,7 +442,9 @@ a substitute for the operator DB response.
 
 Each `result.txt` must report `result=PASS`, `acceptance_status=PASS`, matching
 `run_id`, fresh `fixture_id`/`fixture_status`, a per-AVD `db_start_nonce`, tested
-Flutter SHA, backend SHA, `provider_calls_made=false`,
+Flutter SHA, backend SHA, exact Flutter/Dart version and framework revision,
+matching `android_host_source_sha256`,
+`provider_calls_made=false`,
 `db_evidence=COLLECTED`, passing secret/APK scans, zero hard findings and
 crash/ANR findings, at least four non-empty screenshots, at least ten unique
 route markers, and at least five authority-invariant markers. Its log must
@@ -437,12 +458,15 @@ to emit `ANDROID_EMULATOR_PASS`. It requires both AVD result files to pass,
 the same `QA_RUN_ID`, matching fresh fixture attestation, exact matching
 Flutter and backend SHAs, valid route and authority evidence, current-run
 run/AVD/nonce-bound DB evidence for both AVDs, zero provider calls, clean
-hard-error/crash/secret scans, and the exact AVD matrix evidence.
+hard-error/crash/secret scans, matching Android-host source attestation, and
+the exact AVD matrix evidence.
 It writes `aggregate-verdict.txt` and `aggregate-verdict.json`; any missing,
 stale, partial, provider-tainted, secret-tainted, or non-current-run evidence
 emits `ANDROID_EMULATOR_FAIL` and exits nonzero. The runner's final
 `summary.txt` and hash-only `evidence-manifest.sha256` are produced after the
-complete artifact-root secret scan.
+complete artifact-root secret scan. A final scan, summary, or manifest write
+failure changes the runner exit status to failure; cleanup cannot preserve a
+successful exit after incomplete evidence publication.
 
 Until a real protected run produces both independent AVD artifacts and the
 aggregate verdict accepts them, the authoritative conclusion remains

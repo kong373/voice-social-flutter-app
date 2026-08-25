@@ -54,6 +54,9 @@ readonly SMS_COOLDOWN_BUFFER_SECONDS='5'
 readonly APP_PACKAGE='com.kong373.voice_social_app'
 readonly RUNTIME_TOKEN_FILE='cache/m4-runtime-relay-token'
 readonly RUNTIME_TOKEN_TMP_FILE="$RUNTIME_TOKEN_FILE.tmp"
+readonly EXPECTED_FLUTTER_VERSION='3.44.7'
+readonly EXPECTED_DART_VERSION='3.12.2'
+readonly EXPECTED_FLUTTER_REVISION='84fc5cbb223bc12f83d65b647ff8a56caf779ffd'
 
 readonly SUMMARY_FILE="$ARTIFACT_ROOT/summary.txt"
 readonly MANIFEST_FILE="$ARTIFACT_ROOT/evidence-manifest.sha256"
@@ -62,7 +65,6 @@ readonly STARTED_SERIALS_FILE="$ARTIFACT_ROOT/.started-emulator-serials"
   -n "$BACKEND_REPO" && -n "$LIVE_PHONE" && -n "$OAUTH_CLIENT_ID" &&
   -n "$FIXTURE_ID" && -n "$FIXTURE_STATUS" && -n "$DB_URL" &&
   -n "$DB_TOKEN" && -n "$RUN_ID" ]] || exit 64
-mkdir -p "$ARTIFACT_ROOT"
 RELAY_PID=''
 RELAY_PORT=''
 DB_START_NONCE=''
@@ -70,6 +72,11 @@ SMS_COOLDOWN_STARTED_AT=''
 RELAY_TOKEN_A=''
 RELAY_TOKEN_B=''
 RUNTIME_TOKEN_FEEDER_PID=''
+FLUTTER_BIN=''
+FLUTTER_FRAMEWORK_VERSION=''
+FLUTTER_DART_VERSION=''
+FLUTTER_FRAMEWORK_REVISION=''
+ANDROID_HOST_SOURCE_SHA256=''
 OVERALL_RESULT='PASS'
 
 fail() {
@@ -78,8 +85,203 @@ fail() {
   exit 64
 }
 
+assert_flutter_checkout_clean() {
+  local status
+  # This is intentionally the pre-build binding point. Git's default status
+  # semantics exclude ignored Flutter outputs (build/, .dart_tool/, etc.),
+  # while --untracked-files=all still rejects every non-ignored untracked
+  # input. Generated outputs therefore cannot turn a clean checkout dirty
+  # after this check, but source or tooling outside the ignore rules cannot be
+  # silently included in the evidence run.
+  if ! status="$(git -C "$PROJECT_ROOT" status \
+    --porcelain=v1 --untracked-files=all --ignore-submodules=none)"; then
+    fail 'Flutter checkout status could not be read'
+  fi
+  [[ -z "$status" ]] || fail 'Flutter checkout is dirty or has non-ignored untracked files'
+}
+
+create_safe_artifact_root() {
+  python3 - "$ARTIFACT_ROOT" <<'PY'
+import os
+from pathlib import Path
+import stat
+import sys
+
+raw = sys.argv[1]
+if not os.path.isabs(raw) or os.path.normpath(raw) != raw or os.path.lexists(raw):
+    raise SystemExit(1)
+path = Path(raw)
+ancestor = path.parent
+missing = []
+while not os.path.lexists(ancestor):
+    missing.append(ancestor)
+    if ancestor == ancestor.parent:
+        raise SystemExit(1)
+    ancestor = ancestor.parent
+current = Path(ancestor.anchor)
+for part in ancestor.parts[1:]:
+    current /= part
+    mode = os.lstat(current).st_mode
+    if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+        raise SystemExit(1)
+for directory in reversed(missing):
+    os.mkdir(directory, 0o700)
+os.mkdir(path, 0o700)
+current = Path(path.anchor)
+for part in path.parts[1:]:
+    current /= part
+    mode = os.lstat(current).st_mode
+    if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+        raise SystemExit(1)
+PY
+}
+
+attest_flutter_sdk() {
+  local fact
+  local -a sdk_facts=()
+  FLUTTER_BIN="$(command -v flutter)"
+  [[ -n "$FLUTTER_BIN" ]] || fail 'Flutter executable could not be resolved'
+  while IFS= read -r fact; do
+    sdk_facts+=("$fact")
+  done < <("$FLUTTER_BIN" --version --machine 2>/dev/null | python3 -c '
+import json
+import sys
+try:
+    payload = json.load(sys.stdin)
+    print(payload["frameworkVersion"])
+    print(payload["dartSdkVersion"])
+    print(payload["frameworkRevision"])
+except (KeyError, TypeError, ValueError):
+    raise SystemExit(1)
+')
+  [[ "${#sdk_facts[@]}" -eq 3 ]] || fail 'Flutter SDK metadata is invalid'
+  FLUTTER_FRAMEWORK_VERSION="${sdk_facts[0]}"
+  FLUTTER_DART_VERSION="${sdk_facts[1]}"
+  FLUTTER_FRAMEWORK_REVISION="${sdk_facts[2]}"
+  [[ "$FLUTTER_FRAMEWORK_VERSION" == "$EXPECTED_FLUTTER_VERSION" ]] || fail 'Flutter version mismatch'
+  [[ "$FLUTTER_DART_VERSION" == "$EXPECTED_DART_VERSION" ]] || fail 'Dart version mismatch'
+  [[ "$FLUTTER_FRAMEWORK_REVISION" == "$EXPECTED_FLUTTER_REVISION" ]] || fail 'Flutter framework revision mismatch'
+}
+
+attest_android_host_source() {
+  local digest
+  # android/ is intentionally generated and ignored by Git in this repository,
+  # but its Gradle, manifest, wrapper, Kotlin, and resource files still affect
+  # the APK. Re-create the exact Flutter template with the selected SDK, compare
+  # every build input, then replace machine-local properties and remove the
+  # generated plugin registrant so the ensuing Flutter build regenerates it.
+  # Caches and IDE metadata are excluded; extra source/config files fail closed.
+  if ! digest="$(python3 - "$PROJECT_ROOT" "$FLUTTER_BIN" <<'PY'
+import hashlib
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+project_root = Path(sys.argv[1]).resolve()
+flutter = str(Path(sys.argv[2]).resolve())
+current = project_root / "android"
+if not current.is_dir() or current.is_symlink():
+    raise SystemExit(1)
+
+excluded_directories = {".gradle", ".kotlin", "build", ".cxx"}
+excluded_files = {
+    Path("local.properties"),
+    Path("app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java"),
+}
+generated_registrant = Path(
+    "app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java"
+)
+
+
+def source_files(root: Path):
+    result = {}
+    for directory, directory_names, file_names in os.walk(root, followlinks=False):
+        base = Path(directory)
+        for name in list(directory_names):
+            candidate = base / name
+            if candidate.is_symlink():
+                raise RuntimeError("symlinked Android host directory")
+            if name in excluded_directories:
+                directory_names.remove(name)
+        for name in file_names:
+            candidate = base / name
+            relative = candidate.relative_to(root)
+            if candidate.is_symlink():
+                raise RuntimeError("symlinked Android host file")
+            if relative in excluded_files or name.endswith(".iml"):
+                continue
+            if not candidate.is_file():
+                raise RuntimeError("non-regular Android host input")
+            result[relative.as_posix()] = hashlib.sha256(candidate.read_bytes()).digest()
+    return result
+
+
+try:
+    with tempfile.TemporaryDirectory(prefix="m4-android-template-") as temporary:
+        generated_root = Path(temporary) / "generated"
+        subprocess.run(
+            [
+                flutter,
+                "create",
+                "--platforms=android",
+                "--android-language=kotlin",
+                "--org=com.kong373",
+                "--project-name=voice_social_app",
+                "--no-pub",
+                str(generated_root),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        expected = generated_root / "android"
+        expected_sources = source_files(expected)
+        if source_files(current) != expected_sources:
+            raise RuntimeError("Android host does not match the selected Flutter template")
+
+        expected_local_properties = expected / "local.properties"
+        if not expected_local_properties.is_file():
+            raise RuntimeError("generated Android local properties missing")
+        local_properties = current / "local.properties"
+        if local_properties.is_symlink():
+            raise RuntimeError("symlinked Android local properties")
+        with tempfile.NamedTemporaryFile(dir=current, prefix=".m4-local-", delete=False) as output:
+            temporary_properties = Path(output.name)
+            output.write(expected_local_properties.read_bytes())
+        os.chmod(temporary_properties, 0o600)
+        os.replace(temporary_properties, local_properties)
+
+        registrant = current / generated_registrant
+        if registrant.exists():
+            if registrant.is_symlink() or not registrant.is_file():
+                raise RuntimeError("invalid generated plugin registrant")
+            registrant.unlink()
+
+        digest_builder = hashlib.sha256()
+        for relative in sorted(expected_sources):
+            digest_builder.update(relative.encode("utf-8"))
+            digest_builder.update(b"\0")
+            digest_builder.update(expected_sources[relative])
+        digest_builder.update(b"local.properties\0")
+        digest_builder.update(hashlib.sha256(expected_local_properties.read_bytes()).digest())
+        print(digest_builder.hexdigest())
+except (OSError, RuntimeError, subprocess.SubprocessError):
+    raise SystemExit(1)
+PY
+  )"; then
+    fail 'ignored Android host source attestation failed'
+  fi
+  [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || fail 'Android host source digest is invalid'
+  ANDROID_HOST_SOURCE_SHA256="$digest"
+}
+
 cleanup() {
+  local incoming_status=$?
+  local cleanup_failed=0
   set +e
+  [[ "$incoming_status" -eq 0 ]] || OVERALL_RESULT='FAIL'
   [[ -z "$RELAY_PID" ]] || { kill "$RELAY_PID" 2>/dev/null || true; wait "$RELAY_PID" 2>/dev/null || true; }
   [[ -z "$RUNTIME_TOKEN_FEEDER_PID" ]] || {
     kill "$RUNTIME_TOKEN_FEEDER_PID" 2>/dev/null || true
@@ -100,6 +302,10 @@ cleanup() {
     printf 'conclusion=%s\n' "$OVERALL_RESULT"
     printf 'flutter_sha=%s\n' "$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || printf unknown)"
     printf 'backend_sha=%s\n' "$(git -C "$BACKEND_REPO" rev-parse HEAD 2>/dev/null || printf unknown)"
+    printf 'android_host_source_sha256=%s\n' "${ANDROID_HOST_SOURCE_SHA256:-unknown}"
+    printf 'flutter_version=%s\ndart_version=%s\nflutter_revision=%s\n' \
+      "${FLUTTER_FRAMEWORK_VERSION:-unknown}" "${FLUTTER_DART_VERSION:-unknown}" \
+      "${FLUTTER_FRAMEWORK_REVISION:-unknown}"
     printf 'backend_mode=live\nbackend_base_url=%s\n' "$BACKEND_BASE_URL"
     printf 'provider_calls_made=false\n'
     printf 'formal_sms_vendor_started=false\nformal_rtc_vendor_started=false\n'
@@ -117,30 +323,95 @@ cleanup() {
         sed "s/^/$avd./" "$ARTIFACT_ROOT/$avd/db-evidence-status.txt"
       fi
     done
-  } >"$SUMMARY_FILE"
+  } >"$SUMMARY_FILE" || cleanup_failed=1
   # Re-scan after writing the summary so the final metadata file is covered as
   # well. The manifest is generated from hashes only after this check.
-  if declare -F secret_scan >/dev/null 2>&1 && ! secret_scan "$ARTIFACT_ROOT"; then
+  if ! declare -F secret_scan >/dev/null 2>&1 || ! secret_scan "$ARTIFACT_ROOT"; then
     OVERALL_RESULT='FAIL'
-    local summary_tmp="$ARTIFACT_ROOT/.summary.tmp"
-    awk -v result="$OVERALL_RESULT" '
+    cleanup_failed=1
+  fi
+  if [[ "$OVERALL_RESULT" != PASS ]]; then
+    local summary_tmp
+    summary_tmp="$(mktemp "$ARTIFACT_ROOT/.m4-summary.XXXXXX")" || cleanup_failed=1
+    if [[ -n "${summary_tmp:-}" && -f "$SUMMARY_FILE" ]]; then
+      awk -v result="$OVERALL_RESULT" '
       /^conclusion=/ { print "conclusion=" result; next }
       { print }
-    ' "$SUMMARY_FILE" >"$summary_tmp" && mv "$summary_tmp" "$SUMMARY_FILE"
+    ' "$SUMMARY_FILE" >"$summary_tmp" && \
+        python3 - "$summary_tmp" "$SUMMARY_FILE" <<'PY' || cleanup_failed=1
+import os
+import sys
+os.replace(sys.argv[1], sys.argv[2])
+PY
+    fi
   fi
-  if command -v shasum >/dev/null 2>&1; then
-    find "$ARTIFACT_ROOT" -type f ! -path "$MANIFEST_FILE" -print0 |
-      sort -z | xargs -0 -r shasum -a 256 >"$MANIFEST_FILE" 2>/dev/null || true
-  elif command -v sha256sum >/dev/null 2>&1; then
-    find "$ARTIFACT_ROOT" -type f ! -path "$MANIFEST_FILE" -print0 |
-      sort -z | xargs -0 -r sha256sum >"$MANIFEST_FILE" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT
+  python3 - "$ARTIFACT_ROOT" "$MANIFEST_FILE" <<'PY' || cleanup_failed=1
+import hashlib
+import os
+from pathlib import Path
+import stat
+import sys
+import tempfile
 
-for command_name in adb flutter git python3 curl find sort awk grep unzip date sleep; do
+root = Path(sys.argv[1]).resolve()
+final = Path(sys.argv[2])
+try:
+    rows = []
+    for directory, directory_names, file_names in os.walk(root, followlinks=False):
+        base = Path(directory)
+        for name in directory_names:
+            if (base / name).is_symlink():
+                raise OSError("symlinked evidence directory")
+        for name in file_names:
+            path = base / name
+            if path == final or path.name.startswith(".m4-manifest."):
+                continue
+            item = os.lstat(path)
+            if not stat.S_ISREG(item.st_mode):
+                raise OSError("non-regular evidence file")
+            relative = path.relative_to(root).as_posix()
+            rows.append((relative, hashlib.sha256(path.read_bytes()).hexdigest()))
+    with tempfile.NamedTemporaryFile(
+        dir=root, prefix=".m4-manifest.", delete=False, mode="w", encoding="utf-8"
+    ) as output:
+        temporary = Path(output.name)
+        for relative, digest in sorted(rows):
+            output.write(f"{digest}  {relative}\n")
+    os.replace(temporary, final)
+    result = os.lstat(final)
+    if not stat.S_ISREG(result.st_mode) or result.st_nlink != 1:
+        raise OSError("manifest publication was not exclusive")
+except OSError:
+    raise SystemExit(1)
+PY
+  if [[ "$cleanup_failed" -ne 0 ]]; then
+    OVERALL_RESULT='FAIL'
+    incoming_status=1
+    if [[ -f "$SUMMARY_FILE" ]]; then
+      local failed_summary
+      failed_summary="$(mktemp "$ARTIFACT_ROOT/.m4-summary-failed.XXXXXX")" || true
+      if [[ -n "${failed_summary:-}" ]]; then
+        awk '
+          /^conclusion=/ { print "conclusion=FAIL"; next }
+          { print }
+        ' "$SUMMARY_FILE" >"$failed_summary" && \
+          python3 - "$failed_summary" "$SUMMARY_FILE" <<'PY' || true
+import os
+import sys
+os.replace(sys.argv[1], sys.argv[2])
+PY
+      fi
+    fi
+  fi
+  trap - EXIT
+  exit "$incoming_status"
+}
+for command_name in adb flutter git python3 curl find sort awk grep unzip date sleep rm mktemp; do
   command -v "$command_name" >/dev/null 2>&1 || fail "missing command: $command_name"
 done
+attest_flutter_sdk
+readonly FLUTTER_BIN
+readonly FLUTTER_FRAMEWORK_VERSION FLUTTER_DART_VERSION FLUTTER_FRAMEWORK_REVISION
 [[ -f "$PROJECT_ROOT/pubspec.yaml" ]] || fail 'not a Flutter checkout'
 [[ -f "$DB_EVIDENCE_HELPER" ]] || fail 'bundled DB evidence helper is missing'
 [[ -d "$BACKEND_REPO/.git" || -f "$BACKEND_REPO/.git" ]] || fail 'QA_BACKEND_REPO is not Git'
@@ -160,6 +431,17 @@ readonly FLUTTER_SHA_ACTUAL="$(git -C "$PROJECT_ROOT" rev-parse --verify HEAD)"
 readonly BACKEND_SHA_ACTUAL="$(git -C "$BACKEND_REPO" rev-parse --verify HEAD)"
 [[ "$FLUTTER_SHA_EXPECTED" == "$FLUTTER_SHA_ACTUAL" ]] || fail 'QA_FLUTTER_SHA mismatch'
 [[ "$BACKEND_SHA_EXPECTED" == "$BACKEND_SHA_ACTUAL" ]] || fail 'QA_BACKEND_SHA mismatch'
+assert_flutter_checkout_clean
+[[ "$ARTIFACT_ROOT" != *':8765'* && "$ARTIFACT_ROOT" != *'contract-server'* && "$ARTIFACT_ROOT" != *'.env.local'* ]] || fail 'artifact path names a forbidden source'
+[[ "$ARTIFACT_ROOT" != *"$LIVE_PHONE"* && "$ARTIFACT_ROOT" != *"$OAUTH_CLIENT_ID"* ]] || fail 'artifact path contains a runtime secret'
+[[ -z "$DB_TOKEN" || "$ARTIFACT_ROOT" != *"$DB_TOKEN"* ]] || fail 'artifact path contains the DB token'
+
+# The clean-checkout binding above must happen before this directory is
+# created, because QA_ARTIFACT_ROOT may itself be inside the Flutter checkout.
+# The normal Flutter build outputs are ignored by Git and are intentionally
+# allowed after the binding point.
+create_safe_artifact_root || fail 'artifact root must be a new absolute directory with no symlinked parent'
+trap cleanup EXIT
 
 [[ -z "$(printenv DEVELOPMENT_OUTBOX_KEY || true)" ]] || fail 'DEVELOPMENT_OUTBOX_KEY is forbidden'
 [[ -z "$(printenv QA_DEVELOPMENT_OUTBOX_KEY || true)" ]] || fail 'QA_DEVELOPMENT_OUTBOX_KEY is forbidden'
@@ -167,10 +449,10 @@ readonly BACKEND_SHA_ACTUAL="$(git -C "$BACKEND_REPO" rev-parse --verify HEAD)"
 [[ -z "$(printenv CONTRACT_SERVER_PORT || true)" &&
   -z "$(printenv QA_CONTRACT_SERVER_PORT || true)" ]] || fail 'contract-server variables are forbidden'
 [[ "$BACKEND_BASE_URL" != *':8765'* && "$BACKEND_BASE_URL" != *'contract-server'* ]] || fail 'backend target is not authoritative'
-[[ "$ARTIFACT_ROOT" != *':8765'* && "$ARTIFACT_ROOT" != *'contract-server'* && "$ARTIFACT_ROOT" != *'.env.local'* ]] || fail 'artifact path names a forbidden source'
-[[ "$ARTIFACT_ROOT" != *"$LIVE_PHONE"* && "$ARTIFACT_ROOT" != *"$OAUTH_CLIENT_ID"* ]] || fail 'artifact path contains a runtime secret'
-[[ -z "$DB_TOKEN" || "$ARTIFACT_ROOT" != *"$DB_TOKEN"* ]] || fail 'artifact path contains the DB token'
 python3 "$DB_EVIDENCE_HELPER" --self-test >/dev/null 2>&1 || fail 'bundled DB evidence helper self-test failed'
+"$FLUTTER_BIN" clean >/dev/null 2>&1 || fail 'Flutter clean failed'
+attest_android_host_source
+"$FLUTTER_BIN" pub get --enforce-lockfile >/dev/null 2>&1 || fail 'locked Flutter dependency regeneration failed'
 
 run_with_timeout() {
   local timeout_seconds="$1"
@@ -562,6 +844,9 @@ write_environment() {
     printf 'expected_viewport=%sx%s\nexpected_dpr=%s\n' "$width" "$height" "$dpr"
     printf 'backend_mode=live\nbackend_base_url=%s\n' "$BACKEND_BASE_URL"
     printf 'flutter_sha=%s\nbackend_sha=%s\n' "$FLUTTER_SHA_ACTUAL" "$BACKEND_SHA_ACTUAL"
+    printf 'android_host_source_sha256=%s\n' "$ANDROID_HOST_SOURCE_SHA256"
+    printf 'flutter_version=%s\ndart_version=%s\nflutter_revision=%s\n' \
+      "$FLUTTER_FRAMEWORK_VERSION" "$FLUTTER_DART_VERSION" "$FLUTTER_FRAMEWORK_REVISION"
     printf 'oauth_client_id_loaded_by_flutter=false\n'
     printf 'development_outbox_key_loaded_by_flutter=false\nprovider_calls_made=false\n'
     printf '%s\n' "$viewport"
@@ -747,48 +1032,170 @@ PY
 contains_literal_file() {
   local value="$1"
   local path="$2"
-  [[ -n "$value" ]] || return 1
+  local status
+  # 0 means found, 1 means absent, and 2 means the scanner could not read or
+  # process the file. Callers must keep the third state fail-closed.
+  [[ -n "$value" && -f "$path" && -r "$path" ]] || return 2
   # Keep protected values in shell memory/stdin; never put them in grep argv.
   grep -aFq -f <(printf '%s' "$value") "$path" 2>/dev/null
+  status=$?
+  case "$status" in
+    0|1) return "$status" ;;
+    *) return 2 ;;
+  esac
 }
 
 contains_literal_stream() {
   local value="$1"
-  [[ -n "$value" ]] || return 1
+  local status
+  [[ -n "$value" ]] || return 2
   # The APK bytes stay on stdin while the private pattern travels through a
   # process-substitution fd, so neither protected value becomes subprocess argv.
-  grep -aFq -f <(printf '%s' "$value") 2>/dev/null
+  # Do not use grep -q here: it can close the pipe early and make unzip report
+  # SIGPIPE instead of its real archive status.
+  grep -aF -f <(printf '%s' "$value") >/dev/null 2>/dev/null
+  status=$?
+  case "$status" in
+    0|1) return "$status" ;;
+    *) return 2 ;;
+  esac
+}
+
+path_contains_protected_value() {
+  local path="$1"
+  local protected_value
+  for protected_value in "$LIVE_PHONE" "$OAUTH_CLIENT_ID" "$DB_TOKEN" \
+    "$RELAY_TOKEN_A" "$RELAY_TOKEN_B"; do
+    [[ -z "$protected_value" || "$path" != *"$protected_value"* ]] || return 0
+  done
+  [[ "$path" =~ 1[3-9][0-9]{9} ]] && return 0
+  return 1
+}
+
+publish_scan_output() {
+  local temporary="$1"
+  local final="$2"
+  python3 - "$temporary" "$final" <<'PY'
+import os
+import stat
+import sys
+
+temporary, final = sys.argv[1:]
+try:
+    mode = os.lstat(temporary).st_mode
+    if not stat.S_ISREG(mode):
+        raise OSError("scan output is not regular")
+    if os.path.lexists(final) and stat.S_ISDIR(os.lstat(final).st_mode):
+        raise OSError("scan output destination is a directory")
+    os.replace(temporary, final)
+    result = os.lstat(final)
+    if not stat.S_ISREG(result.st_mode) or result.st_nlink != 1:
+        raise OSError("scan output publication was not exclusive")
+except OSError:
+    raise SystemExit(1)
+PY
+}
+
+scan_apk_literal() {
+  local value="$1"
+  local apk="$2"
+  local statuses unzip_status='' grep_status=''
+
+  # Return 0 for absent, 1 for found, and 2 for an unzip/grep failure. The
+  # pipeline runs with errexit disabled only inside this subshell so its two
+  # component statuses can be captured without weakening the runner itself.
+  statuses="$(
+    set +e
+    unzip -p "$apk" 2>/dev/null | contains_literal_stream "$value"
+    local -a pipeline_status=("${PIPESTATUS[@]}")
+    printf '%s %s\n' "${pipeline_status[0]}" "${pipeline_status[1]}"
+  )" || return 2
+  IFS=' ' read -r unzip_status grep_status <<<"$statuses" || return 2
+  [[ "$unzip_status" =~ ^[0-9]+$ && "$grep_status" =~ ^[0-9]+$ ]] || return 2
+  (( unzip_status == 0 )) || return 2
+  case "$grep_status" in
+    0) return 1 ;;
+    1) return 0 ;;
+    *) return 2 ;;
+  esac
 }
 
 secret_scan() {
   local dir="$1"
-  local output="$dir/secret-scan.txt"
-  local bad=0 path base
-  : >"$output"
+  local final_output="$dir/secret-scan.txt"
+  local output list nodes
+  local bad=0 path base protected_value scan_status
+  output="$(mktemp "$dir/.m4-secret-scan-output.XXXXXX")" || return 1
+  list="$(mktemp "$dir/.m4-secret-scan-files.XXXXXX")" || {
+    printf 'scanner_error=secret_scan_list_unwritable\n' >>"$output" || return 1
+    return 1
+  }
+  nodes="$(mktemp "$dir/.m4-secret-scan-nodes.XXXXXX")" || {
+    rm -f "$list" || true
+    printf 'scanner_error=secret_scan_node_list_unwritable\n' >>"$output" || return 1
+    return 1
+  }
+  if ! find "$dir" ! -type f ! -type d -print0 >"$nodes" 2>/dev/null; then
+    printf 'scanner_error=secret_scan_node_find_failed\n' >>"$output" || return 1
+    bad=1
+  elif [[ -s "$nodes" ]]; then
+    printf 'scanner_error=non_regular_artifact_node\n' >>"$output" || return 1
+    bad=1
+  fi
+  if ! find "$dir" -type f ! -path "$output" ! -path "$final_output" \
+    ! -path "$list" ! -path "$nodes" -print0 >"$list" 2>/dev/null; then
+    printf 'scanner_error=secret_scan_find_failed\n' >>"$output" || return 1
+    bad=1
+  fi
   while IFS= read -r -d '' path; do
-    base="$(basename "$path")"
+    if path_contains_protected_value "$path"; then
+      printf 'forbidden_artifact_path_value=true\n' >>"$output" || return 1
+      bad=1
+      continue
+    fi
+    if [[ ! -f "$path" || ! -r "$path" ]]; then
+      printf 'scanner_error=unreadable_artifact\n' >>"$output" || return 1
+      bad=1
+      continue
+    fi
+    base="${path##*/}"
     if [[ "$base" == '.env.local' || "$path" == *'.env.local'* ||
       "$path" == *'contract-server'* || "$path" == *':8765'* ]]; then
-      printf 'forbidden_artifact_name=%s\n' "$base" >>"$output"; bad=1
+      printf 'forbidden_artifact_name=true\n' >>"$output" || return 1
+      bad=1
     fi
-    if contains_literal_file "$LIVE_PHONE" "$path" ||
-      contains_literal_file "$OAUTH_CLIENT_ID" "$path" ||
-      contains_literal_file "$DB_TOKEN" "$path" ||
-      contains_literal_file "$RELAY_TOKEN_A" "$path" ||
-      contains_literal_file "$RELAY_TOKEN_B" "$path"; then
-      printf 'runtime_secret_value_found=true\n' >>"$output"; bad=1
-    fi
+    for protected_value in "$LIVE_PHONE" "$OAUTH_CLIENT_ID" "$DB_TOKEN" \
+      "$RELAY_TOKEN_A" "$RELAY_TOKEN_B"; do
+      if contains_literal_file "$protected_value" "$path"; then
+        printf 'runtime_secret_value_found=true\n' >>"$output" || return 1
+        bad=1
+      else
+        scan_status=$?
+        if [[ "$scan_status" -ne 1 ]]; then
+          printf 'scanner_error=secret_literal_grep_failed\n' >>"$output" || return 1
+          bad=1
+        fi
+      fi
+    done
     if grep -aEiq '1[3-9][0-9]{9}|Bearer[[:space:]]+[A-Za-z0-9._~+/=-]{12,}' "$path" 2>/dev/null; then
-      printf 'credential_like_value_found=true\n' >>"$output"; bad=1
+      printf 'credential_like_value_found=true\n' >>"$output" || return 1
+      bad=1
+    else
+      scan_status=$?
+      if [[ "$scan_status" -gt 1 ]]; then
+        printf 'scanner_error=credential_grep_failed\n' >>"$output" || return 1
+        bad=1
+      fi
     fi
     if python3 - "$path" <<'PY'
 import re
 import sys
 
 try:
-    text = open(sys.argv[1], "rb").read().decode("utf-8", errors="ignore")
+    with open(sys.argv[1], "rb") as handle:
+        text = handle.read().decode("utf-8", errors="ignore")
 except OSError:
-    raise SystemExit(0)
+    raise SystemExit(2)
 keys = (
     "access_token", "refresh_token", "accessToken", "refreshToken",
     "token", "password", "client_secret", "clientSecret", "oauthClientId",
@@ -805,29 +1212,94 @@ PY
     then
       :
     else
-      printf 'credential_field_value_found=true\n' >>"$output"; bad=1
+      scan_status=$?
+      if [[ "$scan_status" -eq 1 ]]; then
+        printf 'credential_field_value_found=true\n' >>"$output" || return 1
+      else
+        printf 'scanner_error=python_secret_scan_failed\n' >>"$output" || return 1
+      fi
+      bad=1
     fi
-  done < <(find "$dir" -type f -print0)
-  [[ "$bad" -eq 0 ]] && { printf 'secret_scan=0\n' >>"$output"; return 0; }
-  printf 'secret_scan=FAIL\n' >>"$output"
+  done <"$list"
+  if ! rm -f "$list" "$nodes"; then
+    printf 'scanner_error=secret_scan_list_cleanup_failed\n' >>"$output" || return 1
+    bad=1
+  fi
+  if [[ "$bad" -eq 0 ]]; then
+    printf 'secret_scan=0\n' >>"$output" || return 1
+    publish_scan_output "$output" "$final_output" || return 1
+    return 0
+  fi
+  printf 'secret_scan=FAIL\n' >>"$output" || return 1
+  publish_scan_output "$output" "$final_output" || return 1
   return 1
 }
 
 apk_scan() {
   local dir="$1"
-  local output="$dir/apk-secret-scan.txt"
-  local bad=0 apk apk_count=0
-  : >"$output"
+  local final_output="$dir/apk-secret-scan.txt"
+  local output list
+  local bad=0 apk apk_count=0 scan_status protected_value
+  output="$(mktemp "$dir/.m4-apk-scan-output.XXXXXX")" || return 1
+  list="$(mktemp "$dir/.m4-apk-scan-files.XXXXXX")" || {
+    printf 'scanner_error=apk_scan_list_unwritable\n' >>"$output" || return 1
+    return 1
+  }
+  if ! find "$PROJECT_ROOT/build/app/outputs" -type f -name '*.apk' -print0 >"$list" 2>/dev/null; then
+    printf 'scanner_error=apk_find_failed\n' >>"$output" || return 1
+    bad=1
+  fi
   while IFS= read -r -d '' apk; do
     apk_count=$((apk_count + 1))
-    unzip -p "$apk" 2>/dev/null | contains_literal_stream "$LIVE_PHONE" && { printf 'apk_phone_value_found=true\n' >>"$output"; bad=1; } || true
-    unzip -p "$apk" 2>/dev/null | contains_literal_stream "$OAUTH_CLIENT_ID" && { printf 'apk_oauth_client_value_found=true\n' >>"$output"; bad=1; } || true
-    unzip -p "$apk" 2>/dev/null | contains_literal_stream "$RELAY_TOKEN_A" && { printf 'apk_relay_token_a_value_found=true\n' >>"$output"; bad=1; } || true
-    unzip -p "$apk" 2>/dev/null | contains_literal_stream "$RELAY_TOKEN_B" && { printf 'apk_relay_token_b_value_found=true\n' >>"$output"; bad=1; } || true
-  done < <(find "$PROJECT_ROOT/build/app/outputs" -type f -name '*.apk' -print0 2>/dev/null || true)
-  [[ "$apk_count" -gt 0 ]] || { printf 'apk_missing=true\n' >>"$output"; bad=1; }
-  [[ "$bad" -eq 0 ]] && { printf 'apk_secret_scan=0\n' >>"$output"; return 0; }
-  printf 'apk_secret_scan=FAIL\n' >>"$output"
+    if path_contains_protected_value "$apk"; then
+      printf 'forbidden_apk_path_value=true\n' >>"$output" || return 1
+      bad=1
+      continue
+    fi
+    if [[ ! -f "$apk" || ! -r "$apk" ]]; then
+      printf 'scanner_error=unreadable_apk\n' >>"$output" || return 1
+      bad=1
+      continue
+    fi
+    if ! unzip -t "$apk" >/dev/null 2>&1; then
+      printf 'scanner_error=corrupt_or_unreadable_apk\n' >>"$output" || return 1
+      bad=1
+      continue
+    fi
+    for protected_value in "$LIVE_PHONE" "$OAUTH_CLIENT_ID" "$RELAY_TOKEN_A" "$RELAY_TOKEN_B"; do
+      if scan_apk_literal "$protected_value" "$apk"; then
+        scan_status=0
+      else
+        scan_status=$?
+      fi
+      case "$scan_status" in
+        0) ;;
+        1)
+          printf 'apk_secret_value_found=true\n' >>"$output" || return 1
+          bad=1
+          ;;
+        *)
+          printf 'scanner_error=apk_unzip_or_grep_failed\n' >>"$output" || return 1
+          bad=1
+          ;;
+      esac
+    done
+  done <"$list"
+  if ! rm -f "$list"; then
+    printf 'scanner_error=apk_scan_list_cleanup_failed\n' >>"$output" || return 1
+    bad=1
+  fi
+  if [[ "$apk_count" -eq 0 ]]; then
+    printf 'apk_missing=true\n' >>"$output" || return 1
+    bad=1
+  fi
+  if [[ "$bad" -eq 0 ]]; then
+    printf 'apk_secret_scan=0\n' >>"$output" || return 1
+    publish_scan_output "$output" "$final_output" || return 1
+    return 0
+  fi
+  printf 'apk_secret_scan=FAIL\n' >>"$output" || return 1
+  publish_scan_output "$output" "$final_output" || return 1
   return 1
 }
 
@@ -874,7 +1346,7 @@ run_one() {
       -u DEVELOPMENT_OUTBOX_KEY -u QA_DEVELOPMENT_OUTBOX_KEY \
       -u OAUTH_CLIENT_ID -u M3_OAUTH_CLIENT_ID -u M3_API_BASE_URL -u QA_API_BASE_URL \
       QA_SCREENSHOT_DIR="$dir/screenshots" \
-      flutter drive --driver=test_driver/integration_test.dart \
+      "$FLUTTER_BIN" drive --driver=test_driver/integration_test.dart \
       --target=integration_test/m4_first_party_live_integration_test.dart \
       --device-id="$serial" --debug --no-pub \
       --dart-define=BACKEND_MODE=live --dart-define=APP_ENV=development \
@@ -943,6 +1415,9 @@ run_one() {
     printf 'result=%s\nreason=%s\navd=%s\napi_level=%s\nprofile=%s\nserial=%s\n' "$result" "$reason" "$avd" "$api" "$profile" "$serial"
     printf 'run_id=%s\nfixture_id=%s\nfixture_status=%s\ndb_start_nonce=%s\ntested_git_sha=%s\nflutter_sha=%s\nbackend_sha=%s\nhttp_route_marker_count=%s\nauthority_invariant_count=%s\n' \
       "$RUN_ID" "$FIXTURE_ID" "$FIXTURE_STATUS" "$DB_START_NONCE" "$FLUTTER_SHA_ACTUAL" "$FLUTTER_SHA_ACTUAL" "$BACKEND_SHA_ACTUAL" "$marker_count" "$invariant_count"
+    printf 'android_host_source_sha256=%s\n' "$ANDROID_HOST_SOURCE_SHA256"
+    printf 'flutter_version=%s\ndart_version=%s\nflutter_revision=%s\n' \
+      "$FLUTTER_FRAMEWORK_VERSION" "$FLUTTER_DART_VERSION" "$FLUTTER_FRAMEWORK_REVISION"
     printf 'screenshot_count=%s\nhard_finding_count=%s\ncrash_anr_count=%s\n' "$screenshot_count" "$hard_count" "$crash_count"
     printf 'acceptance_status=%s\nprovider_calls_made=false\ndb_evidence=%s\nsecret_scan=%s\napk_secret_scan=%s\n' "$([[ "$result" == PASS ]] && printf PASS || printf FAIL)" "$db_status" "$secret_status" "$apk_status"
   } >"$dir/result.txt"

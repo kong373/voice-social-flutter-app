@@ -24,6 +24,9 @@ readonly EXPECTED_BACKEND_SHA="$(required QA_BACKEND_SHA)"
 readonly EXPECTED_RUN_ID="$(required QA_RUN_ID)"
 readonly EXPECTED_FIXTURE_ID="$(required QA_M4_FIXTURE_ID)"
 readonly EXPECTED_FIXTURE_STATUS="$(required QA_M4_FIXTURE_STATUS)"
+readonly EXPECTED_FLUTTER_VERSION='3.44.7'
+readonly EXPECTED_DART_VERSION='3.12.2'
+readonly EXPECTED_FLUTTER_REVISION='84fc5cbb223bc12f83d65b647ff8a56caf779ffd'
 readonly AGGREGATE_TEXT="$ARTIFACT_ROOT/aggregate-verdict.txt"
 readonly AGGREGATE_JSON="$ARTIFACT_ROOT/aggregate-verdict.json"
 
@@ -54,6 +57,7 @@ readonly AGGREGATE_JSON="$ARTIFACT_ROOT/aggregate-verdict.json"
 
 reasons=()
 avd_results=()
+android_host_source_sha256=''
 
 field() {
   local file="$1"
@@ -193,6 +197,7 @@ validate_avd() {
   local avd="$1"
   local dir="$ARTIFACT_ROOT/$avd"
   local result="$dir/result.txt"
+  local avd_android_host_source_sha256
   [[ -f "$result" ]] || { add_reason "$avd:result_missing"; return; }
   [[ "$(field "$result" result)" == PASS ]] || { add_reason "$avd:result_not_pass"; return; }
   [[ "$(field "$result" acceptance_status)" == PASS ]] || { add_reason "$avd:acceptance_not_pass"; return; }
@@ -203,6 +208,17 @@ validate_avd() {
   [[ "$(field "$result" tested_git_sha)" == "$EXPECTED_FLUTTER_SHA" ]] || add_reason "$avd:tested_git_sha_mismatch"
   [[ "$(field "$result" flutter_sha)" == "$EXPECTED_FLUTTER_SHA" ]] || add_reason "$avd:flutter_sha_mismatch"
   [[ "$(field "$result" backend_sha)" == "$EXPECTED_BACKEND_SHA" ]] || add_reason "$avd:backend_sha_mismatch"
+  [[ "$(field "$result" flutter_version)" == "$EXPECTED_FLUTTER_VERSION" ]] || add_reason "$avd:flutter_version_mismatch"
+  [[ "$(field "$result" dart_version)" == "$EXPECTED_DART_VERSION" ]] || add_reason "$avd:dart_version_mismatch"
+  [[ "$(field "$result" flutter_revision)" == "$EXPECTED_FLUTTER_REVISION" ]] || add_reason "$avd:flutter_revision_mismatch"
+  avd_android_host_source_sha256="$(field "$result" android_host_source_sha256)"
+  if [[ ! "$avd_android_host_source_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+    add_reason "$avd:android_host_source_attestation_missing"
+  elif [[ -z "$android_host_source_sha256" ]]; then
+    android_host_source_sha256="$avd_android_host_source_sha256"
+  elif [[ "$avd_android_host_source_sha256" != "$android_host_source_sha256" ]]; then
+    add_reason "$avd:android_host_source_attestation_mismatch"
+  fi
   [[ "$(field "$result" provider_calls_made)" == false ]] || add_reason "$avd:provider_calls_not_zero"
   [[ "$(field "$result" db_evidence)" == COLLECTED ]] || add_reason "$avd:db_evidence_not_collected"
   [[ "$(field "$result" secret_scan)" == PASS ]] || add_reason "$avd:secret_scan_not_pass"
@@ -230,16 +246,20 @@ if ((${#reasons[@]} > 0)) || ((${#avd_results[@]} != 2)); then
   conclusion='ANDROID_EMULATOR_FAIL'
 fi
 
-python3 - "$AGGREGATE_JSON" "$conclusion" "$EXPECTED_FLUTTER_SHA" "$EXPECTED_BACKEND_SHA" "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" "$EXPECTED_FIXTURE_STATUS" "${reasons[*]-}" <<'PY'
+python3 - "$AGGREGATE_JSON" "$conclusion" "$EXPECTED_FLUTTER_SHA" "$EXPECTED_BACKEND_SHA" "$android_host_source_sha256" "$EXPECTED_FLUTTER_VERSION" "$EXPECTED_DART_VERSION" "$EXPECTED_FLUTTER_REVISION" "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" "$EXPECTED_FIXTURE_STATUS" "${reasons[*]-}" <<'PY'
 import json
 import sys
 
-path, conclusion, flutter_sha, backend_sha, run_id, fixture_id, fixture_status, raw_reasons = sys.argv[1:]
+path, conclusion, flutter_sha, backend_sha, android_host_source_sha256, flutter_version, dart_version, flutter_revision, run_id, fixture_id, fixture_status, raw_reasons = sys.argv[1:]
 reasons = [item for item in raw_reasons.splitlines() if item]
 payload = {
     "conclusion": conclusion,
     "tested_git_sha": flutter_sha,
     "backend_sha": backend_sha,
+    "android_host_source_sha256": android_host_source_sha256,
+    "flutter_version": flutter_version,
+    "dart_version": dart_version,
+    "flutter_revision": flutter_revision,
     "run_id": run_id,
     "fixture_id": fixture_id,
     "fixture_status": fixture_status,
@@ -261,6 +281,9 @@ PY
   printf 'conclusion=%s\n' "$conclusion"
   printf 'run_id=%s\nfixture_id=%s\nfixture_status=%s\n' "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" "$EXPECTED_FIXTURE_STATUS"
   printf 'tested_git_sha=%s\nbackend_sha=%s\n' "$EXPECTED_FLUTTER_SHA" "$EXPECTED_BACKEND_SHA"
+  printf 'android_host_source_sha256=%s\n' "$android_host_source_sha256"
+  printf 'flutter_version=%s\ndart_version=%s\nflutter_revision=%s\n' \
+    "$EXPECTED_FLUTTER_VERSION" "$EXPECTED_DART_VERSION" "$EXPECTED_FLUTTER_REVISION"
   printf 'AVD-A=%s\nAVD-B=%s\n' \
     "$(if printf '%s\n' "${reasons[@]-}" | grep -q '^AVD-A:'; then printf FAIL; else printf PASS; fi)" \
     "$(if printf '%s\n' "${reasons[@]-}" | grep -q '^AVD-B:'; then printf FAIL; else printf PASS; fi)"
