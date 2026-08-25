@@ -922,9 +922,7 @@ class BackendAccountComplianceRepository
       }
       final String lastUsedAtValue = _string(item['lastUsedAt']);
       final DateTime? lastActiveAt = DateTime.tryParse(
-        lastUsedAtValue.isEmpty
-            ? _string(item['createdAt'])
-            : lastUsedAtValue,
+        lastUsedAtValue.isEmpty ? _string(item['createdAt']) : lastUsedAtValue,
       );
       if (lastActiveAt == null) {
         throw ApiException(
