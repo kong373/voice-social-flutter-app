@@ -1269,6 +1269,22 @@ printf '%s\n' 'safe prefix; $(touch should-not-run)' | contains_literal_stream "
       expect(integrationSource, contains('already_authoritative'));
       expect(
         integrationSource,
+        contains('void preexisting(String capability, String route)'),
+      );
+      expect(
+        integrationSource,
+        isNot(
+          contains(
+            'void preexisting(String capability, String route, String state)',
+          ),
+        ),
+      );
+      expect(
+        integrationSource,
+        isNot(contains('existing_authoritative_application')),
+      );
+      expect(
+        integrationSource,
         contains('pkRecoveryRoom: ownedModeRooms.approval'),
       );
       expect(

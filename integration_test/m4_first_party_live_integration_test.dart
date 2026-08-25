@@ -725,7 +725,6 @@ Future<void> _runDynamicSocialCommunityFlow(
       evidence.preexisting(
         'community.checkin',
         const BackendRouteCatalog().todaySignStatus,
-        'already_authoritative',
       );
     }
 
@@ -768,7 +767,6 @@ Future<void> _runDynamicSocialCommunityFlow(
         evidence.preexisting(
           'community.task.claim',
           const BackendRouteCatalog().taskRecords,
-          'already_authoritative',
         );
       } else {
         evidence.local(
@@ -1613,11 +1611,7 @@ Future<void> _runRoomMutationFlow(
         'seat_up_not_attempted_without_available_seat',
       );
     } else {
-      evidence.preexisting(
-        'room.seat.up',
-        routes.roomOnlineMembers,
-        'already_authoritative',
-      );
+      evidence.preexisting('room.seat.up', routes.roomOnlineMembers);
       evidence.requireCapability('room.seat.down');
       final bool? seatDown = await _probe<bool>(
         evidence,
@@ -2003,11 +1997,7 @@ Future<void> _runRoomPkMutation(
     evidence.invariant('pk_accept_and_end_compensated');
     evidence.invariant('pk_mutation_path_confirmed');
   } else {
-    evidence.preexisting(
-      'room.pk.recovery',
-      routes.roomPkProgress,
-      'already_authoritative',
-    );
+    evidence.preexisting('room.pk.recovery', routes.roomPkProgress);
     evidence.invariant('pk_mutation_path_confirmed');
   }
 }
@@ -2076,11 +2066,7 @@ Future<void> _runRefundMutation(
   } else {
     // An earlier AVD may already have submitted this order. Preserve that
     // server state explicitly; do not issue a second application.
-    evidence.preexisting(
-      'commerce.refund.submit',
-      routes.refundResult,
-      'existing_authoritative_application',
-    );
+    evidence.preexisting('commerce.refund.submit', routes.refundResult);
   }
 
   final String? applicationId = existingApplicationId;
@@ -2535,11 +2521,7 @@ Future<void> _runCommerceFlow(
   }
   if (existingPendingWithdrawal != null) {
     final WithdrawalRecord existingWithdrawal = existingPendingWithdrawal;
-    evidence.preexisting(
-      'commerce.withdraw.apply',
-      routes.withdrawalRecords,
-      'already_authoritative',
-    );
+    evidence.preexisting('commerce.withdraw.apply', routes.withdrawalRecords);
     evidence.requireCapability('commerce.withdraw.result');
     final WithdrawalRecord? recoveredWithdrawal =
         await _probe<WithdrawalRecord>(
@@ -3313,7 +3295,7 @@ class _M4Evidence {
     _requiredCapabilities.add(capability);
   }
 
-  void preexisting(String capability, String route, String state) {
+  void preexisting(String capability, String route) {
     requireCapability(capability);
     _preexistingCapabilities.add(capability);
     http(
@@ -3321,7 +3303,7 @@ class _M4Evidence {
       method: 'GET',
       route: route,
       status: 200,
-      state: state,
+      state: 'already_authoritative',
     );
   }
 
