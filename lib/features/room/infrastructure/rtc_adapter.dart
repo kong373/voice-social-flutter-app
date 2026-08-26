@@ -133,6 +133,7 @@ class AgoraRtcAdapter implements RtcAdapter {
   Future<void>? _reconnectInFlight;
   _RtcSessionIdentity? _joinInFlightIdentity;
   _RtcSessionIdentity? _reconnectInFlightIdentity;
+  bool _reconnectOwnsJoin = false;
   Completer<void>? _joinCompletion;
   Completer<void>? _joinCancellation;
   Completer<void>? _initializeCancellation;
@@ -336,8 +337,20 @@ class AgoraRtcAdapter implements RtcAdapter {
   @override
   Future<void> join(RtcCredentials credentials) {
     _ensureNotDisposed();
+    // Validate every request before looking at an in-flight operation. A
+    // malformed replacement must not inherit a valid request's Future merely
+    // because its session identity happens to match.
+    final RtcAdapterException? validationError = _validateCredentialsForEntry(
+      credentials,
+    );
+    if (validationError != null) {
+      return Future<void>.error(validationError);
+    }
     final _RtcSessionIdentity requestedIdentity =
         _RtcSessionIdentity.fromCredentials(credentials);
+    if (_reconnectInFlight != null && !_reconnectOwnsJoin) {
+      return Future<void>.error(_operationConflict(RtcAdapterFailure.join));
+    }
     final Future<void>? inFlight = _joinInFlight;
     if (inFlight != null) {
       if (_joinInFlightIdentity == requestedIdentity) {
@@ -531,6 +544,9 @@ class AgoraRtcAdapter implements RtcAdapter {
         _sessionIdentityConflict(RtcAdapterFailure.join),
       );
     }
+    if (_joinInFlight != null) {
+      return Future<void>.error(_operationConflict(RtcAdapterFailure.join));
+    }
     _reconnectInFlightIdentity = requestedIdentity;
     final Future<void> operation = _reconnectInternal(credentials);
     _reconnectInFlight = operation;
@@ -559,7 +575,15 @@ class AgoraRtcAdapter implements RtcAdapter {
     final bool wasAudioEnabled = _localAudioEnabled;
     try {
       await leave();
-      await join(credentials);
+      // Reconnect owns the join phase. Public join calls remain blocked while
+      // the leave/join transition is in progress, while this internal call is
+      // allowed to use the normal single-flight join machinery.
+      _reconnectOwnsJoin = true;
+      try {
+        await join(credentials);
+      } finally {
+        _reconnectOwnsJoin = false;
+      }
       final ClientRoleType role = _roleFor(credentials.role);
       await setLocalAudioEnabled(
         wasAudioEnabled && role == ClientRoleType.clientRoleBroadcaster,
@@ -1549,6 +1573,20 @@ class AgoraRtcAdapter implements RtcAdapter {
         failure: failure,
         message: 'RTC 会话身份不一致，请使用 reconnect',
       );
+
+  RtcAdapterException _operationConflict(RtcAdapterFailure failure) =>
+      RtcAdapterException(failure: failure, message: 'RTC 会话操作正在进行，请等待完成后重试');
+
+  RtcAdapterException? _validateCredentialsForEntry(
+    RtcCredentials credentials,
+  ) {
+    try {
+      _validateCredentials(credentials);
+      return null;
+    } on RtcAdapterException catch (error) {
+      return error;
+    }
+  }
 
   static RtcAdapterException _providerException(
     RtcAdapterFailure failure,

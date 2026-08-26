@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/data/mock_room_operations_repository.dart';
@@ -92,6 +94,80 @@ void main() {
     },
   );
 
+  test('occupied-muted direct grant never publishes audio', () async {
+    final _OccupiedMutedRoleAwareRoomRepository repository =
+        _OccupiedMutedRoleAwareRoomRepository();
+    final _TrackingRtcAdapter rtc = _TrackingRtcAdapter();
+    final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
+    final RoomController controller = _controller(
+      repository: repository,
+      rtc: rtc,
+      realtime: realtime,
+    );
+    addTearDown(() async {
+      controller.dispose();
+      await realtime.dispose();
+    });
+
+    await controller.join();
+    expect(await controller.requestMic(4), isTrue);
+    expect(rtc.reconnects.last.role, 'broadcaster');
+    expect(rtc.audioStates, <bool>[false]);
+    expect(controller.snapshot?.seats.single.state, MicSeatState.occupiedMuted);
+    expect(controller.micMuted, isTrue);
+  });
+
+  test('occupied-muted invite acceptance never publishes audio', () async {
+    final _OccupiedMutedApprovalRoleAwareRoomRepository repository =
+        _OccupiedMutedApprovalRoleAwareRoomRepository();
+    final MockRoomOperationsRepository operations =
+        MockRoomOperationsRepository();
+    operations.seedMicRequestForQa(
+      MicAccessRequest(
+        id: 'invite-occupied-muted',
+        roomId: 'room-42',
+        member: const RoomMember(
+          userId: 10001,
+          name: '我',
+          role: RoomRole.listener,
+          presence: RoomMemberPresence.listener,
+        ),
+        seatNumber: 4,
+        status: MicRequestStatus.pending,
+        createdAt: DateTime.utc(2030, 1, 1),
+        type: MicRequestType.invite,
+        requestedByUserId: 20001,
+        subjectUserId: 10001,
+        targetAction: MicRequestTargetAction.accept,
+      ),
+    );
+    final _TrackingRtcAdapter rtc = _TrackingRtcAdapter();
+    final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
+    final RoomController controller = _controller(
+      repository: repository,
+      rtc: rtc,
+      realtime: realtime,
+      operations: operations,
+    );
+    addTearDown(() async {
+      controller.dispose();
+      await realtime.dispose();
+    });
+
+    await controller.join();
+    expect(
+      await controller.resolveMicInvite(
+        requestId: 'invite-occupied-muted',
+        accepted: true,
+      ),
+      isTrue,
+    );
+    expect(rtc.reconnects.last.role, 'broadcaster');
+    expect(rtc.audioStates, <bool>[false]);
+    expect(controller.snapshot?.seats.single.state, MicSeatState.occupiedMuted);
+    expect(controller.micMuted, isTrue);
+  });
+
   test(
     'authoritative mic revoke stops publication before applying audience token',
     () async {
@@ -165,6 +241,62 @@ void main() {
       expect(rtc.audioStates, <bool>[true, false]);
     },
   );
+
+  test(
+    'authoritative mute arriving during local unmute keeps native audio disabled',
+    () async {
+      final _RoleAwareRoomRepository repository = _RoleAwareRoomRepository();
+      final _DeferredTrackingRtcAdapter rtc = _DeferredTrackingRtcAdapter();
+      final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
+      final RoomController controller = _controller(
+        repository: repository,
+        rtc: rtc,
+        realtime: realtime,
+      );
+      addTearDown(() async {
+        controller.dispose();
+        await realtime.dispose();
+      });
+
+      await controller.join();
+      expect(await controller.requestMic(4), isTrue);
+      expect(await controller.toggleMicrophone(), isTrue);
+      expect(rtc.audioStates, <bool>[true, false]);
+
+      final Completer<void> pendingEnable = Completer<void>();
+      rtc.pendingEnable = pendingEnable;
+      final Future<bool> unmute = controller.toggleMicrophone();
+      for (
+        int attempt = 0;
+        attempt < 3 && rtc.audioStates.length < 3;
+        attempt += 1
+      ) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(rtc.audioStates, <bool>[true, false, true]);
+
+      realtime.emit(
+        const RoomRealtimeEvent(
+          code: RoomRealtimeEventCodes.mutedInRoom,
+          payload: <String, Object?>{},
+        ),
+      );
+      expect(controller.mutedInRoom, isTrue);
+      pendingEnable.complete();
+      expect(await unmute, isTrue);
+      for (int attempt = 0; attempt < 3 && rtc.audioStates.last; attempt += 1) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(rtc.audioStates.last, isFalse);
+      expect(rtc.audioStates.where((bool enabled) => enabled), <bool>[
+        true,
+        true,
+      ]);
+      expect(controller.mutedInRoom, isTrue);
+      expect(controller.snapshot?.seats.single.state, MicSeatState.occupied);
+    },
+  );
 }
 
 RoomController _controller({
@@ -203,6 +335,12 @@ class _RoleAwareRoomRepository extends MockRoomRepository {
   Future<void> leaveMic() async {
     _onMic = false;
   }
+
+  @override
+  Future<void> setSelfMicrophoneMuted({
+    required int backendMicIndex,
+    required bool muted,
+  }) async {}
 
   @override
   Future<RoomSnapshot> reconnectRoom({
@@ -272,6 +410,49 @@ class _RevokingRoleAwareRoomRepository extends _RoleAwareRoomRepository {
   }
 }
 
+class _OccupiedMutedRoleAwareRoomRepository extends _RoleAwareRoomRepository {
+  @override
+  Future<RoomSnapshot> reconnectRoom({
+    required String roomId,
+    required int currentUserId,
+  }) async {
+    final RoomSnapshot snapshot = await super.reconnectRoom(
+      roomId: roomId,
+      currentUserId: currentUserId,
+    );
+    return snapshot.copyWith(
+      seats: <MicSeat>[
+        for (final MicSeat seat in snapshot.seats)
+          seat.userId == currentUserId
+              ? seat.copyWith(state: MicSeatState.occupiedMuted)
+              : seat,
+      ],
+    );
+  }
+}
+
+class _OccupiedMutedApprovalRoleAwareRoomRepository
+    extends _ApprovalRoleAwareRoomRepository {
+  @override
+  Future<RoomSnapshot> reconnectRoom({
+    required String roomId,
+    required int currentUserId,
+  }) async {
+    final RoomSnapshot snapshot = await super.reconnectRoom(
+      roomId: roomId,
+      currentUserId: currentUserId,
+    );
+    return snapshot.copyWith(
+      seats: <MicSeat>[
+        for (final MicSeat seat in snapshot.seats)
+          seat.userId == currentUserId
+              ? seat.copyWith(state: MicSeatState.occupiedMuted)
+              : seat,
+      ],
+    );
+  }
+}
+
 RtcCredentials _credentials(String role) => RtcCredentials(
   provider: 'agora',
   appId: 'test-public-app-id',
@@ -301,4 +482,17 @@ class _TrackingRtcAdapter implements RtcAdapter {
 
   @override
   Future<void> leave() async {}
+}
+
+class _DeferredTrackingRtcAdapter extends _TrackingRtcAdapter {
+  Completer<void>? pendingEnable;
+
+  @override
+  Future<void> setLocalAudioEnabled(bool enabled) {
+    audioStates.add(enabled);
+    if (enabled && pendingEnable != null) {
+      return pendingEnable!.future;
+    }
+    return Future<void>.value();
+  }
 }
