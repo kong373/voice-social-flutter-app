@@ -47,7 +47,7 @@ void main() {
   );
 
   test(
-    'reconnect preserves muted state and reuses the initialized engine',
+    'reconnect preserves disabled microphone state and reuses the initialized engine',
     () async {
       final _FakeRtcEngine engine = _FakeRtcEngine();
       final AgoraRtcAdapter adapter = AgoraRtcAdapter(
@@ -64,8 +64,38 @@ void main() {
       expect(engine.joinCalls, 2);
       expect(engine.leaveCalls, 1);
       expect(engine.renewedTokens, isEmpty);
-      expect(engine.muteCalls, <bool>[true, true]);
+      expect(engine.muteCalls, <bool>[true]);
       expect(adapter.localAudioEnabled, isFalse);
+    },
+  );
+
+  test(
+    'reconnect never republishes a previously enabled microphone automatically',
+    () async {
+      final _FakeRtcEngine engine = _FakeRtcEngine();
+      final _FakePermissionAdapter permissions = _FakePermissionAdapter(
+        statusValue: PermissionState.granted,
+        requestValue: PermissionState.granted,
+      );
+      final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+        engine: engine,
+        now: () => now,
+        microphonePermissionAdapter: permissions,
+      );
+      addTearDown(adapter.release);
+
+      await adapter.join(_credentials(role: 'broadcaster'));
+      await adapter.setLocalAudioEnabled(true);
+      expect(adapter.localAudioEnabled, isTrue);
+
+      await adapter.reconnect(
+        _credentials(role: 'broadcaster', token: 'token-2'),
+      );
+
+      expect(adapter.localAudioEnabled, isFalse);
+      expect(engine.updatedOptions, hasLength(1));
+      expect(engine.updatedOptions.single.publishMicrophoneTrack, isTrue);
+      expect(engine.muteCalls, <bool>[false]);
     },
   );
 
@@ -858,6 +888,222 @@ void main() {
       expect(adapter.joined, isTrue);
     },
   );
+
+  test(
+    'external leave cancels reconnect during its first native leave',
+    () async {
+      final _FakeRtcEngine engine = _FakeRtcEngine()..emitLeaveSuccess = false;
+      final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+        engine: engine,
+        now: () => now,
+        leaveTimeout: const Duration(seconds: 1),
+      );
+      addTearDown(adapter.release);
+      final List<RtcAdapterEvent> events = <RtcAdapterEvent>[];
+      final StreamSubscription<RtcAdapterEvent> subscription = adapter.events
+          .listen(events.add);
+      addTearDown(subscription.cancel);
+
+      await adapter.join(_credentials(role: 'audience', token: 'token-old'));
+      final Future<void> reconnect = adapter.reconnect(
+        _credentials(role: 'audience', token: 'token-next'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.leaveCalls, 1);
+
+      final Future<void> externalLeave = adapter.leave();
+      engine.handler!.onLeaveChannel!(
+        RtcConnection(channelId: 'room-42', localUid: 42),
+        RtcStats(),
+      );
+      await externalLeave;
+      await expectLater(
+        reconnect,
+        throwsA(
+          isA<RtcAdapterException>()
+              .having(
+                (RtcAdapterException error) => error.failure,
+                'failure',
+                RtcAdapterFailure.join,
+              )
+              .having(
+                (RtcAdapterException error) => error.message,
+                'cancellation',
+                'RTC 重连已取消',
+              )
+              .having(
+                (RtcAdapterException error) => error.toString(),
+                'sanitized message',
+                isNot(contains('token-next')),
+              ),
+        ),
+      );
+
+      expect(engine.joinCalls, 1);
+      expect(engine.leaveCalls, 1);
+      expect(adapter.joined, isFalse);
+      expect(
+        events.where(
+          (RtcAdapterEvent event) => event.type == RtcAdapterEventType.rejoined,
+        ),
+        isEmpty,
+      );
+    },
+  );
+
+  test('external leave cancels reconnect during its native join', () async {
+    final _FakeRtcEngine engine = _FakeRtcEngine();
+    final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+      engine: engine,
+      now: () => now,
+      joinTimeout: const Duration(seconds: 1),
+      leaveTimeout: const Duration(seconds: 1),
+    );
+    addTearDown(adapter.release);
+    final List<RtcAdapterEvent> events = <RtcAdapterEvent>[];
+    final StreamSubscription<RtcAdapterEvent> subscription = adapter.events
+        .listen(events.add);
+    addTearDown(subscription.cancel);
+
+    await adapter.join(_credentials(role: 'audience', token: 'token-old'));
+    engine.emitJoinSuccess = false;
+    final Future<void> reconnect = adapter.reconnect(
+      _credentials(role: 'audience', token: 'token-next'),
+    );
+    for (int attempt = 0; attempt < 5 && engine.joinCalls < 2; attempt += 1) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(engine.joinCalls, 2);
+
+    final Future<void> externalLeave = adapter.leave();
+    await externalLeave;
+    await expectLater(
+      reconnect,
+      throwsA(
+        isA<RtcAdapterException>()
+            .having(
+              (RtcAdapterException error) => error.failure,
+              'failure',
+              RtcAdapterFailure.join,
+            )
+            .having(
+              (RtcAdapterException error) => error.message,
+              'cancellation',
+              'RTC 重连已取消',
+            )
+            .having(
+              (RtcAdapterException error) => error.toString(),
+              'sanitized message',
+              isNot(contains('token-next')),
+            ),
+      ),
+    );
+
+    expect(engine.joinCalls, 2);
+    expect(engine.leaveCalls, 2);
+    expect(adapter.joined, isFalse);
+    expect(
+      events.where(
+        (RtcAdapterEvent event) => event.type == RtcAdapterEventType.rejoined,
+      ),
+      isEmpty,
+    );
+  });
+
+  test('release cancels reconnect during its first native leave', () async {
+    final _FakeRtcEngine engine = _FakeRtcEngine()..emitLeaveSuccess = false;
+    final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+      engine: engine,
+      now: () => now,
+      leaveTimeout: const Duration(seconds: 1),
+    );
+    final List<RtcAdapterEvent> events = <RtcAdapterEvent>[];
+    final StreamSubscription<RtcAdapterEvent> subscription = adapter.events
+        .listen(events.add);
+    addTearDown(subscription.cancel);
+
+    await adapter.join(_credentials(role: 'audience', token: 'token-old'));
+    final Future<void> reconnect = adapter.reconnect(
+      _credentials(role: 'audience', token: 'token-next'),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.leaveCalls, 1);
+
+    final Future<void> release = adapter.release();
+    engine.handler!.onLeaveChannel!(
+      RtcConnection(channelId: 'room-42', localUid: 42),
+      RtcStats(),
+    );
+    await release;
+    await expectLater(
+      reconnect,
+      throwsA(
+        isA<RtcAdapterException>().having(
+          (RtcAdapterException error) => error.message,
+          'cancellation',
+          'RTC 重连已取消',
+        ),
+      ),
+    );
+
+    expect(engine.joinCalls, 1);
+    expect(engine.leaveCalls, 1);
+    expect(engine.releaseCalls, 1);
+    expect(adapter.joined, isFalse);
+    expect(
+      events.where(
+        (RtcAdapterEvent event) => event.type == RtcAdapterEventType.rejoined,
+      ),
+      isEmpty,
+    );
+  });
+
+  test('release cancels reconnect during its native join', () async {
+    final _FakeRtcEngine engine = _FakeRtcEngine();
+    final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+      engine: engine,
+      now: () => now,
+      leaveTimeout: const Duration(seconds: 1),
+    );
+    final List<RtcAdapterEvent> events = <RtcAdapterEvent>[];
+    final StreamSubscription<RtcAdapterEvent> subscription = adapter.events
+        .listen(events.add);
+    addTearDown(subscription.cancel);
+
+    await adapter.join(_credentials(role: 'audience', token: 'token-old'));
+    engine.emitJoinSuccess = false;
+    final Future<void> reconnect = adapter.reconnect(
+      _credentials(role: 'audience', token: 'token-next'),
+    );
+    for (int attempt = 0; attempt < 5 && engine.joinCalls < 2; attempt += 1) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(engine.joinCalls, 2);
+
+    final Future<void> release = adapter.release();
+    await release;
+    await expectLater(
+      reconnect,
+      throwsA(
+        isA<RtcAdapterException>().having(
+          (RtcAdapterException error) => error.message,
+          'cancellation',
+          'RTC 重连已取消',
+        ),
+      ),
+    );
+
+    expect(engine.joinCalls, 2);
+    expect(engine.leaveCalls, 2);
+    expect(engine.releaseCalls, 1);
+    expect(adapter.joined, isFalse);
+    expect(
+      events.where(
+        (RtcAdapterEvent event) => event.type == RtcAdapterEventType.rejoined,
+      ),
+      isEmpty,
+    );
+  });
 
   test(
     'join provider error is authoritative and leaves the pending channel',

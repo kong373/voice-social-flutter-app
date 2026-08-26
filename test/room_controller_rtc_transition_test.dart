@@ -297,6 +297,49 @@ void main() {
       expect(controller.snapshot?.seats.single.state, MicSeatState.occupied);
     },
   );
+
+  test(
+    'dispose cancels a pending RTC reconcile and queues final leave',
+    () async {
+      final _RoleAwareRoomRepository repository = _RoleAwareRoomRepository();
+      final _DeferredTrackingRtcAdapter rtc = _DeferredTrackingRtcAdapter();
+      final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
+      final RoomController controller = _controller(
+        repository: repository,
+        rtc: rtc,
+        realtime: realtime,
+      );
+
+      await controller.join();
+      expect(await controller.requestMic(4), isTrue);
+      expect(rtc.audioStates, <bool>[true]);
+
+      final Completer<void> pendingReconnect = Completer<void>();
+      rtc.pendingReconnect = pendingReconnect;
+      final Future<void> reconnect = controller.reconnect();
+      for (
+        int attempt = 0;
+        attempt < 5 && rtc.reconnects.length < 2;
+        attempt += 1
+      ) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(rtc.reconnects, hasLength(2));
+
+      final int audioCallsBeforeDispose = rtc.audioStates.length;
+      controller.dispose();
+      pendingReconnect.complete();
+      await reconnect;
+      for (int attempt = 0; attempt < 5 && rtc.leaveCalls == 0; attempt += 1) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(rtc.leaveCalls, 1);
+      expect(rtc.audioStates.length, audioCallsBeforeDispose);
+      expect(rtc.audioStates.where((bool enabled) => enabled), <bool>[true]);
+      await realtime.dispose();
+    },
+  );
 }
 
 RoomController _controller({
@@ -468,6 +511,7 @@ class _TrackingRtcAdapter implements RtcAdapter {
   final List<RtcCredentials> joins = <RtcCredentials>[];
   final List<RtcCredentials> reconnects = <RtcCredentials>[];
   final List<bool> audioStates = <bool>[];
+  int leaveCalls = 0;
 
   @override
   Future<void> join(RtcCredentials credentials) async => joins.add(credentials);
@@ -481,11 +525,24 @@ class _TrackingRtcAdapter implements RtcAdapter {
       audioStates.add(enabled);
 
   @override
-  Future<void> leave() async {}
+  Future<void> leave() async {
+    leaveCalls += 1;
+  }
 }
 
 class _DeferredTrackingRtcAdapter extends _TrackingRtcAdapter {
   Completer<void>? pendingEnable;
+  Completer<void>? pendingReconnect;
+
+  @override
+  Future<void> reconnect(RtcCredentials credentials) {
+    reconnects.add(credentials);
+    final Completer<void>? pending = pendingReconnect;
+    if (pending != null) {
+      return pending.future;
+    }
+    return Future<void>.value();
+  }
 
   @override
   Future<void> setLocalAudioEnabled(bool enabled) {

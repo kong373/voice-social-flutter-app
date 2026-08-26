@@ -1424,6 +1424,9 @@ class RoomController extends ChangeNotifier {
     required bool publishAudio,
     bool forceReconnect = true,
   }) async {
+    if (_disposed) {
+      return;
+    }
     if (snapshot.isSnapshotOnly) {
       await _withRtcAudioMutex<void>(_rtcAdapter.leave);
       _rtcConnected = false;
@@ -1437,8 +1440,15 @@ class RoomController extends ChangeNotifier {
         // Keep reconnect and the subsequent publication update in the same
         // serialized operation. Otherwise a local toggle could run between
         // them and be silently replaced by a stale role/token transition.
+        if (_disposed || authorityGeneration != _rtcAudioAuthorityGeneration) {
+          return;
+        }
         if (forceReconnect || !_rtcConnected) {
           await _rtcAdapter.reconnect(snapshot.rtc);
+          if (_disposed ||
+              authorityGeneration != _rtcAudioAuthorityGeneration) {
+            return;
+          }
           _rtcConnected = true;
           _rtcPublicationActive = false;
         }
@@ -1452,7 +1462,8 @@ class RoomController extends ChangeNotifier {
         await _rtcAdapter.setLocalAudioEnabled(effectivePublishAudio);
         _rtcPublicationActive = effectivePublishAudio;
         if (effectivePublishAudio &&
-            (authorityGeneration != _rtcAudioAuthorityGeneration ||
+            (_disposed ||
+                authorityGeneration != _rtcAudioAuthorityGeneration ||
                 !_snapshotAllowsRtcPublication(snapshot))) {
           await _rtcAdapter.setLocalAudioEnabled(false);
           _rtcPublicationActive = false;
@@ -1908,6 +1919,7 @@ class RoomController extends ChangeNotifier {
       return;
     }
     _sessionEpoch += 1;
+    _rtcAudioAuthorityGeneration += 1;
     _micQueueEpoch += 1;
     _disposed = true;
     _joinCancelled = true;
@@ -1919,6 +1931,9 @@ class RoomController extends ChangeNotifier {
     _giftRequestId = null;
     _giftRequestKey = null;
     _refreshingFromEvent = false;
+    _rtcAudioRequested = false;
+    _rtcConnected = false;
+    _rtcPublicationActive = false;
     final Object? transportLease = _transportLeaseId;
     final StreamSubscription<RoomRealtimeEvent>? subscription =
         _realtimeSubscription;
@@ -1932,7 +1947,20 @@ class RoomController extends ChangeNotifier {
     }
     if (_ownsRtcTransport(transportLease)) {
       _rtcTransportOwners[_rtcAdapter] = null;
-      unawaited(_rtcAdapter.leave());
+      unawaited(
+        _withRtcAudioMutex<void>(() async {
+          try {
+            await _rtcAdapter.leave();
+          } catch (_) {
+            // Disposal is best effort; the controller is already terminal and
+            // must not surface an asynchronous provider error.
+          } finally {
+            _rtcConnected = false;
+            _rtcPublicationActive = false;
+            _rtcAudioRequested = false;
+          }
+        }),
+      );
     }
     if (_transportLeaseId == transportLease) {
       _transportLeaseId = null;

@@ -133,6 +133,8 @@ class AgoraRtcAdapter implements RtcAdapter {
   Future<void>? _reconnectInFlight;
   _RtcSessionIdentity? _joinInFlightIdentity;
   _RtcSessionIdentity? _reconnectInFlightIdentity;
+  _RtcReconnectState? _reconnectState;
+  int _reconnectGeneration = 0;
   bool _reconnectOwnsJoin = false;
   Completer<void>? _joinCompletion;
   Completer<void>? _joinCancellation;
@@ -547,8 +549,15 @@ class AgoraRtcAdapter implements RtcAdapter {
     if (_joinInFlight != null) {
       return Future<void>.error(_operationConflict(RtcAdapterFailure.join));
     }
+    final _RtcReconnectState reconnectState = _RtcReconnectState(
+      ++_reconnectGeneration,
+    );
+    _reconnectState = reconnectState;
     _reconnectInFlightIdentity = requestedIdentity;
-    final Future<void> operation = _reconnectInternal(credentials);
+    final Future<void> operation = _reconnectInternal(
+      credentials,
+      reconnectState,
+    );
     _reconnectInFlight = operation;
     operation.then<void>(
       (_) {
@@ -558,6 +567,9 @@ class AgoraRtcAdapter implements RtcAdapter {
         if (identical(_reconnectInFlightIdentity, requestedIdentity)) {
           _reconnectInFlightIdentity = null;
         }
+        if (identical(_reconnectState, reconnectState)) {
+          _reconnectState = null;
+        }
       },
       onError: (Object _, StackTrace __) {
         if (identical(_reconnectInFlight, operation)) {
@@ -566,15 +578,22 @@ class AgoraRtcAdapter implements RtcAdapter {
         if (identical(_reconnectInFlightIdentity, requestedIdentity)) {
           _reconnectInFlightIdentity = null;
         }
+        if (identical(_reconnectState, reconnectState)) {
+          _reconnectState = null;
+        }
       },
     );
     return operation;
   }
 
-  Future<void> _reconnectInternal(RtcCredentials credentials) async {
-    final bool wasAudioEnabled = _localAudioEnabled;
+  Future<void> _reconnectInternal(
+    RtcCredentials credentials,
+    _RtcReconnectState reconnectState,
+  ) async {
     try {
-      await leave();
+      _ensureReconnectActive(reconnectState);
+      await _startLeaveOperation(emitEvent: true);
+      _ensureReconnectActive(reconnectState);
       // Reconnect owns the join phase. Public join calls remain blocked while
       // the leave/join transition is in progress, while this internal call is
       // allowed to use the normal single-flight join machinery.
@@ -584,18 +603,25 @@ class AgoraRtcAdapter implements RtcAdapter {
       } finally {
         _reconnectOwnsJoin = false;
       }
-      final ClientRoleType role = _roleFor(credentials.role);
-      await setLocalAudioEnabled(
-        wasAudioEnabled && role == ClientRoleType.clientRoleBroadcaster,
-      );
+      // Reconnect always returns with publication disabled. The room
+      // controller is the sole authority allowed to explicitly publish after
+      // it has rechecked the latest room snapshot and permission state.
+      _ensureReconnectActive(reconnectState);
     } catch (_) {
       try {
-        await leave();
+        await _startLeaveOperation(emitEvent: true);
       } catch (_) {
         // Preserve the original reconnect failure.
       }
+      if (reconnectState.cancelled ||
+          !identical(_reconnectState, reconnectState) ||
+          _disposed ||
+          _disposing) {
+        throw _reconnectCancelled();
+      }
       rethrow;
     }
+    _ensureReconnectActive(reconnectState);
     _emit(const RtcAdapterEvent(type: RtcAdapterEventType.rejoined));
   }
 
@@ -677,11 +703,19 @@ class AgoraRtcAdapter implements RtcAdapter {
     if (_disposed || _disposing) {
       return Future<void>.value();
     }
+    _cancelActiveReconnect();
+    return _startLeaveOperation(emitEvent: true);
+  }
+
+  Future<void> _startLeaveOperation({required bool emitEvent}) {
+    if (_disposed || _disposing) {
+      return Future<void>.value();
+    }
     final Future<void>? inFlight = _leaveInFlight;
     if (inFlight != null) {
       return inFlight;
     }
-    final Future<void> operation = _leaveInternal(emitEvent: true);
+    final Future<void> operation = _leaveInternal(emitEvent: emitEvent);
     _leaveInFlight = operation;
     operation.then<void>(
       (_) {
@@ -703,6 +737,7 @@ class AgoraRtcAdapter implements RtcAdapter {
     _cancelJoinWait();
     _cancelRenewalWait();
     final Future<void>? joining = _joinInFlight;
+    final int? joiningSessionGeneration = _joinLogicalGeneration;
     if (joining != null) {
       try {
         await joining;
@@ -732,7 +767,8 @@ class AgoraRtcAdapter implements RtcAdapter {
     _leaveCompletion = completion;
     _leavingEngineGeneration = engineGeneration;
     _leavingCallbackGeneration = callbackGeneration;
-    _leavingSessionGeneration = _activeSessionGeneration;
+    _leavingSessionGeneration =
+        _activeSessionGeneration ?? joiningSessionGeneration;
     _leavingChannelId = channelId;
     _leavingUid = uid;
     Object? failure;
@@ -807,6 +843,7 @@ class AgoraRtcAdapter implements RtcAdapter {
     }
     _disposing = true;
     ++_lifecycleGeneration;
+    _cancelActiveReconnect();
     _cancelInitializeWait();
     _cancelJoinWait();
     _cancelRenewalWait();
@@ -842,6 +879,15 @@ class AgoraRtcAdapter implements RtcAdapter {
       } catch (_) {
         // Continue to release native resources even if the channel is already
         // gone or the provider reports a leave timeout during teardown.
+      }
+    }
+
+    final Future<void>? reconnecting = _reconnectInFlight;
+    if (reconnecting != null) {
+      try {
+        await reconnecting;
+      } catch (_) {
+        // Release owns teardown; reconnect cancellation is expected here.
       }
     }
 
@@ -1577,6 +1623,30 @@ class AgoraRtcAdapter implements RtcAdapter {
   RtcAdapterException _operationConflict(RtcAdapterFailure failure) =>
       RtcAdapterException(failure: failure, message: 'RTC 会话操作正在进行，请等待完成后重试');
 
+  RtcAdapterException _reconnectCancelled() => const RtcAdapterException(
+    failure: RtcAdapterFailure.join,
+    message: 'RTC 重连已取消',
+  );
+
+  void _ensureReconnectActive(_RtcReconnectState reconnectState) {
+    if (_disposed ||
+        _disposing ||
+        reconnectState.cancelled ||
+        !identical(_reconnectState, reconnectState) ||
+        reconnectState.generation != _reconnectGeneration) {
+      throw _reconnectCancelled();
+    }
+  }
+
+  void _cancelActiveReconnect() {
+    final _RtcReconnectState? reconnectState = _reconnectState;
+    if (reconnectState == null || reconnectState.cancelled) {
+      return;
+    }
+    reconnectState.cancelled = true;
+    ++_reconnectGeneration;
+  }
+
   RtcAdapterException? _validateCredentialsForEntry(
     RtcCredentials credentials,
   ) {
@@ -1615,6 +1685,13 @@ class AgoraRtcAdapter implements RtcAdapter {
     _joinEventReported = true;
     _emit(const RtcAdapterEvent(type: RtcAdapterEventType.joined));
   }
+}
+
+class _RtcReconnectState {
+  _RtcReconnectState(this.generation);
+
+  final int generation;
+  bool cancelled = false;
 }
 
 class _RtcOperationCancelled implements Exception {
