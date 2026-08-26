@@ -13,6 +13,13 @@ void main() {
     );
     expect(await oldManager.hasAcceptedConsent(), isFalse);
 
+    final AuthSessionManager previousVersionManager = AuthSessionManager(
+      MemoryKeyValueStore(<String, String>{
+        AuthSessionManager.consentStorageKey: 'accepted:app-owned-v1',
+      }),
+    );
+    expect(await previousVersionManager.hasAcceptedConsent(), isFalse);
+
     final AuthSessionManager manager = AuthSessionManager(
       MemoryKeyValueStore(),
     );
@@ -38,7 +45,8 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('App-owned v1'), findsWidgets);
+    expect(find.textContaining('App-owned v2'), findsWidgets);
+    expect(find.textContaining('支付宝 App Pay SDK'), findsOneWidget);
     await tester.tap(find.byKey(const Key('consent-submit')));
     expect(accepted, isFalse);
 

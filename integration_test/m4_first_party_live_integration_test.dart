@@ -13,6 +13,7 @@ import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
+import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
@@ -252,7 +253,8 @@ void main() {
         environment: environment,
         initialStorage: <String, String>{
           'auth.session.v2': refreshedSession.encode(),
-          'compliance.consent.v1': 'accepted:app-owned-v1',
+          AuthSessionManager.consentStorageKey:
+              AuthSessionManager.consentStorageValue,
         },
       );
       await _pumpGate(tester, dependencies);

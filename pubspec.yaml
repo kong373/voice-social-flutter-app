@@ -14,6 +14,8 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_secure_storage: ^10.3.1
+  alipay_app_pay:
+    path: packages/alipay_app_pay
 
 dev_dependencies:
   flutter_test:

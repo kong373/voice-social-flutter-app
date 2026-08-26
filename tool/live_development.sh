@@ -36,6 +36,9 @@ Options:
                      `build-apk`.
   --enable-agora-rtc Explicitly opt into the first-party server-issued Agora
                      audio transport. Without this switch the value is false.
+  --enable-alipay-app-pay Explicitly opt into the first-party Android Alipay
+                     App Pay bridge. It still requires a server-issued order
+                     string; no Alipay credential is accepted by this wrapper.
   --dry-run          Validate configuration and print a redacted plan only.
   --help             Show this help.
 
@@ -49,7 +52,8 @@ with a matching app-debug.apk.sha256 sidecar before the isolated host is
 removed.
 It rejects OAuth Client Secrets, vendor secrets, user Dart-define aliases, and
 --dart-define-from-file. API_BASE_URL is an origin with an optional root `/`;
-the client metadata and ENABLE_AGORA_RTC define are fixed by this wrapper.
+the client metadata and ENABLE_AGORA_RTC/ENABLE_ALIPAY_APP_PAY defines are
+  fixed by this wrapper.
 Only non-defining diagnostic flags (--verbose, --quiet, --wrap, --no-wrap,
 --color, --no-color, --suppress-analytics, --disable-analytics) may be passed
 after `--`; runtime defines, device selection, and project arguments belong to
@@ -81,6 +85,7 @@ is_runtime_define_environment_name() {
   local normalized_name
   normalized_name="$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
   [[ "$normalized_name" == 'enable_agora_rtc' ||
+    "$normalized_name" == 'enable_alipay_app_pay' ||
     "$normalized_name" == 'agora_rtc' ||
     "$normalized_name" == 'agora_enable_rtc' ||
     "$normalized_name" == 'dart_define' ||
@@ -119,6 +124,9 @@ reject_runtime_define_environment() {
         "$normalized_name" == 'agora_rtc' ||
         "$normalized_name" == 'agora_enable_rtc' ]]; then
         fail 'ENABLE_AGORA_RTC is controlled only by --enable-agora-rtc'
+      fi
+      if [[ "$normalized_name" == 'enable_alipay_app_pay' ]]; then
+        fail 'ENABLE_ALIPAY_APP_PAY is controlled only by --enable-alipay-app-pay'
       fi
       fail 'runtime defines are owned by this wrapper and cannot come from the environment'
     fi
@@ -296,6 +304,7 @@ print_plan() {
   printf 'qa_console=false\n'
   printf 'video_runtime_demo=false\n'
   printf 'enable_agora_rtc=%s\n' "$ENABLE_AGORA_RTC"
+  printf 'enable_alipay_app_pay=%s\n' "$ENABLE_ALIPAY_APP_PAY"
   printf 'oauth_client_id_configured=true\n'
   if [[ "$COMMAND" == 'run' ]]; then
     printf 'flutter_action=flutter run --no-pub\n'
@@ -478,6 +487,7 @@ API_BASE_URL_VALUE="${API_BASE_URL:-}"
 OAUTH_CLIENT_ID_VALUE="${OAUTH_CLIENT_ID:-}"
 DEVICE_ID=''
 ENABLE_AGORA_RTC=false
+ENABLE_ALIPAY_APP_PAY=false
 DRY_RUN=false
 EXTRA_ARGS=()
 
@@ -538,6 +548,13 @@ while (($# > 0)); do
       ;;
     --enable-agora-rtc=*)
       fail '--enable-agora-rtc is a flag and does not accept a value'
+      ;;
+    --enable-alipay-app-pay)
+      ENABLE_ALIPAY_APP_PAY=true
+      shift
+      ;;
+    --enable-alipay-app-pay=*)
+      fail '--enable-alipay-app-pay is a flag and does not accept a value'
       ;;
     --dry-run)
       DRY_RUN=true
@@ -601,6 +618,7 @@ DEFINES=(
   '--dart-define=ENABLE_QA_CONSOLE=false'
   '--dart-define=ENABLE_VIDEO_RUNTIME_DEMO=false'
   "--dart-define=ENABLE_AGORA_RTC=${ENABLE_AGORA_RTC}"
+  "--dart-define=ENABLE_ALIPAY_APP_PAY=${ENABLE_ALIPAY_APP_PAY}"
   "--dart-define=API_BASE_URL=${API_BASE_URL_VALUE}"
   '--dart-define=ALLOW_INSECURE_HTTP=true'
   "--dart-define=OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID_VALUE}"

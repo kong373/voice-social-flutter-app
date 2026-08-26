@@ -44,6 +44,7 @@ class AppEnvironment {
     this.liveProbePath = '/',
     this.allowInsecureHttp = false,
     this.enableAgoraRtc = false,
+    this.enableAlipayAppPay = false,
     @Deprecated('Mobile clients are public clients and never carry a secret.')
     String oauthClientSecret = '',
   });
@@ -76,6 +77,7 @@ class AppEnvironment {
       ),
       allowInsecureHttp: const bool.fromEnvironment('ALLOW_INSECURE_HTTP'),
       enableAgoraRtc: const bool.fromEnvironment('ENABLE_AGORA_RTC'),
+      enableAlipayAppPay: const bool.fromEnvironment('ENABLE_ALIPAY_APP_PAY'),
     );
   }
 
@@ -91,6 +93,7 @@ class AppEnvironment {
     required String liveProbePath,
     required bool allowInsecureHttp,
     bool enableAgoraRtc = false,
+    bool enableAlipayAppPay = false,
     bool releaseBuild = kReleaseMode,
   }) {
     final DeploymentEnvironment deploymentEnvironment =
@@ -131,6 +134,7 @@ class AppEnvironment {
       liveProbePath: liveProbePath,
       allowInsecureHttp: allowInsecureHttp,
       enableAgoraRtc: enableAgoraRtc,
+      enableAlipayAppPay: enableAlipayAppPay,
     );
   }
 
@@ -164,6 +168,12 @@ class AppEnvironment {
   /// the adapter is only wired when live mode also receives complete,
   /// server-issued RTC credentials from the authenticated token endpoint.
   final bool enableAgoraRtc;
+
+  /// Explicit opt-in for the first-party Android Alipay bridge. The default
+  /// is disabled; enabling it still requires a server-issued order string and
+  /// the native official SDK host plugin. No payment credential is read by
+  /// the Flutter client.
+  final bool enableAlipayAppPay;
 
   /// Compatibility getter for older callers. The value is deliberately empty.
   @Deprecated('Mobile clients are public clients and never carry a secret.')
@@ -213,6 +223,7 @@ class AppEnvironment {
     'realtimeEndpointConfigured': realtimeEndpoint.trim().isNotEmpty,
     'allowInsecureHttp': allowInsecureHttp,
     'enableAgoraRtc': enableAgoraRtc,
+    'enableAlipayAppPay': enableAlipayAppPay,
   };
 
   void validateLiveConfiguration() {

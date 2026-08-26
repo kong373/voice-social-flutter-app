@@ -98,7 +98,7 @@ class _ConsentPageState extends State<ConsentPage> {
               centered: false,
             ),
             const SizedBox(height: 25),
-            const AccountSectionLabel(text: '应用协议 · App-owned v1'),
+            const AccountSectionLabel(text: '应用协议 · App-owned v2'),
             const AccountSheet(
               padding: EdgeInsets.fromLTRB(16, 16, 16, 18),
               child: _ConsentBody(),
@@ -107,7 +107,7 @@ class _ConsentPageState extends State<ConsentPage> {
             AccountNoticeStrip(
               icon: Icons.privacy_tip_outlined,
               text:
-                  '本协议由本应用以 App-owned v1 版本发布和留档，不代表第三方法律审核或认证。协议更新后，应用会再次请求你的确认。',
+                  '本协议由本应用以 App-owned v2 版本发布和留档，不代表第三方法律审核或认证。协议更新后，应用会再次请求你的确认。',
               tone: AccountOxygenColors.cyan,
             ),
             const SizedBox(height: 8),
@@ -137,7 +137,7 @@ class _ConsentPageState extends State<ConsentPage> {
                     }
                   : null,
               controlAffinity: ListTileControlAffinity.leading,
-              title: const Text('我已阅读并同意 App-owned v1 用户协议与隐私政策'),
+              title: const Text('我已阅读并同意 App-owned v2 用户协议与隐私政策'),
               subtitle: Text(_hasReachedEnd ? '已读到正文末尾，可以确认。' : '请先滚动到正文末尾。'),
             ),
             if (_error != null) ...<Widget>[
@@ -248,7 +248,7 @@ class _ConsentBody extends StatelessWidget {
         Text('4. 版本与变更', style: heading),
         const SizedBox(height: 5),
         const Text(
-          '本次确认绑定 App-owned v1。后续版本发生实质变更时，应用会清除旧版本的确认效力，在进入主要功能前重新展示对应版本正文。',
+          '本次确认绑定 App-owned v2。后续版本发生实质变更时，应用会清除旧版本的确认效力，在进入主要功能前重新展示对应版本正文。',
         ),
         const SizedBox(height: 12),
         Text('5. 厂商能力边界', style: heading),
@@ -256,10 +256,22 @@ class _ConsentBody extends StatelessWidget {
         const Text(
           '未接入的短信、实时音视频、即时通讯、支付、推送或对象存储能力会显示不可用状态。应用不会把本地演示、开发验证码或缺失适配器描述为正式厂商成功。',
         ),
+        const SizedBox(height: 12),
+        Text('6. 支付 SDK 说明', style: heading),
+        const SizedBox(height: 5),
+        const Text(
+          '仅当你主动确认 Android 充值并点击支付宝支付时，应用才会调用支付宝 App Pay SDK，目的是打开支付宝或其网页支付流程并处理订单返回。SDK 可能处理服务端签名订单串、订单结果状态，以及完成网络请求和应用切换所需的设备、网络和已安装应用可用性信息；应用只接收脱敏后的临时结果分类，到账和金额以本应用服务端订单状态为准。应用不会把支付宝私钥、证书或长期支付密钥放入客户端。',
+        ),
+        const SizedBox(height: 12),
+        Text('7. 第三方能力的主动触发', style: heading),
+        const SizedBox(height: 5),
+        const Text(
+          '支付宝支付以及其他可选第三方能力只会在对应功能被明确操作且配置已通过检查时尝试调用；未配置、取消、超时或返回不确定状态时，应用会回到服务端核验或明确失败，不会伪造成功。相关厂商对其处理活动另有说明的，以其实际页面和隐私规则为准。',
+        ),
         // Keep the document long enough that the user must deliberately reach
         // the end on a phone-sized viewport.
         const SizedBox(height: 260),
-        const Text('正文结束 · App-owned v1'),
+        const Text('正文结束 · App-owned v2'),
       ],
     );
   }

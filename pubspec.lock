@@ -9,6 +9,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.6.3"
+  alipay_app_pay:
+    dependency: "direct main"
+    description:
+      path: "packages/alipay_app_pay"
+      relative: true
+    source: path
+    version: "0.1.0"
   args:
     dependency: transitive
     description:

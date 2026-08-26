@@ -1,0 +1,19 @@
+name: alipay_app_pay
+description: First-party Android bridge for the official Alipay App Pay SDK.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=3.12.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.kong373.alipay_app_pay
+        pluginClass: AlipayAppPayPlugin

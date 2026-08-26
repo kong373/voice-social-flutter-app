@@ -16,6 +16,7 @@ import 'package:voice_social_app/features/account/domain/auth_repository.dart';
 import 'package:voice_social_app/features/commerce/catalog/data/backend_commerce_catalog_repository.dart';
 import 'package:voice_social_app/features/commerce/catalog/data/mock_commerce_catalog_repository.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_repository.dart';
+import 'package:voice_social_app/features/commerce/infrastructure/alipay_app_pay_adapter.dart';
 import 'package:voice_social_app/features/commerce/data/backend_commerce_repository.dart';
 import 'package:voice_social_app/features/commerce/data/mock_commerce_repository.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
@@ -171,6 +172,13 @@ class AppDependencies {
                 supportsRealNameSubmission: true,
               )
             : MockAccountComplianceRepository());
+    final AlipayAppPayAdapter alipayAppPayAdapter =
+        environment.isLive && environment.enableAlipayAppPay
+        ? MethodChannelAlipayAppPayAdapter(
+            enabled: true,
+            consentChecker: sessionManager.hasAcceptedConsent,
+          )
+        : const DisabledAlipayAppPayAdapter();
     final DiscoveryRepository discoveryRepository =
         discoveryRepositoryOverride ??
         (environment.isLive
@@ -210,6 +218,7 @@ class AppDependencies {
       commerceCatalogRepository = BackendCommerceCatalogRepository(
         apiClient: apiClient,
         routes: routes,
+        alipayAppPayAdapter: alipayAppPayAdapter,
       );
     } else {
       final MockCommerceRepository mockCommerceRepository =

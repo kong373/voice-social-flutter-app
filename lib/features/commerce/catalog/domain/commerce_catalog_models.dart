@@ -70,6 +70,7 @@ class RechargeOrder {
     required this.state,
     required this.createdAt,
     this.message = '',
+    this.paymentOrderString,
   });
 
   final String orderNo;
@@ -80,7 +81,17 @@ class RechargeOrder {
   final DateTime createdAt;
   final String message;
 
-  RechargeOrder copyWith({RechargeOrderState? state, String? message}) {
+  /// Server-issued, signed Alipay order payload held only in memory until the
+  /// native bridge is invoked. It must never be persisted, logged, or treated
+  /// as evidence of a successful payment; [queryRechargeOrder] remains the
+  /// sole authority for the final order state.
+  final String? paymentOrderString;
+
+  RechargeOrder copyWith({
+    RechargeOrderState? state,
+    String? message,
+    String? paymentOrderString,
+  }) {
     return RechargeOrder(
       orderNo: orderNo,
       account: account,
@@ -89,6 +100,7 @@ class RechargeOrder {
       state: state ?? this.state,
       createdAt: createdAt,
       message: message ?? this.message,
+      paymentOrderString: paymentOrderString ?? this.paymentOrderString,
     );
   }
 }
