@@ -43,6 +43,7 @@ class AppEnvironment {
     this.apiTimeout = const Duration(seconds: 15),
     this.liveProbePath = '/',
     this.allowInsecureHttp = false,
+    this.enableAgoraRtc = false,
     @Deprecated('Mobile clients are public clients and never carry a secret.')
     String oauthClientSecret = '',
   });
@@ -74,6 +75,7 @@ class AppEnvironment {
         defaultValue: '/',
       ),
       allowInsecureHttp: const bool.fromEnvironment('ALLOW_INSECURE_HTTP'),
+      enableAgoraRtc: const bool.fromEnvironment('ENABLE_AGORA_RTC'),
     );
   }
 
@@ -88,6 +90,7 @@ class AppEnvironment {
     required String realtimeEndpoint,
     required String liveProbePath,
     required bool allowInsecureHttp,
+    bool enableAgoraRtc = false,
     bool releaseBuild = kReleaseMode,
   }) {
     final DeploymentEnvironment deploymentEnvironment =
@@ -127,6 +130,7 @@ class AppEnvironment {
       apiTimeout: Duration(seconds: timeoutSeconds),
       liveProbePath: liveProbePath,
       allowInsecureHttp: allowInsecureHttp,
+      enableAgoraRtc: enableAgoraRtc,
     );
   }
 
@@ -155,6 +159,11 @@ class AppEnvironment {
   final Duration apiTimeout;
   final String liveProbePath;
   final bool allowInsecureHttp;
+
+  /// Explicit opt-in for the live Agora transport. It is false by default;
+  /// the adapter is only wired when live mode also receives complete,
+  /// server-issued RTC credentials from the authenticated token endpoint.
+  final bool enableAgoraRtc;
 
   /// Compatibility getter for older callers. The value is deliberately empty.
   @Deprecated('Mobile clients are public clients and never carry a secret.')
@@ -203,6 +212,7 @@ class AppEnvironment {
     'developmentOutboxConfigured': false,
     'realtimeEndpointConfigured': realtimeEndpoint.trim().isNotEmpty,
     'allowInsecureHttp': allowInsecureHttp,
+    'enableAgoraRtc': enableAgoraRtc,
   };
 
   void validateLiveConfiguration() {

@@ -200,7 +200,10 @@ jobs:
             --exclude=.ci_app \
             --exclude=artifacts \
             --exclude=build \
+            --exclude='/android' \
             ./ .ci_app/
+
+          python3 tool/prepare_android_audio_manifest.py .ci_app
 
           mkdir -p \
             .ci_app/artifacts/qa/m2.4-emulator/AVD-A \

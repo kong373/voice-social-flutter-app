@@ -45,6 +45,46 @@ Device and anti-abuse fields are supplied through `ClientDevice`; no fixed real 
 
 `enterRoom` sends room ID, optional password, and a numeric entry-source code. Home discovery uses source `0`; search uses `2`; share uses `4`; discovery post uses `10`; leaderboard uses `11`; message uses `19`.
 
+### Agora RTC credential contract
+
+When `ENABLE_AGORA_RTC=true`, the Flutter client obtains a short-lived public
+credential immediately after `enterRoom`/`reConnectRoomInfo` and again for
+token renewal:
+
+```text
+GET /app-room-api/room/com/v1/buildAgoraToken?roomId=<room-id>
+X-Request-Id: <client-generated opaque id>
+```
+
+The authenticated response uses the common envelope and the client allow-list
+accepts only `provider=agora`, public `appId`, `channelId` (or legacy
+`channelName`), ephemeral `token`, numeric `uid`, `role`, and `expiresAt` or
+positive `ttlSeconds`. The client rejects a response whose uid is not the
+authenticated user or whose explicit room identity does not match the request;
+an incomplete response leaves the room `HTTP_SNAPSHOT_ONLY`.
+
+The mobile client never accepts or stores an App Certificate or provider
+signing secret. Joining starts with `publishMicrophoneTrack=false`; only an
+explicit, successful first-party microphone permission request may enable the
+publisher track. Generated Android hosts apply an app-level manifest overlay
+that removes the Agora library's audio-unneeded CAMERA and READ_PHONE_STATE
+permissions while retaining RECORD_AUDIO, network, and required Bluetooth
+permissions; it also removes Agora's screen-capture activity/service and
+`FOREGROUND_SERVICE_MEDIA_PROJECTION` because this product surface is
+audio-only. The `ffi: 2.2.0` dependency override is required because the
+current Flutter secure-storage dependency requires ffi 2.x while
+`agora_rtc_engine 6.6.3` still declares ffi 1.x; it can be removed after the
+upstream constraint is widened and normal lockfile resolution succeeds.
+
+The official Agora 6.6.3 Android set intentionally retains both its Iris
+wrapper and RTC SDK AAR. They currently share the historical `io.agora.rtc`
+package namespace, which AGP 9 validates by default. The generated-host
+helper therefore exposes the app compile SDK to Agora's legacy Gradle helper
+and applies the documented AGP migration setting
+`android.uniquePackageNames=false`; it does not remove either AAR or bypass
+manifest merging. Remove that setting when the upstream AARs publish distinct
+namespaces.
+
 ## Legacy mic status mapping
 
 | Backend status | Meaning | Flutter state |
@@ -72,7 +112,9 @@ Unknown events and retired gameplay events are ignored. They do not create UI en
 
 ## Known integration gaps
 
-- The approved Flutter RTC provider driver and token-renewal behavior are not configured.
+- The Flutter Agora driver is opt-in (`ENABLE_AGORA_RTC=true`); it requires the
+  authenticated `buildAgoraToken` response to be complete before joining and
+  remains snapshot-only when that readiness contract is unavailable.
 - The approved realtime socket/MQTT/IM handshake and heartbeat are not configured.
 - Wallet balance and server-backed gift catalog need their authoritative economy routes.
 - The development gateway, database-backed accounts, and non-production credentials are not present in this public repository.

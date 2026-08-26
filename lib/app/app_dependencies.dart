@@ -35,6 +35,7 @@ import 'package:voice_social_app/features/room/application/room_controller.dart'
 import 'package:voice_social_app/features/room/data/backend_room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_room_repository.dart';
+import 'package:voice_social_app/features/room/data/backend_rtc_token_repository.dart';
 import 'package:voice_social_app/features/room/data/mock_room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/data/mock_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/data/mock_room_repository.dart';
@@ -128,6 +129,7 @@ class AppDependencies {
     MessageRepository? messageRepositoryOverride,
     ExternalUrlOpener? externalUrlOpenerOverride,
   }) {
+    final DateTime Function() currentTime = () => mockNow ?? DateTime.now();
     final AuthSessionManager sessionManager = AuthSessionManager(store);
     final ApiClient apiClient = ApiClient(
       baseUri: Uri.parse(environment.apiBaseUrl),
@@ -228,8 +230,21 @@ class AppDependencies {
                 nativePermissionAdapter: nativePermissionAdapter,
               )
             : MockMessageRepository(now: mockNow));
+    final RtcTokenRepository? rtcTokenRepository =
+        environment.isLive && environment.enableAgoraRtc
+        ? BackendRtcTokenRepository(
+            apiClient: apiClient,
+            routes: routes,
+            now: currentTime,
+          )
+        : null;
     final RoomRepository roomRepository = environment.isLive
-        ? BackendRoomRepository(apiClient: apiClient, routes: routes)
+        ? BackendRoomRepository(
+            apiClient: apiClient,
+            routes: routes,
+            rtcTokenRepository: rtcTokenRepository,
+            now: currentTime,
+          )
         : MockRoomRepository();
     final RoomOperationsRepository roomOperationsRepository = environment.isLive
         ? BackendRoomOperationsRepository(apiClient: apiClient, routes: routes)
@@ -243,7 +258,21 @@ class AppDependencies {
         ? BackendRoomPkRepository(apiClient: apiClient, routes: routes)
         : MockRoomPkRepository();
     final RtcAdapter rtcAdapter = environment.isLive
-        ? const SnapshotOnlyRtcAdapter()
+        ? rtcTokenRepository == null
+              ? const SnapshotOnlyRtcAdapter()
+              : AgoraRtcAdapter(
+                  credentialsProvider: (String roomId) async {
+                    final session = sessionManager.session;
+                    if (session == null) {
+                      throw StateError('用户未登录，不能刷新 RTC 凭证');
+                    }
+                    return rtcTokenRepository.buildRtcToken(
+                      roomId: roomId,
+                      currentUserId: session.userId,
+                    );
+                  },
+                  microphonePermissionAdapter: nativePermissionAdapter,
+                )
         : MockRtcAdapter();
     final RoomRealtimeGateway realtimeGateway = environment.isLive
         ? const SnapshotOnlyRoomRealtimeGateway()
@@ -270,7 +299,7 @@ class AppDependencies {
       environment: environment,
       sessionManager: sessionManager,
       authController: authController,
-      currentTime: () => mockNow ?? DateTime.now(),
+      currentTime: currentTime,
       liveReadOnlyRepository: liveReadOnlyRepository,
       accountComplianceRepository: accountComplianceRepository,
       discoveryRepository: discoveryRepository,

@@ -5,24 +5,33 @@ import 'package:voice_social_app/features/room/domain/fixed_eight_seat_adapter.d
 import 'package:voice_social_app/features/room/domain/room_intent_digest.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
+import 'package:voice_social_app/features/room/data/backend_rtc_token_repository.dart';
 import 'package:voice_social_app/features/room/data/room_write_guard.dart';
 
 /// M3.2A live repository.
 ///
 /// It exposes the authoritative HTTP room snapshot and the first-party room
-/// writes. RTC/audio/realtime transport remains explicitly vendor-blocked.
-class BackendRoomRepository implements RoomRepository, GiftReceiptRepository {
+/// writes. RTC credentials are an explicit opt-in capability; realtime and
+/// audio remain fail-closed unless the app supplies the corresponding adapter.
+class BackendRoomRepository
+    implements RoomRepository, GiftReceiptRepository, RtcTokenRepository {
   BackendRoomRepository({
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
     FixedEightSeatAdapter seatAdapter = const FixedEightSeatAdapter(),
+    RtcTokenRepository? rtcTokenRepository,
+    DateTime Function()? now,
   }) : _apiClient = apiClient,
        _routes = routes,
-       _seatAdapter = seatAdapter;
+       _seatAdapter = seatAdapter,
+       _rtcTokenRepository = rtcTokenRepository,
+       _now = now ?? DateTime.now;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
   final FixedEightSeatAdapter _seatAdapter;
+  final RtcTokenRepository? _rtcTokenRepository;
+  final DateTime Function() _now;
   final RoomWriteGuard _writeGuard = RoomWriteGuard(scope: 'room-session');
   final RoomWriteGuard _giftWriteGuard = RoomWriteGuard(scope: 'room-gift');
   String? _activeRoomId;
@@ -147,9 +156,13 @@ class BackendRoomRepository implements RoomRepository, GiftReceiptRepository {
           snapshot,
           requestedRoomId: normalizedRoomId,
         );
-        _activeRoomId = snapshot.roomId;
+        final RoomSnapshot transportReady = await _withRtcCredentials(
+          snapshot,
+          currentUserId: currentUserId,
+        );
+        _activeRoomId = transportReady.roomId;
         _activeCurrentUserId = currentUserId;
-        return snapshot;
+        return transportReady;
       },
     );
   }
@@ -182,11 +195,70 @@ class BackendRoomRepository implements RoomRepository, GiftReceiptRepository {
           snapshot,
           requestedRoomId: normalizedRoomId,
         );
-        _activeRoomId = snapshot.roomId;
+        final RoomSnapshot transportReady = await _withRtcCredentials(
+          snapshot,
+          currentUserId: currentUserId,
+        );
+        _activeRoomId = transportReady.roomId;
         _activeCurrentUserId = currentUserId;
-        return snapshot;
+        return transportReady;
       },
     );
+  }
+
+  /// Fetches a short-lived provider token through the authenticated
+  /// first-party route. The default live room graph leaves this capability
+  /// unset until the app has explicitly enabled the RTC readiness gate.
+  @override
+  Future<RtcCredentials> buildRtcToken({
+    required String roomId,
+    required int currentUserId,
+    String? requestId,
+  }) {
+    final RtcTokenRepository? repository = _rtcTokenRepository;
+    if (repository == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: 'RTC 凭证能力尚未启用',
+      );
+    }
+    return repository.buildRtcToken(
+      roomId: roomId,
+      currentUserId: currentUserId,
+      requestId: requestId,
+    );
+  }
+
+  Future<RoomSnapshot> _withRtcCredentials(
+    RoomSnapshot snapshot, {
+    required int currentUserId,
+  }) async {
+    if (_rtcTokenRepository == null) {
+      return snapshot;
+    }
+    try {
+      final RtcCredentials credentials = await buildRtcToken(
+        roomId: snapshot.roomId,
+        currentUserId: currentUserId,
+      );
+      if (credentials.uid != currentUserId ||
+          credentials.channelId != snapshot.roomId ||
+          !credentials.hasUsablePublicCredentials ||
+          (credentials.expiresAt != null &&
+              !credentials.expiresAt!.isAfter(_now().toUtc()))) {
+        return snapshot;
+      }
+      return snapshot.copyWith(
+        rtc: credentials,
+        transportMode: RoomTransportMode.interactive,
+      );
+    } on Object {
+      // A room snapshot remains safe to display when the optional provider
+      // token/readiness endpoint is unavailable or malformed. In particular,
+      // never fall back to a mock token or invoke a vendor without a complete
+      // public credential set.
+      return snapshot;
+    }
   }
 
   RoomSnapshot _snapshotFromResponse(

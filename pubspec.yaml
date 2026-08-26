@@ -7,6 +7,7 @@ environment:
   sdk: ">=3.12.0 <4.0.0"
 
 dependencies:
+  agora_rtc_engine: 6.6.3
   crypto: 3.0.7
   first_party_native_permissions:
     path: packages/first_party_native_permissions
@@ -19,6 +20,12 @@ dev_dependencies:
     sdk: flutter
   integration_test:
     sdk: flutter
+
+# agora_rtc_engine 6.6.3 still declares the older ffi constraint. The SDK's
+# generated bindings are compatible with ffi 2.x, which is also required by
+# flutter_secure_storage on the supported desktop test host.
+dependency_overrides:
+  ffi: 2.2.0
 
 flutter:
   uses-material-design: true

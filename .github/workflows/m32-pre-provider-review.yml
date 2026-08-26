@@ -131,7 +131,9 @@ jobs:
             --exclude=.review_app \
             --exclude=artifacts \
             --exclude=build \
+            --exclude='/android' \
             ./ .review_app/
+          python3 tool/prepare_android_audio_manifest.py .review_app
           python3 - <<'PY'
           from pathlib import Path
           path = Path('.review_app/android/app/src/main/AndroidManifest.xml')
@@ -254,7 +256,9 @@ jobs:
             --exclude=.review_app \
             --exclude=artifacts \
             --exclude=build \
+            --exclude='/android' \
             ./ .review_app/
+          python3 tool/prepare_android_audio_manifest.py .review_app
           python3 - <<'PY'
           from pathlib import Path
           path = Path('.review_app/android/app/src/main/AndroidManifest.xml')
