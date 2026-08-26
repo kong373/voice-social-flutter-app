@@ -359,6 +359,66 @@ void main() {
     },
   );
 
+  test(
+    'queued dispose cleanup cannot leave a shared adapter reclaimed by a new controller',
+    () async {
+      final _RaceRepository firstRepository = _RaceRepository()
+        ..seedSnapshot(occupiedOwnSeat: true);
+      final _RaceRepository secondRepository = _RaceRepository();
+      final _RaceRealtimeGateway firstRealtime = _RaceRealtimeGateway();
+      final _RaceRealtimeGateway secondRealtime = _RaceRealtimeGateway();
+      final _LeaseHandoffRtcAdapter rtc = _LeaseHandoffRtcAdapter();
+      final RoomController firstController = RoomController(
+        roomId: '880217',
+        title: '深夜温柔陪伴',
+        currentUserId: 10001,
+        accessToken: 'token',
+        repository: firstRepository,
+        rtcAdapter: rtc,
+        realtimeGateway: firstRealtime,
+      );
+      final RoomController secondController = RoomController(
+        roomId: '520906',
+        title: '电台夜聊',
+        currentUserId: 10002,
+        accessToken: 'token-2',
+        repository: secondRepository,
+        rtcAdapter: rtc,
+        realtimeGateway: secondRealtime,
+      );
+      addTearDown(() async {
+        secondController.dispose();
+        firstController.dispose();
+        await Future<void>.delayed(Duration.zero);
+        await firstRealtime.dispose();
+        await secondRealtime.dispose();
+      });
+
+      await firstController.join();
+      final Future<bool> firstToggle = firstController.toggleMicrophone();
+      await firstRepository.muteStarted.future;
+      firstRepository.muteGate.complete();
+      await rtc.audioStarted.future;
+
+      // dispose queues leave behind the blocked microphone operation while
+      // retaining the old lease. The second join is allowed to claim it.
+      firstController.dispose();
+      await secondController.join();
+      expect(secondController.status, RoomSessionStatus.joined);
+      expect(rtc.joinCount, 2);
+      expect(rtc.joined, isTrue);
+      expect(rtc.joinedChannelId, '880217');
+
+      rtc.audioGate.complete();
+      expect(await firstToggle, isFalse);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(rtc.leaveCount, 0);
+      expect(rtc.joined, isTrue);
+      expect(secondController.status, RoomSessionStatus.joined);
+    },
+  );
+
   test('join failure after rtc join cleans up the claimed transport', () async {
     final _RaceRepository repository = _RaceRepository();
     final _EventsThrowingRealtimeGateway realtime =
@@ -796,6 +856,49 @@ class _SharedTrackingRtcAdapter implements RtcAdapter {
   @override
   Future<void> leave() async {
     joined = false;
+  }
+}
+
+class _LeaseHandoffRtcAdapter implements RtcAdapter {
+  final Completer<void> audioStarted = Completer<void>();
+  final Completer<void> audioGate = Completer<void>();
+  final List<bool> audioStates = <bool>[];
+  bool joined = false;
+  int joinCount = 0;
+  int leaveCount = 0;
+  String? joinedChannelId;
+  bool _blockFirstAudioOperation = true;
+
+  @override
+  Future<void> join(RtcCredentials credentials) async {
+    joinCount += 1;
+    joined = true;
+    joinedChannelId = credentials.channelId;
+  }
+
+  @override
+  Future<void> reconnect(RtcCredentials credentials) async {
+    joined = true;
+    joinedChannelId = credentials.channelId;
+  }
+
+  @override
+  Future<void> setLocalAudioEnabled(bool enabled) async {
+    audioStates.add(enabled);
+    if (!audioStarted.isCompleted) {
+      audioStarted.complete();
+    }
+    if (_blockFirstAudioOperation) {
+      _blockFirstAudioOperation = false;
+      await audioGate.future;
+    }
+  }
+
+  @override
+  Future<void> leave() async {
+    leaveCount += 1;
+    joined = false;
+    joinedChannelId = null;
   }
 }
 

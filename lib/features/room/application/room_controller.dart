@@ -1411,6 +1411,33 @@ class RoomController extends ChangeNotifier {
       transportLease != null &&
       _rtcTransportOwners[_rtcAdapter] == transportLease;
 
+  Future<void> _leaveOwnedRtcTransport(Object transportLease) async {
+    await _withRtcAudioMutex<void>(() async {
+      // The lease may have been handed to a newer controller while this
+      // cleanup waited behind an older audio operation. Never let a stale
+      // queued cleanup leave that newer session.
+      if (!_ownsRtcTransport(transportLease)) {
+        return;
+      }
+      try {
+        await _rtcAdapter.leave();
+      } finally {
+        if (_ownsRtcTransport(transportLease)) {
+          _rtcTransportOwners[_rtcAdapter] = null;
+        }
+      }
+    });
+  }
+
+  Future<void> _disposeOwnedRtcTransport(Object transportLease) async {
+    try {
+      await _leaveOwnedRtcTransport(transportLease);
+    } catch (_) {
+      // Disposal is best effort; the controller is already terminal and must
+      // not surface an asynchronous provider error.
+    }
+  }
+
   bool _ownsRealtimeTransport(Object? transportLease) =>
       transportLease != null &&
       _realtimeTransportOwners[_realtimeGateway] == transportLease;
@@ -1732,16 +1759,13 @@ class RoomController extends ChangeNotifier {
     }
     if (_ownsRtcTransport(transportLease)) {
       try {
-        await _withRtcAudioMutex<void>(_rtcAdapter.leave);
+        await _leaveOwnedRtcTransport(transportLease!);
       } catch (error) {
         firstError ??= error;
       }
       _rtcConnected = false;
       _rtcPublicationActive = false;
       _rtcAudioRequested = false;
-      if (_ownsRtcTransport(transportLease)) {
-        _rtcTransportOwners[_rtcAdapter] = null;
-      }
     }
     if (_transportLeaseId == transportLease) {
       _transportLeaseId = null;
@@ -1946,21 +1970,7 @@ class RoomController extends ChangeNotifier {
       unawaited(_realtimeGateway.disconnect());
     }
     if (_ownsRtcTransport(transportLease)) {
-      _rtcTransportOwners[_rtcAdapter] = null;
-      unawaited(
-        _withRtcAudioMutex<void>(() async {
-          try {
-            await _rtcAdapter.leave();
-          } catch (_) {
-            // Disposal is best effort; the controller is already terminal and
-            // must not surface an asynchronous provider error.
-          } finally {
-            _rtcConnected = false;
-            _rtcPublicationActive = false;
-            _rtcAudioRequested = false;
-          }
-        }),
-      );
+      unawaited(_disposeOwnedRtcTransport(transportLease!));
     }
     if (_transportLeaseId == transportLease) {
       _transportLeaseId = null;
