@@ -94,6 +94,18 @@ diagnostic flags (`--verbose`, `--quiet`, `--wrap`, `--no-wrap`, `--color`,
   --enable-agora-rtc
 ```
 
+A successful `build-apk` retains the installable artifact and its checksum at:
+
+```text
+build/live-development/app-debug.apk
+build/live-development/app-debug.apk.sha256
+```
+
+The launcher prints the absolute retained path and SHA-256 only after both
+files have been written successfully. A real build clears the previous fixed
+pair before Flutter starts, so a failed build cannot leave a stale artifact
+that looks current. A dry run does not create or remove either file.
+
 ## Isolated Android host
 
 The Android target works from a clean checkout even though this repository does
@@ -106,6 +118,11 @@ generated directory is removed on exit, so the ignored `android/` host never
 pollutes this checkout or becomes a commit candidate. A dirty checkout fails
 before Flutter starts; commit or remove local changes first so the app source
 being built is unambiguous and no untracked secret can enter the host.
+For `build-apk`, the launcher copies the non-empty regular APK into the fixed,
+ignored `build/live-development/` directory and writes its SHA-256 sidecar
+before removing the temporary host. It refuses symbolic-link or non-directory
+output parents and symbolic-link/non-regular output files. Existing content
+elsewhere under `build/` is never removed.
 
 `tool/bootstrap_local.sh` remains available for general local Flutter runners,
 but it copies a generated platform host into the checkout and therefore is not

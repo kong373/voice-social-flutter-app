@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -7,14 +8,58 @@ void main() {
   late File fakeFlutterLog;
   late File fakeFlutterEnvLog;
   late File fakeFlutterVersionConfig;
+  late File fakeFlutterBehaviorConfig;
   late File fakeFlutterHostLog;
+  late Directory liveArtifactDirectory;
+  late File liveArtifact;
+  late File liveArtifactHash;
+  late bool liveArtifactDirectoryExisted;
+  late bool liveArtifactDirectoryRemovedForTest;
+  late List<int>? preservedArtifactBytes;
+  late String? preservedArtifactHash;
 
   setUp(() {
     fakeFlutterBin = Directory.systemTemp.createTempSync('live-dev-flutter-');
     fakeFlutterLog = File('${fakeFlutterBin.path}/invocation.log');
     fakeFlutterEnvLog = File('${fakeFlutterBin.path}/environment.log');
     fakeFlutterVersionConfig = File('${fakeFlutterBin.path}/version.config');
+    fakeFlutterBehaviorConfig = File('${fakeFlutterBin.path}/behavior.config')
+      ..writeAsStringSync('success\n');
     fakeFlutterHostLog = File('${fakeFlutterBin.path}/android-host.log');
+    liveArtifactDirectory = Directory('build/live-development');
+    liveArtifact = File('${liveArtifactDirectory.path}/app-debug.apk');
+    liveArtifactHash = File(
+      '${liveArtifactDirectory.path}/app-debug.apk.sha256',
+    );
+    final FileSystemEntityType artifactDirectoryType =
+        FileSystemEntity.typeSync(
+          liveArtifactDirectory.path,
+          followLinks: false,
+        );
+    if (artifactDirectoryType != FileSystemEntityType.notFound &&
+        artifactDirectoryType != FileSystemEntityType.directory) {
+      throw StateError('live artifact path must be a real directory');
+    }
+    liveArtifactDirectoryExisted =
+        artifactDirectoryType == FileSystemEntityType.directory;
+    liveArtifactDirectoryRemovedForTest = false;
+    preservedArtifactBytes = liveArtifact.existsSync()
+        ? liveArtifact.readAsBytesSync()
+        : null;
+    preservedArtifactHash = liveArtifactHash.existsSync()
+        ? liveArtifactHash.readAsStringSync()
+        : null;
+    if (liveArtifact.existsSync()) {
+      liveArtifact.deleteSync();
+    }
+    if (liveArtifactHash.existsSync()) {
+      liveArtifactHash.deleteSync();
+    }
+    if (liveArtifactDirectoryExisted &&
+        liveArtifactDirectory.listSync().isEmpty) {
+      liveArtifactDirectory.deleteSync();
+      liveArtifactDirectoryRemovedForTest = true;
+    }
     fakePath = fakeFlutterBin.path;
     fakeLogPath = fakeFlutterLog.path;
     fakeFlutterEnvLogPath = fakeFlutterEnvLog.path;
@@ -46,6 +91,19 @@ fi
 if [[ "\${1-}" == "pub" ]]; then
   exit 0
 fi
+if [[ "\${1-}" == "build" && "\${2-}" == "apk" ]]; then
+  build_behavior='success'
+  if [[ -f "${fakeFlutterBehaviorConfig.path}" ]]; then
+    IFS= read -r build_behavior < "${fakeFlutterBehaviorConfig.path}"
+  fi
+  if [[ "\$build_behavior" == 'fail' ]]; then
+    exit 17
+  fi
+  if [[ "\$build_behavior" != 'missing-apk' ]]; then
+    mkdir -p build/app/outputs/flutter-apk
+    printf 'fake-live-debug-apk\n' > build/app/outputs/flutter-apk/app-debug.apk
+  fi
+fi
 if [[ -f android/app/src/main/AndroidManifest.xml ]]; then
   printf 'manifest=%s\\n' "\$(tr -d '[:space:]' < android/app/src/main/AndroidManifest.xml)" >> "${fakeFlutterHostLog.path}"
 fi
@@ -75,6 +133,40 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
     fakeFlutterEnvLogPath = null;
     fakeVersionConfigPath = null;
     fakeHostLogPath = null;
+    if (liveArtifact.existsSync()) {
+      liveArtifact.deleteSync();
+    }
+    if (liveArtifactHash.existsSync()) {
+      liveArtifactHash.deleteSync();
+    }
+    final FileSystemEntityType artifactDirectoryType =
+        FileSystemEntity.typeSync(
+          liveArtifactDirectory.path,
+          followLinks: false,
+        );
+    if (!liveArtifactDirectoryExisted) {
+      if (artifactDirectoryType == FileSystemEntityType.link) {
+        Link(liveArtifactDirectory.path).deleteSync();
+      } else if (artifactDirectoryType == FileSystemEntityType.file) {
+        File(liveArtifactDirectory.path).deleteSync();
+      }
+    }
+    if (preservedArtifactBytes case final List<int> bytes) {
+      liveArtifactDirectory.createSync(recursive: true);
+      liveArtifact.writeAsBytesSync(bytes);
+    }
+    if (preservedArtifactHash case final String hash) {
+      liveArtifactDirectory.createSync(recursive: true);
+      liveArtifactHash.writeAsStringSync(hash);
+    }
+    if (liveArtifactDirectoryRemovedForTest &&
+        !liveArtifactDirectory.existsSync()) {
+      liveArtifactDirectory.createSync(recursive: true);
+    } else if (!liveArtifactDirectoryExisted &&
+        liveArtifactDirectory.existsSync() &&
+        liveArtifactDirectory.listSync().isEmpty) {
+      liveArtifactDirectory.deleteSync();
+    }
   });
 
   test('help describes the two supported live-development entry points', () {
@@ -295,8 +387,104 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
       expect(result.stdout, contains('api_origin=http://10.0.2.2:18080'));
       expect(result.stdout, contains('flutter build apk --debug'));
       expect(fakeFlutterLog.existsSync(), isFalse);
+      expect(liveArtifact.existsSync(), isFalse);
+      expect(liveArtifactHash.existsSync(), isFalse);
     },
   );
+
+  test('successful build retains the APK and SHA-256 after wrapper exit', () {
+    final ProcessResult result = _run(<String>[
+      'build-apk',
+      '--target',
+      'android-emulator',
+      '--enable-agora-rtc',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, 0);
+    expect(liveArtifact.existsSync(), isTrue);
+    expect(liveArtifactHash.existsSync(), isTrue);
+    expect(liveArtifact.readAsStringSync(), 'fake-live-debug-apk\n');
+    final String digest = sha256
+        .convert(liveArtifact.readAsBytesSync())
+        .toString();
+    expect(liveArtifactHash.readAsStringSync(), '$digest  app-debug.apk\n');
+    expect(
+      result.stdout,
+      contains('live_apk_path=${liveArtifact.absolute.path}'),
+    );
+    expect(result.stdout, contains('live_apk_sha256=$digest'));
+  });
+
+  test('failed build leaves no retained APK or SHA-256', () {
+    liveArtifactDirectory.createSync(recursive: true);
+    liveArtifact.writeAsStringSync('stale-apk');
+    liveArtifactHash.writeAsStringSync('stale-hash');
+    fakeFlutterBehaviorConfig.writeAsStringSync('fail\n');
+
+    final ProcessResult result = _run(<String>[
+      'build-apk',
+      '--target',
+      'android-emulator',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, isNot(0));
+    expect(liveArtifact.existsSync(), isFalse);
+    expect(liveArtifactHash.existsSync(), isFalse);
+  });
+
+  test('build rejects a symbolic-link artifact output directory', () {
+    final Directory linkTarget = Directory.systemTemp.createTempSync(
+      'live-apk-link-target-',
+    );
+    addTearDown(() {
+      if (linkTarget.existsSync()) {
+        linkTarget.deleteSync(recursive: true);
+      }
+    });
+    Link(liveArtifactDirectory.path).createSync(linkTarget.path);
+
+    final ProcessResult result = _run(<String>[
+      'build-apk',
+      '--target',
+      'android-emulator',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, isNot(0));
+    expect(result.stderr, contains('must be a real directory'));
+    expect(fakeFlutterLog.existsSync(), isFalse);
+    expect(linkTarget.listSync(), isEmpty);
+  });
+
+  test('build rejects a non-directory artifact output parent', () {
+    File(liveArtifactDirectory.path)
+      ..createSync(recursive: true)
+      ..writeAsStringSync('not-a-directory');
+
+    final ProcessResult result = _run(<String>[
+      'build-apk',
+      '--target',
+      'android-emulator',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, isNot(0));
+    expect(result.stderr, contains('must be a real directory'));
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('missing Flutter APK fails closed without retained output', () {
+    fakeFlutterBehaviorConfig.writeAsStringSync('missing-apk\n');
+
+    final ProcessResult result = _run(<String>[
+      'build-apk',
+      '--target',
+      'android-emulator',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, isNot(0));
+    expect(result.stderr, contains('expected Flutter APK was not produced'));
+    expect(liveArtifact.existsSync(), isFalse);
+    expect(liveArtifactHash.existsSync(), isFalse);
+  });
 
   test(
     'build-apk passes only live public-client defines without a device flag',

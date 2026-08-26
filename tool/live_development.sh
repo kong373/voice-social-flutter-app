@@ -9,6 +9,9 @@ readonly SCRIPT_NAME="live-development"
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly REQUIRED_FLUTTER_VERSION='3.44.7'
 readonly REQUIRED_DART_VERSION='3.12.2'
+readonly LIVE_APK_OUTPUT_DIR="${ROOT_DIR}/build/live-development"
+readonly LIVE_APK_OUTPUT_PATH="${LIVE_APK_OUTPUT_DIR}/app-debug.apk"
+readonly LIVE_APK_SHA256_PATH="${LIVE_APK_OUTPUT_DIR}/app-debug.apk.sha256"
 cd "$ROOT_DIR"
 
 usage() {
@@ -41,6 +44,9 @@ ENABLE_QA_CONSOLE=false, ENABLE_VIDEO_RUNTIME_DEMO=false, and
 ALLOW_INSECURE_HTTP=true for the explicitly local development targets. APK
 builds are restricted to android-emulator because an Android APK cannot reach
 the Mac through 127.0.0.1.
+Successful APK builds are retained as build/live-development/app-debug.apk
+with a matching app-debug.apk.sha256 sidecar before the isolated host is
+removed.
 It rejects OAuth Client Secrets, vendor secrets, user Dart-define aliases, and
 --dart-define-from-file. API_BASE_URL is an origin with an optional root `/`;
 the client metadata and ENABLE_AGORA_RTC define are fixed by this wrapper.
@@ -299,11 +305,118 @@ print_plan() {
 }
 
 ANDROID_HOST_DIR=''
+APK_COPY_TEMP=''
+APK_HASH_TEMP=''
+APK_PUBLISH_IN_PROGRESS=false
 
 cleanup_android_host() {
   if [[ -n "${ANDROID_HOST_DIR:-}" && -d "$ANDROID_HOST_DIR" ]]; then
     rm -rf "$ANDROID_HOST_DIR"
   fi
+}
+
+cleanup_live_temporary_files() {
+  if [[ -n "${APK_COPY_TEMP:-}" && ( -e "$APK_COPY_TEMP" || -L "$APK_COPY_TEMP" ) ]]; then
+    rm -f "$APK_COPY_TEMP"
+  fi
+  if [[ -n "${APK_HASH_TEMP:-}" && ( -e "$APK_HASH_TEMP" || -L "$APK_HASH_TEMP" ) ]]; then
+    rm -f "$APK_HASH_TEMP"
+  fi
+  if [[ "${APK_PUBLISH_IN_PROGRESS:-false}" == true ]]; then
+    if [[ -f "$LIVE_APK_OUTPUT_PATH" || -L "$LIVE_APK_OUTPUT_PATH" ]]; then
+      rm -f "$LIVE_APK_OUTPUT_PATH"
+    fi
+    if [[ -f "$LIVE_APK_SHA256_PATH" || -L "$LIVE_APK_SHA256_PATH" ]]; then
+      rm -f "$LIVE_APK_SHA256_PATH"
+    fi
+  fi
+}
+
+cleanup_live_runtime() {
+  cleanup_live_temporary_files
+  cleanup_android_host
+}
+
+ensure_real_directory() {
+  local path="$1"
+  local label="$2"
+  if [[ -e "$path" || -L "$path" ]]; then
+    [[ ! -L "$path" && -d "$path" ]] ||
+      fail "$label must be a real directory and not a symbolic link"
+    return 0
+  fi
+  mkdir "$path" || fail "unable to create $label"
+  [[ ! -L "$path" && -d "$path" ]] ||
+    fail "$label must be a real directory and not a symbolic link"
+}
+
+validate_live_apk_output_targets() {
+  local output_path
+  for output_path in "$LIVE_APK_OUTPUT_PATH" "$LIVE_APK_SHA256_PATH"; do
+    [[ ! -L "$output_path" ]] ||
+      fail 'live APK output files must not be symbolic links'
+    [[ ! -e "$output_path" || -f "$output_path" ]] ||
+      fail 'live APK output files must be regular files'
+  done
+}
+
+prepare_live_apk_output_directory() {
+  command -v shasum >/dev/null 2>&1 ||
+    fail 'shasum is required to retain the live APK checksum'
+  ensure_real_directory "$ROOT_DIR/build" 'live APK build parent'
+  ensure_real_directory "$LIVE_APK_OUTPUT_DIR" 'live APK output directory'
+  validate_live_apk_output_targets
+}
+
+clear_live_apk_output() {
+  validate_live_apk_output_targets
+  rm -f "$LIVE_APK_OUTPUT_PATH" "$LIVE_APK_SHA256_PATH" ||
+    fail 'unable to clear the previous live APK output'
+}
+
+publish_live_apk() {
+  local source_apk="${ANDROID_HOST_DIR}/build/app/outputs/flutter-apk/app-debug.apk"
+  [[ -f "$source_apk" && ! -L "$source_apk" && -s "$source_apk" ]] ||
+    fail 'expected Flutter APK was not produced as a non-empty regular file'
+
+  prepare_live_apk_output_directory
+  APK_COPY_TEMP="$(mktemp "${LIVE_APK_OUTPUT_DIR}/.app-debug.apk.XXXXXX")" ||
+    fail 'unable to create the temporary live APK output'
+  APK_HASH_TEMP="$(mktemp "${LIVE_APK_OUTPUT_DIR}/.app-debug.apk.sha256.XXXXXX")" ||
+    fail 'unable to create the temporary live APK checksum output'
+
+  cp "$source_apk" "$APK_COPY_TEMP" || fail 'unable to copy the live APK output'
+  chmod 600 "$APK_COPY_TEMP" || fail 'unable to secure the live APK output'
+
+  local checksum_line
+  local checksum
+  checksum_line="$(shasum -a 256 "$APK_COPY_TEMP")" ||
+    fail 'unable to compute the live APK SHA-256'
+  checksum="${checksum_line%% *}"
+  [[ "$checksum" =~ ^[0-9a-f]{64}$ ]] ||
+    fail 'live APK SHA-256 output was invalid'
+  printf '%s  app-debug.apk\n' "$checksum" >"$APK_HASH_TEMP" ||
+    fail 'unable to write the live APK SHA-256 sidecar'
+  chmod 600 "$APK_HASH_TEMP" ||
+    fail 'unable to secure the live APK SHA-256 sidecar'
+
+  # Revalidate immediately before replacing the two fixed output files. The
+  # temporary names are created inside the validated directory, so neither the
+  # APK bytes nor their checksum are copied through a user-controlled path.
+  validate_live_apk_output_targets
+  APK_PUBLISH_IN_PROGRESS=true
+  mv -f "$APK_COPY_TEMP" "$LIVE_APK_OUTPUT_PATH" ||
+    fail 'unable to retain the live APK output'
+  APK_COPY_TEMP=''
+  if ! mv -f "$APK_HASH_TEMP" "$LIVE_APK_SHA256_PATH"; then
+    rm -f "$LIVE_APK_OUTPUT_PATH"
+    fail 'unable to retain the live APK SHA-256 sidecar'
+  fi
+  APK_HASH_TEMP=''
+  APK_PUBLISH_IN_PROGRESS=false
+
+  printf 'live_apk_path=%s\n' "$LIVE_APK_OUTPUT_PATH"
+  printf 'live_apk_sha256=%s\n' "$checksum"
 }
 
 prepare_android_host() {
@@ -319,7 +432,7 @@ prepare_android_host() {
 
   ANDROID_HOST_DIR="$(mktemp -d "$temp_root/voice-social-live-android.XXXXXX")" ||
     fail 'unable to create an isolated Android host directory'
-  trap cleanup_android_host EXIT HUP INT TERM
+  trap cleanup_live_runtime EXIT HUP INT TERM
 
   # Create the platform host in a temporary directory first.  Overlaying the
   # tracked checkout afterwards preserves this project's pubspec and sources
@@ -473,6 +586,11 @@ fi
 
 check_flutter
 
+if [[ "$COMMAND" == 'build-apk' ]]; then
+  prepare_live_apk_output_directory
+  clear_live_apk_output
+fi
+
 if [[ "$TARGET" == 'android-emulator' ]]; then
   prepare_android_host
 fi
@@ -514,3 +632,7 @@ fi
     "${CLEAN_ENV[@]}" "$FLUTTER_BIN" "${FLUTTER_ARGS[@]}" "${DEFINES[@]}"
   fi
 )
+
+if [[ "$COMMAND" == 'build-apk' ]]; then
+  publish_live_apk
+fi
