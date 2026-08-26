@@ -27,8 +27,10 @@ void main() {
     );
 
     final Directory buildDirectory = Directory('build');
-    final FileSystemEntityType buildDirectoryType =
-        FileSystemEntity.typeSync(buildDirectory.path, followLinks: false);
+    final FileSystemEntityType buildDirectoryType = FileSystemEntity.typeSync(
+      buildDirectory.path,
+      followLinks: false,
+    );
     if (buildDirectoryType == FileSystemEntityType.notFound) {
       buildDirectory.createSync(recursive: true);
       buildDirectoryExisted = false;
@@ -157,8 +159,7 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
       _removeEntityIfPresent(liveArtifactDirectory.path, recursive: true);
       final String originalPath =
           '${liveArtifactBackupDirectory.path}/live-development';
-      if (originalLiveArtifactDirectoryType !=
-          FileSystemEntityType.notFound) {
+      if (originalLiveArtifactDirectoryType != FileSystemEntityType.notFound) {
         if (FileSystemEntity.typeSync(originalPath, followLinks: false) ==
             FileSystemEntityType.notFound) {
           throw StateError('live artifact backup is missing');
