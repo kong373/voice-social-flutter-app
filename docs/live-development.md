@@ -2,7 +2,10 @@
 
 `tool/live_development.sh` is the single local entry point for first-party
 development integration. It keeps the normal debug build in mock mode while
-making a live development run explicit and fail-closed.
+making a live development run explicit and fail-closed. The optional
+`--enable-agora-rtc` switch is the only way this launcher enables the live
+first-party Agora audio transport; when omitted, it passes an explicit
+`ENABLE_AGORA_RTC=false` define.
 
 ## Required inputs
 
@@ -70,15 +73,45 @@ diagnostic flags (`--verbose`, `--quiet`, `--wrap`, `--no-wrap`, `--color`,
   --target android-emulator \
   --dry-run
 
-# Run on an Android Emulator / BlueStacks device.
+# Run on an Android Emulator / BlueStacks device with snapshot-only room audio.
 ./tool/live_development.sh run \
   --target android-emulator \
   --device emulator-5554
 
+# Opt into the server-issued Agora audio transport for this run.
+./tool/live_development.sh run \
+  --target android-emulator \
+  --device emulator-5554 \
+  --enable-agora-rtc
+
 # Build a debug APK with the Android Emulator address baked in.
 ./tool/live_development.sh build-apk \
   --target android-emulator
+
+# Build a debug APK with the live Agora audio transport enabled.
+./tool/live_development.sh build-apk \
+  --target android-emulator \
+  --enable-agora-rtc
 ```
+
+## Isolated Android host
+
+The Android target works from a clean checkout even though this repository does
+not track an `android/` directory. Before a live run or APK build, the launcher
+requires `git status --porcelain --untracked-files=normal` to be empty, then
+creates a temporary Flutter Android host under `TMPDIR`, overlays the tracked
+checkout sources, runs `tool/prepare_android_audio_manifest.py`, and performs a
+locked `flutter pub get`. Flutter then runs from that temporary host. The
+generated directory is removed on exit, so the ignored `android/` host never
+pollutes this checkout or becomes a commit candidate. A dirty checkout fails
+before Flutter starts; commit or remove local changes first so the app source
+being built is unambiguous and no untracked secret can enter the host.
+
+`tool/bootstrap_local.sh` remains available for general local Flutter runners,
+but it copies a generated platform host into the checkout and therefore is not
+used by the live Android launcher. The audio manifest helper keeps
+`RECORD_AUDIO` and removes `CAMERA`, `READ_PHONE_STATE`,
+`FOREGROUND_SERVICE_MEDIA_PROJECTION`, and Agora screen-capture components.
 
 For a host Flutter target, change both the environment and selector. This is a
 `run` target; do not use it to build an Android APK:
@@ -100,6 +133,7 @@ BACKEND_MODE=live
 APP_ENV=development
 ENABLE_QA_CONSOLE=false
 ENABLE_VIDEO_RUNTIME_DEMO=false
+ENABLE_AGORA_RTC=<true only when --enable-agora-rtc is present; otherwise false>
 API_BASE_URL=<validated target URL>
 OAUTH_CLIENT_ID=<public client id>
 ALLOW_INSECURE_HTTP=true
@@ -111,6 +145,13 @@ through ordinary host environment variables. Flutter receives no OAuth or
 vendor secret. `--dry-run`
 prints only the target, API origin, and whether the public client is configured;
 it never prints the client identifier itself.
+
+The `ENABLE_AGORA_RTC` environment variable and related environment aliases
+(`AGORA_RTC`, `AGORA_ENABLE_RTC`, `DART_DEFINES`, `FLUTTER_TOOL_ARGS`, and
+Gradle project-define variables) are rejected. Arbitrary `--dart-define`,
+`--dart-define-from-file`, Gradle define, and Android project-argument aliases
+remain rejected as well; the wrapper owns every runtime define and never
+accepts an OAuth or vendor secret.
 
 The launcher uses an explicit two-level environment policy. Environment
 variable and CLI argument checks are case-insensitive: names that clearly

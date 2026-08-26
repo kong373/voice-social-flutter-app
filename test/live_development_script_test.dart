@@ -7,16 +7,19 @@ void main() {
   late File fakeFlutterLog;
   late File fakeFlutterEnvLog;
   late File fakeFlutterVersionConfig;
+  late File fakeFlutterHostLog;
 
   setUp(() {
     fakeFlutterBin = Directory.systemTemp.createTempSync('live-dev-flutter-');
     fakeFlutterLog = File('${fakeFlutterBin.path}/invocation.log');
     fakeFlutterEnvLog = File('${fakeFlutterBin.path}/environment.log');
     fakeFlutterVersionConfig = File('${fakeFlutterBin.path}/version.config');
+    fakeFlutterHostLog = File('${fakeFlutterBin.path}/android-host.log');
     fakePath = fakeFlutterBin.path;
     fakeLogPath = fakeFlutterLog.path;
     fakeFlutterEnvLogPath = fakeFlutterEnvLog.path;
     fakeVersionConfigPath = fakeFlutterVersionConfig.path;
+    fakeHostLogPath = fakeFlutterHostLog.path;
     final File fakeFlutter = File('${fakeFlutterBin.path}/flutter');
     fakeFlutter.writeAsStringSync('''#!/usr/bin/env bash
 set -euo pipefail
@@ -28,6 +31,23 @@ if [[ "\${1-}" == "--version" && "\${2-}" == "--machine" ]]; then
   IFS='|' read -r framework_version dart_version <<< "\$version_line"
   printf '{"frameworkVersion":"%s","dartSdkVersion":"%s"}\\n' "\$framework_version" "\$dart_version"
   exit 0
+fi
+if [[ "\${1-}" == "create" ]]; then
+  host="\${@: -1}"
+  mkdir -p "\$host/android/app/src/main"
+  cat > "\$host/android/app/src/main/AndroidManifest.xml" <<'MANIFEST'
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application />
+</manifest>
+MANIFEST
+  printf '%s\\n' "\$host" > "${fakeFlutterHostLog.path}"
+  exit 0
+fi
+if [[ "\${1-}" == "pub" ]]; then
+  exit 0
+fi
+if [[ -f android/app/src/main/AndroidManifest.xml ]]; then
+  printf 'manifest=%s\\n' "\$(tr -d '[:space:]' < android/app/src/main/AndroidManifest.xml)" >> "${fakeFlutterHostLog.path}"
 fi
 printf '%s\\n' "\$@" > "${fakeFlutterLog.path}"
 printf 'HOST_TOOL_TOKEN=%s\\n' "\${HOST_TOOL_TOKEN-<unset>}" > "${fakeFlutterEnvLog.path}"
@@ -54,6 +74,7 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
     fakeLogPath = null;
     fakeFlutterEnvLogPath = null;
     fakeVersionConfigPath = null;
+    fakeHostLogPath = null;
   });
 
   test('help describes the two supported live-development entry points', () {
@@ -124,6 +145,7 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
       invocation,
       contains('--dart-define=ENABLE_VIDEO_RUNTIME_DEMO=false'),
     );
+    expect(invocation, contains('--dart-define=ENABLE_AGORA_RTC=false'));
     expect(
       invocation,
       contains('--dart-define=API_BASE_URL=http://10.0.2.2:18080/'),
@@ -131,6 +153,34 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
     expect(invocation, contains('--dart-define=OAUTH_CLIENT_ID=public-client'));
     expect(invocation, isNot(contains('SECRET')));
     expect(invocation, isNot(contains('PASSWORD')));
+  });
+
+  test('explicit Agora switch passes exactly the public enable define', () {
+    final ProcessResult result = _run(<String>[
+      'run',
+      '--target',
+      'android-emulator',
+      '--device',
+      'emulator-5554',
+      '--enable-agora-rtc',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, 0);
+    final List<String> invocationLines = fakeFlutterLog
+        .readAsStringSync()
+        .trim()
+        .split('\n');
+    expect(invocationLines, contains('--dart-define=ENABLE_AGORA_RTC=true'));
+    expect(
+      invocationLines,
+      isNot(contains('--dart-define=ENABLE_AGORA_RTC=false')),
+    );
+    expect(
+      invocationLines.where(
+        (String line) => line.startsWith('--dart-define=ENABLE_AGORA_RTC='),
+      ),
+      hasLength(1),
+    );
   });
 
   test('run rejects a Flutter SDK other than the frozen 3.44.7', () {
@@ -276,6 +326,7 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
         invocationLines,
         contains('--dart-define=ENABLE_VIDEO_RUNTIME_DEMO=false'),
       );
+      expect(invocationLines, contains('--dart-define=ENABLE_AGORA_RTC=false'));
       expect(
         invocationLines,
         contains('--dart-define=API_BASE_URL=http://10.0.2.2:18080/'),
@@ -407,6 +458,83 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
       fakeFlutterEnvLog.readAsStringSync(),
       contains('HOST_TOOL_TOKEN=<unset>'),
     );
+  });
+
+  test('rejects an environment alias for the fixed Agora switch', () {
+    final ProcessResult result = _run(<String>[
+      'run',
+      '--target',
+      'android-emulator',
+      '--device',
+      'emulator-5554',
+    ], environment: _baseEnvironment()..['ENABLE_AGORA_RTC'] = 'true');
+
+    expect(result.exitCode, isNot(0));
+    expect(result.stderr, contains('--enable-agora-rtc'));
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('rejects environment Dart-define aliases before Flutter', () {
+    final ProcessResult result = _run(
+      <String>[
+        'run',
+        '--target',
+        'android-emulator',
+        '--device',
+        'emulator-5554',
+      ],
+      environment: _baseEnvironment()
+        ..['DART_DEFINES'] = 'QkFDS0VORF9NT0RFPW1vY2s=',
+    );
+
+    expect(result.exitCode, isNot(0));
+    expect(
+      result.stderr,
+      contains('runtime defines are owned by this wrapper'),
+    );
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('Android live entry prepares an isolated audio-only host', () {
+    final ProcessResult result = _run(<String>[
+      'build-apk',
+      '--target',
+      'android-emulator',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, 0);
+    expect(fakeFlutterHostLog.readAsStringSync(), contains('RECORD_AUDIO'));
+    expect(fakeFlutterHostLog.readAsStringSync(), contains('CAMERA'));
+    expect(fakeFlutterHostLog.readAsStringSync(), contains('READ_PHONE_STATE'));
+    expect(
+      fakeFlutterHostLog.readAsStringSync(),
+      contains('FOREGROUND_SERVICE_MEDIA_PROJECTION'),
+    );
+    expect(
+      fakeFlutterHostLog.readAsStringSync(),
+      contains('LocalScreenCaptureAssistantActivity'),
+    );
+    expect(Directory('android').existsSync(), isFalse);
+  });
+
+  test('Android live entry refuses a dirty checkout before Flutter', () {
+    final File untrackedMarker = File('live-development-dirty-checkout-marker')
+      ..writeAsStringSync('test-only');
+    addTearDown(() {
+      if (untrackedMarker.existsSync()) {
+        untrackedMarker.deleteSync();
+      }
+    });
+
+    final ProcessResult result = _run(<String>[
+      'build-apk',
+      '--target',
+      'android-emulator',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, isNot(0));
+    expect(result.stderr, contains('requires a clean checkout'));
+    expect(fakeFlutterLog.existsSync(), isFalse);
   });
 
   test('strips lowercase and mixed-case token environment variables', () {
@@ -810,6 +938,7 @@ Map<String, String> _baseEnvironment() {
     'API_BASE_URL': 'http://10.0.2.2:18080/',
     'OAUTH_CLIENT_ID': 'public-client',
     'FAKE_FLUTTER_LOG': fakeLogPath!,
+    'FAKE_FLUTTER_HOST_LOG': fakeHostLogPath!,
     'FAKE_FLUTTER_ENV_LOG': fakeFlutterEnvLogPath!,
     'HOME': '/tmp/live-development-test-home',
     'USER': 'live-development-test',
@@ -866,6 +995,7 @@ String? fakePath;
 String? fakeLogPath;
 String? fakeFlutterEnvLogPath;
 String? fakeVersionConfigPath;
+String? fakeHostLogPath;
 
 ProcessResult _run(List<String> arguments, {Map<String, String>? environment}) {
   final Map<String, String> env = <String, String>{
@@ -877,6 +1007,7 @@ ProcessResult _run(List<String> arguments, {Map<String, String>? environment}) {
       path?.split(Platform.isWindows ? ';' : ':') ?? <String>[];
   fakePath = pathParts.isNotEmpty ? pathParts.first : null;
   fakeLogPath = env['FAKE_FLUTTER_LOG'];
+  fakeHostLogPath = env['FAKE_FLUTTER_HOST_LOG'];
   final String frameworkVersion = env['FAKE_FLUTTER_VERSION'] ?? '3.44.7';
   final String dartVersion = env['FAKE_DART_VERSION'] ?? '3.12.2';
   File(

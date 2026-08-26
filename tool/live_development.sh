@@ -31,6 +31,8 @@ Options:
   --target <name>    Required target selector; also accepts --target=<name>.
   --device <id>      Required Flutter device id for `run`; rejected by
                      `build-apk`.
+  --enable-agora-rtc Explicitly opt into the first-party server-issued Agora
+                     audio transport. Without this switch the value is false.
   --dry-run          Validate configuration and print a redacted plan only.
   --help             Show this help.
 
@@ -41,7 +43,7 @@ builds are restricted to android-emulator because an Android APK cannot reach
 the Mac through 127.0.0.1.
 It rejects OAuth Client Secrets, vendor secrets, user Dart-define aliases, and
 --dart-define-from-file. API_BASE_URL is an origin with an optional root `/`;
-the client metadata defines are fixed by this wrapper.
+the client metadata and ENABLE_AGORA_RTC define are fixed by this wrapper.
 Only non-defining diagnostic flags (--verbose, --quiet, --wrap, --no-wrap,
 --color, --no-color, --suppress-analytics, --disable-analytics) may be passed
 after `--`; runtime defines, device selection, and project arguments belong to
@@ -69,6 +71,25 @@ is_token_name() {
   [[ "$normalized_name" =~ (^|_)token(_|$) ]]
 }
 
+is_runtime_define_environment_name() {
+  local normalized_name
+  normalized_name="$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  [[ "$normalized_name" == 'enable_agora_rtc' ||
+    "$normalized_name" == 'agora_rtc' ||
+    "$normalized_name" == 'agora_enable_rtc' ||
+    "$normalized_name" == 'dart_define' ||
+    "$normalized_name" == 'dart_defines' ||
+    "$normalized_name" == 'dart_define_from_file' ||
+    "$normalized_name" == 'dart_defines_from_file' ||
+    "$normalized_name" == 'flutter_dart_define' ||
+    "$normalized_name" == 'flutter_dart_defines' ||
+    "$normalized_name" == 'flutter_dart_define_from_file' ||
+    "$normalized_name" == 'flutter_dart_defines_from_file' ||
+    "$normalized_name" == 'flutter_tool_args' ||
+    "$normalized_name" == 'gradle_opts' ||
+    "$normalized_name" == 'org_gradle_project_'* ]]
+}
+
 reject_confidential_environment() {
   local name
   SECRET_LIKE_ENV_NAMES=''
@@ -78,6 +99,22 @@ reject_confidential_environment() {
     fi
     if is_token_name "$name"; then
       SECRET_LIKE_ENV_NAMES+="${name}"$'\n'
+    fi
+  done < <(env)
+}
+
+reject_runtime_define_environment() {
+  local name
+  local normalized_name
+  while IFS='=' read -r name _; do
+    if is_runtime_define_environment_name "$name"; then
+      normalized_name="$(printf '%s' "$name" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+      if [[ "$normalized_name" == 'enable_agora_rtc' ||
+        "$normalized_name" == 'agora_rtc' ||
+        "$normalized_name" == 'agora_enable_rtc' ]]; then
+        fail 'ENABLE_AGORA_RTC is controlled only by --enable-agora-rtc'
+      fi
+      fail 'runtime defines are owned by this wrapper and cannot come from the environment'
     fi
   done < <(env)
 }
@@ -252,12 +289,63 @@ print_plan() {
   printf 'app_env=development\n'
   printf 'qa_console=false\n'
   printf 'video_runtime_demo=false\n'
+  printf 'enable_agora_rtc=%s\n' "$ENABLE_AGORA_RTC"
   printf 'oauth_client_id_configured=true\n'
   if [[ "$COMMAND" == 'run' ]]; then
     printf 'flutter_action=flutter run --no-pub\n'
   else
     printf 'flutter_action=flutter build apk --debug --no-pub\n'
   fi
+}
+
+ANDROID_HOST_DIR=''
+
+cleanup_android_host() {
+  if [[ -n "${ANDROID_HOST_DIR:-}" && -d "$ANDROID_HOST_DIR" ]]; then
+    rm -rf "$ANDROID_HOST_DIR"
+  fi
+}
+
+prepare_android_host() {
+  local temp_root="${TMPDIR:-/tmp}"
+  command -v git >/dev/null 2>&1 ||
+    fail 'git is required to create the isolated Android host'
+  command -v tar >/dev/null 2>&1 ||
+    fail 'tar is required to create the isolated Android host'
+  command -v python3 >/dev/null 2>&1 ||
+    fail 'python3 is required to apply the audio-only Android manifest'
+  [[ -d "$temp_root" ]] || mkdir -p "$temp_root" ||
+    fail 'unable to create the temporary directory for the Android host'
+
+  ANDROID_HOST_DIR="$(mktemp -d "$temp_root/voice-social-live-android.XXXXXX")" ||
+    fail 'unable to create an isolated Android host directory'
+  trap cleanup_android_host EXIT HUP INT TERM
+
+  # Create the platform host in a temporary directory first.  Overlaying the
+  # tracked checkout afterwards preserves this project's pubspec and sources
+  # while ensuring the generated android/ directory never appears in the
+  # checkout (it is intentionally ignored there).
+  "${CLEAN_ENV[@]}" "$FLUTTER_BIN" create \
+    --platforms=android \
+    --org=com.kong373 \
+    --project-name=voice_social_app \
+    --no-pub \
+    "$ANDROID_HOST_DIR"
+  git -C "$ROOT_DIR" archive --format=tar HEAD |
+    tar -x -C "$ANDROID_HOST_DIR"
+  python3 "$ROOT_DIR/tool/prepare_android_audio_manifest.py" "$ANDROID_HOST_DIR"
+  (
+    cd "$ANDROID_HOST_DIR"
+    "${CLEAN_ENV[@]}" "$FLUTTER_BIN" pub get --enforce-lockfile
+  )
+}
+
+require_clean_checkout_for_android() {
+  local status
+  status="$(git -C "$ROOT_DIR" status --porcelain --untracked-files=normal)" ||
+    fail 'unable to verify that the checkout is clean before Android live launch'
+  [[ -z "$status" ]] ||
+    fail 'Android live launch requires a clean checkout; commit or remove local changes first'
 }
 
 COMMAND="${1:-}"
@@ -276,10 +364,12 @@ TARGET="${LIVE_DEVELOPMENT_TARGET:-}"
 API_BASE_URL_VALUE="${API_BASE_URL:-}"
 OAUTH_CLIENT_ID_VALUE="${OAUTH_CLIENT_ID:-}"
 DEVICE_ID=''
+ENABLE_AGORA_RTC=false
 DRY_RUN=false
 EXTRA_ARGS=()
 
 reject_confidential_environment
+reject_runtime_define_environment
 build_clean_environment
 
 if [[ -n "${BACKEND_MODE:-}" && "${BACKEND_MODE}" != 'live' ]]; then
@@ -329,6 +419,13 @@ while (($# > 0)); do
       DEVICE_ID="${1#*=}"
       shift
       ;;
+    --enable-agora-rtc)
+      ENABLE_AGORA_RTC=true
+      shift
+      ;;
+    --enable-agora-rtc=*)
+      fail '--enable-agora-rtc is a flag and does not accept a value'
+      ;;
     --dry-run)
       DRY_RUN=true
       shift
@@ -370,13 +467,22 @@ if [[ "$DRY_RUN" == true ]]; then
   exit 0
 fi
 
+if [[ "$TARGET" == 'android-emulator' ]]; then
+  require_clean_checkout_for_android
+fi
+
 check_flutter
+
+if [[ "$TARGET" == 'android-emulator' ]]; then
+  prepare_android_host
+fi
 
 DEFINES=(
   "--dart-define=BACKEND_MODE=live"
   "--dart-define=APP_ENV=development"
   '--dart-define=ENABLE_QA_CONSOLE=false'
   '--dart-define=ENABLE_VIDEO_RUNTIME_DEMO=false'
+  "--dart-define=ENABLE_AGORA_RTC=${ENABLE_AGORA_RTC}"
   "--dart-define=API_BASE_URL=${API_BASE_URL_VALUE}"
   '--dart-define=ALLOW_INSECURE_HTTP=true'
   "--dart-define=OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID_VALUE}"
@@ -399,6 +505,9 @@ fi
   # The child receives an explicit SDK/runtime allowlist. This strips ordinary
   # host tokens and unknown cloud/profile/config variables without relying on a
   # never-complete credential-name denylist.
+  if [[ -n "$ANDROID_HOST_DIR" ]]; then
+    cd "$ANDROID_HOST_DIR"
+  fi
   if ((${#EXTRA_ARGS[@]} > 0)); then
     "${CLEAN_ENV[@]}" "$FLUTTER_BIN" "${FLUTTER_ARGS[@]}" "${DEFINES[@]}" "${EXTRA_ARGS[@]}"
   else

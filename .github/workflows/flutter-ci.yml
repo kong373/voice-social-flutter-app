@@ -191,6 +191,7 @@ jobs:
             --dart-define=BACKEND_MODE=live \
             --dart-define=APP_ENV=development \
             --dart-define=ALLOW_INSECURE_HTTP=true \
+            --dart-define=ENABLE_AGORA_RTC=true \
             --dart-define=API_BASE_URL=http://10.0.2.2:8765/ \
             --dart-define=OAUTH_CLIENT_ID=voice-social-mobile-public
 

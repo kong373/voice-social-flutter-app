@@ -28,6 +28,18 @@ void main() {
     expect(flutterCi, isNot(contains('contents: write')));
   });
 
+  test('only the live Android debug APK opts into Agora RTC', () {
+    final int androidStart = flutterCi.indexOf('  android-debug:');
+    expect(androidStart, greaterThanOrEqualTo(0));
+    final String quality = flutterCi.substring(0, androidStart);
+    final String android = flutterCi.substring(androidStart);
+
+    expect(android, contains('--dart-define=ENABLE_AGORA_RTC=true'));
+    expect(quality, isNot(contains('--dart-define=ENABLE_AGORA_RTC=true')));
+    expect(android, isNot(contains('--dart-define=CLIENT_SECRET')));
+    expect(android, isNot(contains('--dart-define=OAUTH_CLIENT_SECRET')));
+  });
+
   test('autofix workflows are manual-only and scope write permission', () {
     for (final String workflow in <String>[formatAutofix, snapshotAutofix]) {
       expect(workflow, contains('on:\n  workflow_dispatch:'));
