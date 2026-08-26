@@ -354,6 +354,329 @@ void main() {
   );
 
   test(
+    'concurrent joins with different identities fail without touching the first session',
+    () async {
+      final _FakeRtcEngine engine = _FakeRtcEngine()..emitJoinSuccess = false;
+      final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+        engine: engine,
+        now: () => now,
+        joinTimeout: const Duration(seconds: 1),
+      );
+      addTearDown(adapter.release);
+
+      final RtcCredentials firstCredentials = _credentials(
+        role: 'broadcaster',
+        token: 'token-a',
+      );
+      final RtcCredentials secondCredentials = _credentials(
+        role: 'audience',
+        token: 'token-b',
+        channelId: 'room-b',
+        uid: 43,
+      );
+      final Future<void> first = adapter.join(firstCredentials);
+      await Future<void>.delayed(Duration.zero);
+      final Future<void> second = adapter.join(secondCredentials);
+
+      expect(identical(first, second), isFalse);
+      await expectLater(
+        second,
+        throwsA(
+          isA<RtcAdapterException>()
+              .having(
+                (RtcAdapterException error) => error.failure,
+                'failure',
+                RtcAdapterFailure.join,
+              )
+              .having(
+                (RtcAdapterException error) => error.toString(),
+                'sanitized message',
+                isNot(contains('token-b')),
+              ),
+        ),
+      );
+
+      engine.handler!.onJoinChannelSuccess!(
+        RtcConnection(channelId: 'room-42', localUid: 42),
+        42,
+      );
+      await first;
+      expect(engine.joinCalls, 1);
+      expect(engine.lastJoinChannel, 'room-42');
+      expect(engine.lastJoinUid, 42);
+      expect(adapter.credentials?.token, 'token-a');
+      expect(adapter.credentials?.channelId, 'room-42');
+      expect(adapter.joined, isTrue);
+    },
+  );
+
+  test(
+    'same identity joins share the first native operation and never replace its token',
+    () async {
+      final _FakeRtcEngine engine = _FakeRtcEngine()..emitJoinSuccess = false;
+      final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+        engine: engine,
+        now: () => now,
+        joinTimeout: const Duration(seconds: 1),
+      );
+      addTearDown(adapter.release);
+
+      final Future<void> first = adapter.join(
+        _credentials(role: 'broadcaster', token: 'token-a'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final Future<void> second = adapter.join(
+        _credentials(role: 'publisher', token: 'token-b'),
+      );
+
+      expect(identical(first, second), isTrue);
+      engine.handler!.onJoinChannelSuccess!(
+        RtcConnection(channelId: 'room-42', localUid: 42),
+        42,
+      );
+      await Future.wait(<Future<void>>[first, second]);
+
+      expect(engine.initializeCalls, 1);
+      expect(engine.joinCalls, 1);
+      expect(engine.lastJoinChannel, 'room-42');
+      expect(engine.lastJoinUid, 42);
+      expect(adapter.credentials?.token, 'token-a');
+      expect(adapter.credentials?.role, 'broadcaster');
+    },
+  );
+
+  test(
+    'joined A then join B fails closed and leaves native/session identity unchanged',
+    () async {
+      final _FakeRtcEngine engine = _FakeRtcEngine();
+      final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+        engine: engine,
+        now: () => now,
+      );
+      addTearDown(adapter.release);
+
+      await adapter.join(_credentials(role: 'audience', token: 'token-a'));
+      await expectLater(
+        adapter.join(
+          _credentials(
+            role: 'broadcaster',
+            token: 'token-b',
+            channelId: 'room-b',
+            uid: 43,
+          ),
+        ),
+        throwsA(
+          isA<RtcAdapterException>()
+              .having(
+                (RtcAdapterException error) => error.failure,
+                'failure',
+                RtcAdapterFailure.join,
+              )
+              .having(
+                (RtcAdapterException error) => error.toString(),
+                'sanitized message',
+                isNot(contains('token-b')),
+              ),
+        ),
+      );
+
+      expect(engine.joinCalls, 1);
+      expect(engine.leaveCalls, 0);
+      expect(engine.lastJoinChannel, 'room-42');
+      expect(engine.lastJoinUid, 42);
+      expect(adapter.credentials?.token, 'token-a');
+      expect(adapter.credentials?.channelId, 'room-42');
+      expect(adapter.joined, isTrue);
+    },
+  );
+
+  test(
+    'joined A then same identity join is idempotent without replacing active token',
+    () async {
+      final _FakeRtcEngine engine = _FakeRtcEngine();
+      final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+        engine: engine,
+        now: () => now,
+      );
+      addTearDown(adapter.release);
+
+      await adapter.join(_credentials(role: 'broadcaster', token: 'token-a'));
+      await adapter.join(_credentials(role: 'publisher', token: 'token-b'));
+
+      expect(engine.joinCalls, 1);
+      expect(engine.leaveCalls, 0);
+      expect(adapter.credentials?.token, 'token-a');
+      expect(adapter.credentials?.role, 'broadcaster');
+      expect(adapter.joined, isTrue);
+    },
+  );
+
+  test(
+    'initialize with a different identity while joined fails without overwriting active credentials',
+    () async {
+      final _FakeRtcEngine engine = _FakeRtcEngine();
+      final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+        engine: engine,
+        now: () => now,
+      );
+      addTearDown(adapter.release);
+
+      await adapter.join(_credentials(role: 'audience', token: 'token-a'));
+      await expectLater(
+        adapter.initialize(
+          _credentials(
+            role: 'audience',
+            token: 'token-b',
+            channelId: 'room-b',
+            uid: 43,
+          ),
+        ),
+        throwsA(
+          isA<RtcAdapterException>()
+              .having(
+                (RtcAdapterException error) => error.failure,
+                'failure',
+                RtcAdapterFailure.initialize,
+              )
+              .having(
+                (RtcAdapterException error) => error.toString(),
+                'sanitized message',
+                isNot(contains('token-b')),
+              ),
+        ),
+      );
+
+      expect(engine.initializeCalls, 1);
+      expect(engine.releaseCalls, 0);
+      expect(engine.joinCalls, 1);
+      expect(adapter.credentials?.appId, 'public-app-id');
+      expect(adapter.credentials?.token, 'token-a');
+      expect(adapter.credentials?.channelId, 'room-42');
+      expect(adapter.joined, isTrue);
+    },
+  );
+
+  test(
+    'initialize with the same identity while joined never replaces the active token',
+    () async {
+      final _FakeRtcEngine engine = _FakeRtcEngine();
+      final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+        engine: engine,
+        now: () => now,
+      );
+      addTearDown(adapter.release);
+
+      await adapter.join(_credentials(role: 'audience', token: 'token-a'));
+      await adapter.initialize(
+        _credentials(role: 'subscriber', token: 'token-b'),
+      );
+
+      expect(engine.initializeCalls, 1);
+      expect(engine.releaseCalls, 0);
+      expect(engine.joinCalls, 1);
+      expect(adapter.credentials?.token, 'token-a');
+      expect(adapter.credentials?.role, 'audience');
+      expect(adapter.joined, isTrue);
+    },
+  );
+
+  test(
+    'concurrent reconnects with different identities fail without changing the first reconnect',
+    () async {
+      final _FakeRtcEngine engine = _FakeRtcEngine()..emitLeaveSuccess = false;
+      final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+        engine: engine,
+        now: () => now,
+        leaveTimeout: const Duration(seconds: 1),
+      );
+      addTearDown(adapter.release);
+      await adapter.join(_credentials(role: 'audience', token: 'token-a'));
+
+      final Future<void> first = adapter.reconnect(
+        _credentials(role: 'audience', token: 'token-a2'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final Future<void> second = adapter.reconnect(
+        _credentials(
+          role: 'broadcaster',
+          token: 'token-b',
+          channelId: 'room-b',
+          uid: 43,
+        ),
+      );
+
+      expect(identical(first, second), isFalse);
+      await expectLater(
+        second,
+        throwsA(
+          isA<RtcAdapterException>()
+              .having(
+                (RtcAdapterException error) => error.failure,
+                'failure',
+                RtcAdapterFailure.join,
+              )
+              .having(
+                (RtcAdapterException error) => error.toString(),
+                'sanitized message',
+                isNot(contains('token-b')),
+              ),
+        ),
+      );
+
+      engine.handler!.onLeaveChannel!(
+        RtcConnection(channelId: 'room-42', localUid: 42),
+        RtcStats(),
+      );
+      await first;
+
+      expect(engine.joinCalls, 2);
+      expect(engine.leaveCalls, 1);
+      expect(engine.lastJoinChannel, 'room-42');
+      expect(engine.lastJoinUid, 42);
+      expect(adapter.credentials?.token, 'token-a2');
+      expect(adapter.credentials?.channelId, 'room-42');
+      expect(adapter.joined, isTrue);
+    },
+  );
+
+  test(
+    'concurrent reconnects with the same identity share one operation',
+    () async {
+      final _FakeRtcEngine engine = _FakeRtcEngine()..emitLeaveSuccess = false;
+      final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+        engine: engine,
+        now: () => now,
+        leaveTimeout: const Duration(seconds: 1),
+      );
+      addTearDown(adapter.release);
+      await adapter.join(_credentials(role: 'audience', token: 'token-a'));
+
+      final Future<void> first = adapter.reconnect(
+        _credentials(role: 'audience', token: 'token-a2'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final Future<void> second = adapter.reconnect(
+        _credentials(role: 'subscriber', token: 'token-b'),
+      );
+
+      expect(identical(first, second), isTrue);
+      engine.handler!.onLeaveChannel!(
+        RtcConnection(channelId: 'room-42', localUid: 42),
+        RtcStats(),
+      );
+      await Future.wait(<Future<void>>[first, second]);
+
+      expect(engine.joinCalls, 2);
+      expect(engine.leaveCalls, 1);
+      expect(engine.lastJoinChannel, 'room-42');
+      expect(engine.lastJoinUid, 42);
+      expect(adapter.credentials?.token, 'token-a2');
+      expect(adapter.credentials?.role, 'audience');
+      expect(adapter.joined, isTrue);
+    },
+  );
+
+  test(
     'join provider error is authoritative and leaves the pending channel',
     () async {
       final _FakeRtcEngine engine = _FakeRtcEngine()..emitJoinSuccess = false;
@@ -464,18 +787,23 @@ void main() {
   });
 }
 
-RtcCredentials _credentials({required String role, String token = 'token-1'}) =>
-    RtcCredentials(
-      solution: RtcSolution.agora,
-      provider: 'agora',
-      appId: 'public-app-id',
-      token: token,
-      channelId: 'room-42',
-      uid: 42,
-      role: role,
-      expiresAt: DateTime.utc(2030, 1, 1, 13),
-      ttlSeconds: 3600,
-    );
+RtcCredentials _credentials({
+  required String role,
+  String token = 'token-1',
+  String appId = 'public-app-id',
+  String channelId = 'room-42',
+  int uid = 42,
+}) => RtcCredentials(
+  solution: RtcSolution.agora,
+  provider: 'agora',
+  appId: appId,
+  token: token,
+  channelId: channelId,
+  uid: uid,
+  role: role,
+  expiresAt: DateTime.utc(2030, 1, 1, 13),
+  ttlSeconds: 3600,
+);
 
 class _FakeRtcEngine implements RtcEngine {
   RtcEngineContext? lastContext;

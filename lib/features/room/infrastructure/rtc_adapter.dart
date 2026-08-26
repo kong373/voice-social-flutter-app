@@ -131,6 +131,8 @@ class AgoraRtcAdapter implements RtcAdapter {
   Future<void>? _joinInFlight;
   Future<void>? _leaveInFlight;
   Future<void>? _reconnectInFlight;
+  _RtcSessionIdentity? _joinInFlightIdentity;
+  _RtcSessionIdentity? _reconnectInFlightIdentity;
   Completer<void>? _joinCompletion;
   Completer<void>? _joinCancellation;
   Completer<void>? _initializeCancellation;
@@ -187,7 +189,18 @@ class AgoraRtcAdapter implements RtcAdapter {
     _validateCredentials(credentials);
     while (true) {
       _ensureNotDisposed();
-      if (_initialized && _credentials?.appId == credentials.appId) {
+      final RtcCredentials? activeCredentials = _credentials;
+      if (_joined) {
+        if (activeCredentials == null ||
+            !_sameSessionIdentity(activeCredentials, credentials)) {
+          throw _sessionIdentityConflict(RtcAdapterFailure.initialize);
+        }
+        // An initialized/joined SDK already owns this session. A new token is
+        // applied only by renewToken/reconnect, never by initialize.
+        return;
+      }
+      if (_initialized &&
+          activeCredentials?.appId.trim() == credentials.appId.trim()) {
         _credentials = credentials;
         return;
       }
@@ -217,7 +230,12 @@ class AgoraRtcAdapter implements RtcAdapter {
 
   Future<void> _initializeInternal(RtcCredentials credentials) async {
     if (_joined) {
-      await leave();
+      final RtcCredentials? activeCredentials = _credentials;
+      if (activeCredentials == null ||
+          !_sameSessionIdentity(activeCredentials, credentials)) {
+        throw _sessionIdentityConflict(RtcAdapterFailure.initialize);
+      }
+      return;
     }
     final Future<void>? leaving = _leaveInFlight;
     if (leaving != null) {
@@ -318,10 +336,26 @@ class AgoraRtcAdapter implements RtcAdapter {
   @override
   Future<void> join(RtcCredentials credentials) {
     _ensureNotDisposed();
+    final _RtcSessionIdentity requestedIdentity =
+        _RtcSessionIdentity.fromCredentials(credentials);
     final Future<void>? inFlight = _joinInFlight;
     if (inFlight != null) {
-      return inFlight;
+      if (_joinInFlightIdentity == requestedIdentity) {
+        return inFlight;
+      }
+      return Future<void>.error(
+        _sessionIdentityConflict(RtcAdapterFailure.join),
+      );
     }
+    final RtcCredentials? activeCredentials = _credentials;
+    if (_joined &&
+        (activeCredentials == null ||
+            !_sameSessionIdentity(activeCredentials, credentials))) {
+      return Future<void>.error(
+        _sessionIdentityConflict(RtcAdapterFailure.join),
+      );
+    }
+    _joinInFlightIdentity = requestedIdentity;
     final Future<void> operation = _joinInternal(credentials);
     _joinInFlight = operation;
     operation.then<void>(
@@ -329,10 +363,16 @@ class AgoraRtcAdapter implements RtcAdapter {
         if (identical(_joinInFlight, operation)) {
           _joinInFlight = null;
         }
+        if (identical(_joinInFlightIdentity, requestedIdentity)) {
+          _joinInFlightIdentity = null;
+        }
       },
       onError: (Object _, StackTrace __) {
         if (identical(_joinInFlight, operation)) {
           _joinInFlight = null;
+        }
+        if (identical(_joinInFlightIdentity, requestedIdentity)) {
+          _joinInFlightIdentity = null;
         }
       },
     );
@@ -341,6 +381,17 @@ class AgoraRtcAdapter implements RtcAdapter {
 
   Future<void> _joinInternal(RtcCredentials credentials) async {
     _validateCredentials(credentials);
+    if (_joined) {
+      final RtcCredentials? activeCredentials = _credentials;
+      if (activeCredentials == null ||
+          !_sameSessionIdentity(activeCredentials, credentials)) {
+        throw _sessionIdentityConflict(RtcAdapterFailure.join);
+      }
+      // Calling join twice for the same session is idempotent. In particular,
+      // do not replace the active token with one that was never applied to the
+      // native channel; use renewToken or reconnect for that operation.
+      return;
+    }
     final Future<void>? leaving = _leaveInFlight;
     if (leaving != null) {
       await leaving;
@@ -349,6 +400,10 @@ class AgoraRtcAdapter implements RtcAdapter {
     _ensureNotDisposed();
     final RtcEngine engine = _requireEngine();
     if (_joined) {
+      if (_credentials == null ||
+          !_sameSessionIdentity(_credentials!, credentials)) {
+        throw _sessionIdentityConflict(RtcAdapterFailure.join);
+      }
       return;
     }
     final ClientRoleType role = _roleFor(credentials.role);
@@ -465,10 +520,18 @@ class AgoraRtcAdapter implements RtcAdapter {
   Future<void> reconnect(RtcCredentials credentials) {
     _ensureNotDisposed();
     _validateCredentials(credentials);
+    final _RtcSessionIdentity requestedIdentity =
+        _RtcSessionIdentity.fromCredentials(credentials);
     final Future<void>? inFlight = _reconnectInFlight;
     if (inFlight != null) {
-      return inFlight;
+      if (_reconnectInFlightIdentity == requestedIdentity) {
+        return inFlight;
+      }
+      return Future<void>.error(
+        _sessionIdentityConflict(RtcAdapterFailure.join),
+      );
     }
+    _reconnectInFlightIdentity = requestedIdentity;
     final Future<void> operation = _reconnectInternal(credentials);
     _reconnectInFlight = operation;
     operation.then<void>(
@@ -476,10 +539,16 @@ class AgoraRtcAdapter implements RtcAdapter {
         if (identical(_reconnectInFlight, operation)) {
           _reconnectInFlight = null;
         }
+        if (identical(_reconnectInFlightIdentity, requestedIdentity)) {
+          _reconnectInFlightIdentity = null;
+        }
       },
       onError: (Object _, StackTrace __) {
         if (identical(_reconnectInFlight, operation)) {
           _reconnectInFlight = null;
+        }
+        if (identical(_reconnectInFlightIdentity, requestedIdentity)) {
+          _reconnectInFlightIdentity = null;
         }
       },
     );
@@ -1460,23 +1529,26 @@ class AgoraRtcAdapter implements RtcAdapter {
   }
 
   static ClientRoleType _roleFor(String role) {
-    final String normalized = role.trim().toLowerCase();
+    final String normalized = _RtcSessionIdentity.normalizedRole(role);
     return switch (normalized) {
-      'broadcaster' ||
-      'publisher' ||
-      'host' ||
-      'speaker' ||
-      'anchor' => ClientRoleType.clientRoleBroadcaster,
-      'audience' ||
-      'listener' ||
-      'guest' ||
-      'subscriber' => ClientRoleType.clientRoleAudience,
+      'broadcaster' => ClientRoleType.clientRoleBroadcaster,
+      'audience' => ClientRoleType.clientRoleAudience,
       _ => throw const RtcAdapterException(
         failure: RtcAdapterFailure.invalidCredentials,
         message: 'RTC 凭证 role 无法识别',
       ),
     };
   }
+
+  bool _sameSessionIdentity(RtcCredentials left, RtcCredentials right) =>
+      _RtcSessionIdentity.fromCredentials(left) ==
+      _RtcSessionIdentity.fromCredentials(right);
+
+  RtcAdapterException _sessionIdentityConflict(RtcAdapterFailure failure) =>
+      RtcAdapterException(
+        failure: failure,
+        message: 'RTC 会话身份不一致，请使用 reconnect',
+      );
 
   static RtcAdapterException _providerException(
     RtcAdapterFailure failure,
@@ -1509,6 +1581,61 @@ class AgoraRtcAdapter implements RtcAdapter {
 
 class _RtcOperationCancelled implements Exception {
   const _RtcOperationCancelled();
+}
+
+/// The identity that owns a native RTC channel.
+///
+/// Token material and expiry are deliberately absent: a token refresh must be
+/// allowed to preserve the same session, while a different channel, uid,
+/// app, provider, or effective role must never be silently coalesced.
+class _RtcSessionIdentity {
+  const _RtcSessionIdentity({
+    required this.provider,
+    required this.appId,
+    required this.channelId,
+    required this.uid,
+    required this.role,
+  });
+
+  factory _RtcSessionIdentity.fromCredentials(RtcCredentials credentials) =>
+      _RtcSessionIdentity(
+        provider: credentials.provider.trim().toLowerCase(),
+        appId: credentials.appId.trim(),
+        channelId: credentials.channelId.trim(),
+        uid: credentials.uid,
+        role: normalizedRole(credentials.role),
+      );
+
+  final String provider;
+  final String appId;
+  final String channelId;
+  final int uid;
+  final String role;
+
+  static String normalizedRole(String role) {
+    final String normalized = role.trim().toLowerCase();
+    return switch (normalized) {
+      'broadcaster' ||
+      'publisher' ||
+      'host' ||
+      'speaker' ||
+      'anchor' => 'broadcaster',
+      'audience' || 'listener' || 'guest' || 'subscriber' => 'audience',
+      _ => normalized,
+    };
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is _RtcSessionIdentity &&
+      provider == other.provider &&
+      appId == other.appId &&
+      channelId == other.channelId &&
+      uid == other.uid &&
+      role == other.role;
+
+  @override
+  int get hashCode => Object.hash(provider, appId, channelId, uid, role);
 }
 
 class MockRtcAdapter implements RtcAdapter {
