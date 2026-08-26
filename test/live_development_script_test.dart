@@ -13,10 +13,51 @@ void main() {
   late Directory liveArtifactDirectory;
   late File liveArtifact;
   late File liveArtifactHash;
-  late bool liveArtifactDirectoryExisted;
-  late bool liveArtifactDirectoryRemovedForTest;
-  late List<int>? preservedArtifactBytes;
-  late String? preservedArtifactHash;
+  late Directory liveArtifactBackupDirectory;
+  late bool buildDirectoryExisted;
+  late FileSystemEntityType originalLiveArtifactDirectoryType;
+  late bool suiteArtifactFixturePrepared;
+
+  setUpAll(() {
+    suiteArtifactFixturePrepared = false;
+    liveArtifactDirectory = Directory('build/live-development');
+    liveArtifact = File('${liveArtifactDirectory.path}/app-debug.apk');
+    liveArtifactHash = File(
+      '${liveArtifactDirectory.path}/app-debug.apk.sha256',
+    );
+
+    final Directory buildDirectory = Directory('build');
+    final FileSystemEntityType buildDirectoryType =
+        FileSystemEntity.typeSync(buildDirectory.path, followLinks: false);
+    if (buildDirectoryType == FileSystemEntityType.notFound) {
+      buildDirectory.createSync(recursive: true);
+      buildDirectoryExisted = false;
+    } else {
+      if (buildDirectoryType != FileSystemEntityType.directory) {
+        throw StateError('build must be a real directory');
+      }
+      buildDirectoryExisted = true;
+    }
+
+    // Keep the original output entry in a sibling directory on the same
+    // filesystem.  Renaming the whole entry is atomic and preserves a large
+    // APK, its sidecar, permissions, symlinks, and any unrelated files
+    // without reading or rewriting them for every test.
+    liveArtifactBackupDirectory = buildDirectory.createTempSync(
+      '.live-development-script-test-backup-',
+    );
+    originalLiveArtifactDirectoryType = FileSystemEntity.typeSync(
+      liveArtifactDirectory.path,
+      followLinks: false,
+    );
+    if (originalLiveArtifactDirectoryType != FileSystemEntityType.notFound) {
+      _renameEntity(
+        liveArtifactDirectory.path,
+        '${liveArtifactBackupDirectory.path}/live-development',
+      );
+    }
+    suiteArtifactFixturePrepared = true;
+  });
 
   setUp(() {
     fakeFlutterBin = Directory.systemTemp.createTempSync('live-dev-flutter-');
@@ -26,40 +67,7 @@ void main() {
     fakeFlutterBehaviorConfig = File('${fakeFlutterBin.path}/behavior.config')
       ..writeAsStringSync('success\n');
     fakeFlutterHostLog = File('${fakeFlutterBin.path}/android-host.log');
-    liveArtifactDirectory = Directory('build/live-development');
-    liveArtifact = File('${liveArtifactDirectory.path}/app-debug.apk');
-    liveArtifactHash = File(
-      '${liveArtifactDirectory.path}/app-debug.apk.sha256',
-    );
-    final FileSystemEntityType artifactDirectoryType =
-        FileSystemEntity.typeSync(
-          liveArtifactDirectory.path,
-          followLinks: false,
-        );
-    if (artifactDirectoryType != FileSystemEntityType.notFound &&
-        artifactDirectoryType != FileSystemEntityType.directory) {
-      throw StateError('live artifact path must be a real directory');
-    }
-    liveArtifactDirectoryExisted =
-        artifactDirectoryType == FileSystemEntityType.directory;
-    liveArtifactDirectoryRemovedForTest = false;
-    preservedArtifactBytes = liveArtifact.existsSync()
-        ? liveArtifact.readAsBytesSync()
-        : null;
-    preservedArtifactHash = liveArtifactHash.existsSync()
-        ? liveArtifactHash.readAsStringSync()
-        : null;
-    if (liveArtifact.existsSync()) {
-      liveArtifact.deleteSync();
-    }
-    if (liveArtifactHash.existsSync()) {
-      liveArtifactHash.deleteSync();
-    }
-    if (liveArtifactDirectoryExisted &&
-        liveArtifactDirectory.listSync().isEmpty) {
-      liveArtifactDirectory.deleteSync();
-      liveArtifactDirectoryRemovedForTest = true;
-    }
+    _removeEntityIfPresent(liveArtifactDirectory.path, recursive: true);
     fakePath = fakeFlutterBin.path;
     fakeLogPath = fakeFlutterLog.path;
     fakeFlutterEnvLogPath = fakeFlutterEnvLog.path;
@@ -125,47 +133,47 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
   });
 
   tearDown(() {
-    if (fakeFlutterBin.existsSync()) {
-      fakeFlutterBin.deleteSync(recursive: true);
-    }
-    fakePath = null;
-    fakeLogPath = null;
-    fakeFlutterEnvLogPath = null;
-    fakeVersionConfigPath = null;
-    fakeHostLogPath = null;
-    if (liveArtifact.existsSync()) {
-      liveArtifact.deleteSync();
-    }
-    if (liveArtifactHash.existsSync()) {
-      liveArtifactHash.deleteSync();
-    }
-    final FileSystemEntityType artifactDirectoryType =
-        FileSystemEntity.typeSync(
-          liveArtifactDirectory.path,
-          followLinks: false,
-        );
-    if (!liveArtifactDirectoryExisted) {
-      if (artifactDirectoryType == FileSystemEntityType.link) {
-        Link(liveArtifactDirectory.path).deleteSync();
-      } else if (artifactDirectoryType == FileSystemEntityType.file) {
-        File(liveArtifactDirectory.path).deleteSync();
+    try {
+      if (fakeFlutterBin.existsSync()) {
+        fakeFlutterBin.deleteSync(recursive: true);
       }
+      fakePath = null;
+      fakeLogPath = null;
+      fakeFlutterEnvLogPath = null;
+      fakeVersionConfigPath = null;
+      fakeHostLogPath = null;
+    } finally {
+      // The suite-level backup is untouched here.  Only remove the output
+      // entry created by this test so the next test starts without artifacts.
+      _removeEntityIfPresent(liveArtifactDirectory.path, recursive: true);
     }
-    if (preservedArtifactBytes case final List<int> bytes) {
-      liveArtifactDirectory.createSync(recursive: true);
-      liveArtifact.writeAsBytesSync(bytes);
+  });
+
+  tearDownAll(() {
+    if (!suiteArtifactFixturePrepared) {
+      return;
     }
-    if (preservedArtifactHash case final String hash) {
-      liveArtifactDirectory.createSync(recursive: true);
-      liveArtifactHash.writeAsStringSync(hash);
-    }
-    if (liveArtifactDirectoryRemovedForTest &&
-        !liveArtifactDirectory.existsSync()) {
-      liveArtifactDirectory.createSync(recursive: true);
-    } else if (!liveArtifactDirectoryExisted &&
-        liveArtifactDirectory.existsSync() &&
-        liveArtifactDirectory.listSync().isEmpty) {
-      liveArtifactDirectory.deleteSync();
+    try {
+      _removeEntityIfPresent(liveArtifactDirectory.path, recursive: true);
+      final String originalPath =
+          '${liveArtifactBackupDirectory.path}/live-development';
+      if (originalLiveArtifactDirectoryType !=
+          FileSystemEntityType.notFound) {
+        if (FileSystemEntity.typeSync(originalPath, followLinks: false) ==
+            FileSystemEntityType.notFound) {
+          throw StateError('live artifact backup is missing');
+        }
+        _renameEntity(originalPath, liveArtifactDirectory.path);
+      }
+      liveArtifactBackupDirectory.deleteSync(recursive: true);
+      if (!buildDirectoryExisted &&
+          FileSystemEntity.typeSync('build', followLinks: false) ==
+              FileSystemEntityType.directory &&
+          Directory('build').listSync().isEmpty) {
+        Directory('build').deleteSync();
+      }
+    } finally {
+      suiteArtifactFixturePrepared = false;
     }
   });
 
@@ -1118,6 +1126,36 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
 String get _projectRoot => Directory.current.path;
 
 File get _script => File('$_projectRoot/tool/live_development.sh');
+
+void _renameEntity(String source, String destination) {
+  switch (FileSystemEntity.typeSync(source, followLinks: false)) {
+    case FileSystemEntityType.directory:
+      Directory(source).renameSync(destination);
+    case FileSystemEntityType.file:
+      File(source).renameSync(destination);
+    case FileSystemEntityType.link:
+      Link(source).renameSync(destination);
+    case FileSystemEntityType.notFound:
+      throw StateError('cannot rename missing filesystem entry: $source');
+    default:
+      throw StateError('unsupported filesystem entry: $source');
+  }
+}
+
+void _removeEntityIfPresent(String path, {required bool recursive}) {
+  switch (FileSystemEntity.typeSync(path, followLinks: false)) {
+    case FileSystemEntityType.directory:
+      Directory(path).deleteSync(recursive: recursive);
+    case FileSystemEntityType.file:
+      File(path).deleteSync();
+    case FileSystemEntityType.link:
+      Link(path).deleteSync();
+    case FileSystemEntityType.notFound:
+      return;
+    default:
+      throw StateError('unsupported filesystem entry: $path');
+  }
+}
 
 Map<String, String> _baseEnvironment() {
   final Map<String, String> environment = <String, String>{
