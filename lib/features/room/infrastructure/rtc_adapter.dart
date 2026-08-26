@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
 import 'package:voice_social_app/features/account/compliance/infrastructure/native_permission_adapter.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
@@ -1669,6 +1670,24 @@ class AgoraRtcAdapter implements RtcAdapter {
   );
 
   void _emit(RtcAdapterEvent event) {
+    if (kDebugMode) {
+      switch (event.type) {
+        case RtcAdapterEventType.initialized:
+        case RtcAdapterEventType.joined:
+        case RtcAdapterEventType.rejoined:
+        case RtcAdapterEventType.left:
+          // Fixed, credential-free marker used by local vendor acceptance.
+          // Never add app ids, tokens, channel ids, uids, or provider payloads.
+          debugPrint('RTC_LIFECYCLE provider=agora event=${event.type.name}');
+        case RtcAdapterEventType.remoteUserJoined:
+        case RtcAdapterEventType.remoteUserLeft:
+        case RtcAdapterEventType.remoteUserMuted:
+        case RtcAdapterEventType.connectionChanged:
+        case RtcAdapterEventType.tokenRenewed:
+        case RtcAdapterEventType.error:
+          break;
+      }
+    }
     final StreamController<RtcAdapterEvent>? controller = _events;
     if (!_disposed &&
         !_disposing &&
