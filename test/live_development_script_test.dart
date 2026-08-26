@@ -13,52 +13,67 @@ void main() {
   late Directory liveArtifactDirectory;
   late File liveArtifact;
   late File liveArtifactHash;
-  late Directory liveArtifactBackupDirectory;
-  late bool buildDirectoryExisted;
-  late FileSystemEntityType originalLiveArtifactDirectoryType;
-  late bool suiteArtifactFixturePrepared;
+  Directory? isolatedCheckoutParent;
+  Directory? isolatedCheckout;
 
-  setUpAll(() {
-    suiteArtifactFixturePrepared = false;
-    liveArtifactDirectory = Directory('build/live-development');
+  setUpAll(() async {
+    _originalWorkingDirectory = Directory.current.path;
+    _originalCheckoutRoot = _originalWorkingDirectory;
+    _originalCheckoutHead = _gitOutput(_originalCheckoutRoot!, <String>[
+      'rev-parse',
+      'HEAD',
+    ]);
+    _originalCheckoutSentinel = await _captureCheckoutSentinel(
+      _originalCheckoutRoot!,
+    );
+
+    // Every test process gets its own real local clone.  The wrapper derives
+    // ROOT_DIR from its own script path, so changing this process's cwd is
+    // enough to make all build/run output belong to the clone.  The original
+    // checkout is never used as a fixture and is never renamed or cleaned.
+    isolatedCheckoutParent = Directory.systemTemp.createTempSync(
+      'live-development-script-test-',
+    );
+    isolatedCheckout = Directory('${isolatedCheckoutParent!.path}/checkout');
+    final ProcessResult cloneResult = Process.runSync('git', <String>[
+      'clone',
+      '--quiet',
+      '--no-local',
+      _originalCheckoutRoot!,
+      isolatedCheckout!.path,
+    ]);
+    if (cloneResult.exitCode != 0) {
+      throw StateError('unable to create isolated test checkout');
+    }
+    final ProcessResult detachResult = Process.runSync('git', <String>[
+      '-C',
+      isolatedCheckout!.path,
+      'checkout',
+      '--detach',
+      '--quiet',
+      _originalCheckoutHead!,
+    ]);
+    if (detachResult.exitCode != 0 ||
+        _gitOutput(isolatedCheckout!.path, <String>['rev-parse', 'HEAD']) !=
+            _originalCheckoutHead) {
+      throw StateError('isolated test checkout is not at the exact test HEAD');
+    }
+    if (_gitOutput(isolatedCheckout!.path, <String>[
+      'status',
+      '--porcelain',
+      '--untracked-files=normal',
+    ]).isNotEmpty) {
+      throw StateError('isolated test checkout is not clean');
+    }
+
+    Directory.current = isolatedCheckout!.path;
+    liveArtifactDirectory = Directory(
+      '${isolatedCheckout!.path}/build/live-development',
+    );
     liveArtifact = File('${liveArtifactDirectory.path}/app-debug.apk');
     liveArtifactHash = File(
       '${liveArtifactDirectory.path}/app-debug.apk.sha256',
     );
-
-    final Directory buildDirectory = Directory('build');
-    final FileSystemEntityType buildDirectoryType = FileSystemEntity.typeSync(
-      buildDirectory.path,
-      followLinks: false,
-    );
-    if (buildDirectoryType == FileSystemEntityType.notFound) {
-      buildDirectory.createSync(recursive: true);
-      buildDirectoryExisted = false;
-    } else {
-      if (buildDirectoryType != FileSystemEntityType.directory) {
-        throw StateError('build must be a real directory');
-      }
-      buildDirectoryExisted = true;
-    }
-
-    // Keep the original output entry in a sibling directory on the same
-    // filesystem.  Renaming the whole entry is atomic and preserves a large
-    // APK, its sidecar, permissions, symlinks, and any unrelated files
-    // without reading or rewriting them for every test.
-    liveArtifactBackupDirectory = buildDirectory.createTempSync(
-      '.live-development-script-test-backup-',
-    );
-    originalLiveArtifactDirectoryType = FileSystemEntity.typeSync(
-      liveArtifactDirectory.path,
-      followLinks: false,
-    );
-    if (originalLiveArtifactDirectoryType != FileSystemEntityType.notFound) {
-      _renameEntity(
-        liveArtifactDirectory.path,
-        '${liveArtifactBackupDirectory.path}/live-development',
-      );
-    }
-    suiteArtifactFixturePrepared = true;
   });
 
   setUp(() {
@@ -145,36 +160,25 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
       fakeVersionConfigPath = null;
       fakeHostLogPath = null;
     } finally {
-      // The suite-level backup is untouched here.  Only remove the output
-      // entry created by this test so the next test starts without artifacts.
+      // Only remove output from this test's private clone.  In particular,
+      // never clean a path in the original checkout from tearDown.
       _removeEntityIfPresent(liveArtifactDirectory.path, recursive: true);
     }
   });
 
-  tearDownAll(() {
-    if (!suiteArtifactFixturePrepared) {
-      return;
-    }
+  tearDownAll(() async {
     try {
-      _removeEntityIfPresent(liveArtifactDirectory.path, recursive: true);
-      final String originalPath =
-          '${liveArtifactBackupDirectory.path}/live-development';
-      if (originalLiveArtifactDirectoryType != FileSystemEntityType.notFound) {
-        if (FileSystemEntity.typeSync(originalPath, followLinks: false) ==
-            FileSystemEntityType.notFound) {
-          throw StateError('live artifact backup is missing');
-        }
-        _renameEntity(originalPath, liveArtifactDirectory.path);
-      }
-      liveArtifactBackupDirectory.deleteSync(recursive: true);
-      if (!buildDirectoryExisted &&
-          FileSystemEntity.typeSync('build', followLinks: false) ==
-              FileSystemEntityType.directory &&
-          Directory('build').listSync().isEmpty) {
-        Directory('build').deleteSync();
+      // Restore cwd before removing the clone.  If the test process is
+      // interrupted, the clone may remain in system temp, but it cannot
+      // affect the real checkout or its retained APK.
+      if (_originalWorkingDirectory != null) {
+        Directory.current = _originalWorkingDirectory!;
+        await _assertOriginalCheckoutUntouched();
       }
     } finally {
-      suiteArtifactFixturePrepared = false;
+      if (isolatedCheckoutParent?.existsSync() ?? false) {
+        isolatedCheckoutParent!.deleteSync(recursive: true);
+      }
     }
   });
 
@@ -401,28 +405,38 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
     },
   );
 
-  test('successful build retains the APK and SHA-256 after wrapper exit', () {
-    final ProcessResult result = _run(<String>[
-      'build-apk',
-      '--target',
-      'android-emulator',
-      '--enable-agora-rtc',
-    ], environment: _baseEnvironment());
+  test(
+    'successful build retains the APK and SHA-256 after wrapper exit',
+    () async {
+      final ProcessResult result = _run(<String>[
+        'build-apk',
+        '--target',
+        'android-emulator',
+        '--enable-agora-rtc',
+      ], environment: _baseEnvironment());
 
-    expect(result.exitCode, 0);
-    expect(liveArtifact.existsSync(), isTrue);
-    expect(liveArtifactHash.existsSync(), isTrue);
-    expect(liveArtifact.readAsStringSync(), 'fake-live-debug-apk\n');
-    final String digest = sha256
-        .convert(liveArtifact.readAsBytesSync())
-        .toString();
-    expect(liveArtifactHash.readAsStringSync(), '$digest  app-debug.apk\n');
-    expect(
-      result.stdout,
-      contains('live_apk_path=${liveArtifact.absolute.path}'),
-    );
-    expect(result.stdout, contains('live_apk_sha256=$digest'));
-  });
+      expect(result.exitCode, 0);
+      expect(liveArtifact.existsSync(), isTrue);
+      expect(liveArtifactHash.existsSync(), isTrue);
+      expect(liveArtifact.readAsStringSync(), 'fake-live-debug-apk\n');
+      final String digest = sha256
+          .convert(liveArtifact.readAsBytesSync())
+          .toString();
+      expect(liveArtifactHash.readAsStringSync(), '$digest  app-debug.apk\n');
+      expect(result.stdout, contains('live_apk_path='));
+      final String reportedPath = result.stdout
+          .toString()
+          .split('\n')
+          .firstWhere((String line) => line.startsWith('live_apk_path='))
+          .substring('live_apk_path='.length);
+      expect(
+        File(reportedPath).resolveSymbolicLinksSync(),
+        liveArtifact.resolveSymbolicLinksSync(),
+      );
+      expect(result.stdout, contains('live_apk_sha256=$digest'));
+      await _assertOriginalCheckoutUntouched();
+    },
+  );
 
   test('failed build leaves no retained APK or SHA-256', () {
     liveArtifactDirectory.createSync(recursive: true);
@@ -1124,24 +1138,137 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
   });
 }
 
+String? _originalWorkingDirectory;
+String? _originalCheckoutRoot;
+String? _originalCheckoutHead;
+_CheckoutSentinel? _originalCheckoutSentinel;
+
+class _CheckoutSentinel {
+  const _CheckoutSentinel({
+    required this.gitHead,
+    required this.gitStatus,
+    required this.entries,
+  });
+
+  final String gitHead;
+  final String gitStatus;
+  final Map<String, String> entries;
+}
+
+Future<_CheckoutSentinel> _captureCheckoutSentinel(String root) async {
+  final Map<String, String> entries = <String, String>{};
+  await _captureEntity(root, 'build', entries, includeChildren: false);
+  await _captureEntity(
+    root,
+    'build/live-development',
+    entries,
+    includeChildren: true,
+  );
+  await _captureEntity(root, 'android', entries, includeChildren: true);
+  return _CheckoutSentinel(
+    gitHead: _gitOutput(root, <String>['rev-parse', 'HEAD']),
+    gitStatus: _gitOutput(root, <String>[
+      'status',
+      '--porcelain',
+      '--untracked-files=normal',
+    ]),
+    entries: entries,
+  );
+}
+
+Future<void> _captureEntity(
+  String root,
+  String relativePath,
+  Map<String, String> entries, {
+  required bool includeChildren,
+}) async {
+  final String path = '$root/$relativePath';
+  final FileSystemEntityType type = FileSystemEntity.typeSync(
+    path,
+    followLinks: false,
+  );
+  if (type == FileSystemEntityType.notFound) {
+    entries[relativePath] = 'not-found';
+    return;
+  }
+
+  if (type == FileSystemEntityType.link) {
+    entries[relativePath] = '${type.toString()}|${Link(path).targetSync()}';
+    return;
+  }
+  final FileStat stat = FileStat.statSync(path);
+  String digest = '';
+  if (type == FileSystemEntityType.file) {
+    digest = (await sha256.bind(File(path).openRead())).toString();
+  }
+  entries[relativePath] =
+      '${type.toString()}|${stat.mode}|${stat.size}|'
+      '${stat.modified.microsecondsSinceEpoch}|$digest';
+
+  if (includeChildren && type == FileSystemEntityType.directory) {
+    final List<FileSystemEntity> children =
+        Directory(path).listSync(followLinks: false).toList()
+          ..sort((FileSystemEntity left, FileSystemEntity right) {
+            return left.path.compareTo(right.path);
+          });
+    for (final FileSystemEntity child in children) {
+      final int separator = child.path.lastIndexOf(Platform.pathSeparator);
+      final String name = separator < 0
+          ? child.path
+          : child.path.substring(separator + 1);
+      await _captureEntity(
+        root,
+        '$relativePath/$name',
+        entries,
+        includeChildren: true,
+      );
+    }
+  }
+}
+
+String _gitOutput(String root, List<String> arguments) {
+  final ProcessResult result = Process.runSync('git', <String>[
+    '-C',
+    root,
+    ...arguments,
+  ]);
+  if (result.exitCode != 0) {
+    throw StateError('git command failed while preparing the isolated test');
+  }
+  return result.stdout.toString().trimRight();
+}
+
+Future<void> _assertOriginalCheckoutUntouched() async {
+  final _CheckoutSentinel? before = _originalCheckoutSentinel;
+  final String? root = _originalCheckoutRoot;
+  if (before == null || root == null) {
+    return;
+  }
+  final _CheckoutSentinel after = await _captureCheckoutSentinel(root);
+  if (after.gitHead != before.gitHead ||
+      after.gitStatus != before.gitStatus ||
+      !_sameMap(after.entries, before.entries)) {
+    throw StateError(
+      'the original checkout changed while testing live-development',
+    );
+  }
+}
+
+bool _sameMap(Map<String, String> left, Map<String, String> right) {
+  if (left.length != right.length) {
+    return false;
+  }
+  for (final MapEntry<String, String> entry in left.entries) {
+    if (right[entry.key] != entry.value) {
+      return false;
+    }
+  }
+  return true;
+}
+
 String get _projectRoot => Directory.current.path;
 
 File get _script => File('$_projectRoot/tool/live_development.sh');
-
-void _renameEntity(String source, String destination) {
-  switch (FileSystemEntity.typeSync(source, followLinks: false)) {
-    case FileSystemEntityType.directory:
-      Directory(source).renameSync(destination);
-    case FileSystemEntityType.file:
-      File(source).renameSync(destination);
-    case FileSystemEntityType.link:
-      Link(source).renameSync(destination);
-    case FileSystemEntityType.notFound:
-      throw StateError('cannot rename missing filesystem entry: $source');
-    default:
-      throw StateError('unsupported filesystem entry: $source');
-  }
-}
 
 void _removeEntityIfPresent(String path, {required bool recursive}) {
   switch (FileSystemEntity.typeSync(path, followLinks: false)) {
