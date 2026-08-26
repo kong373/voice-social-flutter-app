@@ -1028,13 +1028,18 @@ class AgoraRtcAdapter implements RtcAdapter {
     int engineGeneration, {
     int? sessionGeneration,
   }) {
-    if (_handlerRegistered && _eventHandler != null) {
-      try {
-        engine.unregisterEventHandler(_eventHandler!);
-      } catch (_) {
-        // Continue by installing a fresh generation-bound handler.
-      }
-      _handlerRegistered = false;
+    // Agora's Dart API exposes register/unregister as `void`, but the native
+    // bridge performs both operations asynchronously.  Re-registering while
+    // the first registration is still in flight can make the bridge assert
+    // (and report an unhandled async error).  A native engine therefore owns
+    // exactly one handler for its entire lifetime.  Session generations are
+    // mutable state checked by the handler callbacks, so a reconnect only
+    // updates the generation below; it never replaces the handler.
+    if (_handlerRegistered &&
+        _eventHandler != null &&
+        identical(_engine, engine)) {
+      _callbackSessionGeneration = sessionGeneration;
+      return;
     }
     final int callbackGeneration = ++_callbackGeneration;
     _callbackSessionGeneration = sessionGeneration;
@@ -1529,15 +1534,10 @@ class AgoraRtcAdapter implements RtcAdapter {
   }
 
   Future<void> _releaseEngine(RtcEngine engine) async {
-    try {
-      final RtcEngineEventHandler? handler = _eventHandler;
-      if (_handlerRegistered && handler != null) {
-        engine.unregisterEventHandler(handler);
-      }
-    } catch (_) {
-      // Releasing the engine remains best effort if an older SDK build has
-      // already detached its event handler.
-    }
+    // Do not call unregisterEventHandler here.  In agora_rtc_engine 6.6.3 it
+    // is an async-void bridge operation and may race an earlier registration.
+    // RtcEngine.release() owns native handler teardown and safely unregisters
+    // all handlers as part of engine disposal.
     try {
       await engine.release();
     } on Object {

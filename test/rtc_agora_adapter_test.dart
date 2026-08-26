@@ -33,6 +33,8 @@ void main() {
         ClientRoleType.clientRoleBroadcaster,
       );
       expect(engine.lastJoinOptions?.publishMicrophoneTrack, isFalse);
+      expect(engine.registerCalls, 1);
+      expect(engine.unregisterCalls, 0);
       expect(adapter.localAudioEnabled, isFalse);
       expect(adapter.joined, isTrue);
 
@@ -276,6 +278,46 @@ void main() {
       expect(providerCalls, 0);
       expect(engine.releaseCalls, 1);
       expect(adapter.joined, isFalse);
+    },
+  );
+
+  test(
+    'keeps one async native handler across join, reconnect, and release',
+    () async {
+      final _FakeRtcEngine engine = _FakeRtcEngine()..asyncRegister = true;
+      final AgoraRtcAdapter adapter = AgoraRtcAdapter(
+        engine: engine,
+        now: () => now,
+      );
+      final List<Object> asyncErrors = <Object>[];
+
+      final Zone guardedZone = Zone.current.fork(
+        specification: ZoneSpecification(
+          handleUncaughtError:
+              (
+                Zone self,
+                ZoneDelegate parent,
+                Zone zone,
+                Object error,
+                StackTrace stack,
+              ) {
+                asyncErrors.add(error);
+              },
+        ),
+      );
+      await guardedZone.run<Future<void>>(() async {
+        await adapter.join(_credentials(role: 'audience'));
+        await adapter.reconnect(
+          _credentials(role: 'audience', token: 'token-2'),
+        );
+        await adapter.release();
+        // Let a void-async fake surface any native bridge error in this zone.
+        await Future<void>.delayed(Duration.zero);
+      });
+
+      expect(engine.registerCalls, 1);
+      expect(engine.unregisterCalls, 0);
+      expect(asyncErrors, isEmpty);
     },
   );
 
@@ -1249,6 +1291,8 @@ class _FakeRtcEngine implements RtcEngine {
   int joinCalls = 0;
   int leaveCalls = 0;
   int releaseCalls = 0;
+  int registerCalls = 0;
+  int unregisterCalls = 0;
   String? _joinedChannel;
   int? _joinedUid;
   final List<bool> muteCalls = <bool>[];
@@ -1257,6 +1301,8 @@ class _FakeRtcEngine implements RtcEngine {
   bool emitJoinSuccess = true;
   bool emitLeaveSuccess = true;
   bool emitRenewResult = true;
+  bool asyncRegister = false;
+  bool _registrationInFlight = false;
 
   @override
   Future<void> initialize(RtcEngineContext context) async {
@@ -1335,11 +1381,28 @@ class _FakeRtcEngine implements RtcEngine {
 
   @override
   void registerEventHandler(RtcEngineEventHandler eventHandler) {
-    handler = eventHandler;
+    registerCalls += 1;
+    final bool duplicateRegistration = asyncRegister && _registrationInFlight;
+    if (!duplicateRegistration) {
+      handler = eventHandler;
+    }
+    if (asyncRegister) {
+      _registrationInFlight = true;
+      scheduleMicrotask(() {
+        _registrationInFlight = false;
+        if (duplicateRegistration) {
+          Zone.current.handleUncaughtError(
+            StateError('duplicate async native event-handler registration'),
+            StackTrace.current,
+          );
+        }
+      });
+    }
   }
 
   @override
   void unregisterEventHandler(RtcEngineEventHandler eventHandler) {
+    unregisterCalls += 1;
     if (identical(handler, eventHandler)) {
       handler = null;
     }
