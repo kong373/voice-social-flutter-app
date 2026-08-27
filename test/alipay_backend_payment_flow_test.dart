@@ -12,6 +12,65 @@ import 'package:voice_social_app/features/commerce/infrastructure/alipay_app_pay
 
 void main() {
   test(
+    'native cancellation evidence is strict and survives only safe copies',
+    () {
+      final RechargeOrder created = RechargeOrder(
+        orderNo: 'recharge-order-evidence',
+        account: 'current-user-account',
+        product: const RechargeProduct(
+          id: 'product-1',
+          giftCoins: 60,
+          priceCny: 6,
+        ),
+        channel: PaymentChannelType.alipay,
+        state: RechargeOrderState.confirming,
+        createdAt: DateTime(2026),
+      );
+
+      final RechargeOrder trusted = created.withNativeBridgeResult(
+        sdkCompleted: false,
+        resultStatus: '6001',
+        outcome: 'userCanceled',
+        reason: 'userCanceled',
+      );
+      expect(
+        trusted.nativeCancellationEvidence,
+        RechargeNativeCancellationEvidence.trustedUserCanceled6001,
+      );
+      expect(trusted.hasTrustedNativeCancellationEvidence, isTrue);
+
+      // Refresh/status copies retain the normalized evidence needed for a
+      // recovery retry, while any native-field rewrite fails closed.
+      final RechargeOrder stateCopy = trusted.copyWith(
+        state: RechargeOrderState.confirming,
+        message: '仍在确认',
+      );
+      expect(stateCopy.hasTrustedNativeCancellationEvidence, isTrue);
+      final RechargeOrder nativeFieldsCopy = trusted.copyWith(
+        nativeSdkCompleted: false,
+        nativeResultStatus: '6001',
+      );
+      expect(
+        nativeFieldsCopy.nativeCancellationEvidence,
+        RechargeNativeCancellationEvidence.none,
+      );
+      expect(nativeFieldsCopy.hasTrustedNativeCancellationEvidence, isFalse);
+
+      final RechargeOrder contradictory = created.withNativeBridgeResult(
+        sdkCompleted: false,
+        resultStatus: '6001',
+        outcome: 'userCanceled',
+        reason: 'processing',
+      );
+      expect(
+        contradictory.nativeCancellationEvidence,
+        RechargeNativeCancellationEvidence.none,
+      );
+      expect(contradictory.hasTrustedNativeCancellationEvidence, isFalse);
+    },
+  );
+
+  test(
     'Alipay order string comes from backend and native result is provisional',
     () async {
       final List<_Request> requests = <_Request>[];
@@ -156,7 +215,7 @@ void main() {
   );
 
   test(
-    'cancel, processing, and timeout native results never become SDK success',
+    'only trusted 6001 cancellation skips reconcile for native outcomes',
     () async {
       final List<AlipayAppPayResult> nativeResults = <AlipayAppPayResult>[
         const AlipayAppPayResult(
@@ -175,6 +234,38 @@ void main() {
           outcome: AlipayAppPayOutcome.processing,
           reason: AlipayAppPayReason.timeout,
           sdkCompleted: false,
+        ),
+        const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.sdkCompleted,
+          reason: AlipayAppPayReason.processing,
+          sdkCompleted: true,
+          resultStatus: '9000',
+        ),
+        const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.networkError,
+          reason: AlipayAppPayReason.network,
+          sdkCompleted: false,
+          resultStatus: '6002',
+        ),
+        const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.processing,
+          reason: AlipayAppPayReason.processing,
+          sdkCompleted: false,
+          resultStatus: '6004',
+        ),
+        const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.failed,
+          reason: AlipayAppPayReason.vendorFailed,
+          sdkCompleted: false,
+          resultStatus: '4000',
+        ),
+        // A contradictory bridge payload must not be allowed to enter the
+        // cancel mutation merely because it contains the 6001 token.
+        const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.userCanceled,
+          reason: AlipayAppPayReason.userCanceled,
+          sdkCompleted: true,
+          resultStatus: '6001',
         ),
       ];
 
@@ -206,17 +297,399 @@ void main() {
 
           final RechargeOrder result = await repository.invokePayment(created);
 
-          // The backend may truthfully report a previously settled order, but
-          // that read cannot upgrade a non-successful native SDK outcome.
+          // The backend may truthfully report a previously settled order; the
+          // native evidence is retained separately and never authorizes it.
           expect(result.state, RechargeOrderState.succeeded);
-          expect(result.nativeSdkCompleted, isFalse);
+          expect(result.nativeSdkCompleted, nativeResult.sdkCompleted);
           expect(result.nativeResultStatus, nativeResult.resultStatus);
-          expect(result.isNativeSdkSuccess, isFalse);
+          expect(
+            result.isNativeSdkSuccess,
+            nativeResult.sdkCompleted && nativeResult.resultStatus == '9000',
+          );
           expect(result.message, '服务端已确认到账');
+          expect(harness.requests, hasLength(4));
+          final bool trustedCancellation =
+              nativeResult.sdkCompleted == false &&
+              nativeResult.outcome == AlipayAppPayOutcome.userCanceled &&
+              nativeResult.reason == AlipayAppPayReason.userCanceled &&
+              nativeResult.resultStatus == '6001';
+          expect(
+            harness.requests[2].path,
+            trustedCancellation
+                ? '/app-economy-api/pay/ali/order/cancel'
+                : '/app-economy-api/pay/ali/order/reconcile',
+          );
+          expect(harness.requests[2].method, 'POST');
+          expect(harness.requests[2].query, <String, String>{
+            'orderNo': 'recharge-order-1',
+          });
+          expect(
+            harness.requests[2].requestId,
+            startsWith(
+              trustedCancellation ? 'alipay-cancel-' : 'alipay-reconcile-',
+            ),
+          );
+          expect(harness.requests[3].method, 'GET');
+          expect(
+            harness.requests[3].path,
+            '/app-economy-api/pay/ali/order/status',
+          );
         } finally {
           await harness.close();
         }
       }
+    },
+  );
+
+  test(
+    'trusted local Alipay cancellation writes once per request id then reads DB status',
+    () async {
+      final _ServerHarness harness = await _ServerHarness.start(
+        nativeResult: const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.userCanceled,
+          reason: AlipayAppPayReason.userCanceled,
+          sdkCompleted: false,
+          resultStatus: '6001',
+        ),
+        status: 'CANCELLED',
+      );
+      addTearDown(harness.close);
+      final BackendCommerceCatalogRepository repository =
+          BackendCommerceCatalogRepository(
+            apiClient: harness.client,
+            routes: const BackendRouteCatalog(),
+            alipayAppPayAdapter: harness.adapter,
+          );
+      await repository.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
+      );
+      final RechargeOrder created = await repository.createRechargeOrder(
+        account: 'current-user-account',
+        product: const RechargeProduct(
+          id: 'product-1',
+          giftCoins: 60,
+          priceCny: 6,
+        ),
+        channel: PaymentChannelType.alipay,
+        platform: ClientStorePlatform.android,
+        youthModeEnabled: false,
+      );
+
+      final RechargeOrder first = await repository.invokePayment(created);
+      expect(
+        first.nativeCancellationEvidence,
+        RechargeNativeCancellationEvidence.trustedUserCanceled6001,
+      );
+      expect(first.hasTrustedNativeCancellationEvidence, isTrue);
+
+      // The order is already terminal, so a later refresh must not replay the
+      // close-capable cancel mutation even though trusted evidence is retained.
+      final RechargeOrder terminalRefresh = await repository.queryRechargeOrder(
+        first,
+      );
+      expect(terminalRefresh.state, RechargeOrderState.canceled);
+      final RechargeOrder second = await repository.invokePayment(created);
+
+      expect(first.state, RechargeOrderState.canceled);
+      expect(second.state, RechargeOrderState.canceled);
+      expect(harness.requests, hasLength(7));
+      expect(
+        harness.requests
+            .where(
+              (_Request request) =>
+                  request.path == '/app-economy-api/pay/ali/order/cancel',
+            )
+            .length,
+        2,
+      );
+      final List<_Request> cancelRequests = harness.requests
+          .where(
+            (_Request request) =>
+                request.path == '/app-economy-api/pay/ali/order/cancel',
+          )
+          .toList();
+      expect(cancelRequests[0].method, 'POST');
+      expect(cancelRequests[0].query, <String, String>{
+        'orderNo': 'recharge-order-1',
+      });
+      expect(cancelRequests[0].requestId, startsWith('alipay-cancel-'));
+      expect(cancelRequests[1].requestId, cancelRequests[0].requestId);
+      expect(
+        harness.requests.any(
+          (_Request request) =>
+              request.path == '/app-economy-api/pay/ali/order/reconcile',
+        ),
+        isFalse,
+      );
+      expect(
+        harness.requests
+            .where(
+              (_Request request) =>
+                  request.path == '/app-economy-api/pay/ali/order/status',
+            )
+            .length,
+        3,
+      );
+      expect(
+        harness.requests.last.path,
+        '/app-economy-api/pay/ali/order/status',
+      );
+      expect(
+        harness.requests.where(
+          (_Request request) =>
+              request.path == '/app-economy-api/pay/ali/order/reconcile',
+        ),
+        isEmpty,
+      );
+    },
+  );
+
+  test(
+    'trusted cancellation still forces DB status when cancel write is unavailable',
+    () async {
+      final _ServerHarness harness = await _ServerHarness.start(
+        nativeResult: const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.userCanceled,
+          reason: AlipayAppPayReason.userCanceled,
+          sdkCompleted: false,
+          resultStatus: '6001',
+        ),
+        status: 'CONFIRMING',
+        cancelStatusCode: 503,
+      );
+      addTearDown(harness.close);
+      final BackendCommerceCatalogRepository repository =
+          BackendCommerceCatalogRepository(
+            apiClient: harness.client,
+            routes: const BackendRouteCatalog(),
+            alipayAppPayAdapter: harness.adapter,
+          );
+      await repository.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
+      );
+      final RechargeOrder created = await repository.createRechargeOrder(
+        account: 'current-user-account',
+        product: const RechargeProduct(
+          id: 'product-1',
+          giftCoins: 60,
+          priceCny: 6,
+        ),
+        channel: PaymentChannelType.alipay,
+        platform: ClientStorePlatform.android,
+        youthModeEnabled: false,
+      );
+
+      final RechargeOrder result = await repository.invokePayment(created);
+
+      expect(result.state, RechargeOrderState.confirming);
+      expect(harness.requests, hasLength(4));
+      expect(harness.requests[2].path, '/app-economy-api/pay/ali/order/cancel');
+      expect(harness.requests[2].method, 'POST');
+      expect(harness.requests[3].path, '/app-economy-api/pay/ali/order/status');
+      expect(
+        harness.requests.any(
+          (_Request request) =>
+              request.path == '/app-economy-api/pay/ali/order/reconcile',
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'query recovery retries cancel after the initial cancel request is unavailable',
+    () async {
+      final _ServerHarness harness = await _ServerHarness.start(
+        nativeResult: const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.userCanceled,
+          reason: AlipayAppPayReason.userCanceled,
+          sdkCompleted: false,
+          resultStatus: '6001',
+        ),
+        statusSequence: <String>['CONFIRMING', 'CANCELLED'],
+        cancelStatusSequence: <int>[503, 200],
+      );
+      addTearDown(harness.close);
+      final BackendCommerceCatalogRepository repository =
+          BackendCommerceCatalogRepository(
+            apiClient: harness.client,
+            routes: const BackendRouteCatalog(),
+            alipayAppPayAdapter: harness.adapter,
+          );
+      await repository.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
+      );
+      final RechargeOrder created = await repository.createRechargeOrder(
+        account: 'current-user-account',
+        product: const RechargeProduct(
+          id: 'product-1',
+          giftCoins: 60,
+          priceCny: 6,
+        ),
+        channel: PaymentChannelType.alipay,
+        platform: ClientStorePlatform.android,
+        youthModeEnabled: false,
+      );
+
+      final RechargeOrder first = await repository.invokePayment(created);
+      expect(first.state, RechargeOrderState.confirming);
+      expect(
+        first.nativeCancellationEvidence,
+        RechargeNativeCancellationEvidence.trustedUserCanceled6001,
+      );
+      expect(first.hasTrustedNativeCancellationEvidence, isTrue);
+
+      final RechargeOrder recovered = await repository.queryRechargeOrder(
+        first,
+      );
+
+      expect(recovered.state, RechargeOrderState.canceled);
+      expect(harness.requests, hasLength(7));
+      expect(harness.requests.map((_Request request) => request.path), <String>[
+        '/app-mini-api/mini/v1/recharge/products',
+        '/app-economy-api/pay/ali/order',
+        '/app-economy-api/pay/ali/order/cancel',
+        '/app-economy-api/pay/ali/order/status',
+        '/app-economy-api/pay/ali/order/cancel',
+        '/app-economy-api/pay/ali/order/reconcile',
+        '/app-economy-api/pay/ali/order/status',
+      ]);
+      expect(harness.requests[2].requestId, harness.requests[4].requestId);
+    },
+  );
+
+  test(
+    'query recovery replays stable cancel after an UNKNOWN cancellation result',
+    () async {
+      final _ServerHarness harness = await _ServerHarness.start(
+        nativeResult: const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.userCanceled,
+          reason: AlipayAppPayReason.userCanceled,
+          sdkCompleted: false,
+          resultStatus: '6001',
+        ),
+        statusSequence: <String>['CONFIRMING', 'CANCELLED'],
+        // The first response represents a backend-cached UNKNOWN outcome;
+        // the replay must retain the same request id before reconciliation.
+        cancelStatusSequence: <int>[200, 200],
+        cancelOutcomeSequence: <String>['UNKNOWN', 'UNKNOWN'],
+      );
+      addTearDown(harness.close);
+      final BackendCommerceCatalogRepository repository =
+          BackendCommerceCatalogRepository(
+            apiClient: harness.client,
+            routes: const BackendRouteCatalog(),
+            alipayAppPayAdapter: harness.adapter,
+          );
+      await repository.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
+      );
+      final RechargeOrder created = await repository.createRechargeOrder(
+        account: 'current-user-account',
+        product: const RechargeProduct(
+          id: 'product-1',
+          giftCoins: 60,
+          priceCny: 6,
+        ),
+        channel: PaymentChannelType.alipay,
+        platform: ClientStorePlatform.android,
+        youthModeEnabled: false,
+      );
+
+      final RechargeOrder first = await repository.invokePayment(created);
+      expect(first.state, RechargeOrderState.confirming);
+      expect(
+        first.nativeCancellationEvidence,
+        RechargeNativeCancellationEvidence.trustedUserCanceled6001,
+      );
+      expect(first.hasTrustedNativeCancellationEvidence, isTrue);
+
+      final RechargeOrder recovered = await repository.queryRechargeOrder(
+        first,
+      );
+
+      expect(recovered.state, RechargeOrderState.canceled);
+      final List<_Request> cancelRequests = harness.requests
+          .where(
+            (_Request request) =>
+                request.path == '/app-economy-api/pay/ali/order/cancel',
+          )
+          .toList();
+      expect(cancelRequests, hasLength(2));
+      expect(cancelRequests[1].requestId, cancelRequests[0].requestId);
+      expect(
+        harness.requests.any(
+          (_Request request) =>
+              request.path == '/app-economy-api/pay/ali/order/reconcile',
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'contradictory 6001 evidence never replays cancel during query recovery',
+    () async {
+      final _ServerHarness harness = await _ServerHarness.start(
+        nativeResult: const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.userCanceled,
+          reason: AlipayAppPayReason.processing,
+          sdkCompleted: false,
+          resultStatus: '6001',
+        ),
+        status: 'CONFIRMING',
+      );
+      addTearDown(harness.close);
+      final BackendCommerceCatalogRepository repository =
+          BackendCommerceCatalogRepository(
+            apiClient: harness.client,
+            routes: const BackendRouteCatalog(),
+            alipayAppPayAdapter: harness.adapter,
+          );
+      await repository.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
+      );
+      final RechargeOrder created = await repository.createRechargeOrder(
+        account: 'current-user-account',
+        product: const RechargeProduct(
+          id: 'product-1',
+          giftCoins: 60,
+          priceCny: 6,
+        ),
+        channel: PaymentChannelType.alipay,
+        platform: ClientStorePlatform.android,
+        youthModeEnabled: false,
+      );
+
+      final RechargeOrder first = await repository.invokePayment(created);
+      final RechargeOrder recovered = await repository.queryRechargeOrder(
+        first,
+      );
+
+      expect(first.state, RechargeOrderState.confirming);
+      expect(first.nativeSdkCompleted, isFalse);
+      expect(first.nativeResultStatus, '6001');
+      expect(
+        first.nativeCancellationEvidence,
+        RechargeNativeCancellationEvidence.none,
+      );
+      expect(first.hasTrustedNativeCancellationEvidence, isFalse);
+      expect(recovered.state, RechargeOrderState.confirming);
+      expect(harness.requests.map((_Request request) => request.path), <String>[
+        '/app-mini-api/mini/v1/recharge/products',
+        '/app-economy-api/pay/ali/order',
+        '/app-economy-api/pay/ali/order/reconcile',
+        '/app-economy-api/pay/ali/order/status',
+        '/app-economy-api/pay/ali/order/reconcile',
+        '/app-economy-api/pay/ali/order/status',
+      ]);
+      expect(
+        harness.requests.any(
+          (_Request request) =>
+              request.path == '/app-economy-api/pay/ali/order/cancel',
+        ),
+        isFalse,
+      );
     },
   );
 
@@ -1022,6 +1495,11 @@ class _ServerHarness {
 
   static Future<_ServerHarness> start({
     AlipayAppPayResult? nativeResult,
+    String status = 'SUCCEEDED',
+    int cancelStatusCode = 200,
+    List<String>? statusSequence,
+    List<int>? cancelStatusSequence,
+    List<String>? cancelOutcomeSequence,
   }) async {
     final HttpServer server = await HttpServer.bind(
       InternetAddress.loopbackIPv4,
@@ -1039,6 +1517,18 @@ class _ServerHarness {
             resultStatus: '9000',
           ),
     );
+    final List<String> statuses = List<String>.from(
+      statusSequence ?? <String>[status],
+    );
+    final List<int> cancelStatuses = List<int>.from(
+      cancelStatusSequence ?? <int>[cancelStatusCode],
+    );
+    final List<String> cancelOutcomes = List<String>.from(
+      cancelOutcomeSequence ?? <String>[status],
+    );
+    var statusIndex = 0;
+    var cancelStatusIndex = 0;
+    var cancelOutcomeIndex = 0;
     server.listen((HttpRequest request) async {
       requests.add(
         _Request(
@@ -1049,13 +1539,30 @@ class _ServerHarness {
           body: null,
         ),
       );
+      final bool cancelRequest = request.uri.path.endsWith('/ali/order/cancel');
+      final bool statusRequest = request.uri.path.endsWith('/ali/order/status');
+      final int responseStatusCode = cancelRequest
+          ? cancelStatuses[cancelStatusIndex < cancelStatuses.length
+                ? cancelStatusIndex++
+                : cancelStatuses.length - 1]
+          : 200;
+      final String cancelOutcome = cancelRequest
+          ? cancelOutcomes[cancelOutcomeIndex < cancelOutcomes.length
+                ? cancelOutcomeIndex++
+                : cancelOutcomes.length - 1]
+          : '';
+      final String responseStatus = statusRequest
+          ? statuses[statusIndex < statuses.length
+                ? statusIndex++
+                : statuses.length - 1]
+          : status;
       request.response
-        ..statusCode = 200
+        ..statusCode = responseStatusCode
         ..headers.contentType = ContentType.json
         ..write(
           jsonEncode(<String, Object?>{
-            'code': 200,
-            'message': 'OK',
+            'code': responseStatusCode,
+            'message': responseStatusCode == 200 ? 'OK' : 'FAIL',
             'data': request.uri.path.endsWith('/recharge/products')
                 ? <String, Object?>{
                     'platform': 'ANDROID',
@@ -1084,10 +1591,17 @@ class _ServerHarness {
                     'platform': 'ANDROID',
                     'status': 'CREATED',
                   }
+                : cancelRequest
+                ? <String, Object?>{
+                    'orderNo': 'recharge-order-1',
+                    'bool': false,
+                    'status': status,
+                    'cancelOutcome': cancelOutcome,
+                  }
                 : <String, Object?>{
                     'orderNo': 'recharge-order-1',
-                    'bool': true,
-                    'status': 'SUCCEEDED',
+                    'bool': responseStatus == 'SUCCEEDED',
+                    'status': responseStatus,
                   },
           }),
         );

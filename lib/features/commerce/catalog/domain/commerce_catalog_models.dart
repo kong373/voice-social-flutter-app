@@ -20,6 +20,12 @@ enum RechargeOrderState {
   unavailable,
 }
 
+/// Normalized evidence recorded only after the local Alipay bridge result has
+/// passed the full completion/outcome/reason/status trust check. Keeping this
+/// as a domain fact means a later order refresh does not have to reconstruct
+/// trust from lossy status fields alone.
+enum RechargeNativeCancellationEvidence { none, trustedUserCanceled6001 }
+
 extension RechargeOrderStateLabel on RechargeOrderState {
   String get label => switch (this) {
     RechargeOrderState.created => '订单已创建',
@@ -73,6 +79,7 @@ class RechargeOrder {
     this.paymentOrderString,
     this.nativeSdkCompleted,
     this.nativeResultStatus,
+    this.nativeCancellationEvidence = RechargeNativeCancellationEvidence.none,
   });
 
   final String orderNo;
@@ -95,6 +102,12 @@ class RechargeOrder {
   final bool? nativeSdkCompleted;
   final String? nativeResultStatus;
 
+  /// A normalized, non-sensitive trust fact for the exact local
+  /// `userCanceled`/`6001` PayTask result. It is never inferred from the
+  /// status fields and is cleared when those fields are changed through
+  /// [copyWith].
+  final RechargeNativeCancellationEvidence nativeCancellationEvidence;
+
   /// Short aliases used by the provider-live acceptance layer. They remain
   /// nullable because orders created without a native invocation have no SDK
   /// result to report.
@@ -106,6 +119,43 @@ class RechargeOrder {
   bool get isNativeSdkSuccess =>
       nativeSdkCompleted == true && nativeResultStatus == '9000';
 
+  bool get hasTrustedNativeCancellationEvidence =>
+      nativeCancellationEvidence ==
+          RechargeNativeCancellationEvidence.trustedUserCanceled6001 &&
+      nativeSdkCompleted == false &&
+      nativeResultStatus == '6001';
+
+  /// Copies one complete local bridge result while deriving the normalized
+  /// cancellation evidence from all of its classification fields. A
+  /// contradictory outcome/reason can therefore never become trusted.
+  RechargeOrder withNativeBridgeResult({
+    required bool sdkCompleted,
+    required String? resultStatus,
+    required String outcome,
+    required String reason,
+  }) {
+    final bool trustedCancellation =
+        !sdkCompleted &&
+        resultStatus == '6001' &&
+        outcome == 'userCanceled' &&
+        reason == 'userCanceled';
+    return RechargeOrder(
+      orderNo: orderNo,
+      account: account,
+      product: product,
+      channel: channel,
+      state: state,
+      createdAt: createdAt,
+      message: message,
+      paymentOrderString: paymentOrderString,
+      nativeSdkCompleted: sdkCompleted,
+      nativeResultStatus: resultStatus,
+      nativeCancellationEvidence: trustedCancellation
+          ? RechargeNativeCancellationEvidence.trustedUserCanceled6001
+          : RechargeNativeCancellationEvidence.none,
+    );
+  }
+
   RechargeOrder copyWith({
     RechargeOrderState? state,
     String? message,
@@ -113,6 +163,8 @@ class RechargeOrder {
     bool? nativeSdkCompleted,
     String? nativeResultStatus,
   }) {
+    final bool nativeEvidenceFieldsChanged =
+        nativeSdkCompleted != null || nativeResultStatus != null;
     return RechargeOrder(
       orderNo: orderNo,
       account: account,
@@ -124,6 +176,9 @@ class RechargeOrder {
       paymentOrderString: paymentOrderString ?? this.paymentOrderString,
       nativeSdkCompleted: nativeSdkCompleted ?? this.nativeSdkCompleted,
       nativeResultStatus: nativeResultStatus ?? this.nativeResultStatus,
+      nativeCancellationEvidence: nativeEvidenceFieldsChanged
+          ? RechargeNativeCancellationEvidence.none
+          : nativeCancellationEvidence,
     );
   }
 }

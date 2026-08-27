@@ -197,6 +197,11 @@ void main() {
       contains("'alipay.native.launch-cancel', 'NOT_OPTED_IN'"),
     );
     expect(integrationSource, contains("'alipay.query-reconcile', 'NOT_RUN'"));
+    expect(integrationSource, contains('routes.cancelAlipayRechargeOrder'));
+    expect(
+      integrationSource,
+      contains('result.hasTrustedNativeCancellationEvidence'),
+    );
     expect(integrationSource, contains("'vendor_blocked'"));
     expect(integrationSource, contains("'cancel_only'"));
     expect(integrationSource, contains("fullyPass ? 'PARTIAL'"));

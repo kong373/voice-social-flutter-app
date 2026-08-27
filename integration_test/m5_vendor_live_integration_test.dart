@@ -1151,10 +1151,11 @@ Future<void> _runAlipaySandbox(
     result = await dependencies.commerceCatalogRepository.invokePayment(order);
     evidence.paymentNativeResult(result);
     if (_paymentScenario == 'cancel') {
-      // The native result is only a provisional SDK outcome. The final
-      // canceled state is accepted only after the first-party query.
-      final bool nativeCanceled =
-          result.sdkCompleted == false && result.resultStatus == '6001';
+      // The native result is only a provisional SDK outcome. The Flutter
+      // repository sends the explicit cancel mutation only for trusted local
+      // 6001/userCanceled evidence, then forces a DB-only status GET. The
+      // final canceled state is accepted only after that first-party query.
+      final bool nativeCanceled = result.hasTrustedNativeCancellationEvidence;
       if (nativeCanceled) {
         evidence.providerCallback('alipay', 'launch_cancel');
       }
@@ -1171,8 +1172,9 @@ Future<void> _runAlipaySandbox(
       evidence.route(
         capability: 'alipay.query-reconcile',
         method: 'POST+GET',
-        route:
-            '${routes.reconcileAlipayRechargeOrder}+${routes.alipayRechargeOrderStatus}',
+        route: nativeCanceled
+            ? '${routes.cancelAlipayRechargeOrder}+${routes.alipayRechargeOrderStatus}'
+            : '${routes.reconcileAlipayRechargeOrder}+${routes.alipayRechargeOrderStatus}',
         status: 200,
         state: 'authoritative',
       );

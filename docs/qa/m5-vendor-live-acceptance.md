@@ -132,10 +132,12 @@ The integration test records these lanes independently:
 * `alipay.catalog` — authenticated Android catalog projection;
 * `alipay.order` — server-created Alipay sandbox order (opt-in only);
 * `alipay.native.launch-cancel` — native launch, SDK cancellation callback,
-  and operator cancellation (cancel opt-in only);
+  explicit authenticated `POST /app-economy-api/pay/ali/order/cancel`, and
+  operator cancellation (cancel opt-in only);
 * `alipay.native.launch-success` — native launch result marked provisional;
-* `alipay.query-reconcile` — reconcile POST followed by mandatory DB status
-  GET (opt-in only).
+* `alipay.query-reconcile` — success uses reconcile POST followed by a
+  mandatory DB status GET; cancel uses the explicit cancel POST followed by a
+  mandatory DB-only status GET (opt-in only).
 * `alipay.settlement` — success-only DB proof of one verified provider event,
   one succeeded order, one wallet credit, and one balanced two-posting ledger;
 * `alipay.reconcile-idempotency` — success-only second reconcile of the same

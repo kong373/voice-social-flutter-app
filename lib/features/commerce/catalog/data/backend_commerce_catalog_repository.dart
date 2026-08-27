@@ -265,12 +265,32 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       (false, AlipayAppPayOutcome.failed) => '支付宝返回失败，订单状态仍需服务端核验',
       (false, AlipayAppPayOutcome.unavailable) => '支付宝支付当前不可用，订单状态仍需服务端核验',
     };
-    final RechargeOrder provisional = order.copyWith(
-      state: RechargeOrderState.confirming,
-      message: message,
-      nativeSdkCompleted: result.sdkCompleted,
-      nativeResultStatus: result.resultStatus,
-    );
+    final RechargeOrder provisional = order
+        .copyWith(state: RechargeOrderState.confirming, message: message)
+        .withNativeBridgeResult(
+          sdkCompleted: result.sdkCompleted,
+          resultStatus: result.resultStatus,
+          outcome: result.outcome.name,
+          reason: result.reason.name,
+        );
+    if (_isTrustedNativeUserCancellation(result)) {
+      // A local PayTask cancellation is the only native outcome that may
+      // request the explicit first-party cancel mutation. The mutation
+      // response is deliberately ignored: the following DB-only GET remains
+      // the sole authority for the order state.
+      try {
+        await _cancelAlipayRechargeOrder(provisional);
+      } catch (_) {
+        // Even if the cancel write is unavailable, force the read below so a
+        // concurrent provider callback or a retried request can determine the
+        // authoritative state. Never infer cancellation locally.
+      }
+      try {
+        return await _queryRechargeOrderStatus(provisional);
+      } catch (_) {
+        return provisional;
+      }
+    }
     // A native result is never authoritative.  Reconciliation is an explicit
     // authenticated write path, while the following GET is a DB-only
     // projection.  The recovery method also runs from the result page, so an
@@ -286,6 +306,19 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   Future<RechargeOrder> queryRechargeOrder(RechargeOrder order) async {
     if (order.channel == PaymentChannelType.alipay &&
         !_isTerminalAlipayOrderState(order.state)) {
+      if (_hasTrustedNativeCancellationEvidence(order)) {
+        // A process/network interruption can happen after PayTask returns but
+        // before the initial cancel POST reaches the backend. Replaying the
+        // same stable idempotency key is safe when the backend already cached
+        // an UNKNOWN cancellation result, and gives the backend another
+        // chance to close/query before the normal reconcile flow.
+        try {
+          await _cancelAlipayRechargeOrder(order);
+        } catch (_) {
+          // Reconciliation remains best effort and the DB-only GET below is
+          // still mandatory. Never infer cancellation from this write.
+        }
+      }
       // Best effort: the read below remains mandatory even if provider
       // reconciliation is unavailable. This keeps the DB projection the only
       // source of final payment authority and makes manual refresh recoverable.
@@ -295,6 +328,13 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         // Continue to the read-only status endpoint.
       }
     }
+    return _queryRechargeOrderStatus(order);
+  }
+
+  /// Reads the first-party order projection without invoking a provider or a
+  /// provider-capable reconcile operation. This is intentionally used after
+  /// an explicit local PayTask cancellation mutation.
+  Future<RechargeOrder> _queryRechargeOrderStatus(RechargeOrder order) async {
     final String statusRoute = order.channel == PaymentChannelType.alipay
         ? _routes.alipayRechargeOrderStatus
         : _routes.rechargeOrderStatus;
@@ -360,6 +400,30 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     );
   }
 
+  Future<void> _cancelAlipayRechargeOrder(RechargeOrder order) async {
+    await _apiClient.post(
+      _routes.cancelAlipayRechargeOrder,
+      query: <String, String>{'orderNo': order.orderNo},
+      headers: <String, String>{
+        'X-Request-Id': _alipayCancelRequestId(order.orderNo),
+      },
+    );
+  }
+
+  /// Only the exact native cancellation evidence may enter the explicit
+  /// cancel write path. Contradictory bridge payloads remain on reconcile.
+  static bool _isTrustedNativeUserCancellation(AlipayAppPayResult result) =>
+      !result.sdkCompleted &&
+      result.outcome == AlipayAppPayOutcome.userCanceled &&
+      result.reason == AlipayAppPayReason.userCanceled &&
+      result.resultStatus == '6001';
+
+  /// Query recovery only retains the bridge evidence that was copied onto the
+  /// order by [invokePayment]. No other native result is permitted to trigger
+  /// the close-capable cancellation route.
+  static bool _hasTrustedNativeCancellationEvidence(RechargeOrder order) =>
+      order.hasTrustedNativeCancellationEvidence;
+
   static bool _isTerminalAlipayOrderState(RechargeOrderState state) =>
       switch (state) {
         RechargeOrderState.succeeded ||
@@ -379,6 +443,15 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         .convert(utf8.encode('voice-social:alipay-reconcile:$orderNo'))
         .toString();
     return 'alipay-reconcile-$digest';
+  }
+
+  /// Stable for one first-party order so repeated local cancel attempts replay
+  /// the same authenticated backend idempotency boundary.
+  static String _alipayCancelRequestId(String orderNo) {
+    final String digest = sha256
+        .convert(utf8.encode('voice-social:alipay-cancel:$orderNo'))
+        .toString();
+    return 'alipay-cancel-$digest';
   }
 
   static String _alipayCreateIntentKey({
