@@ -15,9 +15,15 @@ import 'package:voice_social_app/features/room/infrastructure/room_realtime_gate
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
 class RoomController extends ChangeNotifier {
-  static const int _maximumTencentImReadinessPollAttempts = 8;
-  static const Duration _tencentImReadinessPollInterval = Duration(
-    milliseconds: 250,
+  /// The backend IM outbox is a 30-second fixed-delay worker. Keep the
+  /// default client window above two worker periods so a room entered just
+  /// after a worker tick can still observe the next two attempts. Tests may
+  /// inject shorter values without changing this production guarantee.
+  static const Duration _defaultTencentImReadinessPollInterval = Duration(
+    seconds: 5,
+  );
+  static const Duration _defaultTencentImReadinessPollWindow = Duration(
+    seconds: 65,
   );
   static final Random _secureRandom = Random.secure();
   static final Expando<Object> _rtcTransportOwners = Expando<Object>(
@@ -40,6 +46,10 @@ class RoomController extends ChangeNotifier {
     bool allowSyntheticPublicMessages = true,
     String Function(String prefix)? requestIdGenerator,
     TencentImAvChatRoomCoordinator? tencentImAvChatRoomCoordinator,
+    Duration tencentImReadinessPollInterval =
+        _defaultTencentImReadinessPollInterval,
+    Duration tencentImReadinessPollWindow =
+        _defaultTencentImReadinessPollWindow,
   }) : _currentUserId = currentUserId,
        _accessToken = accessToken,
        _repository = repository,
@@ -49,7 +59,15 @@ class RoomController extends ChangeNotifier {
        _permissionPolicy = permissionPolicy,
        _allowSyntheticPublicMessages = allowSyntheticPublicMessages,
        _requestIdGenerator = requestIdGenerator ?? _secureRequestId,
-       _tencentImAvChatRoomCoordinator = tencentImAvChatRoomCoordinator {
+       _tencentImAvChatRoomCoordinator = tencentImAvChatRoomCoordinator,
+       _tencentImReadinessPollInterval = _positiveDuration(
+         tencentImReadinessPollInterval,
+         'tencentImReadinessPollInterval',
+       ),
+       _tencentImReadinessPollWindow = _positiveDuration(
+         tencentImReadinessPollWindow,
+         'tencentImReadinessPollWindow',
+       ) {
     final TencentImAvChatRoomCoordinator? coordinator =
         _tencentImAvChatRoomCoordinator;
     if (coordinator != null) {
@@ -72,8 +90,11 @@ class RoomController extends ChangeNotifier {
   final bool _allowSyntheticPublicMessages;
   final String Function(String prefix) _requestIdGenerator;
   final TencentImAvChatRoomCoordinator? _tencentImAvChatRoomCoordinator;
+  final Duration _tencentImReadinessPollInterval;
+  final Duration _tencentImReadinessPollWindow;
   TencentImRoomRefreshRegistration? _tencentImRefreshRegistration;
   TencentImAvChatRoomSession? _tencentImSession;
+  _CancelableTencentImReadinessWait? _tencentImReadinessWait;
 
   RoomSnapshot? _snapshot;
   final List<RoomMessage> _messages = <RoomMessage>[];
@@ -205,6 +226,7 @@ class RoomController extends ChangeNotifier {
         _status == RoomSessionStatus.leaving) {
       return;
     }
+    _invalidateTencentImReadinessPoll();
     final int sessionEpoch = ++_sessionEpoch;
     _joinCancelled = false;
     _pendingJoinRequestRoomId = null;
@@ -345,7 +367,8 @@ class RoomController extends ChangeNotifier {
     RoomSnapshot snapshot, {
     required int sessionEpoch,
   }) async {
-    final int readinessPollGeneration = ++_tencentImReadinessPollGeneration;
+    _invalidateTencentImReadinessPoll();
+    final int readinessPollGeneration = _tencentImReadinessPollGeneration;
     final TencentImAvChatRoomCoordinator? coordinator =
         _tencentImAvChatRoomCoordinator;
     if (coordinator == null || !_isCurrent(sessionEpoch)) {
@@ -402,27 +425,45 @@ class RoomController extends ChangeNotifier {
     required int sessionEpoch,
     required int pollGeneration,
   }) async {
-    for (
-      int attempt = 0;
-      attempt < _maximumTencentImReadinessPollAttempts;
-      attempt += 1
-    ) {
-      if (attempt > 0) {
-        await Future<void>.delayed(_tencentImReadinessPollInterval);
-      }
-      if (!_isCurrent(sessionEpoch) ||
-          pollGeneration != _tencentImReadinessPollGeneration ||
-          _tencentImSession?.roomId != pendingSession.roomId ||
-          _tencentImSession?.sessionId != pendingSession.sessionId ||
-          _tencentImSession?.groupId != pendingSession.groupId) {
+    final Stopwatch pollWindow = Stopwatch()..start();
+    for (int attempt = 0; ; attempt += 1) {
+      if (!_isCurrentTencentImReadinessPoll(
+        sessionEpoch: sessionEpoch,
+        pollGeneration: pollGeneration,
+        pendingSession: pendingSession,
+      )) {
         return;
       }
+      if (attempt > 0) {
+        final Duration? remaining = _remainingReadinessPollWindow(pollWindow);
+        if (remaining == null) {
+          return;
+        }
+        final Duration delay = remaining < _tencentImReadinessPollInterval
+            ? remaining
+            : _tencentImReadinessPollInterval;
+        if (!await _waitForTencentImReadiness(delay)) {
+          return;
+        }
+        if (!_isCurrentTencentImReadinessPoll(
+              sessionEpoch: sessionEpoch,
+              pollGeneration: pollGeneration,
+              pendingSession: pendingSession,
+            ) ||
+            _remainingReadinessPollWindow(pollWindow) == null) {
+          return;
+        }
+      }
 
+      final Duration? fetchBudget = _remainingReadinessPollWindow(pollWindow);
+      if (fetchBudget == null) {
+        return;
+      }
       TencentImAvChatRoomSession? latest;
       try {
-        latest = await readinessSource.fetchTencentImRoomReadiness(
-          pendingSession.roomId,
-        );
+        latest = await readinessSource
+            .fetchTencentImRoomReadiness(pendingSession.roomId)
+            .timeout(fetchBudget);
       } on Object {
         // A readiness route outage leaves the already successful HTTP room
         // usable. The bounded loop gives transient recovery a chance without
@@ -443,18 +484,69 @@ class RoomController extends ChangeNotifier {
           latest.version < pendingSession.version) {
         return;
       }
+      // A response that completed after the bounded window cannot authorize
+      // a provider join, even when it reports READY.
+      if (_remainingReadinessPollWindow(pollWindow) == null) {
+        return;
+      }
       if (!latest.isReady) {
         continue;
       }
-      if (!_isCurrent(sessionEpoch) ||
-          pollGeneration != _tencentImReadinessPollGeneration ||
-          _tencentImSession?.sessionId != pendingSession.sessionId) {
+      if (!_isCurrentTencentImReadinessPoll(
+        sessionEpoch: sessionEpoch,
+        pollGeneration: pollGeneration,
+        pendingSession: pendingSession,
+      )) {
         return;
       }
       _tencentImSession = latest;
-      await coordinator.enter(latest);
+      try {
+        await coordinator.enter(latest);
+      } on Object {
+        // Provider readiness is optional. A coordinator disposal or provider
+        // rejection must not turn the detached polling task into an
+        // unhandled asynchronous error.
+      }
       return;
     }
+  }
+
+  bool _isCurrentTencentImReadinessPoll({
+    required int sessionEpoch,
+    required int pollGeneration,
+    required TencentImAvChatRoomSession pendingSession,
+  }) {
+    return _isCurrent(sessionEpoch) &&
+        pollGeneration == _tencentImReadinessPollGeneration &&
+        _tencentImSession?.roomId == pendingSession.roomId &&
+        _tencentImSession?.sessionId == pendingSession.sessionId &&
+        _tencentImSession?.groupId == pendingSession.groupId;
+  }
+
+  Duration? _remainingReadinessPollWindow(Stopwatch pollWindow) {
+    final Duration remaining =
+        _tencentImReadinessPollWindow - pollWindow.elapsed;
+    return remaining <= Duration.zero ? null : remaining;
+  }
+
+  Future<bool> _waitForTencentImReadiness(Duration duration) {
+    if (_disposed) {
+      return Future<bool>.value(false);
+    }
+    final _CancelableTencentImReadinessWait wait =
+        _CancelableTencentImReadinessWait(duration);
+    _tencentImReadinessWait = wait;
+    return wait.future.whenComplete(() {
+      if (identical(_tencentImReadinessWait, wait)) {
+        _tencentImReadinessWait = null;
+      }
+    });
+  }
+
+  void _invalidateTencentImReadinessPoll() {
+    _tencentImReadinessPollGeneration += 1;
+    _tencentImReadinessWait?.cancel();
+    _tencentImReadinessWait = null;
   }
 
   /// Provider custom elements are metadata-only invalidation hints. The
@@ -1609,7 +1701,7 @@ class RoomController extends ChangeNotifier {
 
   int _invalidateSession() {
     _sessionEpoch += 1;
-    _tencentImReadinessPollGeneration += 1;
+    _invalidateTencentImReadinessPoll();
     _rtcAudioAuthorityGeneration += 1;
     _micQueueEpoch += 1;
     _joinCancelled = true;
@@ -2201,7 +2293,7 @@ class RoomController extends ChangeNotifier {
       return;
     }
     _sessionEpoch += 1;
-    _tencentImReadinessPollGeneration += 1;
+    _invalidateTencentImReadinessPoll();
     _rtcAudioAuthorityGeneration += 1;
     _micQueueEpoch += 1;
     _disposed = true;
@@ -2249,6 +2341,35 @@ class RoomController extends ChangeNotifier {
       _transportLeaseId = null;
     }
     super.dispose();
+  }
+
+  static Duration _positiveDuration(Duration value, String name) {
+    if (value <= Duration.zero) {
+      throw ArgumentError.value(value, name, 'duration must be positive');
+    }
+    return value;
+  }
+}
+
+class _CancelableTencentImReadinessWait {
+  _CancelableTencentImReadinessWait(Duration duration) {
+    _timer = Timer(duration, () => _complete(true));
+  }
+
+  final Completer<bool> _completer = Completer<bool>();
+  late final Timer _timer;
+
+  Future<bool> get future => _completer.future;
+
+  void cancel() {
+    _timer.cancel();
+    _complete(false);
+  }
+
+  void _complete(bool value) {
+    if (!_completer.isCompleted) {
+      _completer.complete(value);
+    }
   }
 }
 

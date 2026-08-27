@@ -490,6 +490,217 @@ void main() {
       expect(sdk.joinedGroupIds, <String>['room-group-1']);
     });
 
+    test(
+      'keeps polling across delayed Tencent worker cycles before joining',
+      () async {
+        final _GroupSdk sdk = _GroupSdk();
+        final TencentImSessionAdapter adapter = TencentImSessionAdapter(
+          sdkClient: sdk,
+          now: () => now,
+          operationTimeout: const Duration(milliseconds: 100),
+        );
+        await adapter.login(_credentials(now));
+        final TencentImAvChatRoomCoordinator coordinator =
+            TencentImAvChatRoomCoordinator(
+              sessionAdapter: adapter,
+              operationTimeout: const Duration(milliseconds: 100),
+            );
+        final TencentImAvChatRoomSession ready =
+            TencentImAvChatRoomSession.fromBackendData(_roomData());
+        final _TencentRoomRepository repository = _TencentRoomRepository()
+          ..returnPendingOnEnter = true
+          ..readinessSequence = <TencentImAvChatRoomSession?>[
+            null,
+            null,
+            ready,
+          ];
+        final RoomController controller = _roomController(
+          repository,
+          coordinator,
+          tencentImReadinessPollInterval: const Duration(milliseconds: 5),
+          tencentImReadinessPollWindow: const Duration(milliseconds: 100),
+        );
+        addTearDown(() async {
+          controller.dispose();
+          await coordinator.dispose();
+          await adapter.dispose();
+          await sdk.dispose();
+        });
+
+        await controller.join();
+        await _waitUntil(() => sdk.joinedGroupIds.isNotEmpty);
+        expect(repository.readinessCalls, greaterThanOrEqualTo(3));
+        expect(sdk.joinedGroupIds, <String>['room-group-1']);
+        expect(controller.status, RoomSessionStatus.joined);
+      },
+    );
+
+    test(
+      'cancels readiness polling immediately when leaving the room',
+      () async {
+        final _GroupSdk sdk = _GroupSdk();
+        final TencentImSessionAdapter adapter = TencentImSessionAdapter(
+          sdkClient: sdk,
+          now: () => now,
+          operationTimeout: const Duration(milliseconds: 100),
+        );
+        await adapter.login(_credentials(now));
+        final TencentImAvChatRoomCoordinator coordinator =
+            TencentImAvChatRoomCoordinator(
+              sessionAdapter: adapter,
+              operationTimeout: const Duration(milliseconds: 100),
+            );
+        final _TencentRoomRepository repository = _TencentRoomRepository()
+          ..returnPendingOnEnter = true
+          ..readinessSession = null;
+        final RoomController controller = _roomController(
+          repository,
+          coordinator,
+          tencentImReadinessPollInterval: const Duration(milliseconds: 40),
+          tencentImReadinessPollWindow: const Duration(milliseconds: 300),
+        );
+        addTearDown(() async {
+          controller.dispose();
+          await coordinator.dispose();
+          await adapter.dispose();
+          await sdk.dispose();
+        });
+
+        await controller.join();
+        await _waitUntil(() => repository.readinessCalls >= 1);
+        expect(await controller.leaveRoom(), isTrue);
+        final int callsAfterLeave = repository.readinessCalls;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(repository.readinessCalls, callsAfterLeave);
+        expect(sdk.joinedGroupIds, isEmpty);
+        expect(controller.status, RoomSessionStatus.left);
+      },
+    );
+
+    test('cancels readiness polling immediately when disposed', () async {
+      final _GroupSdk sdk = _GroupSdk();
+      final TencentImSessionAdapter adapter = TencentImSessionAdapter(
+        sdkClient: sdk,
+        now: () => now,
+        operationTimeout: const Duration(milliseconds: 100),
+      );
+      await adapter.login(_credentials(now));
+      final TencentImAvChatRoomCoordinator coordinator =
+          TencentImAvChatRoomCoordinator(
+            sessionAdapter: adapter,
+            operationTimeout: const Duration(milliseconds: 100),
+          );
+      final _TencentRoomRepository repository = _TencentRoomRepository()
+        ..returnPendingOnEnter = true
+        ..readinessSession = null;
+      final RoomController controller = _roomController(
+        repository,
+        coordinator,
+        tencentImReadinessPollInterval: const Duration(milliseconds: 40),
+        tencentImReadinessPollWindow: const Duration(milliseconds: 300),
+      );
+      addTearDown(() async {
+        controller.dispose();
+        await coordinator.dispose();
+        await adapter.dispose();
+        await sdk.dispose();
+      });
+
+      await controller.join();
+      await _waitUntil(() => repository.readinessCalls >= 1);
+      controller.dispose();
+      final int callsAfterDispose = repository.readinessCalls;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(repository.readinessCalls, callsAfterDispose);
+      expect(sdk.joinedGroupIds, isEmpty);
+    });
+
+    test('drops a stale readiness response after leave and re-entry', () async {
+      final _GroupSdk sdk = _GroupSdk();
+      final TencentImSessionAdapter adapter = TencentImSessionAdapter(
+        sdkClient: sdk,
+        now: () => now,
+        operationTimeout: const Duration(milliseconds: 100),
+      );
+      await adapter.login(_credentials(now));
+      final TencentImAvChatRoomCoordinator coordinator =
+          TencentImAvChatRoomCoordinator(
+            sessionAdapter: adapter,
+            operationTimeout: const Duration(milliseconds: 100),
+          );
+      final TencentImAvChatRoomSession ready =
+          TencentImAvChatRoomSession.fromBackendData(_roomData());
+      final Completer<TencentImAvChatRoomSession?> staleReadiness =
+          Completer<TencentImAvChatRoomSession?>();
+      final _TencentRoomRepository repository = _TencentRoomRepository()
+        ..returnPendingOnEnter = true
+        ..readinessFactory = () => staleReadiness.future;
+      final RoomController controller = _roomController(
+        repository,
+        coordinator,
+        tencentImReadinessPollInterval: const Duration(milliseconds: 5),
+        tencentImReadinessPollWindow: const Duration(milliseconds: 100),
+      );
+      addTearDown(() async {
+        controller.dispose();
+        await coordinator.dispose();
+        await adapter.dispose();
+        await sdk.dispose();
+      });
+
+      await controller.join();
+      await _waitUntil(() => repository.readinessCalls >= 1);
+      expect(await controller.leaveRoom(), isTrue);
+      staleReadiness.complete(ready);
+      await _eventTurn();
+      expect(sdk.joinedGroupIds, isEmpty);
+
+      repository.readinessFactory = null;
+      repository.readinessSession = ready;
+      await controller.join();
+      await _waitUntil(() => sdk.joinedGroupIds.isNotEmpty);
+      expect(sdk.joinedGroupIds, <String>['room-group-1']);
+    });
+
+    test(
+      'keeps HTTP-only state after the bounded readiness window expires',
+      () async {
+        final _GroupSdk sdk = _GroupSdk();
+        final TencentImSessionAdapter adapter = TencentImSessionAdapter(
+          sdkClient: sdk,
+          now: () => now,
+          operationTimeout: const Duration(milliseconds: 100),
+        );
+        await adapter.login(_credentials(now));
+        final TencentImAvChatRoomCoordinator coordinator =
+            TencentImAvChatRoomCoordinator(
+              sessionAdapter: adapter,
+              operationTimeout: const Duration(milliseconds: 100),
+            );
+        final _TencentRoomRepository repository = _TencentRoomRepository()
+          ..returnPendingOnEnter = true
+          ..readinessSession = null;
+        final RoomController controller = _roomController(
+          repository,
+          coordinator,
+          tencentImReadinessPollInterval: const Duration(milliseconds: 5),
+          tencentImReadinessPollWindow: const Duration(milliseconds: 30),
+        );
+        addTearDown(() async {
+          controller.dispose();
+          await coordinator.dispose();
+          await adapter.dispose();
+          await sdk.dispose();
+        });
+
+        await controller.join();
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        expect(repository.readinessCalls, greaterThanOrEqualTo(1));
+        expect(sdk.joinedGroupIds, isEmpty);
+        expect(controller.status, RoomSessionStatus.joined);
+      },
+    );
+
     test('does not block HTTP room entry on a hanging provider join', () async {
       final _GroupSdk sdk = _GroupSdk()..hangJoin = true;
       final TencentImSessionAdapter adapter = TencentImSessionAdapter(
@@ -545,6 +756,24 @@ Map<String, Object?> _roomData({String status = 'READY'}) => <String, Object?>{
     'contentAuthority': 'HTTP',
   },
 };
+
+RoomController _roomController(
+  _TencentRoomRepository repository,
+  TencentImAvChatRoomCoordinator coordinator, {
+  required Duration tencentImReadinessPollInterval,
+  required Duration tencentImReadinessPollWindow,
+}) => RoomController(
+  roomId: 'room-1',
+  title: '房间',
+  currentUserId: 123,
+  accessToken: 'first-party-token',
+  repository: repository,
+  rtcAdapter: MockRtcAdapter(),
+  realtimeGateway: MockRoomRealtimeGateway(),
+  tencentImAvChatRoomCoordinator: coordinator,
+  tencentImReadinessPollInterval: tencentImReadinessPollInterval,
+  tencentImReadinessPollWindow: tencentImReadinessPollWindow,
+);
 
 ImSessionCredentials _credentials(DateTime now) => ImSessionCredentials(
   provider: ImSessionCredentials.expectedProvider,
@@ -667,6 +896,9 @@ class _TencentRoomRepository extends MockRoomRepository
   TencentImAvChatRoomSession? session =
       TencentImAvChatRoomSession.fromBackendData(_roomData());
   TencentImAvChatRoomSession? readinessSession;
+  List<TencentImAvChatRoomSession?> readinessSequence =
+      <TencentImAvChatRoomSession?>[];
+  Future<TencentImAvChatRoomSession?> Function()? readinessFactory;
   bool returnPendingOnEnter = false;
   List<RoomMessage> messages = const <RoomMessage>[];
   int fetchCalls = 0;
@@ -698,6 +930,14 @@ class _TencentRoomRepository extends MockRoomRepository
     String roomId,
   ) async {
     readinessCalls += 1;
+    final Future<TencentImAvChatRoomSession?> Function()? factory =
+        readinessFactory;
+    if (factory != null) {
+      return factory();
+    }
+    if (readinessSequence.isNotEmpty) {
+      return readinessSequence.removeAt(0);
+    }
     return readinessSession;
   }
 
