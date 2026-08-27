@@ -206,6 +206,7 @@ class RoomMessage {
     this.createdAt,
     this.deliveryMode,
     this.realtimeStatus,
+    this.eventVersion,
   });
 
   final String? roomId;
@@ -218,6 +219,10 @@ class RoomMessage {
   final DateTime? createdAt;
   final String? deliveryMode;
   final String? realtimeStatus;
+
+  /// Server-issued signed 64-bit ordering for metadata-only realtime hints.
+  /// The room UI never treats it as provider authorization.
+  final int? eventVersion;
 }
 
 class RoomSnapshot {

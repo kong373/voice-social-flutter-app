@@ -15,15 +15,19 @@ class BackendMessageRepository implements MessageRepository {
     required BackendRouteCatalog routes,
     required int Function() currentUserIdProvider,
     NativePermissionAdapter? nativePermissionAdapter,
+    bool Function()? privateRealtimeAvailabilityProvider,
   }) : _apiClient = apiClient,
        _routes = routes,
        _currentUserIdProvider = currentUserIdProvider,
-       _nativePermissionAdapter = nativePermissionAdapter;
+       _nativePermissionAdapter = nativePermissionAdapter,
+       _privateRealtimeAvailabilityProvider =
+           privateRealtimeAvailabilityProvider;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
   final int Function() _currentUserIdProvider;
   final NativePermissionAdapter? _nativePermissionAdapter;
+  final bool Function()? _privateRealtimeAvailabilityProvider;
   final Map<String, AppNotification> _notificationCache =
       <String, AppNotification>{};
   final Map<NotificationCategory, int> _notificationFetchVersions =
@@ -49,7 +53,8 @@ class BackendMessageRepository implements MessageRepository {
   bool get supportsPrivateSend => true;
 
   @override
-  bool get supportsPrivateRealtime => false;
+  bool get supportsPrivateRealtime =>
+      _privateRealtimeAvailabilityProvider?.call() ?? false;
 
   @override
   bool get supportsSystemNotificationList => true;
@@ -183,20 +188,22 @@ class BackendMessageRepository implements MessageRepository {
           data['targetUserId'],
           field: 'targetUserId',
         );
+        final MessageImStatus historyImStatus = _requiredMessageImStatus(
+          data['imStatus'],
+          context: '私聊历史响应',
+        );
+        final bool providerInvocation = _requiredBool(
+          data['providerInvocation'],
+          field: 'providerInvocation',
+        );
         if (targetUserId != conversation.targetUserId ||
-            _requiredString(
-                  data['imStatus'],
-                  '私聊历史响应缺少 IM 阻断状态',
-                ).toUpperCase() !=
-                'VENDOR_BLOCKED' ||
-            _requiredBool(
-                  data['providerInvocation'],
-                  field: 'providerInvocation',
-                ) !=
-                false) {
+            !_isTrustedMessageStatusBoundary(
+              historyImStatus,
+              providerInvocation,
+            )) {
           throw const ApiException(
             kind: ApiFailureKind.protocol,
-            message: '私聊历史响应的会话权限或第三方阻断状态不可信',
+            message: '私聊历史响应的会话权限或 IM 投递状态不可信',
           );
         }
       }
@@ -245,8 +252,9 @@ class BackendMessageRepository implements MessageRepository {
       (ChatMessage left, ChatMessage right) =>
           left.createdAt.compareTo(right.createdAt),
     );
-    // Entering a conversation is the first-party read boundary.  This does
-    // not claim realtime delivery: the backend keeps imStatus VENDOR_BLOCKED.
+    // Entering a conversation is the first-party read boundary.  Provider
+    // delivery remains represented by the response-level status mapping; this
+    // HTTP read never treats a provider callback as message content.
     await _runStableMessageWrite<void>(
       intent: 'private-read:${conversation.targetUserId}',
       action: (Map<String, String> headers) async {
@@ -468,11 +476,17 @@ class BackendMessageRepository implements MessageRepository {
           data['totalUnread'],
           field: 'totalUnread',
         );
+        final MessageImStatus syncImStatus = _requiredMessageImStatus(
+          imStatus,
+          context: '通知同步响应',
+        );
         if (!synced ||
             projectionStatus != 'FIRST_PARTY_MATERIALIZED' ||
             pushStatus != 'VENDOR_BLOCKED' ||
-            imStatus != 'VENDOR_BLOCKED' ||
-            providerInvocation ||
+            !_isTrustedMessageStatusBoundary(
+              syncImStatus,
+              providerInvocation,
+            ) ||
             dynamicUnread > notificationUnread ||
             totalUnread != notificationUnread + messageUnread) {
           throw const ApiException(
@@ -681,14 +695,21 @@ class BackendMessageRepository implements MessageRepository {
           statusField: 'pushStatus',
           context: '清空互动通知响应',
         );
-        if (_requiredString(
-              data['imStatus'],
-              '清空互动通知响应缺少 IM 阻断状态',
-            ).toUpperCase() !=
-            'VENDOR_BLOCKED') {
+        final MessageImStatus clearImStatus = _requiredMessageImStatus(
+          data['imStatus'],
+          context: '清空互动通知响应',
+        );
+        final bool clearProviderInvocation = _requiredBool(
+          data['providerInvocation'],
+          field: 'providerInvocation',
+        );
+        if (!_isTrustedMessageStatusBoundary(
+          clearImStatus,
+          clearProviderInvocation,
+        )) {
           throw const ApiException(
             kind: ApiFailureKind.protocol,
-            message: '清空互动通知响应的 IM 阻断状态不可信',
+            message: '清空互动通知响应的 IM 投递状态不可信',
           );
         }
         _notificationCache.removeWhere(
@@ -704,15 +725,24 @@ class BackendMessageRepository implements MessageRepository {
   Future<MessageRecoverySnapshot> fetchRecoverySnapshot() async {
     final NativeNotificationPermissionState notificationPermission =
         await _nativeNotificationPermission();
+    final bool privateRealtimeAvailable = supportsPrivateRealtime;
+    final String unavailableRealtimeMessage =
+        _privateRealtimeAvailabilityProvider == null
+        ? '腾讯 IM 实时投递仍为 VENDOR_BLOCKED。'
+        : '腾讯 IM 实时会话当前不可用。';
     return MessageRecoverySnapshot(
-      privateRealtimeAvailable: false,
+      privateRealtimeAvailable: privateRealtimeAvailable,
       notificationPermission: notificationPermission,
       lastNotificationSyncAt: _lastSyncAt,
       message:
           notificationPermission ==
               NativeNotificationPermissionState.unavailable
-          ? '第一方消息记录与通知已接通；系统通知权限适配器不可用，腾讯 IM 实时投递仍为 VENDOR_BLOCKED。'
-          : '系统通知状态由 Android/iOS 原生权限返回；腾讯 IM 实时投递仍为 VENDOR_BLOCKED，不伪造实时状态。',
+          ? privateRealtimeAvailable
+                ? '第一方消息记录与通知已接通；腾讯 IM 实时会话已连接。'
+                : '第一方消息记录与通知已接通；$unavailableRealtimeMessage'
+          : privateRealtimeAvailable
+          ? '系统通知状态由 Android/iOS 原生权限返回；腾讯 IM 实时会话已连接。'
+          : '系统通知状态由 Android/iOS 原生权限返回；$unavailableRealtimeMessage',
     );
   }
 
@@ -835,7 +865,10 @@ class BackendMessageRepository implements MessageRepository {
         message: '消息响应的会话 ID 与分页顶层会话 ID 不一致',
       );
     }
-    final ChatMessageStatus status = _statusFromMap(item, isMine: mine);
+    final _ParsedMessageStatus parsedStatus = _statusFromMap(
+      item,
+      isMine: mine,
+    );
     final String? conversationId =
         authoritativeConversationId ??
         (itemConversationId.isEmpty ? conversation.id : itemConversationId);
@@ -850,31 +883,100 @@ class BackendMessageRepository implements MessageRepository {
       content: _string(item['content'] ?? item['message']),
       createdAt: createdAt,
       isMine: mine,
-      status: status,
+      status: parsedStatus.status,
+      deliveryStatus: parsedStatus.deliveryStatus,
     );
   }
 
-  static ChatMessageStatus _statusFromMap(
+  static _ParsedMessageStatus _statusFromMap(
     Map<String, Object?> item, {
     required bool isMine,
   }) {
     if (!isMine) {
-      return ChatMessageStatus.received;
+      return _ParsedMessageStatus(
+        status: ChatMessageStatus.received,
+        deliveryStatus:
+            _optionalMessageDeliveryStatus(item['deliveryStatus']) ??
+            _optionalMessageDeliveryStatus(item['imStatus']) ??
+            MessageDeliveryStatus.unknown,
+      );
     }
     final String storageStatus = _string(item['storageStatus']).toUpperCase();
-    final String deliveryStatus = _string(item['deliveryStatus']).toUpperCase();
-    if (storageStatus == 'FIRST_PARTY_STORED' ||
-        deliveryStatus == 'VENDOR_BLOCKED') {
-      return ChatMessageStatus.storedPendingDelivery;
-    }
-    if (deliveryStatus == 'DELIVERED' ||
-        deliveryStatus == 'DELIVERED_TO_RECIPIENT') {
-      return ChatMessageStatus.sent;
-    }
-    throw const ApiException(
-      kind: ApiFailureKind.protocol,
-      message: '消息响应缺少可确认的投递状态',
+    final Object? rawDeliveryStatus =
+        item['deliveryStatus'] ?? item['imStatus'];
+    final MessageDeliveryStatus deliveryStatus =
+        _optionalMessageDeliveryStatus(rawDeliveryStatus) ??
+        (storageStatus == 'FIRST_PARTY_STORED'
+            ? MessageDeliveryStatus.vendorBlocked
+            : (throw const ApiException(
+                kind: ApiFailureKind.protocol,
+                message: '消息响应缺少可确认的投递状态',
+              )));
+    return _ParsedMessageStatus(
+      status: switch (deliveryStatus) {
+        MessageDeliveryStatus.delivered => ChatMessageStatus.sent,
+        MessageDeliveryStatus.failed => ChatMessageStatus.failed,
+        MessageDeliveryStatus.pending ||
+        MessageDeliveryStatus.processing ||
+        MessageDeliveryStatus.retry ||
+        MessageDeliveryStatus.unknown ||
+        MessageDeliveryStatus.vendorBlocked =>
+          ChatMessageStatus.storedPendingDelivery,
+      },
+      deliveryStatus: deliveryStatus,
     );
+  }
+
+  static MessageDeliveryStatus? _optionalMessageDeliveryStatus(Object? value) {
+    if (value == null || (value is String && value.trim().isEmpty)) {
+      return null;
+    }
+    final MessageDeliveryStatus? parsed = tryParseMessageDeliveryStatus(value);
+    if (parsed == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '消息响应包含无法识别的 IM 投递状态',
+      );
+    }
+    return parsed;
+  }
+
+  static MessageDeliveryStatus _requiredMessageDeliveryStatus(
+    Object? value, {
+    required String context,
+  }) {
+    final MessageDeliveryStatus? parsed = _optionalMessageDeliveryStatus(value);
+    if (parsed == null) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$context 缺少有效的 IM 投递状态',
+      );
+    }
+    return parsed;
+  }
+
+  static bool _isTrustedMessageStatusBoundary(
+    MessageImStatus status,
+    bool providerInvocation,
+  ) => status != MessageImStatus.vendorBlocked || !providerInvocation;
+
+  static bool _isTrustedMessageDeliveryBoundary(
+    MessageDeliveryStatus status,
+    bool providerInvocation,
+  ) => status != MessageDeliveryStatus.vendorBlocked || !providerInvocation;
+
+  static MessageImStatus _requiredMessageImStatus(
+    Object? value, {
+    required String context,
+  }) {
+    final MessageImStatus? parsed = tryParseMessageImStatus(value);
+    if (parsed == null) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$context 缺少有效的 IM 能力状态',
+      );
+    }
+    return parsed;
   }
 
   Future<ChatMessage> _sendPrivateMessage({
@@ -913,10 +1015,18 @@ class BackendMessageRepository implements MessageRepository {
         message['providerInvocation'],
         field: 'providerInvocation',
       );
+      final MessageDeliveryStatus responseDeliveryStatus =
+          _requiredMessageDeliveryStatus(
+            message['deliveryStatus'] ?? message['imStatus'],
+            context: '发送消息响应',
+          );
       if (receiverUserId != conversation.targetUserId ||
           returnedType != _privateMessageType ||
           returnedContent != content ||
-          providerInvocation) {
+          !_isTrustedMessageDeliveryBoundary(
+            responseDeliveryStatus,
+            providerInvocation,
+          )) {
         throw const ApiException(
           kind: ApiFailureKind.protocol,
           message: '发送消息响应与提交内容或第三方阻断边界不一致',
@@ -1476,4 +1586,14 @@ class _ConversationPage {
   final int total;
   final int pages;
   final bool hasMore;
+}
+
+class _ParsedMessageStatus {
+  const _ParsedMessageStatus({
+    required this.status,
+    required this.deliveryStatus,
+  });
+
+  final ChatMessageStatus status;
+  final MessageDeliveryStatus deliveryStatus;
 }

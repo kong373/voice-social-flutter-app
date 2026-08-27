@@ -20,6 +20,9 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   int _loadRequestId = 0;
   String? _pendingSendRequestId;
   String? _pendingSendContent;
+  ImAuthoritativeRefreshBus? _refreshBus;
+  ImAuthoritativeRefreshSubscription? _refreshSubscription;
+  Future<void>? _refreshFlight;
 
   MessageRepository get _repository =>
       AppDependencyScope.of(context).messageRepository;
@@ -33,34 +36,75 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final ImAuthoritativeRefreshBus refreshBus = AppDependencyScope.of(
+      context,
+    ).imAuthoritativeRefreshBus;
+    if (!identical(_refreshBus, refreshBus)) {
+      _refreshSubscription?.cancel();
+      _refreshBus = refreshBus;
+      _refreshSubscription = refreshBus.subscribe(_onAuthoritativeRefresh);
+    }
     if (_loading && _messages.isEmpty) {
       _load();
     }
   }
 
+  Future<void> _onAuthoritativeRefresh(ImAuthoritativeRefreshRequest request) {
+    final Future<void>? active = _refreshFlight;
+    if (active != null) {
+      return active;
+    }
+    final Future<void> operation = _load(showLoading: false);
+    _refreshFlight = operation;
+    operation.then<void>(
+      (_) {
+        if (identical(_refreshFlight, operation)) {
+          _refreshFlight = null;
+        }
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_refreshFlight, operation)) {
+          _refreshFlight = null;
+        }
+      },
+    );
+    return operation;
+  }
+
   @override
   void dispose() {
     _loadRequestId += 1;
+    _refreshSubscription?.cancel();
+    _refreshSubscription = null;
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool showLoading = true}) async {
     if (!mounted) {
       return;
     }
     final int requestId = ++_loadRequestId;
     final MessageRepository repository = _repository;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    final AppDependencies dependencies = AppDependencyScope.of(context);
+    final int authUserIdAtStart =
+        dependencies.sessionManager.session?.userId ?? 0;
+    if (showLoading || _error != null) {
+      setState(() {
+        _loading = showLoading;
+        _error = null;
+      });
+    }
     try {
       final List<ChatMessage> value = await repository.fetchPrivateMessages(
         _conversation,
       );
-      if (!mounted || requestId != _loadRequestId) {
+      final int authUserIdAfterFetch =
+          dependencies.sessionManager.session?.userId ?? 0;
+      if (!mounted ||
+          requestId != _loadRequestId ||
+          authUserIdAfterFetch != authUserIdAtStart) {
         return;
       }
       if (_conversation.isDraft) {
@@ -98,7 +142,14 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       }
       setState(() {
         _loading = false;
-        _error = _messageFor(error);
+        // A provider hint only requests an authoritative refresh.  If that
+        // HTTP refresh fails after messages are already visible, keep the
+        // last first-party snapshot on screen and let the next hint/manual
+        // refresh retry it; do not replace trusted content with a transient
+        // error page.
+        _error = !showLoading && _messages.isNotEmpty
+            ? null
+            : _messageFor(error);
       });
     }
   }

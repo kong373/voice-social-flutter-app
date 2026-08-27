@@ -11,11 +11,17 @@ class ApiResponse {
     required this.code,
     required this.message,
     required this.data,
+    this.responseHeaders = const <String, String>{},
   });
 
   final int code;
   final String message;
   final Object? data;
+
+  /// Response headers normalized to lower-case names.  Most callers do not
+  /// need transport metadata, but security-sensitive contracts can enforce
+  /// directives such as `Cache-Control: no-store`.
+  final Map<String, String> responseHeaders;
 
   bool get isSuccess => code == 200;
 }
@@ -159,6 +165,27 @@ class ApiClient {
     authenticated: authenticated,
   );
 
+  /// Sends a request without invoking the auth refresh callback.
+  ///
+  /// Short-lived provider credentials must be bound to the current first-party
+  /// session. Retrying this request after a refresh could otherwise race a
+  /// session transition and associate the response with another principal.
+  Future<ApiResponse> postWithoutUnauthorizedRecovery(
+    String path, {
+    Map<String, String>? query,
+    Map<String, String>? headers,
+    Map<String, Object?>? body,
+    bool authenticated = true,
+  }) => _request(
+    method: 'POST',
+    path: path,
+    query: query,
+    headers: headers,
+    body: body,
+    authenticated: authenticated,
+    allowUnauthorizedRecovery: false,
+  );
+
   Future<ApiResponse> _request({
     required String method,
     required String path,
@@ -243,6 +270,7 @@ class ApiClient {
         code: code,
         message: message,
         data: decoded['data'],
+        responseHeaders: _responseHeaders(response),
       );
       final bool httpSuccess =
           response.statusCode >= 200 && response.statusCode < 300;
@@ -352,6 +380,14 @@ class ApiClient {
         request.headers.set(name, value);
       }
     }
+  }
+
+  static Map<String, String> _responseHeaders(HttpClientResponse response) {
+    final Map<String, String> headers = <String, String>{};
+    response.headers.forEach((String name, List<String> values) {
+      headers[name.toLowerCase()] = values.join(',');
+    });
+    return headers;
   }
 
   static int? _asInt(Object? value) {

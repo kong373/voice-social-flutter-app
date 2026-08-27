@@ -183,13 +183,14 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
   });
 
   test('help describes the two supported live-development entry points', () {
-    final ProcessResult result = _run(<String>['help']);
+    final ProcessResult result = _runCurrentLauncher(<String>['help']);
 
     expect(result.exitCode, 0);
     expect(result.stdout, contains('run'));
     expect(result.stdout, contains('build-apk'));
     expect(result.stdout, contains('10.0.2.2'));
     expect(result.stdout, contains('127.0.0.1'));
+    expect(result.stdout, contains('--enable-tencent-im'));
   });
 
   test('run fails before Flutter when API_BASE_URL is missing', () {
@@ -286,6 +287,85 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
       ),
       hasLength(1),
     );
+  });
+
+  test(
+    'explicit Tencent IM switch passes exactly the public enable define',
+    () {
+      final ProcessResult result = _runCurrentLauncher(
+        <String>[
+          'run',
+          '--target',
+          'host',
+          '--device',
+          'macos',
+          '--enable-tencent-im',
+        ],
+        environment: _baseEnvironment()
+          ..['API_BASE_URL'] = 'http://127.0.0.1:18080/',
+      );
+
+      expect(result.exitCode, 0);
+      final List<String> invocationLines = fakeFlutterLog
+          .readAsStringSync()
+          .trim()
+          .split('\n');
+      expect(invocationLines, contains('--dart-define=ENABLE_TENCENT_IM=true'));
+      expect(
+        invocationLines,
+        isNot(contains('--dart-define=ENABLE_TENCENT_IM=false')),
+      );
+      expect(
+        invocationLines.where(
+          (String line) => line.startsWith('--dart-define=ENABLE_TENCENT_IM='),
+        ),
+        hasLength(1),
+      );
+    },
+  );
+
+  test(
+    'Tencent IM switch defaults to false without an environment override',
+    () {
+      final ProcessResult result = _runCurrentLauncher(
+        <String>['run', '--target', 'host', '--device', 'macos'],
+        environment: _baseEnvironment()
+          ..['API_BASE_URL'] = 'http://127.0.0.1:18080/',
+      );
+
+      expect(result.exitCode, 0);
+      final List<String> invocationLines = fakeFlutterLog
+          .readAsStringSync()
+          .trim()
+          .split('\n');
+      expect(
+        invocationLines,
+        contains('--dart-define=ENABLE_TENCENT_IM=false'),
+      );
+      expect(
+        invocationLines,
+        isNot(contains('--dart-define=ENABLE_TENCENT_IM=true')),
+      );
+    },
+  );
+
+  test('Tencent IM switch is strict and does not accept a value', () {
+    final ProcessResult result = _runCurrentLauncher(
+      <String>[
+        'run',
+        '--target',
+        'host',
+        '--device',
+        'macos',
+        '--enable-tencent-im=true',
+      ],
+      environment: _baseEnvironment()
+        ..['API_BASE_URL'] = 'http://127.0.0.1:18080/',
+    );
+
+    expect(result.exitCode, isNot(0));
+    expect(result.stderr, contains('--enable-tencent-im'));
+    expect(fakeFlutterLog.existsSync(), isFalse);
   });
 
   test('run rejects a Flutter SDK other than the frozen 3.44.7', () {
@@ -437,6 +517,21 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
       await _assertOriginalCheckoutUntouched();
     },
   );
+
+  test('dry-run reports Tencent IM as a boolean without credentials', () {
+    final ProcessResult result = _runCurrentLauncher(<String>[
+      'build-apk',
+      '--target',
+      'android-emulator',
+      '--enable-tencent-im',
+      '--dry-run',
+    ], environment: _baseEnvironment());
+
+    expect(result.exitCode, 0);
+    expect(result.stdout, contains('enable_tencent_im=true'));
+    expect(result.stdout, isNot(contains('public-client')));
+    expect(fakeFlutterLog.existsSync(), isFalse);
+  });
 
   test('failed build leaves no retained APK or SHA-256', () {
     liveArtifactDirectory.createSync(recursive: true);
@@ -683,6 +778,60 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
     expect(result.exitCode, isNot(0));
     expect(result.stderr, contains('--enable-agora-rtc'));
     expect(fakeFlutterLog.existsSync(), isFalse);
+  });
+
+  test('rejects environment aliases for the fixed Tencent IM switch', () {
+    for (final String name in <String>[
+      'ENABLE_TENCENT_IM',
+      'TENCENT_IM',
+      'TENCENT_ENABLE_IM',
+      'ORG_GRADLE_PROJECT_ENABLE_TENCENT_IM',
+      'GRADLE_OPTS',
+    ]) {
+      final ProcessResult result = _runCurrentLauncher(
+        <String>['run', '--target', 'host', '--device', 'macos'],
+        environment: _baseEnvironment()
+          ..['API_BASE_URL'] = 'http://127.0.0.1:18080/'
+          ..[name] = 'true',
+      );
+
+      expect(result.exitCode, isNot(0), reason: name);
+      if (name == 'ORG_GRADLE_PROJECT_ENABLE_TENCENT_IM' ||
+          name == 'GRADLE_OPTS') {
+        expect(
+          result.stderr,
+          contains('runtime defines are owned by this wrapper'),
+          reason: name,
+        );
+      } else {
+        expect(result.stderr, contains('--enable-tencent-im'), reason: name);
+      }
+      expect(fakeFlutterLog.existsSync(), isFalse, reason: name);
+    }
+  });
+
+  test('rejects Tencent IM Dart-define and Gradle aliases', () {
+    for (final List<String> alias in <List<String>>[
+      <String>['--dart-define=ENABLE_TENCENT_IM=true'],
+      <String>['-PENABLE_TENCENT_IM=true'],
+      <String>['-P', 'ENABLE_TENCENT_IM=true'],
+      <String>['--android-project-arg=ENABLE_TENCENT_IM=true'],
+      <String>['--android-project-arg', 'ENABLE_TENCENT_IM=true'],
+    ]) {
+      final ProcessResult result = _runCurrentLauncher(
+        <String>['run', '--target', 'host', '--device', 'macos', ...alias],
+        environment: _baseEnvironment()
+          ..['API_BASE_URL'] = 'http://127.0.0.1:18080/',
+      );
+
+      expect(result.exitCode, isNot(0), reason: alias.join(' '));
+      expect(
+        result.stderr,
+        contains('runtime defines are owned by this wrapper'),
+        reason: alias.join(' '),
+      );
+      expect(fakeFlutterLog.existsSync(), isFalse, reason: alias.join(' '));
+    }
   });
 
   test('rejects environment Dart-define aliases before Flutter', () {
@@ -1336,6 +1485,11 @@ Map<String, String> _baseEnvironment() {
     'CLIENT_INNER_VERSION',
     'API_TIMEOUT_SECONDS',
     'LIVE_PROBE_PATH',
+    'ENABLE_TENCENT_IM',
+    'TENCENT_IM',
+    'TENCENT_ENABLE_IM',
+    'ORG_GRADLE_PROJECT_ENABLE_TENCENT_IM',
+    'GRADLE_OPTS',
     'access_token',
     'Access_Token',
     'MiXeD_TOkEn',
@@ -1352,6 +1506,36 @@ String? fakeVersionConfigPath;
 String? fakeHostLogPath;
 
 ProcessResult _run(List<String> arguments, {Map<String, String>? environment}) {
+  return _runScript(
+    arguments,
+    environment: environment,
+    scriptPath: _script.path,
+    workingDirectory: _projectRoot,
+  );
+}
+
+ProcessResult _runCurrentLauncher(
+  List<String> arguments, {
+  Map<String, String>? environment,
+}) {
+  final String? checkoutRoot = _originalCheckoutRoot;
+  if (checkoutRoot == null) {
+    throw StateError('original checkout root is not initialized');
+  }
+  return _runScript(
+    arguments,
+    environment: environment,
+    scriptPath: '$checkoutRoot/tool/live_development.sh',
+    workingDirectory: checkoutRoot,
+  );
+}
+
+ProcessResult _runScript(
+  List<String> arguments, {
+  required String scriptPath,
+  required String workingDirectory,
+  Map<String, String>? environment,
+}) {
   final Map<String, String> env = <String, String>{
     ...Platform.environment,
     ...?environment,
@@ -1369,8 +1553,8 @@ ProcessResult _run(List<String> arguments, {Map<String, String>? environment}) {
   ).writeAsStringSync('$frameworkVersion|$dartVersion\n');
   return Process.runSync(
     'bash',
-    <String>[_script.path, ...arguments],
-    workingDirectory: _projectRoot,
+    <String>[scriptPath, ...arguments],
+    workingDirectory: workingDirectory,
     environment: env,
   );
 }

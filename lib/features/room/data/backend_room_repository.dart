@@ -7,6 +7,7 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_rtc_token_repository.dart';
 import 'package:voice_social_app/features/room/data/room_write_guard.dart';
+import 'package:voice_social_app/features/im/domain/tencent_im_room_models.dart';
 
 /// M3.2A live repository.
 ///
@@ -14,7 +15,12 @@ import 'package:voice_social_app/features/room/data/room_write_guard.dart';
 /// writes. RTC credentials are an explicit opt-in capability; realtime and
 /// audio remain fail-closed unless the app supplies the corresponding adapter.
 class BackendRoomRepository
-    implements RoomRepository, GiftReceiptRepository, RtcTokenRepository {
+    implements
+        RoomRepository,
+        GiftReceiptRepository,
+        RtcTokenRepository,
+        TencentImRoomSessionSource,
+        TencentImRoomReadinessSource {
   BackendRoomRepository({
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
@@ -36,9 +42,94 @@ class BackendRoomRepository
   final RoomWriteGuard _giftWriteGuard = RoomWriteGuard(scope: 'room-gift');
   String? _activeRoomId;
   int? _activeCurrentUserId;
+  final Map<String, TencentImAvChatRoomSession> _tencentImRoomSessions =
+      <String, TencentImAvChatRoomSession>{};
+  TencentImAvChatRoomSession? _lastTencentImRoomSession;
 
   static const int _publicMessagesPageSize = 50;
   static const int _maximumPublicMessagePages = 100;
+  static const int _maximumEventVersion = 0x7fffffffffffffff;
+  static const Set<String> _publicMessageRealtimeStatuses = <String>{
+    'PENDING',
+    'PROCESSING',
+    'RETRY',
+    'UNKNOWN',
+    'READY',
+    'ACTIVE',
+    'DELIVERED',
+    'FAILED',
+    'VENDOR_BLOCKED',
+  };
+
+  @override
+  TencentImAvChatRoomSession? get lastTencentImRoomSession =>
+      _lastTencentImRoomSession;
+
+  @override
+  TencentImAvChatRoomSession? takeTencentImRoomSession(String roomId) {
+    final String normalizedRoomId = roomId.trim();
+    final TencentImAvChatRoomSession? session = _tencentImRoomSessions.remove(
+      normalizedRoomId,
+    );
+    if (_lastTencentImRoomSession?.roomId == normalizedRoomId) {
+      _lastTencentImRoomSession = null;
+    }
+    return session;
+  }
+
+  /// Reads the authenticated, first-party room projection without creating a
+  /// new membership/session.  This is used only for a transient
+  /// `realtimeGroup.status=PENDING` returned by enter/reconnect; the room
+  /// controller keeps rendering the already successful HTTP room while this
+  /// bounded poll runs in the background.
+  @override
+  Future<TencentImAvChatRoomSession?> fetchTencentImRoomReadiness(
+    String roomId,
+  ) async {
+    final String normalizedRoomId = roomId.trim();
+    if (normalizedRoomId.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '房间 ID 不能为空',
+      );
+    }
+    final ApiResponse response = await _apiClient.get(
+      // queryRoomOtherInfo is the authenticated room-context projection;
+      // unlike the legacy queryRoomInfo shape it can carry the active
+      // sessionId and realtimeGroup readiness fields.
+      _routes.queryRoomOtherInfo,
+      query: <String, String>{'roomId': normalizedRoomId},
+    );
+    // The projection is optional for a backend/provider-blocked deployment.
+    // A malformed or absent projection is therefore HTTP-only rather than a
+    // reason to fabricate a provider join. The strict parser still enforces
+    // the exact room/session/version/seven-field group contract whenever the
+    // backend supplies it.
+    return TencentImAvChatRoomSession.tryParseRoomReadinessFromRoomData(
+      response.data,
+      expectedRoomId: normalizedRoomId,
+    );
+  }
+
+  void _setTencentImRoomSession(
+    String roomId,
+    TencentImAvChatRoomSession? session,
+  ) {
+    if (session == null) {
+      _clearTencentImRoomSession(roomId);
+      return;
+    }
+    _tencentImRoomSessions[roomId] = session;
+    _lastTencentImRoomSession = session;
+  }
+
+  void _clearTencentImRoomSession(String roomId) {
+    final String normalizedRoomId = roomId.trim();
+    _tencentImRoomSessions.remove(normalizedRoomId);
+    if (_lastTencentImRoomSession?.roomId == normalizedRoomId) {
+      _lastTencentImRoomSession = null;
+    }
+  }
 
   static const Set<String> _authoritativeGiftSuccessStatuses = <String>{
     'SUCCESS',
@@ -119,6 +210,7 @@ class BackendRoomRepository
   }) async {
     final String normalizedRoomId = roomId.trim();
     final String? normalizedPassword = password?.trim();
+    _clearTencentImRoomSession(normalizedRoomId);
     return _writeGuard.run<RoomSnapshot>(
       intent: roomIntentDigest(
         scope: 'enter-room',
@@ -143,6 +235,12 @@ class BackendRoomRepository
           body: body,
         );
         RoomWriteGuard.validateMutationResponse(response, operation: '进入房间');
+        final TencentImAvChatRoomSession? tencentImRoomSession =
+            TencentImAvChatRoomSession.tryParseRoomReadinessFromRoomData(
+              response.data,
+              expectedRoomId: normalizedRoomId,
+            );
+        _setTencentImRoomSession(normalizedRoomId, tencentImRoomSession);
         _assertRawRequestedRoomIdentity(
           response,
           requestedRoomId: normalizedRoomId,
@@ -173,6 +271,7 @@ class BackendRoomRepository
     required int currentUserId,
   }) async {
     final String normalizedRoomId = roomId.trim();
+    _clearTencentImRoomSession(normalizedRoomId);
     return _writeGuard.run<RoomSnapshot>(
       intent: 'reconnect:$normalizedRoomId:$currentUserId',
       action: (Map<String, String> headers) async {
@@ -182,6 +281,13 @@ class BackendRoomRepository
           body: <String, Object?>{'roomId': normalizedRoomId},
         );
         RoomWriteGuard.validateMutationResponse(response, operation: '恢复房间会话');
+        _setTencentImRoomSession(
+          normalizedRoomId,
+          TencentImAvChatRoomSession.tryParseRoomReadinessFromRoomData(
+            response.data,
+            expectedRoomId: normalizedRoomId,
+          ),
+        );
         _assertRawRequestedRoomIdentity(
           response,
           requestedRoomId: normalizedRoomId,
@@ -417,6 +523,7 @@ class BackendRoomRepository
       _activeRoomId = null;
       _activeCurrentUserId = null;
     }
+    _clearTencentImRoomSession(normalizedRoomId);
   }
 
   @override
@@ -1823,6 +1930,10 @@ class BackendRoomRepository
       'realtimeStatus',
       field: '公屏消息实时状态',
     ).toUpperCase();
+    final int? eventVersion = _optionalEventVersion(
+      raw,
+      field: '公屏消息 eventVersion',
+    );
     if (responseRoomId != roomId ||
         responseContent != content ||
         (_activeCurrentUserId != null && senderId != _activeCurrentUserId)) {
@@ -1831,11 +1942,15 @@ class BackendRoomRepository
         message: '公屏消息响应与请求上下文不一致',
       );
     }
-    if (deliveryMode != 'HTTP_PERSISTED_NO_REALTIME' ||
-        realtimeStatus != 'VENDOR_BLOCKED') {
+    if (!_isSupportedPublicMessageDelivery(
+          deliveryMode: deliveryMode,
+          realtimeStatus: realtimeStatus,
+        ) ||
+        (deliveryMode == 'HTTP_PERSISTED_METADATA_HINT' &&
+            eventVersion == null)) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
-        message: '公屏消息实时能力未按服务端契约阻断',
+        message: '公屏消息实时能力未按服务端契约声明',
       );
     }
     final String? optionalType = _optionalString(raw['type']);
@@ -1857,6 +1972,7 @@ class BackendRoomRepository
       createdAt: createdAt,
       deliveryMode: deliveryMode,
       realtimeStatus: realtimeStatus,
+      eventVersion: eventVersion,
     );
   }
 
@@ -1886,6 +2002,50 @@ class BackendRoomRepository
       'createdAt',
       field: '公屏历史消息时间',
     );
+    final int? eventVersion = _optionalEventVersion(
+      raw,
+      field: '公屏历史 eventVersion',
+    );
+    String deliveryMode = 'HTTP_PERSISTED_NO_REALTIME';
+    String realtimeStatus = 'VENDOR_BLOCKED';
+    if (raw.containsKey('deliveryMode')) {
+      deliveryMode = _requiredString(
+        raw,
+        'deliveryMode',
+        field: '公屏历史消息投递模式',
+      ).toUpperCase();
+    }
+    if (raw.containsKey('realtimeStatus')) {
+      realtimeStatus = _requiredString(
+        raw,
+        'realtimeStatus',
+        field: '公屏历史消息实时状态',
+      ).toUpperCase();
+    }
+    if (!_isSupportedPublicMessageDelivery(
+          deliveryMode: deliveryMode,
+          realtimeStatus: realtimeStatus,
+        ) ||
+        (deliveryMode == 'HTTP_PERSISTED_METADATA_HINT' &&
+            eventVersion == null)) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '公屏历史消息实时能力未按服务端契约声明',
+      );
+    }
+    if (raw.containsKey('providerInvocation')) {
+      final bool providerInvocation = _requiredBool(
+        raw,
+        'providerInvocation',
+        field: '公屏历史消息厂商调用状态',
+      );
+      if (deliveryMode == 'HTTP_PERSISTED_NO_REALTIME' && providerInvocation) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '公屏历史消息阻断状态不能声明厂商调用',
+        );
+      }
+    }
     if (raw.containsKey('roomId')) {
       final String responseRoomId = _requiredString(
         raw,
@@ -1896,32 +2056,6 @@ class BackendRoomRepository
         throw const ApiException(
           kind: ApiFailureKind.protocol,
           message: '公屏历史消息房间 ID 与请求不一致',
-        );
-      }
-    }
-    if (raw.containsKey('deliveryMode')) {
-      final String deliveryMode = _requiredString(
-        raw,
-        'deliveryMode',
-        field: '公屏历史消息投递模式',
-      ).toUpperCase();
-      if (deliveryMode != 'HTTP_PERSISTED_NO_REALTIME') {
-        throw const ApiException(
-          kind: ApiFailureKind.configuration,
-          message: '公屏历史消息实时能力未按服务端契约阻断',
-        );
-      }
-    }
-    if (raw.containsKey('realtimeStatus')) {
-      final String realtimeStatus = _requiredString(
-        raw,
-        'realtimeStatus',
-        field: '公屏历史消息实时状态',
-      ).toUpperCase();
-      if (realtimeStatus != 'VENDOR_BLOCKED') {
-        throw const ApiException(
-          kind: ApiFailureKind.configuration,
-          message: '公屏历史消息实时能力未按服务端契约阻断',
         );
       }
     }
@@ -1938,9 +2072,41 @@ class BackendRoomRepository
           normalizedType == 'NOTICE' ||
           normalizedType == 'GIFT',
       createdAt: createdAt,
-      deliveryMode: 'HTTP_PERSISTED_NO_REALTIME',
-      realtimeStatus: 'VENDOR_BLOCKED',
+      deliveryMode: deliveryMode,
+      realtimeStatus: realtimeStatus,
+      eventVersion: eventVersion,
     );
+  }
+
+  static bool _isSupportedPublicMessageDelivery({
+    required String deliveryMode,
+    required String realtimeStatus,
+  }) {
+    if (!_publicMessageRealtimeStatuses.contains(realtimeStatus)) {
+      return false;
+    }
+    return switch (deliveryMode) {
+      'HTTP_PERSISTED_NO_REALTIME' => realtimeStatus == 'VENDOR_BLOCKED',
+      'HTTP_PERSISTED_METADATA_HINT' => true,
+      _ => false,
+    };
+  }
+
+  static int? _optionalEventVersion(
+    Map<String, Object?> data, {
+    required String field,
+  }) {
+    if (!data.containsKey('eventVersion')) {
+      return null;
+    }
+    final Object? raw = data['eventVersion'];
+    if (raw is! int || raw < 1 || raw > _maximumEventVersion) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field不是有效的有符号64位版本',
+      );
+    }
+    return raw;
   }
 
   static int _requiredPositiveInt(

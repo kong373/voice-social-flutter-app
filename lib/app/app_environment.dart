@@ -45,6 +45,7 @@ class AppEnvironment {
     this.allowInsecureHttp = false,
     this.enableAgoraRtc = false,
     this.enableAlipayAppPay = false,
+    this.enableTencentIm = false,
     @Deprecated('Mobile clients are public clients and never carry a secret.')
     String oauthClientSecret = '',
   });
@@ -78,6 +79,7 @@ class AppEnvironment {
       allowInsecureHttp: const bool.fromEnvironment('ALLOW_INSECURE_HTTP'),
       enableAgoraRtc: const bool.fromEnvironment('ENABLE_AGORA_RTC'),
       enableAlipayAppPay: const bool.fromEnvironment('ENABLE_ALIPAY_APP_PAY'),
+      enableTencentIm: const bool.fromEnvironment('ENABLE_TENCENT_IM'),
     );
   }
 
@@ -94,6 +96,7 @@ class AppEnvironment {
     required bool allowInsecureHttp,
     bool enableAgoraRtc = false,
     bool enableAlipayAppPay = false,
+    bool enableTencentIm = false,
     bool releaseBuild = kReleaseMode,
   }) {
     final DeploymentEnvironment deploymentEnvironment =
@@ -135,6 +138,7 @@ class AppEnvironment {
       allowInsecureHttp: allowInsecureHttp,
       enableAgoraRtc: enableAgoraRtc,
       enableAlipayAppPay: enableAlipayAppPay,
+      enableTencentIm: enableTencentIm,
     );
   }
 
@@ -174,6 +178,11 @@ class AppEnvironment {
   /// the native official SDK host plugin. No payment credential is read by
   /// the Flutter client.
   final bool enableAlipayAppPay;
+
+  /// Explicit opt-in for the live Tencent IM transport.  It is effective only
+  /// when [isLive] is true; mock mode always uses the in-memory fake adapter.
+  /// No SDK app id or signing material is accepted from dart-defines.
+  final bool enableTencentIm;
 
   /// Compatibility getter for older callers. The value is deliberately empty.
   @Deprecated('Mobile clients are public clients and never carry a secret.')
@@ -224,6 +233,7 @@ class AppEnvironment {
     'allowInsecureHttp': allowInsecureHttp,
     'enableAgoraRtc': enableAgoraRtc,
     'enableAlipayAppPay': enableAlipayAppPay,
+    'enableTencentIm': enableTencentIm,
   };
 
   void validateLiveConfiguration() {

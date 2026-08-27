@@ -39,6 +39,9 @@ Options:
   --enable-alipay-app-pay Explicitly opt into the first-party Android Alipay
                      App Pay bridge. It still requires a server-issued order
                      string; no Alipay credential is accepted by this wrapper.
+  --enable-tencent-im Explicitly opt into the first-party server-issued
+                      Tencent Cloud IM session. Without this switch the value
+                      is false.
   --dry-run          Validate configuration and print a redacted plan only.
   --help             Show this help.
 
@@ -52,8 +55,8 @@ with a matching app-debug.apk.sha256 sidecar before the isolated host is
 removed.
 It rejects OAuth Client Secrets, vendor secrets, user Dart-define aliases, and
 --dart-define-from-file. API_BASE_URL is an origin with an optional root `/`;
-the client metadata and ENABLE_AGORA_RTC/ENABLE_ALIPAY_APP_PAY defines are
-  fixed by this wrapper.
+the client metadata, ENABLE_AGORA_RTC, ENABLE_ALIPAY_APP_PAY, and
+ENABLE_TENCENT_IM defines are fixed by this wrapper.
 Only non-defining diagnostic flags (--verbose, --quiet, --wrap, --no-wrap,
 --color, --no-color, --suppress-analytics, --disable-analytics) may be passed
 after `--`; runtime defines, device selection, and project arguments belong to
@@ -88,6 +91,9 @@ is_runtime_define_environment_name() {
     "$normalized_name" == 'enable_alipay_app_pay' ||
     "$normalized_name" == 'agora_rtc' ||
     "$normalized_name" == 'agora_enable_rtc' ||
+    "$normalized_name" == 'enable_tencent_im' ||
+    "$normalized_name" == 'tencent_im' ||
+    "$normalized_name" == 'tencent_enable_im' ||
     "$normalized_name" == 'dart_define' ||
     "$normalized_name" == 'dart_defines' ||
     "$normalized_name" == 'dart_define_from_file' ||
@@ -127,6 +133,11 @@ reject_runtime_define_environment() {
       fi
       if [[ "$normalized_name" == 'enable_alipay_app_pay' ]]; then
         fail 'ENABLE_ALIPAY_APP_PAY is controlled only by --enable-alipay-app-pay'
+      fi
+      if [[ "$normalized_name" == 'enable_tencent_im' ||
+        "$normalized_name" == 'tencent_im' ||
+        "$normalized_name" == 'tencent_enable_im' ]]; then
+        fail 'ENABLE_TENCENT_IM is controlled only by --enable-tencent-im'
       fi
       fail 'runtime defines are owned by this wrapper and cannot come from the environment'
     fi
@@ -305,6 +316,7 @@ print_plan() {
   printf 'video_runtime_demo=false\n'
   printf 'enable_agora_rtc=%s\n' "$ENABLE_AGORA_RTC"
   printf 'enable_alipay_app_pay=%s\n' "$ENABLE_ALIPAY_APP_PAY"
+  printf 'enable_tencent_im=%s\n' "$ENABLE_TENCENT_IM"
   printf 'oauth_client_id_configured=true\n'
   if [[ "$COMMAND" == 'run' ]]; then
     printf 'flutter_action=flutter run --no-pub\n'
@@ -488,6 +500,7 @@ OAUTH_CLIENT_ID_VALUE="${OAUTH_CLIENT_ID:-}"
 DEVICE_ID=''
 ENABLE_AGORA_RTC=false
 ENABLE_ALIPAY_APP_PAY=false
+ENABLE_TENCENT_IM=false
 DRY_RUN=false
 EXTRA_ARGS=()
 
@@ -556,6 +569,13 @@ while (($# > 0)); do
     --enable-alipay-app-pay=*)
       fail '--enable-alipay-app-pay is a flag and does not accept a value'
       ;;
+    --enable-tencent-im)
+      ENABLE_TENCENT_IM=true
+      shift
+      ;;
+    --enable-tencent-im=*)
+      fail '--enable-tencent-im is a flag and does not accept a value'
+      ;;
     --dry-run)
       DRY_RUN=true
       shift
@@ -619,6 +639,7 @@ DEFINES=(
   '--dart-define=ENABLE_VIDEO_RUNTIME_DEMO=false'
   "--dart-define=ENABLE_AGORA_RTC=${ENABLE_AGORA_RTC}"
   "--dart-define=ENABLE_ALIPAY_APP_PAY=${ENABLE_ALIPAY_APP_PAY}"
+  "--dart-define=ENABLE_TENCENT_IM=${ENABLE_TENCENT_IM}"
   "--dart-define=API_BASE_URL=${API_BASE_URL_VALUE}"
   '--dart-define=ALLOW_INSECURE_HTTP=true'
   "--dart-define=OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID_VALUE}"

@@ -8,7 +8,7 @@ void main() {
   test('consent acceptance is bound to the app-owned version', () async {
     final AuthSessionManager oldManager = AuthSessionManager(
       MemoryKeyValueStore(<String, String>{
-        AuthSessionManager.consentStorageKey: 'accepted',
+        'compliance.consent.v1': 'accepted:app-owned-v1',
       }),
     );
     expect(await oldManager.hasAcceptedConsent(), isFalse);
@@ -47,6 +47,8 @@ void main() {
 
     expect(find.textContaining('App-owned v2'), findsWidgets);
     expect(find.textContaining('支付宝 App Pay SDK'), findsOneWidget);
+    expect(find.textContaining('声网 Agora'), findsOneWidget);
+    expect(find.textContaining('腾讯云即时通信 IM'), findsOneWidget);
     await tester.tap(find.byKey(const Key('consent-submit')));
     expect(accepted, isFalse);
 

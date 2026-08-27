@@ -85,6 +85,87 @@ and applies the documented AGP migration setting
 manifest merging. Remove that setting when the upstream AARs publish distinct
 namespaces.
 
+### Tencent Cloud IM session contract
+
+Phase 1 wires only the no-UI session lifecycle. It does not send or receive
+messages. In a live build the lifecycle is selected only when
+`ENABLE_TENCENT_IM=true`; the default is blocked. After consent and a
+first-party login, the client sends an authenticated request with no body or
+client-supplied uid:
+
+```text
+POST /app-mini-api/mini/v1/im/credential
+X-Request-Id: <client-generated opaque id>
+Cache-Control: no-store
+```
+
+The response must carry `Cache-Control: no-store` and the common envelope. Its
+`data` object is an exact allow-list: `provider=tencent-im`, positive integer
+`sdkAppId`, canonical `userId=u-<positive platform user id>`, bounded
+server-issued `userSig`, ISO-8601 `expiresAt`, bounded `ttlSeconds`,
+`imStatus=READY`, and the bounded public `systemAccount` used to identify
+first-party refresh-hint senders. The client never accepts an SDK app id from a
+dart-define, generates a UserSig, or writes a UserSig to storage. A provider
+identity that does not match the authenticated platform session fails closed.
+The adapter proactively refetches and renews at the five-minute expiry window,
+and also refetches after the SDK expiry or reconnect callbacks; readiness is
+fail-closed inside the renewal window or while offline. A C2C custom element is
+eligible only when its transient sender exactly matches the active credential's
+`systemAccount`, `groupId=null`, and `isSelf=false`; its payload is then reduced
+to the allow-listed `messageId` and positive signed-64-bit `eventVersion`
+metadata. No provider message content is displayed or passed to the UI.
+
+### Tencent AVChatRoom contract
+
+An HTTP room enter/reconnect response may include the following exact
+provider projection inside the full room snapshot:
+
+```json
+{
+  "roomId": "room-public-id",
+  "sessionId": "first-party-session-id",
+  "version": 2147483648,
+  "realtimeGroup": {
+    "provider": "tencent-im",
+    "type": "AVCHATROOM",
+    "groupType": "AVChatRoom",
+    "groupId": "server-authorized-group-id",
+    "status": "READY",
+    "messageMode": "METADATA_HINT",
+    "contentAuthority": "HTTP"
+  }
+}
+```
+
+`sessionId` plus the room controller's navigation generation is the active
+first-party lease fence; V8 does not expose a `leaseExpiresAt` field. The
+client joins only when all seven nested fields are present and `status=READY`.
+`status=PENDING` remains a successful HTTP room state and is retained for a
+bounded background readiness poll through the authenticated
+`GET /app-room-api/room/com/v1/queryRoomOtherInfo?roomId=<room-id>` projection;
+it never authorizes an SDK join by itself. A readiness response must match the
+same room, session, group, group type, and non-decreasing room version before
+it can replace the pending binding. If the projection is absent, malformed,
+stale, or the IM provider is unavailable, the room stays HTTP-only.
+
+After a `READY` binding, the client performs the official AVChatRoom
+`joinGroup` for the server group. At most one current group is fenced per
+account; switching or leaving clears the local fence first and starts bounded
+best-effort `quitGroup` cleanup without delaying the first-party HTTP exit. A
+group custom element is accepted only from the active public `systemAccount`,
+with `isSelf=false` and the current `groupId`; duplicate or non-increasing
+`eventVersion` values, old session fences, and wrong groups are discarded. The
+element carries no renderable content or authorization. It can only trigger
+the current room's authoritative HTTP `public-messages`/snapshot refresh,
+which is the sole source of rendered public messages.
+
+Public message send/history responses support both
+`deliveryMode=HTTP_PERSISTED_NO_REALTIME` with `realtimeStatus=VENDOR_BLOCKED`
+and `deliveryMode=HTTP_PERSISTED_METADATA_HINT` with an allow-listed dynamic
+`realtimeStatus` and signed-64-bit `eventVersion`. Both modes render only the
+HTTP-persisted content; realtime metadata never becomes UI content or an
+authorization decision.
+
 ## Legacy mic status mapping
 
 | Backend status | Meaning | Flutter state |

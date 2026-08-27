@@ -191,6 +191,9 @@ class _RecordingHttpHeaders implements HttpHeaders {
   void set(String name, Object value, {bool preserveHeaderCase = false}) {}
 
   @override
+  void forEach(void Function(String name, List<String> values) action) {}
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

@@ -117,7 +117,7 @@ The manual workflow `.github/workflows/m3-live-contract-preflight.yml` reads val
 
 ### Live development launcher
 
-For local first-party integration, use [`tool/live_development.sh`](tool/live_development.sh) instead of hand-writing `--dart-define` values. It requires only `API_BASE_URL` and an opaque public `OAUTH_CLIENT_ID` (the caller must still ensure it is public), fixes `BACKEND_MODE=live` and `APP_ENV=development`, forces both Mock-backed shell flags off (`ENABLE_QA_CONSOLE=false` and `ENABLE_VIDEO_RUNTIME_DEMO=false`), passes `ENABLE_AGORA_RTC=false` unless the explicit `--enable-agora-rtc` switch is present, enforces Flutter 3.44.7 / Dart 3.12.2, rejects user Dart-define/Gradle-project-argument/environment aliases and unknown Flutter passthrough options, and fails before Flutter when the target address or configuration is unsafe. Android live runs and builds use a temporary generated host plus the existing audio-only manifest helper, so no ignored `android/` directory is written to the checkout. A successful `build-apk` securely retains `build/live-development/app-debug.apk` and its `.sha256` sidecar before the temporary host is removed.
+For local first-party integration, use [`tool/live_development.sh`](tool/live_development.sh) instead of hand-writing `--dart-define` values. It requires only `API_BASE_URL` and an opaque public `OAUTH_CLIENT_ID` (the caller must still ensure it is public), fixes `BACKEND_MODE=live` and `APP_ENV=development`, forces both Mock-backed shell flags off (`ENABLE_QA_CONSOLE=false` and `ENABLE_VIDEO_RUNTIME_DEMO=false`), passes `ENABLE_AGORA_RTC=false` and `ENABLE_TENCENT_IM=false` unless the matching explicit `--enable-agora-rtc` or `--enable-tencent-im` switch is present, enforces Flutter 3.44.7 / Dart 3.12.2, rejects user Dart-define/Gradle-project-argument/environment aliases and unknown Flutter passthrough options, and fails before Flutter when the target address or configuration is unsafe. Android live runs and builds use a temporary generated host plus the existing audio-only manifest helper, so no ignored `android/` directory is written to the checkout. A successful `build-apk` securely retains `build/live-development/app-debug.apk` and its `.sha256` sidecar before the temporary host is removed.
 
 ```bash
 export API_BASE_URL=http://10.0.2.2:18080/
@@ -129,6 +129,10 @@ export OAUTH_CLIENT_ID=voice-social-mobile-public
 # Explicitly enable the first-party server-issued Agora audio transport.
 ./tool/live_development.sh run --target android-emulator --device emulator-5554 --enable-agora-rtc
 ./tool/live_development.sh build-apk --target android-emulator --enable-agora-rtc
+
+# Explicitly enable the first-party server-issued Tencent Cloud IM session.
+./tool/live_development.sh run --target android-emulator --device emulator-5554 --enable-tencent-im
+./tool/live_development.sh build-apk --target android-emulator --enable-tencent-im
 ```
 
 Use `http://127.0.0.1:18080/` with `--target host` only for `run` when Flutter itself runs on the Mac; `build-apk` accepts only `--target android-emulator`. `127.0.0.1` is not the Mac host from inside an Android Emulator. `run` requires an explicit `--device` matching its target (Android emulator selector or host selector), while `build-apk` rejects `--device`; ports must be 1 through 65535 and the API value may contain only an optional root `/`. It rejects OAuth client secrets, vendor secrets, `-D`/`--DartDefines`, Gradle define aliases, and `--dart-define-from-file` case-insensitively; ordinary token environment variables are stripped before Flutter runs, and Flutter receives only the launcher's minimal SDK environment rather than host profile/config/auth variables. See [live development](docs/live-development.md).

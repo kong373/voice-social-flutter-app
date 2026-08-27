@@ -3,6 +3,8 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/im/application/tencent_im_avchat_room_coordinator.dart';
+import 'package:voice_social_app/features/im/domain/tencent_im_room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_intent_digest.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_permission_policy.dart';
@@ -13,6 +15,10 @@ import 'package:voice_social_app/features/room/infrastructure/room_realtime_gate
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
 class RoomController extends ChangeNotifier {
+  static const int _maximumTencentImReadinessPollAttempts = 8;
+  static const Duration _tencentImReadinessPollInterval = Duration(
+    milliseconds: 250,
+  );
   static final Random _secureRandom = Random.secure();
   static final Expando<Object> _rtcTransportOwners = Expando<Object>(
     'roomRtcTransportOwner',
@@ -33,6 +39,7 @@ class RoomController extends ChangeNotifier {
     RoomPermissionPolicy permissionPolicy = const RoomPermissionPolicy(),
     bool allowSyntheticPublicMessages = true,
     String Function(String prefix)? requestIdGenerator,
+    TencentImAvChatRoomCoordinator? tencentImAvChatRoomCoordinator,
   }) : _currentUserId = currentUserId,
        _accessToken = accessToken,
        _repository = repository,
@@ -41,7 +48,17 @@ class RoomController extends ChangeNotifier {
        _roomOperationsRepository = roomOperationsRepository,
        _permissionPolicy = permissionPolicy,
        _allowSyntheticPublicMessages = allowSyntheticPublicMessages,
-       _requestIdGenerator = requestIdGenerator ?? _secureRequestId;
+       _requestIdGenerator = requestIdGenerator ?? _secureRequestId,
+       _tencentImAvChatRoomCoordinator = tencentImAvChatRoomCoordinator {
+    final TencentImAvChatRoomCoordinator? coordinator =
+        _tencentImAvChatRoomCoordinator;
+    if (coordinator != null) {
+      _tencentImRefreshRegistration = coordinator.registerRefreshHandler(
+        roomId: roomId,
+        onRefresh: _refreshFromTencentHint,
+      );
+    }
+  }
 
   final String roomId;
   final String title;
@@ -54,6 +71,9 @@ class RoomController extends ChangeNotifier {
   final RoomPermissionPolicy _permissionPolicy;
   final bool _allowSyntheticPublicMessages;
   final String Function(String prefix) _requestIdGenerator;
+  final TencentImAvChatRoomCoordinator? _tencentImAvChatRoomCoordinator;
+  TencentImRoomRefreshRegistration? _tencentImRefreshRegistration;
+  TencentImAvChatRoomSession? _tencentImSession;
 
   RoomSnapshot? _snapshot;
   final List<RoomMessage> _messages = <RoomMessage>[];
@@ -78,6 +98,7 @@ class RoomController extends ChangeNotifier {
   bool _joinCancelled = false;
   bool _disposed = false;
   int _sessionEpoch = 0;
+  int _tencentImReadinessPollGeneration = 0;
   Object? _transportLeaseId;
   String? _errorMessage;
   String? _pendingJoinRequestRoomId;
@@ -201,6 +222,18 @@ class RoomController extends ChangeNotifier {
     RoomSnapshot? enteredSnapshot;
     Object? transportLease;
     try {
+      // Tencent permits one AVChatRoom per user. Fence and bounded-quit any
+      // previous shared coordinator binding before this HTTP enter can be
+      // rebound to the new navigation target.
+      final TencentImAvChatRoomCoordinator? tencentCoordinator =
+          _tencentImAvChatRoomCoordinator;
+      if (tencentCoordinator != null) {
+        // `leave` fences the shared coordinator synchronously and queues a
+        // bounded provider quit. Never make first-party HTTP enter wait for a
+        // vendor operation that may be slow or unavailable; the subsequent
+        // coordinator.enter is serialized behind this cleanup.
+        unawaited(_ignoreTencentLeave(tencentCoordinator.leave()));
+      }
       final RoomSnapshot snapshot = await _repository.enterRoom(
         roomId: roomId,
         password: password,
@@ -262,6 +295,11 @@ class RoomController extends ChangeNotifier {
             ),
         ]);
       _status = RoomSessionStatus.joined;
+      await _bindTencentImRoom(snapshot, sessionEpoch: sessionEpoch);
+      if (!_isCurrent(sessionEpoch) || _joinCancelled) {
+        await _abandonEnteredRoom(snapshot, sessionEpoch: sessionEpoch);
+        return;
+      }
       await _loadPublicHistory(snapshot, sessionEpoch: sessionEpoch);
       if (micCoordinationMode == MicCoordinationMode.approval) {
         await _loadMicRequests(sessionEpoch: sessionEpoch);
@@ -300,6 +338,170 @@ class RoomController extends ChangeNotifier {
     }
     if (_isCurrent(sessionEpoch)) {
       _notify();
+    }
+  }
+
+  Future<void> _bindTencentImRoom(
+    RoomSnapshot snapshot, {
+    required int sessionEpoch,
+  }) async {
+    final int readinessPollGeneration = ++_tencentImReadinessPollGeneration;
+    final TencentImAvChatRoomCoordinator? coordinator =
+        _tencentImAvChatRoomCoordinator;
+    if (coordinator == null || !_isCurrent(sessionEpoch)) {
+      return;
+    }
+    final TencentImRoomSessionSource? source =
+        _repository is TencentImRoomSessionSource
+        ? _repository as TencentImRoomSessionSource
+        : null;
+    final TencentImAvChatRoomSession? session = source
+        ?.takeTencentImRoomSession(snapshot.roomId);
+    final TencentImAvChatRoomSession? roomBoundSession =
+        session?.roomId == snapshot.roomId ? session : null;
+    _tencentImSession = roomBoundSession;
+    if (roomBoundSession == null) {
+      // A provider-blocked/malformed projection is deliberately HTTP-only;
+      // clear only this room's current provider binding if one remains.
+      await coordinator.leaveIfCurrent(roomId: snapshot.roomId);
+      return;
+    }
+    // The coordinator fences the current room synchronously and serializes
+    // the bounded SDK join behind any prior cleanup. The authoritative HTTP
+    // room and its history must not wait for that optional provider call.
+    unawaited(_ignoreTencentEnter(coordinator.enter(roomBoundSession)));
+    if (!_isCurrent(sessionEpoch) ||
+        !identical(_tencentImSession, roomBoundSession) ||
+        roomBoundSession.isReady) {
+      return;
+    }
+    final TencentImRoomReadinessSource? readinessSource =
+        _repository is TencentImRoomReadinessSource
+        ? _repository as TencentImRoomReadinessSource
+        : null;
+    if (readinessSource == null) {
+      return;
+    }
+    // Enter already succeeded over HTTP. Polling is deliberately detached so
+    // a slow/blocked provider readiness projection cannot delay room UI.
+    unawaited(
+      _pollTencentImReadiness(
+        coordinator: coordinator,
+        readinessSource: readinessSource,
+        pendingSession: roomBoundSession,
+        sessionEpoch: sessionEpoch,
+        pollGeneration: readinessPollGeneration,
+      ),
+    );
+  }
+
+  Future<void> _pollTencentImReadiness({
+    required TencentImAvChatRoomCoordinator coordinator,
+    required TencentImRoomReadinessSource readinessSource,
+    required TencentImAvChatRoomSession pendingSession,
+    required int sessionEpoch,
+    required int pollGeneration,
+  }) async {
+    for (
+      int attempt = 0;
+      attempt < _maximumTencentImReadinessPollAttempts;
+      attempt += 1
+    ) {
+      if (attempt > 0) {
+        await Future<void>.delayed(_tencentImReadinessPollInterval);
+      }
+      if (!_isCurrent(sessionEpoch) ||
+          pollGeneration != _tencentImReadinessPollGeneration ||
+          _tencentImSession?.roomId != pendingSession.roomId ||
+          _tencentImSession?.sessionId != pendingSession.sessionId ||
+          _tencentImSession?.groupId != pendingSession.groupId) {
+        return;
+      }
+
+      TencentImAvChatRoomSession? latest;
+      try {
+        latest = await readinessSource.fetchTencentImRoomReadiness(
+          pendingSession.roomId,
+        );
+      } on Object {
+        // A readiness route outage leaves the already successful HTTP room
+        // usable. The bounded loop gives transient recovery a chance without
+        // surfacing provider details or blocking navigation.
+        continue;
+      }
+      if (latest == null) {
+        continue;
+      }
+      // A read response from another navigation/session is never rebound,
+      // even when its room is otherwise valid. The session handle is the
+      // first-party lease fence; version may advance while the member stays
+      // in the same room, but it may not move backwards.
+      if (latest.roomId != pendingSession.roomId ||
+          latest.sessionId != pendingSession.sessionId ||
+          latest.groupId != pendingSession.groupId ||
+          latest.groupType != pendingSession.groupType ||
+          latest.version < pendingSession.version) {
+        return;
+      }
+      if (!latest.isReady) {
+        continue;
+      }
+      if (!_isCurrent(sessionEpoch) ||
+          pollGeneration != _tencentImReadinessPollGeneration ||
+          _tencentImSession?.sessionId != pendingSession.sessionId) {
+        return;
+      }
+      _tencentImSession = latest;
+      await coordinator.enter(latest);
+      return;
+    }
+  }
+
+  /// Provider custom elements are metadata-only invalidation hints. The
+  /// authoritative HTTP history replaces the rendered list; no custom payload
+  /// is ever parsed into a message or permission decision here.
+  Future<void> _refreshFromTencentHint(String hintedRoomId) async {
+    final RoomSnapshot? snapshot = _snapshot;
+    final String normalizedRoomId = hintedRoomId.trim();
+    if (_disposed ||
+        _status != RoomSessionStatus.joined ||
+        snapshot == null ||
+        normalizedRoomId != roomId ||
+        snapshot.roomId != normalizedRoomId ||
+        _refreshingFromEvent) {
+      return;
+    }
+    final int sessionEpoch = _sessionEpoch;
+    _refreshingFromEvent = true;
+    try {
+      final List<RoomMessage> history = await _repository.fetchPublicMessages(
+        normalizedRoomId,
+      );
+      if (!_isJoinedEpoch(sessionEpoch) ||
+          _snapshot?.roomId != normalizedRoomId) {
+        return;
+      }
+      _historyErrorKind = null;
+      _historyErrorMessage = null;
+      _messages
+        ..clear()
+        ..addAll(history);
+      _notify();
+    } catch (error) {
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return;
+      }
+      _historyErrorKind = error is ApiException
+          ? error.kind
+          : ApiFailureKind.protocol;
+      _historyErrorMessage = error is ApiException
+          ? error.message
+          : '公屏历史暂时不可用';
+      _notify();
+    } finally {
+      if (_isCurrent(sessionEpoch)) {
+        _refreshingFromEvent = false;
+      }
     }
   }
 
@@ -1063,6 +1265,10 @@ class RoomController extends ChangeNotifier {
         return;
       }
       _snapshot = snapshot;
+      await _bindTencentImRoom(snapshot, sessionEpoch: sessionEpoch);
+      if (!_isCurrent(sessionEpoch)) {
+        return;
+      }
       if (_allowSyntheticPublicMessages && !snapshot.isSnapshotOnly) {
         _messages.add(
           const RoomMessage(
@@ -1096,6 +1302,23 @@ class RoomController extends ChangeNotifier {
     final RoomSessionStatus previousStatus = _status;
     final Object? transportLease = _transportLeaseId;
     final int sessionEpoch = _invalidateSession();
+    final TencentImAvChatRoomCoordinator? tencentCoordinator =
+        _tencentImAvChatRoomCoordinator;
+    final TencentImAvChatRoomSession? tencentSession = _tencentImSession;
+    _tencentImSession = null;
+    if (tencentCoordinator != null) {
+      // leaveIfCurrent fences the local session synchronously and starts a
+      // bounded provider quit. The first-party HTTP exit must not wait for or
+      // depend on that vendor operation.
+      unawaited(
+        _ignoreTencentLeave(
+          tencentCoordinator.leaveIfCurrent(
+            roomId: _snapshot?.roomId ?? roomId,
+            sessionId: tencentSession?.sessionId,
+          ),
+        ),
+      );
+    }
     if (_status == RoomSessionStatus.joining ||
         _status == RoomSessionStatus.idle ||
         (_status == RoomSessionStatus.failed && _snapshot == null)) {
@@ -1340,6 +1563,20 @@ class RoomController extends ChangeNotifier {
     RoomSnapshot snapshot, {
     required int sessionEpoch,
   }) async {
+    final TencentImAvChatRoomCoordinator? tencentCoordinator =
+        _tencentImAvChatRoomCoordinator;
+    final TencentImAvChatRoomSession? tencentSession = _tencentImSession;
+    _tencentImSession = null;
+    if (tencentCoordinator != null) {
+      unawaited(
+        _ignoreTencentLeave(
+          tencentCoordinator.leaveIfCurrent(
+            roomId: tencentSession?.roomId ?? snapshot.roomId,
+            sessionId: tencentSession?.sessionId,
+          ),
+        ),
+      );
+    }
     if (_canCompensateJoin(sessionEpoch)) {
       try {
         await _repository.exitRoom(snapshot.roomId);
@@ -1372,6 +1609,7 @@ class RoomController extends ChangeNotifier {
 
   int _invalidateSession() {
     _sessionEpoch += 1;
+    _tencentImReadinessPollGeneration += 1;
     _rtcAudioAuthorityGeneration += 1;
     _micQueueEpoch += 1;
     _joinCancelled = true;
@@ -1908,6 +2146,26 @@ class RoomController extends ChangeNotifier {
     return value;
   }
 
+  static Future<void> _ignoreTencentLeave(Future<void> leave) async {
+    try {
+      await leave;
+    } catch (_) {
+      // Provider cleanup is best effort. The first-party HTTP room state owns
+      // the user-visible leave/compensation result.
+    }
+  }
+
+  static Future<void> _ignoreTencentEnter(
+    Future<TencentImAvChatRoomJoinResult> enter,
+  ) async {
+    try {
+      await enter;
+    } catch (_) {
+      // Provider join is optional. The first-party HTTP room stays usable
+      // when the SDK rejects, times out, or is unavailable.
+    }
+  }
+
   static String _secureRequestId(String prefix) {
     final String entropy = List<String>.generate(
       32,
@@ -1943,6 +2201,7 @@ class RoomController extends ChangeNotifier {
       return;
     }
     _sessionEpoch += 1;
+    _tencentImReadinessPollGeneration += 1;
     _rtcAudioAuthorityGeneration += 1;
     _micQueueEpoch += 1;
     _disposed = true;
@@ -1958,6 +2217,20 @@ class RoomController extends ChangeNotifier {
     _rtcAudioRequested = false;
     _rtcConnected = false;
     _rtcPublicationActive = false;
+    final TencentImAvChatRoomCoordinator? tencentCoordinator =
+        _tencentImAvChatRoomCoordinator;
+    final TencentImAvChatRoomSession? tencentSession = _tencentImSession;
+    _tencentImSession = null;
+    _tencentImRefreshRegistration?.cancel();
+    _tencentImRefreshRegistration = null;
+    if (tencentCoordinator != null && tencentSession != null) {
+      unawaited(
+        tencentCoordinator.leaveIfCurrent(
+          roomId: tencentSession.roomId,
+          sessionId: tencentSession.sessionId,
+        ),
+      );
+    }
     final Object? transportLease = _transportLeaseId;
     final StreamSubscription<RoomRealtimeEvent>? subscription =
         _realtimeSubscription;

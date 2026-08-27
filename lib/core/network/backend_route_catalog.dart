@@ -182,6 +182,7 @@ class BackendRouteCatalog {
     this.privateChatHistory = '/app-api/user/imMessage/queryChat',
     this.chatUserStatus = '/app-api/user/imMessage/queryUserStatus',
     this.chatUserInfo = '/app-api/user/imMessage/getUserInfoInChat',
+    this.imCredential = '/app-mini-api/mini/v1/im/credential',
     this.dynamicNotifications = '/app-api/dynamic/queryUserDynamicNotify',
     this.clearDynamicNotifications = '/app-api/dynamic/emptyUserDynamicNotify',
     this.dynamicNotificationBadge = '/app-api/dynamic/queryDynamicNotifyRedHot',
@@ -376,6 +377,7 @@ class BackendRouteCatalog {
   final String privateChatHistory;
   final String chatUserStatus;
   final String chatUserInfo;
+  final String imCredential;
   final String dynamicNotifications;
   final String clearDynamicNotifications;
   final String dynamicNotificationBadge;

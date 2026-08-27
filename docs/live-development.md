@@ -3,9 +3,9 @@
 `tool/live_development.sh` is the single local entry point for first-party
 development integration. It keeps the normal debug build in mock mode while
 making a live development run explicit and fail-closed. The optional
-`--enable-agora-rtc` switch is the only way this launcher enables the live
-first-party Agora audio transport; when omitted, it passes an explicit
-`ENABLE_AGORA_RTC=false` define.
+`--enable-agora-rtc` and `--enable-tencent-im` switches are the only ways this
+launcher enables the live first-party Agora audio transport or Tencent Cloud
+IM session; when omitted, it passes explicit `false` defines for both.
 
 ## Required inputs
 
@@ -61,6 +61,10 @@ SDK fails before Flutter can build or install anything:
 The launcher also forces `ENABLE_QA_CONSOLE=false` and
 `ENABLE_VIDEO_RUNTIME_DEMO=false`; a live build cannot route into either
 Mock-backed shell even when the host environment requests one.
+Tencent Cloud IM remains blocked unless `--enable-tencent-im` is supplied. The
+switch is a strict boolean opt-in: it accepts no value, and the corresponding
+environment, Dart-define, Flutter-tool, and Gradle aliases are rejected before
+Flutter starts.
 
 Only the wrapper's options are accepted. A small allowlist of non-defining
 diagnostic flags (`--verbose`, `--quiet`, `--wrap`, `--no-wrap`, `--color`,
@@ -92,6 +96,17 @@ diagnostic flags (`--verbose`, `--quiet`, `--wrap`, `--no-wrap`, `--color`,
 ./tool/live_development.sh build-apk \
   --target android-emulator \
   --enable-agora-rtc
+
+# Opt into the server-issued Tencent Cloud IM session for this run.
+./tool/live_development.sh run \
+  --target android-emulator \
+  --device emulator-5554 \
+  --enable-tencent-im
+
+# Build a debug APK with the live Tencent Cloud IM session enabled.
+./tool/live_development.sh build-apk \
+  --target android-emulator \
+  --enable-tencent-im
 ```
 
 A successful `build-apk` retains the installable artifact and its checksum at:
@@ -151,6 +166,7 @@ APP_ENV=development
 ENABLE_QA_CONSOLE=false
 ENABLE_VIDEO_RUNTIME_DEMO=false
 ENABLE_AGORA_RTC=<true only when --enable-agora-rtc is present; otherwise false>
+ENABLE_TENCENT_IM=<true only when --enable-tencent-im is present; otherwise false>
 API_BASE_URL=<validated target URL>
 OAUTH_CLIENT_ID=<public client id>
 ALLOW_INSECURE_HTTP=true
@@ -163,12 +179,14 @@ vendor secret. `--dry-run`
 prints only the target, API origin, and whether the public client is configured;
 it never prints the client identifier itself.
 
-The `ENABLE_AGORA_RTC` environment variable and related environment aliases
-(`AGORA_RTC`, `AGORA_ENABLE_RTC`, `DART_DEFINES`, `FLUTTER_TOOL_ARGS`, and
-Gradle project-define variables) are rejected. Arbitrary `--dart-define`,
+The `ENABLE_AGORA_RTC` and `ENABLE_TENCENT_IM` environment variables and
+related environment aliases (`AGORA_RTC`, `AGORA_ENABLE_RTC`, `TENCENT_IM`,
+`TENCENT_ENABLE_IM`, `DART_DEFINES`, `FLUTTER_TOOL_ARGS`, and Gradle
+project-define variables) are rejected. Arbitrary `--dart-define`,
 `--dart-define-from-file`, Gradle define, and Android project-argument aliases
 remain rejected as well; the wrapper owns every runtime define and never
-accepts an OAuth or vendor secret.
+accepts an OAuth or vendor secret. Use the explicit `--enable-tencent-im`
+switch when Tencent Cloud IM is intentionally enabled.
 
 The launcher uses an explicit two-level environment policy. Environment
 variable and CLI argument checks are case-insensitive: names that clearly
@@ -198,8 +216,11 @@ attempt to enumerate every possible credential suffix.
 
 ## What this does not do
 
-The launcher does not call `/health`, request an SMS, authenticate a user,
-create a room, send a message, create an order, charge a wallet, or invoke an
-RTC, IM, push, payment, or storage provider. Those are separate integration
-and acceptance steps. The backend must be started independently on port
-`18080` before a live run can make a read or authentication request.
+The launcher itself does not call `/health`, request an SMS, authenticate a
+user, create a room, send a message, create an order, charge a wallet, or
+invoke an RTC, IM, push, payment, or storage provider. A launched app can
+perform the explicitly selected first-party flows; Tencent Cloud IM remains
+blocked unless `--enable-tencent-im` is supplied, and Phase 1 only establishes
+its session lifecycle (no message send/receive). The backend must be started
+independently on port `18080` before a live run can make a read or
+authentication request.
