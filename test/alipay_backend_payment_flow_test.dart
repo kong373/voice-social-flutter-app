@@ -10,6 +10,8 @@ import 'package:voice_social_app/features/commerce/catalog/data/backend_commerce
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/infrastructure/alipay_app_pay_adapter.dart';
 
+final RegExp _requestIdPolicyPattern = RegExp(r'^[A-Za-z0-9._-]{1,80}$');
+
 void main() {
   test(
     'native cancellation evidence is strict and survives only safe copies',
@@ -195,7 +197,8 @@ void main() {
       expect(requests[2].query, <String, String>{
         'orderNo': 'recharge-order-1',
       });
-      expect(requests[2].requestId, startsWith('alipay-reconcile-'));
+      expect(requests[2].requestId, startsWith('alipay-rec-'));
+      expect(_isValidBackendRequestId(requests[2].requestId), isTrue);
       expect(requests[3].method, 'GET');
       expect(requests[3].path, '/app-economy-api/pay/ali/order/status');
       expect(requests[3].query, <String, String>{
@@ -325,9 +328,11 @@ void main() {
           });
           expect(
             harness.requests[2].requestId,
-            startsWith(
-              trustedCancellation ? 'alipay-cancel-' : 'alipay-reconcile-',
-            ),
+            startsWith(trustedCancellation ? 'alipay-cancel-' : 'alipay-rec-'),
+          );
+          expect(
+            _isValidBackendRequestId(harness.requests[2].requestId),
+            isTrue,
           );
           expect(harness.requests[3].method, 'GET');
           expect(
@@ -413,7 +418,9 @@ void main() {
         'orderNo': 'recharge-order-1',
       });
       expect(cancelRequests[0].requestId, startsWith('alipay-cancel-'));
+      expect(_isValidBackendRequestId(cancelRequests[0].requestId), isTrue);
       expect(cancelRequests[1].requestId, cancelRequests[0].requestId);
+      expect(_isValidBackendRequestId(cancelRequests[1].requestId), isTrue);
       expect(
         harness.requests.any(
           (_Request request) =>
@@ -1049,8 +1056,10 @@ void main() {
       expect(requests[2].path, '/app-economy-api/pay/ali/order/reconcile');
       expect(requests[3].method, 'GET');
       expect(requests[3].path, '/app-economy-api/pay/ali/order/status');
-      expect(requests[0].requestId, startsWith('alipay-reconcile-'));
+      expect(requests[0].requestId, startsWith('alipay-rec-'));
+      expect(_isValidBackendRequestId(requests[0].requestId), isTrue);
       expect(requests[2].requestId, requests[0].requestId);
+      expect(_isValidBackendRequestId(requests[2].requestId), isTrue);
     },
   );
 
@@ -1435,6 +1444,11 @@ void main() {
     expect(products.single.id, '00000000-0000-0000-0000-000000009001');
   });
 }
+
+bool _isValidBackendRequestId(String? value) =>
+    value != null &&
+    value.length <= 80 &&
+    _requestIdPolicyPattern.hasMatch(value);
 
 class _FakeAlipayAdapter implements AlipayAppPayAdapter {
   _FakeAlipayAdapter({

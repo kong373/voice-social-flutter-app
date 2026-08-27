@@ -442,7 +442,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     final String digest = sha256
         .convert(utf8.encode('voice-social:alipay-reconcile:$orderNo'))
         .toString();
-    return 'alipay-reconcile-$digest';
+    return 'alipay-rec-$digest';
   }
 
   /// Stable for one first-party order so repeated local cancel attempts replay
