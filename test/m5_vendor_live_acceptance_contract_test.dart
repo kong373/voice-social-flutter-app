@@ -46,6 +46,11 @@ void main() {
     expect(integrationSource, contains('_pollRelayPeerUserId'));
     expect(
       integrationSource,
+      contains('request.contentLength = encodedPayload.length'),
+    );
+    expect(integrationSource, contains('request.add(encodedPayload)'));
+    expect(
+      integrationSource,
       contains('tencent_c2c_draft_conversation_from_relay_peer_user_id'),
     );
     expect(integrationSource, contains('ConversationSummary.draft('));
@@ -86,6 +91,8 @@ void main() {
     expect(runnerSource, contains('/m5/c2c/peer'));
     expect(runnerSource, contains('invalid_first_party_user_id'));
     expect(runnerSource, contains('first_party_user_id_conflict'));
+    expect(runnerSource, contains('self.headers.get_all("Content-Length")'));
+    expect(runnerSource, contains('self.headers.get_all("Transfer-Encoding")'));
     expect(runnerSource, contains('targetUserId'));
     expect(runnerSource, contains('/m5/avchatroom/ready'));
     expect(runnerSource, contains('/m5/avchatroom/message-sent'));

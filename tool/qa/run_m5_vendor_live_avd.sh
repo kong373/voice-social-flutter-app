@@ -580,7 +580,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
     def _body_json(self):
         try:
-            length = int(self.headers.get("Content-Length", "0"))
+            lengths = self.headers.get_all("Content-Length") or []
+            if len(lengths) != 1 or self.headers.get_all("Transfer-Encoding"):
+                return {}
+            length = int(lengths[0])
             if length < 0 or length > 4096:
                 return {}
             raw = self.rfile.read(length)

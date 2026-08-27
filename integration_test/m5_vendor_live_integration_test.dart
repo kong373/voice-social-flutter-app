@@ -1363,6 +1363,7 @@ Future<void> _postRelayJson(
   String path,
   Map<String, Object?> payload,
 ) async {
+  final List<int> encodedPayload = utf8.encode(jsonEncode(payload));
   final HttpClient client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 3)
     ..idleTimeout = const Duration(seconds: 3);
@@ -1373,7 +1374,8 @@ Future<void> _postRelayJson(
     request.headers
       ..set(HttpHeaders.authorizationHeader, 'Bearer ${config.relayToken}')
       ..contentType = ContentType.json;
-    request.write(jsonEncode(payload));
+    request.contentLength = encodedPayload.length;
+    request.add(encodedPayload);
     final HttpClientResponse response = await request.close().timeout(
       const Duration(seconds: 3),
     );
