@@ -13,8 +13,8 @@ The default run is zero-payment and zero-financial-side-effect:
   order;
 * no refund or other financial mutation is attempted.
 
-The native launch-cancel lane is allowed only when all of these are supplied
-outside the app process:
+The opt-in cancel lane is allowed only when all of these are supplied outside
+the app process:
 
 ```text
 QA_M5_ALLOW_EXTERNAL_PAYMENT=true
@@ -24,9 +24,28 @@ QA_M5_ENABLE_ALIPAY_APP_PAY=true
 ```
 
 The runner passes `M5_ALLOW_EXTERNAL_PAYMENT=true` only after validating this
-exact opt-in. A missing or partial opt-in fails closed. The only accepted
-scenario is operator cancellation; a native SDK return is provisional and
+exact opt-in. A missing or partial opt-in fails closed. The default scenario is
+`none`; it never creates an order. `cancel` remains a non-successful,
+non-zero PARTIAL lane. A native SDK result, including 9000, is provisional and
 the authenticated backend order status remains authoritative.
+
+The separately confirmed sandbox-success lane additionally requires the
+following independent confirmation and is the only lane that may create a
+successful payment assertion:
+
+```text
+QA_M5_ALLOW_EXTERNAL_PAYMENT=true
+QA_M5_PAYMENT_CONFIRMATION=I_UNDERSTAND_SANDBOX_PAYMENT
+QA_M5_ALIPAY_SCENARIO=success
+QA_M5_SUCCESS_CONFIRMATION=I_UNDERSTAND_SANDBOX_SUCCESS_PAYMENT
+QA_M5_ENABLE_ALIPAY_APP_PAY=true
+```
+
+Only AVD-A may create the order and invoke `AlipaySDK`; AVD-B is a receiver
+and all payment lanes must be `NOT_RUN`. The success lane records the native
+9000/result as provisional, then requires an authenticated POST reconcile plus
+GET status and a second explicit POST reconcile plus GET status for the same
+order to return `SUCCEEDED`. It does not trust the native result as settlement.
 
 ## Required operator inputs
 
@@ -46,8 +65,13 @@ QA_M5_FIXTURE_ID=m5-fresh-<dedicated-fixture>
 QA_LIVE_PHONE=<development phone>
 QA_M5_RECEIVER_PHONE=<second development phone for AVD-B C2C receiver>
 QA_OAUTH_CLIENT_ID=<public OAuth client id>
+# Optional external endpoint. Supply both or neither. If omitted, the runner
+# starts the tracked helper on loopback after APK attestation.
 QA_DB_EVIDENCE_URL=https://<operator-evidence-endpoint>
 QA_DB_EVIDENCE_TOKEN=<operator evidence bearer>
+QA_M5_MYSQL_CONTAINER=<serving MySQL container, for the built-in helper>
+# For a success run, the helper must be started with the same scenario:
+M5_ALIPAY_SCENARIO=success
 ```
 
 The runner requires Docker access to the serving backend, not only a local
@@ -108,24 +132,27 @@ The integration test records these lanes independently:
 * `alipay.catalog` — authenticated Android catalog projection;
 * `alipay.order` — server-created Alipay sandbox order (opt-in only);
 * `alipay.native.launch-cancel` — native launch, SDK cancellation callback,
-  and operator cancellation (opt-in only);
+  and operator cancellation (cancel opt-in only);
+* `alipay.native.launch-success` — native launch result marked provisional;
 * `alipay.query-reconcile` — reconcile POST followed by mandatory DB status
   GET (opt-in only).
+* `alipay.settlement` — success-only DB proof of one verified provider event,
+  one succeeded order, one wallet credit, and one balanced two-posting ledger;
+* `alipay.reconcile-idempotency` — success-only second reconcile of the same
+  order, with no second credit in the DB delta.
 
 `BLOCKED`, `NOT_OPTED_IN`, and `NOT_RUN` remain visible in evidence and none is
 converted to PASS. With payment opt-in absent, the aggregate may conclude
 `ANDROID_EMULATOR_NO_PAY` (core provider evidence complete) or
 `ANDROID_EMULATOR_PARTIAL` (live credentials/evidence incomplete); these are
 explicit safety verdicts, not product/provider PASS. Full Alipay lanes are
-required only after the exact external opt-in. The currently supported opt-in
-is cancel-only: it proves order creation, native SDK callback, and
-authoritative canceled query state, but deliberately does not claim a
-successful payment or require an asynchronous Alipay notify callback. It
-also requires a fresh DB delta with an Alipay order and no Alipay callback
-event; the aggregate reports `ANDROID_EMULATOR_PARTIAL` and exits nonzero. A
-future separately confirmed sandbox-success lane must add provider callback,
-successful-order, and wallet/ledger evidence before it may use
-`ANDROID_EMULATOR_PASS`. Only `ANDROID_EMULATOR_PASS` and
+required only after the exact external opt-in. The cancel opt-in proves order
+creation, native SDK callback, and authoritative canceled query state, but
+deliberately does not claim a successful payment; it requires no asynchronous
+Alipay notify event, reports `ANDROID_EMULATOR_PARTIAL`, and exits nonzero.
+The separately confirmed success opt-in may use
+`ANDROID_EMULATOR_PASS` only when the success lanes and DB settlement proof
+below pass. Only `ANDROID_EMULATOR_PASS` and
 `ANDROID_EMULATOR_NO_PAY` are successful aggregate exits; `PARTIAL` and
 `FAIL` exit nonzero.
 
@@ -174,7 +201,7 @@ audio-only M5 build.
     "payment_provider_events": 1,
     "wallet_transactions": 1,
     "ledger_journals": 1,
-    "ledger_entries": 1
+    "ledger_entries": 2
   },
   "vendorOutbox": {
     "tencentIm": {"state": "SENT", "attempts": 1},
@@ -184,7 +211,18 @@ audio-only M5 build.
     "tencentIm": {"verified": true, "eventCount": 1},
     "alipay": {"verified": true, "eventCount": 1}
   },
-  "providerCalls": {"tencentIm": 1, "alipay": 1},
+  "paymentSettlement": {
+    "providerEventVerified": true,
+    "providerEventProcessedCount": 1,
+    "succeededOrderCount": 1,
+    "walletTransactionCount": 1,
+    "walletCreditCount": 1,
+    "ledgerJournalCount": 1,
+    "ledgerEntryCount": 2,
+    "balancedJournalCount": 1,
+    "ledgerImbalanceCount": 0
+  },
+  "outboxAttempts": {"tencentIm": 1, "alipay": 1},
   "secrets": false,
   "backendSourceDigest": "<64 lowercase hex characters>"
 }
@@ -192,12 +230,16 @@ audio-only M5 build.
 
 The four payment safety counters are baseline deltas: provider-event rows,
 wallet transactions, ledger journals, and ledger entries. A cancel-only run
-must report all four as zero; a future successful-payment run must bind their
-nonzero values to the separately verified success callback and ledger rules.
+must report all four as zero. A success run must report exactly one verified
+provider event, one succeeded order, one wallet credit transaction, one
+balanced journal, and exactly two balanced ledger postings. The
+`paymentSettlement` object carries those row-count-only assertions and never
+contains amounts, order identifiers, provider payloads, or user identifiers.
 
 The database endpoint must return this fixed schema for the
 `X-M5-Evidence-Phase: start` and `collect` protocol. `start` snapshots the
-baseline and returns a one-shot nonce; `collect` reports only the delta for
+baseline and returns a one-shot nonce, the exact `paymentScenario`, and
+`paymentSettlementPoll=internal-bounded-90s`; `collect` reports only the delta for
 that exact `(runId, fixtureId, avd, startNonce, backendSha, flutterSha,
 apkSha, backendSourceDigest)` binding. A historical full-table provider row
 cannot satisfy this contract. The aggregate rejects stale binding, unknown

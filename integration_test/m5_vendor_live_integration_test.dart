@@ -79,7 +79,11 @@ const String _paymentConfirmation = String.fromEnvironment(
 );
 const String _paymentScenario = String.fromEnvironment(
   'M5_ALIPAY_SCENARIO',
-  defaultValue: 'cancel',
+  defaultValue: 'none',
+);
+const String _successConfirmation = String.fromEnvironment(
+  'M5_SUCCESS_CONFIRMATION',
+  defaultValue: '',
 );
 String get _c2cMessageContent =>
     'M5 ${_runId.isEmpty ? _fixtureId : _runId} HTTP authority avd-a';
@@ -121,16 +125,37 @@ void main() {
           environment.validateLiveConfiguration();
           evidence.invariant('authoritative_backend_target_10_0_2_2_18080');
           evidence.viewport(tester, config.role);
+          final bool validScenario = <String>{
+            'none',
+            'cancel',
+            'success',
+          }.contains(_paymentScenario);
+          final bool paymentRequested =
+              _allowExternalPayment && _paymentScenario != 'none';
           final bool paymentOptedIn =
-              _allowExternalPayment &&
+              paymentRequested &&
+              _enableAlipayAppPay &&
               _paymentConfirmation == 'I_UNDERSTAND_SANDBOX_PAYMENT' &&
-              _paymentScenario == 'cancel';
-          if (_allowExternalPayment &&
+              (_paymentScenario != 'success' ||
+                  _successConfirmation ==
+                      'I_UNDERSTAND_SANDBOX_SUCCESS_PAYMENT');
+          if (!validScenario) {
+            evidence.violation('payment_scenario_invalid');
+          }
+          if (_allowExternalPayment && _paymentScenario == 'none') {
+            evidence.violation('payment_scenario_required_when_enabled');
+          }
+          if (paymentRequested &&
               _paymentConfirmation != 'I_UNDERSTAND_SANDBOX_PAYMENT') {
             evidence.violation('payment_opt_in_confirmation_invalid');
           }
-          if (_allowExternalPayment && _paymentScenario != 'cancel') {
-            evidence.violation('payment_scenario_must_be_cancel');
+          if (paymentRequested && !_enableAlipayAppPay) {
+            evidence.violation('alipay_provider_build_flag_missing');
+          }
+          if (_allowExternalPayment &&
+              _paymentScenario == 'success' &&
+              _successConfirmation != 'I_UNDERSTAND_SANDBOX_SUCCESS_PAYMENT') {
+            evidence.violation('payment_success_confirmation_invalid');
           }
           evidence.paymentOptIn(paymentOptedIn, owner: config.role == 'sender');
 
@@ -994,7 +1019,10 @@ Future<void> _runAlipaySandbox(
   void markPaymentNotRun() {
     evidence.lane('alipay.order', 'NOT_RUN');
     evidence.lane('alipay.native.launch-cancel', 'NOT_RUN');
+    evidence.lane('alipay.native.launch-success', 'NOT_RUN');
     evidence.lane('alipay.query-reconcile', 'NOT_RUN');
+    evidence.lane('alipay.settlement', 'NOT_RUN');
+    evidence.lane('alipay.reconcile-idempotency', 'NOT_RUN');
   }
 
   List<RechargeProduct> products;
@@ -1043,14 +1071,20 @@ Future<void> _runAlipaySandbox(
   }
   final bool optedIn =
       _allowExternalPayment &&
+      _enableAlipayAppPay &&
       _paymentConfirmation == 'I_UNDERSTAND_SANDBOX_PAYMENT' &&
-      _paymentScenario == 'cancel';
+      (_paymentScenario == 'cancel' ||
+          (_paymentScenario == 'success' &&
+              _successConfirmation == 'I_UNDERSTAND_SANDBOX_SUCCESS_PAYMENT'));
   if (!optedIn) {
     // Catalog reads have no financial side effect. Creating an order, invoking
     // the native SDK, and reconciling are all withheld until explicit opt-in.
     evidence.lane('alipay.order', 'NOT_OPTED_IN');
     evidence.lane('alipay.native.launch-cancel', 'NOT_OPTED_IN');
+    evidence.lane('alipay.native.launch-success', 'NOT_OPTED_IN');
     evidence.lane('alipay.query-reconcile', 'NOT_RUN');
+    evidence.lane('alipay.settlement', 'NOT_RUN');
+    evidence.lane('alipay.reconcile-idempotency', 'NOT_RUN');
     return;
   }
   final RechargeProduct product = products.firstWhere(
@@ -1090,34 +1124,103 @@ Future<void> _runAlipaySandbox(
   RechargeOrder result;
   try {
     result = await dependencies.commerceCatalogRepository.invokePayment(order);
-    // Native launch-cancel is provisional, but the returned SDK result is a
-    // real provider callback. Final order state still comes only from the
-    // authoritative query below.
-    evidence.providerCallback('alipay', 'launch_cancel');
+    if (_paymentScenario == 'cancel') {
+      // The native result is only a provisional SDK outcome. The final
+      // canceled state is accepted only after the first-party query.
+      evidence.providerCallback('alipay', 'launch_cancel');
+      evidence.route(
+        capability: 'alipay.native.launch-cancel',
+        method: 'SDK',
+        route: 'AlipaySDK.pay',
+        status: 200,
+        state: 'provisional_cancel',
+      );
+      final RechargeOrder reconciled = await dependencies
+          .commerceCatalogRepository
+          .queryRechargeOrder(result);
+      evidence.route(
+        capability: 'alipay.query-reconcile',
+        method: 'POST+GET',
+        route:
+            '${routes.reconcileAlipayRechargeOrder}+${routes.alipayRechargeOrderStatus}',
+        status: 200,
+        state: 'authoritative',
+      );
+      final bool canceled = reconciled.state == RechargeOrderState.canceled;
+      evidence.lane(
+        'alipay.native.launch-cancel',
+        result.state == RechargeOrderState.canceled ? 'PASS' : 'FAIL',
+      );
+      evidence.lane('alipay.query-reconcile', canceled ? 'PASS' : 'FAIL');
+      evidence.lane('alipay.native.launch-success', 'NOT_RUN');
+      evidence.lane('alipay.settlement', 'NOT_RUN');
+      evidence.lane('alipay.reconcile-idempotency', 'NOT_RUN');
+      return;
+    }
+
+    // 9000 from the native SDK is provisional. invokePayment already performs
+    // one authenticated POST reconcile + GET status; require a second
+    // explicit reconcile with the same order before accepting SUCCEEDED.
+    evidence.providerCallback('alipay', 'launch_success');
     evidence.route(
-      capability: 'alipay.native.launch-cancel',
+      capability: 'alipay.native.launch-success',
       method: 'SDK',
       route: 'AlipaySDK.pay',
       status: 200,
-      state: 'provisional_cancel',
+      state: 'provisional_sdk_result',
     );
-    final RechargeOrder reconciled = await dependencies
-        .commerceCatalogRepository
-        .queryRechargeOrder(result);
+    final bool firstSucceeded = result.state == RechargeOrderState.succeeded;
     evidence.route(
       capability: 'alipay.query-reconcile',
       method: 'POST+GET',
       route:
           '${routes.reconcileAlipayRechargeOrder}+${routes.alipayRechargeOrderStatus}',
       status: 200,
-      state: 'authoritative',
+      state: firstSucceeded
+          ? 'authoritative_succeeded'
+          : 'authoritative_not_succeeded',
     );
-    final bool canceled = reconciled.state == RechargeOrderState.canceled;
+    if (!firstSucceeded) {
+      evidence.lane('alipay.native.launch-success', 'FAIL');
+      evidence.lane('alipay.query-reconcile', 'FAIL');
+      evidence.lane('alipay.settlement', 'BLOCKED');
+      evidence.lane('alipay.reconcile-idempotency', 'BLOCKED');
+      return;
+    }
+    final RechargeOrder repeated = await dependencies.commerceCatalogRepository
+        .queryRechargeOrder(
+          result.copyWith(state: RechargeOrderState.confirming),
+        );
+    final bool repeatedSucceeded =
+        repeated.state == RechargeOrderState.succeeded &&
+        repeated.orderNo == result.orderNo;
+    evidence.route(
+      capability: 'alipay.query-reconcile.repeat',
+      method: 'POST+GET',
+      route:
+          '${routes.reconcileAlipayRechargeOrder}+${routes.alipayRechargeOrderStatus}',
+      status: 200,
+      state: repeatedSucceeded
+          ? 'authoritative_repeated_succeeded'
+          : 'authoritative_repeat_mismatch',
+    );
+    evidence.paymentSuccessFlowVerified(repeatedSucceeded);
     evidence.lane(
-      'alipay.native.launch-cancel',
-      result.state == RechargeOrderState.canceled ? 'PASS' : 'FAIL',
+      'alipay.native.launch-success',
+      firstSucceeded ? 'PASS' : 'FAIL',
     );
-    evidence.lane('alipay.query-reconcile', canceled ? 'PASS' : 'FAIL');
+    evidence.lane(
+      'alipay.query-reconcile',
+      repeatedSucceeded ? 'PASS' : 'FAIL',
+    );
+    // These lanes are closed only after DB evidence proves the verified event,
+    // one credit and one balanced two-posting journal. The integration marker
+    // records that the HTTP authority was exercised twice.
+    evidence.lane('alipay.settlement', repeatedSucceeded ? 'PASS' : 'FAIL');
+    evidence.lane(
+      'alipay.reconcile-idempotency',
+      repeatedSucceeded ? 'PASS' : 'FAIL',
+    );
   } on ApiException catch (error) {
     evidence.route(
       capability: 'alipay.query-reconcile',
@@ -1126,8 +1229,15 @@ Future<void> _runAlipaySandbox(
       status: error.httpStatus ?? 0,
       state: _safeApiState(error),
     );
-    evidence.lane('alipay.native.launch-cancel', 'FAIL');
+    evidence.lane(
+      _paymentScenario == 'success'
+          ? 'alipay.native.launch-success'
+          : 'alipay.native.launch-cancel',
+      'FAIL',
+    );
     evidence.lane('alipay.query-reconcile', 'FAIL');
+    evidence.lane('alipay.settlement', 'BLOCKED');
+    evidence.lane('alipay.reconcile-idempotency', 'BLOCKED');
   }
 }
 
@@ -1355,6 +1465,7 @@ class _M5Evidence {
   int _alipayProviderCalls = 0;
   bool _paymentOptedIn = false;
   bool _paymentOwner = false;
+  bool _paymentSuccessFlowVerified = false;
   bool c2cHintObserved = false;
   final Set<String> _c2cHintMessageIds = <String>{};
   bool roomHintObserved = false;
@@ -1371,10 +1482,18 @@ class _M5Evidence {
     'alipay.catalog',
   };
 
-  static const Set<String> paymentLanes = <String>{
+  static const Set<String> cancelPaymentLanes = <String>{
     'alipay.order',
     'alipay.native.launch-cancel',
     'alipay.query-reconcile',
+  };
+
+  static const Set<String> successPaymentLanes = <String>{
+    'alipay.order',
+    'alipay.native.launch-success',
+    'alipay.query-reconcile',
+    'alipay.settlement',
+    'alipay.reconcile-idempotency',
   };
 
   void viewport(WidgetTester tester, String role) {
@@ -1507,6 +1626,11 @@ class _M5Evidence {
     debugPrint('M5_PAYMENT_OPT_IN::${value ? 1 : 0}');
   }
 
+  void paymentSuccessFlowVerified(bool value) {
+    _paymentSuccessFlowVerified = value;
+    debugPrint('M5_PAYMENT_SUCCESS_FLOW_VERIFIED::${value ? 1 : 0}');
+  }
+
   void lane(String name, String state) {
     final String safeName = name.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
     final String safeState = state.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
@@ -1530,9 +1654,12 @@ class _M5Evidence {
     // does not manufacture an outage, so NOT_RUN is never mixed into the
     // provider core verdict.
     _lanes.putIfAbsent('tencent.outage.fallback', () => 'NOT_RUN');
+    final Set<String> requiredPaymentLanes = _paymentScenario == 'success'
+        ? successPaymentLanes
+        : cancelPaymentLanes;
     final Set<String> requiredLanes = <String>{
       ...coreLanes,
-      if (_paymentOptedIn && _paymentOwner) ...paymentLanes,
+      if (_paymentOptedIn && _paymentOwner) ...requiredPaymentLanes,
     };
     final Set<String> missing = requiredLanes.difference(_lanes.keys.toSet());
     for (final String laneName in missing) {
@@ -1558,19 +1685,15 @@ class _M5Evidence {
     );
     final bool paymentPass =
         !_paymentOwner ||
-        paymentLanes.every((String name) => _lanes[name] == 'PASS');
+        requiredPaymentLanes.every((String name) => _lanes[name] == 'PASS');
     final bool cancelOnlyPayment =
         _paymentOptedIn && _paymentScenario == 'cancel';
+    final bool successPayment =
+        _paymentOptedIn && _paymentOwner && _paymentScenario == 'success';
     final bool fullyPass =
         _violations.isEmpty && lanesPass && corePass && paymentPass;
     final String verdict;
     if (_paymentOptedIn) {
-      // The only currently permitted external-payment exercise is a
-      // cancel-only sandbox attempt. It proves order creation, the native
-      // SDK callback, and an authoritative canceled query, but it cannot
-      // prove successful payment or wallet/ledger settlement. Keep this
-      // explicitly PARTIAL (and fail the integration process) until a
-      // separately confirmed success lane is implemented.
       verdict = cancelOnlyPayment
           ? (fullyPass ? 'PARTIAL' : 'FAIL')
           : (fullyPass ? 'PASS' : 'FAIL');
@@ -1593,9 +1716,15 @@ class _M5Evidence {
           : 'none',
       'secretsInClient': false,
       'paymentOptIn': _paymentOptedIn,
-      'paymentMode': cancelOnlyPayment ? 'cancel_only' : 'none',
+      'paymentMode': cancelOnlyPayment
+          ? 'cancel_only'
+          : (successPayment ? 'success' : 'none'),
       'paymentSuccessProven':
-          _paymentOptedIn && !cancelOnlyPayment && fullyPass,
+          successPayment && _paymentSuccessFlowVerified && fullyPass,
+      'paymentFlowVerified': successPayment && _paymentSuccessFlowVerified,
+      'reconcileRepeat': successPayment && _paymentSuccessFlowVerified
+          ? 'PASS'
+          : 'NOT_RUN',
       'paymentInvoked': _alipayProviderCalls > 0,
       'resilienceVerdict': _lanes['tencent.outage.fallback'],
       'lanes': _lanes,
@@ -1619,8 +1748,9 @@ class _M5Evidence {
     // Default zero-payment runs complete with an explicit NO_PAY/PARTIAL
     // verdict so the shell harness can report safety state without treating
     // it as a product/provider PASS. Cancel-only opt-in intentionally remains
-    // PARTIAL/nonzero; a future success lane can use PASS after full callback
-    // and ledger evidence is available.
+    // PARTIAL/nonzero. Success is PASS only after two authoritative
+    // reconciles; the aggregate additionally requires database settlement
+    // evidence.
     if (cancelOnlyPayment) {
       // The shell runner translates a complete cancel-only evidence report to
       // PARTIAL. Returning true here keeps the process-level integration

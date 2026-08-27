@@ -45,8 +45,11 @@ readonly BACKEND_REPO="$(env_value QA_BACKEND_REPO)"
 readonly BACKEND_CONTAINER="$(env_value QA_BACKEND_CONTAINER)"
 readonly RUN_ID="$(env_value QA_M5_RUN_ID)"
 readonly FIXTURE_ID="$(env_value QA_M5_FIXTURE_ID)"
-readonly DB_URL="$(env_value QA_DB_EVIDENCE_URL)"
-readonly DB_TOKEN="$(env_value QA_DB_EVIDENCE_TOKEN)"
+readonly EXTERNAL_DB_URL="$(env_value QA_DB_EVIDENCE_URL)"
+readonly EXTERNAL_DB_TOKEN="$(env_value QA_DB_EVIDENCE_TOKEN)"
+DB_URL="$EXTERNAL_DB_URL"
+DB_TOKEN="$EXTERNAL_DB_TOKEN"
+readonly MYSQL_CONTAINER_CONFIG="$(env_value QA_M5_MYSQL_CONTAINER)"
 readonly LIVE_PHONE="$(env_value QA_LIVE_PHONE)"
 readonly RECEIVER_PHONE="$(env_value QA_M5_RECEIVER_PHONE)"
 readonly OAUTH_CLIENT_ID="$(env_value QA_OAUTH_CLIENT_ID)"
@@ -59,6 +62,7 @@ readonly ENABLE_ALIPAY="$(env_value QA_M5_ENABLE_ALIPAY_APP_PAY)"
 readonly PAYMENT_ALLOW_REQUEST="$(env_value QA_M5_ALLOW_EXTERNAL_PAYMENT)"
 readonly PAYMENT_CONFIRMATION="$(env_value QA_M5_PAYMENT_CONFIRMATION)"
 readonly PAYMENT_SCENARIO="$(env_value QA_M5_ALIPAY_SCENARIO)"
+readonly PAYMENT_SUCCESS_CONFIRMATION="$(env_value QA_M5_SUCCESS_CONFIRMATION)"
 
 readonly SUMMARY_FILE="$ARTIFACT_ROOT/summary.txt"
 readonly MANIFEST_FILE="$ARTIFACT_ROOT/evidence-manifest.sha256"
@@ -68,6 +72,9 @@ RELAY_PORT=''
 RELAY_TOKEN_A=''
 RELAY_TOKEN_B=''
 RUNTIME_TOKEN_FEEDER_PID=''
+DB_HELPER_PID=''
+DB_HELPER_STATE_DIR=''
+DB_HELPER_LOG=''
 FLUTTER_BIN=''
 FLUTTER_FRAMEWORK_VERSION=''
 FLUTTER_DART_VERSION=''
@@ -262,11 +269,14 @@ PY
 }
 
 attest_debug_apk() {
-  local alipay_define='false' payment_define='false' confirmation_define='' apk_source=''
+  local alipay_define='false' payment_define='false' confirmation_define='' success_confirmation_define='' apk_source=''
   is_true "$ENABLE_ALIPAY" && alipay_define='true'
   if [[ "$PAYMENT_OPT_IN" == 'true' ]]; then
     payment_define='true'
     confirmation_define='--dart-define=M5_PAYMENT_CONFIRMATION=I_UNDERSTAND_SANDBOX_PAYMENT'
+    if [[ "${PAYMENT_SCENARIO:-none}" == 'success' ]]; then
+      success_confirmation_define='--dart-define=M5_SUCCESS_CONFIRMATION=I_UNDERSTAND_SANDBOX_SUCCESS_PAYMENT'
+    fi
   fi
   # Build the exact integration-test APK once. The same immutable binary is copied to
   # both AVDs; role and viewport are runtime relay values so the database
@@ -285,8 +295,8 @@ attest_debug_apk() {
     --dart-define=M5_EXPECTED_BACKEND_DIGEST="$BACKEND_SOURCE_DIGEST_ACTUAL" \
     --dart-define=QA_M5_RUN_ID="$RUN_ID" \
     --dart-define=M5_ALLOW_EXTERNAL_PAYMENT="$payment_define" \
-    --dart-define=M5_ALIPAY_SCENARIO=cancel \
-    $confirmation_define >/dev/null 2>&1 ||
+    --dart-define=M5_ALIPAY_SCENARIO="${PAYMENT_SCENARIO:-none}" \
+    $confirmation_define $success_confirmation_define >/dev/null 2>&1 ||
     fail 'attested APK build failed'
   apk_source="$PROJECT_ROOT/build/app/outputs/flutter-apk/app-debug.apk"
   [[ -f "$apk_source" ]] || fail 'attested APK is missing at the expected output path'
@@ -738,12 +748,77 @@ configure_viewport() {
   printf 'wm_size=%s\nwm_density=%s\nrotation=%s\nfont_scale=%s\n' "$size" "$density_value" "$rotation" "$font"
 }
 
+start_db_evidence_helper() {
+  # An externally supplied endpoint is an explicit operator choice. Require
+  # its bearer token as a pair; never mix one external half with the local
+  # helper's endpoint or token.
+  if [[ -n "$EXTERNAL_DB_URL" || -n "$EXTERNAL_DB_TOKEN" ]]; then
+    [[ -n "$EXTERNAL_DB_URL" && -n "$EXTERNAL_DB_TOKEN" ]] ||
+      fail 'QA_DB_EVIDENCE_URL and QA_DB_EVIDENCE_TOKEN must be supplied together'
+    DB_URL="$EXTERNAL_DB_URL"
+    DB_TOKEN="$EXTERNAL_DB_TOKEN"
+    return 0
+  fi
+
+  local mysql_container docker_socket helper_token listening_port
+  mysql_container="$MYSQL_CONTAINER_CONFIG"
+  [[ "$mysql_container" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ ]] ||
+    fail 'QA_M5_MYSQL_CONTAINER is required for the local evidence helper'
+  DB_HELPER_STATE_DIR="$ARTIFACT_ROOT/.m5-db-evidence-state"
+  mkdir -m 700 -- "$DB_HELPER_STATE_DIR" || fail 'local evidence state directory could not be created'
+  helper_token="$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(48), end="")
+PY
+)"
+  [[ "$helper_token" =~ ^[A-Za-z0-9._~-]{32,512}$ ]] ||
+    fail 'local evidence helper token generation failed'
+  DB_TOKEN="$helper_token"
+  DB_HELPER_LOG="$ARTIFACT_ROOT/.m5-db-evidence.log"
+  docker_socket="${DOCKER_HOST:-}"
+  if [[ "$docker_socket" != unix://* && "$docker_socket" != /* ]]; then
+    docker_socket=''
+  fi
+  if [[ -n "$docker_socket" ]]; then
+    M5_DOCKER_SOCKET="$docker_socket" \
+      M5_RUN_ID="$RUN_ID" M5_BACKEND_REPO="$BACKEND_REPO" \
+      M5_BACKEND_SHA="$BACKEND_SHA_ACTUAL" M5_FLUTTER_REPO="$PROJECT_ROOT" \
+      M5_FLUTTER_SHA="$FLUTTER_SHA_ACTUAL" M5_APK_PATH="$ATTESTED_APK_PATH" \
+      M5_APK_SHA="$APK_SHA_EXPECTED" M5_MYSQL_CONTAINER="$mysql_container" \
+      M5_BACKEND_DIGEST="$BACKEND_SOURCE_DIGEST_ACTUAL" M5_ALIPAY_SCENARIO="${PAYMENT_SCENARIO:-none}" \
+      M5_DB_EVIDENCE_TOKEN="$DB_TOKEN" M5_DB_EVIDENCE_STATE_DIR="$DB_HELPER_STATE_DIR" \
+      python3 -u "$PROJECT_ROOT/tool/qa/m5_vendor_db_evidence.py" --serve \
+      >"$DB_HELPER_LOG" 2>/dev/null &
+  else
+    env -u M5_DOCKER_SOCKET -u QA_DOCKER_SOCKET \
+      M5_RUN_ID="$RUN_ID" M5_BACKEND_REPO="$BACKEND_REPO" \
+      M5_BACKEND_SHA="$BACKEND_SHA_ACTUAL" M5_FLUTTER_REPO="$PROJECT_ROOT" \
+      M5_FLUTTER_SHA="$FLUTTER_SHA_ACTUAL" M5_APK_PATH="$ATTESTED_APK_PATH" \
+      M5_APK_SHA="$APK_SHA_EXPECTED" M5_MYSQL_CONTAINER="$mysql_container" \
+      M5_BACKEND_DIGEST="$BACKEND_SOURCE_DIGEST_ACTUAL" M5_ALIPAY_SCENARIO="${PAYMENT_SCENARIO:-none}" \
+      M5_DB_EVIDENCE_TOKEN="$DB_TOKEN" M5_DB_EVIDENCE_STATE_DIR="$DB_HELPER_STATE_DIR" \
+      python3 -u "$PROJECT_ROOT/tool/qa/m5_vendor_db_evidence.py" --serve \
+      >"$DB_HELPER_LOG" 2>/dev/null &
+  fi
+  DB_HELPER_PID=$!
+  listening_port=''
+  for _ in {1..100}; do
+    listening_port="$(sed -n 's/^M5_DB_EVIDENCE_LISTENING=127\.0\.0\.1:\([0-9][0-9]*\)\/m5\/db-evidence$/\1/p' "$DB_HELPER_LOG" 2>/dev/null | head -n 1)"
+    [[ -n "$listening_port" ]] && break
+    kill -0 "$DB_HELPER_PID" 2>/dev/null || break
+    sleep 0.1
+  done
+  [[ "$listening_port" =~ ^[1-9][0-9]*$ ]] || fail 'local evidence helper did not start'
+  DB_URL="http://127.0.0.1:${listening_port}/m5/db-evidence"
+}
+
 db_evidence_start() {
   local dir="$1" avd="$2" nonce=''
   set +e
   nonce="$(M5_DB_TOKEN="$DB_TOKEN" M5_DB_URL="$DB_URL" M5_RUN_ID="$RUN_ID" M5_AVD="$avd" M5_FIXTURE_ID="$FIXTURE_ID" \
     M5_BACKEND_SHA="$BACKEND_SHA_ACTUAL" M5_FLUTTER_SHA="$FLUTTER_SHA_ACTUAL" \
     M5_APK_SHA="$APK_SHA_EXPECTED" M5_BACKEND_DIGEST="$BACKEND_SOURCE_DIGEST_ACTUAL" \
+    M5_PAYMENT_SCENARIO="${PAYMENT_SCENARIO:-none}" \
     python3 -u - <<'PY'
 import json
 import os
@@ -757,6 +832,7 @@ request = urllib.request.Request(os.environ["M5_DB_URL"], headers={
     "X-M5-Flutter-SHA": os.environ["M5_FLUTTER_SHA"],
     "X-M5-APK-SHA": os.environ["M5_APK_SHA"],
     "X-M5-Backend-Digest": os.environ["M5_BACKEND_DIGEST"],
+    "X-M5-Payment-Scenario": os.environ["M5_PAYMENT_SCENARIO"],
 })
 try:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -770,6 +846,8 @@ try:
         payload.get("flutterSha") != os.environ["M5_FLUTTER_SHA"] or
         payload.get("apkSha") != os.environ["M5_APK_SHA"] or
         payload.get("backendSourceDigest") != os.environ["M5_BACKEND_DIGEST"] or
+        payload.get("paymentScenario") != os.environ["M5_PAYMENT_SCENARIO"] or
+        payload.get("paymentSettlementPoll") != "internal-bounded-90s" or
         not isinstance(payload.get("startNonce"), str)):
         raise RuntimeError("invalid_binding")
     print(payload["startNonce"])
@@ -798,6 +876,7 @@ db_evidence_collect() {
     M5_FIXTURE_ID="$FIXTURE_ID" M5_START_NONCE="$nonce" M5_BACKEND_SHA="$BACKEND_SHA_ACTUAL" \
     M5_FLUTTER_SHA="$FLUTTER_SHA_ACTUAL" M5_APK_SHA="$apk_sha" \
     M5_BACKEND_DIGEST="$BACKEND_SOURCE_DIGEST_ACTUAL" \
+    M5_PAYMENT_SCENARIO="${PAYMENT_SCENARIO:-none}" \
     python3 -u - "$raw" <<'PY'
 import json
 import os
@@ -813,13 +892,14 @@ request = urllib.request.Request(os.environ["M5_DB_URL"], headers={
     "X-M5-Flutter-SHA": os.environ["M5_FLUTTER_SHA"],
     "X-M5-APK-SHA": os.environ["M5_APK_SHA"],
     "X-M5-Backend-Digest": os.environ["M5_BACKEND_DIGEST"],
+    "X-M5-Payment-Scenario": os.environ["M5_PAYMENT_SCENARIO"],
 })
 try:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     with opener.open(request, timeout=30) as response:
         if response.status < 200 or response.status >= 300: raise RuntimeError("non_success")
         payload = json.loads(response.read())
-    required = {"status", "evidenceBinding", "writeCounters", "vendorOutbox", "callbackEvents", "providerCalls", "secrets", "backendSourceDigest"}
+    required = {"status", "evidenceBinding", "writeCounters", "vendorOutbox", "callbackEvents", "outboxAttempts", "paymentSettlement", "secrets", "backendSourceDigest"}
     if not isinstance(payload, dict) or set(payload) != required or payload.get("status") != "OK" or payload.get("secrets") is not False:
         raise RuntimeError("schema_or_status")
     binding = payload.get("evidenceBinding")
@@ -841,10 +921,16 @@ try:
         not isinstance(callback, dict) or set(callback) != {"verified", "eventCount"} or
             type(callback["verified"]) is not bool or type(callback["eventCount"]) is not int or callback["eventCount"] < 0):
             raise RuntimeError("vendor_evidence")
-    calls = payload.get("providerCalls")
-    if (not isinstance(calls, dict) or set(calls) != {"tencentIm", "alipay"} or any(type(value) is not int or value < 0 for value in calls.values())):
-        raise RuntimeError("provider_calls")
+    attempts = payload.get("outboxAttempts")
+    if (not isinstance(attempts, dict) or set(attempts) != {"tencentIm", "alipay"} or any(type(value) is not int or value < 0 for value in attempts.values())):
+        raise RuntimeError("outbox_attempts")
     if payload.get("backendSourceDigest") != os.environ["M5_BACKEND_DIGEST"]: raise RuntimeError("backend_digest")
+    settlement = payload.get("paymentSettlement")
+    settlement_keys = {"providerEventVerified", "providerEventProcessedCount", "succeededOrderCount", "walletTransactionCount", "walletCreditCount", "ledgerJournalCount", "ledgerEntryCount", "balancedJournalCount", "ledgerImbalanceCount"}
+    if (not isinstance(settlement, dict) or set(settlement) != settlement_keys or
+        type(settlement["providerEventVerified"]) is not bool or
+        any(type(settlement[key]) is not int or settlement[key] < 0 for key in settlement_keys - {"providerEventVerified"})):
+        raise RuntimeError("payment_settlement")
     with open(out, "w", encoding="utf-8") as stream: json.dump(payload, stream, sort_keys=True, separators=(",", ":"))
 except Exception:
     raise SystemExit(1)
@@ -860,16 +946,16 @@ PY
 
 write_db_fallback() {
   local dir="$1"
-  printf 'schema=m5-vendor-live-evidence-v1\nstatus=UNAVAILABLE\nprovider_calls_observed=unknown\nsecrets=false\n' >"$dir/db-write-counters.txt"
+  printf 'schema=m5-vendor-live-evidence-v1\nstatus=UNAVAILABLE\nsdk_callbacks_observed=unknown\nsecrets=false\n' >"$dir/db-write-counters.txt"
 }
 
 write_db_projections() {
   local dir="$1"
-  python3 - "$dir/db-evidence.json" "$dir/db-write-counters.txt" "$dir/outbox-evidence.txt" "$dir/callback-evidence.txt" <<'PY'
+  python3 - "$dir/db-evidence.json" "$dir/db-write-counters.txt" "$dir/outbox-evidence.txt" "$dir/callback-evidence.txt" "$dir/payment-settlement.txt" <<'PY'
 import json
 import sys
 
-source, counters_path, outbox_path, callback_path = sys.argv[1:]
+source, counters_path, outbox_path, callback_path, settlement_path = sys.argv[1:]
 with open(source, encoding="utf-8") as stream:
     payload = json.load(stream)
 binding = payload["evidenceBinding"]
@@ -899,16 +985,24 @@ with open(callback_path, "w", encoding="utf-8") as stream:
     for key in ("tencentIm", "alipay"):
         item = payload["callbackEvents"][key]
         stream.write(f"{key}.verified={str(item['verified']).lower()}\n{key}.eventCount={item['eventCount']}\n")
+settlement = payload["paymentSettlement"]
+with open(settlement_path, "w", encoding="utf-8") as stream:
+    for key in sorted(settlement):
+        value = settlement[key]
+        stream.write(f"{key}={str(value).lower() if isinstance(value, bool) else value}\n")
 PY
 }
 
 run_flutter_test() {
   local serial="$1" avd="$2" width="$3" height="$4" dpr="$5" dir="$6"
   local raw="$dir/logs/flutter-drive.raw.log" safe="$dir/logs/flutter-drive.log"
-  local alipay_define='false' payment_define='false' confirmation_define=''
+  local alipay_define='false' payment_define='false' confirmation_define='' success_confirmation_define=''
   is_true "$ENABLE_ALIPAY" && alipay_define='true'
   [[ "$PAYMENT_OPT_IN" == 'true' ]] && payment_define='true'
   [[ "$PAYMENT_OPT_IN" == 'true' ]] && confirmation_define='--dart-define=M5_PAYMENT_CONFIRMATION=I_UNDERSTAND_SANDBOX_PAYMENT'
+  if [[ "$PAYMENT_OPT_IN" == 'true' && "${PAYMENT_SCENARIO:-none}" == 'success' ]]; then
+    success_confirmation_define='--dart-define=M5_SUCCESS_CONFIRMATION=I_UNDERSTAND_SANDBOX_SUCCESS_PAYMENT'
+  fi
   set +e
   env -u QA_LIVE_PHONE -u QA_M5_RECEIVER_PHONE -u QA_OAUTH_CLIENT_ID -u QA_DB_EVIDENCE_TOKEN \
     -u DEVELOPMENT_OUTBOX_KEY -u QA_DEVELOPMENT_OUTBOX_KEY "$FLUTTER_BIN" drive \
@@ -922,8 +1016,8 @@ run_flutter_test() {
     --dart-define=M5_EXPECTED_BACKEND_SHA="$BACKEND_SHA_ACTUAL" --dart-define=M5_EXPECTED_BACKEND_DIGEST="$BACKEND_SOURCE_DIGEST_ACTUAL" \
     --dart-define=QA_M5_RUN_ID="$RUN_ID" \
     --dart-define=M5_ALLOW_EXTERNAL_PAYMENT="$payment_define" \
-    --dart-define=M5_ALIPAY_SCENARIO=cancel \
-    $confirmation_define >"$raw" 2>&1
+    --dart-define=M5_ALIPAY_SCENARIO="${PAYMENT_SCENARIO:-none}" \
+    $confirmation_define $success_confirmation_define >"$raw" 2>&1
   local status=$?
   set -e
   sanitize_stream <"$raw" >"$safe" || true
@@ -952,6 +1046,11 @@ write_route_evidence() {
 write_result() {
   local dir="$1" avd="$2" result="$3" reason="$4" db_status="$5" apk_sha="$6"
   local screenshot_count="$7" route_count="$8" event_count="$9" tencent_calls="${10}" alipay_calls="${11}" nonce="${12:-}" resilience="${13:-NOT_RUN}"
+  local payment_success_proven='false' reconcile_repeat='NOT_RUN'
+  if grep -Eq '^M5_PAYMENT_SUCCESS_FLOW_VERIFIED::1$' "$dir/logs/flutter-drive.log" 2>/dev/null; then
+    payment_success_proven='true'
+    reconcile_repeat='PASS'
+  fi
   {
     printf 'result=%s\nacceptance_status=%s\nreason=%s\n' "$result" "$result" "$reason"
     printf 'run_id=%s\nfixture_id=%s\navd=%s\n' "$RUN_ID" "$FIXTURE_ID" "$avd"
@@ -972,7 +1071,8 @@ write_result() {
       "$( [[ -s "$dir/callback-evidence.txt" ]] && printf COLLECTED || printf UNAVAILABLE )"
     printf 'screenshot_count=%s\nhttp_route_marker_count=%s\nvendor_event_count=%s\n' \
       "$screenshot_count" "$route_count" "$event_count"
-    printf 'resilience_verdict=%s\n' "$resilience"
+    printf 'resilience_verdict=%s\npayment_scenario=%s\npayment_success_proven=%s\nreconcile_repeat=%s\n' \
+      "$resilience" "${PAYMENT_SCENARIO:-none}" "$payment_success_proven" "$reconcile_repeat"
     printf 'hard_finding_count=0\ncrash_anr_count=%s\n' \
       "$( [[ -s "$dir/logs/crash-anr.txt" ]] && printf 1 || printf 0 )"
     printf 'secret_scan=%s\napk_secret_scan=%s\npayment_opt_in=%s\npayment_invoked=%s\n' \
@@ -998,7 +1098,8 @@ run_one() {
     printf 'run_id=%s\nfixture_id=%s\nbackend_mode=live\nbackend_base_url=%s\n' "$RUN_ID" "$FIXTURE_ID" "$BACKEND_BASE_URL"
     printf 'flutter_sha=%s\nbackend_sha=%s\nbackend_source_digest=%s\nandroid_host_source_sha256=%s\n' \
       "$FLUTTER_SHA_ACTUAL" "$BACKEND_SHA_ACTUAL" "$BACKEND_SOURCE_DIGEST_ACTUAL" "$ANDROID_HOST_SOURCE_SHA256"
-    printf 'expected_viewport=%sx%s\nexpected_dpr=%s\npayment_opt_in=%s\n' "$width" "$height" "$dpr" "$PAYMENT_OPT_IN"
+    printf 'expected_viewport=%sx%s\nexpected_dpr=%s\npayment_opt_in=%s\npayment_scenario=%s\n' \
+      "$width" "$height" "$dpr" "$PAYMENT_OPT_IN" "${PAYMENT_SCENARIO:-none}"
   } >"$dir/environment.txt"
   [[ -f "$dir/apk/app-debug.apk" ]] || {
     write_db_fallback "$dir"
@@ -1172,6 +1273,22 @@ cleanup() {
     done <"$STARTED_SERIALS_FILE"
     rm -f -- "$STARTED_SERIALS_FILE"
   fi
+  if [[ -n "$DB_HELPER_PID" ]]; then
+    kill "$DB_HELPER_PID" 2>/dev/null || true
+    wait "$DB_HELPER_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$DB_HELPER_STATE_DIR" &&
+    "$DB_HELPER_STATE_DIR" == "$ARTIFACT_ROOT/.m5-db-evidence-state" &&
+    ! -L "$DB_HELPER_STATE_DIR" ]]; then
+    rm -rf -- "$DB_HELPER_STATE_DIR"
+    DB_HELPER_STATE_DIR=''
+  fi
+  if [[ -n "$DB_HELPER_LOG" &&
+    "$DB_HELPER_LOG" == "$ARTIFACT_ROOT/.m5-db-evidence.log" &&
+    ! -L "$DB_HELPER_LOG" ]]; then
+    rm -f -- "$DB_HELPER_LOG"
+    DB_HELPER_LOG=''
+  fi
   for raw in "${DB_EVIDENCE_RAW_FILES[@]}"; do
     [[ "$raw" == "$ARTIFACT_ROOT"/AVD-[AB]/.m5-db-evidence.* ]] && rm -f -- "$raw"
   done
@@ -1192,14 +1309,19 @@ if is_true "$DRY_RUN"; then
   exit 0
 fi
 
-for required_value in FLUTTER_SHA_EXPECTED BACKEND_SHA_EXPECTED BACKEND_REPO BACKEND_CONTAINER RUN_ID FIXTURE_ID DB_URL DB_TOKEN LIVE_PHONE RECEIVER_PHONE OAUTH_CLIENT_ID; do
+for required_value in FLUTTER_SHA_EXPECTED BACKEND_SHA_EXPECTED BACKEND_REPO BACKEND_CONTAINER RUN_ID FIXTURE_ID LIVE_PHONE RECEIVER_PHONE OAUTH_CLIENT_ID; do
   [[ -n "${!required_value}" ]] || fail "required M5 input is missing: $required_value"
 done
 [[ "$FLUTTER_SHA_EXPECTED" =~ ^[0-9a-f]{40}$ ]] || fail 'QA_FLUTTER_SHA must be a lowercase 40-character SHA'
 [[ "$BACKEND_SHA_EXPECTED" =~ ^[0-9a-f]{40}$ ]] || fail 'QA_BACKEND_SHA must be a lowercase 40-character SHA'
 [[ "$RUN_ID" =~ ^[A-Za-z0-9_.:-]{1,80}$ ]] || fail 'QA_M5_RUN_ID contains unsafe characters'
 [[ "$FIXTURE_ID" =~ ^m5-fresh-[A-Za-z0-9_.:-]{1,64}$ ]] || fail 'QA_M5_FIXTURE_ID must identify a fresh fixture'
-[[ "$DB_URL" =~ ^https?:// && "$DB_URL" != *'?'* && "$DB_URL" != *'@'* ]] || fail 'QA_DB_EVIDENCE_URL is invalid'
+if [[ -n "$EXTERNAL_DB_URL" || -n "$EXTERNAL_DB_TOKEN" ]]; then
+  [[ -n "$EXTERNAL_DB_URL" && -n "$EXTERNAL_DB_TOKEN" ]] ||
+    fail 'QA_DB_EVIDENCE_URL and QA_DB_EVIDENCE_TOKEN must be supplied together'
+  [[ "$EXTERNAL_DB_URL" =~ ^https?:// && "$EXTERNAL_DB_URL" != *'?'* && "$EXTERNAL_DB_URL" != *'@'* ]] ||
+    fail 'QA_DB_EVIDENCE_URL is invalid'
+fi
 [[ "$LIVE_PHONE" =~ ^1[3-9][0-9]{9}$ ]] || fail 'QA_LIVE_PHONE is invalid'
 [[ "$RECEIVER_PHONE" =~ ^1[3-9][0-9]{9}$ ]] || fail 'QA_M5_RECEIVER_PHONE is invalid'
 [[ "$RECEIVER_PHONE" != "$LIVE_PHONE" ]] || fail 'QA_M5_RECEIVER_PHONE must be a distinct second account'
@@ -1207,10 +1329,21 @@ done
 [[ -z "$(env_value DEVELOPMENT_OUTBOX_KEY)" && -z "$(env_value QA_DEVELOPMENT_OUTBOX_KEY)" ]] || fail 'development outbox secrets are forbidden'
 [[ -z "$(env_value CONTRACT_SERVER_PORT)" && -z "$(env_value QA_CONTRACT_SERVER_PORT)" ]] || fail 'contract server variables are forbidden'
 if is_true "$PAYMENT_ALLOW_REQUEST"; then
+  case "${PAYMENT_SCENARIO:-none}" in
+    cancel|success) ;;
+    none) fail 'payment scenario is required when external payment is enabled' ;;
+    *) fail 'payment scenario must be none, cancel, or success' ;;
+  esac
   [[ "$PAYMENT_CONFIRMATION" == 'I_UNDERSTAND_SANDBOX_PAYMENT' ]] || fail 'external payment opt-in confirmation is required'
-  [[ "${PAYMENT_SCENARIO:-cancel}" == 'cancel' ]] || fail 'only cancel payment scenario is allowed'
+  if [[ "${PAYMENT_SCENARIO:-none}" == 'success' ]]; then
+    [[ "$PAYMENT_SUCCESS_CONFIRMATION" == 'I_UNDERSTAND_SANDBOX_SUCCESS_PAYMENT' ]] ||
+      fail 'success payment confirmation is required'
+  fi
   is_true "$ENABLE_ALIPAY" || fail 'Alipay provider build flag is required for payment opt-in'
   PAYMENT_OPT_IN='true'
+elif [[ -n "$PAYMENT_SCENARIO" && "$PAYMENT_SCENARIO" != 'none' &&
+  "$PAYMENT_SCENARIO" != 'cancel' && "$PAYMENT_SCENARIO" != 'success' ]]; then
+  fail 'payment scenario must be none, cancel, or success'
 fi
 for command_name in adb flutter docker git python3 awk grep find mktemp shasum sort tr; do command -v "$command_name" >/dev/null 2>&1 || fail "missing command: $command_name"; done
 [[ -f "$PROJECT_ROOT/pubspec.yaml" ]] || fail 'not a Flutter checkout'
@@ -1230,6 +1363,7 @@ attest_android_host
 start_relay
 attest_debug_apk
 install_attested_apk
+start_db_evidence_helper
 set +e
 run_one AVD-A "$A_API" "$A_PROFILE" "$A_PHYSICAL" "$A_DENSITY" "$A_WIDTH" "$A_HEIGHT" "$A_DPR" "$AVD_A_SERIAL" &
 pid_a=$!

@@ -125,7 +125,12 @@ class _FakeSessionCollector(M5EvidenceSessionCollector):
         return _state_snapshot(self._snapshots.pop(0))
 
 
-def _session_config(state_dir: str, *, run_id: str = "m5-run") -> EvidenceConfig:
+def _session_config(
+    state_dir: str,
+    *,
+    run_id: str = "m5-run",
+    payment_scenario: str = "none",
+) -> EvidenceConfig:
     return EvidenceConfig(
         mysql_container="mysql",
         docker_bin="docker",
@@ -140,6 +145,7 @@ def _session_config(state_dir: str, *, run_id: str = "m5-run") -> EvidenceConfig
         evidence_token="T" * 16 + "u" * 8 + "v" * 8,
         state_dir=state_dir,
         backend_source_digest="d" * 64,
+        payment_scenario=payment_scenario,
     )
 
 
@@ -313,6 +319,10 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
             )
             started = collector.start("m5-run", "AVD-A", fixture)
             self.assertEqual(started["status"], "STARTED")
+            self.assertEqual(started["paymentScenario"], "none")
+            self.assertEqual(
+                started["paymentSettlementPoll"], "internal-bounded-90s"
+            )
             nonce = started["startNonce"]
             self.assertIsInstance(nonce, str)
             result = collector.collect("m5-run", "AVD-A", fixture, nonce)
@@ -325,7 +335,8 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
                     "writeCounters",
                     "vendorOutbox",
                     "callbackEvents",
-                    "providerCalls",
+                    "outboxAttempts",
+                    "paymentSettlement",
                     "secrets",
                     "backendSourceDigest",
                 },
@@ -344,6 +355,20 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
                 },
             )
             self.assertEqual(result["writeCounters"]["auth_sessions"], 2)
+            self.assertEqual(
+                result["paymentSettlement"],
+                {
+                    "providerEventVerified": False,
+                    "providerEventProcessedCount": 0,
+                    "succeededOrderCount": 0,
+                    "walletTransactionCount": 0,
+                    "walletCreditCount": 0,
+                    "ledgerJournalCount": 0,
+                    "ledgerEntryCount": 0,
+                    "balancedJournalCount": 0,
+                    "ledgerImbalanceCount": 0,
+                },
+            )
             self.assertEqual(
                 result["writeCounters"],
                 {
@@ -389,8 +414,62 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
             self.assertEqual(result["writeCounters"]["wallet_transactions"], 1)
             self.assertEqual(result["writeCounters"]["ledger_journals"], 1)
             self.assertEqual(result["writeCounters"]["ledger_entries"], 1)
+            self.assertEqual(result["paymentSettlement"]["walletCreditCount"], 0)
+            self.assertEqual(result["paymentSettlement"]["ledgerEntryCount"], 1)
             self.assertNotIn("amount_minor", repr(result))
             self.assertNotIn("publicIds", repr(result))
+
+    def test_success_settlement_evidence_requires_verified_event_and_balanced_double_entry(self) -> None:
+        fixture = "m5-fresh-success"
+        current = _current_run_markers()
+        for table, delta in (
+            ("wallet_transaction", 1),
+            ("ledger_journal", 1),
+            ("ledger_posting", 2),
+        ):
+            current = current.replace(
+                f"T|{table}|1|1", f"T|{table}|{1 + delta}|1"
+            )
+        for table, column, status in (
+            ("payment_provider_event", "status", "PROCESSED"),
+            ("payment_provider_event", "observed_status", "TRADE_SUCCESS"),
+            ("recharge_order", "status", "SUCCEEDED"),
+            ("recharge_order", "provider_status", "TRADE_SUCCESS"),
+            ("wallet_transaction", "transaction_type", "CREDIT"),
+        ):
+            current = current.replace(
+                f"S|{table}|{column}|{status}|0",
+                f"S|{table}|{column}|{status}|1",
+            )
+        with tempfile.TemporaryDirectory() as state_dir:
+            collector = _FakeSessionCollector(
+                _session_config(
+                    state_dir, run_id="m5-success", payment_scenario="success"
+                ),
+                [_markers(), current],
+            )
+            started = collector.start("m5-success", "AVD-A", fixture)
+            result = collector.collect(
+                "m5-success", "AVD-A", fixture, started["startNonce"]
+            )
+            self.assertEqual(
+                result["paymentSettlement"],
+                {
+                    "providerEventVerified": True,
+                    "providerEventProcessedCount": 1,
+                    "succeededOrderCount": 1,
+                    "walletTransactionCount": 1,
+                    "walletCreditCount": 1,
+                    "ledgerJournalCount": 1,
+                    "ledgerEntryCount": 2,
+                    "balancedJournalCount": 1,
+                    "ledgerImbalanceCount": 0,
+                },
+            )
+            self.assertEqual(
+                result["callbackEvents"]["alipay"],
+                {"verified": True, "eventCount": 1},
+            )
 
     def test_start_rejects_replay_and_collect_rejects_stale_or_bad_nonce(self) -> None:
         fixture = "m5-fresh-replay"
@@ -462,6 +541,7 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
                 token: str = config.evidence_token,
                 avd: str = "AVD-A",
                 backend_sha: str = BACKEND_SHA,
+                payment_scenario: str = config.payment_scenario,
             ):
                 headers = {
                     "Authorization": f"Bearer {token}",
@@ -473,6 +553,7 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
                     "X-M5-Flutter-SHA": FLUTTER_SHA,
                     "X-M5-APK-SHA": APK_SHA,
                     "X-M5-Backend-Digest": config.backend_source_digest,
+                    "X-M5-Payment-Scenario": payment_scenario,
                 }
                 if nonce:
                     headers["X-M5-Start-Nonce"] = nonce
@@ -481,8 +562,19 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
                 return opener.open(request, timeout=3)
 
             try:
+                with self.assertRaises(urllib.error.HTTPError) as scenario_mismatch:
+                    try:
+                        call("start", payment_scenario="success")
+                    except urllib.error.HTTPError as error:
+                        error.close()
+                        raise
+                self.assertEqual(scenario_mismatch.exception.code, 400)
                 with call("start") as response:
                     started = json.loads(response.read())
+                self.assertEqual(started["paymentScenario"], "none")
+                self.assertEqual(
+                    started["paymentSettlementPoll"], "internal-bounded-90s"
+                )
                 with call("collect", nonce=started["startNonce"]) as response:
                     collected = json.loads(response.read())
                 self.assertEqual(collected["status"], "OK")

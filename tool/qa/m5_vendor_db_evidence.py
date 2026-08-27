@@ -95,6 +95,8 @@ AVD_RE = re.compile(r"^AVD-[AB]$")
 FIXTURE_ID_RE = re.compile(r"^m5-fresh-[A-Za-z0-9_.:-]{1,64}$")
 START_NONCE_RE = re.compile(r"^[A-Za-z0-9_.~=-]{16,255}$")
 UNIX_EPOCH_RE = re.compile(r"^[0-9]{1,12}$")
+PAYMENT_SCENARIOS = frozenset({"none", "cancel", "success"})
+PAYMENT_SETTLEMENT_POLL_MODE = "internal-bounded-90s"
 M5_RESPONSE_KEYS = frozenset(
     {
         "status",
@@ -102,7 +104,8 @@ M5_RESPONSE_KEYS = frozenset(
         "writeCounters",
         "vendorOutbox",
         "callbackEvents",
-        "providerCalls",
+        "outboxAttempts",
+        "paymentSettlement",
         "secrets",
         "backendSourceDigest",
     }
@@ -522,11 +525,21 @@ STRUCTURAL_KEYS = frozenset(
         "badIdempotencyFingerprintCount",
         "vendorOutbox",
         "callbackEvents",
-        "providerCalls",
+        "outboxAttempts",
         "state",
         "attempts",
         "verified",
         "eventCount",
+        "paymentSettlement",
+        "providerEventVerified",
+        "providerEventProcessedCount",
+        "succeededOrderCount",
+        "walletTransactionCount",
+        "walletCreditCount",
+        "ledgerJournalCount",
+        "ledgerEntryCount",
+        "balancedJournalCount",
+        "ledgerImbalanceCount",
     }
 )
 CHECK_NAMES = (
@@ -634,6 +647,7 @@ def _valid_attestation_headers(
     headers: Mapping[str, object],
     binding: EvidenceBinding,
     backend_source_digest: str,
+    payment_scenario: str,
 ) -> bool:
     """Require request metadata to agree with the attested server config."""
 
@@ -642,6 +656,7 @@ def _valid_attestation_headers(
         "X-M5-Flutter-SHA": binding.flutter_sha,
         "X-M5-APK-SHA": binding.apk_sha,
         "X-M5-Backend-Digest": backend_source_digest,
+        "X-M5-Payment-Scenario": payment_scenario,
     }
     for name, value in expected.items():
         values = headers.get_all(name) if hasattr(headers, "get_all") else None
@@ -789,6 +804,7 @@ class EvidenceConfig:
     state_dir: str | None = None
     backend_source_digest: str = ""
     fixture_id: str | None = None
+    payment_scenario: str = "none"
 
 
 def read_config(environment: Mapping[str, str] | None = None) -> EvidenceConfig:
@@ -843,6 +859,9 @@ def read_config(environment: Mapping[str, str] | None = None) -> EvidenceConfig:
         configured_fixture_id
     ):
         raise ConfigurationError("invalid fixture id")
+    payment_scenario = _first_value(env, ("M5_ALIPAY_SCENARIO", "QA_M5_ALIPAY_SCENARIO")) or "none"
+    if payment_scenario not in PAYMENT_SCENARIOS:
+        raise ConfigurationError("invalid payment scenario")
     apk_path = _first_value(env, ("M5_APK_PATH", "QA_APK_PATH")) or None
     if not binding.apk_sha and apk_path:
         binding = dataclasses.replace(binding, apk_sha=_sha256_file(apk_path))
@@ -895,6 +914,7 @@ def read_config(environment: Mapping[str, str] | None = None) -> EvidenceConfig:
         state_dir=state_dir,
         backend_source_digest=backend_source_digest.lower(),
         fixture_id=configured_fixture_id,
+        payment_scenario=payment_scenario,
     )
 
 
@@ -2400,6 +2420,42 @@ def _check_delta(
     return max(0, int(current.checks[name]) - int(baseline.checks[name]))
 
 
+def _payment_settlement_ready(
+    current: _ScopedSnapshot,
+    baseline: _ScopedSnapshot,
+) -> bool:
+    """Return true once the minimum success settlement rows are visible."""
+
+    return (
+        _status_delta(
+            current, baseline, "payment_provider_event", "status", "PROCESSED"
+        )
+        >= 1
+        and _status_delta(
+            current,
+            baseline,
+            "payment_provider_event",
+            "observed_status",
+            "TRADE_SUCCESS",
+        )
+        >= 1
+        and _status_delta(
+            current, baseline, "recharge_order", "status", "SUCCEEDED"
+        )
+        >= 1
+        and _status_delta(
+            current,
+            baseline,
+            "wallet_transaction",
+            "transaction_type",
+            "CREDIT",
+        )
+        >= 1
+        and _snapshot_count_delta(current, baseline, "ledger_journal") >= 1
+        and _snapshot_count_delta(current, baseline, "ledger_posting") >= 2
+    )
+
+
 def _vendor_state(
     values: Mapping[str, int],
 ) -> str:
@@ -2469,10 +2525,32 @@ def _m5_payload_valid(payload: Mapping[str, object]) -> None:
             raise EvidenceError("SECRET_POLICY")
         if type(callback["verified"]) is not bool or type(callback["eventCount"]) is not int or callback["eventCount"] < 0:
             raise EvidenceError("SECRET_POLICY")
-    calls = payload.get("providerCalls")
-    if not isinstance(calls, Mapping) or set(calls) != {"tencentIm", "alipay"}:
+    attempts = payload.get("outboxAttempts")
+    if not isinstance(attempts, Mapping) or set(attempts) != {"tencentIm", "alipay"}:
         raise EvidenceError("SECRET_POLICY")
-    if any(type(value) is not int or value < 0 for value in calls.values()):
+    if any(type(value) is not int or value < 0 for value in attempts.values()):
+        raise EvidenceError("SECRET_POLICY")
+    settlement = payload.get("paymentSettlement")
+    settlement_keys = {
+        "providerEventVerified",
+        "providerEventProcessedCount",
+        "succeededOrderCount",
+        "walletTransactionCount",
+        "walletCreditCount",
+        "ledgerJournalCount",
+        "ledgerEntryCount",
+        "balancedJournalCount",
+        "ledgerImbalanceCount",
+    }
+    if (
+        not isinstance(settlement, Mapping)
+        or set(settlement) != settlement_keys
+        or type(settlement["providerEventVerified"]) is not bool
+        or any(
+            type(settlement[key]) is not int or settlement[key] < 0
+            for key in settlement_keys - {"providerEventVerified"}
+        )
+    ):
         raise EvidenceError("SECRET_POLICY")
     digest = payload.get("backendSourceDigest")
     if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
@@ -2548,6 +2626,8 @@ class M5EvidenceSessionCollector:
                 "avd": avd,
                 "fixtureId": fixture_id,
                 "startNonce": nonce,
+                "paymentScenario": self._config.payment_scenario,
+                "paymentSettlementPoll": PAYMENT_SETTLEMENT_POLL_MODE,
                 "backendSha": self._config.binding.backend_sha.lower(),
                 "flutterSha": self._config.binding.flutter_sha.lower(),
                 "apkSha": self._config.binding.apk_sha.lower(),
@@ -2592,6 +2672,19 @@ class M5EvidenceSessionCollector:
             )
             if not table_presence:
                 raise EvidenceError("SCHEMA_MISSING")
+            if self._config.payment_scenario == "success" and avd == "AVD-A":
+                # Alipay notify/worker settlement may be slightly later than
+                # the native 9000 result. Keep the one-shot nonce open while
+                # polling the same fixture-scoped aggregate snapshot for a
+                # bounded 90 seconds; the final response still enforces exact
+                # counts and all invariant checks below.
+                deadline = time.monotonic() + 90.0
+                while not _payment_settlement_ready(current, start.snapshot):
+                    if time.monotonic() >= deadline:
+                        break
+                    time.sleep(1.0)
+                    current = self._snapshot(fixture_id, start.since_epoch)
+                    _validate_snapshot(current)
 
             private_delta = _snapshot_count_delta(current, start.snapshot, "private_message")
             app_user_delta = _snapshot_count_delta(current, start.snapshot, "app_user")
@@ -2626,6 +2719,37 @@ class M5EvidenceSessionCollector:
             # of the storage naming; this is still a row-count-only delta.
             ledger_entry_delta = _snapshot_count_delta(
                 current, start.snapshot, "ledger_posting"
+            )
+            payment_event_processed_delta = _status_delta(
+                current,
+                start.snapshot,
+                "payment_provider_event",
+                "status",
+                "PROCESSED",
+            )
+            payment_event_trade_success_delta = _status_delta(
+                current,
+                start.snapshot,
+                "payment_provider_event",
+                "observed_status",
+                "TRADE_SUCCESS",
+            )
+            recharge_succeeded_delta = _status_delta(
+                current,
+                start.snapshot,
+                "recharge_order",
+                "status",
+                "SUCCEEDED",
+            )
+            wallet_credit_delta = _status_delta(
+                current,
+                start.snapshot,
+                "wallet_transaction",
+                "transaction_type",
+                "CREDIT",
+            )
+            ledger_imbalance_delta = _check_delta(
+                current, start.snapshot, "ledger_journal_imbalance"
             )
 
             tencent_status: dict[str, int] = {}
@@ -2695,13 +2819,36 @@ class M5EvidenceSessionCollector:
                         "eventCount": callback_delta,
                     },
                     "alipay": {
-                        "verified": payment_event_delta > 0
+                        "verified": payment_event_processed_delta > 0
+                        and payment_event_trade_success_delta > 0
                         and _check_delta(current, start.snapshot, "payment_event_bad_fingerprint") == 0,
                         "eventCount": payment_event_delta,
                     },
                 },
-                "providerCalls": {
-                    "tencentIm": tencent_attempts + callback_delta,
+                # This is deliberately row-count-only accounting evidence.
+                # The success gate combines it with the integration lane's
+                # repeated reconcile marker; no order numbers, amounts,
+                # provider payloads or user identifiers leave the collector.
+                "paymentSettlement": {
+                    "providerEventVerified": payment_event_processed_delta > 0
+                    and payment_event_trade_success_delta > 0
+                    and _check_delta(current, start.snapshot, "payment_event_bad_fingerprint") == 0,
+                    "providerEventProcessedCount": payment_event_processed_delta,
+                    "succeededOrderCount": recharge_succeeded_delta,
+                    "walletTransactionCount": wallet_transaction_delta,
+                    "walletCreditCount": wallet_credit_delta,
+                    "ledgerJournalCount": ledger_journal_delta,
+                    "ledgerEntryCount": ledger_entry_delta,
+                    "balancedJournalCount": max(
+                        0, ledger_journal_delta - ledger_imbalance_delta
+                    ),
+                    "ledgerImbalanceCount": ledger_imbalance_delta,
+                },
+                # These are outbox/order attempts, not SDK calls. Actual SDK
+                # callback counts are attested separately by the Flutter
+                # integration markers and are never inferred from DB rows.
+                "outboxAttempts": {
+                    "tencentIm": tencent_attempts,
                     "alipay": alipay_attempts,
                 },
                 "secrets": False,
@@ -2775,6 +2922,7 @@ class M5EvidenceHandler(http.server.BaseHTTPRequestHandler):
             self.headers,
             server.binding,
             server.backend_source_digest,
+            server.payment_scenario,
         ):
             self._json(400, {"status": "BAD_REQUEST"})
             return
@@ -2874,8 +3022,13 @@ class M5EvidenceServer(http.server.ThreadingHTTPServer):
         validate_binding(configured_binding)
         if not SHA256_RE.fullmatch(digest):
             raise EvidenceError("CONFIGURATION")
+        configured = getattr(collector, "_config", None)
+        payment_scenario = str(getattr(configured, "payment_scenario", ""))
+        if payment_scenario not in PAYMENT_SCENARIOS:
+            raise EvidenceError("CONFIGURATION")
         self.binding = configured_binding
         self.backend_source_digest = digest.lower()
+        self.payment_scenario = payment_scenario
 
 
 def serve_evidence(config: EvidenceConfig) -> int:

@@ -109,7 +109,8 @@ synthetic success bit; SMS challenge rows are not counted because their
 phone-hash-only schema cannot be fixture-attributed without exposing or
 recomputing private input.
 
-The live `writeCounters` contract also contains the payment/accounting deltas:
+The live `writeCounters` contract also contains the payment/accounting deltas,
+and the response contains a fixed `paymentSettlement` object:
 
 - `payment_provider_events`: fixture-owned `payment_provider_event` rows whose
   `received_at` is after `start` (provider event fields remain redacted).
@@ -121,12 +122,22 @@ The live `writeCounters` contract also contains the payment/accounting deltas:
   created after `start`. The public counter uses “entries” while the V4/V11
   storage table is named `ledger_posting`.
 
+`paymentSettlement` is row-count-only and has exactly these fields:
+`providerEventVerified`, `providerEventProcessedCount`,
+`succeededOrderCount`, `walletTransactionCount`, `walletCreditCount`,
+`ledgerJournalCount`, `ledgerEntryCount`, `balancedJournalCount`, and
+`ledgerImbalanceCount`. A confirmed Alipay success must show one verified and
+processed provider event, one succeeded order, one wallet credit transaction,
+one journal, two postings, one balanced journal, and zero imbalances. The
+Flutter lane separately records a second authenticated reconcile of the same
+order; the one-credit DB delta proves that retry did not credit twice.
+
 These are non-negative, current-session deltas, not all-time totals. The
-cancel-only acceptance gate can therefore require `alipay_orders >= 1` while
-requiring `payment_provider_events == 0`, `wallet_transactions == 0`,
-`ledger_journals == 0`, and `ledger_entries == 0`. A future sandbox-success
-scenario can require positive payment/accounting counters and reconcile them
-without exposing amount, provider, or ledger values.
+cancel-only acceptance gate can therefore require exactly one
+`alipay_orders` while requiring `payment_provider_events == 0`,
+`wallet_transactions == 0`, `ledger_journals == 0`, and `ledger_entries == 0`.
+The success gate requires the exact settlement counts above without exposing
+amount, provider, or ledger values.
 
 `VENDOR_BLOCKED`, `PENDING`, `PROCESSING`, `RETRY`, `UNKNOWN`, `DELIVERED`,
 and `FAILED` remain visible as controlled status counts. A non-zero invariant
@@ -152,6 +163,7 @@ export M5_MYSQL_CONTAINER="authoritative-mysql"
 export M5_DOCKER_SOCKET="unix:///secure/path/to/docker.sock"
 export M5_DB_EVIDENCE_TOKEN="provided-by-the-protected-runner"
 export M5_DB_EVIDENCE_STATE_DIR="/secure/private/m5-evidence-state"
+export M5_ALIPAY_SCENARIO="success" # use the run's exact none/cancel/success value
 mkdir -m 700 -p "$M5_DB_EVIDENCE_STATE_DIR"
 export M5_BACKEND_DIGEST="$(bash "$M5_BACKEND_REPO/scripts/compute-backend-source-digest.sh")"
 
@@ -165,16 +177,24 @@ these headers:
 
 | Phase | Required headers |
 | --- | --- |
-| `start` | `X-M5-Evidence-Phase`, `X-M5-Run-ID`, `X-M5-AVD`, `X-M5-Fixture-ID`, source/APK digest headers |
+| `start` | `X-M5-Evidence-Phase`, `X-M5-Run-ID`, `X-M5-AVD`, `X-M5-Fixture-ID`, `X-M5-Payment-Scenario`, source/APK digest headers |
 | `collect` | all `start` headers plus `X-M5-Start-Nonce` |
 
-`start` returns `201` and a nonce. `collect` returns `200` with exactly these
+`start` returns `201`, a nonce, the matching `paymentScenario`, and
+`paymentSettlementPoll=internal-bounded-90s`. `collect` returns `200` with exactly these
 top-level keys: `status`, `evidenceBinding`, `writeCounters`, `vendorOutbox`,
-`callbackEvents`, `providerCalls`, `secrets`, and `backendSourceDigest`.
+`callbackEvents`, `outboxAttempts`, `paymentSettlement`, `secrets`, and
+`backendSourceDigest`. `outboxAttempts` is explicitly an outbox/order-attempt
+count; it is never an SDK-call or provider-callback count. Actual SDK callback
+counts come only from the Flutter integration markers.
 `evidenceBinding` contains the run/AVD/fixture/nonce and all source digests.
 Wrong bearer, wrong AVD/fixture/run, stale state, replayed nonce, and any
 baseline counter rollback fail closed with a controlled `UNAVAILABLE` category.
 The same nonce cannot be collected twice.
+For `success` on AVD-A, `collect` owns a bounded 90-second poll for the
+verified provider event and settlement rows before consuming the one-shot nonce.
+An external helper must be started with the exact run scenario and advertise
+this poll capability; the runner does not use an unverified fixed delay.
 
 The session's SQL predicates bind rows through the fixture nickname derived
 from `fixtureId` and a `created_at`/`received_at` boundary captured at
