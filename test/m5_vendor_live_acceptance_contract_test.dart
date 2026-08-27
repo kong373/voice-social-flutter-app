@@ -199,6 +199,14 @@ void main() {
     expect(runnerSource, contains('must be supplied together'));
     expect(runnerSource, contains('M5_DB_EVIDENCE_LISTENING'));
     expect(
+      runnerSource,
+      isNot(contains("grep -Ec '^M5_ROUTE_STATUS::'.*|| printf 0")),
+    );
+    expect(
+      runnerSource,
+      contains(r'[[ "$route_count" =~ ^[0-9]+$ ]] || route_count=0'),
+    );
+    expect(
       RegExp('PYTHONDONTWRITEBYTECODE=1').allMatches(runnerSource).length,
       greaterThanOrEqualTo(4),
     );

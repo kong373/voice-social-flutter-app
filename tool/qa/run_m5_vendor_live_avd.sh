@@ -1261,8 +1261,10 @@ run_one() {
   fi
   local screenshot_count route_count event_count
   screenshot_count="$(find "$dir/screenshots" -type f -name '*.png' | wc -l | tr -d '[:space:]')"
-  route_count="$(grep -Ec '^M5_ROUTE_STATUS::' "$dir/http-route-coverage.csv" 2>/dev/null || printf 0)"
-  event_count="$(grep -Ec '^M5_VENDOR_EVENT::' "$dir/vendor-events.txt" 2>/dev/null || printf 0)"
+  route_count="$(grep -Ec '^M5_ROUTE_STATUS::' "$dir/http-route-coverage.csv" 2>/dev/null || true)"
+  event_count="$(grep -Ec '^M5_VENDOR_EVENT::' "$dir/vendor-events.txt" 2>/dev/null || true)"
+  [[ "$route_count" =~ ^[0-9]+$ ]] || route_count=0
+  [[ "$event_count" =~ ^[0-9]+$ ]] || event_count=0
   local acceptance_marker
   acceptance_marker="$(grep -E '^M5_ACCEPTANCE::(PASS|NO_PAY|PARTIAL|FAIL)$' "$dir/evidence-verdict.txt" 2>/dev/null | tail -n 1 | sed 's/^M5_ACCEPTANCE:://' || true)"
   local result_before_acceptance="$result"
