@@ -385,6 +385,7 @@ class TencentImSessionAdapter
         groupId == null &&
         isSelf == false &&
         senderUserId != null &&
+        credentials.systemAccount != credentials.userId &&
         senderUserId == credentials.systemAccount;
   }
 
@@ -428,6 +429,7 @@ class TencentImSessionAdapter
         normalizedGroupId == activeGroupId &&
         isSelf == false &&
         senderUserId != null &&
+        credentials.systemAccount != credentials.userId &&
         senderUserId == credentials.systemAccount;
   }
 
@@ -1016,6 +1018,7 @@ class TencentImSessionAdapter
         credentials.sdkAppId <= 0 ||
         !ImSessionCredentials.isCanonicalUserId(credentials.userId) ||
         !ImSessionCredentials.isValidSystemAccount(credentials.systemAccount) ||
+        credentials.systemAccount == credentials.userId ||
         !ImSessionCredentials.isValidUserSig(credentials.userSig) ||
         !ImSessionCredentials.isValidTtlSeconds(credentials.ttlSeconds) ||
         !ImSessionCredentials.isExpiryConsistent(

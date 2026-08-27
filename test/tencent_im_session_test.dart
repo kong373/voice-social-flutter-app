@@ -83,6 +83,9 @@ void main() {
         '',
         'administrator with whitespace',
         'admin\n',
+        'u-123',
+        'u-0',
+        'system-',
         List<String>.filled(33, 'x').join(),
       ]) {
         expect(
@@ -94,6 +97,15 @@ void main() {
           reason: 'invalid system sender must fail closed: $account',
         );
       }
+    });
+
+    test('accepts explicit system senders but never a user namespace', () {
+      expect(ImSessionCredentials.isValidSystemAccount('system-im'), isTrue);
+      expect(
+        ImSessionCredentials.isValidSystemAccount('administrator'),
+        isTrue,
+      );
+      expect(ImSessionCredentials.isValidSystemAccount('u-123'), isFalse);
     });
 
     test('enforces bounded UserSig, ttl and internally consistent expiry', () {
@@ -233,6 +245,37 @@ void main() {
         expect(sdk.uninitCalls, 1);
       },
     );
+
+    test('rejects a system sender that equals the authenticated user', () {
+      final _RecordingSdk sdk = _RecordingSdk();
+      final TencentImSessionAdapter adapter = TencentImSessionAdapter(
+        sdkClient: sdk,
+        now: () => now,
+        operationTimeout: const Duration(seconds: 1),
+      );
+      addTearDown(adapter.dispose);
+      final ImSessionCredentials invalid = ImSessionCredentials(
+        provider: ImSessionCredentials.expectedProvider,
+        sdkAppId: 1400000000,
+        userId: 'u-123',
+        userSig: credentialSig,
+        expiresAt: now.add(const Duration(hours: 1)),
+        ttlSeconds: 3600,
+        imStatus: ImSessionCredentials.readyStatus,
+        systemAccount: 'u-123',
+      );
+
+      expect(
+        () => adapter.login(invalid),
+        throwsA(
+          isA<ImSessionException>().having(
+            (ImSessionException error) => error.failure,
+            'failure',
+            ImSessionFailure.invalidCredentials,
+          ),
+        ),
+      );
+    });
 
     test(
       'rejects a mismatched identity before invoking the provider',

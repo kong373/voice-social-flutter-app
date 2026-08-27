@@ -24,6 +24,12 @@ class ImSessionCredentials {
   /// It is not signing material and must stay within Tencent's 32-byte
   /// identifier boundary.
   static final RegExp systemAccountPattern = RegExp(r'^[A-Za-z0-9_-]{1,32}$');
+
+  /// Explicit system identities use a bounded, non-empty suffix after the
+  /// reserved prefix. Legacy non-user identifiers remain compatible.
+  static final RegExp explicitSystemAccountPattern = RegExp(
+    r'^system-[A-Za-z0-9][A-Za-z0-9_-]{0,24}$',
+  );
   static const int minimumTtlSeconds = 60;
   static const int maximumTtlSeconds = 7 * 24 * 60 * 60;
   static const Duration expiryClockTolerance = Duration(minutes: 5);
@@ -103,7 +109,8 @@ class ImSessionCredentials {
       throw const ImCredentialException(ImCredentialFailure.invalidStatus);
     }
     if (systemAccountValue is! String ||
-        !isValidSystemAccount(systemAccountValue)) {
+        !isValidSystemAccount(systemAccountValue) ||
+        systemAccountValue == userIdValue) {
       throw const ImCredentialException(ImCredentialFailure.invalidValue);
     }
     if (ttlSecondsValue is! int || !isValidTtlSeconds(ttlSecondsValue)) {
@@ -170,8 +177,13 @@ class ImSessionCredentials {
   static bool isCanonicalUserId(String value) =>
       canonicalUserIdPattern.hasMatch(value);
 
-  static bool isValidSystemAccount(String value) =>
-      systemAccountPattern.hasMatch(value);
+  static bool isValidSystemAccount(String value) {
+    if (!systemAccountPattern.hasMatch(value) || value.startsWith('u-')) {
+      return false;
+    }
+    return !value.startsWith('system-') ||
+        explicitSystemAccountPattern.hasMatch(value);
+  }
 
   static bool isValidTtlSeconds(int value) =>
       value >= minimumTtlSeconds && value <= maximumTtlSeconds;
