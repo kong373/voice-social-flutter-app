@@ -310,22 +310,26 @@ class TencentImAvChatRoomCoordinator {
     if (!session.hasActiveLease(_now())) {
       return;
     }
+    final int generation = _generation;
+    if (!_isCurrentSession(session, generation)) {
+      return;
+    }
     final ImRefreshHintVersionFence fence = ImRefreshHintVersionFence(
       event.hint.messageId,
       event.hint.eventVersion,
       _acceptedVersionsByMessage,
       _lastAcceptedEventVersion,
     );
-    if (!fence.accept()) {
+    if (!fence.shouldAccept()) {
       return;
     }
-    _lastAcceptedEventVersion = fence.nextLastVersion;
-    final int generation = _generation;
-    // A custom group element carries no message body, room decision, or
-    // authorization. It can only cause a current-room authoritative refresh.
     if (!_isCurrentSession(session, generation)) {
       return;
     }
+    fence.apply();
+    _lastAcceptedEventVersion = fence.nextLastVersion;
+    // A custom group element carries no message body, room decision, or
+    // authorization. It can only cause a current-room authoritative refresh.
     final Future<void> Function(String roomId) refresh =
         _refreshHandlers[session.roomId]?.callback ?? _refreshRoom;
     try {
@@ -475,7 +479,7 @@ class ImRefreshHintVersionFence {
 
   int? nextLastVersion;
 
-  bool accept() {
+  bool shouldAccept() {
     final int? previousForMessage = seenByMessage[messageId];
     if (previousForMessage != null && version <= previousForMessage) {
       return false;
@@ -483,9 +487,12 @@ class ImRefreshHintVersionFence {
     if (previousGlobalVersion != null && version <= previousGlobalVersion!) {
       return false;
     }
+    return true;
+  }
+
+  void apply() {
     seenByMessage[messageId] = version;
     nextLastVersion = version;
-    return true;
   }
 }
 

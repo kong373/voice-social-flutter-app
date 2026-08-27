@@ -267,6 +267,45 @@ void main() {
       );
     });
 
+    test(
+      'keeps stale room-switch hint proposals inert until the current binding commits them',
+      () {
+        final Map<String, int> acceptedVersionsByMessage = <String, int>{};
+        int? lastAcceptedEventVersion;
+
+        final ImRefreshHintVersionFence staleFence = ImRefreshHintVersionFence(
+          'stale-room-message',
+          9,
+          acceptedVersionsByMessage,
+          lastAcceptedEventVersion,
+        );
+        expect(staleFence.shouldAccept(), isTrue);
+        expect(acceptedVersionsByMessage, isEmpty);
+        expect(staleFence.nextLastVersion, isNull);
+
+        // A room switch clears the old binding's dedupe state before the stale
+        // event is allowed to commit anything into the next room's fence.
+        acceptedVersionsByMessage.clear();
+        lastAcceptedEventVersion = null;
+
+        final ImRefreshHintVersionFence currentFence =
+            ImRefreshHintVersionFence(
+              'current-room-message',
+              1,
+              acceptedVersionsByMessage,
+              lastAcceptedEventVersion,
+            );
+        expect(currentFence.shouldAccept(), isTrue);
+        currentFence.apply();
+        lastAcceptedEventVersion = currentFence.nextLastVersion;
+
+        expect(acceptedVersionsByMessage, <String, int>{
+          'current-room-message': 1,
+        });
+        expect(lastAcceptedEventVersion, 1);
+      },
+    );
+
     test('retries the current READY group after a late IM login', () async {
       final _GroupSdk sdk = _GroupSdk();
       final TencentImSessionAdapter adapter = TencentImSessionAdapter(
