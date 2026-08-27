@@ -196,6 +196,12 @@ void main() {
     }
     expect(runnerSource, contains('result_before_acceptance'));
     expect(runnerSource, contains('start_db_evidence_helper'));
+    expect(
+      runnerSource,
+      contains(r'nonce="$(db_evidence_start "$dir" "$avd")"'),
+    );
+    expect(runnerSource, isNot(contains('DB_START_NONCE_A')));
+    expect(runnerSource, isNot(contains('DB_START_NONCE_B')));
     expect(runnerSource, contains('must be supplied together'));
     expect(runnerSource, contains('M5_DB_EVIDENCE_LISTENING'));
     expect(

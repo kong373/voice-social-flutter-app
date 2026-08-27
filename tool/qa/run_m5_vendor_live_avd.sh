@@ -89,8 +89,6 @@ OVERALL_RESULT='PASS'
 LAST_RESULT_REASON='not_started'
 PAYMENT_OPT_IN='false'
 PAYMENT_INVOKED='false'
-DB_START_NONCE_A=''
-DB_START_NONCE_B=''
 declare -a DB_EVIDENCE_RAW_FILES=()
 
 fail() {
@@ -945,13 +943,16 @@ PY
     printf 'status=UNAVAILABLE\nphase=start\n' >"$dir/db-evidence-error.txt"
     return 1
   fi
-  if [[ "$avd" == 'AVD-A' ]]; then DB_START_NONCE_A="$nonce"; else DB_START_NONCE_B="$nonce"; fi
   printf '%s\n' "$nonce"
 }
 
 db_evidence_collect() {
   local dir="$1" avd="$2" nonce="$3" apk_sha="$4"
-  [[ -n "$nonce" ]] || { printf 'status=UNAVAILABLE\nphase=collect\n' >"$dir/db-evidence-error.txt"; return 1; }
+  [[ -n "$nonce" ]] || {
+    [[ -f "$dir/db-evidence-error.txt" ]] ||
+      printf 'status=UNAVAILABLE\nphase=collect\n' >"$dir/db-evidence-error.txt"
+    return 1
+  }
   [[ "$apk_sha" =~ ^[0-9a-f]{64}$ ]] || { printf 'status=UNAVAILABLE\nphase=collect\n' >"$dir/db-evidence-error.txt"; return 1; }
   local raw
   raw="$(mktemp "$dir/.m5-db-evidence.XXXXXX")"
@@ -1210,9 +1211,10 @@ run_one() {
     write_result "$dir" "$avd" FAIL viewport_mismatch UNAVAILABLE unknown 0 0 0 0 0 ''
     return 1
   }
-  db_evidence_start "$dir" "$avd" >/dev/null || true
-  local nonce="$DB_START_NONCE_A"
-  [[ "$avd" == 'AVD-B' ]] && nonce="$DB_START_NONCE_B"
+  local nonce=''
+  if ! nonce="$(db_evidence_start "$dir" "$avd")"; then
+    nonce=''
+  fi
   local relay_token="$RELAY_TOKEN_A"
   [[ "$avd" == 'AVD-B' ]] && relay_token="$RELAY_TOKEN_B"
   adb -s "$serial" logcat -c >/dev/null 2>&1 || true
