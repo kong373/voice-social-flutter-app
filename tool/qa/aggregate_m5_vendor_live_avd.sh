@@ -89,6 +89,17 @@ marker_count() {
   marker_log "$log" | grep -Ec "$pattern" || true
 }
 
+resilience_state() {
+  local log="$1"
+  local state=''
+  state="$(marker_log "$log" | awk -F '::' '$1 == "M5_RESILIENCE" {value=$2} END {print value}' 2>/dev/null)"
+  if [[ -n "$state" ]]; then
+    printf '%s' "$state"
+    return 0
+  fi
+  marker_log "$log" | awk -F '::' '$1 == "M5_LANE" && $2 == "tencent.outage.fallback" {value=$3} END {print value}' 2>/dev/null
+}
+
 validate_log() {
   local dir="$1" log="$1/logs/flutter-drive.log"
   [[ -s "$log" ]] || return 1
@@ -164,7 +175,7 @@ validate_lanes() {
       [[ "$state" == 'PASS' || "$state" == 'BLOCKED' || "$state" == 'FAIL' || "$state" == 'NOT_RUN' ]] || add_reason "${dir##*/}:lane_${lane}_missing_verdict"
     fi
   done
-  state="$(marker_log "$dir/logs/flutter-drive.log" | awk -F '::' '$1 == "M5_LANE" && $2 == "tencent.outage.fallback" {value=$3} END {print value}' 2>/dev/null)"
+  state="$(resilience_state "$dir/logs/flutter-drive.log")"
   [[ "$state" == 'PASS' || "$state" == 'NOT_RUN' || "$state" == 'BLOCKED' ]] || add_reason "${dir##*/}:resilience_verdict_invalid"
   if [[ "$PAYMENT_OPT_IN" == 'true' ]]; then
     if [[ "${dir##*/}" == 'AVD-A' ]]; then
