@@ -132,10 +132,7 @@ void main() {
           if (_allowExternalPayment && _paymentScenario != 'cancel') {
             evidence.violation('payment_scenario_must_be_cancel');
           }
-          evidence.paymentOptIn(
-            paymentOptedIn,
-            owner: config.role == 'sender',
-          );
+          evidence.paymentOptIn(paymentOptedIn, owner: config.role == 'sender');
 
           if (paymentOptedIn || !_allowExternalPayment) {
             dependencies = AppDependencies.forTestEnvironment(
@@ -990,17 +987,16 @@ Future<void> _runAvChatRoom(
 Future<void> _runAlipaySandbox(
   AppDependencies dependencies,
   _M5Evidence evidence,
-  AuthSession session,
-  {
+  AuthSession session, {
   required bool paymentOwner,
-  }
-) async {
+}) async {
   final BackendRouteCatalog routes = const BackendRouteCatalog();
   void markPaymentNotRun() {
     evidence.lane('alipay.order', 'NOT_RUN');
     evidence.lane('alipay.native.launch-cancel', 'NOT_RUN');
     evidence.lane('alipay.query-reconcile', 'NOT_RUN');
   }
+
   List<RechargeProduct> products;
   try {
     products = await dependencies.commerceCatalogRepository
@@ -1560,7 +1556,8 @@ class _M5Evidence {
     final bool corePass = coreLanes.every(
       (String name) => _lanes[name] == 'PASS',
     );
-    final bool paymentPass = !_paymentOwner ||
+    final bool paymentPass =
+        !_paymentOwner ||
         paymentLanes.every((String name) => _lanes[name] == 'PASS');
     final bool cancelOnlyPayment =
         _paymentOptedIn && _paymentScenario == 'cancel';

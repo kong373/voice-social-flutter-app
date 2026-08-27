@@ -44,7 +44,10 @@ void main() {
     expect(integrationSource, contains('saveRoom'));
     expect(integrationSource, contains('RoomAccessMode.publicRoom'));
     expect(integrationSource, contains('routes.createRoom'));
-    expect(integrationSource, contains('candidate.title.trim() == fixtureTitle'));
+    expect(
+      integrationSource,
+      contains('candidate.title.trim() == fixtureTitle'),
+    );
     expect(integrationSource, contains('!saved.created'));
     expect(integrationSource, contains('sendPublicMessage'));
     expect(integrationSource, contains('/m5/avchatroom/ready'));
