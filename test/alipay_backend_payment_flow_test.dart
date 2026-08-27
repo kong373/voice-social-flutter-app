@@ -32,7 +32,24 @@ void main() {
             body: decoded is Map ? Map<String, Object?>.from(decoded) : decoded,
           ),
         );
-        final Object? data = request.uri.path.endsWith('/ali/order')
+        final Object? data = request.uri.path.endsWith('/recharge/products')
+            ? <String, Object?>{
+                'platform': 'ANDROID',
+                'list': <Object?>[
+                  <String, Object?>{
+                    'productId': '00000000-0000-0000-0000-000000001001',
+                    'title': '60礼物币',
+                    'amountMinor': 600,
+                    'amount': 6.00,
+                    'giftCoinAmount': 60,
+                    'bonusGiftCoin': 0,
+                  },
+                ],
+                'total': 1,
+                'orderCreationStatus': 'READY',
+                'providerInvocation': false,
+              }
+            : request.uri.path.endsWith('/ali/order')
             ? <String, Object?>{
                 'orderNo': 'recharge-order-1',
                 'orderStr': 'server-signed-order-string',
@@ -81,6 +98,10 @@ void main() {
         priceCny: 6,
       );
 
+      expect(repository.supportsPaymentChannelInvocation, isFalse);
+      await repository.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
+      );
       expect(repository.supportsPaymentChannelInvocation, isTrue);
       expect(
         repository.availableChannels(ClientStorePlatform.android),
@@ -95,8 +116,8 @@ void main() {
       );
       expect(created.orderNo, 'recharge-order-1');
       expect(created.paymentOrderString, 'server-signed-order-string');
-      expect(requests.single.path, '/app-economy-api/pay/ali/order');
-      expect(requests.single.body, <String, Object?>{
+      expect(requests[1].path, '/app-economy-api/pay/ali/order');
+      expect(requests[1].body, <String, Object?>{
         'account': 'current-user-account',
         'productId': 'product-1',
         'channel': 'ALIPAY',
@@ -109,16 +130,16 @@ void main() {
       expect(provisional.state, RechargeOrderState.succeeded);
       expect(provisional.message, '服务端已确认到账');
       expect(adapter.orderStrings, <String>['server-signed-order-string']);
-      expect(requests, hasLength(3));
-      expect(requests[1].method, 'POST');
-      expect(requests[1].path, '/app-economy-api/pay/ali/order/reconcile');
-      expect(requests[1].query, <String, String>{
+      expect(requests, hasLength(4));
+      expect(requests[2].method, 'POST');
+      expect(requests[2].path, '/app-economy-api/pay/ali/order/reconcile');
+      expect(requests[2].query, <String, String>{
         'orderNo': 'recharge-order-1',
       });
-      expect(requests[1].requestId, startsWith('alipay-reconcile-'));
-      expect(requests[2].method, 'GET');
-      expect(requests[2].path, '/app-economy-api/pay/ali/order/status');
-      expect(requests[2].query, <String, String>{
+      expect(requests[2].requestId, startsWith('alipay-reconcile-'));
+      expect(requests[3].method, 'GET');
+      expect(requests[3].path, '/app-economy-api/pay/ali/order/status');
+      expect(requests[3].query, <String, String>{
         'orderNo': 'recharge-order-1',
       });
 
@@ -126,8 +147,8 @@ void main() {
         provisional,
       );
       expect(authoritative.state, RechargeOrderState.succeeded);
-      expect(requests, hasLength(4));
-      expect(requests[3].path, '/app-economy-api/pay/ali/order/status');
+      expect(requests, hasLength(5));
+      expect(requests[4].path, '/app-economy-api/pay/ali/order/status');
     },
   );
 

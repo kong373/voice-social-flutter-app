@@ -43,16 +43,23 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   final Map<String, Future<RechargeOrder>> _pendingAlipayOrderCreations =
       <String, Future<RechargeOrder>>{};
   final Map<String, String> _alipayCreateRequestIds = <String, String>{};
+  // The native bridge is only one half of the payment boundary.  Keep the
+  // server's catalog readiness separately so a local SDK cannot enable order
+  // creation while the authenticated backend port is fail-closed.
+  bool _serverOrderCreationReady = false;
 
   @override
   bool get supportsRechargeCatalog => true;
 
   @override
-  bool get supportsPaymentChannelInvocation => _alipayAppPayAdapter.isAvailable;
+  bool get supportsPaymentChannelInvocation =>
+      _serverOrderCreationReady && _alipayAppPayAdapter.isAvailable;
 
   @override
   List<PaymentChannelType> availableChannels(ClientStorePlatform platform) =>
-      platform == ClientStorePlatform.ios
+      !supportsPaymentChannelInvocation
+      ? const <PaymentChannelType>[]
+      : platform == ClientStorePlatform.ios
       ? const <PaymentChannelType>[PaymentChannelType.appleIap]
       : _alipayAppPayAdapter.isAvailable
       ? const <PaymentChannelType>[PaymentChannelType.alipay]
@@ -62,6 +69,9 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   Future<List<RechargeProduct>> fetchRechargeProducts({
     required ClientStorePlatform platform,
   }) async {
+    // A refresh that is in flight must not leave an earlier READY result
+    // usable if the server later reports a blocked or malformed contract.
+    _serverOrderCreationReady = false;
     final String expectedPlatform = platform == ClientStorePlatform.android
         ? 'ANDROID'
         : 'IOS';
@@ -78,17 +88,22 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     final String orderCreationStatus = _string(
       envelope['orderCreationStatus'],
     ).toUpperCase();
-    final String expectedOrderCreationStatus =
-        expectedPlatform == 'ANDROID' && _alipayAppPayAdapter.isAvailable
-        ? 'READY'
-        : 'VENDOR_BLOCKED';
+    final bool validOrderCreationStatus =
+        orderCreationStatus == 'READY' ||
+        orderCreationStatus == 'VENDOR_BLOCKED';
+    // The catalog endpoint is the server authority.  Local SDK availability
+    // is intentionally not folded into this protocol check; it is intersected
+    // by supportsPaymentChannelInvocation after the response is accepted.
     if (_string(envelope['platform']).toUpperCase() != expectedPlatform ||
-        orderCreationStatus != expectedOrderCreationStatus) {
+        !validOrderCreationStatus ||
+        (expectedPlatform != 'ANDROID' && orderCreationStatus == 'READY')) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '充值商品目录平台或支付可用状态与请求不一致',
       );
     }
+    _serverOrderCreationReady =
+        expectedPlatform == 'ANDROID' && orderCreationStatus == 'READY';
     return items.map(_rechargeProductFromMap).toList(growable: false);
   }
 

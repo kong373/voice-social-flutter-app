@@ -9,6 +9,7 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/commerce/catalog/data/backend_commerce_catalog_repository.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
+import 'package:voice_social_app/features/commerce/infrastructure/alipay_app_pay_adapter.dart';
 
 void main() {
   test(
@@ -97,7 +98,7 @@ void main() {
           'platform': 'ANDROID',
           'list': <Object?>[validProduct],
           'total': 1,
-          'orderCreationStatus': 'READY',
+          'orderCreationStatus': 'NOT_READY',
           'providerInvocation': false,
         },
         <String, Object?>{
@@ -1160,35 +1161,93 @@ void main() {
       );
     });
   }
+
+  test(
+    'payment invocation requires both server READY and a local Alipay bridge',
+    () async {
+      final Map<String, Object?> validProduct = <String, Object?>{
+        'productId': '00000000-0000-0000-0000-000000001001',
+        'title': '60礼物币',
+        'amountMinor': 600,
+        'amount': 6.00,
+        'giftCoinAmount': 60,
+        'bonusGiftCoin': 0,
+      };
+      final _Harness serverReady = await _Harness.start(
+        (RequestRecord request) => _Response.ok(<String, Object?>{
+          'platform': 'ANDROID',
+          'list': <Object?>[validProduct],
+          'total': 1,
+          'orderCreationStatus': 'READY',
+          'providerInvocation': false,
+        }),
+      );
+      final BackendCommerceCatalogRepository serverReadyLocalDisabled =
+          serverReady.repository;
+      await serverReadyLocalDisabled.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
+      );
+      expect(
+        serverReadyLocalDisabled.supportsPaymentChannelInvocation,
+        isFalse,
+      );
+      await serverReady.close();
+
+      final _Harness localReady = await _Harness.start(
+        (RequestRecord request) => _Response.ok(<String, Object?>{
+          'platform': 'ANDROID',
+          'list': <Object?>[validProduct],
+          'total': 1,
+          'orderCreationStatus': 'VENDOR_BLOCKED',
+          'providerInvocation': false,
+        }),
+        alipayAppPayAdapter: _AvailableAlipayAdapter(),
+      );
+      await localReady.repository.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
+      );
+      expect(localReady.repository.supportsPaymentChannelInvocation, isFalse);
+      await localReady.close();
+    },
+  );
 }
 
 class _Harness {
-  _Harness._(this.server, this.requests)
-    : repository = BackendCommerceCatalogRepository(
-        apiClient: ApiClient(
-          baseUri: Uri.parse(
-            'http://${server.address.address}:${server.port}/',
-          ),
-          clientType: 'Android',
-          clientInnerVersion: '6',
-          authorizationProvider: () => 'Bearer contract-test',
-        ),
-        routes: const BackendRouteCatalog(),
-      );
+  _Harness._(
+    this.server,
+    this.requests, {
+    AlipayAppPayAdapter? alipayAppPayAdapter,
+  }) : repository = BackendCommerceCatalogRepository(
+         apiClient: ApiClient(
+           baseUri: Uri.parse(
+             'http://${server.address.address}:${server.port}/',
+           ),
+           clientType: 'Android',
+           clientInnerVersion: '6',
+           authorizationProvider: () => 'Bearer contract-test',
+         ),
+         routes: const BackendRouteCatalog(),
+         alipayAppPayAdapter: alipayAppPayAdapter,
+       );
 
   final HttpServer server;
   final List<RequestRecord> requests;
   final BackendCommerceCatalogRepository repository;
 
   static Future<_Harness> start(
-    FutureOr<_Response> Function(RequestRecord) handler,
-  ) async {
+    FutureOr<_Response> Function(RequestRecord) handler, {
+    AlipayAppPayAdapter? alipayAppPayAdapter,
+  }) async {
     final HttpServer server = await HttpServer.bind(
       InternetAddress.loopbackIPv4,
       0,
     );
     final List<RequestRecord> requests = <RequestRecord>[];
-    final _Harness harness = _Harness._(server, requests);
+    final _Harness harness = _Harness._(
+      server,
+      requests,
+      alipayAppPayAdapter: alipayAppPayAdapter,
+    );
     server.listen((HttpRequest request) async {
       final String rawBody = await utf8.decoder.bind(request).join();
       final Object? decodedBody = rawBody.trim().isEmpty
@@ -1221,6 +1280,22 @@ class _Harness {
   }
 
   Future<void> close() => server.close(force: true);
+}
+
+class _AvailableAlipayAdapter implements AlipayAppPayAdapter {
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<AlipayAppPayResult> pay({
+    required String orderNo,
+    required String orderString,
+  }) async {
+    return const AlipayAppPayResult(
+      outcome: AlipayAppPayOutcome.processing,
+      reason: AlipayAppPayReason.processing,
+    );
+  }
 }
 
 class RequestRecord {
