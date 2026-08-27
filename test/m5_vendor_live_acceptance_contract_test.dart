@@ -402,6 +402,9 @@ void main() {
 }
 ''';
     final String log = '''
+untrusted M5_ACCEPTANCE::FAIL
+I/flutter (not-a-pid): M5_ACCEPTANCE::FAIL
+I/flutter (12345): untrusted M5_ACCEPTANCE::FAIL
 M5_ACCEPTANCE::NO_PAY
 M5_PROVIDER_CALLS::1::0
 M5_VENDOR_EVENT::tencent-im::login_ready::sdk_callback
@@ -421,6 +424,10 @@ M5_LANE::alipay.query-reconcile::NOT_RUN
 M5_LANE::alipay.settlement::NOT_RUN
 M5_LANE::alipay.reconcile-idempotency::NOT_RUN
 ''';
+    final String flutterPrefixedLog = log
+        .split('\n')
+        .map((String line) => line.isEmpty ? line : 'I/flutter (12345): $line')
+        .join('\n');
     final String result =
         '''
 result=NO_PAY
@@ -450,7 +457,12 @@ tencent_provider_calls=1
 alipay_provider_calls=0
 ''';
     for (final String avd in <String>['AVD-A', 'AVD-B']) {
-      write('$avd/logs/flutter-drive.log', log);
+      // Real Android Flutter output has an `I/flutter (pid): ` envelope;
+      // retain one raw fixture as a backwards-compatibility contract too.
+      write(
+        '$avd/logs/flutter-drive.log',
+        avd == 'AVD-A' ? flutterPrefixedLog : log,
+      );
       write(
         '$avd/vendor-events.txt',
         'M5_VENDOR_EVENT::tencent-im::login_ready::sdk_callback\n',

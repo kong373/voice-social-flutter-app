@@ -56,33 +56,66 @@ field() {
   sed -n "s/^${name}=//p" "$file" 2>/dev/null | head -n 1
 }
 
+# Flutter's Android runner prefixes application output with a log envelope such
+# as `I/flutter (12345): `.  Normalize only the exact Android Flutter envelope
+# (or an already-normalized raw marker) and only known M5 marker families.  A
+# random line containing `M5_` must not become acceptance evidence merely
+# because it happens to contain a marker-shaped substring.
+marker_log() {
+  local log="$1"
+  awk '
+    function emit(line) {
+      if (line ~ /^M5_(ACCEPTANCE|LANE|PROVIDER_CALLS|RESILIENCE|ROUTE_STATUS|SECRETS_IN_CLIENT|VENDOR_EVENT)::/ ||
+          line ~ /^M[234]_[A-Z0-9_]+::/) {
+        print line
+      }
+    }
+    {
+      if ($0 ~ /^M5_(ACCEPTANCE|LANE|PROVIDER_CALLS|RESILIENCE|ROUTE_STATUS|SECRETS_IN_CLIENT|VENDOR_EVENT)::/ ||
+          $0 ~ /^M[234]_[A-Z0-9_]+::/) {
+        emit($0)
+        next
+      }
+      if ($0 ~ /^[VDIWEF]\/flutter \([0-9]+\): M5_(ACCEPTANCE|LANE|PROVIDER_CALLS|RESILIENCE|ROUTE_STATUS|SECRETS_IN_CLIENT|VENDOR_EVENT)::/) {
+        sub(/^[VDIWEF]\/flutter \([0-9]+\): /, "", $0)
+        emit($0)
+      }
+    }
+  ' "$log"
+}
+
+marker_count() {
+  local log="$1" pattern="$2"
+  marker_log "$log" | grep -Ec "$pattern" || true
+}
+
 validate_log() {
   local dir="$1" log="$1/logs/flutter-drive.log"
   [[ -s "$log" ]] || return 1
-  [[ "$(grep -Ec '^M5_ACCEPTANCE::(PASS|NO_PAY|PARTIAL|FAIL)$' "$log" || true)" -eq 1 ]] || return 1
-  [[ "$(grep -Ec '^M5_ACCEPTANCE::FAIL$' "$log" || true)" -eq 0 ]] || return 1
+  [[ "$(marker_count "$log" '^M5_ACCEPTANCE::(PASS|NO_PAY|PARTIAL|FAIL)$')" -eq 1 ]] || return 1
+  [[ "$(marker_count "$log" '^M5_ACCEPTANCE::FAIL$')" -eq 0 ]] || return 1
   if [[ "$PAYMENT_OPT_IN" == 'true' ]]; then
     if [[ "$PAYMENT_CANCEL_ONLY" == 'true' ]]; then
       # Cancel-only is an intentionally non-successful financial verdict: the
       # SDK callback and authoritative canceled query are evidence, not proof
       # of a completed payment.
-      [[ "$(grep -Ec '^M5_ACCEPTANCE::PARTIAL$' "$log" || true)" -eq 1 ]] || return 1
+      [[ "$(marker_count "$log" '^M5_ACCEPTANCE::PARTIAL$')" -eq 1 ]] || return 1
     else
-      [[ "$(grep -Ec '^M5_ACCEPTANCE::PASS$' "$log" || true)" -eq 1 ]] || return 1
+      [[ "$(marker_count "$log" '^M5_ACCEPTANCE::PASS$')" -eq 1 ]] || return 1
     fi
     if [[ "${dir##*/}" == 'AVD-A' ]]; then
-      [[ "$(grep -Ec '^M5_PROVIDER_CALLS::[1-9][0-9]*::[1-9][0-9]*$' "$log" || true)" -eq 1 ]] || return 1
+      [[ "$(marker_count "$log" '^M5_PROVIDER_CALLS::[1-9][0-9]*::[1-9][0-9]*$')" -eq 1 ]] || return 1
     else
-      [[ "$(grep -Ec '^M5_PROVIDER_CALLS::[1-9][0-9]*::0$' "$log" || true)" -eq 1 ]] || return 1
+      [[ "$(marker_count "$log" '^M5_PROVIDER_CALLS::[1-9][0-9]*::0$')" -eq 1 ]] || return 1
     fi
   else
-    [[ "$(grep -Ec '^M5_ACCEPTANCE::(NO_PAY|PARTIAL)$' "$log" || true)" -eq 1 ]] || return 1
-    [[ "$(grep -Ec '^M5_PROVIDER_CALLS::[0-9]+::[0-9]+$' "$log" || true)" -eq 1 ]] || return 1
-    if [[ "$(grep -Ec '^M5_PROVIDER_CALLS::[1-9][0-9]*::[0-9]+$' "$log" || true)" -gt 0 ]]; then
-      [[ "$(grep -Ec '^M5_VENDOR_EVENT::[^:]+::[^:]+::sdk_callback$' "$log" || true)" -gt 0 ]] || return 1
+    [[ "$(marker_count "$log" '^M5_ACCEPTANCE::(NO_PAY|PARTIAL)$')" -eq 1 ]] || return 1
+    [[ "$(marker_count "$log" '^M5_PROVIDER_CALLS::[0-9]+::[0-9]+$')" -eq 1 ]] || return 1
+    if [[ "$(marker_count "$log" '^M5_PROVIDER_CALLS::[1-9][0-9]*::[0-9]+$')" -gt 0 ]]; then
+      [[ "$(marker_count "$log" '^M5_VENDOR_EVENT::[^:]+::[^:]+::sdk_callback$')" -gt 0 ]] || return 1
     fi
   fi
-  if [[ "$(grep -Ec '^M5_VENDOR_EVENT::tencent-im::[^:]+::sdk_callback$' "$log" || true)" -gt 0 ]]; then
+  if [[ "$(marker_count "$log" '^M5_VENDOR_EVENT::tencent-im::[^:]+::sdk_callback$')" -gt 0 ]]; then
     :
   else
     return 1
@@ -93,23 +126,23 @@ validate_log() {
         # The native cancellation callback is the only Alipay provider event
         # required here. An async notify callback is intentionally not required
         # and would be suspicious for an unpaid cancellation.
-        [[ "$(grep -Ec '^M5_VENDOR_EVENT::alipay::launch_cancel::sdk_callback$' "$log" || true)" -eq 1 ]] || return 1
+        [[ "$(marker_count "$log" '^M5_VENDOR_EVENT::alipay::launch_cancel::sdk_callback$')" -eq 1 ]] || return 1
       else
         # AVD-B is receiver-only for every payment scenario and must not emit
         # even a cancellation callback.
-        [[ "$(grep -Ec '^M5_VENDOR_EVENT::alipay::[^:]+::sdk_callback$' "$log" || true)" -eq 0 ]] || return 1
+        [[ "$(marker_count "$log" '^M5_VENDOR_EVENT::alipay::[^:]+::sdk_callback$')" -eq 0 ]] || return 1
       fi
     else
       if [[ "${dir##*/}" == 'AVD-A' ]]; then
-        [[ "$(grep -Ec '^M5_VENDOR_EVENT::alipay::launch_success::sdk_callback$' "$log" || true)" -eq 1 ]] || return 1
+        [[ "$(marker_count "$log" '^M5_VENDOR_EVENT::alipay::launch_success::sdk_callback$')" -eq 1 ]] || return 1
       else
-        [[ "$(grep -Ec '^M5_VENDOR_EVENT::alipay::[^:]+::sdk_callback$' "$log" || true)" -eq 0 ]] || return 1
+        [[ "$(marker_count "$log" '^M5_VENDOR_EVENT::alipay::[^:]+::sdk_callback$')" -eq 0 ]] || return 1
       fi
     fi
   fi
-  [[ "$(grep -Ec '^M5_SECRETS_IN_CLIENT::0$' "$log" || true)" -eq 1 ]] || return 1
-  [[ "$(grep -Ec '^M5_ROUTE_STATUS::[^:]+::[^:]+::[^:]+::[2-4][0-9][0-9]::' "$log" || true)" -gt 0 ]] || return 1
-  ! grep -Eq '^M[234]_.*::' "$log"
+  [[ "$(marker_count "$log" '^M5_SECRETS_IN_CLIENT::0$')" -eq 1 ]] || return 1
+  [[ "$(marker_count "$log" '^M5_ROUTE_STATUS::[^:]+::[^:]+::[^:]+::[2-4][0-9][0-9]::')" -gt 0 ]] || return 1
+  ! marker_log "$log" | grep -Eq '^M[234]_.*::'
 }
 
 validate_lanes() {
@@ -120,7 +153,7 @@ validate_lanes() {
   )
   local lane state
   for lane in "${core_lanes[@]}"; do
-    state="$(awk -F '::' -v wanted="$lane" '$1 == "M5_LANE" && $2 == wanted {value=$3} END {print value}' "$dir/logs/flutter-drive.log" 2>/dev/null)"
+    state="$(marker_log "$dir/logs/flutter-drive.log" | awk -F '::' -v wanted="$lane" '$1 == "M5_LANE" && $2 == wanted {value=$3} END {print value}' 2>/dev/null)"
     if [[ "$PAYMENT_OPT_IN" == 'true' ]]; then
       [[ "$state" == 'PASS' ]] || add_reason "${dir##*/}:lane_${lane}_not_pass"
     elif [[ "$lane" == tencent.* ]]; then
@@ -131,18 +164,18 @@ validate_lanes() {
       [[ "$state" == 'PASS' || "$state" == 'BLOCKED' || "$state" == 'FAIL' || "$state" == 'NOT_RUN' ]] || add_reason "${dir##*/}:lane_${lane}_missing_verdict"
     fi
   done
-  state="$(awk -F '::' '$1 == "M5_LANE" && $2 == "tencent.outage.fallback" {value=$3} END {print value}' "$dir/logs/flutter-drive.log" 2>/dev/null)"
+  state="$(marker_log "$dir/logs/flutter-drive.log" | awk -F '::' '$1 == "M5_LANE" && $2 == "tencent.outage.fallback" {value=$3} END {print value}' 2>/dev/null)"
   [[ "$state" == 'PASS' || "$state" == 'NOT_RUN' || "$state" == 'BLOCKED' ]] || add_reason "${dir##*/}:resilience_verdict_invalid"
   if [[ "$PAYMENT_OPT_IN" == 'true' ]]; then
     if [[ "${dir##*/}" == 'AVD-A' ]]; then
       if [[ "$PAYMENT_CANCEL_ONLY" == 'true' ]]; then
         for lane in 'alipay.order' 'alipay.native.launch-cancel' 'alipay.query-reconcile'; do
-          state="$(awk -F '::' -v wanted="$lane" '$1 == "M5_LANE" && $2 == wanted {value=$3} END {print value}' "$dir/logs/flutter-drive.log" 2>/dev/null)"
+          state="$(marker_log "$dir/logs/flutter-drive.log" | awk -F '::' -v wanted="$lane" '$1 == "M5_LANE" && $2 == wanted {value=$3} END {print value}' 2>/dev/null)"
           [[ "$state" == 'PASS' ]] || add_reason "${dir##*/}:lane_${lane}_not_pass"
         done
       else
         for lane in 'alipay.order' 'alipay.native.launch-success' 'alipay.query-reconcile' 'alipay.settlement' 'alipay.reconcile-idempotency'; do
-          state="$(awk -F '::' -v wanted="$lane" '$1 == "M5_LANE" && $2 == wanted {value=$3} END {print value}' "$dir/logs/flutter-drive.log" 2>/dev/null)"
+          state="$(marker_log "$dir/logs/flutter-drive.log" | awk -F '::' -v wanted="$lane" '$1 == "M5_LANE" && $2 == wanted {value=$3} END {print value}' 2>/dev/null)"
           [[ "$state" == 'PASS' ]] || add_reason "${dir##*/}:lane_${lane}_not_pass"
         done
       fi
@@ -150,13 +183,13 @@ validate_lanes() {
       # AVD-B is receiver-only and must not create an order or call the
       # native payment SDK, even when the success lane is enabled globally.
       for lane in 'alipay.order' 'alipay.native.launch-cancel' 'alipay.native.launch-success' 'alipay.query-reconcile' 'alipay.settlement' 'alipay.reconcile-idempotency'; do
-        state="$(awk -F '::' -v wanted="$lane" '$1 == "M5_LANE" && $2 == wanted {value=$3} END {print value}' "$dir/logs/flutter-drive.log" 2>/dev/null)"
+        state="$(marker_log "$dir/logs/flutter-drive.log" | awk -F '::' -v wanted="$lane" '$1 == "M5_LANE" && $2 == wanted {value=$3} END {print value}' 2>/dev/null)"
         [[ "$state" == 'NOT_RUN' ]] || add_reason "${dir##*/}:payment_lane_must_be_not_run_${lane}"
       done
     fi
   else
     for lane in 'alipay.order' 'alipay.native.launch-cancel' 'alipay.native.launch-success' 'alipay.query-reconcile' 'alipay.settlement' 'alipay.reconcile-idempotency'; do
-      state="$(awk -F '::' -v wanted="$lane" '$1 == "M5_LANE" && $2 == wanted {value=$3} END {print value}' "$dir/logs/flutter-drive.log" 2>/dev/null)"
+      state="$(marker_log "$dir/logs/flutter-drive.log" | awk -F '::' -v wanted="$lane" '$1 == "M5_LANE" && $2 == wanted {value=$3} END {print value}' 2>/dev/null)"
       [[ "$state" == 'NOT_OPTED_IN' || "$state" == 'NOT_RUN' || "$state" == 'BLOCKED' ]] || add_reason "${dir##*/}:payment_lane_not_explicitly_withheld_${lane}"
     done
   fi
@@ -326,7 +359,7 @@ validate_avd() {
   [[ -s "$dir/callback-evidence.txt" ]] || add_reason "$avd:callback_evidence_missing"
   validate_log "$dir" || add_reason "$avd:log_evidence_invalid"
   validate_lanes "$dir"
-  provider_line="$(grep -E '^M5_PROVIDER_CALLS::[0-9]+::[0-9]+$' "$dir/logs/flutter-drive.log" | tail -n 1 || true)"
+  provider_line="$(marker_log "$dir/logs/flutter-drive.log" | grep -E '^M5_PROVIDER_CALLS::[0-9]+::[0-9]+$' | tail -n 1 || true)"
   if [[ "$provider_line" =~ M5_PROVIDER_CALLS::([0-9]+)::([0-9]+)$ ]]; then
     tencent_calls="${BASH_REMATCH[1]}"
     alipay_calls="${BASH_REMATCH[2]}"
