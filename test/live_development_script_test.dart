@@ -126,7 +126,32 @@ if [[ "\${1-}" == "build" && "\${2-}" == "apk" ]]; then
   fi
   if [[ "\$build_behavior" != 'missing-apk' ]]; then
     mkdir -p build/app/outputs/flutter-apk
-    printf 'fake-live-debug-apk\n' > build/app/outputs/flutter-apk/app-debug.apk
+    python3 - "\$build_behavior" "build/app/outputs/flutter-apk/app-debug.apk" <<'PY'
+import pathlib
+import sys
+import zipfile
+
+mode = sys.argv[1]
+apk = pathlib.Path(sys.argv[2])
+apk.parent.mkdir(parents=True, exist_ok=True)
+with zipfile.ZipFile(apk, 'w', compression=zipfile.ZIP_STORED) as archive:
+    if mode == 'forbidden-apk':
+        archive.writestr(
+            'lib/arm64-v8a/libagora_face_capture_extension.so',
+            b'forbidden',
+        )
+        archive.writestr(
+            'lib/arm64-v8a/libagora_lip_sync_extension.so',
+            b'forbidden',
+        )
+        archive.writestr(
+          'assets/secret.pem',
+          b'-----BEGIN ' b'RSA ' b'PRIVATE ' b'KEY-----\\nsecret\\n-----END '
+          b'RSA ' b'PRIVATE ' b'KEY-----\\n',
+        )
+    else:
+        archive.writestr('assets/placeholder.txt', b'safe-apk')
+PY
   fi
 fi
 if [[ -f android/app/src/main/AndroidManifest.xml ]]; then
@@ -498,7 +523,18 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
       expect(result.exitCode, 0);
       expect(liveArtifact.existsSync(), isTrue);
       expect(liveArtifactHash.existsSync(), isTrue);
-      expect(liveArtifact.readAsStringSync(), 'fake-live-debug-apk\n');
+      expect(liveArtifact.lengthSync(), greaterThan(0));
+      final ProcessResult zipCheck = Process.runSync('python3', <String>[
+        '-c',
+        'import sys,zipfile; print("\\n".join(sorted(zipfile.ZipFile(sys.argv[1]).namelist())))',
+        liveArtifact.path,
+      ]);
+      expect(
+        zipCheck.exitCode,
+        0,
+        reason: '${zipCheck.stdout}\n${zipCheck.stderr}',
+      );
+      expect(zipCheck.stdout, contains('assets/placeholder.txt'));
       final String digest = sha256
           .convert(liveArtifact.readAsBytesSync())
           .toString();
@@ -515,6 +551,43 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
       );
       expect(result.stdout, contains('live_apk_sha256=$digest'));
       await _assertOriginalCheckoutUntouched();
+    },
+  );
+
+  test(
+    'build-apk rejects APKs that still contain Agora extensions or private-key PEM material',
+    () {
+      fakeFlutterBehaviorConfig.writeAsStringSync('forbidden-apk\n');
+
+      final ProcessResult result = _run(<String>[
+        'build-apk',
+        '--target',
+        'android-emulator',
+      ], environment: _baseEnvironment());
+
+      final String output = '${result.stdout}\n${result.stderr}';
+      expect(result.exitCode, isNot(0));
+      expect(
+        output,
+        contains(
+          'forbidden Agora extension artifacts or private-key PEM material',
+        ),
+      );
+      expect(
+        output,
+        isNot(
+          contains(
+            'BEGIN '
+            'RSA '
+            'PRIVATE '
+            'KEY',
+          ),
+        ),
+      );
+      expect(output, isNot(contains('libagora_face_capture_extension.so')));
+      expect(output, isNot(contains('libagora_lip_sync_extension.so')));
+      expect(liveArtifact.existsSync(), isFalse);
+      expect(liveArtifactHash.existsSync(), isFalse);
     },
   );
 

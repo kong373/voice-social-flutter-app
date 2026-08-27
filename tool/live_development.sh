@@ -400,6 +400,7 @@ publish_live_apk() {
   [[ -f "$source_apk" && ! -L "$source_apk" && -s "$source_apk" ]] ||
     fail 'expected Flutter APK was not produced as a non-empty regular file'
 
+  validate_live_apk_contents "$source_apk"
   prepare_live_apk_output_directory
   APK_COPY_TEMP="$(mktemp "${LIVE_APK_OUTPUT_DIR}/.app-debug.apk.XXXXXX")" ||
     fail 'unable to create the temporary live APK output'
@@ -438,6 +439,58 @@ publish_live_apk() {
 
   printf 'live_apk_path=%s\n' "$LIVE_APK_OUTPUT_PATH"
   printf 'live_apk_sha256=%s\n' "$checksum"
+}
+
+validate_live_apk_contents() {
+  local apk="$1"
+  local scan_status
+  set +e
+  python3 - "$apk" >/dev/null 2>&1 <<'PY'
+import sys
+import zipfile
+
+FORBIDDEN_NAMES = (
+    "libagora_face_capture_extension.so",
+    "libagora_lip_sync_extension.so",
+)
+PEM_MARKERS = (
+    b"-----BEGIN " b"PRIVATE " b"KEY-----",
+    b"-----BEGIN " b"RSA " b"PRIVATE " b"KEY-----",
+    b"-----BEGIN " b"EC " b"PRIVATE " b"KEY-----",
+    b"-----BEGIN " b"OPENSSH " b"PRIVATE " b"KEY-----",
+)
+MARKER_TAIL_LENGTH = max(len(marker) for marker in PEM_MARKERS) - 1
+CHUNK_SIZE = 65536
+
+try:
+    with zipfile.ZipFile(sys.argv[1]) as archive:
+        for info in archive.infolist():
+            name = info.filename
+            if any(name.endswith(forbidden) for forbidden in FORBIDDEN_NAMES):
+                raise SystemExit(1)
+            if info.is_dir():
+                continue
+            with archive.open(info) as handle:
+                tail = b""
+                while True:
+                    chunk = handle.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    data = tail + chunk
+                    if any(marker in data for marker in PEM_MARKERS):
+                        raise SystemExit(1)
+                    tail = data[-MARKER_TAIL_LENGTH:]
+except (OSError, zipfile.BadZipFile):
+    raise SystemExit(2)
+raise SystemExit(0)
+PY
+  scan_status=$?
+  set -e
+  case "$scan_status" in
+    0) ;;
+    1) fail 'live APK contains forbidden Agora extension artifacts or private-key PEM material' ;;
+    *) fail 'unable to inspect the live APK contents' ;;
+  esac
 }
 
 prepare_android_host() {

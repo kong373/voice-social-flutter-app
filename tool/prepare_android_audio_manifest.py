@@ -26,6 +26,10 @@ AUDIO_FORBIDDEN_COMPONENTS = (
     "io.agora.rtc2.extensions.MediaProjectionMgr$LocalScreenCaptureAssistantActivity",
     "io.agora.rtc2.extensions.MediaProjectionMgr$LocalScreenSharingService",
 )
+AGORA_FORBIDDEN_JNI_LIBS = (
+    "**/libagora_face_capture_extension.so",
+    "**/libagora_lip_sync_extension.so",
+)
 
 
 def _patch_agora_compile_sdk(host: Path) -> None:
@@ -91,6 +95,58 @@ def _patch_agora_unique_package_names(host: Path) -> None:
             text += "\n"
         text += setting + "\n"
     properties.write_text(text, encoding="utf-8")
+
+
+def _patch_agora_packaging_excludes(host: Path) -> None:
+    """Drop Agora's optional face/lip extension JNI libraries from the host.
+
+    The audio-only live path does not use the face-capture or lip-sync
+    extensions, but the official Agora native bundle ships them inside the
+    SDK AAR.  Keep the product APK lean by excluding only those two optional
+    shared objects from the generated Android host.
+    """
+
+    android_app_dir = host / "android/app"
+    candidates = (
+        android_app_dir / "build.gradle.kts",
+        android_app_dir / "build.gradle",
+    )
+    for build_file in candidates:
+        if not build_file.is_file():
+            continue
+        text = build_file.read_text(encoding="utf-8")
+        if all(forbidden in text for forbidden in AGORA_FORBIDDEN_JNI_LIBS):
+            return
+        if build_file.suffix == ".kts":
+            block = (
+                "\nandroid {\n"
+                "    packaging {\n"
+                "        jniLibs {\n"
+                "            excludes += setOf(\n"
+                '                "**/libagora_face_capture_extension.so",\n'
+                '                "**/libagora_lip_sync_extension.so",\n'
+                "            )\n"
+                "        }\n"
+                "    }\n"
+                "}\n"
+            )
+        else:
+            block = (
+                "\nandroid {\n"
+                "    packaging {\n"
+                "        jniLibs {\n"
+                "            excludes += [\n"
+                '                "**/libagora_face_capture_extension.so",\n'
+                '                "**/libagora_lip_sync_extension.so",\n'
+                "            ]\n"
+                "        }\n"
+                "    }\n"
+                "}\n"
+            )
+        if text and not text.endswith("\n"):
+            text += "\n"
+        build_file.write_text(text + block, encoding="utf-8")
+        return
 
 
 def main() -> int:
@@ -179,6 +235,7 @@ def main() -> int:
     manifest.write_text(text, encoding="utf-8")
     _patch_agora_compile_sdk(host)
     _patch_agora_unique_package_names(host)
+    _patch_agora_packaging_excludes(host)
     print(
         "android_audio_manifest=video,phone,screen-capture permissions/components "
         "removed; RECORD_AUDIO retained"

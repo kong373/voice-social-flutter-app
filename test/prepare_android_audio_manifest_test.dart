@@ -18,6 +18,9 @@ void main() {
       androidBuild.writeAsStringSync(
         'allprojects { repositories { google(); mavenCentral() } }',
       );
+      final File appBuild = File('${root.path}/android/app/build.gradle.kts')
+        ..createSync(recursive: true);
+      appBuild.writeAsStringSync('android { namespace = "com.example.audio" }');
       final File properties = File('${root.path}/android/gradle.properties')
         ..createSync(recursive: true);
       properties.writeAsStringSync('android.useAndroidX=true\n');
@@ -74,6 +77,15 @@ void main() {
         properties.readAsStringSync(),
         contains('android.uniquePackageNames=false'),
       );
+      expect(
+        appBuild.readAsStringSync(),
+        contains('libagora_face_capture_extension.so'),
+      );
+      expect(
+        appBuild.readAsStringSync(),
+        contains('libagora_lip_sync_extension.so'),
+      );
+      expect(appBuild.readAsStringSync(), contains('jniLibs'));
 
       final ProcessResult second = Process.runSync('python3', <String>[
         'tool/prepare_android_audio_manifest.py',
@@ -113,6 +125,18 @@ void main() {
         RegExp(
           'android.uniquePackageNames=false',
         ).allMatches(properties.readAsStringSync()),
+        hasLength(1),
+      );
+      expect(
+        RegExp(
+          'libagora_face_capture_extension\\.so',
+        ).allMatches(appBuild.readAsStringSync()),
+        hasLength(1),
+      );
+      expect(
+        RegExp(
+          'libagora_lip_sync_extension\\.so',
+        ).allMatches(appBuild.readAsStringSync()),
         hasLength(1),
       );
     },
@@ -176,6 +200,49 @@ void main() {
       RegExp(
         'android.uniquePackageNames=',
       ).allMatches(properties.readAsStringSync()),
+      hasLength(1),
+    );
+  });
+
+  test('audio manifest overlay patches a generated Groovy app build once', () {
+    final Directory root = Directory.systemTemp.createTempSync(
+      'android-audio-manifest-groovy-app-',
+    );
+    addTearDown(() => root.deleteSync(recursive: true));
+    final File manifest = File(
+      '${root.path}/android/app/src/main/AndroidManifest.xml',
+    )..createSync(recursive: true);
+    manifest.writeAsStringSync(
+      '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+      '<application /></manifest>',
+    );
+    final File appBuild = File('${root.path}/android/app/build.gradle')
+      ..createSync(recursive: true);
+    appBuild.writeAsStringSync('android { namespace "com.example.audio" }');
+
+    final ProcessResult result = Process.runSync('python3', <String>[
+      'tool/prepare_android_audio_manifest.py',
+      root.path,
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(
+      appBuild.readAsStringSync(),
+      contains('libagora_face_capture_extension.so'),
+    );
+    expect(
+      appBuild.readAsStringSync(),
+      contains('libagora_lip_sync_extension.so'),
+    );
+    expect(
+      RegExp(
+        'libagora_face_capture_extension\\.so',
+      ).allMatches(appBuild.readAsStringSync()),
+      hasLength(1),
+    );
+    expect(
+      RegExp(
+        'libagora_lip_sync_extension\\.so',
+      ).allMatches(appBuild.readAsStringSync()),
       hasLength(1),
     );
   });
