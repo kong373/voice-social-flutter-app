@@ -91,13 +91,27 @@ marker_count() {
 
 resilience_state() {
   local log="$1"
-  local state=''
-  state="$(marker_log "$log" | awk -F '::' '$1 == "M5_RESILIENCE" {value=$2} END {print value}' 2>/dev/null)"
-  if [[ -n "$state" ]]; then
+  local dedicated_total dedicated_exact legacy_total legacy_exact state=''
+  dedicated_total="$(marker_count "$log" '^M5_RESILIENCE::')"
+  if [[ "$dedicated_total" -gt 0 ]]; then
+    dedicated_exact="$(marker_count "$log" '^M5_RESILIENCE::(PASS|NOT_RUN|BLOCKED)$')"
+    [[ "$dedicated_total" -eq 1 && "$dedicated_exact" -eq 1 ]] || {
+      printf 'INVALID'
+      return 0
+    }
+    state="$(marker_log "$log" | awk -F '::' '$0 ~ /^M5_RESILIENCE::(PASS|NOT_RUN|BLOCKED)$/ {print $2; exit}' 2>/dev/null)"
     printf '%s' "$state"
     return 0
   fi
-  marker_log "$log" | awk -F '::' '$1 == "M5_LANE" && $2 == "tencent.outage.fallback" {value=$3} END {print value}' 2>/dev/null
+  legacy_total="$(marker_count "$log" '^M5_LANE::tencent\.outage\.fallback::')"
+  if [[ "$legacy_total" -gt 0 ]]; then
+    legacy_exact="$(marker_count "$log" '^M5_LANE::tencent\.outage\.fallback::(PASS|NOT_RUN|BLOCKED)$')"
+    [[ "$legacy_total" -eq 1 && "$legacy_exact" -eq 1 ]] || {
+      printf 'INVALID'
+      return 0
+    }
+    marker_log "$log" | awk -F '::' '$0 ~ /^M5_LANE::tencent\.outage\.fallback::(PASS|NOT_RUN|BLOCKED)$/ {print $3; exit}' 2>/dev/null
+  fi
 }
 
 validate_log() {

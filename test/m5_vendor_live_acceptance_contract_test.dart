@@ -380,27 +380,25 @@ void main() {
     expect(verdict, contains('conclusion=ANDROID_EMULATOR_FAIL'));
   });
 
-  test(
-    'aggregate accepts exact resilience markers from Android and raw logs',
-    () {
-      final Directory root = createM5TempRoot('m5-vendor-live-no-pay-');
-      const String runId = 'm5-no-pay-contract';
-      const String fixtureId = 'm5-fresh-no-pay-fixture';
-      final String flutterSha = 'a' * 40;
-      final String backendSha = 'b' * 40;
-      final String backendDigest = 'c' * 64;
-      final String hostSha = 'd' * 64;
-      final String apkSha = 'e' * 64;
-      final String nonceSha256 = 'f' * 64;
+  test('aggregate validates resilience markers strictly before fallback', () {
+    final Directory root = createM5TempRoot('m5-vendor-live-no-pay-');
+    const String runId = 'm5-no-pay-contract';
+    const String fixtureId = 'm5-fresh-no-pay-fixture';
+    final String flutterSha = 'a' * 40;
+    final String backendSha = 'b' * 40;
+    final String backendDigest = 'c' * 64;
+    final String hostSha = 'd' * 64;
+    final String apkSha = 'e' * 64;
+    final String nonceSha256 = 'f' * 64;
 
-      void write(String relativePath, String contents) {
-        final File file = File('${root.path}/$relativePath');
-        file.parent.createSync(recursive: true);
-        file.writeAsStringSync(contents);
-      }
+    void write(String relativePath, String contents) {
+      final File file = File('${root.path}/$relativePath');
+      file.parent.createSync(recursive: true);
+      file.writeAsStringSync(contents);
+    }
 
-      final String dbEvidence =
-          '''
+    final String dbEvidence =
+        '''
 {
   "status":"OK",
   "evidenceBinding":{"runId":"$runId","avd":"AVD-A","fixtureId":"$fixtureId","startNonceSha256":"$nonceSha256","backendSha":"$backendSha","flutterSha":"$flutterSha","apkSha":"$apkSha","backendSourceDigest":"$backendDigest"},
@@ -413,7 +411,8 @@ void main() {
   "backendSourceDigest":"$backendDigest"
 }
 ''';
-      final String log = '''
+    String logWithResilienceMarker(String resilienceMarker) =>
+        '''
 untrusted M5_ACCEPTANCE::FAIL
 I/flutter (not-a-pid): M5_ACCEPTANCE::FAIL
 I/flutter (12345): untrusted M5_ACCEPTANCE::FAIL
@@ -428,7 +427,7 @@ M5_LANE::tencent.c2c.http-authority::PASS
 M5_LANE::tencent.avchatroom.hint::PASS
 M5_LANE::tencent.avchatroom.leave::PASS
 M5_LANE::alipay.catalog::PASS
-M5_RESILIENCE::NOT_RUN
+$resilienceMarker
 M5_LANE::alipay.order::NOT_OPTED_IN
 M5_LANE::alipay.native.launch-cancel::NOT_OPTED_IN
 M5_LANE::alipay.native.launch-success::NOT_OPTED_IN
@@ -436,14 +435,14 @@ M5_LANE::alipay.query-reconcile::NOT_RUN
 M5_LANE::alipay.settlement::NOT_RUN
 M5_LANE::alipay.reconcile-idempotency::NOT_RUN
 ''';
-      final String flutterPrefixedLog = log
-          .split('\n')
-          .map(
-            (String line) => line.isEmpty ? line : 'I/flutter (12345): $line',
-          )
-          .join('\n');
-      final String result =
-          '''
+
+    String flutterEnvelope(String log) => log
+        .split('\n')
+        .map((String line) => line.isEmpty ? line : 'I/flutter (12345): $line')
+        .join('\n');
+
+    final String result =
+        '''
 result=NO_PAY
 acceptance_status=NO_PAY
 run_id=$runId
@@ -470,12 +469,14 @@ http_route_marker_count=1
 tencent_provider_calls=1
 alipay_provider_calls=0
 ''';
+
+    void writeLogs({required String avdALog, required String avdBLog}) {
       for (final String avd in <String>['AVD-A', 'AVD-B']) {
         // Real Android Flutter output has an `I/flutter (pid): ` envelope;
         // retain one raw fixture as a backwards-compatibility contract too.
         write(
           '$avd/logs/flutter-drive.log',
-          avd == 'AVD-A' ? flutterPrefixedLog : log,
+          avd == 'AVD-A' ? avdALog : avdBLog,
         );
         write(
           '$avd/vendor-events.txt',
@@ -496,111 +497,163 @@ alipay_provider_calls=0
           dbEvidence.replaceAll('"AVD-A"', '"$avd"'),
         );
       }
-      final ProcessResult process = Process.runSync(
-        '/bin/bash',
-        <String>[aggregate.path],
-        environment: <String, String>{
-          ...Platform.environment,
-          'QA_ARTIFACT_ROOT': root.path,
-          'QA_FLUTTER_SHA': flutterSha,
-          'QA_BACKEND_SHA': backendSha,
-          'QA_BACKEND_DIGEST': backendDigest,
-          'QA_M5_RUN_ID': runId,
-          'QA_M5_FIXTURE_ID': fixtureId,
-        },
-      );
-      expect(process.exitCode, 0, reason: process.stderr.toString());
-      expect(
-        File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
-        contains('conclusion=ANDROID_EMULATOR_NO_PAY'),
-      );
-      final File avdALog = File('${root.path}/AVD-A/logs/flutter-drive.log');
-      final File avdBLog = File('${root.path}/AVD-B/logs/flutter-drive.log');
-      avdALog.writeAsStringSync(
-        avdALog.readAsStringSync().replaceFirst(
-          'I/flutter (12345): M5_RESILIENCE::NOT_RUN',
-          'I/flutter (not-a-pid): M5_RESILIENCE::NOT_RUN',
-        ),
-      );
-      avdBLog.writeAsStringSync(
-        avdBLog.readAsStringSync().replaceFirst(
-          'M5_RESILIENCE::NOT_RUN',
-          'untrusted M5_RESILIENCE::NOT_RUN',
-        ),
-      );
-      final ProcessResult spoofedResilience = Process.runSync(
-        '/bin/bash',
-        <String>[aggregate.path],
-        environment: <String, String>{
-          ...Platform.environment,
-          'QA_ARTIFACT_ROOT': root.path,
-          'QA_FLUTTER_SHA': flutterSha,
-          'QA_BACKEND_SHA': backendSha,
-          'QA_BACKEND_DIGEST': backendDigest,
-          'QA_M5_RUN_ID': runId,
-          'QA_M5_FIXTURE_ID': fixtureId,
-        },
-      );
-      expect(spoofedResilience.exitCode, isNonZero);
-      expect(
-        File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
-        contains('conclusion=ANDROID_EMULATOR_FAIL'),
-      );
-      avdALog.writeAsStringSync(flutterPrefixedLog);
-      avdBLog.writeAsStringSync(log);
+    }
 
-      final File resultA = File('${root.path}/AVD-A/result.txt');
-      resultA.writeAsStringSync(
-        resultA.readAsStringSync().replaceFirst(
-          'secret_scan=PASS',
-          'secret_scan=FAIL',
-        ),
-      );
-      final ProcessResult unsafe = Process.runSync(
-        '/bin/bash',
-        <String>[aggregate.path],
-        environment: <String, String>{
-          ...Platform.environment,
-          'QA_ARTIFACT_ROOT': root.path,
-          'QA_FLUTTER_SHA': flutterSha,
-          'QA_BACKEND_SHA': backendSha,
-          'QA_BACKEND_DIGEST': backendDigest,
-          'QA_M5_RUN_ID': runId,
-          'QA_M5_FIXTURE_ID': fixtureId,
-        },
-      );
-      expect(unsafe.exitCode, isNonZero);
-      expect(
-        File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
-        contains('conclusion=ANDROID_EMULATOR_FAIL'),
-      );
+    ProcessResult runAggregate() => Process.runSync(
+      '/bin/bash',
+      <String>[aggregate.path],
+      environment: <String, String>{
+        ...Platform.environment,
+        'QA_ARTIFACT_ROOT': root.path,
+        'QA_FLUTTER_SHA': flutterSha,
+        'QA_BACKEND_SHA': backendSha,
+        'QA_BACKEND_DIGEST': backendDigest,
+        'QA_M5_RUN_ID': runId,
+        'QA_M5_FIXTURE_ID': fixtureId,
+      },
+    );
 
-      resultA.writeAsStringSync(
-        resultA
-            .readAsStringSync()
-            .replaceFirst('secret_scan=FAIL', 'secret_scan=PASS')
-            .replaceFirst('result=NO_PAY', 'result=PARTIAL'),
-      );
-      final ProcessResult partial = Process.runSync(
-        '/bin/bash',
-        <String>[aggregate.path],
-        environment: <String, String>{
-          ...Platform.environment,
-          'QA_ARTIFACT_ROOT': root.path,
-          'QA_FLUTTER_SHA': flutterSha,
-          'QA_BACKEND_SHA': backendSha,
-          'QA_BACKEND_DIGEST': backendDigest,
-          'QA_M5_RUN_ID': runId,
-          'QA_M5_FIXTURE_ID': fixtureId,
-        },
-      );
-      expect(partial.exitCode, isNonZero);
-      expect(
-        File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
-        contains('conclusion=ANDROID_EMULATOR_PARTIAL'),
-      );
-    },
-  );
+    writeLogs(
+      avdALog: flutterEnvelope(
+        logWithResilienceMarker('M5_RESILIENCE::NOT_RUN'),
+      ),
+      avdBLog: logWithResilienceMarker('M5_RESILIENCE::NOT_RUN'),
+    );
+    final ProcessResult process = runAggregate();
+    expect(process.exitCode, 0, reason: process.stderr.toString());
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('conclusion=ANDROID_EMULATOR_NO_PAY'),
+    );
+
+    writeLogs(
+      avdALog: flutterEnvelope(
+        logWithResilienceMarker('M5_LANE::tencent.outage.fallback::NOT_RUN'),
+      ),
+      avdBLog: logWithResilienceMarker(
+        'M5_LANE::tencent.outage.fallback::NOT_RUN',
+      ),
+    );
+    final ProcessResult legacyFallback = runAggregate();
+    expect(
+      legacyFallback.exitCode,
+      0,
+      reason: legacyFallback.stderr.toString(),
+    );
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('conclusion=ANDROID_EMULATOR_NO_PAY'),
+    );
+
+    writeLogs(
+      avdALog: flutterEnvelope(
+        logWithResilienceMarker('M5_RESILIENCE::NOT_RUN::unexpected'),
+      ),
+      avdBLog: logWithResilienceMarker('M5_RESILIENCE::NOT_RUN::unexpected'),
+    );
+    final ProcessResult extraFieldDedicated = runAggregate();
+    expect(extraFieldDedicated.exitCode, isNonZero);
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('conclusion=ANDROID_EMULATOR_FAIL'),
+    );
+
+    writeLogs(
+      avdALog: flutterEnvelope(
+        logWithResilienceMarker(
+          'M5_RESILIENCE::NOT_RUN\nM5_RESILIENCE::NOT_RUN',
+        ),
+      ),
+      avdBLog: logWithResilienceMarker('M5_RESILIENCE::NOT_RUN'),
+    );
+    final ProcessResult duplicateDedicated = runAggregate();
+    expect(duplicateDedicated.exitCode, isNonZero);
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('conclusion=ANDROID_EMULATOR_FAIL'),
+    );
+
+    writeLogs(
+      avdALog: flutterEnvelope(
+        logWithResilienceMarker('M5_RESILIENCE::NOT_RUN\nM5_RESILIENCE::PASS'),
+      ),
+      avdBLog: logWithResilienceMarker('M5_RESILIENCE::NOT_RUN'),
+    );
+    final ProcessResult conflictingDedicated = runAggregate();
+    expect(conflictingDedicated.exitCode, isNonZero);
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('conclusion=ANDROID_EMULATOR_FAIL'),
+    );
+
+    writeLogs(
+      avdALog: flutterEnvelope(
+        logWithResilienceMarker(
+          'M5_RESILIENCE::NOT_RUN::unexpected\n'
+          'M5_LANE::tencent.outage.fallback::NOT_RUN',
+        ),
+      ),
+      avdBLog: logWithResilienceMarker('M5_RESILIENCE::NOT_RUN'),
+    );
+    final ProcessResult malformedDedicatedBlocksFallback = runAggregate();
+    expect(malformedDedicatedBlocksFallback.exitCode, isNonZero);
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('conclusion=ANDROID_EMULATOR_FAIL'),
+    );
+
+    writeLogs(
+      avdALog: flutterEnvelope(
+        logWithResilienceMarker(
+          'M5_LANE::tencent.outage.fallback::NOT_RUN\n'
+          'M5_LANE::tencent.outage.fallback::NOT_RUN',
+        ),
+      ),
+      avdBLog: logWithResilienceMarker(
+        'M5_LANE::tencent.outage.fallback::NOT_RUN',
+      ),
+    );
+    final ProcessResult duplicateLegacy = runAggregate();
+    expect(duplicateLegacy.exitCode, isNonZero);
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('conclusion=ANDROID_EMULATOR_FAIL'),
+    );
+
+    writeLogs(
+      avdALog: flutterEnvelope(
+        logWithResilienceMarker('M5_RESILIENCE::NOT_RUN'),
+      ),
+      avdBLog: logWithResilienceMarker('M5_RESILIENCE::NOT_RUN'),
+    );
+
+    final File resultA = File('${root.path}/AVD-A/result.txt');
+    resultA.writeAsStringSync(
+      resultA.readAsStringSync().replaceFirst(
+        'secret_scan=PASS',
+        'secret_scan=FAIL',
+      ),
+    );
+    final ProcessResult unsafe = runAggregate();
+    expect(unsafe.exitCode, isNonZero);
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('conclusion=ANDROID_EMULATOR_FAIL'),
+    );
+
+    resultA.writeAsStringSync(
+      resultA
+          .readAsStringSync()
+          .replaceFirst('secret_scan=FAIL', 'secret_scan=PASS')
+          .replaceFirst('result=NO_PAY', 'result=PARTIAL'),
+    );
+    final ProcessResult partial = runAggregate();
+    expect(partial.exitCode, isNonZero);
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('conclusion=ANDROID_EMULATOR_PARTIAL'),
+    );
+  });
 
   test('success aggregate requires settlement on AVD-A and withholds AVD-B', () {
     final Directory root = createM5TempRoot('m5-vendor-live-success-');
