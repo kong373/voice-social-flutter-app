@@ -6,8 +6,11 @@ session.  It snapshots only fixture-scoped aggregate markers at start,
 persists a nonce-bound baseline, and emits a fixed JSON delta at collect.  It
 never returns row payloads, user or room numeric identifiers, provider
 credentials, provider order strings, message text, phone values, or database
-diagnostics.  The source/APK binding is supplied by the protected release
-harness and carried through every successful report.
+diagnostics.  Tencent callback counts require a backend-ingested link to a
+fixture-owned room-group outbox row; the helper fails closed when that link
+is absent rather than treating a time-window match as ownership.  The
+source/APK binding is supplied by the protected release harness and carried
+through every successful report.
 
 Use ``--self-test`` for an offline contract and leakage check.  A live run
 requires the M5 environment variables documented in
@@ -205,6 +208,10 @@ class TableSpec:
 
 _PUBLIC_ID = ("00000000-0000-4000-8000-000000000001",)
 _PUBLIC_ID_2 = ("00000000-0000-4000-8000-000000000002",)
+# V30 currently does not persist a callback's owning room/outbox/message.  The
+# live M5 contract therefore requires the backend callback ingest to add this
+# explicit link before the helper can count a Tencent group callback.
+M5_CALLBACK_SCOPE_LINK_COLUMN = "room_group_outbox_public_id"
 
 
 TABLE_SPECS: tuple[TableSpec, ...] = (
@@ -260,7 +267,7 @@ TABLE_SPECS: tuple[TableSpec, ...] = (
     TableSpec(
         "tencent_im_callback_event",
         hash_kinds=("event_key", "body_sha256"),
-        required_columns=("received_at",),
+        required_columns=("received_at", M5_CALLBACK_SCOPE_LINK_COLUMN, "callback_command"),
     ),
     TableSpec(
         "tencent_im_room_group",
@@ -293,6 +300,7 @@ TABLE_SPECS: tuple[TableSpec, ...] = (
         },
         _PUBLIC_ID,
         required_columns=(
+            "public_id",
             "room_id",
             "group_id",
             "generation",
@@ -305,7 +313,13 @@ TABLE_SPECS: tuple[TableSpec, ...] = (
     TableSpec(
         "room_public_message",
         public_ids=_PUBLIC_ID_2,
-        required_columns=("room_id", "sender_user_id", "event_version", "created_at"),
+        required_columns=(
+            "public_id",
+            "room_id",
+            "sender_user_id",
+            "event_version",
+            "created_at",
+        ),
     ),
     TableSpec(
         "payment_provider_event",
@@ -1096,13 +1110,52 @@ column_exists() {
   printf '%s' "$value"
 }
 
+# room_group_outbox_public_id is the explicit ingest link from an accepted
+# Tencent Group callback to tencent_im_room_group_outbox.public_id.  V30 does
+# not currently have it.  Never interpolate the callback table's scope using
+# only received_at; emit an empty scope until every relation needed below is
+# present so the required-column marker makes the live session fail closed.
+callback_scope_available=0
+if [ "$(table_exists tencent_im_callback_event)" = 1 ] \
+  && [ "$(table_exists tencent_im_room_group_outbox)" = 1 ] \
+  && [ "$(table_exists tencent_im_room_group)" = 1 ] \
+  && [ "$(table_exists room_public_message)" = 1 ] \
+  && [ "$(table_exists room)" = 1 ] \
+  && [ "$(table_exists room_member)" = 1 ] \
+  && [ "$(column_exists tencent_im_callback_event room_group_outbox_public_id)" = 1 ] \
+  && [ "$(column_exists tencent_im_callback_event callback_command)" = 1 ] \
+  && [ "$(column_exists tencent_im_room_group_outbox public_id)" = 1 ] \
+  && [ "$(column_exists tencent_im_room_group_outbox operation)" = 1 ] \
+  && [ "$(column_exists tencent_im_room_group_outbox room_id)" = 1 ] \
+  && [ "$(column_exists tencent_im_room_group_outbox group_id)" = 1 ] \
+  && [ "$(column_exists tencent_im_room_group_outbox generation)" = 1 ] \
+  && [ "$(column_exists tencent_im_room_group_outbox aggregate_public_id)" = 1 ] \
+  && [ "$(column_exists tencent_im_room_group_outbox event_version)" = 1 ] \
+  && [ "$(column_exists tencent_im_room_group room_id)" = 1 ] \
+  && [ "$(column_exists tencent_im_room_group group_id)" = 1 ] \
+  && [ "$(column_exists tencent_im_room_group generation)" = 1 ] \
+  && [ "$(column_exists room_public_message public_id)" = 1 ] \
+  && [ "$(column_exists room_public_message room_id)" = 1 ] \
+  && [ "$(column_exists room_public_message event_version)" = 1 ] \
+  && [ "$(column_exists room_public_message created_at)" = 1 ] \
+  && [ "$(column_exists room id)" = 1 ] \
+  && [ "$(column_exists room owner_user_id)" = 1 ] \
+  && [ "$(column_exists room_member room_id)" = 1 ] \
+  && [ "$(column_exists room_member user_id)" = 1 ] \
+  && [ "$(column_exists app_user id)" = 1 ] \
+  && [ "$(column_exists app_user nickname)" = 1 ]; then
+  callback_scope_available=1
+fi
+
 scope_where() {
   table="$1"
   [ -n "$scope_nickname" ] || return 0
   # The fixture nickname is derived from the protected M5 fixture id.  These
   # predicates stay inside MySQL; only aggregate markers cross the container
-  # boundary.  Provider callback rows have no first-party foreign key, so
-  # their receive timestamp is the explicit run boundary.
+  # boundary.  Group callback rows are additionally joined through the
+  # explicit callback->room-group-outbox link and then to the outbox's
+  # first-party room_public_message row.  A missing link is never replaced by
+  # the old received_at-only predicate.
   case "$table" in
     provider_delivery_outbox)
       printf "recipient_user_id IN (SELECT id FROM app_user WHERE nickname = '%s') AND created_at >= FROM_UNIXTIME(%s)" "$scope_nickname" "$scope_since_epoch" ;;
@@ -1115,7 +1168,11 @@ scope_where() {
     refresh_session)
       printf "user_id IN (SELECT id FROM app_user WHERE nickname = '%s') AND created_at >= FROM_UNIXTIME(%s)" "$scope_nickname" "$scope_since_epoch" ;;
     tencent_im_callback_event)
-      printf "received_at >= FROM_UNIXTIME(%s)" "$scope_since_epoch" ;;
+      if [ "$callback_scope_available" = 1 ]; then
+        printf "room_group_outbox_public_id IN (SELECT o.public_id FROM tencent_im_room_group_outbox o JOIN room_public_message p ON p.public_id = o.aggregate_public_id AND p.room_id = o.room_id AND p.event_version = o.event_version JOIN room r ON r.id = o.room_id LEFT JOIN room_member rm ON rm.room_id = r.id WHERE o.operation = 'SEND_GROUP_MSG' AND EXISTS (SELECT 1 FROM tencent_im_room_group g WHERE g.room_id = o.room_id AND g.group_id = o.group_id AND g.generation = o.generation) AND (r.owner_user_id IN (SELECT id FROM app_user WHERE nickname = '%s') OR rm.user_id IN (SELECT id FROM app_user WHERE nickname = '%s')) AND o.created_at >= FROM_UNIXTIME(%s) AND p.created_at >= FROM_UNIXTIME(%s)) AND callback_command = 'Group.CallbackAfterSendMsg' AND received_at >= FROM_UNIXTIME(%s)" "$scope_nickname" "$scope_nickname" "$scope_since_epoch" "$scope_since_epoch" "$scope_since_epoch"
+      else
+        printf "1 = 0"
+      fi ;;
     tencent_im_room_group)
       printf "room_id IN (SELECT r.id FROM room r LEFT JOIN room_member rm ON rm.room_id = r.id WHERE r.owner_user_id IN (SELECT id FROM app_user WHERE nickname = '%s') OR rm.user_id IN (SELECT id FROM app_user WHERE nickname = '%s')) AND created_at >= FROM_UNIXTIME(%s)" "$scope_nickname" "$scope_nickname" "$scope_since_epoch" ;;
     tencent_im_room_group_outbox)
@@ -1311,10 +1368,13 @@ emit_required_column private_message created_at
 emit_required_column tencent_im_account user_id
 emit_required_column tencent_im_account created_at
 emit_required_column tencent_im_callback_event received_at
+emit_required_column tencent_im_callback_event room_group_outbox_public_id
+emit_required_column tencent_im_callback_event callback_command
 emit_required_column tencent_im_room_group room_id
 emit_required_column tencent_im_room_group group_id
 emit_required_column tencent_im_room_group generation
 emit_required_column tencent_im_room_group created_at
+emit_required_column tencent_im_room_group_outbox public_id
 emit_required_column tencent_im_room_group_outbox room_id
 emit_required_column tencent_im_room_group_outbox group_id
 emit_required_column tencent_im_room_group_outbox generation
@@ -1322,6 +1382,7 @@ emit_required_column tencent_im_room_group_outbox event_version
 emit_required_column tencent_im_room_group_outbox aggregate_public_id
 emit_required_column tencent_im_room_group_outbox attempt_count
 emit_required_column tencent_im_room_group_outbox created_at
+emit_required_column room_public_message public_id
 emit_required_column room_public_message room_id
 emit_required_column room_public_message sender_user_id
 emit_required_column room_public_message event_version

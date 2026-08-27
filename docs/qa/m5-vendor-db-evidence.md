@@ -72,6 +72,32 @@ and is atomically marked consumed after a successful collect. Raw nonce,
 provider fields, IDs, hashes, and MySQL/Docker diagnostics are never written
 to state or error responses.
 
+## Tencent callback ownership gate
+
+`received_at` is only a run boundary; it is not an ownership proof. For the
+live M5 Tencent callback counter, the helper requires an explicit
+`tencent_im_callback_event.room_group_outbox_public_id` ingest link and the
+existing `callback_command` column. It counts only `Group.CallbackAfterSendMsg`
+rows whose link resolves to a `SEND_GROUP_MSG` row in
+`tencent_im_room_group_outbox`, whose `aggregate_public_id` and
+`event_version` resolve to the same `room_public_message`, and whose room is
+owned by or contains the fixture user. The room-group `group_id`/`generation`
+mapping is checked inside the same aggregate query. `received_at >= start` is
+still applied, but only after these identity joins.
+
+The V30 schema currently tracked by the backend contains `event_key`,
+`sdk_app_id`, `request_time`, `callback_command`, `body_sha256`, and
+`received_at`; it does not contain the required callback-to-outbox link. The
+helper therefore reports controlled `SCHEMA_MISSING` at `collect` and never
+claims Tencent callback evidence on that schema. Do not substitute a timestamp
+window, provider message text, or a guessed join. The minimum backend change
+is a migration adding a nullable `CHAR(36)` (or equivalent opaque public-key)
+`room_group_outbox_public_id` field with an index/foreign-key-compatible
+relationship to `tencent_im_room_group_outbox.public_id`, plus callback ingest
+that writes the exact matched outbox public ID only after validating the
+group/message hint. C2C callback rows may remain null; the M5 Tencent callback
+counter deliberately measures fixture-owned AVChatRoom group callbacks.
+
 ## V29–V31 coverage
 
 The report requires and projects the following tables:
@@ -220,9 +246,10 @@ The session's SQL predicates bind rows through the fixture nickname derived
 from `fixtureId` and a `created_at`/`received_at` boundary captured at
 `start`. Payment events are joined through the fixture's `recharge_order`;
 Tencent room rows are joined through fixture-owned/member rooms; callback
-events use the explicit received-time boundary because V30 has no
-first-party-user foreign key. Consequently, pre-existing rows and unrelated
-global public IDs cannot satisfy the live current-run delta.
+events additionally traverse the explicit callback-to-room-group-outbox link
+and its first-party public-message identity. Consequently, pre-existing rows
+and unrelated global public IDs cannot satisfy the live current-run delta. If
+the callback link is absent, `collect` fails closed with `SCHEMA_MISSING`.
 
 `--json`/`--csv` are intentionally not accepted in `--serve` mode; callers
 must persist the validated JSON response themselves. `payload_to_csv` remains

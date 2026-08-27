@@ -26,6 +26,7 @@ from m5_vendor_db_evidence import (
     CHECK_NAMES,
     COLLECT_REQUEST_TIMEOUT_SECONDS,
     DOCKER_EVIDENCE_TIMEOUT_SECONDS,
+    M5_CALLBACK_SCOPE_LINK_COLUMN,
     M5EvidenceSessionCollector,
     M5EvidenceServer,
     START_REQUEST_TIMEOUT_SECONDS,
@@ -178,6 +179,43 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             parse_mysql_markers(markers)
 
+    def test_callback_evidence_requires_explicit_outbox_link_marker(self) -> None:
+        # V30's received_at-only callback table cannot prove that a row came
+        # from this fixture's room/message.  A legacy marker stream must not
+        # remain acceptable after the callback ownership gate is enabled.
+        markers = _markers().replace(
+            "X|tencent_im_callback_event|room_group_outbox_public_id|1\n", ""
+        )
+        with self.assertRaises(EvidenceError):
+            parse_mysql_markers(markers)
+
+    def test_callback_evidence_missing_link_fails_closed_at_collect(self) -> None:
+        # Model the current V30 schema explicitly: the marker exists as a
+        # schema probe, but the callback-to-outbox column is absent. Even if a
+        # callback count changes between start and collect, the session must
+        # reject the report instead of returning a timestamp-scoped success.
+        missing_link = "X|tencent_im_callback_event|room_group_outbox_public_id|1\n"
+        missing_link_marker = missing_link.replace("|1\n", "|0\n")
+        legacy_baseline = _markers().replace(missing_link, missing_link_marker)
+        legacy_current = _current_run_markers().replace(
+            missing_link, missing_link_marker
+        )
+        with tempfile.TemporaryDirectory() as state_dir:
+            collector = _FakeSessionCollector(
+                _session_config(state_dir, run_id="m5-callback-schema"),
+                [legacy_baseline, legacy_current],
+            )
+            started = collector.start(
+                "m5-callback-schema", "AVD-A", "m5-fresh-callback"
+            )
+            with self.assertRaisesRegex(EvidenceError, "SCHEMA_MISSING"):
+                collector.collect(
+                    "m5-callback-schema",
+                    "AVD-A",
+                    "m5-fresh-callback",
+                    started["startNonce"],
+                )
+
     def test_nonzero_integrity_check_fails_closed(self) -> None:
         markers = _markers().replace("K|wallet_negative|0", "K|wallet_negative|2")
         payload = build_payload(parse_mysql_markers(markers), _binding())
@@ -289,6 +327,35 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
         self.assertIn("FROM_UNIXTIME", MYSQL_EVIDENCE_SCRIPT)
         self.assertIn("payment_provider = 'alipay-sandbox'", MYSQL_EVIDENCE_SCRIPT)
         self.assertNotIn("payment_provider = 'alipay'", MYSQL_EVIDENCE_SCRIPT)
+
+    def test_callback_scope_joins_fixture_room_outbox_and_message_identity(self) -> None:
+        # The callback count must come from an explicit ingest link to the
+        # room-group outbox and then traverse the outbox's room/message keys.
+        # A received_at window by itself is intentionally insufficient.
+        callback_scope_start = MYSQL_EVIDENCE_SCRIPT.index(
+            "    tencent_im_callback_event)"
+        )
+        callback_scope_end = MYSQL_EVIDENCE_SCRIPT.index(
+            "    tencent_im_room_group)", callback_scope_start
+        )
+        callback_scope = MYSQL_EVIDENCE_SCRIPT[
+            callback_scope_start:callback_scope_end
+        ]
+        for term in (
+            "room_group_outbox_public_id",
+            "callback_command = 'Group.CallbackAfterSendMsg'",
+            "o.public_id",
+            "o.operation = 'SEND_GROUP_MSG'",
+            "p.public_id = o.aggregate_public_id",
+            "p.room_id = o.room_id",
+            "p.event_version = o.event_version",
+            "JOIN room r ON r.id = o.room_id",
+            "r.owner_user_id IN (SELECT id FROM app_user WHERE nickname =",
+            "rm.user_id IN (SELECT id FROM app_user WHERE nickname =",
+            "received_at >= FROM_UNIXTIME",
+        ):
+            self.assertIn(term, callback_scope)
+        self.assertIn(M5_CALLBACK_SCOPE_LINK_COLUMN, callback_scope)
 
     def test_payment_evidence_joins_one_order_business_and_amount_chain(self) -> None:
         # These are aggregate-only predicates.  The SQL may compare the
