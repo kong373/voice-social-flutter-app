@@ -97,6 +97,13 @@ START_NONCE_RE = re.compile(r"^[A-Za-z0-9_.~=-]{16,255}$")
 UNIX_EPOCH_RE = re.compile(r"^[0-9]{1,12}$")
 PAYMENT_SCENARIOS = frozenset({"none", "cancel", "success"})
 PAYMENT_SETTLEMENT_POLL_MODE = "internal-bounded-90s"
+# The HTTP client and the helper must leave enough time for a complete
+# fixture-scoped aggregate scan.  Keep these values in one place so a future
+# runner change cannot accidentally reintroduce the old 20/180 second
+# ceilings.  The collect request also includes the bounded settlement poll.
+START_REQUEST_TIMEOUT_SECONDS = 180
+COLLECT_REQUEST_TIMEOUT_SECONDS = 900
+DOCKER_EVIDENCE_TIMEOUT_SECONDS = 300
 M5_RESPONSE_KEYS = frozenset(
     {
         "status",
@@ -317,7 +324,7 @@ TABLE_SPECS: tuple[TableSpec, ...] = (
         },
         _PUBLIC_ID,
         ("event_fingerprint",),
-        required_columns=("order_no", "received_at"),
+        required_columns=("provider", "order_no", "received_at"),
     ),
     TableSpec(
         "recharge_order",
@@ -333,14 +340,27 @@ TABLE_SPECS: tuple[TableSpec, ...] = (
                 "TRADE_PENDING",
             ),
         },
-        required_columns=("user_id", "payment_provider", "created_at"),
+        required_columns=(
+            "order_no",
+            "user_id",
+            "amount_minor",
+            "gift_coin_amount",
+            "payment_provider",
+            "created_at",
+        ),
     ),
     TableSpec("wallet", required_columns=("user_id", "balance_minor", "frozen_minor")),
     TableSpec(
         "wallet_transaction",
         {"transaction_type": ("CREDIT", "DEBIT", "HOLD", "RELEASE")},
         _PUBLIC_ID_2,
-        required_columns=("wallet_id", "amount_minor", "created_at"),
+        required_columns=(
+            "wallet_id",
+            "amount_minor",
+            "business_type",
+            "business_id",
+            "created_at",
+        ),
     ),
     TableSpec(
         "ledger_account",
@@ -351,9 +371,23 @@ TABLE_SPECS: tuple[TableSpec, ...] = (
     TableSpec(
         "ledger_journal",
         public_ids=_PUBLIC_ID_2,
-        required_columns=("actor_user_id", "created_at"),
+        required_columns=(
+            "actor_user_id",
+            "business_type",
+            "business_id",
+            "created_at",
+        ),
     ),
-    TableSpec("ledger_posting", required_columns=("journal_id", "amount_minor", "created_at")),
+    TableSpec(
+        "ledger_posting",
+        required_columns=(
+            "journal_id",
+            "account_id",
+            "currency_code",
+            "amount_minor",
+            "created_at",
+        ),
+    ),
     TableSpec(
         "wallet_reconciliation",
         {"status": ("BALANCED", "MISMATCH")},
@@ -551,6 +585,8 @@ CHECK_NAMES = (
     "room_public_message_bad_event_version",
     "payment_event_order_missing",
     "payment_event_bad_fingerprint",
+    "payment_accounting_linkage_mismatch",
+    "recharge_order_bad_amount",
     "recharge_succeeded_provider_mismatch",
     "wallet_negative",
     "wallet_frozen_negative",
@@ -630,6 +666,48 @@ def _valid_bearer_header(values: Sequence[str], expected: str) -> bool:
     if len(values) != 1 or not values[0].startswith("Bearer "):
         return False
     return _constant_time_equal(values[0][len("Bearer "):], expected)
+
+
+def validate_evidence_url(value: str, *, allow_loopback_http: bool = False) -> None:
+    """Validate an evidence endpoint before a client opens it.
+
+    External evidence services must use HTTPS.  Plain HTTP is accepted only
+    for the helper endpoint that this runner creates on loopback; callers
+    cannot opt into a non-loopback HTTP endpoint.  Query strings, fragments,
+    user-info, and alternate paths are rejected so a credential cannot be
+    smuggled into a URL or redirected to an unrelated handler.
+    """
+
+    if not isinstance(value, str) or not value or any(ord(char) < 0x20 for char in value):
+        raise ConfigurationError("invalid evidence URL")
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError as error:
+        raise ConfigurationError("invalid evidence URL") from error
+    scheme = parsed.scheme.lower()
+    if scheme == "https":
+        pass
+    elif (
+        allow_loopback_http
+        and scheme == "http"
+        and hostname is not None
+        and hostname.lower() in {"127.0.0.1", "localhost", "::1"}
+    ):
+        pass
+    else:
+        raise ConfigurationError("evidence endpoint must use HTTPS")
+    if (
+        not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"/m5/db-evidence", "/m5/db-evidence/"}
+        or (port is not None and not 1 <= port <= 65535)
+    ):
+        raise ConfigurationError("invalid evidence URL")
 
 
 def _validate_evidence_token(value: str) -> None:
@@ -924,7 +1002,11 @@ class DockerRunner:
     def __init__(self, config: EvidenceConfig):
         self._config = config
 
-    def _run(self, arguments: Sequence[str], timeout: float = 20.0) -> str:
+    def _run(
+        self,
+        arguments: Sequence[str],
+        timeout: float = DOCKER_EVIDENCE_TIMEOUT_SECONDS,
+    ) -> str:
         try:
             completed = subprocess.run(
                 [self._config.docker_bin, *arguments],
@@ -946,7 +1028,10 @@ class DockerRunner:
     def exec_shell(self, container: str, script: str) -> str:
         if not CONTAINER_NAME_RE.fullmatch(container or "") or "\x00" in script:
             raise EvidenceError("CONFIGURATION")
-        return self._run(("exec", container, "/bin/sh", "-c", script), timeout=45.0)
+        return self._run(
+            ("exec", container, "/bin/sh", "-c", script),
+            timeout=DOCKER_EVIDENCE_TIMEOUT_SECONDS,
+        )
 
 
 # The database secret is expanded only in the container shell.  Every
@@ -1241,9 +1326,13 @@ emit_required_column room_public_message room_id
 emit_required_column room_public_message sender_user_id
 emit_required_column room_public_message event_version
 emit_required_column room_public_message created_at
+emit_required_column payment_provider_event provider
 emit_required_column payment_provider_event order_no
 emit_required_column payment_provider_event received_at
+emit_required_column recharge_order order_no
 emit_required_column recharge_order user_id
+emit_required_column recharge_order amount_minor
+emit_required_column recharge_order gift_coin_amount
 emit_required_column recharge_order payment_provider
 emit_required_column recharge_order created_at
 emit_required_column wallet user_id
@@ -1251,11 +1340,17 @@ emit_required_column wallet balance_minor
 emit_required_column wallet frozen_minor
 emit_required_column wallet_transaction wallet_id
 emit_required_column wallet_transaction amount_minor
+emit_required_column wallet_transaction business_type
+emit_required_column wallet_transaction business_id
 emit_required_column wallet_transaction created_at
 emit_required_column ledger_account user_id
 emit_required_column ledger_journal actor_user_id
+emit_required_column ledger_journal business_type
+emit_required_column ledger_journal business_id
 emit_required_column ledger_journal created_at
 emit_required_column ledger_posting journal_id
+emit_required_column ledger_posting account_id
+emit_required_column ledger_posting currency_code
 emit_required_column ledger_posting amount_minor
 emit_required_column ledger_posting created_at
 emit_required_column wallet_reconciliation wallet_id
@@ -1382,24 +1477,71 @@ fi
 if [ "$(table_exists payment_provider_event)" = 1 ] \
   && [ "$(table_exists recharge_order)" = 1 ]; then
   payment_event_scope="1 = 1"
+  payment_order_scope="1 = 1"
+  payment_event_since="1 = 1"
+  payment_row_since="1 = 1"
+  payment_journal_since="1 = 1"
   if [ -n "$scope_nickname" ]; then
-    # An event without a fixture-owned recharge order has no safe first-party
-    # identity.  Exclude it from the scoped report rather than treating an
-    # unrelated provider event as this run's evidence.
-    payment_event_scope="o.user_id IN (SELECT id FROM app_user WHERE nickname = '$scope_nickname') AND e.received_at >= FROM_UNIXTIME($scope_since_epoch)"
+    # A provider event has no first-party user foreign key.  Include every
+    # event received after the run boundary so an event with a missing or
+    # mismatched order fails closed instead of being silently discarded.
+    payment_event_scope="e.received_at >= FROM_UNIXTIME($scope_since_epoch)"
+    payment_order_scope="o.user_id IN (SELECT id FROM app_user WHERE nickname = '$scope_nickname') AND o.created_at >= FROM_UNIXTIME($scope_since_epoch)"
+    payment_event_since="e.received_at >= FROM_UNIXTIME($scope_since_epoch)"
+    payment_row_since="wt.created_at >= FROM_UNIXTIME($scope_since_epoch)"
+    payment_journal_since="j.created_at >= FROM_UNIXTIME($scope_since_epoch)"
   fi
   emit_check payment_event_order_missing \
-    "SELECT COUNT(*) FROM payment_provider_event e LEFT JOIN recharge_order o ON o.order_no = e.order_no WHERE $payment_event_scope AND o.id IS NULL"
+    "SELECT COUNT(*) FROM payment_provider_event e LEFT JOIN recharge_order o ON o.order_no = e.order_no AND o.payment_provider = e.provider WHERE $payment_event_scope AND o.id IS NULL"
   emit_check payment_event_bad_fingerprint \
-    "SELECT COUNT(*) FROM payment_provider_event e LEFT JOIN recharge_order o ON o.order_no = e.order_no WHERE $payment_event_scope AND (e.event_fingerprint IS NULL OR e.event_fingerprint NOT REGEXP '^[0-9a-fA-F]{64}$')"
+    "SELECT COUNT(*) FROM payment_provider_event e LEFT JOIN recharge_order o ON o.order_no = e.order_no AND o.payment_provider = e.provider WHERE $payment_event_scope AND (e.event_fingerprint IS NULL OR e.event_fingerprint NOT REGEXP '^[0-9a-fA-F]{64}$')"
+  # A successful settlement is one redacted relational fact, not four
+  # unrelated row counters: the provider event and recharge order share the
+  # same order_no/provider, the wallet credit uses that order_no as its
+  # business_id and exactly the order's gift_coin_amount, and the one ledger
+  # journal uses the same business_id with exactly two balanced postings of
+  # that amount.  The provider event table intentionally stores no amount;
+  # its amount was verified against recharge_order before the event was
+  # persisted by the authoritative webhook service.
+  if [ "$(column_exists payment_provider_event provider)" = 1 ] \
+    && [ "$(column_exists payment_provider_event order_no)" = 1 ] \
+    && [ "$(column_exists recharge_order order_no)" = 1 ] \
+    && [ "$(column_exists recharge_order user_id)" = 1 ] \
+    && [ "$(column_exists recharge_order amount_minor)" = 1 ] \
+    && [ "$(column_exists recharge_order gift_coin_amount)" = 1 ] \
+    && [ "$(column_exists recharge_order payment_provider)" = 1 ] \
+    && [ "$(column_exists wallet_transaction wallet_id)" = 1 ] \
+    && [ "$(column_exists wallet_transaction amount_minor)" = 1 ] \
+    && [ "$(column_exists wallet_transaction business_type)" = 1 ] \
+    && [ "$(column_exists wallet_transaction business_id)" = 1 ] \
+    && [ "$(column_exists wallet_transaction transaction_type)" = 1 ] \
+    && [ "$(column_exists ledger_journal actor_user_id)" = 1 ] \
+    && [ "$(column_exists ledger_journal business_type)" = 1 ] \
+    && [ "$(column_exists ledger_journal business_id)" = 1 ] \
+    && [ "$(column_exists ledger_posting journal_id)" = 1 ] \
+    && [ "$(column_exists ledger_posting account_id)" = 1 ] \
+    && [ "$(column_exists ledger_posting currency_code)" = 1 ] \
+    && [ "$(column_exists ledger_posting amount_minor)" = 1 ] \
+    && [ "$(table_exists wallet)" = 1 ] \
+    && [ "$(table_exists ledger_journal)" = 1 ] \
+    && [ "$(table_exists ledger_posting)" = 1 ] \
+    && [ "$(table_exists ledger_account)" = 1 ]; then
+    emit_check payment_accounting_linkage_mismatch \
+      "SELECT COUNT(*) FROM recharge_order o WHERE $payment_order_scope AND o.payment_provider = 'alipay-sandbox' AND o.status = 'SUCCEEDED' AND o.amount_minor > 0 AND o.gift_coin_amount > 0 AND (NOT EXISTS (SELECT 1 FROM payment_provider_event e WHERE e.provider = o.payment_provider AND e.order_no = o.order_no AND e.status = 'PROCESSED' AND e.observed_status IN ('TRADE_SUCCESS', 'TRADE_FINISHED', 'SUCCEEDED') AND $payment_event_since) OR (SELECT COUNT(*) FROM wallet_transaction wt JOIN wallet w ON w.id = wt.wallet_id WHERE w.user_id = o.user_id AND wt.business_type = 'PAYMENT_RECHARGE' AND wt.business_id = o.order_no AND wt.transaction_type = 'CREDIT' AND wt.amount_minor = o.gift_coin_amount AND $payment_row_since) <> 1 OR (SELECT COUNT(*) FROM ledger_journal j WHERE j.actor_user_id = o.user_id AND j.business_type = 'PAYMENT_RECHARGE' AND j.business_id = o.order_no AND $payment_journal_since) <> 1 OR NOT EXISTS (SELECT 1 FROM ledger_journal j WHERE j.actor_user_id = o.user_id AND j.business_type = 'PAYMENT_RECHARGE' AND j.business_id = o.order_no AND $payment_journal_since AND (SELECT COUNT(*) FROM ledger_posting p WHERE p.journal_id = j.id) = 2 AND NOT EXISTS (SELECT 1 FROM ledger_posting p WHERE p.journal_id = j.id AND p.currency_code <> 'GIFT_COIN') AND (SELECT COALESCE(SUM(p.amount_minor), 0) FROM ledger_posting p WHERE p.journal_id = j.id AND p.currency_code = 'GIFT_COIN') = 0 AND (SELECT COALESCE(SUM(CASE WHEN p.amount_minor > 0 THEN p.amount_minor ELSE 0 END), 0) FROM ledger_posting p WHERE p.journal_id = j.id AND p.currency_code = 'GIFT_COIN') = o.gift_coin_amount AND (SELECT COALESCE(SUM(CASE WHEN p.amount_minor < 0 THEN -p.amount_minor ELSE 0 END), 0) FROM ledger_posting p WHERE p.journal_id = j.id AND p.currency_code = 'GIFT_COIN') = o.gift_coin_amount AND EXISTS (SELECT 1 FROM ledger_posting p JOIN ledger_account a ON a.id = p.account_id WHERE p.journal_id = j.id AND p.currency_code = 'GIFT_COIN' AND p.amount_minor > 0 AND a.user_id = o.user_id AND a.currency_code = 'GIFT_COIN' AND a.account_type = 'USER_AVAILABLE')))"
+  else
+    emit_check payment_accounting_linkage_mismatch "SELECT COUNT(*) FROM information_schema.tables WHERE 1 = 0"
+  fi
 else
   emit_check payment_event_order_missing "SELECT COUNT(*) FROM information_schema.tables WHERE 1 = 0"
   emit_check payment_event_bad_fingerprint "SELECT COUNT(*) FROM information_schema.tables WHERE 1 = 0"
+  emit_check payment_accounting_linkage_mismatch "SELECT COUNT(*) FROM information_schema.tables WHERE 1 = 0"
 fi
 
 if [ "$(table_exists recharge_order)" = 1 ]; then
+  emit_scoped_check recharge_order_bad_amount recharge_order "amount_minor <= 0 OR gift_coin_amount <= 0"
   emit_scoped_check recharge_succeeded_provider_mismatch recharge_order "status = 'SUCCEEDED' AND payment_provider = 'alipay-sandbox' AND provider_status <> 'TRADE_SUCCESS'"
 else
+  emit_check recharge_order_bad_amount "SELECT COUNT(*) FROM information_schema.tables WHERE 1 = 0"
   emit_check recharge_succeeded_provider_mismatch "SELECT COUNT(*) FROM information_schema.tables WHERE 1 = 0"
 fi
 
@@ -2868,7 +3010,10 @@ class M5EvidenceHandler(http.server.BaseHTTPRequestHandler):
 
     def setup(self) -> None:
         super().setup()
-        self.connection.settimeout(8.0)
+        # A collect request may own the bounded settlement poll and a full
+        # aggregate scan.  Do not let an idle socket timeout before that
+        # response is available.
+        self.connection.settimeout(float(COLLECT_REQUEST_TIMEOUT_SECONDS))
 
     def log_message(self, _format: str, *_arguments: object) -> None:
         return

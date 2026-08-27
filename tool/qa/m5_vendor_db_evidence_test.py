@@ -23,13 +23,18 @@ from m5_vendor_db_evidence import (
     EvidenceBinding,
     EvidenceConfig,
     EvidenceError,
+    CHECK_NAMES,
+    COLLECT_REQUEST_TIMEOUT_SECONDS,
+    DOCKER_EVIDENCE_TIMEOUT_SECONDS,
     M5EvidenceSessionCollector,
     M5EvidenceServer,
+    START_REQUEST_TIMEOUT_SECONDS,
     TABLE_SPECS,
     build_payload,
     parse_mysql_markers,
     payload_to_csv,
     _state_snapshot,
+    validate_evidence_url,
     validate_binding,
     validate_payload,
 )
@@ -66,27 +71,7 @@ def _markers(*, present: bool = True) -> str:
             lines.append(f"D|{spec.name}|{public_id}")
         for hash_kind in spec.hash_kinds:
             lines.append(f"H|{spec.name}|{hash_kind}|{'d' * 64}")
-    for key in (
-        "provider_delivery_pair_mismatch",
-        "provider_delivery_missing_private_message",
-        "provider_delivery_bad_attempts",
-        "callback_event_bad_hashes",
-        "room_group_outbox_mapping_mismatch",
-        "room_public_message_bad_event_version",
-        "payment_event_order_missing",
-        "payment_event_bad_fingerprint",
-        "recharge_succeeded_provider_mismatch",
-        "wallet_negative",
-        "wallet_frozen_negative",
-        "wallet_transaction_bad_amount",
-        "ledger_journal_imbalance",
-        "wallet_reconciliation_mismatch",
-        "refund_four_eyes_violation",
-        "refund_outcome_mismatch",
-        "ops_four_eyes_violation",
-        "ops_audit_rows",
-        "idempotency_bad_fingerprint",
-    ):
+    for key in CHECK_NAMES:
         lines.append(f"K|{key}|0")
     return "\n".join(lines) + "\n"
 
@@ -304,6 +289,46 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
         self.assertIn("FROM_UNIXTIME", MYSQL_EVIDENCE_SCRIPT)
         self.assertIn("payment_provider = 'alipay-sandbox'", MYSQL_EVIDENCE_SCRIPT)
         self.assertNotIn("payment_provider = 'alipay'", MYSQL_EVIDENCE_SCRIPT)
+
+    def test_payment_evidence_joins_one_order_business_and_amount_chain(self) -> None:
+        # These are aggregate-only predicates.  The SQL may compare the
+        # protected values inside MySQL, but no order/business/amount value is
+        # emitted in a marker or response.
+        for term in (
+            "e.order_no = o.order_no",
+            "e.provider = o.payment_provider",
+            "wt.business_id = o.order_no",
+            "wt.amount_minor = o.gift_coin_amount",
+            "j.business_id = o.order_no",
+            "p.journal_id = j.id",
+            "p.amount_minor",
+            "payment_accounting_linkage_mismatch",
+        ):
+            self.assertIn(term, MYSQL_EVIDENCE_SCRIPT)
+        self.assertIn("o.status = 'SUCCEEDED'", MYSQL_EVIDENCE_SCRIPT)
+        self.assertIn("COUNT(*) FROM ledger_posting", MYSQL_EVIDENCE_SCRIPT)
+        self.assertIn("= 2", MYSQL_EVIDENCE_SCRIPT)
+
+    def test_evidence_request_timeouts_have_settlement_headroom(self) -> None:
+        self.assertGreaterEqual(START_REQUEST_TIMEOUT_SECONDS, 60)
+        self.assertGreaterEqual(COLLECT_REQUEST_TIMEOUT_SECONDS, 300)
+        self.assertGreaterEqual(DOCKER_EVIDENCE_TIMEOUT_SECONDS, 300)
+
+    def test_external_evidence_url_is_https_and_loopback_http_is_explicit(self) -> None:
+        validate_evidence_url("https://evidence.example.test/m5/db-evidence")
+        validate_evidence_url("https://127.0.0.1/m5/db-evidence/")
+        validate_evidence_url(
+            "http://127.0.0.1:49152/m5/db-evidence", allow_loopback_http=True
+        )
+        for url in (
+            "http://evidence.example.test/m5/db-evidence",
+            "http://10.0.2.2:18080/m5/db-evidence",
+            "https://evidence.example.test/m5/db-evidence?token=secret",
+            "https://user:password@evidence.example.test/m5/db-evidence",
+            "https://evidence.example.test/redirect",
+        ):
+            with self.assertRaises(EvidenceError):
+                validate_evidence_url(url)
 
     def test_error_categories_are_controlled(self) -> None:
         self.assertIn("DB_UNAVAILABLE", ALLOWED_ERROR_CATEGORIES)

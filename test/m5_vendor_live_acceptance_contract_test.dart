@@ -177,6 +177,13 @@ void main() {
     expect(runnerSource, contains('paymentSettlementPoll'));
     expect(runnerSource, contains('internal-bounded-90s'));
     expect(runnerSource, contains('opener.open(request, timeout=180)'));
+    expect(runnerSource, contains('opener.open(request, timeout=900)'));
+    expect(runnerSource, isNot(contains('opener.open(request, timeout=20)')));
+    expect(runnerSource, contains('class NoRedirect'));
+    expect(runnerSource, contains('redirect_request'));
+    expect(runnerSource, contains('response.geturl()'));
+    expect(runnerSource, contains('QA_DB_EVIDENCE_URL must use HTTPS'));
+    expect(runnerSource, isNot(contains('^https?://')));
     expect(runnerSource, isNot(contains('sleep 90')));
     expect(runnerSource, contains('rm -rf -- "\$DB_HELPER_STATE_DIR"'));
     expect(runnerSource, contains('DB_HELPER_LOG'));

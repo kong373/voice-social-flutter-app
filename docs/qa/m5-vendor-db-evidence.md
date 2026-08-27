@@ -98,6 +98,14 @@ The checks are aggregate-only:
   positive public-message event versions;
 - payment event order linkage/fingerprint, and Alipay succeeded-order
   provider status;
+- successful payment accounting linkage: one provider event and recharge order
+  share the provider/order key, the wallet credit uses that order as its
+  `business_id` and the order's gift-coin amount, and the corresponding
+  ledger journal/postings use the same business key with two balanced entries
+  for that amount. The check is performed inside MySQL and emits only a
+  mismatch count; no order number, business ID, amount, or user ID is emitted.
+- non-positive recharge cash/gift-coin amounts are also fail-closed as an
+  aggregate invariant.
 - non-negative wallet amounts, positive transaction amounts, balanced ledger
   journals, and reconciliation status;
 - refund four-eyes and provider outcome consistency, operations four-eyes,
@@ -195,6 +203,18 @@ For `success` on AVD-A, `collect` owns a bounded 90-second poll for the
 verified provider event and settlement rows before consuming the one-shot nonce.
 An external helper must be started with the exact run scenario and advertise
 this poll capability; the runner does not use an unverified fixed delay.
+
+The runner gives `start` a 180-second HTTP budget and `collect` a 900-second
+HTTP budget. The helper gives each bounded Docker aggregate scan up to 300
+seconds. These limits cover the settlement poll and serialized A/B requests;
+the nonce remains unconsumed when a request fails or times out.
+
+When `QA_DB_EVIDENCE_URL`/`QA_DB_EVIDENCE_TOKEN` are provided, the URL must be
+HTTPS, contain no credentials/query/fragment, and resolve to the fixed
+`/m5/db-evidence` endpoint. The runner disables proxies and rejects every HTTP
+redirect (including a changed final URL). The only HTTP URL accepted is the
+helper's internally generated `http://127.0.0.1:<port>/m5/db-evidence`; it is
+never accepted from external configuration.
 
 The session's SQL predicates bind rows through the fixture nickname derived
 from `fixtureId` and a `created_at`/`received_at` boundary captured at

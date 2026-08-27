@@ -100,6 +100,36 @@ fail() {
   exit 64
 }
 
+validate_external_db_url() {
+  local url="$1"
+  # Only an HTTPS endpoint may be supplied by the operator.  The sole HTTP
+  # exception is the exact 127.0.0.1 endpoint generated below for the local
+  # helper; it never enters this function.
+  [[ "$url" == https://* ]] || return 1
+  M5_EXTERNAL_DB_URL="$url" PYTHONPATH="$PROJECT_ROOT/tool/qa" python3 - <<'PY'
+import os
+from m5_vendor_db_evidence import validate_evidence_url
+
+try:
+    validate_evidence_url(os.environ["M5_EXTERNAL_DB_URL"])
+except Exception:
+    raise SystemExit(1)
+PY
+}
+
+validate_local_db_url() {
+  local url="$1"
+  M5_LOCAL_DB_URL="$url" PYTHONPATH="$PROJECT_ROOT/tool/qa" python3 - <<'PY'
+import os
+from m5_vendor_db_evidence import validate_evidence_url
+
+try:
+    validate_evidence_url(os.environ["M5_LOCAL_DB_URL"], allow_loopback_http=True)
+except Exception:
+    raise SystemExit(1)
+PY
+}
+
 create_safe_artifact_root() {
   python3 - "$ARTIFACT_ROOT" <<'PY'
 import os
@@ -755,6 +785,8 @@ start_db_evidence_helper() {
   if [[ -n "$EXTERNAL_DB_URL" || -n "$EXTERNAL_DB_TOKEN" ]]; then
     [[ -n "$EXTERNAL_DB_URL" && -n "$EXTERNAL_DB_TOKEN" ]] ||
       fail 'QA_DB_EVIDENCE_URL and QA_DB_EVIDENCE_TOKEN must be supplied together'
+    validate_external_db_url "$EXTERNAL_DB_URL" ||
+      fail 'QA_DB_EVIDENCE_URL must be an HTTPS evidence endpoint without credentials or query data'
     DB_URL="$EXTERNAL_DB_URL"
     DB_TOKEN="$EXTERNAL_DB_TOKEN"
     return 0
@@ -810,6 +842,7 @@ PY
   done
   [[ "$listening_port" =~ ^[1-9][0-9]*$ ]] || fail 'local evidence helper did not start'
   DB_URL="http://127.0.0.1:${listening_port}/m5/db-evidence"
+  validate_local_db_url "$DB_URL" || fail 'local evidence helper URL is not a controlled loopback endpoint'
 }
 
 db_evidence_start() {
@@ -835,8 +868,13 @@ request = urllib.request.Request(os.environ["M5_DB_URL"], headers={
     "X-M5-Payment-Scenario": os.environ["M5_PAYMENT_SCENARIO"],
 })
 try:
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(request, timeout=20) as response:
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            raise RuntimeError("redirect")
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    with opener.open(request, timeout=180) as response:
+        if response.geturl() != os.environ["M5_DB_URL"]: raise RuntimeError("redirect")
         if response.status < 200 or response.status >= 300: raise RuntimeError("non_success")
         payload = json.loads(response.read())
     if (not isinstance(payload, dict) or payload.get("status") != "STARTED" or
@@ -895,10 +933,17 @@ request = urllib.request.Request(os.environ["M5_DB_URL"], headers={
     "X-M5-Payment-Scenario": os.environ["M5_PAYMENT_SCENARIO"],
 })
 try:
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    # The helper polls settlement internally for up to 90 seconds. Allow
-    # headroom for the other AVD's serialized collector request as well.
-    with opener.open(request, timeout=180) as response:
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            raise RuntimeError("redirect")
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+    # The helper polls settlement internally for up to 90 seconds, may spend
+    # up to 300 seconds in one bounded Docker scan, and serializes A/B state
+    # transitions.  Keep a 15-minute client budget so a slow scan cannot
+    # orphan a valid one-shot nonce.
+    with opener.open(request, timeout=900) as response:
+        if response.geturl() != os.environ["M5_DB_URL"]: raise RuntimeError("redirect")
         if response.status < 200 or response.status >= 300: raise RuntimeError("non_success")
         payload = json.loads(response.read())
     required = {"status", "evidenceBinding", "writeCounters", "vendorOutbox", "callbackEvents", "outboxAttempts", "paymentSettlement", "secrets", "backendSourceDigest"}
@@ -1321,8 +1366,8 @@ done
 if [[ -n "$EXTERNAL_DB_URL" || -n "$EXTERNAL_DB_TOKEN" ]]; then
   [[ -n "$EXTERNAL_DB_URL" && -n "$EXTERNAL_DB_TOKEN" ]] ||
     fail 'QA_DB_EVIDENCE_URL and QA_DB_EVIDENCE_TOKEN must be supplied together'
-  [[ "$EXTERNAL_DB_URL" =~ ^https?:// && "$EXTERNAL_DB_URL" != *'?'* && "$EXTERNAL_DB_URL" != *'@'* ]] ||
-    fail 'QA_DB_EVIDENCE_URL is invalid'
+  [[ "$EXTERNAL_DB_URL" == https://* ]] ||
+    fail 'QA_DB_EVIDENCE_URL must use HTTPS; only the controlled loopback helper may use HTTP'
 fi
 [[ "$LIVE_PHONE" =~ ^1[3-9][0-9]{9}$ ]] || fail 'QA_LIVE_PHONE is invalid'
 [[ "$RECEIVER_PHONE" =~ ^1[3-9][0-9]{9}$ ]] || fail 'QA_M5_RECEIVER_PHONE is invalid'
@@ -1348,6 +1393,10 @@ elif [[ -n "$PAYMENT_SCENARIO" && "$PAYMENT_SCENARIO" != 'none' &&
   fail 'payment scenario must be none, cancel, or success'
 fi
 for command_name in adb flutter docker git python3 awk grep find mktemp shasum sort tr; do command -v "$command_name" >/dev/null 2>&1 || fail "missing command: $command_name"; done
+if [[ -n "$EXTERNAL_DB_URL" ]]; then
+  validate_external_db_url "$EXTERNAL_DB_URL" ||
+    fail 'QA_DB_EVIDENCE_URL must be an HTTPS evidence endpoint without credentials or query data'
+fi
 [[ -f "$PROJECT_ROOT/pubspec.yaml" ]] || fail 'not a Flutter checkout'
 create_safe_artifact_root || fail 'artifact root must be a new absolute directory'
 trap cleanup EXIT
