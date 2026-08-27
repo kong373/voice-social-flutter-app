@@ -39,10 +39,30 @@ enum AlipayAppPayReason {
 }
 
 class AlipayAppPayResult {
-  const AlipayAppPayResult({required this.outcome, required this.reason});
+  const AlipayAppPayResult({
+    required this.outcome,
+    required this.reason,
+    bool? sdkCompleted,
+    this.resultStatus,
+  }) : sdkCompleted =
+           sdkCompleted ?? outcome == AlipayAppPayOutcome.sdkCompleted;
 
   final AlipayAppPayOutcome outcome;
   final AlipayAppPayReason reason;
+
+  /// Whether the native SDK reported a completed invocation. This is
+  /// structured bridge evidence only; it is never payment authority.
+  final bool sdkCompleted;
+
+  /// The native SDK's bounded, non-sensitive result status. The exact value
+  /// is retained so an acceptance layer can distinguish a real `9000` from a
+  /// cancellation, processing result, timeout, or an old bridge's label.
+  final String? resultStatus;
+
+  /// Only the native success code is eligible to be paired with an
+  /// authoritative backend success. This helper intentionally does not read
+  /// or imply any account, wallet, or ledger state.
+  bool get isSdkSuccess => sdkCompleted && resultStatus == '9000';
 
   /// Native results only describe what the SDK reported to the UI.  They are
   /// never sufficient to mark an order paid.
@@ -229,50 +249,126 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
         reason: AlipayAppPayReason.invalidResponse,
       );
     }
-    final Object? rawStatus =
-        raw['status'] ?? raw['outcome'] ?? raw['resultStatus'];
-    final String status = rawStatus?.toString().trim().toLowerCase() ?? '';
-    return switch (status) {
-      'success' || '9000' => const AlipayAppPayResult(
+    // Prefer the raw SDK resultStatus when a bridge includes both it and a
+    // reduced status label. This keeps the acceptance layer from mistaking
+    // an old `status: success` label for proof of native 9000. A null
+    // resultStatus is meaningful for a timeout/unavailable classification, so
+    // retain that null instead of replacing it with the reduced label.
+    final bool hasRawResultStatus =
+        raw.containsKey('resultStatus') ||
+        raw.containsKey('nativeResultStatus');
+    final Object? rawResultStatus = raw.containsKey('resultStatus')
+        ? raw['resultStatus']
+        : raw['nativeResultStatus'];
+    final String? resultStatus = hasRawResultStatus
+        ? _safeResultStatus(rawResultStatus)
+        : _safeResultStatus(raw['status'] ?? raw['outcome']);
+    if (!hasRawResultStatus && resultStatus == null) {
+      return const AlipayAppPayResult(
+        outcome: AlipayAppPayOutcome.failed,
+        reason: AlipayAppPayReason.invalidResponse,
+      );
+    }
+    if (hasRawResultStatus && rawResultStatus != null && resultStatus == null) {
+      return const AlipayAppPayResult(
+        outcome: AlipayAppPayOutcome.failed,
+        reason: AlipayAppPayReason.invalidResponse,
+      );
+    }
+    final Object? rawSdkCompleted = raw['sdkCompleted'];
+    if (rawSdkCompleted != null && rawSdkCompleted is! bool) {
+      return AlipayAppPayResult(
+        outcome: AlipayAppPayOutcome.failed,
+        reason: AlipayAppPayReason.invalidResponse,
+        sdkCompleted: false,
+        resultStatus: resultStatus,
+      );
+    }
+    final String? reducedStatus = _safeResultStatus(
+      raw['status'] ?? raw['outcome'],
+    );
+    final String? classificationStatus = resultStatus ?? reducedStatus;
+    if (classificationStatus == null) {
+      return AlipayAppPayResult(
+        outcome: AlipayAppPayOutcome.failed,
+        reason: AlipayAppPayReason.invalidResponse,
+        sdkCompleted: false,
+        resultStatus: resultStatus,
+      );
+    }
+    final String normalizedStatus = classificationStatus.toLowerCase();
+    final bool sdkCompleted =
+        (rawSdkCompleted as bool?) ??
+        (normalizedStatus == '9000' || normalizedStatus == 'success');
+    return switch (normalizedStatus) {
+      'success' || '9000' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.sdkCompleted,
         reason: AlipayAppPayReason.processing,
+        sdkCompleted: sdkCompleted,
+        resultStatus: resultStatus,
       ),
-      'processing' || '8000' || '6004' => const AlipayAppPayResult(
+      'processing' || '8000' || '6004' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.processing,
         reason: AlipayAppPayReason.processing,
+        sdkCompleted: sdkCompleted,
+        resultStatus: resultStatus,
       ),
-      'payment_in_progress' => const AlipayAppPayResult(
+      'payment_in_progress' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.processing,
         reason: AlipayAppPayReason.processing,
+        sdkCompleted: sdkCompleted,
+        resultStatus: resultStatus,
       ),
       'user_canceled' ||
       'canceled' ||
       'cancelled' ||
-      '6001' => const AlipayAppPayResult(
+      '6001' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.userCanceled,
         reason: AlipayAppPayReason.userCanceled,
+        sdkCompleted: sdkCompleted,
+        resultStatus: resultStatus,
       ),
-      'network_error' || 'network' || '6002' => const AlipayAppPayResult(
+      'network_error' || 'network' || '6002' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.networkError,
         reason: AlipayAppPayReason.network,
+        sdkCompleted: sdkCompleted,
+        resultStatus: resultStatus,
       ),
-      'failed' || '4000' => const AlipayAppPayResult(
+      'failed' || '4000' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.failed,
         reason: AlipayAppPayReason.vendorFailed,
+        sdkCompleted: sdkCompleted,
+        resultStatus: resultStatus,
       ),
-      'unavailable' || 'activity_unavailable' => const AlipayAppPayResult(
+      'unavailable' || 'activity_unavailable' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.unavailable,
         reason: AlipayAppPayReason.nativeUnavailable,
+        sdkCompleted: sdkCompleted,
+        resultStatus: resultStatus,
       ),
-      'timeout' => const AlipayAppPayResult(
+      'timeout' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.processing,
         reason: AlipayAppPayReason.timeout,
+        sdkCompleted: sdkCompleted,
+        resultStatus: resultStatus,
       ),
-      _ => const AlipayAppPayResult(
+      _ => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.failed,
         reason: AlipayAppPayReason.invalidResponse,
+        sdkCompleted: false,
+        resultStatus: resultStatus,
       ),
     };
+  }
+
+  static String? _safeResultStatus(Object? raw) {
+    final String status = raw?.toString().trim() ?? '';
+    if (status.isEmpty ||
+        status.length > 32 ||
+        !RegExp(r'^[A-Za-z0-9_.-]+$').hasMatch(status)) {
+      return null;
+    }
+    return status;
   }
 
   static AlipayAppPayResult _resultForPlatformError(String code) {

@@ -148,10 +148,103 @@ void main() {
           outcomes[index],
           reason: statuses[index].toString(),
         );
+        expect(result.sdkCompleted, statuses[index] == '9000');
+        expect(result.resultStatus, statuses[index].toString());
+        expect(
+          result.isSdkSuccess,
+          statuses[index] == '9000',
+          reason: statuses[index].toString(),
+        );
         expect(result.isProvisional, isTrue);
         expect(result.vendorStatus, isNull);
         expect(result.toString(), isNot(contains(statuses[index].toString())));
       }
+    },
+  );
+
+  test(
+    'native PayResult keeps structured completion and raw result status',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+            return <String, Object?>{
+              'status': 'success',
+              'sdkCompleted': true,
+              'resultStatus': '9000',
+            };
+          });
+      final MethodChannelAlipayAppPayAdapter adapter =
+          MethodChannelAlipayAppPayAdapter(
+            channel: channel,
+            enabled: true,
+            isAndroid: () => true,
+            consentChecker: () async => true,
+          );
+
+      final AlipayAppPayResult result = await adapter.pay(
+        orderNo: 'structured-result-order',
+        orderString: 'signed-structured-result-order',
+      );
+
+      expect(result.outcome, AlipayAppPayOutcome.sdkCompleted);
+      expect(result.sdkCompleted, isTrue);
+      expect(result.resultStatus, '9000');
+      expect(result.isSdkSuccess, isTrue);
+    },
+  );
+
+  test(
+    'inconsistent native completion evidence cannot become SDK success',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+            return <String, Object?>{
+              'sdkCompleted': false,
+              'resultStatus': '9000',
+            };
+          });
+      final MethodChannelAlipayAppPayAdapter adapter =
+          MethodChannelAlipayAppPayAdapter(
+            channel: channel,
+            enabled: true,
+            isAndroid: () => true,
+            consentChecker: () async => true,
+          );
+
+      final AlipayAppPayResult result = await adapter.pay(
+        orderNo: 'inconsistent-result-order',
+        orderString: 'signed-inconsistent-result-order',
+      );
+
+      expect(result.resultStatus, '9000');
+      expect(result.sdkCompleted, isFalse);
+      expect(result.isSdkSuccess, isFalse);
+    },
+  );
+
+  test(
+    'legacy reduced success label cannot stand in for native resultStatus 9000',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+            return <String, Object?>{'status': 'success'};
+          });
+      final MethodChannelAlipayAppPayAdapter adapter =
+          MethodChannelAlipayAppPayAdapter(
+            channel: channel,
+            enabled: true,
+            isAndroid: () => true,
+            consentChecker: () async => true,
+          );
+
+      final AlipayAppPayResult result = await adapter.pay(
+        orderNo: 'legacy-success-label-order',
+        orderString: 'signed-legacy-success-label-order',
+      );
+
+      expect(result.sdkCompleted, isTrue);
+      expect(result.resultStatus, 'success');
+      expect(result.isSdkSuccess, isFalse);
     },
   );
 
@@ -317,6 +410,8 @@ void main() {
     );
     expect(timedOut.outcome, AlipayAppPayOutcome.processing);
     expect(timedOut.reason, AlipayAppPayReason.timeout);
+    expect(timedOut.sdkCompleted, isFalse);
+    expect(timedOut.resultStatus, isNull);
     await Future<void>.value();
     final AlipayAppPayResult retry = await adapter.pay(
       orderNo: 'order-timeout',

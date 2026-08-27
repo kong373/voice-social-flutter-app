@@ -1124,16 +1124,21 @@ Future<void> _runAlipaySandbox(
   RechargeOrder result;
   try {
     result = await dependencies.commerceCatalogRepository.invokePayment(order);
+    evidence.paymentNativeResult(result);
     if (_paymentScenario == 'cancel') {
       // The native result is only a provisional SDK outcome. The final
       // canceled state is accepted only after the first-party query.
-      evidence.providerCallback('alipay', 'launch_cancel');
+      final bool nativeCanceled =
+          result.sdkCompleted == false && result.resultStatus == '6001';
+      if (nativeCanceled) {
+        evidence.providerCallback('alipay', 'launch_cancel');
+      }
       evidence.route(
         capability: 'alipay.native.launch-cancel',
         method: 'SDK',
         route: 'AlipaySDK.pay',
         status: 200,
-        state: 'provisional_cancel',
+        state: nativeCanceled ? 'provisional_cancel' : 'provisional_non_cancel',
       );
       final RechargeOrder reconciled = await dependencies
           .commerceCatalogRepository
@@ -1149,25 +1154,31 @@ Future<void> _runAlipaySandbox(
       final bool canceled = reconciled.state == RechargeOrderState.canceled;
       evidence.lane(
         'alipay.native.launch-cancel',
-        result.state == RechargeOrderState.canceled ? 'PASS' : 'FAIL',
+        nativeCanceled && canceled ? 'PASS' : 'FAIL',
       );
-      evidence.lane('alipay.query-reconcile', canceled ? 'PASS' : 'FAIL');
+      evidence.lane(
+        'alipay.query-reconcile',
+        nativeCanceled && canceled ? 'PASS' : 'FAIL',
+      );
       evidence.lane('alipay.native.launch-success', 'NOT_RUN');
       evidence.lane('alipay.settlement', 'NOT_RUN');
       evidence.lane('alipay.reconcile-idempotency', 'NOT_RUN');
       return;
     }
 
-    // 9000 from the native SDK is provisional. invokePayment already performs
-    // one authenticated POST reconcile + GET status; require a second
-    // explicit reconcile with the same order before accepting SUCCEEDED.
-    evidence.providerCallback('alipay', 'launch_success');
+    // Only the exact native 9000 result is eligible for a success evidence
+    // lane. A backend success after cancellation, processing, or timeout is
+    // still authoritative order state, but it is never SDK success evidence.
+    final bool nativeSdkSuccess =
+        result.sdkCompleted == true && result.resultStatus == '9000';
     evidence.route(
       capability: 'alipay.native.launch-success',
       method: 'SDK',
       route: 'AlipaySDK.pay',
       status: 200,
-      state: 'provisional_sdk_result',
+      state: nativeSdkSuccess
+          ? 'provisional_sdk_result_9000'
+          : 'provisional_sdk_result_not_9000',
     );
     final bool firstSucceeded = result.state == RechargeOrderState.succeeded;
     evidence.route(
@@ -1180,7 +1191,7 @@ Future<void> _runAlipaySandbox(
           ? 'authoritative_succeeded'
           : 'authoritative_not_succeeded',
     );
-    if (!firstSucceeded) {
+    if (!nativeSdkSuccess || !firstSucceeded) {
       evidence.lane('alipay.native.launch-success', 'FAIL');
       evidence.lane('alipay.query-reconcile', 'FAIL');
       evidence.lane('alipay.settlement', 'BLOCKED');
@@ -1205,9 +1216,15 @@ Future<void> _runAlipaySandbox(
           : 'authoritative_repeat_mismatch',
     );
     evidence.paymentSuccessFlowVerified(repeatedSucceeded);
+    // Delay the provider success marker until both the exact native status
+    // and the repeated authoritative backend success are proven. The marker
+    // is therefore never synthesized from a client callback alone.
+    if (repeatedSucceeded) {
+      evidence.providerCallback('alipay', 'launch_success');
+    }
     evidence.lane(
       'alipay.native.launch-success',
-      firstSucceeded ? 'PASS' : 'FAIL',
+      nativeSdkSuccess && repeatedSucceeded ? 'PASS' : 'FAIL',
     );
     evidence.lane(
       'alipay.query-reconcile',
@@ -1467,6 +1484,8 @@ class _M5Evidence {
   bool _paymentOptedIn = false;
   bool _paymentOwner = false;
   bool _paymentSuccessFlowVerified = false;
+  bool? _alipaySdkCompleted;
+  String? _alipayResultStatus;
   bool c2cHintObserved = false;
   final Set<String> _c2cHintMessageIds = <String>{};
   bool roomHintObserved = false;
@@ -1632,6 +1651,16 @@ class _M5Evidence {
     debugPrint('M5_PAYMENT_SUCCESS_FLOW_VERIFIED::${value ? 1 : 0}');
   }
 
+  void paymentNativeResult(RechargeOrder order) {
+    _alipaySdkCompleted = order.sdkCompleted;
+    _alipayResultStatus = order.resultStatus;
+    debugPrint(
+      'M5_ALIPAY_NATIVE_RESULT::sdkCompleted='
+      '${order.sdkCompleted == true ? 1 : 0}::resultStatus='
+      '${order.resultStatus ?? 'none'}',
+    );
+  }
+
   void lane(String name, String state) {
     final String safeName = name.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
     final String safeState = state.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
@@ -1723,6 +1752,10 @@ class _M5Evidence {
       'paymentSuccessProven':
           successPayment && _paymentSuccessFlowVerified && fullyPass,
       'paymentFlowVerified': successPayment && _paymentSuccessFlowVerified,
+      'alipayNativeResult': <String, Object?>{
+        'sdkCompleted': _alipaySdkCompleted,
+        'resultStatus': _alipayResultStatus,
+      },
       'reconcileRepeat': successPayment && _paymentSuccessFlowVerified
           ? 'PASS'
           : 'NOT_RUN',

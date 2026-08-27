@@ -267,6 +267,8 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     final RechargeOrder provisional = order.copyWith(
       state: RechargeOrderState.confirming,
       message: message,
+      nativeSdkCompleted: result.sdkCompleted,
+      nativeResultStatus: result.resultStatus,
     );
     // A native result is never authoritative.  Reconciliation is an explicit
     // authenticated write path, while the following GET is a DB-only

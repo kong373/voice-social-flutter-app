@@ -149,6 +149,74 @@ void main() {
       expect(authoritative.state, RechargeOrderState.succeeded);
       expect(requests, hasLength(5));
       expect(requests[4].path, '/app-economy-api/pay/ali/order/status');
+      expect(provisional.nativeSdkCompleted, isTrue);
+      expect(provisional.nativeResultStatus, '9000');
+      expect(provisional.isNativeSdkSuccess, isTrue);
+    },
+  );
+
+  test(
+    'cancel, processing, and timeout native results never become SDK success',
+    () async {
+      final List<AlipayAppPayResult> nativeResults = <AlipayAppPayResult>[
+        const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.userCanceled,
+          reason: AlipayAppPayReason.userCanceled,
+          sdkCompleted: false,
+          resultStatus: '6001',
+        ),
+        const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.processing,
+          reason: AlipayAppPayReason.processing,
+          sdkCompleted: false,
+          resultStatus: '8000',
+        ),
+        const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.processing,
+          reason: AlipayAppPayReason.timeout,
+          sdkCompleted: false,
+        ),
+      ];
+
+      for (final AlipayAppPayResult nativeResult in nativeResults) {
+        final _ServerHarness harness = await _ServerHarness.start(
+          nativeResult: nativeResult,
+        );
+        try {
+          final BackendCommerceCatalogRepository repository =
+              BackendCommerceCatalogRepository(
+                apiClient: harness.client,
+                routes: const BackendRouteCatalog(),
+                alipayAppPayAdapter: harness.adapter,
+              );
+          await repository.fetchRechargeProducts(
+            platform: ClientStorePlatform.android,
+          );
+          final RechargeOrder created = await repository.createRechargeOrder(
+            account: 'current-user-account',
+            product: const RechargeProduct(
+              id: 'product-1',
+              giftCoins: 60,
+              priceCny: 6,
+            ),
+            channel: PaymentChannelType.alipay,
+            platform: ClientStorePlatform.android,
+            youthModeEnabled: false,
+          );
+
+          final RechargeOrder result = await repository.invokePayment(created);
+
+          // The backend may truthfully report a previously settled order, but
+          // that read cannot upgrade a non-successful native SDK outcome.
+          expect(result.state, RechargeOrderState.succeeded);
+          expect(result.nativeSdkCompleted, isFalse);
+          expect(result.nativeResultStatus, nativeResult.resultStatus);
+          expect(result.isNativeSdkSuccess, isFalse);
+          expect(result.message, '服务端已确认到账');
+        } finally {
+          await harness.close();
+        }
+      }
     },
   );
 
@@ -796,9 +864,18 @@ void main() {
 }
 
 class _FakeAlipayAdapter implements AlipayAppPayAdapter {
-  _FakeAlipayAdapter({this.available = true});
+  _FakeAlipayAdapter({
+    this.available = true,
+    this.nativeResult = const AlipayAppPayResult(
+      outcome: AlipayAppPayOutcome.sdkCompleted,
+      reason: AlipayAppPayReason.processing,
+      sdkCompleted: true,
+      resultStatus: '9000',
+    ),
+  });
 
   final bool available;
+  final AlipayAppPayResult nativeResult;
   final List<String> orderStrings = <String>[];
 
   @override
@@ -810,10 +887,7 @@ class _FakeAlipayAdapter implements AlipayAppPayAdapter {
     required String orderString,
   }) async {
     orderStrings.add(orderString);
-    return const AlipayAppPayResult(
-      outcome: AlipayAppPayOutcome.sdkCompleted,
-      reason: AlipayAppPayReason.processing,
-    );
+    return nativeResult;
   }
 }
 
@@ -846,13 +920,25 @@ class _ServerHarness {
   final List<_Request> requests;
   final ApiClient client;
 
-  static Future<_ServerHarness> start() async {
+  static Future<_ServerHarness> start({
+    AlipayAppPayResult? nativeResult,
+  }) async {
     final HttpServer server = await HttpServer.bind(
       InternetAddress.loopbackIPv4,
       0,
     );
     final List<_Request> requests = <_Request>[];
     final _ServerHarness harness = _ServerHarness._(server, requests);
+    final _FakeAlipayAdapter adapter = _FakeAlipayAdapter(
+      nativeResult:
+          nativeResult ??
+          const AlipayAppPayResult(
+            outcome: AlipayAppPayOutcome.sdkCompleted,
+            reason: AlipayAppPayReason.processing,
+            sdkCompleted: true,
+            resultStatus: '9000',
+          ),
+    );
     server.listen((HttpRequest request) async {
       requests.add(
         _Request(
@@ -870,17 +956,48 @@ class _ServerHarness {
           jsonEncode(<String, Object?>{
             'code': 200,
             'message': 'OK',
-            'data': <String, Object?>{
-              'orderNo': 'recharge-order-1',
-              'orderStr': 'server-signed-order-string',
-              'status': 'CREATED',
-            },
+            'data': request.uri.path.endsWith('/recharge/products')
+                ? <String, Object?>{
+                    'platform': 'ANDROID',
+                    'list': <Object?>[
+                      <String, Object?>{
+                        'productId': '00000000-0000-0000-0000-000000001001',
+                        'title': '60礼物币',
+                        'amountMinor': 600,
+                        'amount': 6.00,
+                        'giftCoinAmount': 60,
+                        'bonusGiftCoin': 0,
+                      },
+                    ],
+                    'total': 1,
+                    'orderCreationStatus': 'READY',
+                    'providerInvocation': false,
+                  }
+                : request.uri.path.endsWith('/ali/order')
+                ? <String, Object?>{
+                    'orderNo': 'recharge-order-1',
+                    'orderStr': 'server-signed-order-string',
+                    'productId': 'product-1',
+                    'amountMinor': 600,
+                    'giftCoinAmount': 60,
+                    'channel': 'ALIPAY',
+                    'platform': 'ANDROID',
+                    'status': 'CREATED',
+                  }
+                : <String, Object?>{
+                    'orderNo': 'recharge-order-1',
+                    'bool': true,
+                    'status': 'SUCCEEDED',
+                  },
           }),
         );
       await request.response.close();
     });
+    harness.adapter = adapter;
     return harness;
   }
+
+  late final _FakeAlipayAdapter adapter;
 
   Future<void> close() => server.close(force: true);
 }

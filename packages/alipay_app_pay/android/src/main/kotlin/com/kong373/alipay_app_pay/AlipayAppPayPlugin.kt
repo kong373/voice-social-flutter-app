@@ -32,6 +32,7 @@ class AlipayAppPayPlugin :
     companion object {
         private const val CHANNEL = "voice_social_app/alipay_app_pay"
         private const val MAX_ORDER_STRING_LENGTH = 64 * 1024
+        private const val MAX_RESULT_STATUS_LENGTH = 32
         private const val PAY_TIMEOUT_SECONDS = 120L
     }
 
@@ -155,7 +156,15 @@ class AlipayAppPayPlugin :
                         // locked until the original PayTask worker returns.
                         // A retry must receive payment_in_progress rather than
                         // queueing a second SDK invocation.
-                        deliver(result, "processing", invocationToken)
+                        deliver(
+                            result,
+                            ClassifiedStatus(
+                                reducedStatus = "processing",
+                                resultStatus = null,
+                                sdkCompleted = false,
+                            ),
+                            invocationToken,
+                        )
                     }
                 },
                 PAY_TIMEOUT_SECONDS,
@@ -174,15 +183,27 @@ class AlipayAppPayPlugin :
                             !currentActivity.isFinishing && !currentActivity.isDestroyed
                     }
                     if (!activityStillAttached) {
-                        "unavailable"
+                        ClassifiedStatus(
+                            reducedStatus = "unavailable",
+                            resultStatus = null,
+                            sdkCompleted = false,
+                        )
                     } else {
                         val raw = PayTask(currentActivity).payV2(orderString, true)
                         classify(raw["resultStatus"])
                     }
                 } catch (_: RuntimeException) {
-                    "failed"
+                    ClassifiedStatus(
+                        reducedStatus = "failed",
+                        resultStatus = null,
+                        sdkCompleted = false,
+                    )
                 } catch (_: LinkageError) {
-                    "unavailable"
+                    ClassifiedStatus(
+                        reducedStatus = "unavailable",
+                        resultStatus = null,
+                        sdkCompleted = false,
+                    )
                 }
                 if (completion.compareAndSet(false, true)) {
                     timeout.cancel(false)
@@ -207,7 +228,11 @@ class AlipayAppPayPlugin :
         }
     }
 
-    private fun deliver(result: MethodChannel.Result, status: String, invocationToken: Long) {
+    private fun deliver(
+        result: MethodChannel.Result,
+        classified: ClassifiedStatus,
+        invocationToken: Long,
+    ) {
         mainHandler.post {
             // A result from an old engine must never be delivered after a
             // detach/reattach cycle. The Dart future on that engine will
@@ -218,7 +243,18 @@ class AlipayAppPayPlugin :
             if (!shouldDeliver) {
                 return@post
             }
-            result.success(mapOf("status" to status))
+            val status = classified.reducedStatus
+            // Keep the established reduced status field while adding only
+            // bounded, structured evidence. Never forward PayTask's memo or
+            // result text, signed order data, or any account/payment fields.
+            val reduced = mapOf("status" to status)
+            result.success(
+                reduced +
+                    mapOf(
+                        "sdkCompleted" to classified.sdkCompleted,
+                        "resultStatus" to classified.resultStatus,
+                    ),
+            )
         }
     }
 
@@ -232,12 +268,32 @@ class AlipayAppPayPlugin :
         return value
     }
 
-    private fun classify(raw: Any?): String = when (raw?.toString()?.trim()) {
-        "9000" -> "success"
-        "8000", "6004" -> "processing"
-        "6001" -> "user_canceled"
-        "6002" -> "network_error"
-        "4000" -> "failed"
-        else -> "failed"
+    private data class ClassifiedStatus(
+        val reducedStatus: String,
+        val resultStatus: String?,
+        val sdkCompleted: Boolean,
+    )
+
+    private fun classify(raw: Any?): ClassifiedStatus {
+        val resultStatus = boundedResultStatus(raw)
+        return when (resultStatus) {
+            "9000" -> ClassifiedStatus("success", resultStatus, true)
+            "8000", "6004" -> ClassifiedStatus("processing", resultStatus, false)
+            "6001" -> ClassifiedStatus("user_canceled", resultStatus, false)
+            "6002" -> ClassifiedStatus("network_error", resultStatus, false)
+            "4000" -> ClassifiedStatus("failed", resultStatus, false)
+            else -> ClassifiedStatus("failed", resultStatus, false)
+        }
+    }
+
+    private fun boundedResultStatus(raw: Any?): String? {
+        val value = raw?.toString()?.trim() ?: return null
+        if (value.isEmpty() || value.length > MAX_RESULT_STATUS_LENGTH) {
+            return null
+        }
+        if (!value.matches(Regex("^[A-Za-z0-9_.-]+$"))) {
+            return null
+        }
+        return value
     }
 }

@@ -71,6 +71,8 @@ class RechargeOrder {
     required this.createdAt,
     this.message = '',
     this.paymentOrderString,
+    this.nativeSdkCompleted,
+    this.nativeResultStatus,
   });
 
   final String orderNo;
@@ -87,10 +89,29 @@ class RechargeOrder {
   /// sole authority for the final order state.
   final String? paymentOrderString;
 
+  /// Provisional native bridge evidence associated with this order. These
+  /// fields are retained for acceptance/UI diagnostics only; they never
+  /// authorize a balance change or replace the backend status projection.
+  final bool? nativeSdkCompleted;
+  final String? nativeResultStatus;
+
+  /// Short aliases used by the provider-live acceptance layer. They remain
+  /// nullable because orders created without a native invocation have no SDK
+  /// result to report.
+  bool? get sdkCompleted => nativeSdkCompleted;
+  String? get resultStatus => nativeResultStatus;
+
+  /// True only for the exact native 9000 result. The backend still has to
+  /// confirm the order before any caller may present a successful recharge.
+  bool get isNativeSdkSuccess =>
+      nativeSdkCompleted == true && nativeResultStatus == '9000';
+
   RechargeOrder copyWith({
     RechargeOrderState? state,
     String? message,
     String? paymentOrderString,
+    bool? nativeSdkCompleted,
+    String? nativeResultStatus,
   }) {
     return RechargeOrder(
       orderNo: orderNo,
@@ -101,6 +122,8 @@ class RechargeOrder {
       createdAt: createdAt,
       message: message ?? this.message,
       paymentOrderString: paymentOrderString ?? this.paymentOrderString,
+      nativeSdkCompleted: nativeSdkCompleted ?? this.nativeSdkCompleted,
+      nativeResultStatus: nativeResultStatus ?? this.nativeResultStatus,
     );
   }
 }
