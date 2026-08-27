@@ -329,6 +329,24 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
         self.assertIn("payment_provider = 'alipay-sandbox'", MYSQL_EVIDENCE_SCRIPT)
         self.assertNotIn("payment_provider = 'alipay'", MYSQL_EVIDENCE_SCRIPT)
 
+    def test_sql_script_does_not_emit_same_column_as_required_and_status(self) -> None:
+        required_pairs = set(
+            re.findall(
+                r"^emit_required_column\s+([A-Za-z0-9_]+)\s+([A-Za-z0-9_]+)$",
+                MYSQL_EVIDENCE_SCRIPT,
+                re.MULTILINE,
+            )
+        )
+        status_pairs = set(
+            re.findall(
+                r"^emit_column\s+([A-Za-z0-9_]+)\s+([A-Za-z0-9_]+)\s+",
+                MYSQL_EVIDENCE_SCRIPT,
+                re.MULTILINE,
+            )
+        )
+        overlap = sorted(required_pairs & status_pairs)
+        self.assertEqual(overlap, [], overlap)
+
     def test_sql_scope_accepts_the_exact_derived_fixture_nickname_length(self) -> None:
         nickname = _fixture_nickname("m5-fresh-contract")
         self.assertRegex(nickname, r"^m5-[0-9a-f]{13}$")

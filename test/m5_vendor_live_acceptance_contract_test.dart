@@ -83,6 +83,17 @@ void main() {
     );
     expect(integrationSource, contains('_pollAvChatRoomReadiness'));
     expect(integrationSource, contains('maxAttempts = 75'));
+    expect(integrationSource, isNot(contains('readyBeforeEnter')));
+    expect(
+      integrationSource.indexOf(
+        'final RoomSnapshot snapshot = await repository.enterRoom',
+      ),
+      lessThan(
+        integrationSource.indexOf(
+          'final TencentImAvChatRoomSession? readySession = roomSession',
+        ),
+      ),
+    );
     expect(runnerSource, contains('receiverReady'));
     expect(runnerSource, contains('roomMessageId'));
     expect(runnerSource, contains('senderUserId'));
@@ -219,6 +230,13 @@ void main() {
       runnerSource,
       contains(r'[[ "$route_count" =~ ^[0-9]+$ ]] || route_count=0'),
     );
+    expect(runnerSource, isNot(contains('NF >= 7')));
+    expect(runnerSource, contains('field_count == 6'));
+    expect(
+      runnerSource,
+      contains('sub(/^.*M5_ROUTE_STATUS::/, "M5_ROUTE_STATUS::", line)'),
+    );
+    expect(runnerSource, contains('sub("^.*" marker, marker, line)'));
     expect(
       RegExp('PYTHONDONTWRITEBYTECODE=1').allMatches(runnerSource).length,
       greaterThanOrEqualTo(4),

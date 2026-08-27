@@ -800,18 +800,12 @@ Future<void> _runAvChatRoom(
       evidence.invariant('tencent_avchatroom_receiver_bound_shared_room');
     }
     final DiscoveryRoom selectedRoom = room;
-    final TencentImAvChatRoomSession? readyBeforeEnter =
-        await _pollAvChatRoomReadiness(
-          dependencies,
-          evidence,
-          routes,
-          selectedRoom.id,
-        );
-    if (readyBeforeEnter == null || !readyBeforeEnter.isReady) {
-      evidence.lane('tencent.avchatroom.hint', 'BLOCKED');
-      evidence.lane('tencent.avchatroom.leave', 'BLOCKED');
-      return;
-    }
+    // A non-owner participant cannot read the provider projection until the
+    // first-party enter has established their active room membership. The
+    // readiness endpoint is intentionally scoped to that membership, so the
+    // order is HTTP enter first, then bounded readiness polling, then SDK
+    // join. Owners may already have an active row from room creation, but
+    // using the same order keeps both AVD roles on one authoritative path.
     final RoomSnapshot snapshot = await repository.enterRoom(
       roomId: selectedRoom.id,
       password: null,

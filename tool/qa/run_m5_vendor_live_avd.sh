@@ -1131,13 +1131,32 @@ write_route_evidence() {
   local dir="$1" log="$dir/logs/flutter-drive.log"
   {
     printf 'marker,capability,method,route,status,state\n'
-    awk -F '::' '/M5_ROUTE_STATUS::/ && NF >= 7 {printf "%s,%s,%s,%s,%s,%s\n", $0, $2, $3, $4, $5, $6}' "$log" 2>/dev/null || true
+    awk '/M5_ROUTE_STATUS::/ {
+      line=$0
+      sub(/^.*M5_ROUTE_STATUS::/, "M5_ROUTE_STATUS::", line)
+      field_count=split(line, fields, "::")
+      if (field_count == 6) {
+        printf "%s,%s,%s,%s,%s,%s\n", line, fields[2], fields[3], fields[4], fields[5], fields[6]
+      }
+    }' "$log" 2>/dev/null || true
   } >"$dir/http-route-coverage.csv"
-  awk '/M5_AUTHORITY_INVARIANT::/ {print}' "$log" 2>/dev/null >"$dir/authority-invariants.txt" || true
-  awk '/M5_VENDOR_EVENT::/ {print}' "$log" 2>/dev/null >"$dir/vendor-events.txt" || true
-  awk '/M5_LANE::/ {print}' "$log" 2>/dev/null >"$dir/lane-verdicts.txt" || true
-  awk '/M5_ACCEPTANCE::/ {print}' "$log" 2>/dev/null >"$dir/evidence-verdict.txt" || true
-  awk '/M5_PROVIDER_CALLS::/ {print}' "$log" 2>/dev/null >"$dir/provider-calls.txt" || true
+  local marker output
+  for marker in \
+    M5_AUTHORITY_INVARIANT:: M5_VENDOR_EVENT:: M5_LANE:: \
+    M5_ACCEPTANCE:: M5_PROVIDER_CALLS::; do
+    case "$marker" in
+      M5_AUTHORITY_INVARIANT::) output='authority-invariants.txt' ;;
+      M5_VENDOR_EVENT::) output='vendor-events.txt' ;;
+      M5_LANE::) output='lane-verdicts.txt' ;;
+      M5_ACCEPTANCE::) output='evidence-verdict.txt' ;;
+      M5_PROVIDER_CALLS::) output='provider-calls.txt' ;;
+    esac
+    awk -v marker="$marker" 'index($0, marker) {
+      line=$0
+      sub("^.*" marker, marker, line)
+      print line
+    }' "$log" 2>/dev/null >"$dir/$output" || true
+  done
 }
 
 write_result() {
