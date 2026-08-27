@@ -256,13 +256,14 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     // Every native outcome remains a provisional UI status.  Even 9000 is
     // followed by queryRechargeOrder, which is the only authority allowed to
     // report a successful recharge.
-    final String message = switch (result.outcome) {
-      AlipayAppPayOutcome.sdkCompleted => '支付宝已返回完成，正在等待服务端确认',
-      AlipayAppPayOutcome.processing => '支付宝处理中，正在等待服务端确认',
-      AlipayAppPayOutcome.userCanceled => '已取消支付宝页面，订单状态仍需服务端核验',
-      AlipayAppPayOutcome.networkError => '支付宝网络状态不确定，订单状态仍需服务端核验',
-      AlipayAppPayOutcome.failed => '支付宝返回失败，订单状态仍需服务端核验',
-      AlipayAppPayOutcome.unavailable => '支付宝支付当前不可用，订单状态仍需服务端核验',
+    final String message = switch ((result.isSdkSuccess, result.outcome)) {
+      (true, _) => '支付宝已返回完成，正在等待服务端确认',
+      (false, AlipayAppPayOutcome.sdkCompleted) ||
+      (false, AlipayAppPayOutcome.processing) => '支付宝处理中，正在等待服务端确认',
+      (false, AlipayAppPayOutcome.userCanceled) => '已取消支付宝页面，订单状态仍需服务端核验',
+      (false, AlipayAppPayOutcome.networkError) => '支付宝网络状态不确定，订单状态仍需服务端核验',
+      (false, AlipayAppPayOutcome.failed) => '支付宝返回失败，订单状态仍需服务端核验',
+      (false, AlipayAppPayOutcome.unavailable) => '支付宝支付当前不可用，订单状态仍需服务端核验',
     };
     final RechargeOrder provisional = order.copyWith(
       state: RechargeOrderState.confirming,

@@ -297,9 +297,19 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
       );
     }
     final String normalizedStatus = classificationStatus.toLowerCase();
+    final bool statusImpliesSdkCompletion =
+        normalizedStatus == '9000' || normalizedStatus == 'success';
+    if (rawSdkCompleted != null &&
+        rawSdkCompleted != statusImpliesSdkCompletion) {
+      return AlipayAppPayResult(
+        outcome: AlipayAppPayOutcome.failed,
+        reason: AlipayAppPayReason.invalidResponse,
+        sdkCompleted: false,
+        resultStatus: resultStatus,
+      );
+    }
     final bool sdkCompleted =
-        (rawSdkCompleted as bool?) ??
-        (normalizedStatus == '9000' || normalizedStatus == 'success');
+        (rawSdkCompleted as bool?) ?? statusImpliesSdkCompletion;
     return switch (normalizedStatus) {
       'success' || '9000' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.sdkCompleted,

@@ -193,34 +193,33 @@ void main() {
     },
   );
 
-  test(
-    'inconsistent native completion evidence cannot become SDK success',
-    () async {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (MethodCall call) async {
-            return <String, Object?>{
-              'sdkCompleted': false,
-              'resultStatus': '9000',
-            };
-          });
-      final MethodChannelAlipayAppPayAdapter adapter =
-          MethodChannelAlipayAppPayAdapter(
-            channel: channel,
-            enabled: true,
-            isAndroid: () => true,
-            consentChecker: () async => true,
-          );
+  test('contradictory native completion evidence fails closed', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall call) async {
+          return <String, Object?>{
+            'sdkCompleted': false,
+            'resultStatus': '9000',
+          };
+        });
+    final MethodChannelAlipayAppPayAdapter adapter =
+        MethodChannelAlipayAppPayAdapter(
+          channel: channel,
+          enabled: true,
+          isAndroid: () => true,
+          consentChecker: () async => true,
+        );
 
-      final AlipayAppPayResult result = await adapter.pay(
-        orderNo: 'inconsistent-result-order',
-        orderString: 'signed-inconsistent-result-order',
-      );
+    final AlipayAppPayResult result = await adapter.pay(
+      orderNo: 'inconsistent-result-order',
+      orderString: 'signed-inconsistent-result-order',
+    );
 
-      expect(result.resultStatus, '9000');
-      expect(result.sdkCompleted, isFalse);
-      expect(result.isSdkSuccess, isFalse);
-    },
-  );
+    expect(result.outcome, AlipayAppPayOutcome.failed);
+    expect(result.reason, AlipayAppPayReason.invalidResponse);
+    expect(result.resultStatus, '9000');
+    expect(result.sdkCompleted, isFalse);
+    expect(result.isSdkSuccess, isFalse);
+  });
 
   test(
     'legacy reduced success label cannot stand in for native resultStatus 9000',

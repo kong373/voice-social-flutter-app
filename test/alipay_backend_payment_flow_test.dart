@@ -220,6 +220,106 @@ void main() {
     },
   );
 
+  test(
+    'contradictory native completion payload never shows completed wording',
+    () async {
+      final _FakeAlipayAdapter adapter = _FakeAlipayAdapter(
+        nativeResult: const AlipayAppPayResult(
+          outcome: AlipayAppPayOutcome.sdkCompleted,
+          reason: AlipayAppPayReason.processing,
+          sdkCompleted: false,
+          resultStatus: '9000',
+        ),
+      );
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => server.close(force: true));
+      server.listen((HttpRequest request) async {
+        final Object? data = request.uri.path.endsWith('/recharge/products')
+            ? <String, Object?>{
+                'platform': 'ANDROID',
+                'list': <Object?>[
+                  <String, Object?>{
+                    'productId': '00000000-0000-0000-0000-000000001001',
+                    'title': '60礼物币',
+                    'amountMinor': 600,
+                    'amount': 6.00,
+                    'giftCoinAmount': 60,
+                    'bonusGiftCoin': 0,
+                  },
+                ],
+                'total': 1,
+                'orderCreationStatus': 'READY',
+                'providerInvocation': false,
+              }
+            : request.uri.path.endsWith('/ali/order')
+            ? <String, Object?>{
+                'orderNo': 'recharge-order-1',
+                'orderStr': 'server-signed-order-string',
+                'productId': 'product-1',
+                'amountMinor': 600,
+                'giftCoinAmount': 60,
+                'channel': 'ALIPAY',
+                'platform': 'ANDROID',
+                'status': 'CREATED',
+              }
+            : <String, Object?>{};
+        final bool statusRequest = request.uri.path.endsWith(
+          '/ali/order/status',
+        );
+        request.response
+          ..statusCode = statusRequest ? 500 : 200
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode(<String, Object?>{
+              'code': statusRequest ? 500 : 200,
+              'message': statusRequest ? 'FAIL' : 'OK',
+              'data': data,
+            }),
+          );
+        await request.response.close();
+      });
+      final BackendCommerceCatalogRepository repository =
+          BackendCommerceCatalogRepository(
+            apiClient: ApiClient(
+              baseUri: Uri.parse(
+                'http://${server.address.address}:${server.port}/',
+              ),
+              clientType: 'Android',
+              clientInnerVersion: '6',
+              authorizationProvider: () => 'Bearer test-session',
+            ),
+            routes: const BackendRouteCatalog(),
+            alipayAppPayAdapter: adapter,
+          );
+
+      await repository.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
+      );
+      final RechargeOrder created = await repository.createRechargeOrder(
+        account: 'current-user-account',
+        product: const RechargeProduct(
+          id: 'product-1',
+          giftCoins: 60,
+          priceCny: 6,
+        ),
+        channel: PaymentChannelType.alipay,
+        platform: ClientStorePlatform.android,
+        youthModeEnabled: false,
+      );
+
+      final RechargeOrder provisional = await repository.invokePayment(created);
+
+      expect(provisional.state, RechargeOrderState.confirming);
+      expect(provisional.message, '支付宝处理中，正在等待服务端确认');
+      expect(provisional.nativeSdkCompleted, isFalse);
+      expect(provisional.nativeResultStatus, '9000');
+      expect(provisional.isNativeSdkSuccess, isFalse);
+    },
+  );
+
   test('unavailable native bridge leaves backend order unmodified', () async {
     final _FakeAlipayAdapter adapter = _FakeAlipayAdapter(available: false);
     final _ServerHarness harness = await _ServerHarness.start();
