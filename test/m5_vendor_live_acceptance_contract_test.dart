@@ -39,6 +39,17 @@ void main() {
     expect(integrationSource, contains('c2cHintObserved'));
     expect(integrationSource, contains("config.role == 'receiver'"));
     expect(integrationSource, contains('_viewportForRole'));
+    expect(integrationSource, contains('/m5/c2c/identity'));
+    expect(integrationSource, contains('/m5/c2c/peer'));
+    expect(integrationSource, contains('firstPartyUserId'));
+    expect(integrationSource, contains('_registerRelayFirstPartyUserId'));
+    expect(integrationSource, contains('_pollRelayPeerUserId'));
+    expect(
+      integrationSource,
+      contains('tencent_c2c_draft_conversation_from_relay_peer_user_id'),
+    );
+    expect(integrationSource, contains('ConversationSummary.draft('));
+    expect(integrationSource, contains('candidate.targetUserId == peerUserId'));
     expect(integrationSource, contains('/m5/c2c/receiver-ready'));
     expect(integrationSource, contains('hasC2cHintForMessage'));
     expect(integrationSource, contains('roomLifecycleRepository'));
@@ -69,6 +80,13 @@ void main() {
     expect(integrationSource, contains('maxAttempts = 75'));
     expect(runnerSource, contains('receiverReady'));
     expect(runnerSource, contains('roomMessageId'));
+    expect(runnerSource, contains('senderUserId'));
+    expect(runnerSource, contains('receiverUserId'));
+    expect(runnerSource, contains('/m5/c2c/identity'));
+    expect(runnerSource, contains('/m5/c2c/peer'));
+    expect(runnerSource, contains('invalid_first_party_user_id'));
+    expect(runnerSource, contains('first_party_user_id_conflict'));
+    expect(runnerSource, contains('targetUserId'));
     expect(runnerSource, contains('/m5/avchatroom/ready'));
     expect(runnerSource, contains('/m5/avchatroom/message-sent'));
     expect(runnerSource, contains('/m5/avchatroom/pass'));
@@ -180,6 +198,14 @@ void main() {
     expect(runnerSource, contains('start_db_evidence_helper'));
     expect(runnerSource, contains('must be supplied together'));
     expect(runnerSource, contains('M5_DB_EVIDENCE_LISTENING'));
+    expect(
+      RegExp('PYTHONDONTWRITEBYTECODE=1').allMatches(runnerSource).length,
+      greaterThanOrEqualTo(4),
+    );
+    expect(
+      RegExp(r'python3 -B(?: -u)?').allMatches(runnerSource).length,
+      greaterThanOrEqualTo(4),
+    );
     expect(runnerSource, contains('X-M5-Payment-Scenario'));
     expect(runnerSource, contains('paymentSettlementPoll'));
     expect(runnerSource, contains('internal-bounded-90s'));

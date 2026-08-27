@@ -106,7 +106,8 @@ validate_external_db_url() {
   # exception is the exact 127.0.0.1 endpoint generated below for the local
   # helper; it never enters this function.
   [[ "$url" == https://* ]] || return 1
-  M5_EXTERNAL_DB_URL="$url" PYTHONPATH="$PROJECT_ROOT/tool/qa" python3 - <<'PY'
+  M5_EXTERNAL_DB_URL="$url" PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH="$PROJECT_ROOT/tool/qa" python3 -B - <<'PY'
 import os
 from m5_vendor_db_evidence import validate_evidence_url
 
@@ -119,7 +120,8 @@ PY
 
 validate_local_db_url() {
   local url="$1"
-  M5_LOCAL_DB_URL="$url" PYTHONPATH="$PROJECT_ROOT/tool/qa" python3 - <<'PY'
+  M5_LOCAL_DB_URL="$url" PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH="$PROJECT_ROOT/tool/qa" python3 -B - <<'PY'
 import os
 from m5_vendor_db_evidence import validate_evidence_url
 
@@ -543,6 +545,8 @@ tokens = {
     os.environ["QA_M5_RELAY_TOKEN_B"]: {"role": "receiver", "phone": receiver_phone, "configConsumed": False},
 }
 coordination = {
+    "senderUserId": None,
+    "receiverUserId": None,
     "receiverReady": False,
     "senderSent": False,
     "receiverPass": False,
@@ -552,6 +556,12 @@ coordination = {
 }
 opaque_id = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 lock = threading.Lock()
+
+def peer_user_id_for(role):
+    key = "receiverUserId" if role == "sender" else "senderUserId"
+    value = coordination[key]
+    return value if isinstance(value, int) and value > 0 else None
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def _token(self):
         values = self.headers.get_all("Authorization") or []
@@ -605,6 +615,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with lock: ready = coordination["senderSent"]
             self._json(200, {"ready": ready})
             return
+        if self.path == "/m5/c2c/peer":
+            with lock:
+                target_user_id = peer_user_id_for(details["role"])
+            self._json(200, {"ready": isinstance(target_user_id, int), "targetUserId": target_user_id})
+            return
         if self.path == "/m5/avchatroom/ready":
             with lock:
                 room_id = coordination["roomId"]
@@ -627,6 +642,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if self.path == "/m5/c2c/sender-sent" and details["role"] == "sender":
             with lock: coordination["senderSent"] = True
+            self._json(200, {"accepted": True})
+            return
+        if self.path == "/m5/c2c/identity":
+            raw_user_id = self._body_json().get("firstPartyUserId")
+            if not isinstance(raw_user_id, int) or raw_user_id <= 0:
+                self._json(400, {"error": "invalid_first_party_user_id"})
+                return
+            coordination_key = "senderUserId" if details["role"] == "sender" else "receiverUserId"
+            with lock:
+                existing = coordination[coordination_key]
+                if existing not in (None, raw_user_id):
+                    self._json(409, {"error": "first_party_user_id_conflict"})
+                    return
+                coordination[coordination_key] = raw_user_id
             self._json(200, {"accepted": True})
             return
         if self.path == "/m5/c2c/receiver-pass" and details["role"] == "receiver":
@@ -834,7 +863,8 @@ PY
       M5_APK_SHA="$APK_SHA_EXPECTED" M5_MYSQL_CONTAINER="$mysql_container" \
       M5_BACKEND_DIGEST="$BACKEND_SOURCE_DIGEST_ACTUAL" M5_ALIPAY_SCENARIO="${PAYMENT_SCENARIO:-none}" \
       M5_DB_EVIDENCE_TOKEN="$DB_TOKEN" M5_DB_EVIDENCE_STATE_DIR="$DB_HELPER_STATE_DIR" \
-      python3 -u "$PROJECT_ROOT/tool/qa/m5_vendor_db_evidence.py" --serve \
+      PYTHONDONTWRITEBYTECODE=1 \
+      python3 -B -u "$PROJECT_ROOT/tool/qa/m5_vendor_db_evidence.py" --serve \
       >"$DB_HELPER_LOG" 2>/dev/null &
   else
     env -u M5_DOCKER_SOCKET -u QA_DOCKER_SOCKET \
@@ -844,7 +874,8 @@ PY
       M5_APK_SHA="$APK_SHA_EXPECTED" M5_MYSQL_CONTAINER="$mysql_container" \
       M5_BACKEND_DIGEST="$BACKEND_SOURCE_DIGEST_ACTUAL" M5_ALIPAY_SCENARIO="${PAYMENT_SCENARIO:-none}" \
       M5_DB_EVIDENCE_TOKEN="$DB_TOKEN" M5_DB_EVIDENCE_STATE_DIR="$DB_HELPER_STATE_DIR" \
-      python3 -u "$PROJECT_ROOT/tool/qa/m5_vendor_db_evidence.py" --serve \
+      PYTHONDONTWRITEBYTECODE=1 \
+      python3 -B -u "$PROJECT_ROOT/tool/qa/m5_vendor_db_evidence.py" --serve \
       >"$DB_HELPER_LOG" 2>/dev/null &
   fi
   DB_HELPER_PID=$!

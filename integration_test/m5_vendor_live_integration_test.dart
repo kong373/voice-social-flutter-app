@@ -401,6 +401,12 @@ Future<void> _runC2cHttpAuthority(
       evidence.lane('tencent.c2c.http-authority', 'BLOCKED');
       return;
     }
+    await _registerRelayFirstPartyUserId(config, session.userId);
+    final int? peerUserId = await _pollRelayPeerUserId(config, session.userId);
+    if (peerUserId == null) {
+      evidence.lane('tencent.c2c.http-authority', 'BLOCKED');
+      return;
+    }
     final List<ConversationSummary> conversations = await dependencies
         .messageRepository
         .fetchConversations();
@@ -411,21 +417,24 @@ Future<void> _runC2cHttpAuthority(
       status: 200,
       state: 'success',
     );
-    ConversationSummary? conversation;
-    for (final ConversationSummary candidate in conversations) {
-      if (candidate.available &&
-          !candidate.isDraft &&
-          candidate.targetUserId > 0 &&
-          candidate.targetUserId != session.userId) {
-        conversation = candidate;
-        break;
-      }
+    final ConversationSummary selected =
+        conversations.where((ConversationSummary candidate) {
+          return candidate.available &&
+              !candidate.isDraft &&
+              candidate.targetUserId == peerUserId;
+        }).firstOrNull ??
+        ConversationSummary.draft(
+          kind: ConversationKind.privateChat,
+          title: 'M5 live peer',
+          lastMessage: '',
+          unreadCount: 0,
+          targetUserId: peerUserId,
+        );
+    if (selected.isDraft) {
+      evidence.invariant(
+        'tencent_c2c_draft_conversation_from_relay_peer_user_id',
+      );
     }
-    if (conversation == null) {
-      evidence.lane('tencent.c2c.http-authority', 'BLOCKED');
-      return;
-    }
-    final ConversationSummary selected = conversation;
     final List<ChatMessage> history = await dependencies.messageRepository
         .fetchPrivateMessages(selected);
     evidence.route(
@@ -527,10 +536,12 @@ Future<void> _runC2cHttpAuthority(
       status: 200,
       state: 'success',
     );
-    if (selected.id == null ||
-        sent.id.trim().isEmpty ||
-        sent.conversationId != selected.id ||
+    if (sent.id.trim().isEmpty ||
         history.any((ChatMessage item) => item.id == sent.id)) {
+      evidence.lane('tencent.c2c.http-authority', 'FAIL');
+      return;
+    }
+    if (!selected.isDraft && sent.conversationId != selected.id) {
       evidence.lane('tencent.c2c.http-authority', 'FAIL');
       return;
     }
@@ -1330,7 +1341,7 @@ Future<void> _postRelaySignal(_RuntimeConfig config, String path) async {
 Future<void> _postRelayJson(
   _RuntimeConfig config,
   String path,
-  Map<String, String> payload,
+  Map<String, Object?> payload,
 ) async {
   final HttpClient client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 3)
@@ -1353,6 +1364,38 @@ Future<void> _postRelayJson(
   } finally {
     client.close(force: true);
   }
+}
+
+Future<void> _registerRelayFirstPartyUserId(
+  _RuntimeConfig config,
+  int userId,
+) async {
+  if (userId <= 0) {
+    throw TestFailure('M5 authenticated userId is invalid.');
+  }
+  await _postRelayJson(config, '/m5/c2c/identity', <String, Object?>{
+    'firstPartyUserId': userId,
+  });
+}
+
+Future<int?> _pollRelayPeerUserId(
+  _RuntimeConfig config,
+  int currentUserId,
+) async {
+  for (int attempt = 0; attempt < _workerCycleWaitAttempts; attempt += 1) {
+    final int? targetUserId = await _readRelayIntValue(
+      config,
+      '/m5/c2c/peer',
+      'targetUserId',
+    );
+    if (targetUserId != null &&
+        targetUserId > 0 &&
+        targetUserId != currentUserId) {
+      return targetUserId;
+    }
+    await Future<void>.delayed(_workerCycleWaitStep);
+  }
+  return null;
 }
 
 Future<bool> _readRelaySignal(_RuntimeConfig config, String path) async {
@@ -1416,6 +1459,42 @@ Future<String?> _readRelayValue(
     return RegExp(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$').hasMatch(value)
         ? value
         : null;
+  } catch (_) {
+    return null;
+  } finally {
+    client.close(force: true);
+  }
+}
+
+Future<int?> _readRelayIntValue(
+  _RuntimeConfig config,
+  String path,
+  String key,
+) async {
+  final HttpClient client = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 3)
+    ..idleTimeout = const Duration(seconds: 3);
+  try {
+    final HttpClientRequest request = await client
+        .get('10.0.2.2', _runtimeConfigPort, path)
+        .timeout(const Duration(seconds: 3));
+    request.headers.set(
+      HttpHeaders.authorizationHeader,
+      'Bearer ${config.relayToken}',
+    );
+    final HttpClientResponse response = await request.close().timeout(
+      const Duration(seconds: 3),
+    );
+    final String body = await utf8.decoder.bind(response).join();
+    if (response.statusCode != HttpStatus.ok) {
+      return null;
+    }
+    final Object? decoded = jsonDecode(body);
+    if (decoded is! Map<String, Object?> || decoded['ready'] != true) {
+      return null;
+    }
+    final Object? value = decoded[key];
+    return value is int && value > 0 ? value : null;
   } catch (_) {
     return null;
   } finally {
