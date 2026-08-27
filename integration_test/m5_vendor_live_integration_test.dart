@@ -643,8 +643,9 @@ Future<DiscoveryRoom?> _createAvChatRoomFixture(
   final String title = _avchatRoomFixtureTitle();
   final String topic = _avchatRoomFixtureTopic();
   try {
-    final RoomConfiguration? ownedRoom =
-        await dependencies.roomLifecycleRepository.fetchOwnedRoom();
+    final RoomConfiguration? ownedRoom = await dependencies
+        .roomLifecycleRepository
+        .fetchOwnedRoom();
     if (ownedRoom != null &&
         ownedRoom.hasExistingRoom &&
         ownedRoom.isOpen &&
