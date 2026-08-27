@@ -254,10 +254,9 @@ The Tencent `callbackEvents.tencentIm` count is accepted only when the
 database callback ingest links each counted `Group.CallbackAfterSendMsg` row
 to this fixture's `tencent_im_room_group_outbox.public_id`; the helper then
 joins that outbox row to its matching `room_public_message` and fixture-owned
-room. A `received_at` window alone is not ownership evidence. The current V30
-callback table does not persist this link, so the helper reports
-`SCHEMA_MISSING` and the acceptance remains blocked until the backend adds the
-link and writes it only after validating the group/message hint.
+room. A `received_at` window alone is not ownership evidence. Backend migration
+V32 adds this link, and callback ingest writes it only after validating the
+group/message hint. Older schemas remain fail-closed as `SCHEMA_MISSING`.
 
 ## Commands
 

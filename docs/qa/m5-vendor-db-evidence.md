@@ -26,7 +26,7 @@ when a report is `FAIL` because the schema or an invariant is not satisfied.
 
 The `QA_*` aliases are accepted for the same values. Conflicting aliases are
 rejected. `M5_BACKEND_REPO` is required and must be clean, at the requested
-commit, and contain the tracked V29/V30/V31 migration files. If
+commit, and contain the tracked V29/V30/V31/V32 migration files. If
 `M5_FLUTTER_REPO` is not set, the helper uses the Flutter checkout containing
 the helper; a dirty or mismatched checkout is rejected. This prevents an
 operator from attaching a database snapshot to a different source or APK.
@@ -85,20 +85,15 @@ owned by or contains the fixture user. The room-group `group_id`/`generation`
 mapping is checked inside the same aggregate query. `received_at >= start` is
 still applied, but only after these identity joins.
 
-The V30 schema currently tracked by the backend contains `event_key`,
-`sdk_app_id`, `request_time`, `callback_command`, `body_sha256`, and
-`received_at`; it does not contain the required callback-to-outbox link. The
-helper therefore reports controlled `SCHEMA_MISSING` at `collect` and never
-claims Tencent callback evidence on that schema. Do not substitute a timestamp
-window, provider message text, or a guessed join. The minimum backend change
-is a migration adding a nullable `CHAR(36)` (or equivalent opaque public-key)
-`room_group_outbox_public_id` field with an index/foreign-key-compatible
-relationship to `tencent_im_room_group_outbox.public_id`, plus callback ingest
-that writes the exact matched outbox public ID only after validating the
-group/message hint. C2C callback rows may remain null; the M5 Tencent callback
-counter deliberately measures fixture-owned AVChatRoom group callbacks.
+Backend migration V32 adds the nullable callback-to-outbox link, its
+foreign-key-compatible index, and the identity columns used to validate the
+exact group/message hint before attribution. Older schemas report controlled
+`SCHEMA_MISSING` at `collect`; the helper never substitutes a timestamp
+window, provider message text, or a guessed join. C2C callback rows may remain
+null; the M5 Tencent callback counter deliberately measures fixture-owned
+AVChatRoom group callbacks.
 
-## V29–V31 coverage
+## V29–V32 coverage
 
 The report requires and projects the following tables:
 
