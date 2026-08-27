@@ -51,7 +51,7 @@ const String _fixtureId = String.fromEnvironment(
 );
 const String _runId = String.fromEnvironment('QA_M5_RUN_ID', defaultValue: '');
 final RegExp _fixturePattern = RegExp(r'^m5-fresh-[A-Za-z0-9_.:-]{1,64}$');
-const int _workerCycleWaitAttempts = 750;
+const int _workerCycleWaitAttempts = 1200;
 const Duration _workerCycleWaitStep = Duration(milliseconds: 100);
 const String _expectedFlutterSha = String.fromEnvironment(
   'M5_EXPECTED_FLUTTER_SHA',

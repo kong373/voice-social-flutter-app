@@ -1327,6 +1327,22 @@ run_one() {
   [[ "$result" == PASS || "$result" == NO_PAY ]]
 }
 
+wait_for_sender_login_marker() {
+  local sender_pid="$1"
+  local sender_log="$ARTIFACT_ROOT/AVD-A/logs/flutter-drive.raw.log"
+  local attempt=0
+  while [[ "$attempt" -lt 180 ]]; do
+    if [[ -f "$sender_log" ]] &&
+      grep -q 'M5_LANE::tencent.login::PASS' "$sender_log" 2>/dev/null; then
+      return 0
+    fi
+    kill -0 "$sender_pid" 2>/dev/null || return 1
+    attempt=$((attempt + 1))
+    sleep 1
+  done
+  return 1
+}
+
 write_summary() {
   local payment_invoked_summary="$PAYMENT_INVOKED"
   if grep -Eq '^AVD-[AB]\.payment_invoked=true$' <(for avd in AVD-A AVD-B; do [[ -f "$ARTIFACT_ROOT/$avd/result.txt" ]] && sed "s/^/$avd./" "$ARTIFACT_ROOT/$avd/result.txt"; done) 2>/dev/null; then
@@ -1492,12 +1508,23 @@ start_db_evidence_helper
 set +e
 run_one AVD-A "$A_API" "$A_PROFILE" "$A_PHYSICAL" "$A_DENSITY" "$A_WIDTH" "$A_HEIGHT" "$A_DPR" "$AVD_A_SERIAL" &
 pid_a=$!
-run_one AVD-B "$B_API" "$B_PROFILE" "$B_PHYSICAL" "$B_DENSITY" "$B_WIDTH" "$B_HEIGHT" "$B_DPR" "$AVD_B_SERIAL" &
-pid_b=$!
-wait "$pid_a"
-status_a=$?
-wait "$pid_b"
-status_b=$?
+if wait_for_sender_login_marker "$pid_a"; then
+  # Two concurrent Flutter tool startups can contend on the SDK startup lock
+  # and leave one Driver extension paused indefinitely. Start the receiver
+  # only after the sender's app and Tencent session are demonstrably live;
+  # the sender then waits on the protected relay for this receiver.
+  run_one AVD-B "$B_API" "$B_PROFILE" "$B_PHYSICAL" "$B_DENSITY" "$B_WIDTH" "$B_HEIGHT" "$B_DPR" "$AVD_B_SERIAL" &
+  pid_b=$!
+  wait "$pid_a"
+  status_a=$?
+  wait "$pid_b"
+  status_b=$?
+else
+  wait "$pid_a"
+  status_a=$?
+  status_b=1
+  LAST_RESULT_REASON='sender_login_marker_missing'
+fi
 set -e
 if [[ "$status_a" -ne 0 || "$status_b" -ne 0 ]]; then
   OVERALL_RESULT='FAIL'

@@ -83,6 +83,7 @@ void main() {
     );
     expect(integrationSource, contains('_pollAvChatRoomReadiness'));
     expect(integrationSource, contains('maxAttempts = 75'));
+    expect(integrationSource, contains('_workerCycleWaitAttempts = 1200'));
     expect(integrationSource, isNot(contains('readyBeforeEnter')));
     expect(
       integrationSource.indexOf(
@@ -95,6 +96,15 @@ void main() {
       ),
     );
     expect(runnerSource, contains('receiverReady'));
+    expect(runnerSource, contains('wait_for_sender_login_marker'));
+    expect(
+      runnerSource.indexOf(r'if wait_for_sender_login_marker "$pid_a"'),
+      lessThan(
+        runnerSource.indexOf(
+          r'run_one AVD-B "$B_API" "$B_PROFILE" "$B_PHYSICAL"',
+        ),
+      ),
+    );
     expect(runnerSource, contains('roomMessageId'));
     expect(runnerSource, contains('senderUserId'));
     expect(runnerSource, contains('receiverUserId'));
