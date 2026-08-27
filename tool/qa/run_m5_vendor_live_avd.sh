@@ -239,10 +239,25 @@ PY
 }
 
 prepare_android_host() {
+  local staging_root generated_project
   if [[ ! -d "$PROJECT_ROOT/android" ]]; then
+    staging_root="$(mktemp -d "${TMPDIR:-/tmp}/voice-social-m5-android-host.XXXXXX")" ||
+      fail 'Android host staging directory creation failed'
+    generated_project="$staging_root/voice_social_app"
     "$FLUTTER_BIN" create --platforms=android --android-language=kotlin --org=com.kong373 \
-      --project-name=voice_social_app --no-pub "$PROJECT_ROOT" >/dev/null 2>&1 ||
+      --project-name=voice_social_app --no-pub "$generated_project" >/dev/null 2>&1 || {
+      rm -rf -- "$staging_root"
       fail 'Flutter Android host generation failed'
+    }
+    [[ -d "$generated_project/android" ]] || {
+      rm -rf -- "$staging_root"
+      fail 'generated Flutter Android host is missing'
+    }
+    mv "$generated_project/android" "$PROJECT_ROOT/android" || {
+      rm -rf -- "$staging_root"
+      fail 'generated Flutter Android host installation failed'
+    }
+    rm -rf -- "$staging_root"
   fi
   [[ -f "$PROJECT_ROOT/android/settings.gradle" || -f "$PROJECT_ROOT/android/settings.gradle.kts" ]] || fail 'Android host is missing'
 }
@@ -1336,9 +1351,11 @@ cleanup() {
     rm -f -- "$DB_HELPER_LOG"
     DB_HELPER_LOG=''
   fi
-  for raw in "${DB_EVIDENCE_RAW_FILES[@]}"; do
-    [[ "$raw" == "$ARTIFACT_ROOT"/AVD-[AB]/.m5-db-evidence.* ]] && rm -f -- "$raw"
-  done
+  if [[ ${DB_EVIDENCE_RAW_FILES[@]+_} ]]; then
+    for raw in "${DB_EVIDENCE_RAW_FILES[@]}"; do
+      [[ "$raw" == "$ARTIFACT_ROOT"/AVD-[AB]/.m5-db-evidence.* ]] && rm -f -- "$raw"
+    done
+  fi
   if [[ -d "$ARTIFACT_ROOT" ]]; then
     write_summary || true
     if secret_scan "$ARTIFACT_ROOT"; then printf 'status=PASS\n' >"$ARTIFACT_ROOT/aggregate-secret-scan.txt"; else OVERALL_RESULT='FAIL'; printf 'status=FAIL\n' >"$ARTIFACT_ROOT/aggregate-secret-scan.txt"; write_summary || true; fi

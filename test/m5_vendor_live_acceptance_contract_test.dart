@@ -98,6 +98,13 @@ void main() {
     expect(runnerSource, contains('container is not healthy'));
     expect(runnerSource, contains('prepare_android_audio_manifest.py'));
     expect(runnerSource, contains('ls-files --error-unmatch'));
+    expect(runnerSource, contains('voice-social-m5-android-host.XXXXXX'));
+    expect(runnerSource, contains('--no-pub "\$generated_project"'));
+    expect(runnerSource, isNot(contains('--no-pub "\$PROJECT_ROOT"')));
+    expect(
+      runnerSource,
+      contains('mv "\$generated_project/android" "\$PROJECT_ROOT/android"'),
+    );
     for (final String bindingField in <String>[
       'runId',
       'fixtureId',
@@ -187,6 +194,10 @@ void main() {
     expect(runnerSource, isNot(contains('sleep 90')));
     expect(runnerSource, contains('rm -rf -- "\$DB_HELPER_STATE_DIR"'));
     expect(runnerSource, contains('DB_HELPER_LOG'));
+    expect(
+      runnerSource,
+      contains('if [[ \${DB_EVIDENCE_RAW_FILES[@]+_} ]]; then'),
+    );
     expect(runnerSource, contains('[[ "\$result" != \'FAIL\' ]]'));
     expect(
       runnerSource,
