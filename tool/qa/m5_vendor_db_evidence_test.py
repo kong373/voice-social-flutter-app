@@ -34,6 +34,7 @@ from m5_vendor_db_evidence import (
     build_payload,
     parse_mysql_markers,
     payload_to_csv,
+    _fixture_nickname,
     _state_snapshot,
     validate_evidence_url,
     validate_binding,
@@ -327,6 +328,12 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
         self.assertIn("FROM_UNIXTIME", MYSQL_EVIDENCE_SCRIPT)
         self.assertIn("payment_provider = 'alipay-sandbox'", MYSQL_EVIDENCE_SCRIPT)
         self.assertNotIn("payment_provider = 'alipay'", MYSQL_EVIDENCE_SCRIPT)
+
+    def test_sql_scope_accepts_the_exact_derived_fixture_nickname_length(self) -> None:
+        nickname = _fixture_nickname("m5-fresh-contract")
+        self.assertRegex(nickname, r"^m5-[0-9a-f]{13}$")
+        shell_pattern = "m5-" + "[0-9a-f]" * 13 + ") ;;"
+        self.assertIn(shell_pattern, MYSQL_EVIDENCE_SCRIPT)
 
     def test_callback_scope_joins_fixture_room_outbox_and_message_identity(self) -> None:
         # The callback count must come from an explicit ingest link to the

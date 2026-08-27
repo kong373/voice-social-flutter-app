@@ -1063,7 +1063,7 @@ scope_since_epoch="${M5_SCOPE_SINCE_EPOCH:-}"
 include_public_ids="${M5_INCLUDE_PUBLIC_IDS:-0}"
 if [ -n "$scope_nickname" ]; then
   case "$scope_nickname" in
-    m5-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+    m5-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
     *) exit 28 ;;
   esac
   case "$scope_since_epoch" in
