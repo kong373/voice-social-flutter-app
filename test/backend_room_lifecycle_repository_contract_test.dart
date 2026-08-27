@@ -268,6 +268,56 @@ void main() {
     },
   );
 
+  test('create accepts an authoritative READY readiness projection', () async {
+    final _RunningServer server = await _RunningServer.start(
+      (_CapturedRequest request) => _Reply(
+        data: _createSnapshot(
+          created: true,
+          reused: false,
+          rtcStatus: 'READY',
+          imStatus: 'DISABLED',
+        ),
+      ),
+    );
+    addTearDown(server.close);
+    final BackendRoomLifecycleRepository repository =
+        BackendRoomLifecycleRepository(apiClient: server.client);
+
+    final RoomLifecycleSaveResult result = await repository.saveRoom(
+      _newPublicRoom(),
+    );
+
+    expect(result.roomId, 'room-created');
+    expect(result.created, isTrue);
+    expect(server.requests, hasLength(1));
+  });
+
+  test('create rejects an unrecognized readiness projection', () async {
+    final _RunningServer server = await _RunningServer.start(
+      (_CapturedRequest request) => _Reply(
+        data: _createSnapshot(
+          created: true,
+          reused: false,
+          rtcStatus: 'PROVIDER_OK',
+        ),
+      ),
+    );
+    addTearDown(server.close);
+    final BackendRoomLifecycleRepository repository =
+        BackendRoomLifecycleRepository(apiClient: server.client);
+
+    await expectLater(
+      repository.saveRoom(_newPublicRoom()),
+      throwsA(
+        isA<ApiException>().having(
+          (ApiException error) => error.kind,
+          'kind',
+          ApiFailureKind.protocol,
+        ),
+      ),
+    );
+  });
+
   test('create rejects a non-boolean hallVisible', () async {
     final _RunningServer server = await _RunningServer.start(
       (_CapturedRequest request) => _Reply(
@@ -735,6 +785,73 @@ void main() {
         ]),
       );
       expect(seen, hasLength(3));
+    },
+  );
+
+  test(
+    'saveRoom accepts READY and DISABLED readiness projections on update',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        switch (request.path) {
+          case '/app-api/rooms/updateRoomInformation':
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'topicTitle': '',
+                'autoLockMic': false,
+                'status': 'OPEN',
+                'rtcStatus': 'READY',
+                'imStatus': 'DISABLED',
+                'providerInvocation': false,
+                'version': 1,
+              },
+            );
+          case '/app-api/rooms/getRoomSelectByUserId':
+            return _Reply(
+              data: _ownerPage(
+                row: const <String, Object?>{
+                  'roomId': '9527',
+                  'roomCode': 'R9527',
+                  'roomName': '现有房间',
+                  'topicTitle': '',
+                  'topic': '',
+                  'welcomeText': '',
+                  'accessMode': 'PUBLIC',
+                  'hallVisible': true,
+                  'autoLockMic': false,
+                  'status': 'OPEN',
+                },
+              ),
+            );
+          case '/app-api/rooms/getRoomTopics':
+            return const _Reply(
+              data: <String, Object?>{
+                'roomId': '9527',
+                'topicTitle': '',
+                'topic': '',
+                'welcomeText': '',
+                'autoLockMic': false,
+                'canEdit': true,
+                'version': 1,
+              },
+            );
+          default:
+            fail('unexpected lifecycle route: ${request.path}');
+        }
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+
+      final RoomLifecycleSaveResult result = await repository.saveRoom(
+        _existingPublicRoom(),
+      );
+
+      expect(result.roomId, '9527');
+      expect(result.roomCode, 'R9527');
+      expect(result.created, isFalse);
     },
   );
 
