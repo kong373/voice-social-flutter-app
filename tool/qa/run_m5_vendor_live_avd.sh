@@ -818,7 +818,7 @@ import secrets
 print(secrets.token_urlsafe(48), end="")
 PY
 )"
-  [[ "${#helper_token}" -ge 32 ]] ||
+  [[ "${#helper_token}" -eq 64 && "$helper_token" =~ ^[A-Za-z0-9_-]+$ ]] ||
     fail 'local evidence helper token generation failed'
   DB_TOKEN="$helper_token"
   DB_HELPER_LOG="$ARTIFACT_ROOT/.m5-db-evidence.log"

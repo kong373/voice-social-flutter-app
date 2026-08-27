@@ -196,6 +196,12 @@ void main() {
     expect(runnerSource, contains('DB_HELPER_LOG'));
     expect(
       runnerSource,
+      contains(
+        '[[ "\${#helper_token}" -eq 64 && "\$helper_token" =~ ^[A-Za-z0-9_-]+\$ ]]',
+      ),
+    );
+    expect(
+      runnerSource,
       contains('if [[ \${DB_EVIDENCE_RAW_FILES[@]+_} ]]; then'),
     );
     expect(runnerSource, contains('[[ "\$result" != \'FAIL\' ]]'));
