@@ -1336,7 +1336,7 @@ emit_scoped_check() {
   table="$2"
   base_where="$3"
   condition="$(scope_where "$table")"
-  query="SELECT COUNT(*) FROM $table WHERE $base_where"
+  query="SELECT COUNT(*) FROM $table WHERE ($base_where)"
   if [ -n "$condition" ]; then query="$query AND ($condition)"; fi
   emit_check "$name" "$query"
 }

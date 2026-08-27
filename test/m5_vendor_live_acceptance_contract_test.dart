@@ -155,7 +155,7 @@ void main() {
       'runId',
       'fixtureId',
       'avd',
-      'startNonce',
+      'startNonceSha256',
       'backendSha',
       'flutterSha',
       'apkSha',
@@ -164,6 +164,10 @@ void main() {
       expect(runnerSource, contains(bindingField));
       expect(aggregateSource, contains(bindingField));
     }
+    expect(runnerSource, isNot(contains("printf 'db_start_nonce=%s")));
+    expect(runnerSource, contains('db_start_nonce_sha256'));
+    expect(runnerSource, contains('b\'"startNonce":\''));
+    expect(aggregateSource, isNot(contains('binding.get("startNonce")')));
   });
 
   test('default Alipay path has no financial side effect', () {
@@ -370,7 +374,7 @@ void main() {
     final String backendDigest = 'c' * 64;
     final String hostSha = 'd' * 64;
     final String apkSha = 'e' * 64;
-    const String nonce = 'nonce-contract-123456';
+    final String nonceSha256 = 'f' * 64;
 
     void write(String relativePath, String contents) {
       final File file = File('${root.path}/$relativePath');
@@ -382,7 +386,7 @@ void main() {
         '''
 {
   "status":"OK",
-  "evidenceBinding":{"runId":"$runId","avd":"AVD-A","fixtureId":"$fixtureId","startNonce":"$nonce","backendSha":"$backendSha","flutterSha":"$flutterSha","apkSha":"$apkSha","backendSourceDigest":"$backendDigest"},
+  "evidenceBinding":{"runId":"$runId","avd":"AVD-A","fixtureId":"$fixtureId","startNonceSha256":"$nonceSha256","backendSha":"$backendSha","flutterSha":"$flutterSha","apkSha":"$apkSha","backendSourceDigest":"$backendDigest"},
   "writeCounters":{"auth_sessions":1,"im_credentials":1,"c2c_messages":1,"avchatroom_sessions":1,"alipay_orders":0,"payment_provider_events":0,"wallet_transactions":0,"ledger_journals":0,"ledger_entries":0},
   "vendorOutbox":{"tencentIm":{"state":"SENT","attempts":1},"alipay":{"state":"MISSING","attempts":0}},
   "callbackEvents":{"tencentIm":{"verified":true,"eventCount":1},"alipay":{"verified":false,"eventCount":0}},
@@ -418,7 +422,7 @@ result=NO_PAY
 acceptance_status=NO_PAY
 run_id=$runId
 fixture_id=$fixtureId
-db_start_nonce=$nonce
+db_start_nonce_sha256=$nonceSha256
 tested_git_sha=$flutterSha
 backend_sha=$backendSha
 backend_source_digest=$backendDigest
@@ -539,7 +543,7 @@ alipay_provider_calls=0
     addTearDown(() => root.deleteSync(recursive: true));
     const String runId = 'm5-success-contract';
     const String fixtureId = 'm5-fresh-success-fixture';
-    const String nonce = 'nonce-success-123456';
+    final String nonceSha256 = 'f' * 64;
     final String flutterSha = 'a' * 40;
     final String backendSha = 'b' * 40;
     final String backendDigest = 'c' * 64;
@@ -558,7 +562,7 @@ alipay_provider_calls=0
         'runId': runId,
         'avd': owner ? 'AVD-A' : 'AVD-B',
         'fixtureId': fixtureId,
-        'startNonce': nonce,
+        'startNonceSha256': nonceSha256,
         'backendSha': backendSha,
         'flutterSha': flutterSha,
         'apkSha': apkSha,
@@ -645,7 +649,7 @@ result=PASS
 acceptance_status=PASS
 run_id=$runId
 fixture_id=$fixtureId
-db_start_nonce=$nonce
+db_start_nonce_sha256=$nonceSha256
 tested_git_sha=$flutterSha
 flutter_sha=$flutterSha
 backend_sha=$backendSha

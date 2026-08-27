@@ -347,6 +347,16 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
         overlap = sorted(required_pairs & status_pairs)
         self.assertEqual(overlap, [], overlap)
 
+    def test_scoped_checks_parenthesize_disjunctions_and_reject_missing_fingerprints(self) -> None:
+        self.assertIn(
+            'query="SELECT COUNT(*) FROM $table WHERE ($base_where)"',
+            MYSQL_EVIDENCE_SCRIPT,
+        )
+        self.assertIn(
+            "request_fingerprint IS NULL OR request_fingerprint NOT REGEXP",
+            MYSQL_EVIDENCE_SCRIPT,
+        )
+
     def test_sql_scope_accepts_the_exact_derived_fixture_nickname_length(self) -> None:
         nickname = _fixture_nickname("m5-fresh-contract")
         self.assertRegex(nickname, r"^m5-[0-9a-f]{13}$")

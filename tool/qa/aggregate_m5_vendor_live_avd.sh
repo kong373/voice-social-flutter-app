@@ -163,13 +163,14 @@ validate_lanes() {
 }
 
 validate_db_evidence() {
-  local file="$1" avd="$2" expected_nonce="$3" apk_sha="$4" result_value="$5"
+  local file="$1" avd="$2" expected_nonce_sha256="$3" apk_sha="$4" result_value="$5"
   [[ -s "$file" ]] || return 1
-  python3 - "$file" "$avd" "$expected_nonce" "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" "$EXPECTED_BACKEND_SHA" "$EXPECTED_FLUTTER_SHA" "$apk_sha" "$EXPECTED_BACKEND_DIGEST" "$PAYMENT_OPT_IN" "$PAYMENT_CANCEL_ONLY" "$PAYMENT_SUCCESS" "$result_value" <<'PY'
+  python3 - "$file" "$avd" "$expected_nonce_sha256" "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" "$EXPECTED_BACKEND_SHA" "$EXPECTED_FLUTTER_SHA" "$apk_sha" "$EXPECTED_BACKEND_DIGEST" "$PAYMENT_OPT_IN" "$PAYMENT_CANCEL_ONLY" "$PAYMENT_SUCCESS" "$result_value" <<'PY'
 import json
+import re
 import sys
 
-path, expected_avd, expected_nonce, expected_run_id, expected_fixture, expected_backend_sha, expected_flutter_sha, expected_apk_sha, expected_digest, payment_opt_in, payment_cancel_only, payment_success, result_value = sys.argv[1:]
+path, expected_avd, expected_nonce_sha256, expected_run_id, expected_fixture, expected_backend_sha, expected_flutter_sha, expected_apk_sha, expected_digest, payment_opt_in, payment_cancel_only, payment_success, result_value = sys.argv[1:]
 with open(path, encoding="utf-8") as stream:
     payload = json.load(stream)
 required = {"status", "evidenceBinding", "writeCounters", "vendorOutbox", "callbackEvents", "outboxAttempts", "paymentSettlement", "secrets", "backendSourceDigest"}
@@ -177,10 +178,12 @@ if not isinstance(payload, dict) or set(payload) != required:
     raise SystemExit(1)
 if payload.get("status") != "OK" or payload.get("secrets") is not False:
     raise SystemExit(1)
+if re.fullmatch(r"[0-9a-f]{64}", expected_nonce_sha256) is None:
+    raise SystemExit(1)
 binding = payload.get("evidenceBinding")
-if (not isinstance(binding, dict) or set(binding) != {"runId", "avd", "fixtureId", "startNonce", "backendSha", "flutterSha", "apkSha", "backendSourceDigest"} or
+if (not isinstance(binding, dict) or set(binding) != {"runId", "avd", "fixtureId", "startNonceSha256", "backendSha", "flutterSha", "apkSha", "backendSourceDigest"} or
     binding.get("runId") != expected_run_id or binding.get("avd") != expected_avd or
-    binding.get("fixtureId") != expected_fixture or binding.get("startNonce") != expected_nonce or
+    binding.get("fixtureId") != expected_fixture or binding.get("startNonceSha256") != expected_nonce_sha256 or
     binding.get("backendSha") != expected_backend_sha or binding.get("flutterSha") != expected_flutter_sha or
     binding.get("apkSha") != expected_apk_sha or binding.get("backendSourceDigest") != expected_digest):
     raise SystemExit(1)
@@ -260,7 +263,7 @@ PY
 
 validate_avd() {
   local avd="$1" dir="$ARTIFACT_ROOT/$1" result="$ARTIFACT_ROOT/$1/result.txt"
-  local apk_sha host_sha provider_line tencent_calls alipay_calls nonce result_value acceptance_value
+  local apk_sha host_sha provider_line tencent_calls alipay_calls nonce_sha256 result_value acceptance_value
   [[ -f "$result" ]] || { add_reason "$avd:result_missing"; return; }
   result_value="$(field "$result" result)"
   acceptance_value="$(field "$result" acceptance_status)"
@@ -333,8 +336,8 @@ validate_avd() {
   else
     add_reason "$avd:provider_call_marker_invalid"
   fi
-  nonce="$(field "$result" db_start_nonce)"
-  validate_db_evidence "$dir/db-evidence.json" "$avd" "$nonce" "$apk_sha" "$result_value" || add_reason "$avd:db_evidence_contract_invalid"
+  nonce_sha256="$(field "$result" db_start_nonce_sha256)"
+  validate_db_evidence "$dir/db-evidence.json" "$avd" "$nonce_sha256" "$apk_sha" "$result_value" || add_reason "$avd:db_evidence_contract_invalid"
   if [[ "$avd" == 'AVD-A' ]]; then
     AVD_A_RESULT="$result_value"
     AVD_A_TENCENT_CALLS="${tencent_calls:-0}"

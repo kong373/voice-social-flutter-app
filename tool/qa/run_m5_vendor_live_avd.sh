@@ -401,6 +401,7 @@ needles = [value.encode() for value in (
     os.environ.get("M5_SCAN_RELAY_A", ""),
     os.environ.get("M5_SCAN_RELAY_B", ""),
 ) if value]
+needles.extend((b'"startNonce":', b"start_nonce=", b"db_start_nonce="))
 
 def scan_stream(stream, values):
     values = list(dict.fromkeys(values))
@@ -966,6 +967,7 @@ db_evidence_collect() {
     M5_BACKEND_DIGEST="$BACKEND_SOURCE_DIGEST_ACTUAL" \
     M5_PAYMENT_SCENARIO="${PAYMENT_SCENARIO:-none}" \
     python3 -u - "$raw" <<'PY'
+import hashlib
 import json
 import os
 import sys
@@ -1006,6 +1008,12 @@ try:
         binding.get("backendSha") != os.environ["M5_BACKEND_SHA"] or binding.get("flutterSha") != os.environ["M5_FLUTTER_SHA"] or
         binding.get("apkSha") != os.environ["M5_APK_SHA"] or binding.get("backendSourceDigest") != os.environ["M5_BACKEND_DIGEST"]):
         raise RuntimeError("binding")
+    safe_binding = dict(binding)
+    raw_start_nonce = safe_binding.pop("startNonce")
+    safe_binding["startNonceSha256"] = hashlib.sha256(
+        raw_start_nonce.encode("ascii")
+    ).hexdigest()
+    payload["evidenceBinding"] = safe_binding
     counters = payload.get("writeCounters")
     if (not isinstance(counters, dict) or set(counters) != {"auth_sessions", "im_credentials", "c2c_messages", "avchatroom_sessions", "alipay_orders", "payment_provider_events", "wallet_transactions", "ledger_journals", "ledger_entries"} or
         any(type(value) is not int or value < 0 for value in counters.values())):
@@ -1062,7 +1070,7 @@ counter_lines = [
     "run_id=" + binding["runId"],
     "fixture_id=" + binding["fixtureId"],
     "avd=" + binding["avd"],
-    "start_nonce=" + binding["startNonce"],
+    "start_nonce_sha256=" + binding["startNonceSha256"],
     "backend_sha=" + binding["backendSha"],
     "flutter_sha=" + binding["flutterSha"],
     "apk_sha=" + binding["apkSha"],
@@ -1161,7 +1169,7 @@ write_route_evidence() {
 
 write_result() {
   local dir="$1" avd="$2" result="$3" reason="$4" db_status="$5" apk_sha="$6"
-  local screenshot_count="$7" route_count="$8" event_count="$9" tencent_calls="${10}" alipay_calls="${11}" nonce="${12:-}" resilience="${13:-NOT_RUN}"
+  local screenshot_count="$7" route_count="$8" event_count="$9" tencent_calls="${10}" alipay_calls="${11}" nonce_sha256="${12:-}" resilience="${13:-NOT_RUN}"
   local payment_success_proven='false' reconcile_repeat='NOT_RUN'
   if grep -Eq '^M5_PAYMENT_SUCCESS_FLOW_VERIFIED::1$' "$dir/logs/flutter-drive.log" 2>/dev/null; then
     payment_success_proven='true'
@@ -1170,7 +1178,7 @@ write_result() {
   {
     printf 'result=%s\nacceptance_status=%s\nreason=%s\n' "$result" "$result" "$reason"
     printf 'run_id=%s\nfixture_id=%s\navd=%s\n' "$RUN_ID" "$FIXTURE_ID" "$avd"
-    printf 'db_start_nonce=%s\n' "$nonce"
+    printf 'db_start_nonce_sha256=%s\n' "$nonce_sha256"
     printf 'tested_git_sha=%s\nflutter_sha=%s\nbackend_sha=%s\nbackend_source_digest=%s\n' \
       "$FLUTTER_SHA_ACTUAL" "$FLUTTER_SHA_ACTUAL" "$BACKEND_SHA_ACTUAL" "$BACKEND_SOURCE_DIGEST_ACTUAL"
     printf 'android_host_source_sha256=%s\napk_sha256=%s\napk_attestation_sha256=%s\n' "$ANDROID_HOST_SOURCE_SHA256" "$apk_sha" "$APK_SHA_EXPECTED"
@@ -1233,9 +1241,11 @@ run_one() {
     write_result "$dir" "$avd" FAIL viewport_mismatch UNAVAILABLE unknown 0 0 0 0 0 ''
     return 1
   }
-  local nonce=''
+  local nonce='' nonce_sha256=''
   if ! nonce="$(db_evidence_start "$dir" "$avd")"; then
     nonce=''
+  else
+    nonce_sha256="$(printf '%s' "$nonce" | shasum -a 256 | awk '{print $1}')"
   fi
   local relay_token="$RELAY_TOKEN_A"
   [[ "$avd" == 'AVD-B' ]] && relay_token="$RELAY_TOKEN_B"
@@ -1323,7 +1333,7 @@ run_one() {
     result='FAIL'
     reason='acceptance_failed'
   fi
-  write_result "$dir" "$avd" "$result" "$reason" "$db_status" "${apk_sha:-unknown}" "$screenshot_count" "$route_count" "$event_count" "$tencent_calls" "$alipay_calls" "$nonce" "$resilience"
+  write_result "$dir" "$avd" "$result" "$reason" "$db_status" "${apk_sha:-unknown}" "$screenshot_count" "$route_count" "$event_count" "$tencent_calls" "$alipay_calls" "$nonce_sha256" "$resilience"
   [[ "$result" == PASS || "$result" == NO_PAY ]]
 }
 
