@@ -113,6 +113,10 @@ M5_WRITE_COUNTER_KEYS = (
     "c2c_messages",
     "avchatroom_sessions",
     "alipay_orders",
+    "payment_provider_events",
+    "wallet_transactions",
+    "ledger_journals",
+    "ledger_entries",
 )
 
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
@@ -2610,6 +2614,19 @@ class M5EvidenceSessionCollector:
                 current, start.snapshot, "payment_provider_event"
             )
             recharge_delta = _snapshot_count_delta(current, start.snapshot, "recharge_order")
+            wallet_transaction_delta = _snapshot_count_delta(
+                current, start.snapshot, "wallet_transaction"
+            )
+            ledger_journal_delta = _snapshot_count_delta(
+                current, start.snapshot, "ledger_journal"
+            )
+            # The V4/V11 schema names the journal's debit/credit rows
+            # ``ledger_posting``.  The public M5 contract calls these
+            # ``ledger_entries`` so the acceptance gate remains independent
+            # of the storage naming; this is still a row-count-only delta.
+            ledger_entry_delta = _snapshot_count_delta(
+                current, start.snapshot, "ledger_posting"
+            )
 
             tencent_status: dict[str, int] = {}
             for status in TABLE_BY_NAME["provider_delivery_outbox"].status_columns["status"]:
@@ -2656,6 +2673,10 @@ class M5EvidenceSessionCollector:
                     "c2c_messages": private_delta,
                     "avchatroom_sessions": room_outbox_delta,
                     "alipay_orders": recharge_delta,
+                    "payment_provider_events": payment_event_delta,
+                    "wallet_transactions": wallet_transaction_delta,
+                    "ledger_journals": ledger_journal_delta,
+                    "ledger_entries": ledger_entry_delta,
                 },
                 "vendorOutbox": {
                     "tencentIm": {

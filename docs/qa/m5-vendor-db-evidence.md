@@ -109,6 +109,25 @@ synthetic success bit; SMS challenge rows are not counted because their
 phone-hash-only schema cannot be fixture-attributed without exposing or
 recomputing private input.
 
+The live `writeCounters` contract also contains the payment/accounting deltas:
+
+- `payment_provider_events`: fixture-owned `payment_provider_event` rows whose
+  `received_at` is after `start` (provider event fields remain redacted).
+- `wallet_transactions`: fixture wallet `wallet_transaction` rows whose
+  `created_at` is after `start`.
+- `ledger_journals`: fixture-actor `ledger_journal` rows whose `created_at` is
+  after `start`.
+- `ledger_entries`: `ledger_posting` rows joined to those fixture journals and
+  created after `start`. The public counter uses “entries” while the V4/V11
+  storage table is named `ledger_posting`.
+
+These are non-negative, current-session deltas, not all-time totals. The
+cancel-only acceptance gate can therefore require `alipay_orders >= 1` while
+requiring `payment_provider_events == 0`, `wallet_transactions == 0`,
+`ledger_journals == 0`, and `ledger_entries == 0`. A future sandbox-success
+scenario can require positive payment/accounting counters and reconcile them
+without exposing amount, provider, or ledger values.
+
 `VENDOR_BLOCKED`, `PENDING`, `PROCESSING`, `RETRY`, `UNKNOWN`, `DELIVERED`,
 and `FAILED` remain visible as controlled status counts. A non-zero invariant
 check produces `status: "FAIL"` and `INVARIANT_VIOLATION`; missing V29–V31

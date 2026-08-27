@@ -104,7 +104,7 @@ def _current_run_markers() -> str:
         "payment_provider_event",
         "recharge_order",
     ):
-        markers = markers.replace(f"T|{table}|0|1", f"T|{table}|1|1")
+        markers = markers.replace(f"T|{table}|1|1", f"T|{table}|2|1")
     for table in ("provider_delivery_outbox", "tencent_im_room_group_outbox"):
         markers = markers.replace(
             f"S|{table}|status|DELIVERED|0",
@@ -344,6 +344,20 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
                 },
             )
             self.assertEqual(result["writeCounters"]["auth_sessions"], 2)
+            self.assertEqual(
+                result["writeCounters"],
+                {
+                    "auth_sessions": 2,
+                    "im_credentials": 1,
+                    "c2c_messages": 1,
+                    "avchatroom_sessions": 1,
+                    "alipay_orders": 1,
+                    "payment_provider_events": 1,
+                    "wallet_transactions": 0,
+                    "ledger_journals": 0,
+                    "ledger_entries": 0,
+                },
+            )
             self.assertEqual(result["evidenceBinding"]["fixtureId"], fixture)
             self.assertEqual(result["evidenceBinding"]["avd"], "AVD-A")
             self.assertNotIn("publicIds", repr(result))
@@ -354,6 +368,29 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
                 collector.collect("m5-other", "AVD-A", fixture, nonce)
             with self.assertRaises(EvidenceError):
                 collector.collect("m5-run", "AVD-B", fixture, nonce)
+
+    def test_counters_track_future_payment_accounting_delta_without_values(self) -> None:
+        fixture = "m5-fresh-accounting"
+        current = _current_run_markers()
+        for table in ("wallet_transaction", "ledger_journal", "ledger_posting"):
+            current = current.replace(
+                f"T|{table}|1|1", f"T|{table}|2|1"
+            )
+        with tempfile.TemporaryDirectory() as state_dir:
+            collector = _FakeSessionCollector(
+                _session_config(state_dir, run_id="m5-accounting"),
+                [_markers(), current],
+            )
+            started = collector.start("m5-accounting", "AVD-A", fixture)
+            result = collector.collect(
+                "m5-accounting", "AVD-A", fixture, started["startNonce"]
+            )
+            self.assertEqual(result["writeCounters"]["payment_provider_events"], 1)
+            self.assertEqual(result["writeCounters"]["wallet_transactions"], 1)
+            self.assertEqual(result["writeCounters"]["ledger_journals"], 1)
+            self.assertEqual(result["writeCounters"]["ledger_entries"], 1)
+            self.assertNotIn("amount_minor", repr(result))
+            self.assertNotIn("publicIds", repr(result))
 
     def test_start_rejects_replay_and_collect_rejects_stale_or_bad_nonce(self) -> None:
         fixture = "m5-fresh-replay"
