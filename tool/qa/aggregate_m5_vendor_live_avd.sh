@@ -89,10 +89,16 @@ validate_log() {
   fi
   if [[ "$PAYMENT_OPT_IN" == 'true' ]]; then
     if [[ "$PAYMENT_CANCEL_ONLY" == 'true' ]]; then
-      # The native cancellation callback is the only Alipay provider event
-      # required here. An async notify callback is intentionally not required
-      # and would be suspicious for an unpaid cancellation.
-      [[ "$(grep -Ec '^M5_VENDOR_EVENT::alipay::launch_cancel::sdk_callback$' "$log" || true)" -eq 1 ]] || return 1
+      if [[ "${dir##*/}" == 'AVD-A' ]]; then
+        # The native cancellation callback is the only Alipay provider event
+        # required here. An async notify callback is intentionally not required
+        # and would be suspicious for an unpaid cancellation.
+        [[ "$(grep -Ec '^M5_VENDOR_EVENT::alipay::launch_cancel::sdk_callback$' "$log" || true)" -eq 1 ]] || return 1
+      else
+        # AVD-B is receiver-only for every payment scenario and must not emit
+        # even a cancellation callback.
+        [[ "$(grep -Ec '^M5_VENDOR_EVENT::alipay::[^:]+::sdk_callback$' "$log" || true)" -eq 0 ]] || return 1
+      fi
     else
       if [[ "${dir##*/}" == 'AVD-A' ]]; then
         [[ "$(grep -Ec '^M5_VENDOR_EVENT::alipay::launch_success::sdk_callback$' "$log" || true)" -eq 1 ]] || return 1

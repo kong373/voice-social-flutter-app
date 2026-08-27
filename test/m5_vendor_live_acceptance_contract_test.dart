@@ -143,6 +143,12 @@ void main() {
     expect(integrationSource, contains("'vendor_blocked'"));
     expect(integrationSource, contains("'cancel_only'"));
     expect(integrationSource, contains("fullyPass ? 'PARTIAL'"));
+    expect(
+      RegExp(
+        r"evidence\.lane\('alipay\.reconcile-idempotency', 'BLOCKED'\)",
+      ).allMatches(integrationSource).length,
+      1,
+    );
     expect(aggregateSource, contains('payment_lane_not_explicitly_withheld'));
     expect(aggregateSource, contains('PAYMENT_CANCEL_ONLY'));
     expect(aggregateSource, contains('PAYMENT_SUCCESS'));
@@ -151,6 +157,7 @@ void main() {
     expect(aggregateSource, contains('ledgerEntryCount'));
     expect(aggregateSource, contains('ledgerEntryCount": 2'));
     expect(aggregateSource, contains('payment_lane_must_be_not_run'));
+    expect(aggregateSource, contains('AVD-B is receiver-only'));
     expect(aggregateSource, contains('ANDROID_EMULATOR_PARTIAL'));
     expect(aggregateSource, contains('eventCount"] != 0'));
     for (final String paymentCounter in <String>[
@@ -169,6 +176,7 @@ void main() {
     expect(runnerSource, contains('X-M5-Payment-Scenario'));
     expect(runnerSource, contains('paymentSettlementPoll'));
     expect(runnerSource, contains('internal-bounded-90s'));
+    expect(runnerSource, contains('opener.open(request, timeout=180)'));
     expect(runnerSource, isNot(contains('sleep 90')));
     expect(runnerSource, contains('rm -rf -- "\$DB_HELPER_STATE_DIR"'));
     expect(runnerSource, contains('DB_HELPER_LOG'));

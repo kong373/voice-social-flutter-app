@@ -1237,7 +1237,8 @@ Future<void> _runAlipaySandbox(
     );
     evidence.lane('alipay.query-reconcile', 'FAIL');
     evidence.lane('alipay.settlement', 'BLOCKED');
-    evidence.lane('alipay.reconcile-idempotency', 'BLOCKED');
+    // finish() fills the success-only idempotency lane exactly once when the
+    // exception path has not reached the repeated reconcile call.
   }
 }
 

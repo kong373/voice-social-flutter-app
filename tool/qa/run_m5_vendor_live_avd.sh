@@ -896,7 +896,9 @@ request = urllib.request.Request(os.environ["M5_DB_URL"], headers={
 })
 try:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(request, timeout=30) as response:
+    # The helper polls settlement internally for up to 90 seconds. Allow
+    # headroom for the other AVD's serialized collector request as well.
+    with opener.open(request, timeout=180) as response:
         if response.status < 200 or response.status >= 300: raise RuntimeError("non_success")
         payload = json.loads(response.read())
     required = {"status", "evidenceBinding", "writeCounters", "vendorOutbox", "callbackEvents", "outboxAttempts", "paymentSettlement", "secrets", "backendSourceDigest"}
