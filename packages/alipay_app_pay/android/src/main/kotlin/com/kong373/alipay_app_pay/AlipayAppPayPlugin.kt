@@ -36,17 +36,31 @@ class AlipayAppPayPlugin :
     }
 
     private lateinit var channel: MethodChannel
-    private val executor: ExecutorService = Executors.newSingleThreadExecutor()
-    private val timeoutExecutor: ScheduledExecutorService =
-        Executors.newSingleThreadScheduledExecutor()
+    private var executor: ExecutorService? = null
+    private var timeoutExecutor: ScheduledExecutorService? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile
     private var activity: Activity? = null
+    @Volatile
     private var active = false
+    private var activeInvocation: Long? = null
+    private var engineGeneration = 0L
     private var detachedFromEngine = false
 
     @Synchronized
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         detachedFromEngine = false
+        engineGeneration += 1
+        // A plugin instance can be detached and attached to another engine
+        // during host recreation. Recreate the worker pools after detach;
+        // never submit work to an executor that was shut down with the old
+        // engine.
+        if (executor == null || executor!!.isShutdown) {
+            executor = Executors.newSingleThreadExecutor()
+        }
+        if (timeoutExecutor == null || timeoutExecutor!!.isShutdown) {
+            timeoutExecutor = Executors.newSingleThreadScheduledExecutor()
+        }
         channel = MethodChannel(binding.binaryMessenger, CHANNEL)
         channel.setMethodCallHandler(this)
     }
@@ -54,25 +68,38 @@ class AlipayAppPayPlugin :
     @Synchronized
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         detachedFromEngine = true
+        engineGeneration += 1
         channel.setMethodCallHandler(null)
         activity = null
-        executor.shutdownNow()
-        timeoutExecutor.shutdownNow()
+        executor?.shutdownNow()
+        timeoutExecutor?.shutdownNow()
+        executor = null
+        timeoutExecutor = null
     }
 
+    @Synchronized
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        // Invalidate a result produced by a previous Activity instance. The
+        // Flutter engine can survive an Activity recreation, so engine
+        // generation alone is not enough to identify a current UI owner.
+        engineGeneration += 1
         activity = binding.activity
     }
 
+    @Synchronized
     override fun onDetachedFromActivityForConfigChanges() {
+        engineGeneration += 1
         activity = null
     }
 
+    @Synchronized
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
         onAttachedToActivity(binding)
     }
 
+    @Synchronized
     override fun onDetachedFromActivity() {
+        engineGeneration += 1
         activity = null
     }
 
@@ -86,14 +113,16 @@ class AlipayAppPayPlugin :
             result.error("invalid_request", "服务端支付串无效", null)
             return
         }
-        val currentActivity = activity
-        if (currentActivity == null) {
-            result.error("activity_unavailable", "当前没有可用的支付页面", null)
-            return
-        }
+        val currentActivity: Activity
+        val invocationToken: Long
         synchronized(this) {
             if (detachedFromEngine) {
                 result.error("activity_unavailable", "支付桥接未就绪", null)
+                return
+            }
+            val attachedActivity = activity
+            if (attachedActivity == null || attachedActivity.isFinishing || attachedActivity.isDestroyed) {
+                result.error("activity_unavailable", "当前没有可用的支付页面", null)
                 return
             }
             if (active) {
@@ -101,12 +130,23 @@ class AlipayAppPayPlugin :
                 return
             }
             active = true
+            engineGeneration += 1
+            invocationToken = engineGeneration
+            activeInvocation = invocationToken
+            currentActivity = attachedActivity
         }
 
         // PayTask.payV2 performs network and app-switch work. Keep it off the
         // Flutter/UI thread, then send only a small status classification back
         // on the main thread. Never forward the SDK's memo/result strings.
         val completion = AtomicBoolean(false)
+        val timeoutExecutor = this.timeoutExecutor
+        val workerExecutor = this.executor
+        if (timeoutExecutor == null || workerExecutor == null) {
+            clearActive(invocationToken)
+            result.error("unavailable", "支付宝支付桥接当前不可用", null)
+            return
+        }
         val timeout: ScheduledFuture<*> = try {
             timeoutExecutor.schedule(
                 {
@@ -115,22 +155,30 @@ class AlipayAppPayPlugin :
                         // locked until the original PayTask worker returns.
                         // A retry must receive payment_in_progress rather than
                         // queueing a second SDK invocation.
-                        deliver(result, "processing")
+                        deliver(result, "processing", invocationToken)
                     }
                 },
                 PAY_TIMEOUT_SECONDS,
                 TimeUnit.SECONDS,
             )
         } catch (_: RejectedExecutionException) {
-            clearActive()
+            clearActive(invocationToken)
             result.error("unavailable", "支付宝支付桥接当前不可用", null)
             return
         }
         try {
-            executor.execute {
+            workerExecutor.execute {
                 val status = try {
-                    val raw = PayTask(currentActivity).payV2(orderString, true)
-                    classify(raw["resultStatus"])
+                    val activityStillAttached = synchronized(this) {
+                        !detachedFromEngine && activity === currentActivity &&
+                            !currentActivity.isFinishing && !currentActivity.isDestroyed
+                    }
+                    if (!activityStillAttached) {
+                        "unavailable"
+                    } else {
+                        val raw = PayTask(currentActivity).payV2(orderString, true)
+                        classify(raw["resultStatus"])
+                    }
                 } catch (_: RuntimeException) {
                     "failed"
                 } catch (_: LinkageError) {
@@ -138,29 +186,36 @@ class AlipayAppPayPlugin :
                 }
                 if (completion.compareAndSet(false, true)) {
                     timeout.cancel(false)
-                    deliver(result, status)
+                    deliver(result, status, invocationToken)
                 }
-                clearActive()
+                clearActive(invocationToken)
             }
         } catch (_: RejectedExecutionException) {
             timeout.cancel(false)
             if (completion.compareAndSet(false, true)) {
-                clearActive()
                 result.error("unavailable", "支付宝支付桥接当前不可用", null)
             }
+            clearActive(invocationToken)
         }
     }
 
     @Synchronized
-    private fun clearActive() {
-        active = false
+    private fun clearActive(invocationToken: Long) {
+        if (activeInvocation == invocationToken) {
+            active = false
+            activeInvocation = null
+        }
     }
 
-    private fun deliver(result: MethodChannel.Result, status: String) {
+    private fun deliver(result: MethodChannel.Result, status: String, invocationToken: Long) {
         mainHandler.post {
-            val shouldDeliver = synchronized(this) { !detachedFromEngine }
+            // A result from an old engine must never be delivered after a
+            // detach/reattach cycle. The Dart future on that engine will
+            // expire and reconcile the backend order instead.
+            val shouldDeliver = synchronized(this) {
+                !detachedFromEngine && engineGeneration == invocationToken
+            }
             if (!shouldDeliver) {
-                result.error("activity_unavailable", "支付桥接未就绪", null)
                 return@post
             }
             result.success(mapOf("status" to status))

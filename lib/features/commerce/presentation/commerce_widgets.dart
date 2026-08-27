@@ -652,6 +652,7 @@ String _orderStatusLabel(PaymentOrderStatus status) => switch (status) {
 
 IconData _refundIcon(RefundStatus status) => switch (status) {
   RefundStatus.approved => Icons.check_circle_rounded,
+  RefundStatus.completed => Icons.task_alt_rounded,
   RefundStatus.rejected => Icons.cancel_rounded,
   RefundStatus.reviewing ||
   RefundStatus.resubmitted => Icons.hourglass_top_rounded,

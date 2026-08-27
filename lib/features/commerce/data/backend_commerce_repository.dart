@@ -43,6 +43,24 @@ class BackendCommerceRepository implements CommerceRepository {
   };
 
   static const int _maximumCommerceBackendPages = 100;
+  static const Set<String> _refundProviderStatuses = <String>{
+    'VENDOR_BLOCKED',
+    'READY',
+    'SUBMITTED',
+    'APPROVED',
+    'REJECTED',
+    'PROCESSING',
+    'PENDING',
+    'UNKNOWN',
+    'REFUNDED',
+    'CANCELLED',
+    'CANCELED',
+  };
+  static const Set<String> _refundPreReviewProviderStatuses = <String>{
+    'VENDOR_BLOCKED',
+    'READY',
+    'SUBMITTED',
+  };
   static final RegExp _canonicalUuidPattern = RegExp(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
   );
@@ -431,7 +449,11 @@ class BackendCommerceRepository implements CommerceRepository {
       );
     }
     final bool allowed = _requiredBool(data, 'eligible');
-    _requireVendorBlocked(data, field: 'providerStatus', label: '退款资格');
+    final String providerStatus = _requireRefundProviderStatus(
+      data,
+      field: 'providerStatus',
+      label: '退款资格',
+    );
     _validateOptionalCurrency(data, LedgerCurrency.cashCny, field: '退款币种');
     final int amountMinor = _requiredInt(data, <String>[
       'amountMinor',
@@ -444,21 +466,60 @@ class BackendCommerceRepository implements CommerceRepository {
       'reason',
       field: '退款资格原因',
     ).toUpperCase();
+    final String? responseStatus = _optionalStrictUppercaseString(
+      data['status'],
+      present: data.containsKey('status'),
+      field: '退款资格状态',
+    );
     final String? existingApplicationId = _optionalTrimmedString(
       data['existingApplicationId'],
     );
+    final bool reportsExistingApplication =
+        reason == 'REFUND_ALREADY_EXISTS' || reason == 'ACTIVE_REFUND_EXISTS';
     if (amountMinor <= 0 ||
         giftCoinAmount <= 0 ||
         (allowed && reason != 'ELIGIBLE') ||
         (!allowed && reason == 'ELIGIBLE') ||
         (allowed && existingApplicationId != null) ||
-        (reason == 'REFUND_ALREADY_EXISTS' &&
+        (reportsExistingApplication &&
             (existingApplicationId == null ||
                 !_canonicalUuidPattern.hasMatch(existingApplicationId))) ||
-        (reason != 'REFUND_ALREADY_EXISTS' && existingApplicationId != null)) {
+        (!reportsExistingApplication && existingApplicationId != null)) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '退款资格响应的金额、结论、原因或既有申请相互矛盾',
+      );
+    }
+    if (responseStatus != null) {
+      if (responseStatus == 'ELIGIBLE' || responseStatus == 'NOT_ELIGIBLE') {
+        if (!_refundPreReviewProviderStatuses.contains(providerStatus)) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '退款资格状态与支付宝厂商状态不一致',
+          );
+        }
+      } else {
+        _validateRefundProviderStatus(
+          businessStatus: responseStatus,
+          providerStatus: providerStatus,
+        );
+      }
+      if ((allowed && responseStatus != 'ELIGIBLE') ||
+          (!allowed &&
+              existingApplicationId == null &&
+              responseStatus != 'NOT_ELIGIBLE') ||
+          (existingApplicationId != null &&
+              (responseStatus == 'ELIGIBLE' ||
+                  responseStatus == 'NOT_ELIGIBLE'))) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '退款资格 eligible 与服务端 status 不一致',
+        );
+      }
+    } else if (!_refundPreReviewProviderStatuses.contains(providerStatus)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '退款资格缺少与厂商状态对应的业务状态',
       );
     }
     return RefundEligibility(
@@ -847,7 +908,8 @@ class BackendCommerceRepository implements CommerceRepository {
   static bool _refundRetryAppliedStatus(RefundStatus status) =>
       status == RefundStatus.reviewing ||
       status == RefundStatus.resubmitted ||
-      status == RefundStatus.approved;
+      status == RefundStatus.approved ||
+      status == RefundStatus.completed;
 
   @override
   Future<List<RefundApplication>> fetchRefundApplications(
@@ -868,7 +930,12 @@ class BackendCommerceRepository implements CommerceRepository {
         },
       );
       final Map<String, Object?> data = _asMap(response.data);
-      _requireVendorBlocked(data, field: 'providerStatus', label: '退款历史');
+      _requireRefundProviderStatus(
+        data,
+        field: 'providerStatus',
+        label: '退款历史',
+        allowed: _refundPreReviewProviderStatuses,
+      );
       if (data['providerInvocation'] != false) {
         throw const ApiException(
           kind: ApiFailureKind.protocol,
@@ -1494,7 +1561,6 @@ class BackendCommerceRepository implements CommerceRepository {
       );
     }
     _validateOptionalCurrency(raw, currency, field: '退款币种');
-    _requireVendorBlocked(raw, field: 'providerStatus', label: '退款结果');
     final int amountMinor = _requiredInt(raw, <String>[
       'amountMinor',
     ], field: '退款金额');
@@ -1504,12 +1570,21 @@ class BackendCommerceRepository implements CommerceRepository {
         message: '退款金额必须大于 0',
       );
     }
-    final String rawStatus = _requiredString(
+    final String rawStatus = _requiredStrictUppercaseString(
       raw,
       'status',
       field: '退款状态',
-    ).toUpperCase();
+    );
     final RefundStatus status = _requiredRefundStatus(rawStatus);
+    final String providerStatus = _requireRefundProviderStatus(
+      raw,
+      field: 'providerStatus',
+      label: '退款结果',
+    );
+    _validateRefundProviderStatus(
+      businessStatus: rawStatus,
+      providerStatus: providerStatus,
+    );
     final bool completed = _requiredBool(raw, 'completed');
     if (completed != (rawStatus == 'COMPLETED')) {
       throw const ApiException(
@@ -1539,12 +1614,14 @@ class BackendCommerceRepository implements CommerceRepository {
       rejectedReason: status == RefundStatus.rejected ? resultMessage : '',
       createdAt: submittedAt,
       currency: currency,
+      completed: completed,
     );
   }
 
   static RefundStatus? _refundStatus(Object? value) {
     return switch (_string(value).toUpperCase()) {
-      'APPROVED' || 'COMPLETED' => RefundStatus.approved,
+      'APPROVED' => RefundStatus.approved,
+      'COMPLETED' => RefundStatus.completed,
       'REJECTED' => RefundStatus.rejected,
       'CANCELLED' || 'CANCELED' => RefundStatus.unavailable,
       'RESUBMITTED' => RefundStatus.resubmitted,
@@ -1575,7 +1652,7 @@ class BackendCommerceRepository implements CommerceRepository {
       return '该充值订单可以提交退款申请；正式渠道退款仍等待厂商接入。';
     }
     return switch (reason.toUpperCase()) {
-      'ACTIVE_REFUND_EXISTS' => '该订单已有退款申请正在处理。',
+      'ACTIVE_REFUND_EXISTS' || 'REFUND_ALREADY_EXISTS' => '该订单已有退款申请正在处理。',
       'GIFT_COIN_ALREADY_CONSUMED' => '该订单对应礼物币已消费，当前不能退款。',
       _ => reason.isEmpty ? '该充值订单当前不能退款。' : reason,
     };
@@ -1877,6 +1954,7 @@ class BackendCommerceRepository implements CommerceRepository {
   static String _refundStatusText(RefundStatus status) => switch (status) {
     RefundStatus.reviewing => '审核中',
     RefundStatus.approved => '已通过',
+    RefundStatus.completed => '已完成',
     RefundStatus.rejected => '已拒绝',
     RefundStatus.resubmitted => '已重新提交',
     RefundStatus.unavailable => '不可用',
@@ -2103,6 +2181,42 @@ class BackendCommerceRepository implements CommerceRepository {
     return normalized.isEmpty ? null : normalized;
   }
 
+  static String? _optionalStrictUppercaseString(
+    Object? value, {
+    required bool present,
+    required String field,
+  }) {
+    if (!present) {
+      return null;
+    }
+    if (value is! String || value.isEmpty || value.trim() != value) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field不是有效服务端状态',
+      );
+    }
+    return value.toUpperCase();
+  }
+
+  static String _requiredStrictUppercaseString(
+    Map<String, Object?> data,
+    String key, {
+    required String field,
+  }) {
+    final String? value = _optionalStrictUppercaseString(
+      data[key],
+      present: data.containsKey(key),
+      field: field,
+    );
+    if (value == null) {
+      throw ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '$field缺少有效服务端状态',
+      );
+    }
+    return value;
+  }
+
   static DateTime? _optionalDateTime(Object? value) {
     if (value == null) {
       return null;
@@ -2217,16 +2331,62 @@ class BackendCommerceRepository implements CommerceRepository {
     return value;
   }
 
-  static void _requireVendorBlocked(
+  static String _requireRefundProviderStatus(
     Map<String, Object?> data, {
     required String field,
     required String label,
+    Set<String>? allowed,
   }) {
     final Object? raw = data[field];
-    if (raw is! String || raw.trim().toUpperCase() != 'VENDOR_BLOCKED') {
+    final String? value = raw is String && raw.isNotEmpty && raw.trim() == raw
+        ? raw.toUpperCase()
+        : null;
+    final Set<String> accepted = allowed ?? _refundProviderStatuses;
+    if (value == null || !accepted.contains(value)) {
       throw ApiException(
         kind: ApiFailureKind.protocol,
-        message: '$label缺少正式厂商失败关闭状态',
+        message: '$label缺少有效支付宝退款厂商状态',
+      );
+    }
+    return value;
+  }
+
+  static void _validateRefundProviderStatus({
+    required String businessStatus,
+    required String providerStatus,
+  }) {
+    // A blocked adapter is a readiness marker, not a provider observation. It
+    // may only accompany a pre-review first-party row while the Alipay
+    // adapter is unavailable. Approved/rejected/cancelled/completed rows must
+    // carry a concrete provider observation instead.
+    if (providerStatus == 'VENDOR_BLOCKED') {
+      if (!_refundPreReviewProviderStatuses.contains(businessStatus)) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '退款业务状态不能仍处于 VENDOR_BLOCKED',
+        );
+      }
+      return;
+    }
+    final Set<String> expected = switch (businessStatus) {
+      'SUBMITTED' ||
+      'REVIEWING' ||
+      'RESUBMITTED' => _refundPreReviewProviderStatuses,
+      'APPROVED' || 'PENDING' || 'PROCESSING' => const <String>{
+        'APPROVED',
+        'PROCESSING',
+        'PENDING',
+        'UNKNOWN',
+      },
+      'COMPLETED' => const <String>{'REFUNDED'},
+      'REJECTED' => const <String>{'REJECTED'},
+      'CANCELLED' || 'CANCELED' => const <String>{'CANCELLED', 'CANCELED'},
+      _ => const <String>{},
+    };
+    if (!expected.contains(providerStatus)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '支付宝退款业务状态与厂商状态不一致',
       );
     }
   }

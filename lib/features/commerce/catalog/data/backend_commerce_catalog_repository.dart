@@ -126,10 +126,16 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         message: '支付宝支付尚未配置或当前平台不可用',
       );
     }
-    if (!product.enabled || product.id.trim().isEmpty) {
+    if (!_isValidAlipayProduct(product)) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
         message: '充值商品无效，请刷新商品目录后重试',
+      );
+    }
+    if (account.isEmpty || account.trim() != account) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '充值账号无效，请重新登录后重试',
       );
     }
     if (youthModeEnabled) {
@@ -731,6 +737,24 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     );
   }
 
+  static bool _isValidAlipayProduct(RechargeProduct product) {
+    if (!product.enabled ||
+        product.id.isEmpty ||
+        product.id.trim() != product.id ||
+        product.id.codeUnits.any(
+          (int codeUnit) => codeUnit < 0x20 || codeUnit == 0x7f,
+        ) ||
+        product.giftCoins <= 0 ||
+        product.bonusGiftCoins < 0 ||
+        product.totalGiftCoins <= 0 ||
+        !product.priceCny.isFinite ||
+        product.priceCny <= 0) {
+      return false;
+    }
+    final double amountMinor = product.priceCny * 100;
+    return amountMinor.isFinite && amountMinor > 0 && amountMinor.round() > 0;
+  }
+
   static RechargeOrder _alipayRechargeOrderFromResponse(
     Object? value, {
     required String account,
@@ -743,7 +767,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       );
     }
     final String orderNo = _requiredString(value, 'orderNo', '支付宝下单');
-    final String? orderString = _optionalString(
+    final String? orderString = _strictOptionalString(
       value['orderStr'] ?? value['orderString'] ?? value['orderInfo'],
     );
     if (orderString == null ||
@@ -757,11 +781,11 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         message: '支付宝下单响应缺少有效支付串',
       );
     }
-    final String? responseProductId = _optionalString(
+    final String? responseProductId = _strictOptionalString(
       value['productId'] ?? value['rechargeProductId'],
     );
-    final int? responseAmountMinor = _asInt(value['amountMinor']);
-    final int? responseGiftCoinAmount = _asInt(
+    final int? responseAmountMinor = _strictInt(value['amountMinor']);
+    final int? responseGiftCoinAmount = _strictInt(
       value['giftCoinAmount'] ?? value['ncoin'],
     );
     final int expectedAmountMinor = (product.priceCny * 100).round();
@@ -1234,6 +1258,20 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     final String text = value?.toString().trim() ?? '';
     return text.isEmpty ? fallback : text;
   }
+
+  static String? _strictOptionalString(Object? value) {
+    if (value is! String || value.isEmpty || value.trim() != value) {
+      return null;
+    }
+    if (value.codeUnits.any(
+      (int codeUnit) => codeUnit < 0x20 || codeUnit == 0x7f,
+    )) {
+      return null;
+    }
+    return value;
+  }
+
+  static int? _strictInt(Object? value) => value is int ? value : null;
 
   static String? _optionalString(Object? value) {
     final String text = value?.toString().trim() ?? '';
