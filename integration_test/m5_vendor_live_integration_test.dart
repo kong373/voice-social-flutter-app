@@ -643,6 +643,25 @@ Future<DiscoveryRoom?> _createAvChatRoomFixture(
   final String title = _avchatRoomFixtureTitle();
   final String topic = _avchatRoomFixtureTopic();
   try {
+    final RoomConfiguration? ownedRoom =
+        await dependencies.roomLifecycleRepository.fetchOwnedRoom();
+    if (ownedRoom != null &&
+        ownedRoom.hasExistingRoom &&
+        ownedRoom.isOpen &&
+        ownedRoom.title.startsWith('M5 live m5-') &&
+        ownedRoom.version != null) {
+      await dependencies.roomLifecycleRepository.closeRoom(
+        ownedRoom.roomId!,
+        expectedVersion: ownedRoom.version,
+      );
+      evidence.invariant('tencent_avchatroom_previous_owned_room_closed');
+    }
+  } on Object {
+    // Cleanup is opportunistic. If there is no stale open room or the close
+    // request is already settled, creation still proceeds and the contract
+    // evidence will show the actual backend state.
+  }
+  try {
     final RoomLifecycleSaveResult saved = await dependencies
         .roomLifecycleRepository
         .saveRoom(
