@@ -1210,6 +1210,169 @@ void main() {
       await localReady.close();
     },
   );
+
+  test(
+    'server VENDOR_BLOCKED keeps eligibility, order creation, and native invoke fail-closed',
+    () async {
+      final _AvailableAlipayAdapter adapter = _AvailableAlipayAdapter();
+      final _Harness harness = await _Harness.start(
+        (RequestRecord request) => _Response.ok(<String, Object?>{
+          'platform': 'ANDROID',
+          'list': <Object?>[
+            <String, Object?>{
+              'productId': '00000000-0000-0000-0000-000000001001',
+              'title': '60礼物币',
+              'amountMinor': 600,
+              'amount': 6.00,
+              'giftCoinAmount': 60,
+              'bonusGiftCoin': 0,
+            },
+          ],
+          'total': 1,
+          'orderCreationStatus': 'VENDOR_BLOCKED',
+          'providerInvocation': false,
+        }),
+        alipayAppPayAdapter: adapter,
+      );
+      addTearDown(harness.close);
+      await harness.repository.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
+      );
+
+      final RechargeEligibility eligibility = await harness.repository
+          .checkRechargeEligibility(youthModeEnabled: false);
+      expect(harness.repository.supportsPaymentChannelInvocation, isFalse);
+      expect(eligibility.allowed, isFalse);
+      expect(eligibility.message, contains('不能创建或支付订单'));
+
+      const RechargeProduct product = RechargeProduct(
+        id: '00000000-0000-0000-0000-000000001001',
+        giftCoins: 60,
+        priceCny: 6,
+      );
+      await expectLater(
+        harness.repository.createRechargeOrder(
+          account: 'user-1',
+          product: product,
+          channel: PaymentChannelType.alipay,
+          platform: ClientStorePlatform.android,
+          youthModeEnabled: false,
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.configuration,
+          ),
+        ),
+      );
+      await expectLater(
+        harness.repository.invokePayment(
+          RechargeOrder(
+            orderNo: 'order-1',
+            account: 'user-1',
+            product: product,
+            channel: PaymentChannelType.alipay,
+            state: RechargeOrderState.created,
+            createdAt: DateTime(2026),
+            paymentOrderString: 'signed-order',
+          ),
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.configuration,
+          ),
+        ),
+      );
+      expect(adapter.payCalls, isEmpty);
+      expect(harness.requests, hasLength(1));
+      expect(harness.requests.single.path, contains('/recharge/products'));
+    },
+  );
+
+  test(
+    'server UNCONFIGURED refresh clears prior READY state before eligibility or native payment',
+    () async {
+      final _AvailableAlipayAdapter adapter = _AvailableAlipayAdapter();
+      var fetchCount = 0;
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        fetchCount += 1;
+        return _Response.ok(<String, Object?>{
+          'platform': 'ANDROID',
+          'list': <Object?>[
+            <String, Object?>{
+              'productId': '00000000-0000-0000-0000-000000001001',
+              'title': '60礼物币',
+              'amountMinor': 600,
+              'amount': 6.00,
+              'giftCoinAmount': 60,
+              'bonusGiftCoin': 0,
+            },
+          ],
+          'total': 1,
+          'orderCreationStatus': fetchCount == 1 ? 'READY' : 'UNCONFIGURED',
+          'providerInvocation': false,
+        });
+      }, alipayAppPayAdapter: adapter);
+      addTearDown(harness.close);
+      await harness.repository.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
+      );
+      expect(harness.repository.supportsPaymentChannelInvocation, isTrue);
+
+      await expectLater(
+        harness.repository.fetchRechargeProducts(
+          platform: ClientStorePlatform.android,
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+
+      final RechargeEligibility eligibility = await harness.repository
+          .checkRechargeEligibility(youthModeEnabled: false);
+      expect(harness.repository.supportsPaymentChannelInvocation, isFalse);
+      expect(eligibility.allowed, isFalse);
+
+      const RechargeProduct product = RechargeProduct(
+        id: '00000000-0000-0000-0000-000000001001',
+        giftCoins: 60,
+        priceCny: 6,
+      );
+      await expectLater(
+        harness.repository.createRechargeOrder(
+          account: 'user-1',
+          product: product,
+          channel: PaymentChannelType.alipay,
+          platform: ClientStorePlatform.android,
+          youthModeEnabled: false,
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      await expectLater(
+        harness.repository.invokePayment(
+          RechargeOrder(
+            orderNo: 'order-1',
+            account: 'user-1',
+            product: product,
+            channel: PaymentChannelType.alipay,
+            state: RechargeOrderState.created,
+            createdAt: DateTime(2026),
+            paymentOrderString: 'signed-order',
+          ),
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      expect(adapter.payCalls, isEmpty);
+      expect(harness.requests, hasLength(2));
+    },
+  );
 }
 
 class _Harness {
@@ -1283,6 +1446,8 @@ class _Harness {
 }
 
 class _AvailableAlipayAdapter implements AlipayAppPayAdapter {
+  final List<String> payCalls = <String>[];
+
   @override
   bool get isAvailable => true;
 
@@ -1291,6 +1456,7 @@ class _AvailableAlipayAdapter implements AlipayAppPayAdapter {
     required String orderNo,
     required String orderString,
   }) async {
+    payCalls.add(orderNo);
     return const AlipayAppPayResult(
       outcome: AlipayAppPayOutcome.processing,
       reason: AlipayAppPayReason.processing,

@@ -194,6 +194,35 @@ void main() {
       var calls = 0;
       server.listen((HttpRequest request) async {
         await utf8.decoder.bind(request).join();
+        if (request.uri.path.endsWith('/recharge/products')) {
+          request.response
+            ..statusCode = 200
+            ..headers.contentType = ContentType.json
+            ..write(
+              jsonEncode(<String, Object?>{
+                'code': 200,
+                'message': 'OK',
+                'data': <String, Object?>{
+                  'platform': 'ANDROID',
+                  'list': <Object?>[
+                    <String, Object?>{
+                      'productId': '00000000-0000-0000-0000-000000001001',
+                      'title': '60礼物币',
+                      'amountMinor': 600,
+                      'amount': 6.00,
+                      'giftCoinAmount': 60,
+                      'bonusGiftCoin': 0,
+                    },
+                  ],
+                  'total': 1,
+                  'orderCreationStatus': 'READY',
+                  'providerInvocation': false,
+                },
+              }),
+            );
+          await request.response.close();
+          return;
+        }
         requestIds.add(request.headers.value('X-Request-Id'));
         calls += 1;
         if (calls == 1) {
@@ -251,6 +280,9 @@ void main() {
         id: 'product-1',
         giftCoins: 60,
         priceCny: 6,
+      );
+      await repository.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
       );
 
       await expectLater(
@@ -483,6 +515,35 @@ void main() {
       var calls = 0;
       server.listen((HttpRequest request) async {
         await utf8.decoder.bind(request).join();
+        if (request.uri.path.endsWith('/recharge/products')) {
+          request.response
+            ..statusCode = 200
+            ..headers.contentType = ContentType.json
+            ..write(
+              jsonEncode(<String, Object?>{
+                'code': 200,
+                'message': 'OK',
+                'data': <String, Object?>{
+                  'platform': 'ANDROID',
+                  'list': <Object?>[
+                    <String, Object?>{
+                      'productId': '00000000-0000-0000-0000-000000001001',
+                      'title': '60礼物币',
+                      'amountMinor': 600,
+                      'amount': 6.00,
+                      'giftCoinAmount': 60,
+                      'bonusGiftCoin': 0,
+                    },
+                  ],
+                  'total': 1,
+                  'orderCreationStatus': 'READY',
+                  'providerInvocation': false,
+                },
+              }),
+            );
+          await request.response.close();
+          return;
+        }
         calls += 1;
         requestIds.add(request.headers.value('X-Request-Id'));
         if (calls == 1) {
@@ -543,6 +604,9 @@ void main() {
         giftCoins: 60,
         priceCny: 6,
       );
+      await repository.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
+      );
 
       await expectLater(
         repository.createRechargeOrder(
@@ -587,6 +651,35 @@ void main() {
       addTearDown(() => server.close(force: true));
       server.listen((HttpRequest request) async {
         await utf8.decoder.bind(request).join();
+        if (request.uri.path.endsWith('/recharge/products')) {
+          request.response
+            ..statusCode = 200
+            ..headers.contentType = ContentType.json
+            ..write(
+              jsonEncode(<String, Object?>{
+                'code': 200,
+                'message': 'OK',
+                'data': <String, Object?>{
+                  'platform': 'ANDROID',
+                  'list': <Object?>[
+                    <String, Object?>{
+                      'productId': '00000000-0000-0000-0000-000000001001',
+                      'title': '60礼物币',
+                      'amountMinor': 600,
+                      'amount': 6.00,
+                      'giftCoinAmount': 60,
+                      'bonusGiftCoin': 0,
+                    },
+                  ],
+                  'total': 1,
+                  'orderCreationStatus': 'READY',
+                  'providerInvocation': false,
+                },
+              }),
+            );
+          await request.response.close();
+          return;
+        }
         request.response
           ..statusCode = 200
           ..headers.contentType = ContentType.json
@@ -621,6 +714,9 @@ void main() {
             routes: const BackendRouteCatalog(),
             alipayAppPayAdapter: _FakeAlipayAdapter(),
           );
+      await repository.fetchRechargeProducts(
+        platform: ClientStorePlatform.android,
+      );
 
       await expectLater(
         repository.createRechargeOrder(

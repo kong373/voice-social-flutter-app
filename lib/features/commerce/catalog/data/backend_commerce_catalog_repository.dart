@@ -117,7 +117,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         message: '青少年模式已开启，暂不能创建新的充值订单',
       );
     }
-    return _alipayAppPayAdapter.isAvailable
+    return supportsPaymentChannelInvocation
         ? const RechargeEligibility(allowed: true, message: '')
         : const RechargeEligibility(
             allowed: false,
@@ -135,7 +135,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   }) async {
     if (platform != ClientStorePlatform.android ||
         channel != PaymentChannelType.alipay ||
-        !_alipayAppPayAdapter.isAvailable) {
+        !supportsPaymentChannelInvocation) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
         message: '支付宝支付尚未配置或当前平台不可用',
@@ -236,7 +236,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   @override
   Future<RechargeOrder> invokePayment(RechargeOrder order) async {
     if (order.channel != PaymentChannelType.alipay ||
-        !_alipayAppPayAdapter.isAvailable) {
+        !supportsPaymentChannelInvocation) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
         message: '支付宝支付尚未配置或当前平台不可用',
