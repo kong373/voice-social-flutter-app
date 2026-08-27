@@ -15,6 +15,23 @@ void main() {
   final String aggregateSource = aggregate.readAsStringSync();
   final String integrationSource = integration.readAsStringSync();
 
+  Directory createM5TempRoot(String prefix) {
+    // The runner intentionally rejects symlinked artifact ancestors. Resolve
+    // macOS's `/var -> /private/var` before creating the child directory so
+    // the test remains portable while satisfying that safety contract.
+    final Directory parent = Directory(
+      Directory.systemTemp.resolveSymbolicLinksSync(),
+    );
+    parent.createSync(recursive: true);
+    final Directory root = parent.createTempSync(prefix);
+    addTearDown(() {
+      if (root.existsSync()) {
+        root.deleteSync(recursive: true);
+      }
+    });
+    return root;
+  }
+
   test('M5 shell harnesses are syntactically valid', () {
     for (final File file in <File>[runner, aggregate]) {
       final ProcessResult result = Process.runSync('/bin/bash', <String>[
@@ -318,10 +335,7 @@ void main() {
   test(
     'dry-run is allowed without vendor credentials and never reports pass',
     () {
-      final Directory root = Directory(
-        '/private/tmp/m5-vendor-live-contract-${DateTime.now().microsecondsSinceEpoch}',
-      )..createSync();
-      addTearDown(() => root.deleteSync(recursive: true));
+      final Directory root = createM5TempRoot('m5-vendor-live-contract-');
       final Directory artifact = Directory('${root.path}/artifacts');
       final ProcessResult result = Process.runSync(
         '/bin/bash',
@@ -342,10 +356,9 @@ void main() {
   );
 
   test('aggregate fails closed when no two AVD evidences exist', () {
-    final Directory root = Directory(
-      '/private/tmp/m5-vendor-live-aggregate-contract-${DateTime.now().microsecondsSinceEpoch}',
-    )..createSync();
-    addTearDown(() => root.deleteSync(recursive: true));
+    final Directory root = createM5TempRoot(
+      'm5-vendor-live-aggregate-contract-',
+    );
     final ProcessResult result = Process.runSync(
       '/bin/bash',
       <String>[aggregate.path],
@@ -368,10 +381,7 @@ void main() {
   });
 
   test('aggregate keeps a complete zero-payment run explicitly NO_PAY', () {
-    final Directory root = Directory(
-      '/private/tmp/m5-vendor-live-no-pay-${DateTime.now().microsecondsSinceEpoch}',
-    )..createSync();
-    addTearDown(() => root.deleteSync(recursive: true));
+    final Directory root = createM5TempRoot('m5-vendor-live-no-pay-');
     const String runId = 'm5-no-pay-contract';
     const String fixtureId = 'm5-fresh-no-pay-fixture';
     final String flutterSha = 'a' * 40;
@@ -554,10 +564,7 @@ alipay_provider_calls=0
   });
 
   test('success aggregate requires settlement on AVD-A and withholds AVD-B', () {
-    final Directory root = Directory(
-      '/private/tmp/m5-vendor-live-success-${DateTime.now().microsecondsSinceEpoch}',
-    )..createSync();
-    addTearDown(() => root.deleteSync(recursive: true));
+    final Directory root = createM5TempRoot('m5-vendor-live-success-');
     const String runId = 'm5-success-contract';
     const String fixtureId = 'm5-fresh-success-fixture';
     final String nonceSha256 = 'f' * 64;
