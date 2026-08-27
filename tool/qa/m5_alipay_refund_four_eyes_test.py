@@ -9,8 +9,12 @@ the same-id idempotency contract with in-memory doubles.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import os
 import unittest
+from contextlib import redirect_stdout
+from unittest.mock import patch
 
 from m5_alipay_refund_four_eyes import (
     EXPECTED_CONFIRMATION,
@@ -22,8 +26,10 @@ from m5_alipay_refund_four_eyes import (
     RefundHarnessError,
     authorize_provider,
     build_safe_summary,
+    main,
     run_flow,
     sanitize_response,
+    validate_base_url,
     _validate_provider_result,
     _validate_review,
 )
@@ -194,6 +200,33 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
         config = _config(confirmations=False)
         with self.assertRaisesRegex(RefundHarnessError, "PROVIDER_CONFIRMATION_REQUIRED"):
             authorize_provider(config)
+
+    def test_authorized_failure_never_claims_zero_provider_calls(self) -> None:
+        output = io.StringIO()
+        environment = {
+            "QA_M5_REFUND_ALLOW_PROVIDER": "true",
+            "QA_M5_REFUND_CONFIRMATION": EXPECTED_CONFIRMATION,
+            "QA_M5_REFUND_CONFIRMATION_2": EXPECTED_CONFIRMATION_2,
+            # Leave all protected runtime inputs absent so configuration
+            # fails before opening a socket.  The authorized failure shape is
+            # deliberately conservative because later failures may occur
+            # after the provider boundary.
+        }
+        with patch.dict(os.environ, environment, clear=True), redirect_stdout(output):
+            exit_code = main(["--run"])
+        self.assertEqual(exit_code, 2)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["providerInvocation"], "UNKNOWN")
+
+    def test_insecure_http_is_limited_to_the_host_loopback(self) -> None:
+        validate_base_url(
+            "http://127.0.0.1:18080/", allow_insecure_http=True
+        )
+        with self.assertRaisesRegex(RefundHarnessError, "CONFIGURATION"):
+            validate_base_url(
+                "http://10.0.2.2:18080/", allow_insecure_http=True
+            )
 
     def test_response_sanitizer_drops_identifier_and_amount_fields(self) -> None:
         value = sanitize_response(

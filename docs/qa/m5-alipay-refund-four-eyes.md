@@ -56,8 +56,9 @@ The three bearer values must be distinct. The state directory must already
 exist with mode `0700` or narrower. `QA_M5_REFUND_ARTIFACT_DIR` is optional,
 but if supplied it must also be a new private directory. The optional
 `QA_M5_REFUND_ALLOW_INSECURE_HTTP=true` is accepted only for the controlled
-loopback hosts `127.0.0.1`, `localhost`, `::1`, or `10.0.2.2`; HTTPS is the
-default.
+host-loopback names `127.0.0.1`, `localhost`, or `::1`; HTTPS is the default.
+The Android-only `10.0.2.2` gateway is deliberately rejected because this
+orchestrator runs on the Mac host and carries bearer credentials.
 
 The Docker helper reads MySQL credentials only from the serving container's
 `MYSQL_DATABASE` and one of `MYSQL_PASSWORD`, `MYSQL_APP_PASSWORD`, or
@@ -103,6 +104,10 @@ aggregate counts, and SHA-256 hashes of the two protected references. They do
 not contain order/refund/user/provider identifiers, secrets, amounts, phone
 numbers, or provider payloads. A terminal execute result intentionally skips
 reconcile; a pending/unknown result requires reconcile and the same refund id.
+After the explicit provider gate has opened, any failed run reports
+`providerInvocation=UNKNOWN`; a local validation or transport failure cannot
+prove that Alipay was not reached. Only the default pre-confirmation block may
+report `providerInvocation=false`.
 
 ## Local validation (provider-free)
 

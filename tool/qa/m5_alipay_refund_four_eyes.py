@@ -371,7 +371,10 @@ def validate_base_url(value: str, *, allow_insecure_http: bool = False) -> None:
     except ValueError:
         raise RefundHarnessError("CONFIGURATION") from None
     scheme = parsed.scheme.lower()
-    allowed_http_hosts = {"127.0.0.1", "localhost", "::1", "10.0.2.2"}
+    # This orchestrator runs on the Mac host. Android's 10.0.2.2 gateway is
+    # only special inside an emulator and must not be treated as host-local
+    # when transmitting bearer credentials over plain HTTP.
+    allowed_http_hosts = {"127.0.0.1", "localhost", "::1"}
     if scheme == "https":
         pass
     elif (
@@ -1015,7 +1018,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "schemaVersion": FLOW_SCHEMA_VERSION,
                 "status": "FAIL",
                 "category": error.category,
-                "providerInvocation": False,
+                # Once the explicit provider gate is open, a later failure
+                # may happen before or after the backend reached Alipay.  A
+                # local exception cannot prove the negative, so preserve the
+                # ambiguity instead of publishing a false zero-call claim.
+                "providerInvocation": "UNKNOWN",
             }
         )
         return 2
@@ -1027,7 +1034,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "schemaVersion": FLOW_SCHEMA_VERSION,
                 "status": "FAIL",
                 "category": "INVARIANT_VIOLATION",
-                "providerInvocation": False,
+                "providerInvocation": "UNKNOWN",
             }
         )
         return 2
