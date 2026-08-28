@@ -118,6 +118,12 @@ typedef TencentImHintTrustEvaluator =
       required bool? isSelf,
     });
 
+typedef TencentImObservabilityLogger = void Function(String marker);
+
+void _defaultTencentImObservabilityLogger(String marker) {
+  debugPrint(marker);
+}
+
 /// Adapter for the official no-UI `tencent_cloud_chat_sdk` manager.
 ///
 /// No UI wrapper import is used.  `showImLog` is disabled and the SDK is
@@ -131,11 +137,14 @@ class OfficialTencentImSdkClient
   OfficialTencentImSdkClient({
     V2TIMManager? manager,
     TencentImHintTrustEvaluator? trustedHintEvaluator,
+    TencentImObservabilityLogger? logger,
   }) : _manager = manager ?? V2TIMManager(),
-       _trustedHintEvaluator = trustedHintEvaluator;
+       _trustedHintEvaluator = trustedHintEvaluator,
+       _logger = logger ?? _defaultTencentImObservabilityLogger;
 
   final V2TIMManager _manager;
   final TencentImHintTrustEvaluator? _trustedHintEvaluator;
+  final TencentImObservabilityLogger _logger;
   final StreamController<TencentImSdkEvent> _eventController =
       StreamController<TencentImSdkEvent>.broadcast(sync: true);
 
@@ -250,25 +259,11 @@ class OfficialTencentImSdkClient
 
   void _onMessage(V2TimMessage message) {
     final V2TimCustomElem? customElement = message.customElem;
-    final String? customData = customElement?.data;
-    if (customData == null || customData.isEmpty) {
-      return;
-    }
-    final String? groupId = message.groupID;
-    final TencentImHintTrustEvaluator? evaluator = _trustedHintEvaluator;
-    final bool trusted =
-        evaluator?.call(
-          senderUserId: message.sender,
-          groupId: groupId,
-          isSelf: message.isSelf,
-        ) ??
-        false;
-    _emit(
-      TencentImSdkEvent.customElement(
-        data: customData,
-        trustedFirstParty: trusted,
+    _handleObservedMessage(
+      TencentImObservedMessage(
+        customData: customElement?.data,
         senderUserId: message.sender,
-        groupId: groupId,
+        groupId: message.groupID,
         isSelf: message.isSelf,
       ),
     );
@@ -279,6 +274,71 @@ class OfficialTencentImSdkClient
       _eventController.add(event);
     }
   }
+
+  @visibleForTesting
+  void handleObservedMessageForTest(TencentImObservedMessage message) {
+    _handleObservedMessage(message);
+  }
+
+  void _handleObservedMessage(TencentImObservedMessage message) {
+    final String? groupId = message.groupId;
+    final String? senderUserId = message.senderUserId;
+    final String? customData = message.customData;
+    final bool hasCustomData = customData != null && customData.isNotEmpty;
+    if (!hasCustomData) {
+      _logger(
+        _sdkCustomCallbackMarker(
+          hasCustomData: false,
+          hasGroupId: groupId != null && groupId.isNotEmpty,
+          hasSenderUserId: senderUserId != null && senderUserId.isNotEmpty,
+          isSelf: message.isSelf,
+          providerTrusted: false,
+        ),
+      );
+      return;
+    }
+    final String observedCustomData = customData;
+    final TencentImHintTrustEvaluator? evaluator = _trustedHintEvaluator;
+    final bool trusted =
+        evaluator?.call(
+          senderUserId: senderUserId,
+          groupId: groupId,
+          isSelf: message.isSelf,
+        ) ??
+        false;
+    _logger(
+      _sdkCustomCallbackMarker(
+        hasCustomData: true,
+        hasGroupId: groupId != null && groupId.isNotEmpty,
+        hasSenderUserId: senderUserId != null && senderUserId.isNotEmpty,
+        isSelf: message.isSelf,
+        providerTrusted: trusted,
+      ),
+    );
+    _emit(
+      TencentImSdkEvent.customElement(
+        data: observedCustomData,
+        trustedFirstParty: trusted,
+        senderUserId: senderUserId,
+        groupId: groupId,
+        isSelf: message.isSelf,
+      ),
+    );
+  }
+}
+
+class TencentImObservedMessage {
+  const TencentImObservedMessage({
+    this.customData,
+    this.senderUserId,
+    this.groupId,
+    this.isSelf,
+  });
+
+  final String? customData;
+  final String? senderUserId;
+  final String? groupId;
+  final bool? isSelf;
 }
 
 /// Provider-neutral Tencent IM lifecycle implementation.
@@ -291,10 +351,19 @@ class TencentImSessionAdapter
     DateTime Function()? now,
     this.operationTimeout = const Duration(seconds: 15),
     ImLifecycleLogger? logger,
+    TencentImObservabilityLogger? observabilityLogger,
   }) : assert(operationTimeout > Duration.zero),
-       _sdkClient = sdkClient ?? sdk ?? OfficialTencentImSdkClient(),
+       _sdkClient =
+           sdkClient ??
+           sdk ??
+           OfficialTencentImSdkClient(
+             logger:
+                 observabilityLogger ?? _defaultTencentImObservabilityLogger,
+           ),
        _now = now ?? DateTime.now,
-       _logger = logger ?? _defaultLogger {
+       _logger = logger ?? _defaultLogger,
+       _observabilityLogger =
+           observabilityLogger ?? _defaultTencentImObservabilityLogger {
     final TencentImSdkEventSource? source =
         _sdkClient is TencentImSdkEventSource
         ? _sdkClient as TencentImSdkEventSource
@@ -308,6 +377,7 @@ class TencentImSessionAdapter
   final DateTime Function() _now;
   final Duration operationTimeout;
   final ImLifecycleLogger _logger;
+  final TencentImObservabilityLogger _observabilityLogger;
   final StreamController<ImSessionState> _stateController =
       StreamController<ImSessionState>.broadcast(sync: true);
   final StreamController<ImSessionEvent> _eventController =
@@ -674,15 +744,29 @@ class TencentImSessionAdapter
         }
         final String? normalizedGroupId = event.groupId?.trim();
         if (normalizedGroupId != null && normalizedGroupId.isNotEmpty) {
+          final bool groupExact = normalizedGroupId == _activeGroupId;
+          final bool senderExact = _hasExpectedSystemSender(event.senderUserId);
+          final bool providerTrusted = event.trustedFirstParty;
           final ImRefreshHint? roomHint = ImRefreshHint.tryParse(
             customData,
             trustedSource:
-                event.trustedFirstParty &&
+                providerTrusted &&
                 isTrustedRoomHintSender(
                   senderUserId: event.senderUserId,
                   groupId: normalizedGroupId,
                   isSelf: event.isSelf,
                 ),
+          );
+          _observabilityLogger(
+            _adapterGateMarker(
+              kind: _TencentImGateKind.room,
+              hasGroupId: true,
+              groupExact: groupExact,
+              senderExact: senderExact,
+              isSelf: event.isSelf,
+              providerTrusted: providerTrusted,
+              parseAccepted: roomHint != null,
+            ),
           );
           if (roomHint != null && !_roomEventController.isClosed) {
             _roomEventController.add(
@@ -696,15 +780,28 @@ class TencentImSessionAdapter
           // Group custom data never becomes a private refresh event.
           return;
         }
+        final bool senderExact = _hasExpectedSystemSender(event.senderUserId);
+        final bool providerTrusted = event.trustedFirstParty;
         final ImRefreshHint? hint = ImRefreshHint.tryParse(
           customData,
           trustedSource:
-              event.trustedFirstParty &&
+              providerTrusted &&
               isTrustedHintSender(
                 senderUserId: event.senderUserId,
                 groupId: event.groupId,
                 isSelf: event.isSelf,
               ),
+        );
+        _observabilityLogger(
+          _adapterGateMarker(
+            kind: _TencentImGateKind.c2c,
+            hasGroupId: false,
+            groupExact: false,
+            senderExact: senderExact,
+            isSelf: event.isSelf,
+            providerTrusted: providerTrusted,
+            parseAccepted: hint != null,
+          ),
         );
         if (hint != null) {
           _emitEvent(ImSessionEvent.refresh(hint));
@@ -1146,6 +1243,14 @@ class TencentImSessionAdapter
     // exception text into this line.
     debugPrint('im.lifecycle.${marker.name}');
   }
+
+  bool _hasExpectedSystemSender(String? senderUserId) {
+    final ImSessionCredentials? credentials = _credentials;
+    return credentials != null &&
+        senderUserId != null &&
+        credentials.systemAccount != credentials.userId &&
+        senderUserId == credentials.systemAccount;
+  }
 }
 
 class _TencentImSdkFailure implements Exception {
@@ -1153,4 +1258,37 @@ class _TencentImSdkFailure implements Exception {
 
   final ImSessionFailure operation;
   final int? providerCode;
+}
+
+enum _TencentImGateKind { room, c2c }
+
+String _sdkCustomCallbackMarker({
+  required bool hasCustomData,
+  required bool hasGroupId,
+  required bool hasSenderUserId,
+  required bool? isSelf,
+  required bool providerTrusted,
+}) =>
+    'im.tencent.sdk.custom_callback::callback_seen=true::custom=${_presenceMarker(hasCustomData)}::group=${_presenceMarker(hasGroupId)}::sender=${_presenceMarker(hasSenderUserId)}::isSelf=${_triStateMarker(isSelf)}::providerTrusted=${_boolMarker(providerTrusted)}';
+
+String _adapterGateMarker({
+  required _TencentImGateKind kind,
+  required bool hasGroupId,
+  required bool groupExact,
+  required bool senderExact,
+  required bool? isSelf,
+  required bool providerTrusted,
+  required bool parseAccepted,
+}) =>
+    'im.tencent.adapter.${kind.name}_gate::group=${_presenceMarker(hasGroupId)}::groupExact=${_boolMarker(groupExact)}::senderExact=${_boolMarker(senderExact)}::isSelfFalse=${_boolMarker(isSelf == false)}::providerTrusted=${_boolMarker(providerTrusted)}::parseAccepted=${_boolMarker(parseAccepted)}';
+
+String _presenceMarker(bool present) => present ? 'present' : 'absent';
+
+String _boolMarker(bool value) => value ? 'true' : 'false';
+
+String _triStateMarker(bool? value) {
+  if (value == null) {
+    return 'unknown';
+  }
+  return value ? 'true' : 'false';
 }
