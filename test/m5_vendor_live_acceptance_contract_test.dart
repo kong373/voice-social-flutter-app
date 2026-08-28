@@ -107,6 +107,14 @@ override_serial="$(select_device AVD-A 36 emulator-5554 ignored "$root")"
     expect(runnerSource, contains('M5_PROVIDER_CALLS::'));
     expect(aggregateSource, contains('M5_PROVIDER_CALLS::'));
     expect(integrationSource, contains('M5_PROVIDER_CALLS::'));
+    expect(
+      runnerSource,
+      contains("LAST_RESULT_REASON='no_payment_provider_core_pass'"),
+    );
+    expect(
+      runnerSource,
+      contains("LAST_RESULT_REASON='no_payment_provider_core_incomplete'"),
+    );
     expect(runnerSource, isNot(contains('M4_PROVIDER_CALLS::')));
     expect(aggregateSource, isNot(contains('M4_PROVIDER_CALLS::')));
     expect(integrationSource, isNot(contains('M4_PROVIDER_CALLS::')));

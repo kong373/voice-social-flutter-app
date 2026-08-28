@@ -1665,8 +1665,10 @@ elif [[ "$PAYMENT_OPT_IN" != 'true' ]]; then
   if [[ "$(sed -n 's/^result=//p' "$ARTIFACT_ROOT/AVD-A/result.txt" 2>/dev/null | head -n 1)" == 'NO_PAY' &&
     "$(sed -n 's/^result=//p' "$ARTIFACT_ROOT/AVD-B/result.txt" 2>/dev/null | head -n 1)" == 'NO_PAY' ]]; then
     OVERALL_RESULT='NO_PAY'
+    LAST_RESULT_REASON='no_payment_provider_core_pass'
   else
     OVERALL_RESULT='PARTIAL'
+    LAST_RESULT_REASON='no_payment_provider_core_incomplete'
   fi
 fi
 exit "$([[ "$OVERALL_RESULT" == PASS || "$OVERALL_RESULT" == NO_PAY ]] && printf 0 || printf 1)"
