@@ -372,11 +372,23 @@ import os
 import re
 import sys
 values = [os.environ.get(name, "") for name in ("M5_SECRET_PHONE", "M5_SECRET_RECEIVER_PHONE", "M5_SECRET_CLIENT", "M5_SECRET_DB_TOKEN", "M5_SECRET_RELAY_A", "M5_SECRET_RELAY_B")]
+alipay_sdk_field = re.compile(
+    r"(?P<prefix>(?:[\x22\x27]?(?:apdidToken|dynamicKey|apdid|color|webrtcUrl)[\x22\x27]?)[ \t]*[:=][ \t]*)"
+    r"(?:(?P<quoted>[\x22](?:\\.|[^\x22\\\r\n])*[\x22]|[\x27](?:\\.|[^\x27\\\r\n])*[\x27])|(?P<bare>[^\s,}\]]+))",
+    re.IGNORECASE,
+)
+
+def redact_alipay_sdk_field(match):
+    value = match.group("quoted") or match.group("bare") or ""
+    quote = value[:1] if value[:1] in (chr(34), chr(39)) else chr(34)
+    return match.group("prefix") + quote + "[REDACTED_ALIPAY_SDK_FIELD]" + quote
+
 for line in sys.stdin:
     for value in values:
         if value: line = line.replace(value, "[REDACTED]")
     line = re.sub(r"(?<!\d)1[3-9]\d{9}(?!\d)", "[REDACTED_PHONE]", line)
     line = re.sub(r"(?<!\d)\d{6}(?!\d)", "[REDACTED_OTP]", line)
+    line = alipay_sdk_field.sub(redact_alipay_sdk_field, line)
     line = re.sub(r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]{12,}", r"\1[REDACTED_TOKEN]", line)
     line = re.sub(r"(?i)((?:access[_-]?token|refresh[_-]?token|client[_-]?secret|password|token)\s*[:=]\s*)[A-Za-z0-9._~+/=-]{8,}", r"\1[REDACTED_TOKEN]", line)
     sys.stdout.write(line)
@@ -391,6 +403,7 @@ secret_scan() {
     M5_SCAN_RELAY_A="$RELAY_TOKEN_A" \
     M5_SCAN_RELAY_B="$RELAY_TOKEN_B" python3 - "$target" <<'PY'
 import os
+import re
 import sys
 from pathlib import Path
 root = Path(sys.argv[1])
@@ -403,6 +416,19 @@ needles = [value.encode() for value in (
     os.environ.get("M5_SCAN_RELAY_B", ""),
 ) if value]
 needles.extend((b'"startNonce":', b"start_nonce=", b"db_start_nonce="))
+sdk_field_prefix = re.compile(
+    rb'(?i)(?<![A-Za-z0-9_])(?:["\']?(?:apdidToken|dynamicKey|apdid|color|webrtcUrl)["\']?)(?![A-Za-z0-9_])[ \t]*[:=][ \t]*'
+)
+sdk_field_value = re.compile(
+    rb'(?:'
+    rb'"(?:\\.|[^"\\\r\n])*"'
+    rb"|'(?:\\.|[^'\\\r\n])*'"
+    rb'|\[[^\]\r\n]*\]'
+    rb'|[^\s,}\]]+'
+    rb')'
+)
+sdk_field_placeholder = b"[REDACTED_ALIPAY_SDK_FIELD]"
+sdk_text_suffixes = frozenset({".log", ".txt", ".json", ".csv"})
 
 def scan_stream(stream, values):
     values = list(dict.fromkeys(values))
@@ -418,6 +444,23 @@ def scan_stream(stream, values):
         if any(value in window for value in values):
             return False
         overlap = window[-overlap_size:] if overlap_size else b""
+
+def scan_alipay_sdk_fields(path):
+    if path.suffix.lower() not in sdk_text_suffixes:
+        return True
+    payload = path.read_bytes()
+    for prefix in sdk_field_prefix.finditer(payload):
+        value_match = sdk_field_value.match(payload, prefix.end())
+        if value_match is None:
+            return False
+        value = value_match.group(0)
+        if value[:1] in (b'"', b"'"):
+            if len(value) < 2 or value[-1:] != value[:1]:
+                return False
+            value = value[1:-1]
+        if value != sdk_field_placeholder:
+            return False
+    return True
 
 def iter_files(path):
     if not path.exists() or path.is_symlink():
@@ -442,6 +485,8 @@ for candidate in iter_files(root):
     with candidate.open("rb") as stream:
         if not scan_stream(stream, needles):
             raise SystemExit(1)
+    if not scan_alipay_sdk_fields(candidate):
+        raise SystemExit(1)
 raise SystemExit(0)
 PY
 }

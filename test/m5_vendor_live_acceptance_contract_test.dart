@@ -508,6 +508,111 @@ void main() {
     expect(integrationSource, isNot(contains('debugPrint(config.phone')));
   });
 
+  test('Flutter-drive and logcat sanitizers redact Alipay SDK fields', () {
+    final String shellScript = r'''
+set -euo pipefail
+LIVE_PHONE='fixture-phone-a'
+RECEIVER_PHONE='fixture-phone-b'
+OAUTH_CLIENT_ID='fixture-client-id'
+DB_TOKEN='fixture-db-token'
+RELAY_TOKEN_A='fixture-relay-token-a'
+RELAY_TOKEN_B='fixture-relay-token-b'
+eval "$(sed -n '/^sanitize_stream() {/,/^}/p' "$M5_RUNNER")"
+printf '%s\n' \
+  'flutter prefix {"APDIDTOKEN":"synthetic-apdid-token","DynamicKey":"synthetic-dynamic-key","aPdId":"synthetic-apdid","COLOR":"synthetic-color-value","WeBrTcUrL":"https://fixture.invalid/webrtc"}' \
+  'logcat prefix apdidToken=synthetic-apdid-token dynamicKey:synthetic-dynamic-key apdid=synthetic-apdid color=synthetic-color-value webrtcUrl=https://fixture.invalid/webrtc' \
+  'M5_ROUTE_STATUS::alipay::POST::/m5/alipay::200::success' \
+  'M5_PROVIDER_CALLS::1::0' \
+  'M5_ACCEPTANCE::NO_PAY' | sanitize_stream
+''';
+    final ProcessResult result = Process.runSync(
+      '/bin/bash',
+      <String>['-c', shellScript],
+      environment: <String, String>{
+        ...Platform.environment,
+        'M5_RUNNER': runner.path,
+      },
+    );
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    final String sanitized = result.stdout as String;
+    for (final String fixtureValue in <String>[
+      'synthetic-apdid-token',
+      'synthetic-dynamic-key',
+      'synthetic-apdid',
+      'synthetic-color-value',
+      'https://fixture.invalid/webrtc',
+    ]) {
+      expect(sanitized, isNot(contains(fixtureValue)));
+    }
+    expect(sanitized, contains('[REDACTED_ALIPAY_SDK_FIELD]'));
+    expect(
+      sanitized,
+      contains('M5_ROUTE_STATUS::alipay::POST::/m5/alipay::200::success'),
+    );
+    expect(sanitized, contains('M5_PROVIDER_CALLS::1::0'));
+    expect(sanitized, contains('M5_ACCEPTANCE::NO_PAY'));
+    expect(
+      sanitized
+          .split('\n')
+          .where((String line) => line.startsWith('M5_ROUTE_STATUS::'))
+          .length,
+      1,
+    );
+    expect(
+      sanitized
+          .split('\n')
+          .where(
+            (String line) =>
+                RegExp(r'^M5_PROVIDER_CALLS::[0-9]+::[0-9]+$').hasMatch(line),
+          )
+          .length,
+      1,
+    );
+    expect(runnerSource, contains('sanitize_stream <"\$raw" >"\$safe"'));
+    expect(
+      runnerSource,
+      contains('2>"\$dir/logs/logcat.stderr" | sanitize_stream'),
+    );
+    expect(runnerSource, contains('scan_alipay_sdk_fields'));
+    expect(runnerSource, contains('sdk_field_placeholder'));
+  });
+
+  test('secret scan rejects unsanitized Alipay SDK fields', () {
+    final String shellScript = r'''
+set -euo pipefail
+LIVE_PHONE='fixture-phone-a'
+RECEIVER_PHONE='fixture-phone-b'
+OAUTH_CLIENT_ID='fixture-client-id'
+DB_TOKEN='fixture-db-token'
+RELAY_TOKEN_A='fixture-relay-token-a'
+RELAY_TOKEN_B='fixture-relay-token-b'
+eval "$(sed -n '/^secret_scan() {/,/^}/p' "$M5_RUNNER")"
+root="$(mktemp -d)"
+trap 'rm -rf -- "$root"' EXIT
+mkdir -p "$root/logs"
+printf '%s\n' \
+  '{"APDIDTOKEN":"[REDACTED_ALIPAY_SDK_FIELD]","DynamicKey":"[REDACTED_ALIPAY_SDK_FIELD]","aPdId":"[REDACTED_ALIPAY_SDK_FIELD]","COLOR":"[REDACTED_ALIPAY_SDK_FIELD]","WeBrTcUrL":"[REDACTED_ALIPAY_SDK_FIELD]"}' \
+  'M5_PROVIDER_CALLS::1::0' >"$root/logs/sanitized.log"
+secret_scan "$root"
+printf '%s\n' \
+  '{"apdidToken":"synthetic-apdid-token","dynamicKey":"synthetic-dynamic-key","apdid":"synthetic-apdid","color":"synthetic-color-value","webrtcUrl":"https://fixture.invalid/webrtc"}' \
+  'M5_PROVIDER_CALLS::1::0' >"$root/logs/unsanitized.log"
+if secret_scan "$root"; then
+  printf '%s\n' 'secret_scan unexpectedly accepted unsanitized SDK fields' >&2
+  exit 1
+fi
+''';
+    final ProcessResult result = Process.runSync(
+      '/bin/bash',
+      <String>['-c', shellScript],
+      environment: <String, String>{
+        ...Platform.environment,
+        'M5_RUNNER': runner.path,
+      },
+    );
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+  });
+
   test(
     'dry-run is allowed without vendor credentials and never reports pass',
     () {
