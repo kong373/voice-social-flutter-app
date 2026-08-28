@@ -248,6 +248,30 @@ void main() {
     expect(aggregateSource, isNot(contains('binding.get("startNonce")')));
   });
 
+  test('C2C request id is run-scoped and retry-stable', () {
+    expect(integrationSource, contains('String _m5C2cRequestId(String avd)'));
+    expect(integrationSource, contains('_runId.isEmpty'));
+    expect(integrationSource, contains('_fixturePattern.hasMatch(_fixtureId)'));
+    expect(
+      integrationSource,
+      contains(r"'m5-c2c|run=$_runId|fixture=$_fixtureId|avd=$normalizedAvd'"),
+    );
+    expect(
+      integrationSource,
+      contains('sha256.convert(utf8.encode(identity)).toString()'),
+    );
+    expect(
+      integrationSource,
+      contains(r"final String requestId = 'm5-c2c-$digest';"),
+    );
+    expect(integrationSource, contains(r"RegExp(r'^[A-Za-z0-9._-]{1,80}$')"));
+    expect(integrationSource, contains('requestId: _m5C2cRequestId(avd)'));
+    expect(
+      integrationSource,
+      isNot(contains(r"'m5-${avd.toLowerCase()}-c2c'")),
+    );
+  });
+
   test('default Alipay path has no financial side effect', () {
     expect(runnerSource, contains('M5_ALLOW_EXTERNAL_PAYMENT'));
     expect(

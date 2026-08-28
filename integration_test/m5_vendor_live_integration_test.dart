@@ -51,6 +51,7 @@ const String _fixtureId = String.fromEnvironment(
 );
 const String _runId = String.fromEnvironment('QA_M5_RUN_ID', defaultValue: '');
 final RegExp _fixturePattern = RegExp(r'^m5-fresh-[A-Za-z0-9_.:-]{1,64}$');
+final RegExp _runIdPattern = RegExp(r'^[A-Za-z0-9_.:-]{1,80}$');
 const int _workerCycleWaitAttempts = 1200;
 const Duration _workerCycleWaitStep = Duration(milliseconds: 100);
 const String _expectedFlutterSha = String.fromEnvironment(
@@ -347,6 +348,29 @@ String _registrationNickname() {
   return 'm5-${digest.substring(0, 13)}';
 }
 
+String _m5C2cRequestId(String avd) {
+  if (_runId.isEmpty ||
+      !_runIdPattern.hasMatch(_runId) ||
+      !_fixturePattern.hasMatch(_fixtureId)) {
+    throw TestFailure('M5 C2C request identity is missing or invalid.');
+  }
+  final String normalizedAvd = avd.toLowerCase().replaceAll(
+    RegExp(r'[^a-z0-9._-]'),
+    '-',
+  );
+  if (normalizedAvd.isEmpty) {
+    throw TestFailure('M5 C2C AVD identity is missing.');
+  }
+  final String identity =
+      'm5-c2c|run=$_runId|fixture=$_fixtureId|avd=$normalizedAvd';
+  final String digest = sha256.convert(utf8.encode(identity)).toString();
+  final String requestId = 'm5-c2c-$digest';
+  if (!RegExp(r'^[A-Za-z0-9._-]{1,80}$').hasMatch(requestId)) {
+    throw TestFailure('M5 C2C request identity is unsafe.');
+  }
+  return requestId;
+}
+
 Future<void> _runTencentCredentialAndLogin(
   AppDependencies dependencies,
   _M5Evidence evidence,
@@ -527,7 +551,7 @@ Future<void> _runC2cHttpAuthority(
         .sendPrivateMessage(
           conversation: selected,
           content: _c2cMessageContent,
-          requestId: 'm5-${avd.toLowerCase()}-c2c',
+          requestId: _m5C2cRequestId(avd),
         );
     evidence.route(
       capability: 'tencent.c2c.send',
