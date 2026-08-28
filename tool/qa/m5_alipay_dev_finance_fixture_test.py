@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import socket
 import stat
 import tempfile
 import unittest
@@ -25,6 +26,7 @@ from m5_alipay_dev_finance_fixture import (
     ROLE_USER,
     SCHEMA_VERSION,
     STATE_KEYS,
+    _docker_environment,
     _self_test,
     build_state,
     main,
@@ -32,6 +34,7 @@ from m5_alipay_dev_finance_fixture import (
     read_config,
     run_flow,
     validate_base_url,
+    validate_development_mysql_container,
     validate_phone_triplet,
     write_state,
 )
@@ -50,6 +53,7 @@ class FakeApi:
             "13900000003": 303,
         }
         self._roles = {101: ROLE_USER, 202: ROLE_USER, 303: ROLE_USER}
+        self.wrong_reviewer_role = False
 
     def send_code(self, phone: str, device_id: str) -> Challenge:
         self.send_calls.append((phone, device_id))
@@ -66,10 +70,13 @@ class FakeApi:
     def login(self, phone: str, code: str, device_id: str) -> AuthSession:
         self.login_calls.append(phone)
         user_id = self._ids[phone]
+        role = self._roles[user_id]
+        if user_id == 202 and self.wrong_reviewer_role:
+            role = ROLE_USER
         return AuthSession(
             "Bearer login-token-for-" + str(user_id),
             user_id,
-            self._roles[user_id],
+            role,
         )
 
 
@@ -77,17 +84,24 @@ class FakeMysql:
     def __init__(self, api: FakeApi | None = None) -> None:
         self.baseline_calls = 0
         self.role_calls: list[tuple[int, int, int]] = []
+        self.reset_calls: list[tuple[int, int]] = []
         self.api = api
 
-    def baseline_order_id(self) -> str:
+    def baseline_order_id(self) -> int:
         self.baseline_calls += 1
-        return "17"
+        return 17
 
     def assign_roles(self, customer_id: int, reviewer_id: int, executor_id: int) -> None:
         self.role_calls.append((customer_id, reviewer_id, executor_id))
         if self.api is not None:
             self.api._roles[reviewer_id] = ROLE_FINANCE_APPROVER
             self.api._roles[executor_id] = ROLE_FINANCE_EXECUTOR
+
+    def reset_roles(self, reviewer_id: int, executor_id: int) -> None:
+        self.reset_calls.append((reviewer_id, executor_id))
+        if self.api is not None:
+            self.api._roles[reviewer_id] = ROLE_USER
+            self.api._roles[executor_id] = ROLE_USER
 
 
 def _private_root() -> tempfile.TemporaryDirectory[str]:
@@ -106,7 +120,7 @@ def _config(root: str) -> FinanceFixtureConfig:
         reviewer_phone="13900000002",
         executor_phone="13900000003",
         public_client_id="mobile-public-offline",
-        mysql_container="voice-social-mysql",
+        mysql_container="voice-social-m3-development-mysql-1",
         state_file=str(state_parent / "fixture.json"),
     )
 
@@ -147,6 +161,10 @@ class FinanceFixtureContractTest(unittest.TestCase):
             validate_base_url("http://10.0.2.2:18080")
         with self.assertRaisesRegex(FinanceFixtureError, "CONFIGURATION"):
             validate_phone_triplet("13900000001", "13900000001", "13900000003")
+        with self.assertRaisesRegex(FinanceFixtureError, "CONFIGURATION"):
+            validate_development_mysql_container("voice-social-production-mysql-1")
+        with self.assertRaisesRegex(FinanceFixtureError, "CONFIGURATION"):
+            validate_development_mysql_container("voice-social-development-backend-1")
         with _private_root() as root:
             config = _config(root)
             environment = {
@@ -215,7 +233,7 @@ class FinanceFixtureContractTest(unittest.TestCase):
             self.assertEqual(state["customerUserId"], 101)
             self.assertEqual(state["reviewerUserId"], 202)
             self.assertEqual(state["executorUserId"], 303)
-            self.assertEqual(state["orderBaselineId"], "17")
+            self.assertEqual(state["orderBaselineId"], 17)
             self.assertNotIn("challenge", json.dumps(state).lower())
 
     def test_role_and_identity_invariants_are_fail_closed(self) -> None:
@@ -225,7 +243,31 @@ class FinanceFixtureContractTest(unittest.TestCase):
             reviewer = AuthSession("Bearer reviewer-token-0001", 1, ROLE_FINANCE_APPROVER)
             executor = AuthSession("Bearer executor-token-0001", 3, ROLE_FINANCE_EXECUTOR)
             with self.assertRaisesRegex(FinanceFixtureError, "INVARIANT_VIOLATION"):
-                build_state(config, customer, reviewer, executor, "0")
+                build_state(config, customer, reviewer, executor, 0)
+            with self.assertRaisesRegex(FinanceFixtureError, "INVARIANT_VIOLATION"):
+                build_state(
+                    config,
+                    AuthSession("Bearer duplicate-token-0001", 1, ROLE_USER),
+                    AuthSession(
+                        "Bearer duplicate-token-0001", 2, ROLE_FINANCE_APPROVER
+                    ),
+                    executor,
+                    0,
+                )
+
+    def test_post_assignment_failure_resets_finance_roles(self) -> None:
+        with _private_root() as root:
+            config = _config(root)
+            api = FakeApi()
+            api.wrong_reviewer_role = True
+            mysql = FakeMysql(api)
+            with self.assertRaisesRegex(
+                FinanceFixtureError, "INVARIANT_VIOLATION"
+            ):
+                run_flow(config, api=api, mysql=mysql)  # type: ignore[arg-type]
+            self.assertEqual(mysql.reset_calls, [(202, 303)])
+            self.assertEqual(api._roles[202], ROLE_USER)
+            self.assertEqual(api._roles[303], ROLE_USER)
 
     def test_state_write_never_overwrites_a_target(self) -> None:
         with _private_root() as root:
@@ -235,7 +277,7 @@ class FinanceFixtureContractTest(unittest.TestCase):
                 AuthSession("Bearer customer-token-0001", 101, ROLE_USER),
                 AuthSession("Bearer reviewer-token-0001", 202, ROLE_FINANCE_APPROVER),
                 AuthSession("Bearer executor-token-0001", 303, ROLE_FINANCE_EXECUTOR),
-                "0",
+                0,
             )
             write_state(config.state_file, state)
             with self.assertRaisesRegex(FinanceFixtureError, "CONFIGURATION"):
@@ -255,7 +297,7 @@ class FinanceFixtureContractTest(unittest.TestCase):
             "QA_M5_FINANCE_REVIEWER_PHONE": "13900000002",
             "QA_M5_FINANCE_EXECUTOR_PHONE": "13900000003",
             "QA_M5_FINANCE_PUBLIC_CLIENT_ID": "mobile-public-output",
-            "QA_M5_FINANCE_MYSQL_CONTAINER": "voice-social-mysql",
+            "QA_M5_FINANCE_MYSQL_CONTAINER": "voice-social-m3-development-mysql-1",
             # Missing state file intentionally stops before any request.
             "QA_M5_FINANCE_STATE_FILE": "",
         }
@@ -268,13 +310,45 @@ class FinanceFixtureContractTest(unittest.TestCase):
 
     def test_mysql_password_is_only_referenced_inside_container_shell(self) -> None:
         completed = type("Completed", (), {"returncode": 0, "stdout": b"17\n"})()
-        with patch("m5_alipay_dev_finance_fixture.subprocess.run", return_value=completed) as run:
-            self.assertEqual(MysqlExecutor("voice-social-mysql").baseline_order_id(), "17")
+        with patch(
+            "m5_alipay_dev_finance_fixture._docker_environment",
+            return_value={"PATH": "/usr/bin:/bin", "DOCKER_HOST": "unix:///private/tmp/test.sock"},
+        ), patch("m5_alipay_dev_finance_fixture.subprocess.run", return_value=completed) as run:
+            self.assertEqual(
+                MysqlExecutor("voice-social-m3-development-mysql-1").baseline_order_id(),
+                17,
+            )
         args = run.call_args.args[0]
         self.assertNotIn("database-password-value", " ".join(args))
         self.assertIn("MYSQL_ROOT_PASSWORD", args[-1])
         self.assertNotIn("MYSQL_ROOT_PASSWORD=", args[-1])
+        self.assertNotIn('-p"$MYSQL_ROOT_PASSWORD"', args[-1])
+        self.assertIn('MYSQL_PWD="$MYSQL_ROOT_PASSWORD"', args[-1])
         self.assertIs(run.call_args.kwargs["stderr"], __import__("subprocess").DEVNULL)
+
+    def test_docker_routing_rejects_context_and_non_unix_hosts(self) -> None:
+        with patch.dict(os.environ, {"DOCKER_CONTEXT": "remote"}, clear=True):
+            with self.assertRaisesRegex(FinanceFixtureError, "CONFIGURATION"):
+                _docker_environment()
+        with patch.dict(os.environ, {"DOCKER_HOST": "tcp://example.test:2376"}, clear=True):
+            with self.assertRaisesRegex(FinanceFixtureError, "CONFIGURATION"):
+                _docker_environment()
+        with tempfile.TemporaryDirectory(prefix="m5-docker-socket-") as root:
+            socket_path = str(Path(root) / "docker.sock")
+            server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                server.bind(socket_path)
+                with patch.dict(
+                    os.environ,
+                    {"DOCKER_HOST": "unix://" + socket_path},
+                    clear=True,
+                ):
+                    self.assertEqual(
+                        _docker_environment()["DOCKER_HOST"],
+                        "unix://" + socket_path,
+                    )
+            finally:
+                server.close()
 
 
 if __name__ == "__main__":

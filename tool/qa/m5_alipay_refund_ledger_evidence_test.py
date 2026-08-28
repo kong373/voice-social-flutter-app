@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import io
 import json
 import hashlib
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 from m5_alipay_refund_ledger_evidence import (
@@ -15,9 +17,11 @@ from m5_alipay_refund_ledger_evidence import (
     LedgerEvidenceError,
     MYSQL_LEDGER_SCRIPT,
     _run_query,
+    _development_mysql_container,
     _state_path,
     _write_state,
     collect,
+    main,
 )
 
 
@@ -47,6 +51,24 @@ def _collect_values(*, reconcile: bool = True) -> list[int]:
 
 
 class LedgerEvidenceProtocolTest(unittest.TestCase):
+    def test_argument_error_does_not_echo_protected_value(self) -> None:
+        output = io.StringIO()
+        error = io.StringIO()
+        protected = "Bearer accidental-token-value"
+        with redirect_stdout(output), redirect_stderr(error):
+            self.assertEqual(main(["--start", protected]), 2)
+        self.assertNotIn(protected, output.getvalue())
+        self.assertNotIn(protected, error.getvalue())
+        self.assertEqual(error.getvalue(), "")
+
+    def test_mysql_container_is_limited_to_development(self) -> None:
+        self.assertEqual(
+            _development_mysql_container("voice-social-m3-development-mysql-1"),
+            "voice-social-m3-development-mysql-1",
+        )
+        with self.assertRaisesRegex(LedgerEvidenceError, "CONFIGURATION"):
+            _development_mysql_container("voice-social-production-mysql-1")
+
     def test_query_parser_requires_schema_marker_and_all_collect_columns(self) -> None:
         output = "SCHEMA_OK\n" + "\t".join("1" for _ in range(28)) + "\n"
         completed = subprocess.CompletedProcess([], 0, stdout=output, stderr="")

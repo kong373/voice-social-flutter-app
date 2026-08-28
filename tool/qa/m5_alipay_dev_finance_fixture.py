@@ -41,6 +41,7 @@ from urllib.request import (
 
 SCHEMA_VERSION = 1
 FLOW_SCHEMA_VERSION = "m5-alipay-dev-finance-fixture-v1"
+EXPECTED_DEVELOPMENT_MYSQL_CONTAINER = "voice-social-m3-development-mysql-1"
 
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -48,7 +49,6 @@ PHONE_RE = re.compile(r"^1[3-9][0-9]{9}$")
 CLIENT_ID_RE = re.compile(r"^[\x21-\x7e]{1,160}$")
 TOKEN_RE = re.compile(r"^[\x21-\x7e]{16,4096}$")
 CHALLENGE_RE = re.compile(r"^[A-Za-z0-9._:-]{1,256}$")
-CONTAINER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 DECIMAL_ID_RE = re.compile(r"^[1-9][0-9]{0,18}$")
 BASELINE_RE = re.compile(r"^(0|[1-9][0-9]{0,18})$")
 
@@ -252,6 +252,14 @@ def validate_phone_triplet(
     return values
 
 
+def validate_development_mysql_container(value: str) -> str:
+    """Accept only the explicitly local development MySQL container."""
+
+    if value != EXPECTED_DEVELOPMENT_MYSQL_CONTAINER:
+        raise FinanceFixtureError("CONFIGURATION")
+    return value
+
+
 def _state_path_parts(path: Path) -> tuple[Path, list[Path]]:
     """Find the nearest existing ancestor without traversing symlinks."""
 
@@ -359,13 +367,13 @@ def read_config(environment: Mapping[str, str] | None = None) -> FinanceFixtureC
         _first_env(env, EXECUTOR_PHONE_ENV),
     )
     public_client_id = _first_env(env, PUBLIC_CLIENT_ENV).strip()
-    mysql_container = _first_env(env, MYSQL_CONTAINER_ENV).strip()
+    mysql_container = validate_development_mysql_container(
+        _first_env(env, MYSQL_CONTAINER_ENV).strip()
+    )
     state_file = _first_env(env, STATE_FILE_ENV)
     if not CLIENT_ID_RE.fullmatch(public_client_id):
         raise FinanceFixtureError("CONFIGURATION")
     if any(term in public_client_id.lower() for term in ("secret", "password", "token")):
-        raise FinanceFixtureError("CONFIGURATION")
-    if not CONTAINER_NAME_RE.fullmatch(mysql_container):
         raise FinanceFixtureError("CONFIGURATION")
     _validate_private_state_target(state_file, require_new=True)
     marker = _first_env(env, SYNTHETIC_MARKER_ENV)
@@ -547,8 +555,9 @@ MYSQL_CONTAINER_SHELL = r'''set -eu
 test -n "${MYSQL_ROOT_PASSWORD:-}"
 test -n "${MYSQL_DATABASE:-}"
 command -v mysql >/dev/null 2>&1
-exec mysql --protocol=socket --batch --skip-column-names --raw \
-  --connect-timeout=5 -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"
+MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql \
+  --protocol=socket --batch --skip-column-names --raw \
+  --connect-timeout=5 -uroot "$MYSQL_DATABASE"
 '''
 
 
@@ -556,9 +565,7 @@ class MysqlExecutor:
     """Run fixed SQL through the MySQL container, never through host creds."""
 
     def __init__(self, container: str, *, docker_bin: str | None = None):
-        if not CONTAINER_NAME_RE.fullmatch(container):
-            raise FinanceFixtureError("CONFIGURATION")
-        self.container = container
+        self.container = validate_development_mysql_container(container)
         self.docker_bin = docker_bin or "docker"
 
     def run_sql(self, sql: str) -> list[str]:
@@ -588,11 +595,11 @@ class MysqlExecutor:
             raise FinanceFixtureError("DB_CONTRACT")
         return lines
 
-    def baseline_order_id(self) -> str:
+    def baseline_order_id(self) -> int:
         lines = self.run_sql("SELECT COALESCE(MAX(id), 0) FROM recharge_order;\n")
         if len(lines) != 1 or not BASELINE_RE.fullmatch(lines[0].strip()):
             raise FinanceFixtureError("DB_CONTRACT")
-        return lines[0].strip()
+        return int(lines[0].strip())
 
     def assign_roles(self, customer_id: int, reviewer_id: int, executor_id: int) -> None:
         ids = (customer_id, reviewer_id, executor_id)
@@ -600,36 +607,99 @@ class MysqlExecutor:
             raise FinanceFixtureError("INVARIANT_VIOLATION")
         sql = (
             "START TRANSACTION;\n"
-            f"UPDATE app_user SET roles='ROLE_OPS_FINANCE_APPROVER' WHERE id={reviewer_id} AND status='ACTIVE';\n"
+            "UPDATE app_user u JOIN (SELECT eligible_count FROM ("
+            "SELECT COUNT(*) AS eligible_count FROM app_user "
+            f"WHERE id IN ({reviewer_id}, {executor_id}) AND status='ACTIVE' "
+            "AND roles='ROLE_USER') eligibility_snapshot) eligibility_guard "
+            "ON eligibility_guard.eligible_count=2 "
+            "SET u.roles=CASE "
+            f"WHEN u.id={reviewer_id} THEN 'ROLE_OPS_FINANCE_APPROVER' "
+            f"WHEN u.id={executor_id} THEN 'ROLE_OPS_FINANCE' ELSE u.roles END "
+            f"WHERE u.id IN ({reviewer_id}, {executor_id});\n"
             "SELECT ROW_COUNT();\n"
             f"SELECT roles FROM app_user WHERE id={reviewer_id} AND status='ACTIVE';\n"
-            f"UPDATE app_user SET roles='ROLE_OPS_FINANCE' WHERE id={executor_id} AND status='ACTIVE';\n"
-            "SELECT ROW_COUNT();\n"
             f"SELECT roles FROM app_user WHERE id={executor_id} AND status='ACTIVE';\n"
             f"SELECT roles FROM app_user WHERE id={customer_id} AND status='ACTIVE';\n"
             "COMMIT;\n"
         )
+        try:
+            lines = self.run_sql(sql)
+            if len(lines) != 4 or lines[0].strip() != "2":
+                raise FinanceFixtureError("DB_CONTRACT")
+            if lines[1].strip() != ROLE_FINANCE_APPROVER:
+                raise FinanceFixtureError("DB_CONTRACT")
+            if lines[2].strip() != ROLE_FINANCE_EXECUTOR:
+                raise FinanceFixtureError("DB_CONTRACT")
+            if lines[3].strip() != ROLE_USER:
+                raise FinanceFixtureError("DB_CONTRACT")
+        except FinanceFixtureError:
+            # The SQL update is all-or-none.  A transport/output failure after
+            # COMMIT is still uncertain, so make one exact compensating reset.
+            self.reset_roles(reviewer_id, executor_id, tolerate_already_reset=True)
+            raise
+
+    def reset_roles(
+        self,
+        reviewer_id: int,
+        executor_id: int,
+        *,
+        tolerate_already_reset: bool = False,
+    ) -> None:
+        if (
+            type(reviewer_id) is not int
+            or type(executor_id) is not int
+            or reviewer_id <= 0
+            or executor_id <= 0
+            or reviewer_id == executor_id
+        ):
+            raise FinanceFixtureError("INVARIANT_VIOLATION")
+        eligible = (
+            f"(id={reviewer_id} AND roles='ROLE_OPS_FINANCE_APPROVER') OR "
+            f"(id={executor_id} AND roles='ROLE_OPS_FINANCE')"
+        )
+        sql = (
+            "START TRANSACTION;\n"
+            "UPDATE app_user u JOIN (SELECT eligible_count FROM ("
+            "SELECT COUNT(*) AS eligible_count FROM app_user WHERE status='ACTIVE' AND ("
+            + eligible
+            + ")) eligibility_snapshot) eligibility_guard "
+            "ON eligibility_guard.eligible_count=2 SET u.roles='ROLE_USER' "
+            f"WHERE u.id IN ({reviewer_id}, {executor_id});\n"
+            "SELECT ROW_COUNT();\n"
+            f"SELECT roles FROM app_user WHERE id={reviewer_id} AND status='ACTIVE';\n"
+            f"SELECT roles FROM app_user WHERE id={executor_id} AND status='ACTIVE';\n"
+            "COMMIT;\n"
+        )
         lines = self.run_sql(sql)
-        if len(lines) != 5:
-            raise FinanceFixtureError("DB_CONTRACT")
-        if any(line.strip() not in {"0", "1"} for line in (lines[0], lines[2])):
-            raise FinanceFixtureError("DB_CONTRACT")
-        if lines[1].strip() != ROLE_FINANCE_APPROVER:
-            raise FinanceFixtureError("DB_CONTRACT")
-        if lines[3].strip() != ROLE_FINANCE_EXECUTOR:
-            raise FinanceFixtureError("DB_CONTRACT")
-        if lines[4].strip() != ROLE_USER:
+        if tolerate_already_reset and lines == ["0", ROLE_USER, ROLE_USER]:
+            return
+        if lines != ["2", ROLE_USER, ROLE_USER]:
             raise FinanceFixtureError("DB_CONTRACT")
 
 
 def _docker_environment() -> dict[str, str]:
-    """Pass only Docker routing metadata; never host secrets."""
+    """Require one local Unix Docker socket; never inherit a remote context."""
 
     environment = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
-    for name in ("DOCKER_HOST", "DOCKER_CONTEXT"):
-        value = os.environ.get(name)
-        if value:
-            environment[name] = value
+    if os.environ.get("DOCKER_CONTEXT"):
+        raise FinanceFixtureError("CONFIGURATION")
+    value = os.environ.get("DOCKER_HOST", "")
+    if not value.startswith("unix://"):
+        raise FinanceFixtureError("CONFIGURATION")
+    socket_path = value.removeprefix("unix://")
+    if (
+        not socket_path
+        or not os.path.isabs(socket_path)
+        or os.path.normpath(socket_path) != socket_path
+    ):
+        raise FinanceFixtureError("CONFIGURATION")
+    try:
+        socket_metadata = os.lstat(socket_path)
+    except OSError:
+        raise FinanceFixtureError("CONFIGURATION") from None
+    if not stat.S_ISSOCK(socket_metadata.st_mode):
+        raise FinanceFixtureError("CONFIGURATION")
+    environment["DOCKER_HOST"] = value
     return environment
 
 
@@ -674,6 +744,8 @@ def _require_roles(
     sessions = (customer, reviewer, executor)
     if len({session.user_id for session in sessions}) != 3:
         raise FinanceFixtureError("INVARIANT_VIOLATION")
+    if len({session.access_bearer for session in sessions}) != 3:
+        raise FinanceFixtureError("INVARIANT_VIOLATION")
     expected = (expected_customer, expected_reviewer, expected_executor)
     if any(session.roles != role for session, role in zip(sessions, expected)):
         raise FinanceFixtureError("INVARIANT_VIOLATION")
@@ -684,10 +756,10 @@ def build_state(
     customer: AuthSession,
     reviewer: AuthSession,
     executor: AuthSession,
-    order_baseline_id: str,
+    order_baseline_id: int,
 ) -> dict[str, object]:
     _require_roles(customer, reviewer, executor)
-    if not BASELINE_RE.fullmatch(order_baseline_id):
+    if type(order_baseline_id) is not int or order_baseline_id < 0:
         raise FinanceFixtureError("INVARIANT_VIOLATION")
     state: dict[str, object] = {
         "schemaVersion": SCHEMA_VERSION,
@@ -719,13 +791,15 @@ def _validate_state(state: Mapping[str, object]) -> None:
         value = state.get(key)
         if not isinstance(value, str) or not value.startswith("Bearer ") or not TOKEN_RE.fullmatch(value[7:]):
             raise FinanceFixtureError("STATE")
+    if len({state["customerBearer"], state["reviewerBearer"], state["executorBearer"]}) != 3:
+        raise FinanceFixtureError("STATE")
     for key in ("customerUserId", "reviewerUserId", "executorUserId"):
         value = state.get(key)
         if type(value) is not int or value <= 0:
             raise FinanceFixtureError("STATE")
     if len({state["customerUserId"], state["reviewerUserId"], state["executorUserId"]}) != 3:
         raise FinanceFixtureError("STATE")
-    if not isinstance(state.get("orderBaselineId"), str) or not BASELINE_RE.fullmatch(state["orderBaselineId"]):
+    if type(state.get("orderBaselineId")) is not int or state["orderBaselineId"] < 0:
         raise FinanceFixtureError("STATE")
 
 
@@ -778,6 +852,7 @@ def run_flow(
 
     if config.profile != "development" or config.sms_vendor_enabled or not config.synthetic_phones:
         raise FinanceFixtureError("CONFIGURATION")
+    validate_development_mysql_container(config.mysql_container)
     prepare_state_target(config.state_file)
     if api is None:
         client: Any = FirstPartyApi(
@@ -796,17 +871,27 @@ def run_flow(
     executor_registered = _register(client, config.executor_phone, "executor", config.run_id)
     _require_roles(customer_registered, reviewer_registered, executor_registered,
                    expected_customer=ROLE_USER, expected_reviewer=ROLE_USER, expected_executor=ROLE_USER)
-    database.assign_roles(
-        customer_registered.user_id,
-        reviewer_registered.user_id,
-        executor_registered.user_id,
-    )
-    customer = _login(client, config.customer_phone, "customer", config.run_id)
-    reviewer = _login(client, config.reviewer_phone, "reviewer", config.run_id)
-    executor = _login(client, config.executor_phone, "executor", config.run_id)
-    _require_roles(customer, reviewer, executor)
-    state = build_state(config, customer, reviewer, executor, baseline)
-    write_state(config.state_file, state)
+    roles_assigned = False
+    try:
+        database.assign_roles(
+            customer_registered.user_id,
+            reviewer_registered.user_id,
+            executor_registered.user_id,
+        )
+        roles_assigned = True
+        customer = _login(client, config.customer_phone, "customer", config.run_id)
+        reviewer = _login(client, config.reviewer_phone, "reviewer", config.run_id)
+        executor = _login(client, config.executor_phone, "executor", config.run_id)
+        _require_roles(customer, reviewer, executor)
+        state = build_state(config, customer, reviewer, executor, baseline)
+        write_state(config.state_file, state)
+    except Exception:
+        if roles_assigned:
+            database.reset_roles(
+                reviewer_registered.user_id,
+                executor_registered.user_id,
+            )
+        raise
     return {
         "status": "PASS",
         "schemaVersion": SCHEMA_VERSION,
@@ -846,8 +931,10 @@ def _self_test() -> int:
         pass
     else:
         raise AssertionError("duplicate phone accepted")
-    if "MYSQL_ROOT_PASSWORD" not in MYSQL_CONTAINER_SHELL or "-p\"$MYSQL_ROOT_PASSWORD\"" not in MYSQL_CONTAINER_SHELL:
+    if "MYSQL_PWD=\"$MYSQL_ROOT_PASSWORD\"" not in MYSQL_CONTAINER_SHELL:
         raise AssertionError("container-only password contract missing")
+    if '-p"$MYSQL_ROOT_PASSWORD"' in MYSQL_CONTAINER_SHELL:
+        raise AssertionError("database password would enter mysql argv")
     for forbidden in ("INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE"):
         # The role SQL is intentionally not part of the shell command.  A
         # password or SQL statement cannot accidentally become a process arg.

@@ -27,6 +27,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -35,7 +36,7 @@ from typing import Mapping, Sequence
 
 
 SCHEMA_VERSION = "m5-alipay-refund-ledger-v1"
-CONTAINER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+EXPECTED_DEVELOPMENT_MYSQL_CONTAINER = "voice-social-m3-development-mysql-1"
 ORDER_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
 REFUND_ID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-"
@@ -128,11 +129,17 @@ def _private_state_dir(path_value: str) -> str:
     return str(path)
 
 
+def _development_mysql_container(value: str) -> str:
+    if value != EXPECTED_DEVELOPMENT_MYSQL_CONTAINER:
+        raise LedgerEvidenceError("CONFIGURATION")
+    return value
+
+
 def read_config(environment: Mapping[str, str] | None = None) -> LedgerConfig:
     env = os.environ if environment is None else environment
-    container = env.get("QA_M5_REFUND_MYSQL_CONTAINER", "")
-    if not CONTAINER_NAME_RE.fullmatch(container):
-        raise LedgerEvidenceError("CONFIGURATION")
+    container = _development_mysql_container(
+        env.get("QA_M5_REFUND_MYSQL_CONTAINER", "")
+    )
     state_dir = _private_state_dir(env.get("QA_M5_REFUND_LEDGER_STATE_DIR", ""))
     run_id = env.get("QA_M5_REFUND_RUN_ID", "")
     if not RUN_ID_RE.fullmatch(run_id):
@@ -141,13 +148,19 @@ def read_config(environment: Mapping[str, str] | None = None) -> LedgerConfig:
     if not docker_bin:
         raise LedgerEvidenceError("CONFIGURATION")
     docker_socket = env.get("QA_M5_REFUND_DOCKER_SOCKET", "")
-    if docker_socket and not (
-        docker_socket.startswith("unix://") or docker_socket.startswith("/")
-    ):
+    if not docker_socket.startswith("unix://"):
+        raise LedgerEvidenceError("CONFIGURATION")
+    socket_path = docker_socket.removeprefix("unix://")
+    if not socket_path or not os.path.isabs(socket_path) or os.path.normpath(socket_path) != socket_path:
+        raise LedgerEvidenceError("CONFIGURATION")
+    try:
+        socket_metadata = os.lstat(socket_path)
+    except OSError:
+        raise LedgerEvidenceError("CONFIGURATION") from None
+    if not stat.S_ISSOCK(socket_metadata.st_mode):
         raise LedgerEvidenceError("CONFIGURATION")
     docker_env = {"PATH": env.get("PATH", "/usr/bin:/bin")}
-    if docker_socket:
-        docker_env["DOCKER_HOST"] = docker_socket
+    docker_env["DOCKER_HOST"] = docker_socket
     return LedgerConfig(container, docker_bin, docker_env, state_dir, run_id)
 
 
@@ -667,7 +680,13 @@ def inspect_command_source() -> str:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Read-only M5 Alipay refund ledger evidence")
+    class _SafeArgumentParser(argparse.ArgumentParser):
+        def error(self, _message: str) -> None:
+            raise LedgerEvidenceError("CONFIGURATION")
+
+    parser = _SafeArgumentParser(
+        description="Read-only M5 Alipay refund ledger evidence"
+    )
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument("--self-test", action="store_true")
     modes.add_argument("--start", action="store_true")
@@ -676,7 +695,22 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(list(argv) if argv is not None else None)
+    try:
+        args = _parser().parse_args(list(argv) if argv is not None else None)
+    except SystemExit as error:
+        return int(error.code)
+    except LedgerEvidenceError as error:
+        print(
+            json.dumps(
+                {
+                    "status": "FAIL",
+                    "schemaVersion": SCHEMA_VERSION,
+                    "category": error.category,
+                },
+                separators=(",", ":"),
+            )
+        )
+        return 2
     if args.self_test:
         try:
             return _public_self_test()

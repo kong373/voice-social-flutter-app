@@ -37,6 +37,7 @@ from typing import Mapping, Sequence
 
 FLOW_SCHEMA_VERSION = "m5-alipay-success-handoff-v1"
 FIXTURE_STATE_VERSION = 1
+EXPECTED_DEVELOPMENT_MYSQL_CONTAINER = "voice-social-m3-development-mysql-1"
 
 FIXTURE_FIELDS = frozenset(
     {
@@ -77,12 +78,17 @@ BACKEND_SHA_ENV_NAMES = (
     "QA_BACKEND_SHA",
     "M5_BACKEND_SHA",
 )
+RUN_ID_ENV_NAMES = (
+    "QA_M5_ALIPAY_SUCCESS_RUN_ID",
+    "QA_M5_HANDOFF_RUN_ID",
+    "QA_M5_FINANCE_RUN_ID",
+    "QA_M5_REFUND_RUN_ID",
+)
 DOCKER_SOCKET_ENV_NAMES = ("QA_DOCKER_SOCKET", "M5_DOCKER_SOCKET")
 
 SHA1_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 ORDER_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
-CONTAINER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 TOKEN_RE = re.compile(r"^[\x21-\x7e]{16,4096}$")
 
 ALLOWED_ERROR_CATEGORIES = frozenset(
@@ -132,6 +138,7 @@ class HandoffConfig:
     state_file: Path = dataclasses.field(repr=False)
     mysql_container: str = dataclasses.field(repr=False)
     expected_backend_sha: str = dataclasses.field(repr=False)
+    expected_run_id: str = dataclasses.field(repr=False)
     docker_bin: str = dataclasses.field(repr=False)
     docker_env: Mapping[str, str] = dataclasses.field(repr=False)
 
@@ -157,12 +164,10 @@ def _bearer(value: object) -> str:
     return "Bearer " + raw
 
 
-def _require_state_version(value: Mapping[str, object]) -> tuple[str | None, object]:
+def _require_state_version(value: Mapping[str, object]) -> tuple[str, object]:
     present = [key for key in STATE_VERSION_FIELDS if key in value]
-    if len(present) > 1:
+    if len(present) != 1:
         raise HandoffError("STATE")
-    if not present:
-        return None, FIXTURE_STATE_VERSION
     key = present[0]
     version = value[key]
     # The fixture producer may use either a numeric v1 marker or its stable
@@ -404,16 +409,7 @@ def _first_env_value(environment: Mapping[str, str], names: Sequence[str]) -> st
 
 
 def _validate_development_container(value: str) -> str:
-    if not CONTAINER_NAME_RE.fullmatch(value):
-        raise HandoffError("CONFIGURATION")
-    lowered = value.lower()
-    # The handoff must not be pointed at a production/staging database by an
-    # accidentally inherited container variable.  The actual Compose name is
-    # voice-social-m3-development-mysql-1; the token check also supports a
-    # deterministic project suffix used by local CI.
-    if not re.search(r"(?:^|[-_.])development(?:[-_.]|$)", lowered):
-        raise HandoffError("CONFIGURATION")
-    if not re.search(r"(?:^|[-_.])mysql(?:[-_.]|$)", lowered):
+    if value != EXPECTED_DEVELOPMENT_MYSQL_CONTAINER:
         raise HandoffError("CONFIGURATION")
     return value
 
@@ -428,6 +424,9 @@ def read_config(environment: Mapping[str, str] | None = None) -> HandoffConfig:
     expected_backend_sha = _first_env_value(env, BACKEND_SHA_ENV_NAMES)
     if not SHA1_RE.fullmatch(expected_backend_sha or ""):
         raise HandoffError("CONFIGURATION")
+    expected_run_id = _first_env_value(env, RUN_ID_ENV_NAMES)
+    if not RUN_ID_RE.fullmatch(expected_run_id):
+        raise HandoffError("CONFIGURATION")
     mysql_container = _validate_development_container(
         _first_env_value(env, MYSQL_ENV_NAMES)
     )
@@ -436,14 +435,23 @@ def read_config(environment: Mapping[str, str] | None = None) -> HandoffConfig:
         raise HandoffError("CONFIGURATION")
     docker_env = {"PATH": env.get("PATH", "/usr/bin:/bin")}
     socket = _first_env_value(env, DOCKER_SOCKET_ENV_NAMES)
-    if socket:
-        if not (socket.startswith("unix://") or socket.startswith("/")):
-            raise HandoffError("CONFIGURATION")
-        docker_env["DOCKER_HOST"] = socket
+    if not socket.startswith("unix://"):
+        raise HandoffError("CONFIGURATION")
+    socket_path = socket.removeprefix("unix://")
+    if not socket_path or not os.path.isabs(socket_path) or os.path.normpath(socket_path) != socket_path:
+        raise HandoffError("CONFIGURATION")
+    try:
+        socket_metadata = os.lstat(socket_path)
+    except OSError:
+        raise HandoffError("CONFIGURATION") from None
+    if not stat.S_ISSOCK(socket_metadata.st_mode):
+        raise HandoffError("CONFIGURATION")
+    docker_env["DOCKER_HOST"] = socket
     return HandoffConfig(
         state_file=state_file,
         mysql_container=mysql_container,
         expected_backend_sha=expected_backend_sha.lower(),
+        expected_run_id=expected_run_id,
         docker_bin=docker_bin,
         docker_env=docker_env,
     )
@@ -464,13 +472,13 @@ case "$order_baseline_id" in ''|*[!0-9]*) exit 22 ;; esac
     [ "$customer_user_id" -gt 0 ] && [ "$order_baseline_id" -ge 0 ] || exit 23
 
 mysql_query() {
-  MYSQL_PWD="$database_secret" mysql \
+  printf '%s\n' "$1" | MYSQL_PWD="$database_secret" mysql \
     --protocol=socket --connect-timeout=5 \
     --user="$database_user" --database="$database" \
-    --batch --skip-column-names --raw --execute="$1"
+    --batch --skip-column-names --raw
 }
 
-required_tables="app_user recharge_order payment_provider_event wallet wallet_transaction ledger_journal ledger_posting"
+required_tables="app_user recharge_order payment_provider_event wallet wallet_transaction ledger_journal ledger_posting ledger_account"
 for table in $required_tables; do
   count="$(mysql_query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = '$table'")"
   [ "$count" = 1 ] || { printf '%s\n' SCHEMA_MISSING; exit 0; }
@@ -486,22 +494,34 @@ SELECT o.order_no
 FROM recharge_order o
 WHERE o.user_id = $customer_user_id
   AND o.id > $order_baseline_id
+  AND o.amount_minor > 0
+  AND o.gift_coin_amount > 0
   AND o.payment_provider = 'alipay-sandbox'
   AND o.status = 'SUCCEEDED'
   AND o.provider_status IN ('TRADE_SUCCESS', 'TRADE_FINISHED')
   AND o.provider_order_id IS NOT NULL
   AND o.provider_order_id <> ''
-  AND EXISTS (
-      SELECT 1 FROM payment_provider_event pe
+  AND (
+      SELECT COUNT(*) FROM payment_provider_event pe
+      WHERE pe.provider = 'alipay-sandbox'
+        AND pe.order_no = o.order_no
+  ) = 1
+  AND (
+      SELECT COUNT(*) FROM payment_provider_event pe
       WHERE pe.provider = 'alipay-sandbox'
         AND pe.order_no = o.order_no
         AND pe.status = 'PROCESSED'
         AND pe.observed_status IN ('TRADE_SUCCESS', 'TRADE_FINISHED')
         AND pe.provider_event_id <> ''
         AND pe.event_fingerprint REGEXP '^[0-9a-fA-F]{64}$'
-  )
-  AND EXISTS (
-      SELECT 1 FROM wallet_transaction wt
+  ) = 1
+  AND (
+      SELECT COUNT(*) FROM wallet_transaction wt
+      WHERE wt.business_type = 'PAYMENT_RECHARGE'
+        AND wt.business_id = o.order_no
+  ) = 1
+  AND (
+      SELECT COUNT(*) FROM wallet_transaction wt
       JOIN wallet w ON w.id = wt.wallet_id
       WHERE wt.business_type = 'PAYMENT_RECHARGE'
         AND wt.business_id = o.order_no
@@ -509,7 +529,7 @@ WHERE o.user_id = $customer_user_id
         AND wt.amount_minor = o.gift_coin_amount
         AND w.user_id = o.user_id
         AND w.currency_code = 'GIFT_COIN'
-  )
+  ) = 1
   AND (
       SELECT COUNT(*) FROM ledger_journal lj
       WHERE lj.actor_user_id = o.user_id
@@ -520,6 +540,7 @@ WHERE o.user_id = $customer_user_id
       SELECT 1
       FROM ledger_journal lj
       JOIN ledger_posting lp ON lp.journal_id = lj.id
+      JOIN ledger_account la ON la.id = lp.account_id
       WHERE lj.actor_user_id = o.user_id
         AND lj.business_type = 'PAYMENT_RECHARGE'
         AND lj.business_id = o.order_no
@@ -527,6 +548,16 @@ WHERE o.user_id = $customer_user_id
       HAVING COUNT(*) = 2
          AND SUM(lp.amount_minor) = 0
          AND SUM(CASE WHEN lp.currency_code = 'GIFT_COIN' THEN 1 ELSE 0 END) = 2
+         AND SUM(CASE WHEN la.user_id = o.user_id
+                           AND la.account_type = 'USER_AVAILABLE'
+                           AND la.currency_code = 'GIFT_COIN'
+                           AND lp.amount_minor = o.gift_coin_amount
+                      THEN 1 ELSE 0 END) = 1
+         AND SUM(CASE WHEN la.user_id IS NULL
+                           AND la.account_type = 'SYSTEM_CLEARING'
+                           AND la.currency_code = 'GIFT_COIN'
+                           AND lp.amount_minor = -o.gift_coin_amount
+                      THEN 1 ELSE 0 END) = 1
   )
 ORDER BY o.id
 LIMIT 2
@@ -579,6 +610,7 @@ def run_handoff(config: HandoffConfig) -> dict[str, object]:
     state, raw_state = read_state_file(
         config.state_file,
         expected_backend_sha=config.expected_backend_sha,
+        expected_run_id=config.expected_run_id,
         require_unbound=True,
     )
     candidates = _run_mysql_query(config, state)
@@ -615,6 +647,7 @@ def _public_self_test() -> int:
         state_path.write_text(
             json.dumps(
                 {
+                    "schemaVersion": FIXTURE_STATE_VERSION,
                     "runId": "m5-success-self-test",
                     "backendSha": "a" * 40,
                     "customerPhone": "fixture-customer-phone",
@@ -641,6 +674,7 @@ def _public_self_test() -> int:
         try:
             validate_fixture_state(
                 {
+                    "schemaVersion": FIXTURE_STATE_VERSION,
                     "runId": "m5-success-self-test",
                     "backendSha": "a" * 40,
                     "customerPhone": "fixture-customer-phone",
@@ -667,7 +701,11 @@ def inspect_command_source() -> str:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    class _SafeArgumentParser(argparse.ArgumentParser):
+        def error(self, _message: str) -> None:
+            raise HandoffError("CONFIGURATION")
+
+    parser = _SafeArgumentParser(
         description="Bind exactly one verified Alipay sandbox order to a private Finance fixture state"
     )
     modes = parser.add_mutually_exclusive_group(required=True)
@@ -681,7 +719,20 @@ def _emit(value: Mapping[str, object]) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(list(argv) if argv is not None else None)
+    try:
+        args = _parser().parse_args(list(argv) if argv is not None else None)
+    except SystemExit as error:
+        return int(error.code)
+    except HandoffError:
+        _emit(
+            {
+                "schemaVersion": FLOW_SCHEMA_VERSION,
+                "status": "FAIL",
+                "category": "CONFIGURATION",
+                "orderBound": False,
+            }
+        )
+        return 2
     if args.self_test:
         try:
             return _public_self_test()

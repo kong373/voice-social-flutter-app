@@ -60,12 +60,12 @@ from m5_alipay_success_handoff import (
 
 
 FLOW_SCHEMA_VERSION = "m5-alipay-refund-four-eyes-v1"
+EXPECTED_DEVELOPMENT_MYSQL_CONTAINER = "voice-social-m3-development-mysql-1"
 EXPECTED_CONFIRMATION = "I_UNDERSTAND_ALIPAY_SANDBOX_REFUND"
 EXPECTED_CONFIRMATION_2 = "I_UNDERSTAND_ALIPAY_SANDBOX_REFUND_SECOND_OPERATOR"
 
 ORDER_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
 RUN_ID_RE = re.compile(r"^m5-refund-[A-Za-z0-9_.:-]{1,80}$")
-CONTAINER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 TOKEN_RE = re.compile(r"^[\x21-\x7e]{16,4096}$")
 MAX_REFUND_REASON_LENGTH = 256
 UUID_RE = re.compile(
@@ -156,6 +156,9 @@ class RefundHarnessConfig:
     run_id: str = dataclasses.field(repr=False)
     mysql_container: str = dataclasses.field(repr=False)
     state_dir: str = dataclasses.field(repr=False)
+    expected_customer_user_id: int | None = dataclasses.field(default=None, repr=False)
+    expected_reviewer_user_id: int | None = dataclasses.field(default=None, repr=False)
+    expected_executor_user_id: int | None = dataclasses.field(default=None, repr=False)
     allow_provider: bool = False
     confirmation: str = dataclasses.field(default="", repr=False)
     confirmation_2: str = dataclasses.field(default="", repr=False)
@@ -438,6 +441,12 @@ def _validate_refund_reason(value: str) -> str:
     return value
 
 
+def _validate_development_mysql_container(value: str) -> str:
+    if value != EXPECTED_DEVELOPMENT_MYSQL_CONTAINER:
+        raise RefundHarnessError("CONFIGURATION")
+    return value
+
+
 def _first_protected_env_value(
     environment: Mapping[str, str], names: Sequence[str]
 ) -> str:
@@ -454,7 +463,7 @@ def _read_protected_refund_state(
     environment: Mapping[str, str],
     *,
     run_id: str,
-) -> tuple[str, str, str, str, str]:
+) -> tuple[str, str, str, str, int, int, int, str]:
     """Read one protected handoff and return only values needed by the flow."""
 
     state_file = environment.get(PROTECTED_STATE_ENV, "").strip()
@@ -489,6 +498,9 @@ def _read_protected_refund_state(
         state.customer_bearer,
         state.reviewer_bearer,
         state.executor_bearer,
+        state.customer_user_id,
+        state.reviewer_user_id,
+        state.executor_user_id,
         state_file,
     )
 
@@ -506,32 +518,24 @@ def read_config(environment: Mapping[str, str] | None = None) -> RefundHarnessCo
         raise RefundHarnessError("CONFIGURATION")
 
     protected_state_file = env.get(PROTECTED_STATE_ENV, "").strip()
-    if protected_state_file:
-        (
-            order_no,
-            user_bearer,
-            reviewer_bearer,
-            executor_bearer,
-            protected_state_file,
-        ) = _read_protected_refund_state(env, run_id=run_id)
-    else:
-        order_no = env.get("QA_M5_REFUND_ORDER_NO", "")
-        if not ORDER_REF_RE.fullmatch(order_no):
-            raise RefundHarnessError("CONFIGURATION")
-        user_bearer = _normalise_bearer(env.get("QA_M5_REFUND_USER_BEARER", ""))
-        reviewer_bearer = _normalise_bearer(
-            env.get("QA_M5_REFUND_REVIEWER_BEARER", "")
-        )
-        executor_bearer = _normalise_bearer(
-            env.get("QA_M5_REFUND_EXECUTOR_BEARER", "")
-        )
-        protected_state_file = None
+    if not protected_state_file:
+        raise RefundHarnessError("CONFIGURATION")
+    (
+        order_no,
+        user_bearer,
+        reviewer_bearer,
+        executor_bearer,
+        expected_customer_user_id,
+        expected_reviewer_user_id,
+        expected_executor_user_id,
+        protected_state_file,
+    ) = _read_protected_refund_state(env, run_id=run_id)
     if len({user_bearer, reviewer_bearer, executor_bearer}) != 3:
         raise RefundHarnessError("CONFIGURATION")
 
-    mysql_container = env.get("QA_M5_REFUND_MYSQL_CONTAINER", "")
-    if not CONTAINER_NAME_RE.fullmatch(mysql_container):
-        raise RefundHarnessError("CONFIGURATION")
+    mysql_container = _validate_development_mysql_container(
+        env.get("QA_M5_REFUND_MYSQL_CONTAINER", "")
+    )
     state_dir = _private_directory(env.get("QA_M5_REFUND_LEDGER_STATE_DIR", ""))
     artifact_dir_value = env.get("QA_M5_REFUND_ARTIFACT_DIR", "")
     artifact_dir = (
@@ -550,6 +554,9 @@ def read_config(environment: Mapping[str, str] | None = None) -> RefundHarnessCo
         run_id=run_id,
         mysql_container=mysql_container,
         state_dir=state_dir,
+        expected_customer_user_id=expected_customer_user_id,
+        expected_reviewer_user_id=expected_reviewer_user_id,
+        expected_executor_user_id=expected_executor_user_id,
         allow_provider=_is_true(env.get("QA_M5_REFUND_ALLOW_PROVIDER")),
         confirmation=env.get("QA_M5_REFUND_CONFIRMATION", ""),
         confirmation_2=env.get("QA_M5_REFUND_CONFIRMATION_2", ""),
@@ -803,6 +810,10 @@ def run_flow(
         )
     )
     owner_id, reviewer_id = _validate_review(review, refund_id)
+    if config.expected_customer_user_id is not None and owner_id != config.expected_customer_user_id:
+        raise RefundHarnessError("INVARIANT_VIOLATION")
+    if config.expected_reviewer_user_id is not None and reviewer_id != config.expected_reviewer_user_id:
+        raise RefundHarnessError("INVARIANT_VIOLATION")
 
     execute_request_id = _request_id("execute")
     execute = _mapping(
@@ -812,9 +823,11 @@ def run_flow(
             execute_request_id,
         )
     )
-    execute_status, execute_provider_status, _executor_id = _validate_provider_result(
+    execute_status, execute_provider_status, executor_id = _validate_provider_result(
         execute, refund_id, owner_id, reviewer_id
     )
+    if config.expected_executor_user_id is not None and executor_id != config.expected_executor_user_id:
+        raise RefundHarnessError("INVARIANT_VIOLATION")
     execute_replay = _mapping(
         client.execute_refund(
             refund_id,
@@ -839,9 +852,14 @@ def run_flow(
                 reconcile_request_id,
             )
         )
-        reconcile_status, reconcile_provider_status, _ = _validate_provider_result(
+        reconcile_status, reconcile_provider_status, reconcile_executor_id = _validate_provider_result(
             reconciled, refund_id, owner_id, reviewer_id
         )
+        if (
+            config.expected_executor_user_id is not None
+            and reconcile_executor_id != config.expected_executor_user_id
+        ):
+            raise RefundHarnessError("INVARIANT_VIOLATION")
         if reconcile_status != "COMPLETED" or reconcile_provider_status != "REFUNDED":
             raise RefundHarnessError("INVARIANT_VIOLATION")
         reconcile_repeat_value = _mapping(
@@ -1065,7 +1083,11 @@ def _public_self_test() -> int:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    class _SafeArgumentParser(argparse.ArgumentParser):
+        def error(self, _message: str) -> None:
+            raise RefundHarnessError("CONFIGURATION")
+
+    parser = _SafeArgumentParser(
         description="Controlled M5 Alipay sandbox Finance four-eyes refund QA"
     )
     modes = parser.add_mutually_exclusive_group(required=True)
@@ -1079,7 +1101,20 @@ def _emit(value: Mapping[str, object]) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(list(argv) if argv is not None else None)
+    try:
+        args = _parser().parse_args(list(argv) if argv is not None else None)
+    except SystemExit as error:
+        return int(error.code)
+    except RefundHarnessError:
+        _emit(
+            {
+                "schemaVersion": FLOW_SCHEMA_VERSION,
+                "status": "FAIL",
+                "category": "CONFIGURATION",
+                "providerInvocation": False,
+            }
+        )
+        return 2
     if args.self_test:
         try:
             return _public_self_test()

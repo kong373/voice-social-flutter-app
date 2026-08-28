@@ -9,6 +9,7 @@ the same-id idempotency contract with in-memory doubles.
 from __future__ import annotations
 
 import hashlib
+import dataclasses
 import io
 import json
 import os
@@ -16,7 +17,7 @@ from pathlib import Path
 import stat
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 
 from m5_alipay_refund_four_eyes import (
@@ -28,6 +29,7 @@ from m5_alipay_refund_four_eyes import (
     RefundHarnessConfig,
     RefundHarnessError,
     authorize_provider,
+    _validate_development_mysql_container,
     build_safe_summary,
     main,
     run_flow,
@@ -60,6 +62,9 @@ def _config(*, confirmations: bool = True) -> RefundHarnessConfig:
         run_id="m5-refund-offline-test",
         mysql_container="mysql",
         state_dir="/private/tmp/m5-refund-state",
+        expected_customer_user_id=OWNER_ID,
+        expected_reviewer_user_id=REVIEWER_ID,
+        expected_executor_user_id=EXECUTOR_ID,
         allow_provider=confirmations,
         confirmation=EXPECTED_CONFIRMATION if confirmations else "",
         confirmation_2=EXPECTED_CONFIRMATION_2 if confirmations else "",
@@ -252,6 +257,7 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
         self.assertEqual(values[1], "Bearer customer-token-value")
         self.assertEqual(values[2], "Bearer reviewer-token-value")
         self.assertEqual(values[3], "Bearer executor-token-value")
+        self.assertEqual(values[4:7], (11, 22, 33))
         self.assertNotIn("fixture-customer-phone", json.dumps(values))
 
     def test_protected_state_conflicts_with_any_legacy_input(self) -> None:
@@ -326,7 +332,24 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
             config = read_config(environment)
         self.assertEqual(config.order_no, ORDER_NO)
         self.assertEqual(config.user_bearer, "Bearer customer-token-value")
+        self.assertEqual(config.expected_customer_user_id, 11)
+        self.assertEqual(config.expected_reviewer_user_id, 22)
+        self.assertEqual(config.expected_executor_user_id, 33)
         self.assertEqual(config.protected_state_file, str(self.protected_state))
+
+    def test_read_config_rejects_legacy_order_and_bearer_inputs(self) -> None:
+        environment = {
+            "QA_M5_REFUND_BASE_URL": "https://backend.example.test/",
+            "QA_M5_REFUND_RUN_ID": "m5-refund-protected-test",
+            "QA_M5_REFUND_ORDER_NO": ORDER_NO,
+            "QA_M5_REFUND_USER_BEARER": "Bearer customer-token-value",
+            "QA_M5_REFUND_REVIEWER_BEARER": "Bearer reviewer-token-value",
+            "QA_M5_REFUND_EXECUTOR_BEARER": "Bearer executor-token-value",
+            "QA_M5_REFUND_MYSQL_CONTAINER": "voice-social-m3-development-mysql-1",
+            "QA_M5_REFUND_LEDGER_STATE_DIR": str(self.protected_dir),
+        }
+        with self.assertRaisesRegex(RefundHarnessError, "CONFIGURATION"):
+            read_config(environment)
 
     def test_provider_is_disabled_without_both_exact_confirmations(self) -> None:
         config = _config(confirmations=False)
@@ -351,6 +374,21 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
         self.assertEqual(result["status"], "FAIL")
         self.assertEqual(result["providerInvocation"], "UNKNOWN")
 
+    def test_argument_error_does_not_echo_protected_value(self) -> None:
+        output = io.StringIO()
+        error = io.StringIO()
+        protected = "Bearer-SECRET-TOKEN-123456789"
+        with redirect_stdout(output), redirect_stderr(error):
+            self.assertEqual(main(["--run", protected]), 2)
+        self.assertNotIn(protected, output.getvalue())
+        self.assertNotIn(protected, error.getvalue())
+        self.assertEqual(error.getvalue(), "")
+
+    def test_protected_principals_are_bound_to_authoritative_responses(self) -> None:
+        config = dataclasses.replace(_config(), expected_customer_user_id=999)
+        with self.assertRaisesRegex(RefundHarnessError, "INVARIANT_VIOLATION"):
+            run_flow(config, api=FakeApi(), ledger=FakeLedger())
+
     def test_insecure_http_is_limited_to_the_host_loopback(self) -> None:
         validate_base_url(
             "http://127.0.0.1:18080/", allow_insecure_http=True
@@ -358,6 +396,18 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
         with self.assertRaisesRegex(RefundHarnessError, "CONFIGURATION"):
             validate_base_url(
                 "http://10.0.2.2:18080/", allow_insecure_http=True
+            )
+
+    def test_mysql_container_is_limited_to_development(self) -> None:
+        self.assertEqual(
+            _validate_development_mysql_container(
+                "voice-social-m3-development-mysql-1"
+            ),
+            "voice-social-m3-development-mysql-1",
+        )
+        with self.assertRaisesRegex(RefundHarnessError, "CONFIGURATION"):
+            _validate_development_mysql_container(
+                "voice-social-production-mysql-1"
             )
 
     def test_response_sanitizer_drops_identifier_and_amount_fields(self) -> None:
