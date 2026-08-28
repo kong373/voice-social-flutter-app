@@ -30,6 +30,7 @@ from m5_alipay_refund_four_eyes import (
     run_flow,
     sanitize_response,
     validate_base_url,
+    _validate_refund_reason,
     _validate_provider_result,
     _validate_review,
 )
@@ -196,6 +197,11 @@ class FakeLedger(LedgerPort):
 
 
 class M5AlipayRefundHarnessTest(unittest.TestCase):
+    def test_refund_reason_matches_backend_256_character_limit(self) -> None:
+        self.assertEqual(_validate_refund_reason("r" * 256), "r" * 256)
+        with self.assertRaisesRegex(RefundHarnessError, "CONFIGURATION"):
+            _validate_refund_reason("r" * 257)
+
     def test_provider_is_disabled_without_both_exact_confirmations(self) -> None:
         config = _config(confirmations=False)
         with self.assertRaisesRegex(RefundHarnessError, "PROVIDER_CONFIRMATION_REQUIRED"):

@@ -63,6 +63,7 @@ ORDER_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
 RUN_ID_RE = re.compile(r"^m5-refund-[A-Za-z0-9_.:-]{1,80}$")
 CONTAINER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 TOKEN_RE = re.compile(r"^[\x21-\x7e]{16,4096}$")
+MAX_REFUND_REASON_LENGTH = 256
 UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-"
     r"[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
@@ -407,6 +408,16 @@ def _normalise_bearer(value: str) -> str:
     return "Bearer " + raw
 
 
+def _validate_refund_reason(value: str) -> str:
+    if (
+        not value
+        or len(value) > MAX_REFUND_REASON_LENGTH
+        or any(ord(c) < 0x20 for c in value)
+    ):
+        raise RefundHarnessError("CONFIGURATION")
+    return value
+
+
 def read_config(environment: Mapping[str, str] | None = None) -> RefundHarnessConfig:
     env = os.environ if environment is None else environment
     allow_insecure_http = _is_true(env.get("QA_M5_REFUND_ALLOW_INSECURE_HTTP"))
@@ -424,9 +435,9 @@ def read_config(environment: Mapping[str, str] | None = None) -> RefundHarnessCo
     )
     if len({user_bearer, reviewer_bearer, executor_bearer}) != 3:
         raise RefundHarnessError("CONFIGURATION")
-    reason = env.get("QA_M5_REFUND_REASON", "M5 Alipay sandbox refund acceptance")
-    if not reason or len(reason) > 500 or any(ord(c) < 0x20 for c in reason):
-        raise RefundHarnessError("CONFIGURATION")
+    reason = _validate_refund_reason(
+        env.get("QA_M5_REFUND_REASON", "M5 Alipay sandbox refund acceptance")
+    )
     run_id = env.get("QA_M5_REFUND_RUN_ID", "")
     if not RUN_ID_RE.fullmatch(run_id):
         raise RefundHarnessError("CONFIGURATION")

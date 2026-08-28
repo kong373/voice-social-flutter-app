@@ -47,6 +47,7 @@ QA_M5_REFUND_ORDER_NO=<the exact completed success-lane order>
 QA_M5_REFUND_USER_BEARER=<customer bearer>
 QA_M5_REFUND_REVIEWER_BEARER=<Finance reviewer bearer>
 QA_M5_REFUND_EXECUTOR_BEARER=<different Finance executor bearer>
+QA_M5_REFUND_REASON=<1-256 printable characters>
 QA_M5_REFUND_RUN_ID=m5-refund-<fresh-run>
 QA_M5_REFUND_MYSQL_CONTAINER=<serving MySQL container>
 QA_M5_REFUND_LEDGER_STATE_DIR=/secure/private/m5-refund-state
