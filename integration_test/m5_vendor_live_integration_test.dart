@@ -585,6 +585,15 @@ String _avchatRoomFixtureTitle() {
 String _avchatRoomFixtureTopic() =>
     'M5 Tencent AVChatRoom ${_registrationNickname()}';
 
+const String _avchatRoomReceiverLeftPath = '/m5/avchatroom/receiver-left';
+
+class _AvChatRoomFixture {
+  const _AvChatRoomFixture({required this.room, required this.created});
+
+  final DiscoveryRoom room;
+  final bool created;
+}
+
 Future<TencentImAvChatRoomSession?> _pollAvChatRoomReadiness(
   AppDependencies dependencies,
   _M5Evidence evidence,
@@ -635,33 +644,13 @@ Future<TencentImAvChatRoomSession?> _pollAvChatRoomReadiness(
   return latest;
 }
 
-Future<DiscoveryRoom?> _createAvChatRoomFixture(
+Future<_AvChatRoomFixture?> _createAvChatRoomFixture(
   AppDependencies dependencies,
   _M5Evidence evidence,
   BackendRouteCatalog routes,
 ) async {
   final String title = _avchatRoomFixtureTitle();
   final String topic = _avchatRoomFixtureTopic();
-  try {
-    final RoomConfiguration? ownedRoom = await dependencies
-        .roomLifecycleRepository
-        .fetchOwnedRoom();
-    if (ownedRoom != null &&
-        ownedRoom.hasExistingRoom &&
-        ownedRoom.isOpen &&
-        ownedRoom.title.startsWith('M5 live m5-') &&
-        ownedRoom.version != null) {
-      await dependencies.roomLifecycleRepository.closeRoom(
-        ownedRoom.roomId!,
-        expectedVersion: ownedRoom.version,
-      );
-      evidence.invariant('tencent_avchatroom_previous_owned_room_closed');
-    }
-  } on Object {
-    // Cleanup is opportunistic. If there is no stale open room or the close
-    // request is already settled, creation still proceeds and the contract
-    // evidence will show the actual backend state.
-  }
   try {
     final RoomLifecycleSaveResult saved = await dependencies
         .roomLifecycleRepository
@@ -683,24 +672,31 @@ Future<DiscoveryRoom?> _createAvChatRoomFixture(
       method: 'POST',
       route: routes.createRoom,
       status: 200,
-      state: saved.created ? 'created' : 'reused',
+      state: saved.created ? 'created' : 'idempotent_reused',
     );
-    if (!saved.created || saved.roomId.trim().isEmpty) {
+    if (saved.roomId.trim().isEmpty) {
       evidence.violation('avchatroom_fixture_not_fresh');
       evidence.lane('tencent.avchatroom.hint', 'BLOCKED');
       evidence.lane('tencent.avchatroom.leave', 'BLOCKED');
       return null;
     }
-    evidence.invariant('tencent_avchatroom_fixture_created');
-    return DiscoveryRoom(
-      id: saved.roomId,
-      code: saved.roomCode,
-      title: title,
-      topic: topic,
-      occupiedSeats: 0,
-      isSpeaking: false,
-      isFavorite: false,
-      ownerUserId: dependencies.authController.session?.userId,
+    evidence.invariant(
+      saved.created
+          ? 'tencent_avchatroom_fixture_created'
+          : 'tencent_avchatroom_fixture_idempotent_reused',
+    );
+    return _AvChatRoomFixture(
+      created: saved.created,
+      room: DiscoveryRoom(
+        id: saved.roomId,
+        code: saved.roomCode,
+        title: title,
+        topic: topic,
+        occupiedSeats: 0,
+        isSpeaking: false,
+        isFavorite: false,
+        ownerUserId: dependencies.authController.session?.userId,
+      ),
     );
   } on ApiException catch (error) {
     evidence.route(
@@ -728,6 +724,10 @@ Future<void> _runAvChatRoom(
   final RoomRepository repository = dependencies.roomRepository;
   DiscoveryRoom? room;
   TencentImAvChatRoomSession? roomSession;
+  String? selectedRoomId;
+  bool ownerFixtureCleanupEligible = false;
+  bool receiverSdkLeaveConfirmed = config.role != 'receiver';
+  bool receiverHttpExitConfirmed = config.role != 'receiver';
   try {
     if (config.role == 'sender') {
       final String fixtureTitle = _avchatRoomFixtureTitle();
@@ -753,16 +753,37 @@ Future<void> _runAvChatRoom(
                 candidate.id,
                 maxAttempts: 1,
               );
-          if (ready?.isReady == true) {
-            room = candidate;
-            break;
+          room = candidate;
+          // This exact, run-derived title is the only reused fixture that
+          // this test may later close. Never close an arbitrary old M5 room.
+          // Keep a pending exact fixture instead of creating another room;
+          // the normal enter/readiness path will retry it and the owner
+          // cleanup guard will close it after receiver departure.
+          ownerFixtureCleanupEligible = true;
+          if (ready?.isReady != true) {
+            evidence.invariant('tencent_avchatroom_fixture_readiness_pending');
           }
+          break;
         }
       }
-      room ??= await _createAvChatRoomFixture(dependencies, evidence, routes);
+      if (room == null) {
+        final _AvChatRoomFixture? createdFixture =
+            await _createAvChatRoomFixture(dependencies, evidence, routes);
+        if (createdFixture != null) {
+          room = createdFixture.room;
+          // Idempotent create responses may report created=false. The
+          // response still identifies the exact run-derived fixture; the
+          // cleanup guard re-reads owner authority and the exact title before
+          // it is ever allowed to close anything.
+          ownerFixtureCleanupEligible = createdFixture.room.id
+              .trim()
+              .isNotEmpty;
+        }
+      }
       if (room == null) {
         return;
       }
+      selectedRoomId = room.id;
       await _postRelayJson(config, '/m5/avchatroom/ready', <String, String>{
         'roomId': room.id,
       });
@@ -797,6 +818,7 @@ Future<void> _runAvChatRoom(
         isSpeaking: false,
         isFavorite: false,
       );
+      selectedRoomId = roomId;
       evidence.invariant('tencent_avchatroom_receiver_bound_shared_room');
     }
     final DiscoveryRoom selectedRoom = room;
@@ -838,8 +860,10 @@ Future<void> _runAvChatRoom(
     if (readySession == null || !readySession.isReady) {
       evidence.lane('tencent.avchatroom.hint', 'BLOCKED');
       evidence.lane('tencent.avchatroom.leave', 'BLOCKED');
+      receiverSdkLeaveConfirmed = config.role == 'receiver';
       try {
         await dependencies.roomRepository.exitRoom(selectedRoom.id);
+        receiverHttpExitConfirmed = config.role == 'receiver';
         evidence.route(
           capability: 'tencent.avchatroom.http-exit',
           method: 'POST',
@@ -998,8 +1022,16 @@ Future<void> _runAvChatRoom(
       registration.cancel();
       await roomEventSubscription?.cancel();
       evidence.endRoomHintAttempt();
-      await coordinator.leave();
-      final bool left = coordinator.activeGroupId == null;
+      bool left = false;
+      try {
+        await coordinator.leave();
+        left = coordinator.activeGroupId == null;
+      } on Object {
+        left = false;
+      }
+      if (config.role == 'receiver') {
+        receiverSdkLeaveConfirmed = left;
+      }
       evidence.route(
         capability: 'tencent.avchatroom.leave',
         method: 'SDK',
@@ -1010,6 +1042,9 @@ Future<void> _runAvChatRoom(
       evidence.lane('tencent.avchatroom.leave', left ? 'PASS' : 'FAIL');
       try {
         await dependencies.roomRepository.exitRoom(selectedRoom.id);
+        if (config.role == 'receiver') {
+          receiverHttpExitConfirmed = true;
+        }
         evidence.route(
           capability: 'tencent.avchatroom.http-exit',
           method: 'POST',
@@ -1031,6 +1066,97 @@ Future<void> _runAvChatRoom(
     );
     evidence.lane('tencent.avchatroom.hint', 'FAIL');
     evidence.lane('tencent.avchatroom.leave', 'FAIL');
+  } finally {
+    final String? roomId = selectedRoomId;
+    if (config.role == 'receiver' &&
+        roomId != null &&
+        receiverSdkLeaveConfirmed &&
+        receiverHttpExitConfirmed) {
+      // This signal is emitted only after the nested finally has completed
+      // SDK quitGroup and first-party HTTP exitRoom. The sender must not use
+      // the hint-pass signal as a proxy for receiver cleanup.
+      try {
+        await _postRelayJson(
+          config,
+          _avchatRoomReceiverLeftPath,
+          <String, String>{'roomId': roomId},
+        );
+        evidence.invariant('tencent_avchatroom_receiver_left');
+      } on Object {
+        evidence.violation('tencent_avchatroom_receiver_left_signal_failed');
+      }
+    } else if (config.role == 'receiver' && roomId != null) {
+      evidence.violation('tencent_avchatroom_receiver_left_not_confirmed');
+    }
+    if (config.role == 'sender' &&
+        ownerFixtureCleanupEligible &&
+        roomId != null) {
+      bool receiverLeft = false;
+      for (
+        int attempt = 0;
+        attempt < _workerCycleWaitAttempts && !receiverLeft;
+        attempt += 1
+      ) {
+        receiverLeft =
+            await _readRelayValue(
+              config,
+              _avchatRoomReceiverLeftPath,
+              'roomId',
+            ) ==
+            roomId;
+        if (!receiverLeft) {
+          await Future<void>.delayed(_workerCycleWaitStep);
+        }
+      }
+      if (!receiverLeft) {
+        evidence.violation('tencent_avchatroom_receiver_left_not_confirmed');
+        evidence.lane('tencent.avchatroom.fixture-cleanup', 'FAIL');
+      } else {
+        evidence.invariant('tencent_avchatroom_receiver_left_confirmed');
+        try {
+          final RoomConfiguration owned = await dependencies
+              .roomLifecycleRepository
+              .fetchRoom(roomId);
+          final bool exactCurrentFixture =
+              owned.roomId == roomId &&
+              owned.title.trim() == _avchatRoomFixtureTitle() &&
+              owned.accessMode == RoomAccessMode.publicRoom &&
+              owned.isOpen &&
+              owned.version != null;
+          if (!exactCurrentFixture) {
+            evidence.violation('tencent_avchatroom_cleanup_fixture_mismatch');
+            evidence.lane('tencent.avchatroom.fixture-cleanup', 'FAIL');
+          } else {
+            await dependencies.roomLifecycleRepository.closeRoom(
+              roomId,
+              expectedVersion: owned.version,
+            );
+            evidence.route(
+              capability: 'tencent.avchatroom.fixture-cleanup',
+              method: 'POST',
+              route: routes.closeRoom,
+              status: 200,
+              state: 'closed',
+            );
+            evidence.invariant('tencent_avchatroom_current_fixture_closed');
+            evidence.lane('tencent.avchatroom.fixture-cleanup', 'PASS');
+          }
+        } on ApiException catch (error) {
+          evidence.route(
+            capability: 'tencent.avchatroom.fixture-cleanup',
+            method: 'POST',
+            route: routes.closeRoom,
+            status: error.httpStatus ?? 0,
+            state: _safeApiState(error),
+          );
+          evidence.violation('tencent_avchatroom_fixture_cleanup_failed');
+          evidence.lane('tencent.avchatroom.fixture-cleanup', 'FAIL');
+        } on Object {
+          evidence.violation('tencent_avchatroom_fixture_cleanup_failed');
+          evidence.lane('tencent.avchatroom.fixture-cleanup', 'FAIL');
+        }
+      }
+    }
   }
 }
 

@@ -552,6 +552,7 @@ coordination = {
     "roomId": None,
     "roomMessageId": None,
     "roomPass": False,
+    "receiverLeftRoomId": None,
 }
 opaque_id = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 lock = threading.Lock()
@@ -636,6 +637,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             with lock: ready = coordination["roomPass"]
             self._json(200, {"ready": ready})
             return
+        if self.path == "/m5/avchatroom/receiver-left" and details["role"] == "sender":
+            with lock:
+                room_id = coordination["receiverLeftRoomId"]
+            self._json(200, {"ready": isinstance(room_id, str), "roomId": room_id})
+            return
         self._json(404, {"error": "not_found"})
     def do_POST(self):
         details = self._token()
@@ -694,6 +700,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if self.path == "/m5/avchatroom/pass" and details["role"] == "receiver":
             with lock: coordination["roomPass"] = True
+            self._json(200, {"accepted": True})
+            return
+        if self.path == "/m5/avchatroom/receiver-left" and details["role"] == "receiver":
+            room_id = self._body_json().get("roomId")
+            if not isinstance(room_id, str) or not opaque_id.fullmatch(room_id):
+                self._json(400, {"error": "invalid_room_id"})
+                return
+            with lock:
+                expected_room_id = coordination["roomId"]
+                existing = coordination["receiverLeftRoomId"]
+                if not isinstance(expected_room_id, str) or room_id != expected_room_id:
+                    self._json(409, {"error": "room_id_mismatch"})
+                    return
+                if existing not in (None, room_id):
+                    self._json(409, {"error": "receiver_left_room_id_conflict"})
+                    return
+                coordination["receiverLeftRoomId"] = room_id
             self._json(200, {"accepted": True})
             return
         self._json(409, {"error": "role_or_state_mismatch"})

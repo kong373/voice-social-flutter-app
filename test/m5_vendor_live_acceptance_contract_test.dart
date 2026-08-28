@@ -82,11 +82,72 @@ void main() {
       integrationSource,
       contains('candidate.title.trim() == fixtureTitle'),
     );
-    expect(integrationSource, contains('!saved.created'));
+    expect(
+      integrationSource,
+      contains("state: saved.created ? 'created' : 'idempotent_reused'"),
+    );
+    expect(integrationSource, contains('saved.roomId.trim().isEmpty'));
     expect(integrationSource, contains('sendPublicMessage'));
     expect(integrationSource, contains('/m5/avchatroom/ready'));
     expect(integrationSource, contains('/m5/avchatroom/message-sent'));
     expect(integrationSource, contains('/m5/avchatroom/pass'));
+    expect(integrationSource, contains('/m5/avchatroom/receiver-left'));
+    expect(integrationSource, contains('ownerFixtureCleanupEligible'));
+    expect(integrationSource, contains('current_fixture_closed'));
+    expect(integrationSource, contains('fetchRoom(roomId)'));
+    expect(integrationSource, contains('expectedVersion: owned.version'));
+    expect(
+      integrationSource,
+      contains(
+        "if (config.role == 'sender' &&\n        ownerFixtureCleanupEligible",
+      ),
+    );
+    expect(
+      integrationSource,
+      contains('ownerFixtureCleanupEligible = createdFixture.room.id'),
+    );
+    expect(
+      integrationSource,
+      contains('tencent_avchatroom_receiver_left_confirmed'),
+    );
+    expect(integrationSource, contains('receiverSdkLeaveConfirmed'));
+    expect(integrationSource, contains('receiverHttpExitConfirmed'));
+    expect(integrationSource, contains('receiver_left_not_confirmed'));
+    expect(
+      integrationSource,
+      contains('owned.accessMode == RoomAccessMode.publicRoom'),
+    );
+    expect(
+      integrationSource,
+      isNot(contains("title.startsWith('M5 live m5-')")),
+    );
+    final int cleanupFinally = integrationSource.indexOf(
+      '  } finally {\n    final String? roomId = selectedRoomId;',
+    );
+    final int nextFunction = integrationSource.indexOf(
+      '\nFuture<void> _runAlipaySandbox',
+      cleanupFinally,
+    );
+    expect(cleanupFinally, greaterThanOrEqualTo(0));
+    expect(nextFunction, greaterThan(cleanupFinally));
+    expect(
+      integrationSource.substring(cleanupFinally, nextFunction),
+      isNot(contains('return;')),
+    );
+    expect(runnerSource, contains('receiverLeftRoomId'));
+    expect(
+      runnerSource,
+      contains('self.path == "/m5/avchatroom/receiver-left"'),
+    );
+    expect(runnerSource, contains('details["role"] == "sender"'));
+    expect(runnerSource, contains('details["role"] == "receiver"'));
+    expect(runnerSource, contains('expected_room_id = coordination["roomId"]'));
+    expect(runnerSource, contains('room_id != expected_room_id'));
+    expect(
+      runnerSource,
+      contains('coordination["receiverLeftRoomId"] = room_id'),
+    );
+    expect(runnerSource, contains('room_id_mismatch'));
     expect(integrationSource, contains('hasRoomHintForMessage'));
     expect(integrationSource, contains('roomEvents'));
     expect(integrationSource, contains('roomHintFromSdk'));
