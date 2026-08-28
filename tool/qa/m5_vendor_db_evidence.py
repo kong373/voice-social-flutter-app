@@ -100,6 +100,8 @@ START_NONCE_RE = re.compile(r"^[A-Za-z0-9_.~=-]{16,255}$")
 UNIX_EPOCH_RE = re.compile(r"^[0-9]{1,12}$")
 PAYMENT_SCENARIOS = frozenset({"none", "cancel", "success"})
 PAYMENT_SETTLEMENT_POLL_MODE = "internal-bounded-90s"
+TENCENT_CALLBACK_POLL_WINDOW_SECONDS = 15.0
+TENCENT_CALLBACK_POLL_INTERVAL_SECONDS = 1.0
 # The HTTP client and the helper must leave enough time for a complete
 # fixture-scoped aggregate scan.  Keep these values in one place so a future
 # runner change cannot accidentally reintroduce the old 20/180 second
@@ -2658,6 +2660,23 @@ def _payment_settlement_ready(
     )
 
 
+def _tencent_callback_evidence_pending(
+    current: _ScopedSnapshot,
+    baseline: _ScopedSnapshot,
+) -> bool:
+    return (
+        _status_delta(
+            current,
+            baseline,
+            "tencent_im_room_group_outbox",
+            "operation",
+            "SEND_GROUP_MSG",
+        )
+        >= 1
+        and _snapshot_count_delta(current, baseline, "tencent_im_callback_event") == 0
+    )
+
+
 def _vendor_state(
     values: Mapping[str, int],
 ) -> str:
@@ -2885,6 +2904,18 @@ class M5EvidenceSessionCollector:
                     if time.monotonic() >= deadline:
                         break
                     time.sleep(1.0)
+                    current = self._snapshot(fixture_id, start.since_epoch)
+                    _validate_snapshot(current)
+            if _tencent_callback_evidence_pending(current, start.snapshot):
+                # Group.CallbackAfterSendMsg may arrive shortly after the
+                # scoped SEND_GROUP_MSG outbox evidence. Poll only this
+                # fixture-scoped aggregate for a short bounded window and
+                # still fail closed when no explicit callback link appears.
+                deadline = time.monotonic() + TENCENT_CALLBACK_POLL_WINDOW_SECONDS
+                while _tencent_callback_evidence_pending(current, start.snapshot):
+                    if time.monotonic() >= deadline:
+                        break
+                    time.sleep(TENCENT_CALLBACK_POLL_INTERVAL_SECONDS)
                     current = self._snapshot(fixture_id, start.since_epoch)
                     _validate_snapshot(current)
 

@@ -78,6 +78,32 @@ def _markers(*, present: bool = True) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _set_row_count(markers: str, table: str, count: int) -> str:
+    return re.sub(
+        rf"^T\|{re.escape(table)}\|\d+\|1$",
+        f"T|{table}|{count}|1",
+        markers,
+        count=1,
+        flags=re.MULTILINE,
+    )
+
+
+def _set_status_count(
+    markers: str,
+    table: str,
+    column: str,
+    status: str,
+    count: int,
+) -> str:
+    return re.sub(
+        rf"^S\|{re.escape(table)}\|{re.escape(column)}\|{re.escape(status)}\|\d+$",
+        f"S|{table}|{column}|{status}|{count}",
+        markers,
+        count=1,
+        flags=re.MULTILINE,
+    )
+
+
 def _current_run_markers() -> str:
     markers = _markers()
     for table in ("app_user", "refresh_session"):
@@ -97,6 +123,13 @@ def _current_run_markers() -> str:
             f"S|{table}|status|DELIVERED|0",
             f"S|{table}|status|DELIVERED|1",
         )
+    markers = _set_status_count(
+        markers,
+        "tencent_im_room_group_outbox",
+        "operation",
+        "SEND_GROUP_MSG",
+        1,
+    )
     return markers
 
 
@@ -104,9 +137,11 @@ class _FakeSessionCollector(M5EvidenceSessionCollector):
     def __init__(self, config: EvidenceConfig, snapshots: list[str]) -> None:
         super().__init__(config)
         self._snapshots = [parse_mysql_markers(value) for value in snapshots]
+        self.snapshot_calls = 0
 
     def _snapshot(self, fixture_id: str, since_epoch: int):  # type: ignore[no-untyped-def]
         del fixture_id, since_epoch
+        self.snapshot_calls += 1
         if not self._snapshots:
             raise EvidenceError("READ_FAILED")
         return _state_snapshot(self._snapshots.pop(0))
@@ -597,6 +632,83 @@ class M5VendorDbEvidenceContractTest(unittest.TestCase):
                 result["callbackEvents"]["alipay"],
                 {"verified": True, "eventCount": 1},
             )
+            self.assertEqual(collector.snapshot_calls, 2)
+
+    def test_collect_polls_for_delayed_tencent_callback_only_with_send_group_msg_delta(self) -> None:
+        fixture = "m5-fresh-tencent-delay"
+        delayed = _set_row_count(_current_run_markers(), "tencent_im_callback_event", 1)
+        with tempfile.TemporaryDirectory() as state_dir:
+            collector = _FakeSessionCollector(
+                _session_config(state_dir, run_id="m5-tencent-delay"),
+                [_markers(), delayed, _current_run_markers()],
+            )
+            started = collector.start("m5-tencent-delay", "AVD-B", fixture)
+            with (
+                patch("m5_vendor_db_evidence.time.sleep", return_value=None) as sleep_mock,
+                patch("m5_vendor_db_evidence.time.monotonic", side_effect=[0.0, 0.0]),
+            ):
+                result = collector.collect(
+                    "m5-tencent-delay", "AVD-B", fixture, started["startNonce"]
+                )
+            self.assertEqual(
+                result["callbackEvents"]["tencentIm"],
+                {"verified": True, "eventCount": 1},
+            )
+            self.assertEqual(collector.snapshot_calls, 3)
+            sleep_mock.assert_called_once_with(1.0)
+
+    def test_collect_times_out_tencent_callback_poll_and_fails_closed(self) -> None:
+        fixture = "m5-fresh-tencent-timeout"
+        delayed = _set_row_count(_current_run_markers(), "tencent_im_callback_event", 1)
+        with tempfile.TemporaryDirectory() as state_dir:
+            collector = _FakeSessionCollector(
+                _session_config(state_dir, run_id="m5-tencent-timeout"),
+                [_markers(), delayed, delayed],
+            )
+            started = collector.start("m5-tencent-timeout", "AVD-B", fixture)
+            with (
+                patch("m5_vendor_db_evidence.time.sleep", return_value=None) as sleep_mock,
+                patch("m5_vendor_db_evidence.time.monotonic", side_effect=[0.0, 0.0, 15.0]),
+            ):
+                result = collector.collect(
+                    "m5-tencent-timeout", "AVD-B", fixture, started["startNonce"]
+                )
+            self.assertEqual(
+                result["callbackEvents"]["tencentIm"],
+                {"verified": False, "eventCount": 0},
+            )
+            self.assertEqual(collector.snapshot_calls, 3)
+            sleep_mock.assert_called_once_with(1.0)
+
+    def test_collect_does_not_poll_or_count_unscoped_tencent_callbacks_without_send_group_msg_delta(self) -> None:
+        fixture = "m5-fresh-tencent-unscoped"
+        no_send_group_msg = _set_status_count(
+            _set_row_count(_current_run_markers(), "tencent_im_callback_event", 1),
+            "tencent_im_room_group_outbox",
+            "operation",
+            "SEND_GROUP_MSG",
+            0,
+        )
+        with tempfile.TemporaryDirectory() as state_dir:
+            collector = _FakeSessionCollector(
+                _session_config(state_dir, run_id="m5-tencent-unscoped"),
+                [_markers(), no_send_group_msg],
+            )
+            started = collector.start("m5-tencent-unscoped", "AVD-B", fixture)
+            with (
+                patch("m5_vendor_db_evidence.time.sleep", return_value=None) as sleep_mock,
+                patch("m5_vendor_db_evidence.time.monotonic") as monotonic_mock,
+            ):
+                result = collector.collect(
+                    "m5-tencent-unscoped", "AVD-B", fixture, started["startNonce"]
+                )
+            self.assertEqual(
+                result["callbackEvents"]["tencentIm"],
+                {"verified": False, "eventCount": 0},
+            )
+            self.assertEqual(collector.snapshot_calls, 2)
+            sleep_mock.assert_not_called()
+            monotonic_mock.assert_not_called()
 
     def test_start_rejects_replay_and_collect_rejects_stale_or_bad_nonce(self) -> None:
         fixture = "m5-fresh-replay"
