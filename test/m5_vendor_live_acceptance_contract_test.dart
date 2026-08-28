@@ -43,6 +43,8 @@ void main() {
   });
 
   test('M5 cold-start uses installed AVD names and serial overrides bypass it', () {
+    expect(runnerSource, contains('-gpu swiftshader'));
+    expect(runnerSource, isNot(contains('-gpu swiftshader_indirect')));
     expect(
       runnerSource,
       contains(r'select_device "$avd" "$api" "$override" "$avd_name" "$dir"'),

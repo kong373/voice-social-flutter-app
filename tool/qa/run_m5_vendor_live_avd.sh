@@ -844,7 +844,7 @@ start_emulator() {
     [[ -n "$sdk_root" && -x "$sdk_root/emulator/emulator" ]] || fail 'emulator binary is unavailable'
     emulator_bin="$sdk_root/emulator/emulator"
   fi
-  "$emulator_bin" -avd "$name" -no-snapshot -no-boot-anim -gpu swiftshader_indirect \
+  "$emulator_bin" -avd "$name" -no-snapshot -no-boot-anim -gpu swiftshader \
     -no-window >"$dir/emulator.log" 2>&1 &
   local pid=$!
   for _ in {1..180}; do
