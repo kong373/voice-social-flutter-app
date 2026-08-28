@@ -8,7 +8,10 @@ MethodChannel operation:
 ```text
 channel: voice_social_app/alipay_app_pay
 method: pay
-arguments: { orderStr: <server-issued signed order string> }
+arguments: {
+  orderStr: <server-issued signed order string>,
+  sandbox: <typed boolean>
+}
 ```
 
 The Dart side obtains `orderStr` only from the authenticated first-party
@@ -101,6 +104,14 @@ Native bridge errors `unavailable` and `activity_unavailable` stay unavailable;
 `payment_in_progress` stays processing. A Dart timeout is also processing with
 an explicit timeout reason. None of these classifications authorizes a
 balance change.
+
+For an explicitly enabled live local/development build, the Flutter environment
+derives `sandbox: true` and passes that typed boolean through the MethodChannel.
+The Android bridge accepts no string or numeric truthy values. Before the
+official `PayTask.payV2` call it selects `EnvUtils.EnvEnum.SANDBOX`, and only
+debuggable host applications may use that mode. Staging and production always
+pass `sandbox: false`; the native bridge does not call `setEnv` for those
+invocations, so production builds cannot inherit a sandbox opt-in.
 
 The native callback is delivered at most once for an invocation. Dart keeps a
 single-flight result per order number and stores only a SHA-256 digest of the

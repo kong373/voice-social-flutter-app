@@ -84,6 +84,7 @@ class AppDependencies {
     required this.communityRepository,
     required this.commerceRepository,
     required this.commerceCatalogRepository,
+    required this.alipayAppPayAdapter,
     required this.messageRepository,
     required this.roomRepository,
     required this.roomOperationsRepository,
@@ -272,6 +273,7 @@ class AppDependencies {
         environment.isLive && environment.enableAlipayAppPay
         ? MethodChannelAlipayAppPayAdapter(
             enabled: true,
+            sandbox: environment.useAlipaySandbox,
             consentChecker: sessionManager.hasAcceptedConsent,
           )
         : const DisabledAlipayAppPayAdapter();
@@ -421,6 +423,7 @@ class AppDependencies {
       communityRepository: communityRepository,
       commerceRepository: commerceRepository,
       commerceCatalogRepository: commerceCatalogRepository,
+      alipayAppPayAdapter: alipayAppPayAdapter,
       messageRepository: messageRepository,
       roomRepository: roomRepository,
       roomOperationsRepository: roomOperationsRepository,
@@ -450,6 +453,7 @@ class AppDependencies {
   final CommunityRepository communityRepository;
   final CommerceRepository commerceRepository;
   final CommerceCatalogRepository commerceCatalogRepository;
+  final AlipayAppPayAdapter alipayAppPayAdapter;
   final MessageRepository messageRepository;
   final RoomRepository roomRepository;
   final RoomOperationsRepository roomOperationsRepository;

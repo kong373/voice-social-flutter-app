@@ -1,8 +1,10 @@
 package com.kong373.alipay_app_pay
 
 import android.app.Activity
+import android.content.pm.ApplicationInfo
 import android.os.Handler
 import android.os.Looper
+import com.alipay.sdk.app.EnvUtils
 import com.alipay.sdk.app.PayTask
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -110,7 +112,8 @@ class AlipayAppPayPlugin :
             return
         }
         val orderString = orderStringArgument(call)
-        if (orderString == null) {
+        val sandbox = sandboxArgument(call)
+        if (orderString == null || sandbox == null) {
             result.error("invalid_request", "服务端支付串无效", null)
             return
         }
@@ -124,6 +127,10 @@ class AlipayAppPayPlugin :
             val attachedActivity = activity
             if (attachedActivity == null || attachedActivity.isFinishing || attachedActivity.isDestroyed) {
                 result.error("activity_unavailable", "当前没有可用的支付页面", null)
+                return
+            }
+            if (sandbox && !isDebuggable(attachedActivity)) {
+                result.error("sandbox_not_debuggable", "沙箱支付仅允许在可调试构建中运行", null)
                 return
             }
             if (active) {
@@ -189,6 +196,9 @@ class AlipayAppPayPlugin :
                             sdkCompleted = false,
                         )
                     } else {
+                        if (sandbox) {
+                            EnvUtils.setEnv(EnvUtils.EnvEnum.SANDBOX)
+                        }
                         val raw = PayTask(currentActivity).payV2(orderString, true)
                         classify(raw["resultStatus"])
                     }
@@ -267,6 +277,19 @@ class AlipayAppPayPlugin :
         }
         return value
     }
+
+    /**
+     * The sandbox switch is a typed, explicit bridge argument. Android's
+     * MethodChannel codec can decode Dart booleans as [Boolean], but it must
+     * not silently accept string values such as "true" or "1".
+     */
+    private fun sandboxArgument(call: MethodCall): Boolean? {
+        val arguments = call.arguments as? Map<*, *> ?: return null
+        return arguments["sandbox"] as? Boolean
+    }
+
+    private fun isDebuggable(activity: Activity): Boolean =
+        activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
     private data class ClassifiedStatus(
         val reducedStatus: String,

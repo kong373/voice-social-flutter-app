@@ -42,6 +42,11 @@ def main() -> int:
     require(kotlin, 'private const val CHANNEL = "voice_social_app/alipay_app_pay"', "channel")
     require(kotlin, 'call.method != "pay"', "method allowlist")
     require(kotlin, 'arguments["orderStr"]', "server order string input")
+    require(kotlin, 'arguments["sandbox"]', "typed sandbox mode input")
+    require(kotlin, 'return arguments["sandbox"] as? Boolean', "strict sandbox boolean")
+    require(kotlin, "EnvUtils.setEnv(EnvUtils.EnvEnum.SANDBOX)", "sandbox SDK environment")
+    require(kotlin, "ApplicationInfo.FLAG_DEBUGGABLE", "sandbox debuggable guard")
+    require(kotlin, 'result.error("sandbox_not_debuggable"', "sandbox release fail-closed")
     require(kotlin, "PayTask(currentActivity).payV2(orderString, true)", "official SDK invocation")
     require(kotlin, "PAY_TIMEOUT_SECONDS = 120L", "bounded PayTask timeout")
     require(kotlin, "timeoutExecutor.schedule", "native timeout enforcement")
@@ -56,6 +61,9 @@ def main() -> int:
             raise AssertionError(f"client credential boundary: {forbidden}")
 
     require(environment, "ENABLE_ALIPAY_APP_PAY", "Dart feature flag")
+    require(environment, "useAlipaySandbox", "derived sandbox mode")
+    require(dart, "'sandbox': _sandbox", "typed sandbox bridge argument")
+    require(dart, "bool sandbox = false", "sandbox adapter option")
     if not PLUGIN_DART.is_file():
         raise AssertionError(f"plugin package must contain a Dart library: {PLUGIN_DART}")
     require(commerce_repository, "_routes.reconcileAlipayRechargeOrder", "explicit reconcile route")

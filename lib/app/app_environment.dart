@@ -179,6 +179,16 @@ class AppEnvironment {
   /// the Flutter client.
   final bool enableAlipayAppPay;
 
+  /// Whether an enabled live Alipay bridge must select the official sandbox
+  /// endpoint. Sandbox mode is intentionally derived from the deployment
+  /// environment rather than accepted as an independent credential-like
+  /// define: local/development live builds may opt in, while staging and
+  /// production can never accidentally switch the native SDK to sandbox.
+  bool get useAlipaySandbox =>
+      isLive &&
+      enableAlipayAppPay &&
+      deploymentEnvironment.allowsDevelopmentTools;
+
   /// Explicit opt-in for the live Tencent IM transport.  It is effective only
   /// when [isLive] is true; mock mode always uses the in-memory fake adapter.
   /// No SDK app id or signing material is accepted from dart-defines.
@@ -233,6 +243,7 @@ class AppEnvironment {
     'allowInsecureHttp': allowInsecureHttp,
     'enableAgoraRtc': enableAgoraRtc,
     'enableAlipayAppPay': enableAlipayAppPay,
+    'useAlipaySandbox': useAlipaySandbox,
     'enableTencentIm': enableTencentIm,
   };
 

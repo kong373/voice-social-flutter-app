@@ -113,11 +113,13 @@ class DisabledAlipayAppPayAdapter implements AlipayAppPayAdapter {
 class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
   MethodChannelAlipayAppPayAdapter({
     bool enabled = false,
+    bool sandbox = false,
     MethodChannel? channel,
     bool Function()? isAndroid,
     Duration nativeTimeout = const Duration(minutes: 2),
     Future<bool> Function()? consentChecker,
   }) : _enabled = enabled,
+       _sandbox = sandbox,
        _channel =
            channel ?? const MethodChannel('voice_social_app/alipay_app_pay'),
        _isAndroid = isAndroid ?? _defaultIsAndroid,
@@ -131,6 +133,7 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
   static const int _maximumOrderStringLength = 64 * 1024;
 
   final bool _enabled;
+  final bool _sandbox;
   final MethodChannel _channel;
   final bool Function() _isAndroid;
   final Duration _nativeTimeout;
@@ -142,6 +145,10 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
 
   @override
   bool get isAvailable => _enabled && _isAndroid();
+
+  /// Whether this adapter requests the official native sandbox environment.
+  /// This is a non-secret build/runtime classification only.
+  bool get sandboxMode => _sandbox;
 
   @override
   Future<AlipayAppPayResult> pay({
@@ -214,6 +221,7 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
       final Object? raw = await _channel
           .invokeMethod<Object?>('pay', <String, Object?>{
             'orderStr': orderString,
+            'sandbox': _sandbox,
           })
           .timeout(_nativeTimeout);
       return _parseNativeResult(raw);

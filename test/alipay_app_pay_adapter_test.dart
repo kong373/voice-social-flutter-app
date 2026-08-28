@@ -127,6 +127,7 @@ void main() {
               expect(call.method, 'pay');
               expect(call.arguments, <String, Object?>{
                 'orderStr': 'signed-order-${index + 1}',
+                'sandbox': false,
               });
               return <String, Object?>{'resultStatus': statuses[index]};
             });
@@ -278,6 +279,36 @@ void main() {
     response.complete(<String, Object?>{'status': 'processing'});
     expect((await first).outcome, AlipayAppPayOutcome.processing);
     expect(invocationCount, 1);
+  });
+
+  test('explicit sandbox mode is passed as a typed bridge boolean', () async {
+    Object? arguments;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall call) async {
+          arguments = call.arguments;
+          return <String, Object?>{'resultStatus': '4000'};
+        });
+
+    final MethodChannelAlipayAppPayAdapter adapter =
+        MethodChannelAlipayAppPayAdapter(
+          channel: channel,
+          enabled: true,
+          sandbox: true,
+          isAndroid: () => true,
+          consentChecker: () async => true,
+        );
+
+    final AlipayAppPayResult result = await adapter.pay(
+      orderNo: 'sandbox-order',
+      orderString: 'signed-sandbox-order',
+    );
+
+    expect(result.outcome, AlipayAppPayOutcome.failed);
+    expect(arguments, <String, Object?>{
+      'orderStr': 'signed-sandbox-order',
+      'sandbox': true,
+    });
+    expect(adapter.sandboxMode, isTrue);
   });
 
   test('same order with a different payload is rejected', () async {
