@@ -310,6 +310,26 @@ void main() {
       expect(aggregateSource, contains(paymentCounter));
     }
     expect(runnerSource, contains('result_before_acceptance'));
+    expect(runnerSource, contains('clear_test_app_data'));
+    expect(
+      runnerSource,
+      contains('adb -s "\$serial" shell pm clear "\$APP_PACKAGE"'),
+    );
+    expect(runnerSource, contains('[[ "\$clear_output" == \'Success\' ]]'));
+    expect(runnerSource, contains('app_data_clear_failed'));
+    expect(runnerSource, isNot(contains('pm clear com.alipay')));
+    final int selectedSerial = runnerSource.indexOf('serial="\$(select_device');
+    final int clearedSerial = runnerSource.indexOf(
+      'clear_test_app_data "\$serial"',
+      selectedSerial,
+    );
+    final int driveStart = runnerSource.indexOf(
+      'run_flutter_test "\$serial"',
+      clearedSerial,
+    );
+    expect(selectedSerial, greaterThanOrEqualTo(0));
+    expect(clearedSerial, greaterThan(selectedSerial));
+    expect(driveStart, greaterThan(clearedSerial));
     expect(runnerSource, contains('start_db_evidence_helper'));
     expect(
       runnerSource,
@@ -371,6 +391,56 @@ void main() {
       runnerSource,
       contains('[[ "\$result" == PASS || "\$result" == NO_PAY ]]'),
     );
+  });
+
+  test('cancel-only partials coordinate but remain a nonzero runner result', () {
+    expect(runnerSource, contains('cancel_partial_coordination_success'));
+    expect(
+      runnerSource,
+      contains(
+        '"\${PAYMENT_SCENARIO:-none}" == \'cancel\' &&\n'
+        '        "\$result_before_acceptance" == \'PASS\'',
+      ),
+    );
+    expect(runnerSource, contains("reason='payment_cancel_only_partial'"));
+    expect(
+      runnerSource,
+      contains("LAST_RESULT_REASON='payment_cancel_only_partial'"),
+    );
+    expect(
+      runnerSource,
+      contains("LAST_RESULT_REASON='cancel_only_avd_result_not_partial'"),
+    );
+    expect(runnerSource, contains("OVERALL_RESULT='PARTIAL'"));
+    expect(runnerSource, contains("PRESERVE_PARTIAL_RESULT='true'"));
+    expect(
+      runnerSource,
+      contains(
+        'if [[ "\$result_a" == \'PARTIAL\' && "\$result_b" == \'PARTIAL\' ]];',
+      ),
+    );
+    expect(
+      runnerSource,
+      contains(
+        'if [[ "\$incoming_status" -ne 0 && "\$PRESERVE_PARTIAL_RESULT" != \'true\' ]];',
+      ),
+    );
+    final int resultMapping = runnerSource.indexOf(
+      "reason='payment_cancel_only_partial'",
+    );
+    final int coordinationReturn = runnerSource.indexOf(
+      '[[ "\$cancel_partial_coordination_success" == \'true\' ]]',
+    );
+    final int overallBranch = runnerSource.indexOf(
+      '"\${PAYMENT_SCENARIO:-none}" == \'cancel\' ]];',
+      resultMapping,
+    );
+    final int finalExit = runnerSource.indexOf(
+      'exit "\$([[ "\$OVERALL_RESULT" == PASS || "\$OVERALL_RESULT" == NO_PAY ]]',
+    );
+    expect(coordinationReturn, greaterThan(resultMapping));
+    expect(overallBranch, greaterThan(coordinationReturn));
+    expect(finalExit, greaterThan(overallBranch));
   });
 
   test('runtime relay and logs redact credentials', () {

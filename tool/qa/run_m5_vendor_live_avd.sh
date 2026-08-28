@@ -89,6 +89,7 @@ OVERALL_RESULT='PASS'
 LAST_RESULT_REASON='not_started'
 PAYMENT_OPT_IN='false'
 PAYMENT_INVOKED='false'
+PRESERVE_PARTIAL_RESULT='false'
 declare -a DB_EVIDENCE_RAW_FILES=()
 
 fail() {
@@ -828,6 +829,12 @@ select_device() {
   printf '%s\n' "$serial"
 }
 
+clear_test_app_data() {
+  local serial="$1" clear_output=''
+  clear_output="$(adb -s "$serial" shell pm clear "$APP_PACKAGE" 2>&1 | tr -d '\r')" || return 1
+  [[ "$clear_output" == 'Success' ]]
+}
+
 configure_viewport() {
   local serial="$1" physical="$2" density="$3"
   adb -s "$serial" shell settings put system accelerometer_rotation 0 >/dev/null
@@ -1235,11 +1242,17 @@ run_one() {
   mkdir -p "$dir/logs" "$dir/screenshots" "$dir/apk"
   local serial='' result='FAIL' reason='not_started' db_status='UNAVAILABLE' apk_sha=''
   local tencent_calls=0 alipay_calls=0
+  local cancel_partial_coordination_success='false'
   serial="$(select_device "$avd" "$api" "$override" "$profile" "$dir")" || {
     write_db_fallback "$dir"
     write_result "$dir" "$avd" FAIL device_unavailable UNAVAILABLE unknown 0 0 0 0 0 ''
     return 1
   }
+  if ! clear_test_app_data "$serial"; then
+    write_db_fallback "$dir"
+    write_result "$dir" "$avd" FAIL app_data_clear_failed UNAVAILABLE unknown 0 0 0 0 0 ''
+    return 1
+  fi
   {
     printf 'avd=%s\napi_level=%s\nprofile=%s\nserial=%s\n' "$avd" "$api" "$profile" "$serial"
     printf 'run_id=%s\nfixture_id=%s\nbackend_mode=live\nbackend_base_url=%s\n' "$RUN_ID" "$FIXTURE_ID" "$BACKEND_BASE_URL"
@@ -1331,7 +1344,18 @@ run_one() {
       [[ "$result" == 'FAIL' || "$result" == 'PARTIAL' ]] || result='PASS'
       ;;
     NO_PAY|PARTIAL)
-      if [[ "$result_before_acceptance" == 'FAIL' ]]; then
+      if [[ "$acceptance_marker" == 'PARTIAL' &&
+        "$PAYMENT_OPT_IN" == 'true' &&
+        "${PAYMENT_SCENARIO:-none}" == 'cancel' &&
+        "$result_before_acceptance" == 'PASS' ]]; then
+        # A fully evidenced, explicitly canceled sandbox attempt is a
+        # truthful PARTIAL result, not a successful payment. It is allowed to
+        # return zero from run_one solely so the receiver can finish its
+        # coordination; the top-level runner still exits nonzero.
+        result='PARTIAL'
+        reason='payment_cancel_only_partial'
+        cancel_partial_coordination_success='true'
+      elif [[ "$result_before_acceptance" == 'FAIL' ]]; then
         result='FAIL'
       elif [[ "$result_before_acceptance" == 'PARTIAL' ]]; then
         result='PARTIAL'
@@ -1340,11 +1364,13 @@ run_one() {
       else
         result="$acceptance_marker"
       fi
-      if [[ "$result_before_acceptance" != 'FAIL' &&
-        "$result_before_acceptance" != 'PARTIAL' ]]; then
-        reason="acceptance_$(printf '%s' "$acceptance_marker" | tr '[:upper:]' '[:lower:]')"
-      else
-        reason="$reason_before_acceptance"
+      if [[ "$cancel_partial_coordination_success" != 'true' ]]; then
+        if [[ "$result_before_acceptance" != 'FAIL' &&
+          "$result_before_acceptance" != 'PARTIAL' ]]; then
+          reason="acceptance_$(printf '%s' "$acceptance_marker" | tr '[:upper:]' '[:lower:]')"
+        else
+          reason="$reason_before_acceptance"
+        fi
       fi
       ;;
     *)
@@ -1357,7 +1383,10 @@ run_one() {
     reason='acceptance_failed'
   fi
   write_result "$dir" "$avd" "$result" "$reason" "$db_status" "${apk_sha:-unknown}" "$screenshot_count" "$route_count" "$event_count" "$tencent_calls" "$alipay_calls" "$nonce_sha256" "$resilience"
-  [[ "$result" == PASS || "$result" == NO_PAY ]]
+  if [[ "$result" == PASS || "$result" == NO_PAY ]]; then
+    return 0
+  fi
+  [[ "$cancel_partial_coordination_success" == 'true' ]]
 }
 
 wait_for_sender_login_marker() {
@@ -1429,7 +1458,9 @@ PY
 cleanup() {
   local incoming_status=$?
   set +e
-  [[ "$incoming_status" -eq 0 ]] || OVERALL_RESULT='FAIL'
+  if [[ "$incoming_status" -ne 0 && "$PRESERVE_PARTIAL_RESULT" != 'true' ]]; then
+    OVERALL_RESULT='FAIL'
+  fi
   stop_runtime_relay_token_feeder
   if [[ -n "$RELAY_PID" ]]; then kill "$RELAY_PID" 2>/dev/null || true; wait "$RELAY_PID" 2>/dev/null || true; fi
   local started_serial
@@ -1562,6 +1593,18 @@ set -e
 if [[ "$status_a" -ne 0 || "$status_b" -ne 0 ]]; then
   OVERALL_RESULT='FAIL'
   LAST_RESULT_REASON='one_or_more_avds_failed'
+elif [[ "$PAYMENT_OPT_IN" == 'true' &&
+  "${PAYMENT_SCENARIO:-none}" == 'cancel' ]]; then
+  result_a="$(sed -n 's/^result=//p' "$ARTIFACT_ROOT/AVD-A/result.txt" 2>/dev/null | head -n 1)"
+  result_b="$(sed -n 's/^result=//p' "$ARTIFACT_ROOT/AVD-B/result.txt" 2>/dev/null | head -n 1)"
+  if [[ "$result_a" == 'PARTIAL' && "$result_b" == 'PARTIAL' ]]; then
+    OVERALL_RESULT='PARTIAL'
+    LAST_RESULT_REASON='payment_cancel_only_partial'
+    PRESERVE_PARTIAL_RESULT='true'
+  else
+    OVERALL_RESULT='FAIL'
+    LAST_RESULT_REASON='cancel_only_avd_result_not_partial'
+  fi
 elif [[ "$PAYMENT_OPT_IN" != 'true' ]]; then
   if [[ "$(sed -n 's/^result=//p' "$ARTIFACT_ROOT/AVD-A/result.txt" 2>/dev/null | head -n 1)" == 'NO_PAY' &&
     "$(sed -n 's/^result=//p' "$ARTIFACT_ROOT/AVD-B/result.txt" 2>/dev/null | head -n 1)" == 'NO_PAY' ]]; then
