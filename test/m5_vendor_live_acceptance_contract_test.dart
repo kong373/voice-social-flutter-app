@@ -441,6 +441,293 @@ void main() {
     expect(verdict, contains('conclusion=ANDROID_EMULATOR_FAIL'));
   });
 
+  test(
+    'aggregate accepts exact Flutter envelopes with padded Android PIDs',
+    () {
+      final Directory root = createM5TempRoot('m5-vendor-live-padded-pid-');
+      const String runId = 'm5-padded-pid-contract';
+      const String fixtureId = 'm5-fresh-padded-pid-fixture';
+      final String flutterSha = 'a' * 40;
+      final String backendSha = 'b' * 40;
+      final String backendDigest = 'c' * 64;
+      final String hostSha = 'd' * 64;
+      final String apkSha = 'e' * 64;
+      final String nonceSha256 = 'f' * 64;
+
+      void write(String relativePath, String contents) {
+        final File file = File('${root.path}/$relativePath');
+        file.parent.createSync(recursive: true);
+        file.writeAsStringSync(contents);
+      }
+
+      final String dbEvidence =
+          '''
+{
+  "status":"OK",
+  "evidenceBinding":{"runId":"$runId","avd":"AVD-A","fixtureId":"$fixtureId","startNonceSha256":"$nonceSha256","backendSha":"$backendSha","flutterSha":"$flutterSha","apkSha":"$apkSha","backendSourceDigest":"$backendDigest"},
+  "writeCounters":{"auth_sessions":1,"im_credentials":1,"c2c_messages":1,"avchatroom_sessions":1,"alipay_orders":0,"payment_provider_events":0,"wallet_transactions":0,"ledger_journals":0,"ledger_entries":0},
+  "vendorOutbox":{"tencentIm":{"state":"SENT","attempts":1},"alipay":{"state":"MISSING","attempts":0}},
+  "callbackEvents":{"tencentIm":{"verified":true,"eventCount":1},"alipay":{"verified":false,"eventCount":0}},
+  "outboxAttempts":{"tencentIm":1,"alipay":0},
+  "paymentSettlement":{"providerEventVerified":false,"providerEventProcessedCount":0,"succeededOrderCount":0,"walletTransactionCount":0,"walletCreditCount":0,"ledgerJournalCount":0,"ledgerEntryCount":0,"balancedJournalCount":0,"ledgerImbalanceCount":0},
+  "secrets":false,
+  "backendSourceDigest":"$backendDigest"
+}
+''';
+      final String noPayLog = '''
+M5_ACCEPTANCE::NO_PAY
+M5_PROVIDER_CALLS::1::0
+M5_VENDOR_EVENT::tencent-im::login_ready::sdk_callback
+M5_SECRETS_IN_CLIENT::0
+M5_ROUTE_STATUS::auth::GET::/m5::200::success
+M5_LANE::tencent.credential::PASS
+M5_LANE::tencent.login::PASS
+M5_LANE::tencent.c2c.http-authority::PASS
+M5_LANE::tencent.avchatroom.hint::PASS
+M5_LANE::tencent.avchatroom.leave::PASS
+M5_LANE::alipay.catalog::PASS
+M5_RESILIENCE::NOT_RUN
+M5_LANE::alipay.order::NOT_OPTED_IN
+M5_LANE::alipay.native.launch-cancel::NOT_OPTED_IN
+M5_LANE::alipay.native.launch-success::NOT_OPTED_IN
+M5_LANE::alipay.query-reconcile::NOT_RUN
+M5_LANE::alipay.settlement::NOT_RUN
+M5_LANE::alipay.reconcile-idempotency::NOT_RUN
+''';
+      final String result =
+          '''
+result=NO_PAY
+acceptance_status=NO_PAY
+run_id=$runId
+fixture_id=$fixtureId
+db_start_nonce_sha256=$nonceSha256
+tested_git_sha=$flutterSha
+backend_sha=$backendSha
+backend_source_digest=$backendDigest
+flutter_version=3.44.7
+dart_version=3.12.2
+flutter_revision=84fc5cbb223bc12f83d65b647ff8a56caf779ffd
+android_host_source_sha256=$hostSha
+apk_sha256=$apkSha
+apk_attestation_sha256=$apkSha
+resilience_verdict=NOT_RUN
+db_evidence=COLLECTED
+outbox_evidence=COLLECTED
+callback_evidence=COLLECTED
+secret_scan=PASS
+apk_secret_scan=PASS
+crash_anr_count=0
+screenshot_count=1
+http_route_marker_count=1
+tencent_provider_calls=1
+alipay_provider_calls=0
+''';
+
+      String flutterEnvelope(String log, {required String pid}) => log
+          .split('\n')
+          .map((String line) => line.isEmpty ? line : 'I/flutter ($pid): $line')
+          .join('\n');
+
+      for (final String avd in <String>['AVD-A', 'AVD-B']) {
+        write(
+          '$avd/logs/flutter-drive.log',
+          avd == 'AVD-A'
+              ? flutterEnvelope(noPayLog, pid: ' 1364')
+              : flutterEnvelope(noPayLog, pid: '12345'),
+        );
+        write(
+          '$avd/vendor-events.txt',
+          'M5_VENDOR_EVENT::tencent-im::login_ready::sdk_callback\n',
+        );
+        write('$avd/http-route-coverage.csv', 'marker,capability\n');
+        write('$avd/db-write-counters.txt', 'status=OK\n');
+        write('$avd/outbox-evidence.txt', 'tencentIm.state=SENT\n');
+        write('$avd/callback-evidence.txt', 'tencentIm.verified=true\n');
+        write(
+          '$avd/payment-settlement.txt',
+          'providerEventVerified=false\nproviderEventProcessedCount=0\n',
+        );
+        write('$avd/screenshots/m5.png', 'png');
+        write('$avd/result.txt', result);
+        write(
+          '$avd/db-evidence.json',
+          dbEvidence.replaceAll('"AVD-A"', '"$avd"'),
+        );
+      }
+
+      final ProcessResult process = Process.runSync(
+        '/bin/bash',
+        <String>[aggregate.path],
+        environment: <String, String>{
+          ...Platform.environment,
+          'QA_ARTIFACT_ROOT': root.path,
+          'QA_FLUTTER_SHA': flutterSha,
+          'QA_BACKEND_SHA': backendSha,
+          'QA_BACKEND_DIGEST': backendDigest,
+          'QA_M5_RUN_ID': runId,
+          'QA_M5_FIXTURE_ID': fixtureId,
+        },
+      );
+
+      expect(process.exitCode, 0, reason: process.stderr.toString());
+      expect(
+        File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+        contains('conclusion=ANDROID_EMULATOR_NO_PAY'),
+      );
+    },
+  );
+
+  test(
+    'aggregate still rejects prefixed marker lookalikes inside envelopes',
+    () {
+      final Directory root = createM5TempRoot(
+        'm5-vendor-live-prefixed-marker-',
+      );
+      const String runId = 'm5-prefixed-marker-contract';
+      const String fixtureId = 'm5-fresh-prefixed-marker-fixture';
+      final String flutterSha = 'a' * 40;
+      final String backendSha = 'b' * 40;
+      final String backendDigest = 'c' * 64;
+      final String hostSha = 'd' * 64;
+      final String apkSha = 'e' * 64;
+      final String nonceSha256 = 'f' * 64;
+
+      void write(String relativePath, String contents) {
+        final File file = File('${root.path}/$relativePath');
+        file.parent.createSync(recursive: true);
+        file.writeAsStringSync(contents);
+      }
+
+      final String dbEvidence =
+          '''
+{
+  "status":"OK",
+  "evidenceBinding":{"runId":"$runId","avd":"AVD-A","fixtureId":"$fixtureId","startNonceSha256":"$nonceSha256","backendSha":"$backendSha","flutterSha":"$flutterSha","apkSha":"$apkSha","backendSourceDigest":"$backendDigest"},
+  "writeCounters":{"auth_sessions":1,"im_credentials":1,"c2c_messages":1,"avchatroom_sessions":1,"alipay_orders":0,"payment_provider_events":0,"wallet_transactions":0,"ledger_journals":0,"ledger_entries":0},
+  "vendorOutbox":{"tencentIm":{"state":"SENT","attempts":1},"alipay":{"state":"MISSING","attempts":0}},
+  "callbackEvents":{"tencentIm":{"verified":true,"eventCount":1},"alipay":{"verified":false,"eventCount":0}},
+  "outboxAttempts":{"tencentIm":1,"alipay":0},
+  "paymentSettlement":{"providerEventVerified":false,"providerEventProcessedCount":0,"succeededOrderCount":0,"walletTransactionCount":0,"walletCreditCount":0,"ledgerJournalCount":0,"ledgerEntryCount":0,"balancedJournalCount":0,"ledgerImbalanceCount":0},
+  "secrets":false,
+  "backendSourceDigest":"$backendDigest"
+}
+''';
+      final String validNoPayLog = '''
+M5_ACCEPTANCE::NO_PAY
+M5_PROVIDER_CALLS::1::0
+M5_VENDOR_EVENT::tencent-im::login_ready::sdk_callback
+M5_SECRETS_IN_CLIENT::0
+M5_ROUTE_STATUS::auth::GET::/m5::200::success
+M5_LANE::tencent.credential::PASS
+M5_LANE::tencent.login::PASS
+M5_LANE::tencent.c2c.http-authority::PASS
+M5_LANE::tencent.avchatroom.hint::PASS
+M5_LANE::tencent.avchatroom.leave::PASS
+M5_LANE::alipay.catalog::PASS
+M5_RESILIENCE::NOT_RUN
+M5_LANE::alipay.order::NOT_OPTED_IN
+M5_LANE::alipay.native.launch-cancel::NOT_OPTED_IN
+M5_LANE::alipay.native.launch-success::NOT_OPTED_IN
+M5_LANE::alipay.query-reconcile::NOT_RUN
+M5_LANE::alipay.settlement::NOT_RUN
+M5_LANE::alipay.reconcile-idempotency::NOT_RUN
+''';
+      final String prefixedLookalikeLog = '''
+I/flutter ( 1364): untrusted M5_ACCEPTANCE::NO_PAY
+I/flutter ( 1364): M5_PROVIDER_CALLS::1::0
+I/flutter ( 1364): M5_VENDOR_EVENT::tencent-im::login_ready::sdk_callback
+I/flutter ( 1364): M5_SECRETS_IN_CLIENT::0
+I/flutter ( 1364): M5_ROUTE_STATUS::auth::GET::/m5::200::success
+I/flutter ( 1364): M5_LANE::tencent.credential::PASS
+I/flutter ( 1364): M5_LANE::tencent.login::PASS
+I/flutter ( 1364): M5_LANE::tencent.c2c.http-authority::PASS
+I/flutter ( 1364): M5_LANE::tencent.avchatroom.hint::PASS
+I/flutter ( 1364): M5_LANE::tencent.avchatroom.leave::PASS
+I/flutter ( 1364): M5_LANE::alipay.catalog::PASS
+I/flutter ( 1364): M5_RESILIENCE::NOT_RUN
+I/flutter ( 1364): M5_LANE::alipay.order::NOT_OPTED_IN
+I/flutter ( 1364): M5_LANE::alipay.native.launch-cancel::NOT_OPTED_IN
+I/flutter ( 1364): M5_LANE::alipay.native.launch-success::NOT_OPTED_IN
+I/flutter ( 1364): M5_LANE::alipay.query-reconcile::NOT_RUN
+I/flutter ( 1364): M5_LANE::alipay.settlement::NOT_RUN
+I/flutter ( 1364): M5_LANE::alipay.reconcile-idempotency::NOT_RUN
+''';
+      final String result =
+          '''
+result=NO_PAY
+acceptance_status=NO_PAY
+run_id=$runId
+fixture_id=$fixtureId
+db_start_nonce_sha256=$nonceSha256
+tested_git_sha=$flutterSha
+backend_sha=$backendSha
+backend_source_digest=$backendDigest
+flutter_version=3.44.7
+dart_version=3.12.2
+flutter_revision=84fc5cbb223bc12f83d65b647ff8a56caf779ffd
+android_host_source_sha256=$hostSha
+apk_sha256=$apkSha
+apk_attestation_sha256=$apkSha
+resilience_verdict=NOT_RUN
+db_evidence=COLLECTED
+outbox_evidence=COLLECTED
+callback_evidence=COLLECTED
+secret_scan=PASS
+apk_secret_scan=PASS
+crash_anr_count=0
+screenshot_count=1
+http_route_marker_count=1
+tencent_provider_calls=1
+alipay_provider_calls=0
+''';
+
+      for (final String avd in <String>['AVD-A', 'AVD-B']) {
+        write(
+          '$avd/logs/flutter-drive.log',
+          avd == 'AVD-A' ? prefixedLookalikeLog : validNoPayLog,
+        );
+        write(
+          '$avd/vendor-events.txt',
+          'M5_VENDOR_EVENT::tencent-im::login_ready::sdk_callback\n',
+        );
+        write('$avd/http-route-coverage.csv', 'marker,capability\n');
+        write('$avd/db-write-counters.txt', 'status=OK\n');
+        write('$avd/outbox-evidence.txt', 'tencentIm.state=SENT\n');
+        write('$avd/callback-evidence.txt', 'tencentIm.verified=true\n');
+        write(
+          '$avd/payment-settlement.txt',
+          'providerEventVerified=false\nproviderEventProcessedCount=0\n',
+        );
+        write('$avd/screenshots/m5.png', 'png');
+        write('$avd/result.txt', result);
+        write(
+          '$avd/db-evidence.json',
+          dbEvidence.replaceAll('"AVD-A"', '"$avd"'),
+        );
+      }
+
+      final ProcessResult process = Process.runSync(
+        '/bin/bash',
+        <String>[aggregate.path],
+        environment: <String, String>{
+          ...Platform.environment,
+          'QA_ARTIFACT_ROOT': root.path,
+          'QA_FLUTTER_SHA': flutterSha,
+          'QA_BACKEND_SHA': backendSha,
+          'QA_BACKEND_DIGEST': backendDigest,
+          'QA_M5_RUN_ID': runId,
+          'QA_M5_FIXTURE_ID': fixtureId,
+        },
+      );
+
+      expect(process.exitCode, isNonZero);
+      expect(
+        File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+        contains('conclusion=ANDROID_EMULATOR_FAIL'),
+      );
+    },
+  );
+
   test('aggregate validates resilience markers strictly before fallback', () {
     final Directory root = createM5TempRoot('m5-vendor-live-no-pay-');
     const String runId = 'm5-no-pay-contract';

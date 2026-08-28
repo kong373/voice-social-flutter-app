@@ -76,8 +76,8 @@ marker_log() {
         emit($0)
         next
       }
-      if ($0 ~ /^[VDIWEF]\/flutter \([0-9]+\): M5_(ACCEPTANCE|LANE|PROVIDER_CALLS|RESILIENCE|ROUTE_STATUS|SECRETS_IN_CLIENT|VENDOR_EVENT)::/) {
-        sub(/^[VDIWEF]\/flutter \([0-9]+\): /, "", $0)
+      if ($0 ~ /^[VDIWEF]\/flutter \([ \t\r\f\v]*[0-9]+\): M5_(ACCEPTANCE|LANE|PROVIDER_CALLS|RESILIENCE|ROUTE_STATUS|SECRETS_IN_CLIENT|VENDOR_EVENT)::/) {
+        sub(/^[VDIWEF]\/flutter \([ \t\r\f\v]*[0-9]+\): /, "", $0)
         emit($0)
       }
     }
