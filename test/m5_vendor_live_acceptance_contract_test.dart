@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../integration_test/m5_vendor_live_integration_test.dart';
+import 'package:voice_social_app/features/message/domain/message_models.dart';
+
 void main() {
   final File runner = File('tool/qa/run_m5_vendor_live_avd.sh').absolute;
   final File aggregate = File(
@@ -111,7 +114,7 @@ override_serial="$(select_device AVD-A 36 emulator-5554 ignored "$root")"
     expect(integrationSource, contains('_tencentProviderCalls <= 0'));
     expect(integrationSource, contains('providerCallback'));
     expect(integrationSource, isNot(contains('providerCall(')));
-    expect(integrationSource, contains('c2cHintObserved'));
+    expect(integrationSource, contains('c2cHintMessageIdsSnapshot'));
     expect(integrationSource, contains("config.role == 'receiver'"));
     expect(integrationSource, contains('_viewportForRole'));
     expect(integrationSource, contains('/m5/c2c/identity'));
@@ -131,7 +134,7 @@ override_serial="$(select_device AVD-A 36 emulator-5554 ignored "$root")"
     expect(integrationSource, contains('ConversationSummary.draft('));
     expect(integrationSource, contains('candidate.targetUserId == peerUserId'));
     expect(integrationSource, contains('/m5/c2c/receiver-ready'));
-    expect(integrationSource, contains('hasC2cHintForMessage'));
+    expect(integrationSource, contains('hintVerifier.accepts'));
     expect(integrationSource, contains('roomLifecycleRepository'));
     expect(integrationSource, contains('saveRoom'));
     expect(integrationSource, contains('RoomAccessMode.publicRoom'));
@@ -328,6 +331,76 @@ override_serial="$(select_device AVD-A 36 emulator-5554 ignored "$root")"
       integrationSource,
       isNot(contains(r"'m5-${avd.toLowerCase()}-c2c'")),
     );
+    expect(
+      integrationSource,
+      contains('const Duration _c2cHintWindow = Duration(seconds: 75);'),
+    );
+    expect(
+      integrationSource,
+      contains(
+        'const Duration _c2cHistoryRefreshInterval = Duration(seconds: 1);',
+      ),
+    );
+    expect(integrationSource, contains('M5C2cHintVerifier'));
+    expect(integrationSource, contains('c2cHintMessageIdsSnapshot'));
+    expect(
+      integrationSource,
+      contains('while (DateTime.now().isBefore(hintWindowDeadline))'),
+    );
+    expect(
+      integrationSource,
+      contains('hintVerifier.accepts(authoritativeHistory)'),
+    );
+    expect(
+      integrationSource,
+      contains('authoritativeHistory.length < history.length'),
+    );
+  });
+
+  test(
+    'C2C hint window ignores stale hint until the exact message arrives',
+    () {
+      final M5C2cHintVerifier verifier = M5C2cHintVerifier(
+        senderUserId: 10002,
+        expectedContent: 'M5 run current content',
+      );
+      final ChatMessage currentMessage = _m5Message(
+        id: 'message-current',
+        senderUserId: 10002,
+        content: 'M5 run current content',
+      );
+
+      verifier.observeTrustedHint('message-stale');
+      expect(verifier.accepts(<ChatMessage>[]), isFalse);
+      expect(
+        verifier.accepts(<ChatMessage>[currentMessage]),
+        isFalse,
+        reason: 'history alone must not pass without the exact trusted hint',
+      );
+
+      verifier.observeTrustedHint(currentMessage.id);
+      expect(verifier.accepts(<ChatMessage>[currentMessage]), isTrue);
+    },
+  );
+
+  test('C2C hint window remains blocked when only stale hints arrive', () {
+    final M5C2cHintVerifier verifier = M5C2cHintVerifier(
+      senderUserId: 10002,
+      expectedContent: 'M5 run current content',
+    );
+    verifier.observeTrustedHint('message-stale');
+
+    expect(
+      verifier.accepts(<ChatMessage>[
+        _m5Message(
+          id: 'message-current',
+          senderUserId: 10002,
+          content: 'M5 run current content',
+        ),
+      ]),
+      isFalse,
+    );
+    expect(verifier.hasObservedTrustedHints, isTrue);
   });
 
   test('default Alipay path has no financial side effect', () {
@@ -752,6 +825,7 @@ fi
   "backendSourceDigest":"$backendDigest"
 }
 ''';
+
       final String noPayLog = '''
 M5_ACCEPTANCE::NO_PAY
 M5_PROVIDER_CALLS::1::0
@@ -1494,3 +1568,18 @@ payment_invoked=${owner ? 'true' : 'false'}
     );
   });
 }
+
+ChatMessage _m5Message({
+  required String id,
+  required int senderUserId,
+  required String content,
+}) => ChatMessage(
+  id: id,
+  conversationId: 'conversation-m5',
+  senderUserId: senderUserId,
+  senderName: 'M5 sender',
+  content: content,
+  createdAt: DateTime.utc(2026, 8, 29),
+  isMine: false,
+  status: ChatMessageStatus.received,
+);

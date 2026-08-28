@@ -54,6 +54,8 @@ final RegExp _fixturePattern = RegExp(r'^m5-fresh-[A-Za-z0-9_.:-]{1,64}$');
 final RegExp _runIdPattern = RegExp(r'^[A-Za-z0-9_.:-]{1,80}$');
 const int _workerCycleWaitAttempts = 1200;
 const Duration _workerCycleWaitStep = Duration(milliseconds: 100);
+const Duration _c2cHintWindow = Duration(seconds: 75);
+const Duration _c2cHistoryRefreshInterval = Duration(seconds: 1);
 const String _expectedFlutterSha = String.fromEnvironment(
   'M5_EXPECTED_FLUTTER_SHA',
   defaultValue: '',
@@ -488,51 +490,59 @@ Future<void> _runC2cHttpAuthority(
       }
       // The receiver accepts only the provider-neutral custom-element event;
       // message content still comes from the first-party HTTP history route.
-      for (
-        int attempt = 0;
-        attempt < _workerCycleWaitAttempts && !evidence.c2cHintObserved;
-        attempt += 1
-      ) {
+      // A stale hint may arrive before the sender's exact hint. Keep the
+      // entire bounded window alive and refresh authority on new hints (and
+      // periodically after the first hint) instead of failing on that first
+      // refresh. Only the exact sender/content/message-id tuple can pass.
+      final M5C2cHintVerifier hintVerifier = M5C2cHintVerifier(
+        senderUserId: selected.targetUserId,
+        expectedContent: _c2cMessageContent,
+      );
+      final Set<String> refreshedHintMessageIds = <String>{};
+      List<ChatMessage> authoritativeHistory = history;
+      DateTime? nextHistoryRefreshAt;
+      final DateTime hintWindowDeadline = DateTime.now().add(_c2cHintWindow);
+      while (DateTime.now().isBefore(hintWindowDeadline)) {
+        final Set<String> trustedHintMessageIds = evidence
+            .c2cHintMessageIdsSnapshot();
+        final Set<String> newHintMessageIds = trustedHintMessageIds.difference(
+          refreshedHintMessageIds,
+        );
+        final DateTime now = DateTime.now();
+        final bool refreshDue =
+            newHintMessageIds.isNotEmpty ||
+            (hintVerifier.hasObservedTrustedHints &&
+                (nextHistoryRefreshAt == null ||
+                    !now.isBefore(nextHistoryRefreshAt)));
+        if (refreshDue) {
+          for (final String messageId in newHintMessageIds) {
+            hintVerifier.observeTrustedHint(messageId);
+          }
+          refreshedHintMessageIds.addAll(newHintMessageIds);
+          authoritativeHistory = await dependencies.messageRepository
+              .fetchPrivateMessages(selected);
+          evidence.route(
+            capability: 'tencent.c2c.hint.http-refresh',
+            method: 'GET',
+            route: routes.privateChatHistory,
+            status: 200,
+            state: 'authoritative',
+          );
+          if (authoritativeHistory.length < history.length) {
+            evidence.lane('tencent.c2c.http-authority', 'FAIL');
+            return;
+          }
+          if (hintVerifier.accepts(authoritativeHistory)) {
+            await _postRelaySignal(config, '/m5/c2c/receiver-pass');
+            evidence.invariant('tencent_c2c_receiver_sdk_hint_http_refresh');
+            evidence.lane('tencent.c2c.http-authority', 'PASS');
+            return;
+          }
+          nextHistoryRefreshAt = DateTime.now().add(_c2cHistoryRefreshInterval);
+        }
         await Future<void>.delayed(_workerCycleWaitStep);
       }
-      if (!evidence.c2cHintObserved) {
-        evidence.lane('tencent.c2c.http-authority', 'BLOCKED');
-        return;
-      }
-      final List<ChatMessage> refreshed = await dependencies.messageRepository
-          .fetchPrivateMessages(selected);
-      evidence.route(
-        capability: 'tencent.c2c.hint.http-refresh',
-        method: 'GET',
-        route: routes.privateChatHistory,
-        status: 200,
-        state: 'authoritative',
-      );
-      if (refreshed.length < history.length) {
-        evidence.lane('tencent.c2c.http-authority', 'FAIL');
-        return;
-      }
-      final bool senderMessageObserved = refreshed.any(
-        (ChatMessage item) =>
-            item.senderUserId == selected.targetUserId &&
-            item.content == _c2cMessageContent,
-      );
-      if (!senderMessageObserved) {
-        evidence.lane('tencent.c2c.http-authority', 'BLOCKED');
-        return;
-      }
-      final ChatMessage senderMessage = refreshed.firstWhere(
-        (ChatMessage item) =>
-            item.senderUserId == selected.targetUserId &&
-            item.content == _c2cMessageContent,
-      );
-      if (!evidence.hasC2cHintForMessage(senderMessage.id)) {
-        evidence.lane('tencent.c2c.http-authority', 'BLOCKED');
-        return;
-      }
-      await _postRelaySignal(config, '/m5/c2c/receiver-pass');
-      evidence.invariant('tencent_c2c_receiver_sdk_hint_http_refresh');
-      evidence.lane('tencent.c2c.http-authority', 'PASS');
+      evidence.lane('tencent.c2c.http-authority', 'BLOCKED');
       return;
     }
     bool receiverReady = false;
@@ -1716,6 +1726,39 @@ class _RuntimeConfig {
   final String role;
 }
 
+/// Keeps the C2C acceptance condition explicit while a receiver waits for a
+/// provider hint. A trusted hint is only evidence of the provider event; the
+/// first-party history remains the source of message content and sender
+/// identity. Stale or duplicate hints are retained for deduplication but can
+/// never satisfy the current-message check by themselves.
+class M5C2cHintVerifier {
+  M5C2cHintVerifier({
+    required this.senderUserId,
+    required this.expectedContent,
+  });
+
+  final int senderUserId;
+  final String expectedContent;
+  final Set<String> _trustedHintMessageIds = <String>{};
+
+  bool get hasObservedTrustedHints => _trustedHintMessageIds.isNotEmpty;
+
+  void observeTrustedHint(String messageId) {
+    if (messageId.isNotEmpty) {
+      _trustedHintMessageIds.add(messageId);
+    }
+  }
+
+  bool accepts(Iterable<ChatMessage> authoritativeHistory) {
+    return authoritativeHistory.any(
+      (ChatMessage message) =>
+          message.senderUserId == senderUserId &&
+          message.content == expectedContent &&
+          _trustedHintMessageIds.contains(message.id),
+    );
+  }
+}
+
 class _M5Evidence {
   _M5Evidence({required this.avd, required this.binding});
 
@@ -1733,7 +1776,6 @@ class _M5Evidence {
   bool _paymentSuccessFlowVerified = false;
   bool? _alipaySdkCompleted;
   String? _alipayResultStatus;
-  bool c2cHintObserved = false;
   final Set<String> _c2cHintMessageIds = <String>{};
   bool roomHintObserved = false;
   final Set<String> _roomHintMessageIds = <String>{};
@@ -1830,15 +1872,14 @@ class _M5Evidence {
   }
 
   void beginC2cHintAttempt() {
-    c2cHintObserved = false;
     _c2cHintMessageIds.clear();
     roomHintObserved = false;
     _roomHintMessageIds.clear();
     _roomHintWindow = false;
   }
 
-  bool hasC2cHintForMessage(String messageId) =>
-      _c2cHintMessageIds.contains(messageId);
+  Set<String> c2cHintMessageIdsSnapshot() =>
+      Set<String>.unmodifiable(_c2cHintMessageIds);
 
   void beginRoomHintAttempt() {
     roomHintObserved = false;
@@ -1880,7 +1921,6 @@ class _M5Evidence {
             // explicit prevents a C2C callback from satisfying AVChatRoom.
             return;
           }
-          c2cHintObserved = true;
           _c2cHintMessageIds.add(hint.messageId);
           providerCallback('tencent-im', 'refresh_hint');
         }
