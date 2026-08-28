@@ -27,7 +27,8 @@ from pathlib import Path
 import re
 import stat
 import subprocess
-from typing import Any, Mapping, Sequence
+import time
+from typing import Any, Callable, Mapping, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import (
@@ -42,6 +43,7 @@ from urllib.request import (
 SCHEMA_VERSION = 1
 FLOW_SCHEMA_VERSION = "m5-alipay-dev-finance-fixture-v1"
 EXPECTED_DEVELOPMENT_MYSQL_CONTAINER = "voice-social-m3-development-mysql-1"
+SMS_REAUTHENTICATION_WAIT_SECONDS = 61.0
 
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -847,6 +849,7 @@ def run_flow(
     *,
     api: FirstPartyApi | None = None,
     mysql: MysqlExecutor | None = None,
+    sleeper: Callable[[float], None] = time.sleep,
 ) -> dict[str, object]:
     """Create the three accounts, assign roles, relogin, and persist state."""
 
@@ -871,6 +874,12 @@ def run_flow(
     executor_registered = _register(client, config.executor_phone, "executor", config.run_id)
     _require_roles(customer_registered, reviewer_registered, executor_registered,
                    expected_customer=ROLE_USER, expected_reviewer=ROLE_USER, expected_executor=ROLE_USER)
+
+    # Registration consumes its challenge, while a fresh token is required
+    # after the role update because roles are JWT claims.  Wait out the
+    # authoritative 60-second phone cooldown before granting either Finance
+    # role, so an interruption during the wait leaves no elevated account.
+    sleeper(SMS_REAUTHENTICATION_WAIT_SECONDS)
     roles_assigned = False
     try:
         database.assign_roles(

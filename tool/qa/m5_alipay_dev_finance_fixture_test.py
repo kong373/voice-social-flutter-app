@@ -25,6 +25,7 @@ from m5_alipay_dev_finance_fixture import (
     ROLE_FINANCE_EXECUTOR,
     ROLE_USER,
     SCHEMA_VERSION,
+    SMS_REAUTHENTICATION_WAIT_SECONDS,
     STATE_KEYS,
     _docker_environment,
     _self_test,
@@ -214,8 +215,15 @@ class FinanceFixtureContractTest(unittest.TestCase):
             config = _config(root)
             api = FakeApi()
             mysql = FakeMysql(api)
-            result = run_flow(config, api=api, mysql=mysql)  # type: ignore[arg-type]
+            waits: list[float] = []
+            result = run_flow(
+                config,
+                api=api,
+                mysql=mysql,
+                sleeper=waits.append,
+            )  # type: ignore[arg-type]
             self.assertEqual(result["status"], "PASS")
+            self.assertEqual(waits, [SMS_REAUTHENTICATION_WAIT_SECONDS])
             self.assertEqual(result["roleAssignments"], 2)
             self.assertEqual(mysql.baseline_calls, 1)
             self.assertEqual(mysql.role_calls, [(101, 202, 303)])
@@ -264,10 +272,34 @@ class FinanceFixtureContractTest(unittest.TestCase):
             with self.assertRaisesRegex(
                 FinanceFixtureError, "INVARIANT_VIOLATION"
             ):
-                run_flow(config, api=api, mysql=mysql)  # type: ignore[arg-type]
+                run_flow(
+                    config,
+                    api=api,
+                    mysql=mysql,
+                    sleeper=lambda _seconds: None,
+                )  # type: ignore[arg-type]
             self.assertEqual(mysql.reset_calls, [(202, 303)])
             self.assertEqual(api._roles[202], ROLE_USER)
             self.assertEqual(api._roles[303], ROLE_USER)
+
+    def test_cooldown_wait_failure_never_assigns_finance_roles(self) -> None:
+        with _private_root() as root:
+            config = _config(root)
+            api = FakeApi()
+            mysql = FakeMysql(api)
+
+            def interrupted(_seconds: float) -> None:
+                raise FinanceFixtureError("API_UNAVAILABLE")
+
+            with self.assertRaisesRegex(FinanceFixtureError, "API_UNAVAILABLE"):
+                run_flow(
+                    config,
+                    api=api,
+                    mysql=mysql,
+                    sleeper=interrupted,
+                )  # type: ignore[arg-type]
+            self.assertEqual(mysql.role_calls, [])
+            self.assertEqual(mysql.reset_calls, [])
 
     def test_state_write_never_overwrites_a_target(self) -> None:
         with _private_root() as root:
