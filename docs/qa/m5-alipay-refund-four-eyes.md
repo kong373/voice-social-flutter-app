@@ -47,7 +47,9 @@ QA_M5_REFUND_BASE_URL=https://<first-party-backend-host>/
 QA_M5_FINANCE_FIXTURE_ID=m5-fresh-<dedicated-fixture>
 QA_M5_REFUND_PROTECTED_STATE_FILE=/secure/private/m5-finance/fixture.json
 QA_M5_REFUND_REASON=<1-256 printable characters>
+QA_M5_FINANCE_RUN_ID=m5-refund-<fresh-run>
 QA_M5_REFUND_RUN_ID=m5-refund-<fresh-run>
+QA_M5_RUN_ID=m5-refund-<fresh-run>
 QA_M5_REFUND_MYSQL_CONTAINER=<serving MySQL container>
 QA_M5_REFUND_LEDGER_STATE_DIR=/secure/private/m5-refund-state
 ```
@@ -62,6 +64,14 @@ but if supplied it must also be a new private directory. The optional
 host-loopback names `127.0.0.1`, `localhost`, or `::1`; HTTPS is the default.
 The Android-only `10.0.2.2` gateway is deliberately rejected because this
 orchestrator runs on the Mac host and carries bearer credentials.
+
+`QA_M5_FINANCE_RUN_ID`, `QA_M5_REFUND_RUN_ID`, and the standard runner's
+`QA_M5_RUN_ID` are three names for one canonical run identity in this flow.
+They must all be present with the exact same `m5-refund-<fresh-run>` value;
+the fixture writes it into protected state and both handoff and refund reject
+any mismatch. The fixture's protected customer phone must likewise be passed
+unchanged as the standard runner's `QA_LIVE_PHONE`; do not generate or select
+a different payment user after the fixture is created.
 
 The Docker helper reads MySQL credentials only from the serving container's
 `MYSQL_DATABASE` and one of `MYSQL_PASSWORD`, `MYSQL_APP_PASSWORD`, or
@@ -82,6 +92,7 @@ all protected values in the operator's secret relay.
 ```bash
 umask 077
 QA_M5_FINANCE_FIXTURE_ID=m5-fresh-<dedicated-fixture> \
+QA_M5_FINANCE_RUN_ID=m5-refund-<fresh-run> \
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tool/qa \
   python3 tool/qa/m5_alipay_dev_finance_fixture.py --run
 ```
@@ -97,6 +108,7 @@ env \
   QA_M5_PAYMENT_CONFIRMATION=I_UNDERSTAND_SANDBOX_PAYMENT \
   QA_M5_ALIPAY_SCENARIO=success \
   QA_M5_SUCCESS_CONFIRMATION=I_UNDERSTAND_SANDBOX_SUCCESS_PAYMENT \
+  QA_M5_RUN_ID=m5-refund-<fresh-run> \
   tool/qa/run_m5_vendor_live_avd.sh
 ```
 
@@ -109,6 +121,7 @@ there is no direct order or bearer input path.
 ```bash
 umask 077
 mkdir -m 700 /secure/private/m5-refund-state
+QA_M5_REFUND_RUN_ID=m5-refund-<fresh-run> \
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tool/qa \
   python3 tool/qa/m5_alipay_refund_four_eyes.py --run
 ```
