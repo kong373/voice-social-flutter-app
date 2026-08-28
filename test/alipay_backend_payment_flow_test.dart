@@ -34,7 +34,9 @@ void main() {
         resultStatus: '6001',
         outcome: 'userCanceled',
         reason: 'userCanceled',
+        bridgeOutcome: 'pay_task_returned',
       );
+      expect(trusted.nativeBridgeOutcome, 'pay_task_returned');
       expect(
         trusted.nativeCancellationEvidence,
         RechargeNativeCancellationEvidence.trustedUserCanceled6001,
@@ -48,6 +50,7 @@ void main() {
         message: '仍在确认',
       );
       expect(stateCopy.hasTrustedNativeCancellationEvidence, isTrue);
+      expect(stateCopy.nativeBridgeOutcome, 'pay_task_returned');
       final RechargeOrder nativeFieldsCopy = trusted.copyWith(
         nativeSdkCompleted: false,
         nativeResultStatus: '6001',
@@ -57,6 +60,33 @@ void main() {
         RechargeNativeCancellationEvidence.none,
       );
       expect(nativeFieldsCopy.hasTrustedNativeCancellationEvidence, isFalse);
+
+      final RechargeOrder bridgeOutcomeCopy = trusted.copyWith(
+        nativeBridgeOutcome: 'native_exception',
+      );
+      expect(
+        bridgeOutcomeCopy.nativeCancellationEvidence,
+        RechargeNativeCancellationEvidence.none,
+      );
+      expect(bridgeOutcomeCopy.hasTrustedNativeCancellationEvidence, isFalse);
+
+      // Even a direct object carrying stale normalized evidence must re-check
+      // provenance at the getter boundary before it can enter a close-capable
+      // cancellation path.
+      final RechargeOrder forged = RechargeOrder(
+        orderNo: created.orderNo,
+        account: created.account,
+        product: created.product,
+        channel: created.channel,
+        state: created.state,
+        createdAt: created.createdAt,
+        nativeSdkCompleted: false,
+        nativeResultStatus: '6001',
+        nativeBridgeOutcome: 'native_unavailable',
+        nativeCancellationEvidence:
+            RechargeNativeCancellationEvidence.trustedUserCanceled6001,
+      );
+      expect(forged.hasTrustedNativeCancellationEvidence, isFalse);
 
       final RechargeOrder contradictory = created.withNativeBridgeResult(
         sdkCompleted: false,
@@ -69,6 +99,27 @@ void main() {
         RechargeNativeCancellationEvidence.none,
       );
       expect(contradictory.hasTrustedNativeCancellationEvidence, isFalse);
+
+      for (final String marker in <String>[
+        'native_not_invoked',
+        'native_exception',
+        'native_unavailable',
+        'native_watchdog_timeout',
+        'dart_watchdog_timeout',
+      ]) {
+        final RechargeOrder untrusted = created.withNativeBridgeResult(
+          sdkCompleted: false,
+          resultStatus: '6001',
+          outcome: 'userCanceled',
+          reason: 'userCanceled',
+          bridgeOutcome: marker,
+        );
+        expect(
+          untrusted.nativeCancellationEvidence,
+          RechargeNativeCancellationEvidence.none,
+        );
+        expect(untrusted.hasTrustedNativeCancellationEvidence, isFalse);
+      }
     },
   );
 
@@ -226,6 +277,7 @@ void main() {
           reason: AlipayAppPayReason.userCanceled,
           sdkCompleted: false,
           resultStatus: '6001',
+          bridgeOutcome: AlipayAppPayBridgeOutcome.payTaskReturned,
         ),
         const AlipayAppPayResult(
           outcome: AlipayAppPayOutcome.processing,
@@ -269,6 +321,21 @@ void main() {
           reason: AlipayAppPayReason.userCanceled,
           sdkCompleted: true,
           resultStatus: '6001',
+        ),
+        ...<AlipayAppPayBridgeOutcome>[
+          AlipayAppPayBridgeOutcome.nativeNotInvoked,
+          AlipayAppPayBridgeOutcome.nativeException,
+          AlipayAppPayBridgeOutcome.nativeUnavailable,
+          AlipayAppPayBridgeOutcome.nativeWatchdogTimeout,
+          AlipayAppPayBridgeOutcome.dartWatchdogTimeout,
+        ].map(
+          (AlipayAppPayBridgeOutcome bridgeOutcome) => AlipayAppPayResult(
+            outcome: AlipayAppPayOutcome.userCanceled,
+            reason: AlipayAppPayReason.userCanceled,
+            sdkCompleted: false,
+            resultStatus: '6001',
+            bridgeOutcome: bridgeOutcome,
+          ),
         ),
       ];
 
@@ -315,7 +382,10 @@ void main() {
               nativeResult.sdkCompleted == false &&
               nativeResult.outcome == AlipayAppPayOutcome.userCanceled &&
               nativeResult.reason == AlipayAppPayReason.userCanceled &&
-              nativeResult.resultStatus == '6001';
+              nativeResult.resultStatus == '6001' &&
+              (nativeResult.bridgeOutcome == null ||
+                  nativeResult.bridgeOutcome ==
+                      AlipayAppPayBridgeOutcome.payTaskReturned);
           expect(
             harness.requests[2].path,
             trustedCancellation

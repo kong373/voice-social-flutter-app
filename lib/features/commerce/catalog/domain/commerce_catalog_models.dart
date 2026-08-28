@@ -26,6 +26,16 @@ enum RechargeOrderState {
 /// trust from lossy status fields alone.
 enum RechargeNativeCancellationEvidence { none, trustedUserCanceled6001 }
 
+/// The only new-bridge provenance that can support the exact local
+/// `userCanceled`/`6001` cancellation fact. A missing marker is retained as a
+/// compatibility path for older bridges that did not emit provenance;
+/// every other marker must fail closed.
+const String rechargePayTaskReturnedBridgeOutcome = 'pay_task_returned';
+
+bool isTrustedRechargeNativeCancellationBridgeOutcome(String? bridgeOutcome) =>
+    bridgeOutcome == null ||
+    bridgeOutcome == rechargePayTaskReturnedBridgeOutcome;
+
 extension RechargeOrderStateLabel on RechargeOrderState {
   String get label => switch (this) {
     RechargeOrderState.created => '订单已创建',
@@ -79,6 +89,7 @@ class RechargeOrder {
     this.paymentOrderString,
     this.nativeSdkCompleted,
     this.nativeResultStatus,
+    this.nativeBridgeOutcome,
     this.nativeCancellationEvidence = RechargeNativeCancellationEvidence.none,
   });
 
@@ -102,10 +113,14 @@ class RechargeOrder {
   final bool? nativeSdkCompleted;
   final String? nativeResultStatus;
 
+  /// Fixed-vocabulary provenance for the native bridge result. This is
+  /// diagnostic evidence only and never changes payment authority.
+  final String? nativeBridgeOutcome;
+
   /// A normalized, non-sensitive trust fact for the exact local
   /// `userCanceled`/`6001` PayTask result. It is never inferred from the
-  /// status fields and is cleared when those fields are changed through
-  /// [copyWith].
+  /// status fields or an untrusted bridge provenance marker, and is cleared
+  /// when those fields are changed through [copyWith].
   final RechargeNativeCancellationEvidence nativeCancellationEvidence;
 
   /// Short aliases used by the provider-live acceptance layer. They remain
@@ -123,22 +138,26 @@ class RechargeOrder {
       nativeCancellationEvidence ==
           RechargeNativeCancellationEvidence.trustedUserCanceled6001 &&
       nativeSdkCompleted == false &&
-      nativeResultStatus == '6001';
+      nativeResultStatus == '6001' &&
+      isTrustedRechargeNativeCancellationBridgeOutcome(nativeBridgeOutcome);
 
   /// Copies one complete local bridge result while deriving the normalized
   /// cancellation evidence from all of its classification fields. A
-  /// contradictory outcome/reason can therefore never become trusted.
+  /// contradictory outcome/reason/provenance can therefore never become
+  /// trusted.
   RechargeOrder withNativeBridgeResult({
     required bool sdkCompleted,
     required String? resultStatus,
     required String outcome,
     required String reason,
+    String? bridgeOutcome,
   }) {
     final bool trustedCancellation =
         !sdkCompleted &&
         resultStatus == '6001' &&
         outcome == 'userCanceled' &&
-        reason == 'userCanceled';
+        reason == 'userCanceled' &&
+        isTrustedRechargeNativeCancellationBridgeOutcome(bridgeOutcome);
     return RechargeOrder(
       orderNo: orderNo,
       account: account,
@@ -150,6 +169,7 @@ class RechargeOrder {
       paymentOrderString: paymentOrderString,
       nativeSdkCompleted: sdkCompleted,
       nativeResultStatus: resultStatus,
+      nativeBridgeOutcome: bridgeOutcome,
       nativeCancellationEvidence: trustedCancellation
           ? RechargeNativeCancellationEvidence.trustedUserCanceled6001
           : RechargeNativeCancellationEvidence.none,
@@ -162,9 +182,12 @@ class RechargeOrder {
     String? paymentOrderString,
     bool? nativeSdkCompleted,
     String? nativeResultStatus,
+    String? nativeBridgeOutcome,
   }) {
     final bool nativeEvidenceFieldsChanged =
-        nativeSdkCompleted != null || nativeResultStatus != null;
+        nativeSdkCompleted != null ||
+        nativeResultStatus != null ||
+        nativeBridgeOutcome != null;
     return RechargeOrder(
       orderNo: orderNo,
       account: account,
@@ -176,6 +199,7 @@ class RechargeOrder {
       paymentOrderString: paymentOrderString ?? this.paymentOrderString,
       nativeSdkCompleted: nativeSdkCompleted ?? this.nativeSdkCompleted,
       nativeResultStatus: nativeResultStatus ?? this.nativeResultStatus,
+      nativeBridgeOutcome: nativeBridgeOutcome ?? this.nativeBridgeOutcome,
       nativeCancellationEvidence: nativeEvidenceFieldsChanged
           ? RechargeNativeCancellationEvidence.none
           : nativeCancellationEvidence,

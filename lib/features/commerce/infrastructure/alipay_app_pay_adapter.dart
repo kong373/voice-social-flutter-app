@@ -38,12 +38,45 @@ enum AlipayAppPayReason {
   nativeUnavailable,
 }
 
+/// Bounded, non-sensitive provenance for a native bridge result.
+///
+/// This is diagnostic evidence only. It never authorizes a payment, a
+/// cancellation, or a wallet mutation. In particular, a native watchdog
+/// result is intentionally distinct from a [PayTask] return with no usable
+/// result status.
+enum AlipayAppPayBridgeOutcome {
+  payTaskReturned('pay_task_returned'),
+  nativeWatchdogTimeout('native_watchdog_timeout'),
+  nativeNotInvoked('native_not_invoked'),
+  nativeException('native_exception'),
+  nativeUnavailable('native_unavailable'),
+  dartWatchdogTimeout('dart_watchdog_timeout');
+
+  const AlipayAppPayBridgeOutcome(this.wireName);
+
+  final String wireName;
+
+  static AlipayAppPayBridgeOutcome? fromWire(Object? raw) {
+    if (raw is! String) {
+      return null;
+    }
+    for (final AlipayAppPayBridgeOutcome outcome
+        in AlipayAppPayBridgeOutcome.values) {
+      if (outcome.wireName == raw) {
+        return outcome;
+      }
+    }
+    return null;
+  }
+}
+
 class AlipayAppPayResult {
   const AlipayAppPayResult({
     required this.outcome,
     required this.reason,
     bool? sdkCompleted,
     this.resultStatus,
+    this.bridgeOutcome,
   }) : sdkCompleted =
            sdkCompleted ?? outcome == AlipayAppPayOutcome.sdkCompleted;
 
@@ -58,6 +91,10 @@ class AlipayAppPayResult {
   /// is retained so an acceptance layer can distinguish a real `9000` from a
   /// cancellation, processing result, timeout, or an old bridge's label.
   final String? resultStatus;
+
+  /// Safe provenance emitted by the native bridge. This value is intentionally
+  /// a fixed vocabulary and contains no vendor response text or payment data.
+  final AlipayAppPayBridgeOutcome? bridgeOutcome;
 
   /// Only the native success code is eligible to be paired with an
   /// authoritative backend success. This helper intentionally does not read
@@ -232,6 +269,7 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
       return const AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.processing,
         reason: AlipayAppPayReason.timeout,
+        bridgeOutcome: AlipayAppPayBridgeOutcome.dartWatchdogTimeout,
       );
     } on MissingPluginException {
       return const AlipayAppPayResult(
@@ -252,6 +290,16 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
 
   static AlipayAppPayResult _parseNativeResult(Object? raw) {
     if (raw is! Map<Object?, Object?>) {
+      return const AlipayAppPayResult(
+        outcome: AlipayAppPayOutcome.failed,
+        reason: AlipayAppPayReason.invalidResponse,
+      );
+    }
+    final bool hasBridgeOutcome = raw.containsKey('bridgeOutcome');
+    final AlipayAppPayBridgeOutcome? bridgeOutcome = hasBridgeOutcome
+        ? AlipayAppPayBridgeOutcome.fromWire(raw['bridgeOutcome'])
+        : null;
+    if (hasBridgeOutcome && bridgeOutcome == null) {
       return const AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.failed,
         reason: AlipayAppPayReason.invalidResponse,
@@ -290,6 +338,7 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
         reason: AlipayAppPayReason.invalidResponse,
         sdkCompleted: false,
         resultStatus: resultStatus,
+        bridgeOutcome: bridgeOutcome,
       );
     }
     final String? reducedStatus = _safeResultStatus(
@@ -302,9 +351,52 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
         reason: AlipayAppPayReason.invalidResponse,
         sdkCompleted: false,
         resultStatus: resultStatus,
+        bridgeOutcome: bridgeOutcome,
       );
     }
     final String normalizedStatus = classificationStatus.toLowerCase();
+    // A marker emitted by the current bridge must match that bridge's exact
+    // fixed payload shape. This prevents any impossible provenance/status
+    // combination (for example native_exception + 9000) from being treated as
+    // SDK evidence. A missing marker remains the bounded legacy compatibility
+    // path for bridge builds that predate provenance reporting.
+    final bool bridgePayloadCompatible = switch (bridgeOutcome) {
+      null => true,
+      AlipayAppPayBridgeOutcome.payTaskReturned =>
+        hasRawResultStatus && rawSdkCompleted is bool,
+      AlipayAppPayBridgeOutcome.nativeWatchdogTimeout =>
+        hasRawResultStatus &&
+            rawSdkCompleted == false &&
+            resultStatus == null &&
+            normalizedStatus == 'processing',
+      AlipayAppPayBridgeOutcome.nativeNotInvoked =>
+        hasRawResultStatus &&
+            rawSdkCompleted == false &&
+            resultStatus == null &&
+            normalizedStatus == 'unavailable',
+      AlipayAppPayBridgeOutcome.nativeException =>
+        hasRawResultStatus &&
+            rawSdkCompleted == false &&
+            resultStatus == null &&
+            normalizedStatus == 'failed',
+      AlipayAppPayBridgeOutcome.nativeUnavailable =>
+        hasRawResultStatus &&
+            rawSdkCompleted == false &&
+            resultStatus == null &&
+            normalizedStatus == 'unavailable',
+      // This marker is produced by the Dart timeout branch directly and is
+      // never a valid value returned over the native MethodChannel.
+      AlipayAppPayBridgeOutcome.dartWatchdogTimeout => false,
+    };
+    if (!bridgePayloadCompatible) {
+      return AlipayAppPayResult(
+        outcome: AlipayAppPayOutcome.failed,
+        reason: AlipayAppPayReason.invalidResponse,
+        sdkCompleted: false,
+        resultStatus: resultStatus,
+        bridgeOutcome: bridgeOutcome,
+      );
+    }
     final bool statusImpliesSdkCompletion =
         normalizedStatus == '9000' || normalizedStatus == 'success';
     if (rawSdkCompleted != null &&
@@ -314,6 +406,7 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
         reason: AlipayAppPayReason.invalidResponse,
         sdkCompleted: false,
         resultStatus: resultStatus,
+        bridgeOutcome: bridgeOutcome,
       );
     }
     final bool sdkCompleted =
@@ -324,18 +417,21 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
         reason: AlipayAppPayReason.processing,
         sdkCompleted: sdkCompleted,
         resultStatus: resultStatus,
+        bridgeOutcome: bridgeOutcome,
       ),
       'processing' || '8000' || '6004' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.processing,
         reason: AlipayAppPayReason.processing,
         sdkCompleted: sdkCompleted,
         resultStatus: resultStatus,
+        bridgeOutcome: bridgeOutcome,
       ),
       'payment_in_progress' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.processing,
         reason: AlipayAppPayReason.processing,
         sdkCompleted: sdkCompleted,
         resultStatus: resultStatus,
+        bridgeOutcome: bridgeOutcome,
       ),
       'user_canceled' ||
       'canceled' ||
@@ -345,36 +441,42 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
         reason: AlipayAppPayReason.userCanceled,
         sdkCompleted: sdkCompleted,
         resultStatus: resultStatus,
+        bridgeOutcome: bridgeOutcome,
       ),
       'network_error' || 'network' || '6002' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.networkError,
         reason: AlipayAppPayReason.network,
         sdkCompleted: sdkCompleted,
         resultStatus: resultStatus,
+        bridgeOutcome: bridgeOutcome,
       ),
       'failed' || '4000' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.failed,
         reason: AlipayAppPayReason.vendorFailed,
         sdkCompleted: sdkCompleted,
         resultStatus: resultStatus,
+        bridgeOutcome: bridgeOutcome,
       ),
       'unavailable' || 'activity_unavailable' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.unavailable,
         reason: AlipayAppPayReason.nativeUnavailable,
         sdkCompleted: sdkCompleted,
         resultStatus: resultStatus,
+        bridgeOutcome: bridgeOutcome,
       ),
       'timeout' => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.processing,
         reason: AlipayAppPayReason.timeout,
         sdkCompleted: sdkCompleted,
         resultStatus: resultStatus,
+        bridgeOutcome: bridgeOutcome,
       ),
       _ => AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.failed,
         reason: AlipayAppPayReason.invalidResponse,
         sdkCompleted: false,
         resultStatus: resultStatus,
+        bridgeOutcome: bridgeOutcome,
       ),
     };
   }

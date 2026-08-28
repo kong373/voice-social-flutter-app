@@ -14,9 +14,18 @@ void main() {
   final File integration = File(
     'integration_test/m5_vendor_live_integration_test.dart',
   ).absolute;
+  final File alipayBridge = File(
+    'lib/features/commerce/infrastructure/alipay_app_pay_adapter.dart',
+  ).absolute;
+  final File alipayAndroidBridge = File(
+    'packages/alipay_app_pay/android/src/main/kotlin/com/kong373/alipay_app_pay/AlipayAppPayPlugin.kt',
+  ).absolute;
   final String runnerSource = runner.readAsStringSync();
   final String aggregateSource = aggregate.readAsStringSync();
   final String integrationSource = integration.readAsStringSync();
+  final String alipayBridgeSource = alipayBridge.readAsStringSync();
+  final String alipayAndroidBridgeSource = alipayAndroidBridge
+      .readAsStringSync();
 
   Directory createM5TempRoot(String prefix) {
     // The runner intentionally rejects symlinked artifact ancestors. Resolve
@@ -576,6 +585,51 @@ override_serial="$(select_device AVD-A 36 emulator-5554 ignored "$root")"
       contains('[[ "\$result" == PASS || "\$result" == NO_PAY ]]'),
     );
   });
+
+  test(
+    'Alipay bridge keeps native timeout provenance bounded and redacted',
+    () {
+      for (final String marker in <String>[
+        'pay_task_returned',
+        'native_watchdog_timeout',
+        'native_not_invoked',
+        'native_exception',
+        'native_unavailable',
+        'dart_watchdog_timeout',
+      ]) {
+        expect(alipayBridgeSource, contains(marker));
+      }
+      for (final String marker in <String>[
+        'pay_task_returned',
+        'native_watchdog_timeout',
+        'native_not_invoked',
+        'native_exception',
+        'native_unavailable',
+      ]) {
+        expect(alipayAndroidBridgeSource, contains(marker));
+      }
+      expect(alipayAndroidBridgeSource, contains('"bridgeOutcome"'));
+      expect(alipayAndroidBridgeSource, contains('nativeWatchdogTimeout()'));
+      expect(alipayAndroidBridgeSource, contains('payTaskReturned(raw'));
+      expect(alipayBridgeSource, contains("'bridgeOutcome'"));
+      expect(integrationSource, contains('M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::'));
+      expect(
+        integrationSource,
+        contains("'bridgeOutcome': _alipayBridgeOutcome"),
+      );
+      expect(
+        integrationSource,
+        contains(
+          'const Duration _m5AlipayNativeTimeout = Duration(seconds: 150);',
+        ),
+      );
+      expect(
+        integrationSource,
+        contains('alipayNativeTimeout: _m5AlipayNativeTimeout'),
+      );
+      expect(alipayAndroidBridgeSource, isNot(contains('Log.d')));
+    },
+  );
 
   test('cancel-only partials coordinate but remain a nonzero runner result', () {
     expect(runnerSource, contains('cancel_partial_coordination_success'));

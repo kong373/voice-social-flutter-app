@@ -56,6 +56,10 @@ const int _workerCycleWaitAttempts = 1200;
 const Duration _workerCycleWaitStep = Duration(milliseconds: 100);
 const Duration _c2cHintWindow = Duration(seconds: 75);
 const Duration _c2cHistoryRefreshInterval = Duration(seconds: 1);
+// Keep the Dart-side bound longer than the Android bridge's finite watchdog
+// (120s), so a native watchdog result reaches the evidence stream with its
+// explicit marker instead of racing a second, indistinguishable Dart timeout.
+const Duration _m5AlipayNativeTimeout = Duration(seconds: 150);
 const String _expectedFlutterSha = String.fromEnvironment(
   'M5_EXPECTED_FLUTTER_SHA',
   defaultValue: '',
@@ -165,6 +169,7 @@ void main() {
           if (paymentOptedIn || !_allowExternalPayment) {
             dependencies = AppDependencies.forTestEnvironment(
               environment: environment,
+              alipayNativeTimeout: _m5AlipayNativeTimeout,
             );
             await _pumpGate(tester, dependencies);
             await _authenticate(tester, dependencies, config, evidence);
@@ -1776,6 +1781,7 @@ class _M5Evidence {
   bool _paymentSuccessFlowVerified = false;
   bool? _alipaySdkCompleted;
   String? _alipayResultStatus;
+  String? _alipayBridgeOutcome;
   final Set<String> _c2cHintMessageIds = <String>{};
   bool roomHintObserved = false;
   final Set<String> _roomHintMessageIds = <String>{};
@@ -1941,11 +1947,14 @@ class _M5Evidence {
   void paymentNativeResult(RechargeOrder order) {
     _alipaySdkCompleted = order.sdkCompleted;
     _alipayResultStatus = order.resultStatus;
+    _alipayBridgeOutcome = order.nativeBridgeOutcome;
     debugPrint(
       'M5_ALIPAY_NATIVE_RESULT::sdkCompleted='
       '${order.sdkCompleted == true ? 1 : 0}::resultStatus='
       '${order.resultStatus ?? 'none'}',
     );
+    final String bridgeOutcome = order.nativeBridgeOutcome ?? 'none';
+    debugPrint('M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::$bridgeOutcome');
   }
 
   void lane(String name, String state) {
@@ -2042,6 +2051,7 @@ class _M5Evidence {
       'alipayNativeResult': <String, Object?>{
         'sdkCompleted': _alipaySdkCompleted,
         'resultStatus': _alipayResultStatus,
+        'bridgeOutcome': _alipayBridgeOutcome,
       },
       'reconcileRepeat': successPayment && _paymentSuccessFlowVerified
           ? 'PASS'

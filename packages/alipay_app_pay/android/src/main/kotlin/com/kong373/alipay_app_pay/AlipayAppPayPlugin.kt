@@ -34,7 +34,6 @@ class AlipayAppPayPlugin :
     companion object {
         private const val CHANNEL = "voice_social_app/alipay_app_pay"
         private const val MAX_ORDER_STRING_LENGTH = 64 * 1024
-        private const val MAX_RESULT_STATUS_LENGTH = 32
         private const val PAY_TIMEOUT_SECONDS = 120L
     }
 
@@ -165,11 +164,7 @@ class AlipayAppPayPlugin :
                         // queueing a second SDK invocation.
                         deliver(
                             result,
-                            ClassifiedStatus(
-                                reducedStatus = "processing",
-                                resultStatus = null,
-                                sdkCompleted = false,
-                            ),
+                            AlipayBridgeResultClassifier.nativeWatchdogTimeout(),
                             invocationToken,
                         )
                     }
@@ -190,30 +185,18 @@ class AlipayAppPayPlugin :
                             !currentActivity.isFinishing && !currentActivity.isDestroyed
                     }
                     if (!activityStillAttached) {
-                        ClassifiedStatus(
-                            reducedStatus = "unavailable",
-                            resultStatus = null,
-                            sdkCompleted = false,
-                        )
+                        AlipayBridgeResultClassifier.nativeNotInvoked()
                     } else {
                         if (sandbox) {
                             EnvUtils.setEnv(EnvUtils.EnvEnum.SANDBOX)
                         }
                         val raw = PayTask(currentActivity).payV2(orderString, true)
-                        classify(raw["resultStatus"])
+                        AlipayBridgeResultClassifier.payTaskReturned(raw["resultStatus"])
                     }
                 } catch (_: RuntimeException) {
-                    ClassifiedStatus(
-                        reducedStatus = "failed",
-                        resultStatus = null,
-                        sdkCompleted = false,
-                    )
+                    AlipayBridgeResultClassifier.nativeException()
                 } catch (_: LinkageError) {
-                    ClassifiedStatus(
-                        reducedStatus = "unavailable",
-                        resultStatus = null,
-                        sdkCompleted = false,
-                    )
+                    AlipayBridgeResultClassifier.nativeUnavailable()
                 }
                 if (completion.compareAndSet(false, true)) {
                     timeout.cancel(false)
@@ -240,7 +223,7 @@ class AlipayAppPayPlugin :
 
     private fun deliver(
         result: MethodChannel.Result,
-        classified: ClassifiedStatus,
+        classified: AlipayBridgeClassifiedStatus,
         invocationToken: Long,
     ) {
         mainHandler.post {
@@ -263,6 +246,7 @@ class AlipayAppPayPlugin :
                     mapOf(
                         "sdkCompleted" to classified.sdkCompleted,
                         "resultStatus" to classified.resultStatus,
+                        "bridgeOutcome" to classified.bridgeOutcome,
                     ),
             )
         }
@@ -291,30 +275,91 @@ class AlipayAppPayPlugin :
     private fun isDebuggable(activity: Activity): Boolean =
         activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
-    private data class ClassifiedStatus(
-        val reducedStatus: String,
-        val resultStatus: String?,
-        val sdkCompleted: Boolean,
-    )
+}
 
-    private fun classify(raw: Any?): ClassifiedStatus {
+/**
+ * Fixed-vocabulary, non-sensitive provenance for the bridge result. These
+ * markers are diagnostic evidence only and never authorize payment or wallet
+ * mutations.
+ */
+internal data class AlipayBridgeClassifiedStatus(
+    val reducedStatus: String,
+    val resultStatus: String?,
+    val sdkCompleted: Boolean,
+    val bridgeOutcome: String,
+)
+
+internal object AlipayBridgeResultClassifier {
+    const val PAY_TASK_RETURNED = "pay_task_returned"
+    const val NATIVE_WATCHDOG_TIMEOUT = "native_watchdog_timeout"
+    const val NATIVE_NOT_INVOKED = "native_not_invoked"
+    const val NATIVE_EXCEPTION = "native_exception"
+    const val NATIVE_UNAVAILABLE = "native_unavailable"
+
+    private const val MAX_RESULT_STATUS_LENGTH = 32
+    private val RESULT_STATUS_PATTERN = Regex("^[A-Za-z0-9_.-]+$")
+
+    fun nativeWatchdogTimeout(): AlipayBridgeClassifiedStatus =
+        AlipayBridgeClassifiedStatus(
+            reducedStatus = "processing",
+            resultStatus = null,
+            sdkCompleted = false,
+            bridgeOutcome = NATIVE_WATCHDOG_TIMEOUT,
+        )
+
+    fun nativeNotInvoked(): AlipayBridgeClassifiedStatus =
+        AlipayBridgeClassifiedStatus(
+            reducedStatus = "unavailable",
+            resultStatus = null,
+            sdkCompleted = false,
+            bridgeOutcome = NATIVE_NOT_INVOKED,
+        )
+
+    fun nativeException(): AlipayBridgeClassifiedStatus =
+        AlipayBridgeClassifiedStatus(
+            reducedStatus = "failed",
+            resultStatus = null,
+            sdkCompleted = false,
+            bridgeOutcome = NATIVE_EXCEPTION,
+        )
+
+    fun nativeUnavailable(): AlipayBridgeClassifiedStatus =
+        AlipayBridgeClassifiedStatus(
+            reducedStatus = "unavailable",
+            resultStatus = null,
+            sdkCompleted = false,
+            bridgeOutcome = NATIVE_UNAVAILABLE,
+        )
+
+    fun payTaskReturned(raw: Any?): AlipayBridgeClassifiedStatus {
         val resultStatus = boundedResultStatus(raw)
         return when (resultStatus) {
-            "9000" -> ClassifiedStatus("success", resultStatus, true)
-            "8000", "6004" -> ClassifiedStatus("processing", resultStatus, false)
-            "6001" -> ClassifiedStatus("user_canceled", resultStatus, false)
-            "6002" -> ClassifiedStatus("network_error", resultStatus, false)
-            "4000" -> ClassifiedStatus("failed", resultStatus, false)
-            else -> ClassifiedStatus("failed", resultStatus, false)
+            "9000" -> result("success", resultStatus, true)
+            "8000", "6004" -> result("processing", resultStatus, false)
+            "6001" -> result("user_canceled", resultStatus, false)
+            "6002" -> result("network_error", resultStatus, false)
+            "4000" -> result("failed", resultStatus, false)
+            else -> result("failed", resultStatus, false)
         }
     }
+
+    private fun result(
+        reducedStatus: String,
+        resultStatus: String?,
+        sdkCompleted: Boolean,
+    ): AlipayBridgeClassifiedStatus = AlipayBridgeClassifiedStatus(
+        reducedStatus = reducedStatus,
+        resultStatus = resultStatus,
+        sdkCompleted = sdkCompleted,
+        bridgeOutcome = PAY_TASK_RETURNED,
+    )
 
     private fun boundedResultStatus(raw: Any?): String? {
         val value = raw?.toString()?.trim() ?: return null
         if (value.isEmpty() || value.length > MAX_RESULT_STATUS_LENGTH) {
             return null
         }
-        if (!value.matches(Regex("^[A-Za-z0-9_.-]+$"))) {
+        if (!RESULT_STATUS_PATTERN.matches(value)) {
             return null
         }
         return value

@@ -128,6 +128,7 @@ class AppDependencies {
     ImSessionCoordinator? imSessionCoordinator,
     ImAuthoritativeRefreshBus? imAuthoritativeRefreshBus,
     TencentImAvChatRoomCoordinator? tencentImAvChatRoomCoordinator,
+    Duration? alipayNativeTimeout,
   }) {
     return _build(
       environment: environment,
@@ -143,6 +144,7 @@ class AppDependencies {
       imSessionCoordinatorOverride: imSessionCoordinator,
       imAuthoritativeRefreshBusOverride: imAuthoritativeRefreshBus,
       tencentImAvChatRoomCoordinatorOverride: tencentImAvChatRoomCoordinator,
+      alipayNativeTimeout: alipayNativeTimeout,
     );
   }
 
@@ -160,6 +162,7 @@ class AppDependencies {
     ImSessionCoordinator? imSessionCoordinatorOverride,
     ImAuthoritativeRefreshBus? imAuthoritativeRefreshBusOverride,
     TencentImAvChatRoomCoordinator? tencentImAvChatRoomCoordinatorOverride,
+    Duration? alipayNativeTimeout,
   }) {
     final DateTime Function() currentTime = () => mockNow ?? DateTime.now();
     final AuthSessionManager sessionManager = AuthSessionManager(store);
@@ -275,6 +278,7 @@ class AppDependencies {
             enabled: true,
             sandbox: environment.useAlipaySandbox,
             consentChecker: sessionManager.hasAcceptedConsent,
+            nativeTimeout: alipayNativeTimeout ?? const Duration(minutes: 2),
           )
         : const DisabledAlipayAppPayAdapter();
     final DiscoveryRepository discoveryRepository =

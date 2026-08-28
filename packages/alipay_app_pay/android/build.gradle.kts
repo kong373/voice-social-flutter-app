@@ -50,6 +50,7 @@ dependencies {
     // Pin the official Alipay Android SDK. The Flutter layer receives no app
     // private key, public key, certificate, or amount authority.
     implementation("com.alipay.sdk:alipaysdk-android:15.8.42")
+    testImplementation("junit:junit:4.13.2")
 }
 
 kotlin {

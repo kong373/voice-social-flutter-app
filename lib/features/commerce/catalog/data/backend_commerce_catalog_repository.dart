@@ -272,6 +272,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
           resultStatus: result.resultStatus,
           outcome: result.outcome.name,
           reason: result.reason.name,
+          bridgeOutcome: result.bridgeOutcome?.wireName,
         );
     if (_isTrustedNativeUserCancellation(result)) {
       // A local PayTask cancellation is the only native outcome that may
@@ -416,7 +417,10 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       !result.sdkCompleted &&
       result.outcome == AlipayAppPayOutcome.userCanceled &&
       result.reason == AlipayAppPayReason.userCanceled &&
-      result.resultStatus == '6001';
+      result.resultStatus == '6001' &&
+      isTrustedRechargeNativeCancellationBridgeOutcome(
+        result.bridgeOutcome?.wireName,
+      );
 
   /// Query recovery only retains the bridge evidence that was copied onto the
   /// order by [invokePayment]. No other native result is permitted to trigger
