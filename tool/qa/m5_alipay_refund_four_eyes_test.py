@@ -12,6 +12,9 @@ import hashlib
 import io
 import json
 import os
+from pathlib import Path
+import stat
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
@@ -33,6 +36,8 @@ from m5_alipay_refund_four_eyes import (
     _validate_refund_reason,
     _validate_provider_result,
     _validate_review,
+    _read_protected_refund_state,
+    read_config,
 )
 
 
@@ -41,6 +46,7 @@ REFUND_ID = "00000000-0000-4000-8000-000000000001"
 REVIEWER_ID = 101
 EXECUTOR_ID = 202
 OWNER_ID = 303
+BACKEND_SHA = "a" * 40
 
 
 def _config(*, confirmations: bool = True) -> RefundHarnessConfig:
@@ -197,10 +203,130 @@ class FakeLedger(LedgerPort):
 
 
 class M5AlipayRefundHarnessTest(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary_root = "/private/tmp" if os.path.isdir("/private/tmp") else None
+        self._temporary = tempfile.TemporaryDirectory(
+            prefix="m5-refund-protected-state-test-", dir=temporary_root
+        )
+        self.protected_dir = Path(self._temporary.name)
+        os.chmod(self.protected_dir, 0o700)
+        self.protected_state = self.protected_dir / "fixture.json"
+        self.protected_state.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "runId": "m5-refund-protected-test",
+                    "backendSha": BACKEND_SHA,
+                    "customerPhone": "fixture-customer-phone",
+                    "customerBearer": "customer-token-value",
+                    "customerUserId": 11,
+                    "reviewerBearer": "reviewer-token-value",
+                    "reviewerUserId": 22,
+                    "executorBearer": "executor-token-value",
+                    "executorUserId": 33,
+                    "orderBaselineId": 100,
+                    "orderNo": ORDER_NO,
+                }
+            ),
+            encoding="utf-8",
+        )
+        os.chmod(self.protected_state, 0o600)
+
+    def tearDown(self) -> None:
+        self._temporary.cleanup()
+
     def test_refund_reason_matches_backend_256_character_limit(self) -> None:
         self.assertEqual(_validate_refund_reason("r" * 256), "r" * 256)
         with self.assertRaisesRegex(RefundHarnessError, "CONFIGURATION"):
             _validate_refund_reason("r" * 257)
+
+    def test_protected_state_loads_order_and_three_distinct_bearers(self) -> None:
+        values = _read_protected_refund_state(
+            {
+                "QA_M5_REFUND_PROTECTED_STATE_FILE": str(self.protected_state),
+                "QA_M5_REFUND_BACKEND_SHA": BACKEND_SHA,
+            },
+            run_id="m5-refund-protected-test",
+        )
+        self.assertEqual(values[0], ORDER_NO)
+        self.assertEqual(values[1], "Bearer customer-token-value")
+        self.assertEqual(values[2], "Bearer reviewer-token-value")
+        self.assertEqual(values[3], "Bearer executor-token-value")
+        self.assertNotIn("fixture-customer-phone", json.dumps(values))
+
+    def test_protected_state_conflicts_with_any_legacy_input(self) -> None:
+        environment = {
+            "QA_M5_REFUND_PROTECTED_STATE_FILE": str(self.protected_state),
+            "QA_M5_REFUND_BACKEND_SHA": BACKEND_SHA,
+            "QA_M5_REFUND_ORDER_NO": ORDER_NO,
+        }
+        with self.assertRaisesRegex(RefundHarnessError, "CONFIGURATION"):
+            _read_protected_refund_state(
+                environment, run_id="m5-refund-protected-test"
+            )
+
+    def test_protected_state_rejects_bad_path_permissions_and_symlink(self) -> None:
+        os.chmod(self.protected_state, 0o640)
+        with self.assertRaisesRegex(RefundHarnessError, "STATE"):
+            _read_protected_refund_state(
+                {
+                    "QA_M5_REFUND_PROTECTED_STATE_FILE": str(self.protected_state),
+                    "QA_M5_REFUND_BACKEND_SHA": BACKEND_SHA,
+                },
+                run_id="m5-refund-protected-test",
+            )
+        os.chmod(self.protected_state, 0o600)
+        symlink = self.protected_dir / "symlink.json"
+        symlink.symlink_to(self.protected_state)
+        with self.assertRaisesRegex(RefundHarnessError, "STATE"):
+            _read_protected_refund_state(
+                {
+                    "QA_M5_REFUND_PROTECTED_STATE_FILE": str(symlink),
+                    "QA_M5_REFUND_BACKEND_SHA": BACKEND_SHA,
+                },
+                run_id="m5-refund-protected-test",
+            )
+
+    def test_protected_state_rejects_schema_run_backend_and_actor_mismatch(self) -> None:
+        base = json.loads(self.protected_state.read_text(encoding="utf-8"))
+        cases = (
+            ("schemaVersion", "v2"),
+            ("runId", "another-run"),
+            ("backendSha", "b" * 40),
+            ("executorUserId", 22),
+        )
+        for key, value in cases:
+            with self.subTest(key=key):
+                candidate = dict(base, **{key: value})
+                self.protected_state.write_text(json.dumps(candidate), encoding="utf-8")
+                os.chmod(self.protected_state, 0o600)
+                with self.assertRaisesRegex(RefundHarnessError, "STATE"):
+                    _read_protected_refund_state(
+                        {
+                            "QA_M5_REFUND_PROTECTED_STATE_FILE": str(self.protected_state),
+                            "QA_M5_REFUND_BACKEND_SHA": BACKEND_SHA,
+                        },
+                        run_id="m5-refund-protected-test",
+                    )
+        self.protected_state.write_text(json.dumps(base), encoding="utf-8")
+        os.chmod(self.protected_state, 0o600)
+
+    def test_read_config_uses_protected_state_without_legacy_values(self) -> None:
+        environment = {
+            "QA_M5_REFUND_BASE_URL": "https://backend.example.test/",
+            "QA_M5_REFUND_PROTECTED_STATE_FILE": str(self.protected_state),
+            "QA_M5_REFUND_BACKEND_SHA": BACKEND_SHA,
+            "QA_M5_REFUND_RUN_ID": "m5-refund-protected-test",
+            "QA_M5_REFUND_MYSQL_CONTAINER": "voice-social-m3-development-mysql-1",
+            "QA_M5_REFUND_LEDGER_STATE_DIR": str(self.protected_dir),
+        }
+        with patch(
+            "m5_alipay_refund_four_eyes.read_ledger_config", return_value=None
+        ):
+            config = read_config(environment)
+        self.assertEqual(config.order_no, ORDER_NO)
+        self.assertEqual(config.user_bearer, "Bearer customer-token-value")
+        self.assertEqual(config.protected_state_file, str(self.protected_state))
 
     def test_provider_is_disabled_without_both_exact_confirmations(self) -> None:
         config = _config(confirmations=False)

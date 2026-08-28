@@ -53,6 +53,10 @@ from m5_alipay_refund_ledger_evidence import (
     read_config as read_ledger_config,
     start as start_ledger,
 )
+from m5_alipay_success_handoff import (
+    HandoffError,
+    read_state_file,
+)
 
 
 FLOW_SCHEMA_VERSION = "m5-alipay-refund-four-eyes-v1"
@@ -67,6 +71,21 @@ MAX_REFUND_REASON_LENGTH = 256
 UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-"
     r"[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+)
+SHA1_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+
+PROTECTED_STATE_ENV = "QA_M5_REFUND_PROTECTED_STATE_FILE"
+PROTECTED_BACKEND_SHA_ENV_NAMES = (
+    "QA_M5_REFUND_BACKEND_SHA",
+    "QA_M5_BACKEND_SHA",
+    "QA_BACKEND_SHA",
+    "M5_BACKEND_SHA",
+)
+LEGACY_PROTECTED_INPUT_ENV_NAMES = (
+    "QA_M5_REFUND_ORDER_NO",
+    "QA_M5_REFUND_USER_BEARER",
+    "QA_M5_REFUND_REVIEWER_BEARER",
+    "QA_M5_REFUND_EXECUTOR_BEARER",
 )
 
 ORDER_SUCCESS_STATUSES = frozenset({"TRADE_SUCCESS", "TRADE_FINISHED"})
@@ -143,6 +162,7 @@ class RefundHarnessConfig:
     artifact_dir: str | None = None
     allow_insecure_http: bool = False
     ledger_config: LedgerConfig | None = dataclasses.field(default=None, repr=False)
+    protected_state_file: str | None = dataclasses.field(default=None, repr=False)
 
 
 class LedgerPort:
@@ -418,29 +438,97 @@ def _validate_refund_reason(value: str) -> str:
     return value
 
 
+def _first_protected_env_value(
+    environment: Mapping[str, str], names: Sequence[str]
+) -> str:
+    """Resolve aliases only when they agree; never include values in errors."""
+
+    values = [environment.get(name, "").strip() for name in names]
+    present = [value for value in values if value]
+    if len(set(present)) > 1:
+        raise RefundHarnessError("CONFIGURATION")
+    return present[0] if present else ""
+
+
+def _read_protected_refund_state(
+    environment: Mapping[str, str],
+    *,
+    run_id: str,
+) -> tuple[str, str, str, str, str]:
+    """Read one protected handoff and return only values needed by the flow."""
+
+    state_file = environment.get(PROTECTED_STATE_ENV, "").strip()
+    if not state_file:
+        raise RefundHarnessError("CONFIGURATION")
+    # A run must choose exactly one protected-input transport.  Even matching
+    # legacy values are rejected: accepting both creates an ambiguous source
+    # of truth and makes a stale shell export easy to miss.
+    if any(environment.get(name, "") for name in LEGACY_PROTECTED_INPUT_ENV_NAMES):
+        raise RefundHarnessError("CONFIGURATION")
+    expected_backend_sha = _first_protected_env_value(
+        environment, PROTECTED_BACKEND_SHA_ENV_NAMES
+    )
+    if not SHA1_RE.fullmatch(expected_backend_sha):
+        raise RefundHarnessError("CONFIGURATION")
+    try:
+        state, _raw = read_state_file(
+            Path(state_file),
+            expected_backend_sha=expected_backend_sha,
+            expected_run_id=run_id,
+            require_order=True,
+        )
+    except HandoffError as error:
+        category = error.category
+        if category not in ALLOWED_ERROR_CATEGORIES:
+            category = "INVARIANT_VIOLATION"
+        raise RefundHarnessError(category) from None
+    if state.order_no is None:
+        raise RefundHarnessError("STATE")
+    return (
+        state.order_no,
+        state.customer_bearer,
+        state.reviewer_bearer,
+        state.executor_bearer,
+        state_file,
+    )
+
+
 def read_config(environment: Mapping[str, str] | None = None) -> RefundHarnessConfig:
     env = os.environ if environment is None else environment
     allow_insecure_http = _is_true(env.get("QA_M5_REFUND_ALLOW_INSECURE_HTTP"))
     base_url = env.get("QA_M5_REFUND_BASE_URL", "").strip()
     validate_base_url(base_url, allow_insecure_http=allow_insecure_http)
-    order_no = env.get("QA_M5_REFUND_ORDER_NO", "")
-    if not ORDER_REF_RE.fullmatch(order_no):
-        raise RefundHarnessError("CONFIGURATION")
-    user_bearer = _normalise_bearer(env.get("QA_M5_REFUND_USER_BEARER", ""))
-    reviewer_bearer = _normalise_bearer(
-        env.get("QA_M5_REFUND_REVIEWER_BEARER", "")
-    )
-    executor_bearer = _normalise_bearer(
-        env.get("QA_M5_REFUND_EXECUTOR_BEARER", "")
-    )
-    if len({user_bearer, reviewer_bearer, executor_bearer}) != 3:
-        raise RefundHarnessError("CONFIGURATION")
     reason = _validate_refund_reason(
         env.get("QA_M5_REFUND_REASON", "M5 Alipay sandbox refund acceptance")
     )
     run_id = env.get("QA_M5_REFUND_RUN_ID", "")
     if not RUN_ID_RE.fullmatch(run_id):
         raise RefundHarnessError("CONFIGURATION")
+
+    protected_state_file = env.get(PROTECTED_STATE_ENV, "").strip()
+    if protected_state_file:
+        (
+            order_no,
+            user_bearer,
+            reviewer_bearer,
+            executor_bearer,
+            protected_state_file,
+        ) = _read_protected_refund_state(env, run_id=run_id)
+    else:
+        order_no = env.get("QA_M5_REFUND_ORDER_NO", "")
+        if not ORDER_REF_RE.fullmatch(order_no):
+            raise RefundHarnessError("CONFIGURATION")
+        user_bearer = _normalise_bearer(env.get("QA_M5_REFUND_USER_BEARER", ""))
+        reviewer_bearer = _normalise_bearer(
+            env.get("QA_M5_REFUND_REVIEWER_BEARER", "")
+        )
+        executor_bearer = _normalise_bearer(
+            env.get("QA_M5_REFUND_EXECUTOR_BEARER", "")
+        )
+        protected_state_file = None
+    if len({user_bearer, reviewer_bearer, executor_bearer}) != 3:
+        raise RefundHarnessError("CONFIGURATION")
+
     mysql_container = env.get("QA_M5_REFUND_MYSQL_CONTAINER", "")
     if not CONTAINER_NAME_RE.fullmatch(mysql_container):
         raise RefundHarnessError("CONFIGURATION")
@@ -468,6 +556,7 @@ def read_config(environment: Mapping[str, str] | None = None) -> RefundHarnessCo
         artifact_dir=artifact_dir,
         allow_insecure_http=allow_insecure_http,
         ledger_config=ledger_config,
+        protected_state_file=protected_state_file,
     )
 
 
