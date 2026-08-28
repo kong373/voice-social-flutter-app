@@ -129,6 +129,7 @@ esac
     expect(source, contains('set -Eeuo pipefail'));
     expect(source, contains("TARGET_PACKAGE='com.eg.android.AlipayGphoneRC'"));
     expect(source, contains("TARGET_ACTIVITY='MspContainerActivity'"));
+    expect(source, contains("TARGET_SERIAL='emulator-5554'"));
     expect(
       source,
       contains('M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001'),
@@ -331,5 +332,30 @@ esac
     );
     expect(noSerial.exitCode, 64);
     expect(File('${noSerialSandbox.path}/adb-calls.txt').existsSync(), isFalse);
+
+    final Directory wrongSerialSandbox = createSandbox(
+      'm5-alipay-cancel-wrong-serial-',
+    );
+    final File wrongSerialLog = File(
+      '${wrongSerialSandbox.path}/flutter-drive.log',
+    )..writeAsStringSync('');
+    final File wrongSerialAdb = createFakeAdb(
+      wrongSerialSandbox,
+      stateMode: 'online',
+      targetCalls: 3,
+      marker: 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001',
+      markerAfterBack: 1,
+    );
+    final ProcessResult wrongSerial = runOperator(
+      wrongSerialSandbox,
+      fakeAdb: wrongSerialAdb,
+      flutterLog: wrongSerialLog,
+      serial: 'emulator-5556',
+    );
+    expect(wrongSerial.exitCode, 64);
+    expect(
+      File('${wrongSerialSandbox.path}/adb-calls.txt').existsSync(),
+      isFalse,
+    );
   });
 }

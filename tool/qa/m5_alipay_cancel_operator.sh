@@ -11,6 +11,7 @@ umask 077
 
 readonly TARGET_PACKAGE='com.eg.android.AlipayGphoneRC'
 readonly TARGET_ACTIVITY='MspContainerActivity'
+readonly TARGET_SERIAL='emulator-5554'
 readonly EXPECTED_NATIVE_MARKER='M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001'
 readonly DEFAULT_TARGET_TIMEOUT_SECONDS=60
 readonly DEFAULT_AFTER_BACK_TIMEOUT_SECONDS=8
@@ -150,6 +151,8 @@ validate_serial() {
   # whitespace, and control bytes before it reaches adb.
   [[ "$ANDROID_SERIAL" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]] ||
     fail_configuration 'ANDROID_SERIAL has an unsafe format'
+  [[ "$ANDROID_SERIAL" == "$TARGET_SERIAL" ]] ||
+    fail_configuration 'ANDROID_SERIAL must be emulator-5554'
   ANDROID_SERIAL_VALUE="$ANDROID_SERIAL"
 
   # When the normal M5 environment names the receiver AVD, reject an accidental
