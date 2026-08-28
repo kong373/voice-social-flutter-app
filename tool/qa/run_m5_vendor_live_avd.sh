@@ -1292,13 +1292,14 @@ write_result() {
 }
 
 run_one() {
-  local avd="$1" api="$2" profile="$3" physical="$4" density="$5" width="$6" height="$7" dpr="$8" override="$9"
+  local avd="$1" api="$2" profile="$3" physical="$4" density="$5" width="$6" height="$7" dpr="$8" override="$9" avd_name="${10:-}"
+  [[ -n "$avd_name" ]] || avd_name="$profile"
   local dir="$ARTIFACT_ROOT/$avd"
   mkdir -p "$dir/logs" "$dir/screenshots" "$dir/apk"
   local serial='' result='FAIL' reason='not_started' db_status='UNAVAILABLE' apk_sha=''
   local tencent_calls=0 alipay_calls=0
   local cancel_partial_coordination_success='false'
-  serial="$(select_device "$avd" "$api" "$override" "$profile" "$dir")" || {
+  serial="$(select_device "$avd" "$api" "$override" "$avd_name" "$dir")" || {
     write_db_fallback "$dir"
     write_result "$dir" "$avd" FAIL device_unavailable UNAVAILABLE unknown 0 0 0 0 0 ''
     return 1
@@ -1625,14 +1626,14 @@ attest_debug_apk
 install_attested_apk
 start_db_evidence_helper
 set +e
-run_one AVD-A "$A_API" "$A_PROFILE" "$A_PHYSICAL" "$A_DENSITY" "$A_WIDTH" "$A_HEIGHT" "$A_DPR" "$AVD_A_SERIAL" &
+run_one AVD-A "$A_API" "$A_PROFILE" "$A_PHYSICAL" "$A_DENSITY" "$A_WIDTH" "$A_HEIGHT" "$A_DPR" "$AVD_A_SERIAL" "$AVD_A_NAME" &
 pid_a=$!
 if wait_for_sender_login_marker "$pid_a"; then
   # Two concurrent Flutter tool startups can contend on the SDK startup lock
   # and leave one Driver extension paused indefinitely. Start the receiver
   # only after the sender's app and Tencent session are demonstrably live;
   # the sender then waits on the protected relay for this receiver.
-  run_one AVD-B "$B_API" "$B_PROFILE" "$B_PHYSICAL" "$B_DENSITY" "$B_WIDTH" "$B_HEIGHT" "$B_DPR" "$AVD_B_SERIAL" &
+  run_one AVD-B "$B_API" "$B_PROFILE" "$B_PHYSICAL" "$B_DENSITY" "$B_WIDTH" "$B_HEIGHT" "$B_DPR" "$AVD_B_SERIAL" "$AVD_B_NAME" &
   pid_b=$!
   wait "$pid_a"
   status_a=$?

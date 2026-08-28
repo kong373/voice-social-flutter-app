@@ -42,6 +42,62 @@ void main() {
     }
   });
 
+  test('M5 cold-start uses installed AVD names and serial overrides bypass it', () {
+    expect(
+      runnerSource,
+      contains(r'select_device "$avd" "$api" "$override" "$avd_name" "$dir"'),
+    );
+    expect(
+      runnerSource,
+      contains(
+        r'run_one AVD-A "$A_API" "$A_PROFILE" "$A_PHYSICAL" "$A_DENSITY" "$A_WIDTH" "$A_HEIGHT" "$A_DPR" "$AVD_A_SERIAL" "$AVD_A_NAME" &',
+      ),
+    );
+    expect(
+      runnerSource,
+      contains(
+        r'run_one AVD-B "$B_API" "$B_PROFILE" "$B_PHYSICAL" "$B_DENSITY" "$B_WIDTH" "$B_HEIGHT" "$B_DPR" "$AVD_B_SERIAL" "$AVD_B_NAME" &',
+      ),
+    );
+
+    final String shellScript = r'''
+set -euo pipefail
+eval "$(sed -n '/^select_device() {/,/^}/p' "$M5_RUNNER")"
+root="$(mktemp -d)"
+trap 'rm -rf -- "$root"' EXIT
+record="$root/started-name"
+
+device_for_api() { return 1; }
+wait_boot() { return 0; }
+start_emulator() {
+  printf '%s\n' "$2" >"$record"
+  printf '%s\n' 'emulator-cold-start'
+}
+
+cold_serial="$(select_device AVD-B 35 '' voice_social_m4_avd_b_api35 "$root")"
+[[ "$cold_serial" == 'emulator-cold-start' ]]
+recorded_name="$(<"$record")"
+[[ "$recorded_name" == 'voice_social_m4_avd_b_api35' ]]
+
+start_emulator() { return 99; }
+adb() {
+  [[ "$1" == '-s' && "$2" == 'emulator-5554' ]]
+  printf '%s\n' '36'
+}
+override_serial="$(select_device AVD-A 36 emulator-5554 ignored "$root")"
+[[ "$override_serial" == 'emulator-5554' ]]
+''';
+    final ProcessResult result = Process.runSync(
+      '/bin/bash',
+      <String>['-c', shellScript],
+      environment: <String, String>{
+        ...Platform.environment,
+        'M5_RUNNER': runner.path,
+      },
+    );
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+  });
+
   test('M5 uses an independent positive provider-call namespace', () {
     expect(runnerSource, contains('M5_PROVIDER_CALLS::'));
     expect(aggregateSource, contains('M5_PROVIDER_CALLS::'));
