@@ -328,7 +328,7 @@ jobs:
           disable-spellchecker: true
           emulator-options: >-
             -no-window
-            -gpu swiftshader_indirect
+            -gpu swiftshader
             -noaudio
             -no-boot-anim
             -no-snapshot
