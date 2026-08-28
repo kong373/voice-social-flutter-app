@@ -59,14 +59,14 @@ from m5_alipay_success_handoff import (
 )
 
 
-FLOW_SCHEMA_VERSION = "m5-alipay-refund-four-eyes-v1"
+FLOW_SCHEMA_VERSION = "m5-alipay-refund-four-eyes-v2"
 EXPECTED_DEVELOPMENT_MYSQL_CONTAINER = "voice-social-m3-development-mysql-1"
 EXPECTED_CONFIRMATION = "I_UNDERSTAND_ALIPAY_SANDBOX_REFUND"
 EXPECTED_CONFIRMATION_2 = "I_UNDERSTAND_ALIPAY_SANDBOX_REFUND_SECOND_OPERATOR"
 
 ORDER_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
 RUN_ID_RE = re.compile(r"^m5-refund-[A-Za-z0-9_.:-]{1,80}$")
-TOKEN_RE = re.compile(r"^[\x21-\x7e]{16,4096}$")
+FIXTURE_ID_RE = re.compile(r"^m5-fresh-[A-Za-z0-9_.:-]{1,64}$")
 MAX_REFUND_REASON_LENGTH = 256
 UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-"
@@ -81,6 +81,7 @@ PROTECTED_BACKEND_SHA_ENV_NAMES = (
     "QA_BACKEND_SHA",
     "M5_BACKEND_SHA",
 )
+PROTECTED_FIXTURE_ID_ENV = "QA_M5_FINANCE_FIXTURE_ID"
 LEGACY_PROTECTED_INPUT_ENV_NAMES = (
     "QA_M5_REFUND_ORDER_NO",
     "QA_M5_REFUND_USER_BEARER",
@@ -148,6 +149,7 @@ class RefundHarnessConfig:
     """Validated configuration; protected fields deliberately have no repr."""
 
     base_url: str
+    fixture_id: str = dataclasses.field(repr=False)
     order_no: str = dataclasses.field(repr=False)
     user_bearer: str = dataclasses.field(repr=False)
     reviewer_bearer: str = dataclasses.field(repr=False)
@@ -422,15 +424,6 @@ def validate_base_url(value: str, *, allow_insecure_http: bool = False) -> None:
         raise RefundHarnessError("CONFIGURATION")
 
 
-def _normalise_bearer(value: str) -> str:
-    raw = value.strip()
-    if raw.startswith("Bearer "):
-        raw = raw[7:]
-    if not TOKEN_RE.fullmatch(raw):
-        raise RefundHarnessError("CONFIGURATION")
-    return "Bearer " + raw
-
-
 def _validate_refund_reason(value: str) -> str:
     if (
         not value
@@ -463,15 +456,17 @@ def _read_protected_refund_state(
     environment: Mapping[str, str],
     *,
     run_id: str,
-) -> tuple[str, str, str, str, int, int, int, str]:
+) -> tuple[str, str, str, str, int, int, int, str, str]:
     """Read one protected handoff and return only values needed by the flow."""
 
     state_file = environment.get(PROTECTED_STATE_ENV, "").strip()
     if not state_file:
         raise RefundHarnessError("CONFIGURATION")
-    # A run must choose exactly one protected-input transport.  Even matching
-    # legacy values are rejected: accepting both creates an ambiguous source
-    # of truth and makes a stale shell export easy to miss.
+    expected_fixture_id = environment.get(PROTECTED_FIXTURE_ID_ENV, "").strip()
+    if not FIXTURE_ID_RE.fullmatch(expected_fixture_id):
+        raise RefundHarnessError("CONFIGURATION")
+    # Direct order/bearer inputs are retired.  Reject even matching stale
+    # exports so the protected v2 state file remains the sole source of truth.
     if any(environment.get(name, "") for name in LEGACY_PROTECTED_INPUT_ENV_NAMES):
         raise RefundHarnessError("CONFIGURATION")
     expected_backend_sha = _first_protected_env_value(
@@ -483,6 +478,7 @@ def _read_protected_refund_state(
         state, _raw = read_state_file(
             Path(state_file),
             expected_backend_sha=expected_backend_sha,
+            expected_fixture_id=expected_fixture_id,
             expected_run_id=run_id,
             require_order=True,
         )
@@ -502,6 +498,7 @@ def _read_protected_refund_state(
         state.reviewer_user_id,
         state.executor_user_id,
         state_file,
+        state.fixture_id,
     )
 
 
@@ -529,6 +526,7 @@ def read_config(environment: Mapping[str, str] | None = None) -> RefundHarnessCo
         expected_reviewer_user_id,
         expected_executor_user_id,
         protected_state_file,
+        fixture_id,
     ) = _read_protected_refund_state(env, run_id=run_id)
     if len({user_bearer, reviewer_bearer, executor_bearer}) != 3:
         raise RefundHarnessError("CONFIGURATION")
@@ -546,6 +544,7 @@ def read_config(environment: Mapping[str, str] | None = None) -> RefundHarnessCo
     ledger_config = read_ledger_config(env)
     return RefundHarnessConfig(
         base_url=base_url,
+        fixture_id=fixture_id,
         order_no=order_no,
         user_bearer=user_bearer,
         reviewer_bearer=reviewer_bearer,
@@ -773,6 +772,8 @@ def run_flow(
 ) -> dict[str, object]:
     """Run one explicitly authorized refund lane and return safe evidence."""
 
+    if not FIXTURE_ID_RE.fullmatch(config.fixture_id):
+        raise RefundHarnessError("CONFIGURATION")
     authorize_provider(config)
     client = api or JsonRefundApiClient(config.base_url)
     evidence = ledger or DockerLedger(
@@ -878,6 +879,7 @@ def run_flow(
     _validate_ledger(ledger_result, reconcile_required=reconcile_required)
 
     summary = build_safe_summary(
+        fixture_id=config.fixture_id,
         order_no=config.order_no,
         refund_id=refund_id,
         order_status="SUCCEEDED",
@@ -924,6 +926,7 @@ def sanitize_response(value: Mapping[str, object]) -> dict[str, object]:
 
 def build_safe_summary(
     *,
+    fixture_id: str | None = None,
     order_no: str,
     refund_id: str,
     order_status: str,
@@ -934,6 +937,8 @@ def build_safe_summary(
 ) -> dict[str, object]:
     """Build the fixed artifact/stdout shape without protected values."""
 
+    if fixture_id is not None and not FIXTURE_ID_RE.fullmatch(fixture_id):
+        raise RefundHarnessError("INVARIANT_VIOLATION")
     if order_status not in SAFE_SUMMARY_STATUS_VALUES:
         raise RefundHarnessError("INVARIANT_VIOLATION")
     if refund_status not in SAFE_SUMMARY_STATUS_VALUES:
@@ -980,7 +985,7 @@ def build_safe_summary(
             "reconcileStatus",
         }:
             safe_idempotency[key] = metric
-    return {
+    summary: dict[str, object] = {
         "schemaVersion": FLOW_SCHEMA_VERSION,
         "status": "PASS",
         "providerInvocation": True,
@@ -1005,6 +1010,9 @@ def build_safe_summary(
             "refundRefSha256": _sha256(refund_id),
         },
     }
+    if fixture_id is not None:
+        summary["fixtureId"] = fixture_id
+    return summary
 
 
 def _write_artifact(directory: str, summary: Mapping[str, object]) -> None:
@@ -1041,6 +1049,7 @@ def _public_self_test() -> int:
         raise AssertionError("confirmations must be independent")
     blocked = RefundHarnessConfig(
         base_url="https://backend.example.test/",
+        fixture_id="m5-fresh-refund-self-test",
         order_no="m5-order",
         user_bearer="user-token-value",
         reviewer_bearer="reviewer-token-value",

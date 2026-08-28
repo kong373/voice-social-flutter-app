@@ -49,11 +49,13 @@ REVIEWER_ID = 101
 EXECUTOR_ID = 202
 OWNER_ID = 303
 BACKEND_SHA = "a" * 40
+FIXTURE_ID = "m5-fresh-refund-test"
 
 
 def _config(*, confirmations: bool = True) -> RefundHarnessConfig:
     return RefundHarnessConfig(
         base_url="https://backend.example.test/",
+        fixture_id=FIXTURE_ID,
         order_no=ORDER_NO,
         user_bearer="user-token-value",
         reviewer_bearer="reviewer-token-value",
@@ -219,15 +221,16 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
         self.protected_state.write_text(
             json.dumps(
                 {
-                    "schemaVersion": 1,
+                    "schemaVersion": 2,
+                    "fixtureId": FIXTURE_ID,
                     "runId": "m5-refund-protected-test",
                     "backendSha": BACKEND_SHA,
                     "customerPhone": "fixture-customer-phone",
-                    "customerBearer": "customer-token-value",
+                    "customerBearer": "Bearer customer-token-value",
                     "customerUserId": 11,
-                    "reviewerBearer": "reviewer-token-value",
+                    "reviewerBearer": "Bearer reviewer-token-value",
                     "reviewerUserId": 22,
-                    "executorBearer": "executor-token-value",
+                    "executorBearer": "Bearer executor-token-value",
                     "executorUserId": 33,
                     "orderBaselineId": 100,
                     "orderNo": ORDER_NO,
@@ -250,6 +253,7 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
             {
                 "QA_M5_REFUND_PROTECTED_STATE_FILE": str(self.protected_state),
                 "QA_M5_REFUND_BACKEND_SHA": BACKEND_SHA,
+                "QA_M5_FINANCE_FIXTURE_ID": FIXTURE_ID,
             },
             run_id="m5-refund-protected-test",
         )
@@ -258,12 +262,14 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
         self.assertEqual(values[2], "Bearer reviewer-token-value")
         self.assertEqual(values[3], "Bearer executor-token-value")
         self.assertEqual(values[4:7], (11, 22, 33))
+        self.assertEqual(values[-1], FIXTURE_ID)
         self.assertNotIn("fixture-customer-phone", json.dumps(values))
 
     def test_protected_state_conflicts_with_any_legacy_input(self) -> None:
         environment = {
             "QA_M5_REFUND_PROTECTED_STATE_FILE": str(self.protected_state),
             "QA_M5_REFUND_BACKEND_SHA": BACKEND_SHA,
+            "QA_M5_FINANCE_FIXTURE_ID": FIXTURE_ID,
             "QA_M5_REFUND_ORDER_NO": ORDER_NO,
         }
         with self.assertRaisesRegex(RefundHarnessError, "CONFIGURATION"):
@@ -278,6 +284,7 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
                 {
                     "QA_M5_REFUND_PROTECTED_STATE_FILE": str(self.protected_state),
                     "QA_M5_REFUND_BACKEND_SHA": BACKEND_SHA,
+                    "QA_M5_FINANCE_FIXTURE_ID": FIXTURE_ID,
                 },
                 run_id="m5-refund-protected-test",
             )
@@ -289,6 +296,7 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
                 {
                     "QA_M5_REFUND_PROTECTED_STATE_FILE": str(symlink),
                     "QA_M5_REFUND_BACKEND_SHA": BACKEND_SHA,
+                    "QA_M5_FINANCE_FIXTURE_ID": FIXTURE_ID,
                 },
                 run_id="m5-refund-protected-test",
             )
@@ -296,7 +304,9 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
     def test_protected_state_rejects_schema_run_backend_and_actor_mismatch(self) -> None:
         base = json.loads(self.protected_state.read_text(encoding="utf-8"))
         cases = (
+            ("schemaVersion", 1),
             ("schemaVersion", "v2"),
+            ("fixtureId", "m5-fresh-another-fixture"),
             ("runId", "another-run"),
             ("backendSha", "b" * 40),
             ("executorUserId", 22),
@@ -311,6 +321,7 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
                         {
                             "QA_M5_REFUND_PROTECTED_STATE_FILE": str(self.protected_state),
                             "QA_M5_REFUND_BACKEND_SHA": BACKEND_SHA,
+                            "QA_M5_FINANCE_FIXTURE_ID": FIXTURE_ID,
                         },
                         run_id="m5-refund-protected-test",
                     )
@@ -322,6 +333,7 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
             "QA_M5_REFUND_BASE_URL": "https://backend.example.test/",
             "QA_M5_REFUND_PROTECTED_STATE_FILE": str(self.protected_state),
             "QA_M5_REFUND_BACKEND_SHA": BACKEND_SHA,
+            "QA_M5_FINANCE_FIXTURE_ID": FIXTURE_ID,
             "QA_M5_REFUND_RUN_ID": "m5-refund-protected-test",
             "QA_M5_REFUND_MYSQL_CONTAINER": "voice-social-m3-development-mysql-1",
             "QA_M5_REFUND_LEDGER_STATE_DIR": str(self.protected_dir),
@@ -331,6 +343,7 @@ class M5AlipayRefundHarnessTest(unittest.TestCase):
         ):
             config = read_config(environment)
         self.assertEqual(config.order_no, ORDER_NO)
+        self.assertEqual(config.fixture_id, FIXTURE_ID)
         self.assertEqual(config.user_bearer, "Bearer customer-token-value")
         self.assertEqual(config.expected_customer_user_id, 11)
         self.assertEqual(config.expected_reviewer_user_id, 22)

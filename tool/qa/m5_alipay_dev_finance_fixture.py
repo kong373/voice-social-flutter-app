@@ -40,12 +40,14 @@ from urllib.request import (
 )
 
 
-SCHEMA_VERSION = 1
-FLOW_SCHEMA_VERSION = "m5-alipay-dev-finance-fixture-v1"
+SCHEMA_VERSION = 2
+FLOW_SCHEMA_VERSION = "m5-alipay-dev-finance-fixture-v2"
 EXPECTED_DEVELOPMENT_MYSQL_CONTAINER = "voice-social-m3-development-mysql-1"
 SMS_REAUTHENTICATION_WAIT_SECONDS = 61.0
 
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
+FIXTURE_ID_RE = re.compile(r"^m5-fresh-[A-Za-z0-9_.:-]{1,64}$")
+FIXTURE_NICKNAME_RE = re.compile(r"^m5-[0-9a-f]{13}$")
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 PHONE_RE = re.compile(r"^1[3-9][0-9]{9}$")
 CLIENT_ID_RE = re.compile(r"^[\x21-\x7e]{1,160}$")
@@ -74,6 +76,7 @@ ALLOWED_ERROR_CATEGORIES = frozenset(
 STATE_KEYS = frozenset(
     {
         "schemaVersion",
+        "fixtureId",
         "runId",
         "backendSha",
         "customerPhone",
@@ -95,6 +98,7 @@ RUN_ID_ENV = (
     "M5_FINANCE_RUN_ID",
     "QA_FINANCE_FIXTURE_RUN_ID",
 )
+FIXTURE_ID_ENV = ("QA_M5_FINANCE_FIXTURE_ID",)
 BACKEND_URL_ENV = (
     "QA_M5_FINANCE_BACKEND_URL",
     "M5_FINANCE_BACKEND_URL",
@@ -164,6 +168,7 @@ class FinanceFixtureConfig:
     """Validated run configuration; protected values have no repr."""
 
     base_url: str
+    fixture_id: str = dataclasses.field(repr=False)
     run_id: str = dataclasses.field(repr=False)
     backend_sha: str = dataclasses.field(repr=False)
     customer_phone: str = dataclasses.field(repr=False)
@@ -252,6 +257,14 @@ def validate_phone_triplet(
     if any(not PHONE_RE.fullmatch(value) for value in values) or len(set(values)) != 3:
         raise FinanceFixtureError("CONFIGURATION")
     return values
+
+
+def validate_fixture_id(value: str) -> str:
+    """Require a fresh, namespaced fixture identity for every finance run."""
+
+    if not isinstance(value, str) or not FIXTURE_ID_RE.fullmatch(value):
+        raise FinanceFixtureError("CONFIGURATION")
+    return value
 
 
 def validate_development_mysql_container(value: str) -> str:
@@ -353,6 +366,7 @@ def read_config(environment: Mapping[str, str] | None = None) -> FinanceFixtureC
 
     env = os.environ if environment is None else environment
     base_url = validate_base_url(_first_env(env, BACKEND_URL_ENV))
+    fixture_id = validate_fixture_id(_first_env(env, FIXTURE_ID_ENV))
     run_id = _first_env(env, RUN_ID_ENV)
     backend_sha = _first_env(env, BACKEND_SHA_ENV).lower()
     profile = _first_env(env, PROFILE_ENV).strip().lower()
@@ -384,6 +398,7 @@ def read_config(environment: Mapping[str, str] | None = None) -> FinanceFixtureC
         raise FinanceFixtureError("CONFIGURATION")
     return FinanceFixtureConfig(
         base_url=base_url,
+        fixture_id=fixture_id,
         run_id=run_id,
         backend_sha=backend_sha,
         customer_phone=customer_phone,
@@ -710,8 +725,23 @@ def _device_id(run_id: str, role: str) -> str:
     return "m5-finance-" + digest
 
 
-def _nickname(role: str) -> str:
-    return {"customer": "M5 Finance Customer", "reviewer": "M5 Finance Reviewer", "executor": "M5 Finance Executor"}[role]
+def _fixture_nickname(fixture_id: str) -> str:
+    """Derive the exact customer nickname used to scope M5 finance data."""
+
+    validate_fixture_id(fixture_id)
+    nickname = "m5-" + hashlib.sha256(fixture_id.encode("utf-8")).hexdigest()[:13]
+    if not FIXTURE_NICKNAME_RE.fullmatch(nickname):
+        raise FinanceFixtureError("INVARIANT_VIOLATION")
+    return nickname
+
+
+def _nickname(role: str, fixture_id: str) -> str:
+    if role == "customer":
+        return _fixture_nickname(fixture_id)
+    return {
+        "reviewer": "M5 Finance Reviewer",
+        "executor": "M5 Finance Executor",
+    }[role]
 
 
 def _new_code(api: FirstPartyApi, phone: str, device_id: str) -> str:
@@ -722,10 +752,16 @@ def _new_code(api: FirstPartyApi, phone: str, device_id: str) -> str:
     return challenge.code
 
 
-def _register(api: FirstPartyApi, phone: str, role: str, run_id: str) -> AuthSession:
+def _register(
+    api: FirstPartyApi,
+    phone: str,
+    role: str,
+    run_id: str,
+    fixture_id: str,
+) -> AuthSession:
     device_id = _device_id(run_id, role + "-register")
     code = _new_code(api, phone, device_id)
-    return api.register(phone, code, device_id, _nickname(role))
+    return api.register(phone, code, device_id, _nickname(role, fixture_id))
 
 
 def _login(api: FirstPartyApi, phone: str, role: str, run_id: str) -> AuthSession:
@@ -760,11 +796,13 @@ def build_state(
     executor: AuthSession,
     order_baseline_id: int,
 ) -> dict[str, object]:
+    validate_fixture_id(config.fixture_id)
     _require_roles(customer, reviewer, executor)
     if type(order_baseline_id) is not int or order_baseline_id < 0:
         raise FinanceFixtureError("INVARIANT_VIOLATION")
     state: dict[str, object] = {
         "schemaVersion": SCHEMA_VERSION,
+        "fixtureId": config.fixture_id,
         "runId": config.run_id,
         "backendSha": config.backend_sha,
         "customerPhone": config.customer_phone,
@@ -784,6 +822,8 @@ def _validate_state(state: Mapping[str, object]) -> None:
     if set(state) != STATE_KEYS or state.get("schemaVersion") != SCHEMA_VERSION:
         raise FinanceFixtureError("STATE")
     if not isinstance(state.get("runId"), str) or not RUN_ID_RE.fullmatch(state["runId"]):
+        raise FinanceFixtureError("STATE")
+    if not isinstance(state.get("fixtureId"), str) or not FIXTURE_ID_RE.fullmatch(state["fixtureId"]):
         raise FinanceFixtureError("STATE")
     if not isinstance(state.get("backendSha"), str) or not SHA1_RE.fullmatch(state["backendSha"]):
         raise FinanceFixtureError("STATE")
@@ -853,7 +893,12 @@ def run_flow(
 ) -> dict[str, object]:
     """Create the three accounts, assign roles, relogin, and persist state."""
 
-    if config.profile != "development" or config.sms_vendor_enabled or not config.synthetic_phones:
+    if (
+        config.profile != "development"
+        or config.sms_vendor_enabled
+        or not config.synthetic_phones
+        or not FIXTURE_ID_RE.fullmatch(config.fixture_id)
+    ):
         raise FinanceFixtureError("CONFIGURATION")
     validate_development_mysql_container(config.mysql_container)
     prepare_state_target(config.state_file)
@@ -869,9 +914,27 @@ def run_flow(
     database = mysql or MysqlExecutor(config.mysql_container)
     baseline = database.baseline_order_id()
 
-    customer_registered = _register(client, config.customer_phone, "customer", config.run_id)
-    reviewer_registered = _register(client, config.reviewer_phone, "reviewer", config.run_id)
-    executor_registered = _register(client, config.executor_phone, "executor", config.run_id)
+    customer_registered = _register(
+        client,
+        config.customer_phone,
+        "customer",
+        config.run_id,
+        config.fixture_id,
+    )
+    reviewer_registered = _register(
+        client,
+        config.reviewer_phone,
+        "reviewer",
+        config.run_id,
+        config.fixture_id,
+    )
+    executor_registered = _register(
+        client,
+        config.executor_phone,
+        "executor",
+        config.run_id,
+        config.fixture_id,
+    )
     _require_roles(customer_registered, reviewer_registered, executor_registered,
                    expected_customer=ROLE_USER, expected_reviewer=ROLE_USER, expected_executor=ROLE_USER)
 
@@ -928,6 +991,9 @@ def _self_test() -> int:
 
     validate_base_url("http://127.0.0.1:18080")
     validate_phone_triplet("13900000001", "13900000002", "13900000003")
+    fixture_id = "m5-fresh-self-test"
+    if _fixture_nickname(fixture_id) != "m5-" + hashlib.sha256(fixture_id.encode("utf-8")).hexdigest()[:13]:
+        raise AssertionError("fixture nickname derivation failed")
     try:
         validate_base_url("http://10.0.2.2:18080")
     except FinanceFixtureError:

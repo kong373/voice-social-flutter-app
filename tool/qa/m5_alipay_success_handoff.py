@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -35,12 +36,13 @@ import tempfile
 from typing import Mapping, Sequence
 
 
-FLOW_SCHEMA_VERSION = "m5-alipay-success-handoff-v1"
-FIXTURE_STATE_VERSION = 1
+FLOW_SCHEMA_VERSION = "m5-alipay-success-handoff-v2"
+FIXTURE_STATE_VERSION = 2
 EXPECTED_DEVELOPMENT_MYSQL_CONTAINER = "voice-social-m3-development-mysql-1"
 
 FIXTURE_FIELDS = frozenset(
     {
+        "fixtureId",
         "runId",
         "backendSha",
         "customerPhone",
@@ -53,7 +55,7 @@ FIXTURE_FIELDS = frozenset(
         "orderBaselineId",
     }
 )
-STATE_VERSION_FIELDS = frozenset({"schemaVersion", "version"})
+STATE_VERSION_FIELDS = frozenset({"schemaVersion"})
 HANDOFF_FIELDS = FIXTURE_FIELDS | frozenset({"orderNo"}) | STATE_VERSION_FIELDS
 
 STATE_ENV_NAMES = (
@@ -84,9 +86,12 @@ RUN_ID_ENV_NAMES = (
     "QA_M5_FINANCE_RUN_ID",
     "QA_M5_REFUND_RUN_ID",
 )
+FIXTURE_ID_ENV_NAMES = ("QA_M5_FINANCE_FIXTURE_ID",)
 DOCKER_SOCKET_ENV_NAMES = ("QA_DOCKER_SOCKET", "M5_DOCKER_SOCKET")
 
 SHA1_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+FIXTURE_ID_RE = re.compile(r"^m5-fresh-[A-Za-z0-9_.:-]{1,64}$")
+FIXTURE_NICKNAME_RE = re.compile(r"^m5-[0-9a-f]{13}$")
 ORDER_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
 TOKEN_RE = re.compile(r"^[\x21-\x7e]{16,4096}$")
@@ -118,6 +123,7 @@ class HandoffError(RuntimeError):
 class FixtureState:
     """Validated protected fixture state; repr hides every sensitive field."""
 
+    fixture_id: str = dataclasses.field(repr=False)
     run_id: str = dataclasses.field(repr=False)
     backend_sha: str = dataclasses.field(repr=False)
     customer_phone: str = dataclasses.field(repr=False)
@@ -141,6 +147,7 @@ class HandoffConfig:
     expected_run_id: str = dataclasses.field(repr=False)
     docker_bin: str = dataclasses.field(repr=False)
     docker_env: Mapping[str, str] = dataclasses.field(repr=False)
+    expected_fixture_id: str = dataclasses.field(default="", repr=False)
 
 
 def _is_int(value: object) -> bool:
@@ -155,10 +162,20 @@ def _protected_text(value: object, *, max_length: int) -> str:
     return value
 
 
+def _fixture_nickname(fixture_id: str) -> str:
+    if not isinstance(fixture_id, str) or not FIXTURE_ID_RE.fullmatch(fixture_id):
+        raise HandoffError("STATE")
+    nickname = "m5-" + hashlib.sha256(fixture_id.encode("utf-8")).hexdigest()[:13]
+    if not FIXTURE_NICKNAME_RE.fullmatch(nickname):
+        raise HandoffError("STATE")
+    return nickname
+
+
 def _bearer(value: object) -> str:
     raw = _protected_text(value, max_length=4096).strip()
-    if raw.startswith("Bearer "):
-        raw = raw[7:]
+    if not raw.startswith("Bearer "):
+        raise HandoffError("STATE")
+    raw = raw[7:]
     if not TOKEN_RE.fullmatch(raw):
         raise HandoffError("STATE")
     return "Bearer " + raw
@@ -170,16 +187,7 @@ def _require_state_version(value: Mapping[str, object]) -> tuple[str, object]:
         raise HandoffError("STATE")
     key = present[0]
     version = value[key]
-    # The fixture producer may use either a numeric v1 marker or its stable
-    # string name.  No other schema can enter the handoff boundary.
-    if version not in {
-        1,
-        "1",
-        "v1",
-        "m5-alipay-finance-fixture-v1",
-        "m5-alipay-success-fixture-v1",
-        FLOW_SCHEMA_VERSION,
-    }:
+    if version != FIXTURE_STATE_VERSION:
         raise HandoffError("STATE")
     return key, version
 
@@ -188,20 +196,32 @@ def validate_fixture_state(
     value: object,
     *,
     expected_backend_sha: str,
+    expected_fixture_id: str | None = None,
     expected_run_id: str | None = None,
     require_order: bool = False,
     require_unbound: bool = False,
 ) -> FixtureState:
-    """Validate the private JSON v1 contract without exposing its values."""
+    """Validate the private JSON v2 contract without exposing its values."""
 
     if not isinstance(value, dict):
         raise HandoffError("STATE")
     if not SHA1_RE.fullmatch(expected_backend_sha or ""):
         raise HandoffError("CONFIGURATION")
+    if not isinstance(expected_fixture_id, str) or not FIXTURE_ID_RE.fullmatch(
+        expected_fixture_id
+    ):
+        raise HandoffError("CONFIGURATION")
     keys = set(value)
     if not keys.issubset(HANDOFF_FIELDS) or not FIXTURE_FIELDS.issubset(keys):
         raise HandoffError("STATE")
     version_key, version_value = _require_state_version(value)
+
+    fixture_id = value.get("fixtureId")
+    if not isinstance(fixture_id, str) or not FIXTURE_ID_RE.fullmatch(fixture_id):
+        raise HandoffError("STATE")
+    if fixture_id != expected_fixture_id:
+        raise HandoffError("STATE")
+    _fixture_nickname(fixture_id)
 
     run_id = value.get("runId")
     if not isinstance(run_id, str) or not RUN_ID_RE.fullmatch(run_id):
@@ -249,6 +269,7 @@ def validate_fixture_state(
         raise HandoffError("STATE")
 
     return FixtureState(
+        fixture_id=fixture_id,
         run_id=run_id,
         backend_sha=backend_sha.lower(),
         customer_phone=customer_phone,
@@ -377,6 +398,7 @@ def read_state_file(
     path: Path,
     *,
     expected_backend_sha: str,
+    expected_fixture_id: str | None = None,
     expected_run_id: str | None = None,
     require_order: bool = False,
     require_unbound: bool = False,
@@ -390,6 +412,7 @@ def read_state_file(
     state = validate_fixture_state(
         value,
         expected_backend_sha=expected_backend_sha,
+        expected_fixture_id=expected_fixture_id,
         expected_run_id=expected_run_id,
         require_order=require_order,
         require_unbound=require_unbound,
@@ -427,6 +450,9 @@ def read_config(environment: Mapping[str, str] | None = None) -> HandoffConfig:
     expected_run_id = _first_env_value(env, RUN_ID_ENV_NAMES)
     if not RUN_ID_RE.fullmatch(expected_run_id):
         raise HandoffError("CONFIGURATION")
+    expected_fixture_id = _first_env_value(env, FIXTURE_ID_ENV_NAMES)
+    if not FIXTURE_ID_RE.fullmatch(expected_fixture_id):
+        raise HandoffError("CONFIGURATION")
     mysql_container = _validate_development_container(
         _first_env_value(env, MYSQL_ENV_NAMES)
     )
@@ -454,22 +480,26 @@ def read_config(environment: Mapping[str, str] | None = None) -> HandoffConfig:
         expected_run_id=expected_run_id,
         docker_bin=docker_bin,
         docker_env=docker_env,
+        expected_fixture_id=expected_fixture_id,
     )
 
 
 # This script is passed as a fixed ``/bin/sh -c`` argument.  The only values
-# it consumes from stdin are validated positive decimal IDs.  The DB password
-# is expanded inside the development container and never crosses the host.
+# it consumes from stdin are validated positive decimal IDs and the derived
+# fixture nickname. The DB password is expanded inside the development
+# container and never crosses the host.
 MYSQL_HANDOFF_SCRIPT = r"""
 set -eu
 database="${MYSQL_DATABASE:-}"
 database_user="${MYSQL_USER:-${MYSQL_APP_USER:-root}}"
 database_secret="${MYSQL_PASSWORD:-${MYSQL_APP_PASSWORD:-${MYSQL_ROOT_PASSWORD:-}}}"
 [ -n "$database" ] && [ -n "$database_secret" ] || exit 20
-IFS="$(printf '\t')" read -r customer_user_id order_baseline_id
+IFS="$(printf '\t')" read -r customer_user_id order_baseline_id fixture_nickname
 case "$customer_user_id" in ''|*[!0-9]*) exit 21 ;; esac
 case "$order_baseline_id" in ''|*[!0-9]*) exit 22 ;; esac
-    [ "$customer_user_id" -gt 0 ] && [ "$order_baseline_id" -ge 0 ] || exit 23
+case "$fixture_nickname" in m5-?????????????) ;; *) exit 23 ;; esac
+case "${fixture_nickname#m5-}" in *[!0-9a-f]*) exit 24 ;; esac
+[ "$customer_user_id" -gt 0 ] && [ "$order_baseline_id" -ge 0 ] || exit 25
 
 mysql_query() {
   printf '%s\n' "$1" | MYSQL_PWD="$database_secret" mysql \
@@ -493,6 +523,11 @@ candidate_query="
 SELECT o.order_no
 FROM recharge_order o
 WHERE o.user_id = $customer_user_id
+  AND EXISTS (
+      SELECT 1 FROM app_user fixture_customer
+      WHERE fixture_customer.id = o.user_id
+        AND fixture_customer.nickname = '$fixture_nickname'
+  )
   AND o.id > $order_baseline_id
   AND o.amount_minor > 0
   AND o.gift_coin_amount > 0
@@ -568,7 +603,13 @@ unset database_secret MYSQL_PWD
 
 
 def _run_mysql_query(config: HandoffConfig, state: FixtureState) -> list[str]:
-    input_value = f"{state.customer_user_id}\t{state.order_baseline_id}\n"
+    if state.fixture_id != config.expected_fixture_id:
+        raise HandoffError("STATE")
+    fixture_nickname = _fixture_nickname(state.fixture_id)
+    input_value = (
+        f"{state.customer_user_id}\t{state.order_baseline_id}"
+        f"\t{fixture_nickname}\n"
+    )
     try:
         completed = subprocess.run(
             [
@@ -610,6 +651,7 @@ def run_handoff(config: HandoffConfig) -> dict[str, object]:
     state, raw_state = read_state_file(
         config.state_file,
         expected_backend_sha=config.expected_backend_sha,
+        expected_fixture_id=config.expected_fixture_id,
         expected_run_id=config.expected_run_id,
         require_unbound=True,
     )
@@ -623,6 +665,7 @@ def run_handoff(config: HandoffConfig) -> dict[str, object]:
     return {
         "schemaVersion": FLOW_SCHEMA_VERSION,
         "status": "PASS",
+        "fixtureId": state.fixture_id,
         "orderBound": True,
         "provider": "ALIPAY_SANDBOX",
         "settlementVerified": True,
@@ -648,14 +691,15 @@ def _public_self_test() -> int:
             json.dumps(
                 {
                     "schemaVersion": FIXTURE_STATE_VERSION,
+                    "fixtureId": "m5-fresh-success-self-test",
                     "runId": "m5-success-self-test",
                     "backendSha": "a" * 40,
                     "customerPhone": "fixture-customer-phone",
-                    "customerBearer": "customer-token-value",
+                    "customerBearer": "Bearer customer-token-value",
                     "customerUserId": 1,
-                    "reviewerBearer": "reviewer-token-value",
+                    "reviewerBearer": "Bearer reviewer-token-value",
                     "reviewerUserId": 2,
-                    "executorBearer": "executor-token-value",
+                    "executorBearer": "Bearer executor-token-value",
                     "executorUserId": 3,
                     "orderBaselineId": 1,
                 }
@@ -666,6 +710,7 @@ def _public_self_test() -> int:
         state, _ = read_state_file(
             state_path,
             expected_backend_sha="a" * 40,
+            expected_fixture_id="m5-fresh-success-self-test",
             expected_run_id="m5-success-self-test",
             require_unbound=True,
         )
@@ -675,18 +720,20 @@ def _public_self_test() -> int:
             validate_fixture_state(
                 {
                     "schemaVersion": FIXTURE_STATE_VERSION,
+                    "fixtureId": "m5-fresh-success-self-test",
                     "runId": "m5-success-self-test",
                     "backendSha": "a" * 40,
                     "customerPhone": "fixture-customer-phone",
-                    "customerBearer": "same-token-value",
+                    "customerBearer": "Bearer same-token-value",
                     "customerUserId": 1,
-                    "reviewerBearer": "same-token-value",
+                    "reviewerBearer": "Bearer same-token-value",
                     "reviewerUserId": 2,
-                    "executorBearer": "executor-token-value",
+                    "executorBearer": "Bearer executor-token-value",
                     "executorUserId": 3,
                     "orderBaselineId": 1,
                 },
                 expected_backend_sha="a" * 40,
+                expected_fixture_id="m5-fresh-success-self-test",
             )
         except HandoffError:
             pass

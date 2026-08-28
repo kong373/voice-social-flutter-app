@@ -1,10 +1,11 @@
 # M5 Alipay sandbox Finance four-eyes refund acceptance
 
 `tool/qa/m5_alipay_refund_four_eyes.py` is a QA-only, opt-in harness for the
-refund lane. It is run only after the existing M5 runner has created and
-authenticated a successful Alipay sandbox order. The refund harness does not
-discover an order, user, provider identifier, amount, or refund identifier;
-the protected runner/secret store must inject the exact order reference.
+refund lane. It is run only after the M5 finance fixture and success handoff
+have created and authenticated a successful Alipay sandbox order. The refund
+harness does not discover an order, user, provider identifier, amount, or
+refund identifier; it accepts only the private v2 state produced by the
+fixture/handoff flow and checks its fixture binding.
 
 ## Safety contract
 
@@ -43,17 +44,18 @@ history, logs, screenshots, test fixtures, or committed files.
 
 ```text
 QA_M5_REFUND_BASE_URL=https://<first-party-backend-host>/
-QA_M5_REFUND_ORDER_NO=<the exact completed success-lane order>
-QA_M5_REFUND_USER_BEARER=<customer bearer>
-QA_M5_REFUND_REVIEWER_BEARER=<Finance reviewer bearer>
-QA_M5_REFUND_EXECUTOR_BEARER=<different Finance executor bearer>
+QA_M5_FINANCE_FIXTURE_ID=m5-fresh-<dedicated-fixture>
+QA_M5_REFUND_PROTECTED_STATE_FILE=/secure/private/m5-finance/fixture.json
 QA_M5_REFUND_REASON=<1-256 printable characters>
 QA_M5_REFUND_RUN_ID=m5-refund-<fresh-run>
 QA_M5_REFUND_MYSQL_CONTAINER=<serving MySQL container>
 QA_M5_REFUND_LEDGER_STATE_DIR=/secure/private/m5-refund-state
 ```
 
-The three bearer values must be distinct. The state directory must already
+`QA_M5_FINANCE_FIXTURE_ID` is required and must match
+`^m5-fresh-[A-Za-z0-9_.:-]{1,64}$`. The protected state must have
+`schemaVersion=2`, contain the same `fixtureId`, and be the exact private
+state produced by the fixture/handoff flow. The state directory must already
 exist with mode `0700` or narrower. `QA_M5_REFUND_ARTIFACT_DIR` is optional,
 but if supplied it must also be a new private directory. The optional
 `QA_M5_REFUND_ALLOW_INSECURE_HTTP=true` is accepted only for the controlled
@@ -72,10 +74,21 @@ the helper never prints those values.
 
 ## Explicit M5 runner invocation
 
-Load the normal protected M5 inputs first, then run the tracked runner's
-success payment lane. This step is the source of the order reference; it must
-finish with the runner's successful provider result before the refund lane is
-started.
+Create a fresh finance fixture first. The fixture captures the protected v2
+state and derives the customer nickname as `m5-` plus the first 13 lowercase
+hex characters of `sha256(QA_M5_FINANCE_FIXTURE_ID)`. Keep the state path and
+all protected values in the operator's secret relay.
+
+```bash
+umask 077
+QA_M5_FINANCE_FIXTURE_ID=m5-fresh-<dedicated-fixture> \
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tool/qa \
+  python3 tool/qa/m5_alipay_dev_finance_fixture.py --run
+```
+
+Load the normal protected M5 inputs next, then run the tracked runner's
+success payment lane. The success handoff reads the same protected v2 state,
+checks the fixture binding, and adds the one eligible order privately.
 
 ```bash
 # All ordinary QA_M5_* inputs are loaded by the protected runner workflow.
@@ -87,11 +100,11 @@ env \
   tool/qa/run_m5_vendor_live_avd.sh
 ```
 
-After that command returns a successful M5 result, inject the exact order
-reference and the three role bearers from the protected handoff, create the
-private ledger state directory, and invoke the refund orchestrator. The
-orchestrator performs no order lookup beyond the exact supplied reference and
-does not read an artifact to discover one.
+After that command returns a successful M5 result, invoke the protected
+success handoff with the same `QA_M5_FINANCE_FIXTURE_ID` and state file. Then
+create the private ledger state directory and invoke the refund orchestrator.
+The orchestrator obtains the order and bearers only from the matching v2 state;
+there is no direct order or bearer input path.
 
 ```bash
 umask 077

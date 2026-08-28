@@ -38,19 +38,21 @@ from m5_alipay_dev_finance_fixture import (
 
 BACKEND_SHA = "a" * 40
 ORDER_NO = "vs-alipay-success-001"
+FIXTURE_ID = "m5-fresh-success-test"
 
 
 def _fixture(*, order_no: str | None = None) -> dict[str, object]:
     value: dict[str, object] = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
+        "fixtureId": FIXTURE_ID,
         "runId": "m5-success-test",
         "backendSha": BACKEND_SHA,
         "customerPhone": "fixture-customer-phone",
-        "customerBearer": "customer-token-value",
+        "customerBearer": "Bearer customer-token-value",
         "customerUserId": 11,
-        "reviewerBearer": "reviewer-token-value",
+        "reviewerBearer": "Bearer reviewer-token-value",
         "reviewerUserId": 22,
-        "executorBearer": "executor-token-value",
+        "executorBearer": "Bearer executor-token-value",
         "executorUserId": 33,
         "orderBaselineId": 100,
     }
@@ -77,6 +79,7 @@ class M5AlipaySuccessHandoffTest(unittest.TestCase):
             expected_run_id="m5-success-test",
             docker_bin="/usr/bin/docker",
             docker_env={"PATH": "/usr/bin:/bin"},
+            expected_fixture_id=FIXTURE_ID,
         )
 
     def tearDown(self) -> None:
@@ -109,6 +112,7 @@ class M5AlipaySuccessHandoffTest(unittest.TestCase):
         self.assertNotIn(ORDER_NO, json.dumps(result, sort_keys=True))
         state = json.loads(self.state_path.read_text())
         self.assertEqual(state["orderNo"], ORDER_NO)
+        self.assertEqual(state["fixtureId"], FIXTURE_ID)
         self.assertEqual(stat.S_IMODE(self.state_path.stat().st_mode), 0o600)
         self.assertNotIn(ORDER_NO, " ".join(command.call_args.args[0]))
         self.assertNotIn(ORDER_NO, command.call_args.kwargs["input"])
@@ -177,6 +181,7 @@ class M5AlipaySuccessHandoffTest(unittest.TestCase):
                         _run_mysql_query(self.config, read_state_file(
                             self.state_path,
                             expected_backend_sha=BACKEND_SHA,
+                            expected_fixture_id=FIXTURE_ID,
                             require_unbound=True,
                         )[0])
 
@@ -195,32 +200,56 @@ class M5AlipaySuccessHandoffTest(unittest.TestCase):
 
     def test_state_backend_actor_schema_and_unbound_checks(self) -> None:
         valid = _fixture()
-        state = validate_fixture_state(valid, expected_backend_sha=BACKEND_SHA)
+        state = validate_fixture_state(
+            valid,
+            expected_backend_sha=BACKEND_SHA,
+            expected_fixture_id=FIXTURE_ID,
+        )
         self.assertEqual(state.customer_user_id, 11)
+        with self.assertRaisesRegex(HandoffError, "STATE"):
+            validate_fixture_state(
+                dict(valid, schemaVersion=1),
+                expected_backend_sha=BACKEND_SHA,
+                expected_fixture_id=FIXTURE_ID,
+            )
+        with self.assertRaisesRegex(HandoffError, "STATE"):
+            validate_fixture_state(
+                dict(valid, fixtureId="m5-fresh-another-fixture"),
+                expected_backend_sha=BACKEND_SHA,
+                expected_fixture_id=FIXTURE_ID,
+            )
         missing_version = dict(valid)
         missing_version.pop("schemaVersion")
         with self.assertRaisesRegex(HandoffError, "STATE"):
             validate_fixture_state(
-                missing_version, expected_backend_sha=BACKEND_SHA
+                missing_version,
+                expected_backend_sha=BACKEND_SHA,
+                expected_fixture_id=FIXTURE_ID,
             )
         with self.assertRaisesRegex(HandoffError, "STATE"):
             validate_fixture_state(
-                dict(valid, backendSha="b" * 40), expected_backend_sha=BACKEND_SHA
+                dict(valid, backendSha="b" * 40),
+                expected_backend_sha=BACKEND_SHA,
+                expected_fixture_id=FIXTURE_ID,
             )
         with self.assertRaisesRegex(HandoffError, "STATE"):
             validate_fixture_state(
-                dict(valid, executorUserId=22), expected_backend_sha=BACKEND_SHA
+                dict(valid, executorUserId=22),
+                expected_backend_sha=BACKEND_SHA,
+                expected_fixture_id=FIXTURE_ID,
             )
         with self.assertRaisesRegex(HandoffError, "STATE"):
             validate_fixture_state(
                 dict(valid, orderNo=ORDER_NO),
                 expected_backend_sha=BACKEND_SHA,
+                expected_fixture_id=FIXTURE_ID,
                 require_unbound=True,
             )
 
     def test_finance_fixture_state_is_accepted_without_schema_translation(self) -> None:
         config = FinanceFixtureConfig(
             base_url="http://127.0.0.1:18080",
+            fixture_id=FIXTURE_ID,
             run_id="m5-refund-shared-contract",
             backend_sha=BACKEND_SHA,
             customer_phone="13900000001",
@@ -240,6 +269,7 @@ class M5AlipaySuccessHandoffTest(unittest.TestCase):
         consumed = validate_fixture_state(
             produced,
             expected_backend_sha=BACKEND_SHA,
+            expected_fixture_id=FIXTURE_ID,
             expected_run_id="m5-refund-shared-contract",
             require_unbound=True,
         )

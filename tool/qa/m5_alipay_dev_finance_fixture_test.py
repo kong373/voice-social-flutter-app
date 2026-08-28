@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -17,6 +18,7 @@ from unittest.mock import patch
 from m5_alipay_dev_finance_fixture import (
     AuthSession,
     Challenge,
+    FIXTURE_ID_RE,
     FinanceFixtureConfig,
     FinanceFixtureError,
     FirstPartyApi,
@@ -28,6 +30,7 @@ from m5_alipay_dev_finance_fixture import (
     SMS_REAUTHENTICATION_WAIT_SECONDS,
     STATE_KEYS,
     _docker_environment,
+    _fixture_nickname,
     _self_test,
     build_state,
     main,
@@ -47,6 +50,7 @@ class FakeApi:
     def __init__(self) -> None:
         self.send_calls: list[tuple[str, str]] = []
         self.register_calls: list[str] = []
+        self.register_nicknames: list[str] = []
         self.login_calls: list[str] = []
         self._ids = {
             "13900000001": 101,
@@ -62,6 +66,7 @@ class FakeApi:
 
     def register(self, phone: str, code: str, device_id: str, nickname: str) -> AuthSession:
         self.register_calls.append(phone)
+        self.register_nicknames.append(nickname)
         return AuthSession(
             "Bearer access-token-for-" + str(self._ids[phone]),
             self._ids[phone],
@@ -115,6 +120,7 @@ def _config(root: str) -> FinanceFixtureConfig:
     os.chmod(state_parent, 0o700)
     return FinanceFixtureConfig(
         base_url="http://127.0.0.1:18080",
+        fixture_id="m5-fresh-offline-finance",
         run_id="m5-finance-offline-test",
         backend_sha="a" * 40,
         customer_phone="13900000001",
@@ -127,6 +133,15 @@ def _config(root: str) -> FinanceFixtureConfig:
 
 
 class FinanceFixtureContractTest(unittest.TestCase):
+    def test_fixture_id_is_required_and_derives_customer_nickname(self) -> None:
+        fixture_id = "m5-fresh-fixture.with:scope"
+        expected = "m5-" + hashlib.sha256(fixture_id.encode("utf-8")).hexdigest()[:13]
+        self.assertTrue(FIXTURE_ID_RE.fullmatch(fixture_id))
+        self.assertEqual(_fixture_nickname(fixture_id), expected)
+        for invalid in ("", "m5-old-fixture", "m5-fresh-", "m5-fresh- " + "x"):
+            with self.subTest(invalid=invalid):
+                self.assertIsNone(FIXTURE_ID_RE.fullmatch(invalid))
+
     def test_self_test_is_provider_free_and_subprocess_free(self) -> None:
         with patch("m5_alipay_dev_finance_fixture.subprocess.run") as run:
             self.assertEqual(_self_test(), 0)
@@ -171,6 +186,7 @@ class FinanceFixtureContractTest(unittest.TestCase):
             environment = {
                 "QA_M5_FINANCE_BACKEND_URL": config.base_url,
                 "QA_M5_FINANCE_RUN_ID": config.run_id,
+                "QA_M5_FINANCE_FIXTURE_ID": config.fixture_id,
                 "QA_M5_FINANCE_BACKEND_SHA": config.backend_sha,
                 "QA_M5_FINANCE_PROFILE": "production",
                 "QA_M5_FINANCE_SMS_VENDOR_ENABLED": "false",
@@ -228,6 +244,14 @@ class FinanceFixtureContractTest(unittest.TestCase):
             self.assertEqual(mysql.baseline_calls, 1)
             self.assertEqual(mysql.role_calls, [(101, 202, 303)])
             self.assertEqual(api.register_calls, [config.customer_phone, config.reviewer_phone, config.executor_phone])
+            self.assertEqual(
+                api.register_nicknames,
+                [
+                    "m5-" + hashlib.sha256(config.fixture_id.encode("utf-8")).hexdigest()[:13],
+                    "M5 Finance Reviewer",
+                    "M5 Finance Executor",
+                ],
+            )
             self.assertEqual(api.login_calls, [config.customer_phone, config.reviewer_phone, config.executor_phone])
             self.assertEqual(len(api.send_calls), 6)
             state_path = Path(config.state_file)
@@ -238,6 +262,7 @@ class FinanceFixtureContractTest(unittest.TestCase):
             state = json.loads(state_path.read_text(encoding="utf-8"))
             self.assertEqual(set(state), STATE_KEYS)
             self.assertEqual(state["schemaVersion"], SCHEMA_VERSION)
+            self.assertEqual(state["fixtureId"], config.fixture_id)
             self.assertEqual(state["customerUserId"], 101)
             self.assertEqual(state["reviewerUserId"], 202)
             self.assertEqual(state["executorUserId"], 303)
