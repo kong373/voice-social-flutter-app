@@ -315,6 +315,12 @@ void main() {
       runnerSource,
       contains('adb -s "\$serial" shell pm clear "\$APP_PACKAGE"'),
     );
+    expect(
+      runnerSource,
+      contains('adb -s "\$serial" shell pm list packages "\$APP_PACKAGE"'),
+    );
+    expect(runnerSource, contains('grep -Fxq "package:\$APP_PACKAGE"'));
+    expect(runnerSource, contains('[[ -z "\$package_query" ]]'));
     expect(runnerSource, contains('[[ "\$clear_output" == \'Success\' ]]'));
     expect(runnerSource, contains('app_data_clear_failed'));
     expect(runnerSource, isNot(contains('pm clear com.alipay')));
@@ -323,13 +329,28 @@ void main() {
       'clear_test_app_data "\$serial"',
       selectedSerial,
     );
+    final int packageQuery = runnerSource.indexOf(
+      'pm list packages "\$APP_PACKAGE"',
+    );
+    final int exactPackageMatch = runnerSource.indexOf(
+      'grep -Fxq "package:\$APP_PACKAGE"',
+      packageQuery,
+    );
+    final int packageClear = runnerSource.indexOf(
+      'pm clear "\$APP_PACKAGE"',
+      exactPackageMatch,
+    );
     final int driveStart = runnerSource.indexOf(
       'run_flutter_test "\$serial"',
-      clearedSerial,
+      packageClear,
     );
     expect(selectedSerial, greaterThanOrEqualTo(0));
     expect(clearedSerial, greaterThan(selectedSerial));
-    expect(driveStart, greaterThan(clearedSerial));
+    expect(packageQuery, greaterThanOrEqualTo(0));
+    expect(exactPackageMatch, greaterThan(packageQuery));
+    expect(packageClear, greaterThan(exactPackageMatch));
+    expect(packageClear, lessThan(clearedSerial));
+    expect(driveStart, greaterThan(packageClear));
     expect(runnerSource, contains('start_db_evidence_helper'));
     expect(
       runnerSource,

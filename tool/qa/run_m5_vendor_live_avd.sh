@@ -830,7 +830,17 @@ select_device() {
 }
 
 clear_test_app_data() {
-  local serial="$1" clear_output=''
+  local serial="$1" package_query='' query_line clear_output=''
+  package_query="$(adb -s "$serial" shell pm list packages "$APP_PACKAGE" 2>&1 | tr -d '\r')" || return 1
+  if [[ -z "$package_query" ]]; then
+    return 0
+  fi
+  while IFS= read -r query_line; do
+    [[ "$query_line" =~ ^package:[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+$ ]] || return 1
+  done <<<"$package_query"
+  if ! printf '%s\n' "$package_query" | grep -Fxq "package:$APP_PACKAGE"; then
+    return 0
+  fi
   clear_output="$(adb -s "$serial" shell pm clear "$APP_PACKAGE" 2>&1 | tr -d '\r')" || return 1
   [[ "$clear_output" == 'Success' ]]
 }
