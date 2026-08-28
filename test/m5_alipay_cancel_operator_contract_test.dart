@@ -4,6 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   final File operator = File('tool/qa/m5_alipay_cancel_operator.sh').absolute;
+  const String validNativeMarker =
+      'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001';
+  const String validBridgeMarker =
+      'M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned';
 
   Directory createSandbox(String prefix) {
     final Directory sandbox = Directory.systemTemp.createTempSync(prefix);
@@ -19,12 +23,29 @@ void main() {
     Directory sandbox, {
     required String stateMode,
     required int targetCalls,
-    required String marker,
-    required int markerAfterBack,
-    bool appendMarker = true,
+    Map<int, List<String>> markersByBack = const <int, List<String>>{},
+    Map<int, List<String>> markersByDumpsys = const <int, List<String>>{},
   }) {
     File('${sandbox.path}/dumpsys-count.txt').writeAsStringSync('0');
     File('${sandbox.path}/keyevent-count.txt').writeAsStringSync('0');
+    String shellQuote(String value) => "'${value.replaceAll("'", "'\"'\"'")}'";
+    String markerCases(Map<int, List<String>> markers) => markers.isEmpty
+        ? ''
+        : markers.entries
+              .map((MapEntry<int, List<String>> entry) {
+                final String markerWrites = entry.value
+                    .map(
+                      (String marker) =>
+                          "          printf '%s\\n' " +
+                          shellQuote(marker) +
+                          ' >>"\$FAKE_LOG_PATH"',
+                    )
+                    .join('\n');
+                return '        ${entry.key})\n$markerWrites\n          ;;';
+              })
+              .join('\n');
+    final String backMarkerCases = markerCases(markersByBack);
+    final String dumpsysMarkerCases = markerCases(markersByDumpsys);
     final File fakeAdb = File('${sandbox.path}/adb');
     fakeAdb.writeAsStringSync('''#!/usr/bin/env bash
 set -Eeuo pipefail
@@ -51,6 +72,11 @@ case "\${1:-}" in
       count=\"\$(<\"\$FAKE_DUMPSYS_COUNT\")\"
       count=\$((count + 1))
       printf '%s' \"\$count\" >\"\$FAKE_DUMPSYS_COUNT\"
+      case \"\$count\" in
+$dumpsysMarkerCases
+        *)
+          ;;
+      esac
       if (( count <= $targetCalls )); then
         printf '%s\\n' 'mResumedActivity: ActivityRecord{com.eg.android.AlipayGphoneRC/com.alipay.android.msp.ui.views.MspContainerActivity}'
       else
@@ -60,9 +86,11 @@ case "\${1:-}" in
       count=\"\$(<\"\$FAKE_KEYEVENT_COUNT\")\"
       count=\$((count + 1))
       printf '%s' \"\$count\" >\"\$FAKE_KEYEVENT_COUNT\"
-      if [[ '$appendMarker' == 'true' && \"\$count\" == '$markerAfterBack' ]]; then
-        printf '%s\\n' '$marker' >>\"\$FAKE_LOG_PATH\"
-      fi
+      case \"\$count\" in
+$backMarkerCases
+        *)
+          ;;
+      esac
     else
       exit 91
     fi
@@ -130,10 +158,8 @@ esac
     expect(source, contains("TARGET_PACKAGE='com.eg.android.AlipayGphoneRC'"));
     expect(source, contains("TARGET_ACTIVITY='MspContainerActivity'"));
     expect(source, contains("TARGET_SERIAL='emulator-5554'"));
-    expect(
-      source,
-      contains('M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001'),
-    );
+    expect(source, contains(validNativeMarker));
+    expect(source, contains(validBridgeMarker));
     expect(source, contains('ANDROID_SERIAL'));
     expect(source, contains('FLUTTER_LOG_PATH'));
     expect(source, contains('KEYCODE_BACK'));
@@ -147,7 +173,7 @@ esac
     expect(syntax.exitCode, 0, reason: '${syntax.stdout}\n${syntax.stderr}');
   });
 
-  test('exact 6001 marker sends one BACK and leaves AVD-B untouched', () {
+  test('exact 6001/result pair sends one BACK and leaves AVD-B untouched', () {
     final Directory sandbox = createSandbox('m5-alipay-cancel-pass-');
     final File log = File('${sandbox.path}/flutter-drive.log')
       ..writeAsStringSync('');
@@ -155,10 +181,12 @@ esac
       sandbox,
       stateMode: 'online',
       targetCalls: 3,
-      marker:
-          'I/flutter (12345): '
-          'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001',
-      markerAfterBack: 1,
+      markersByBack: <int, List<String>>{
+        1: <String>[
+          'I/flutter (12345): $validNativeMarker',
+          'I/flutter (12345): $validBridgeMarker',
+        ],
+      },
     );
     final ProcessResult result = runOperator(
       sandbox,
@@ -175,6 +203,10 @@ esac
     expect(
       result.stdout,
       contains('NATIVE_RESULT_ACCEPTED::resultStatus=6001'),
+    );
+    expect(
+      result.stdout,
+      contains('BRIDGE_OUTCOME_ACCEPTED::pay_task_returned'),
     );
     final String calls = File(
       '${sandbox.path}/adb-calls.txt',
@@ -204,8 +236,10 @@ esac
       // With after-back-timeout=0, one target observation keeps the cashier
       // present and exercises the explicitly capped second BACK.
       targetCalls: 10000,
-      marker: 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001',
-      markerAfterBack: 2,
+      markersByBack: <int, List<String>>{
+        1: <String>[validNativeMarker],
+        2: <String>[validBridgeMarker],
+      },
     );
     final ProcessResult result = runOperator(
       sandbox,
@@ -230,19 +264,41 @@ esac
     expect(result.stdout, contains('TARGET_STILL_PRESENT_AFTER_BOUNDED_WAIT'));
   });
 
-  test('stale pre-existing 6001 marker is rejected before any BACK', () {
-    final Directory sandbox = createSandbox('m5-alipay-cancel-stale-');
-    final File log = File('${sandbox.path}/flutter-drive.log')
-      ..writeAsStringSync(
-        'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001\n',
+  test('stale pre-existing native or bridge marker rejects before adb', () {
+    for (final String staleMarker in <String>[
+      validNativeMarker,
+      validBridgeMarker,
+    ]) {
+      final Directory sandbox = createSandbox('m5-alipay-cancel-stale-');
+      final File log = File('${sandbox.path}/flutter-drive.log')
+        ..writeAsStringSync('$staleMarker\n');
+      final File fakeAdb = createFakeAdb(
+        sandbox,
+        stateMode: 'online',
+        targetCalls: 3,
       );
+      final ProcessResult result = runOperator(
+        sandbox,
+        fakeAdb: fakeAdb,
+        flutterLog: log,
+      );
+      expect(result.exitCode, 65, reason: staleMarker);
+      expect(result.stdout, isNot(contains('KEYCODE_BACK_SENT')));
+      expect(File('${sandbox.path}/adb-calls.txt').existsSync(), isFalse);
+    }
+  });
+
+  test('marker appearing after baseline but before BACK is rejected', () {
+    final Directory sandbox = createSandbox('m5-alipay-cancel-early-');
+    final File log = File('${sandbox.path}/flutter-drive.log')
+      ..writeAsStringSync('');
     final File fakeAdb = createFakeAdb(
       sandbox,
       stateMode: 'online',
       targetCalls: 3,
-      marker: 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001',
-      markerAfterBack: 1,
-      appendMarker: false,
+      markersByDumpsys: <int, List<String>>{
+        3: <String>[validBridgeMarker],
+      },
     );
     final ProcessResult result = runOperator(
       sandbox,
@@ -251,7 +307,43 @@ esac
     );
     expect(result.exitCode, 65);
     expect(result.stdout, isNot(contains('KEYCODE_BACK_SENT')));
-    expect(File('${sandbox.path}/adb-calls.txt').existsSync(), isFalse);
+    final String calls = File(
+      '${sandbox.path}/adb-calls.txt',
+    ).readAsStringSync();
+    expect(calls, isNot(contains('input keyevent KEYCODE_BACK')));
+  });
+
+  test('missing, wrong, or duplicate bridge provenance fails closed', () {
+    final List<List<String>> markerSets = <List<String>>[
+      <String>[validNativeMarker],
+      <String>[validBridgeMarker],
+      <String>[
+        validNativeMarker,
+        'M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::native_watchdog_timeout',
+      ],
+      <String>[validNativeMarker, validNativeMarker, validBridgeMarker],
+      <String>[validNativeMarker, validBridgeMarker, validBridgeMarker],
+      <String>['prefix-$validNativeMarker', 'prefix-$validBridgeMarker'],
+    ];
+    for (final List<String> markers in markerSets) {
+      final Directory sandbox = createSandbox('m5-alipay-cancel-pair-');
+      final File log = File('${sandbox.path}/flutter-drive.log')
+        ..writeAsStringSync('');
+      final File fakeAdb = createFakeAdb(
+        sandbox,
+        stateMode: 'online',
+        targetCalls: 3,
+        markersByBack: <int, List<String>>{1: markers},
+      );
+      final ProcessResult result = runOperator(
+        sandbox,
+        fakeAdb: fakeAdb,
+        flutterLog: log,
+        afterBackTimeout: 1,
+      );
+      expect(result.exitCode, isNot(0), reason: markers.join(' | '));
+      expect(result.stdout, isNot(contains('::PASS')));
+    }
   });
 
   test('none, non-6001, offline, and missing serial fail closed', () {
@@ -267,8 +359,9 @@ esac
         sandbox,
         stateMode: 'online',
         targetCalls: 3,
-        marker: marker,
-        markerAfterBack: 1,
+        markersByBack: <int, List<String>>{
+          1: <String>[marker, validBridgeMarker],
+        },
       );
       final ProcessResult result = runOperator(
         sandbox,
@@ -286,8 +379,6 @@ esac
       offlineSandbox,
       stateMode: 'offline',
       targetCalls: 3,
-      marker: 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001',
-      markerAfterBack: 1,
     );
     final ProcessResult offline = runOperator(
       offlineSandbox,
@@ -309,8 +400,6 @@ esac
       noSerialSandbox,
       stateMode: 'online',
       targetCalls: 3,
-      marker: 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001',
-      markerAfterBack: 1,
     );
     final ProcessResult noSerial = Process.runSync(
       '/bin/bash',
@@ -343,8 +432,6 @@ esac
       wrongSerialSandbox,
       stateMode: 'online',
       targetCalls: 3,
-      marker: 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001',
-      markerAfterBack: 1,
     );
     final ProcessResult wrongSerial = runOperator(
       wrongSerialSandbox,

@@ -5,7 +5,8 @@ umask 077
 
 # This operator is deliberately narrow: it observes one explicitly selected
 # Android device, returns from the real Alipay sandbox cashier with BACK, and
-# accepts only the sanitized result marker from a private Flutter driver log.
+# accepts only the paired, sanitized native-result and bridge-provenance markers
+# from a private Flutter driver log.
 # It never enumerates devices, starts an app, taps a coordinate, or submits a
 # payment.
 
@@ -13,6 +14,7 @@ readonly TARGET_PACKAGE='com.eg.android.AlipayGphoneRC'
 readonly TARGET_ACTIVITY='MspContainerActivity'
 readonly TARGET_SERIAL='emulator-5554'
 readonly EXPECTED_NATIVE_MARKER='M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001'
+readonly EXPECTED_BRIDGE_MARKER='M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned'
 readonly DEFAULT_TARGET_TIMEOUT_SECONDS=60
 readonly DEFAULT_AFTER_BACK_TIMEOUT_SECONDS=8
 readonly DEFAULT_MARKER_TIMEOUT_SECONDS=30
@@ -299,12 +301,17 @@ wait_for_target_to_leave() {
 }
 
 scan_marker_stream() {
-  awk '
+  awk -v expected_native="$EXPECTED_NATIVE_MARKER" \
+    -v expected_bridge="$EXPECTED_BRIDGE_MARKER" '
     function inspect(line) {
-      if (line == "M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001") {
-        print "VALID"
+      if (line == expected_native) {
+        print "NATIVE_VALID"
+      } else if (line ~ /^M5_ALIPAY_NATIVE_RESULT::/) {
+        print "NATIVE_INVALID"
+      } else if (line == expected_bridge) {
+        print "BRIDGE_VALID"
       } else {
-        print "INVALID"
+        print "BRIDGE_INVALID"
       }
     }
     {
@@ -315,21 +322,26 @@ scan_marker_stream() {
       } else if (line ~ /^[VDIWEF]\/flutter \([[:space:]]*[0-9]+\): M5_ALIPAY_NATIVE_RESULT::/) {
         sub(/^[VDIWEF]\/flutter \([[:space:]]*[0-9]+\): /, "", line)
         inspect(line)
+      } else if (line ~ /^M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::/) {
+        inspect(line)
+      } else if (line ~ /^[VDIWEF]\/flutter \([[:space:]]*[0-9]+\): M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::/) {
+        sub(/^[VDIWEF]\/flutter \([[:space:]]*[0-9]+\): /, "", line)
+        inspect(line)
       }
     }
   '
 }
 
 marker_state_from_file_prefix() {
-  local valid_count=0
+  local marker_count=0
   local invalid_count=0
   local marker_kind=''
   while IFS= read -r marker_kind; do
     case "$marker_kind" in
-      VALID)
-        valid_count=$((valid_count + 1))
+      NATIVE_VALID|BRIDGE_VALID)
+        marker_count=$((marker_count + 1))
         ;;
-      INVALID)
+      INVALID|NATIVE_INVALID|BRIDGE_INVALID)
         invalid_count=$((invalid_count + 1))
         ;;
     esac
@@ -345,15 +357,16 @@ marker_state_from_file_prefix() {
   )
   if (( invalid_count > 0 )); then
     printf 'INVALID'
-  elif (( valid_count > 0 )); then
+  elif (( marker_count > 0 )); then
     printf 'PRESENT'
   else
     printf 'MISSING'
   fi
 }
 
-classify_native_marker() {
-  local valid_count=0
+classify_marker_pair() {
+  local native_valid_count=0
+  local bridge_valid_count=0
   local invalid_count=0
   local marker_kind=''
 
@@ -374,10 +387,13 @@ classify_native_marker() {
   fi
   while IFS= read -r marker_kind; do
     case "$marker_kind" in
-      VALID)
-        valid_count=$((valid_count + 1))
+      NATIVE_VALID)
+        native_valid_count=$((native_valid_count + 1))
         ;;
-      INVALID)
+      BRIDGE_VALID)
+        bridge_valid_count=$((bridge_valid_count + 1))
+        ;;
+      INVALID|NATIVE_INVALID|BRIDGE_INVALID)
         invalid_count=$((invalid_count + 1))
         ;;
     esac
@@ -390,10 +406,12 @@ classify_native_marker() {
 
   if (( invalid_count > 0 )); then
     printf 'INVALID'
-  elif (( valid_count == 1 )); then
-    printf 'VALID'
-  elif (( valid_count > 1 )); then
+  elif (( native_valid_count > 1 || bridge_valid_count > 1 )); then
     printf 'AMBIGUOUS'
+  elif (( native_valid_count == 1 && bridge_valid_count == 1 )); then
+    printf 'VALID'
+  elif (( native_valid_count == 1 || bridge_valid_count == 1 )); then
+    printf 'PARTIAL'
   else
     printf 'MISSING'
   fi
@@ -406,38 +424,39 @@ record_marker_baseline() {
     fail_configuration 'private Flutter log size is invalid'
   local state
   state="$(marker_state_from_file_prefix)"
-  [[ "$state" == 'MISSING' ]] || fail_marker 'pre-existing result marker'
+  [[ "$state" == 'MISSING' ]] || fail_marker 'pre-existing native or bridge marker'
   audit "LOG_BASELINE::bytes=$LOG_BASELINE_BYTES"
 }
 
 assert_no_marker_before_back() {
   local state
-  state="$(classify_native_marker)"
-  [[ "$state" == 'MISSING' ]] || fail_marker 'result marker appeared before BACK'
+  state="$(classify_marker_pair)"
+  [[ "$state" == 'MISSING' ]] || fail_marker 'native or bridge marker appeared before BACK'
 }
 
 wait_for_cancel_marker() {
   local deadline=$((SECONDS + MARKER_TIMEOUT_SECONDS))
   local state=''
   while (( SECONDS <= deadline )); do
-    state="$(classify_native_marker)"
+    state="$(classify_marker_pair)"
     case "$state" in
       VALID)
         audit 'NATIVE_RESULT_ACCEPTED::resultStatus=6001'
+        audit 'BRIDGE_OUTCOME_ACCEPTED::pay_task_returned'
         return 0
         ;;
       INVALID)
-        fail_marker 'none or non-6001 resultStatus'
+        fail_marker 'invalid native result or bridge provenance'
         ;;
       AMBIGUOUS)
-        fail_marker 'duplicate result markers'
+        fail_marker 'duplicate native or bridge markers'
         ;;
-      MISSING)
+      PARTIAL|MISSING)
         ;;
     esac
     pause_between_polls
   done
-  fail_timeout 'sanitized 6001 result marker was not observed'
+  fail_timeout 'sanitized cancellation marker pair was not observed'
 }
 
 main() {
