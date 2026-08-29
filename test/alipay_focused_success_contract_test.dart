@@ -34,6 +34,9 @@ void main() {
   test('success lane is Alipay-only and binds one exact serial', () {
     final String source = runner.readAsStringSync();
     final String fullRunnerSource = fullRunner.readAsStringSync();
+    expect(source, isNot(contains('voice-social-mobile-public')));
+    expect(source, contains('QA_OAUTH_CLIENT_ID'));
+    expect(source, contains('oauth_client_dart_define'));
     expect(source, contains("DEFAULT_SERIAL='emulator-5554'"));
     expect(source, contains('focused success target serial is frozen'));
     expect(source, contains('ENABLE_TENCENT_IM=false'));
@@ -208,6 +211,68 @@ void main() {
     expect(result.stdout, isNot(contains('SELF_TEST::PASS')));
   });
 
+  test('public OAuth client is protected, dynamic, and fail-closed', () {
+    final String source = runner.readAsStringSync();
+    expect(source, contains('printenv QA_OAUTH_CLIENT_ID'));
+    expect(
+      source,
+      contains(r'"$(oauth_client_dart_define "$PUBLIC_OAUTH_CLIENT_ID")"'),
+    );
+    final String path = Platform.environment['PATH'] ?? '/usr/bin:/bin';
+
+    ProcessResult runWith(Map<String, String> values) {
+      return Process.runSync(
+        '/bin/bash',
+        <String>[runner.path],
+        environment: <String, String>{'PATH': path, ...values},
+        includeParentEnvironment: false,
+      );
+    }
+
+    final ProcessResult missing = runWith(<String, String>{});
+    expect(missing.exitCode, 64);
+    expect(missing.stderr, contains('QA_OAUTH_CLIENT_ID'));
+
+    for (final String invalid in <String>[
+      'public client',
+      'public=client',
+      'public-client-secret',
+      'public_token',
+      'Bearer-client',
+    ]) {
+      final ProcessResult result = runWith(<String, String>{
+        'QA_OAUTH_CLIENT_ID': invalid,
+      });
+      expect(result.exitCode, 64, reason: invalid);
+      expect(result.stdout, isNot(contains(invalid)), reason: invalid);
+      expect(result.stderr, isNot(contains(invalid)), reason: invalid);
+    }
+
+    final ProcessResult secretEnvironment = runWith(<String, String>{
+      'QA_OAUTH_CLIENT_ID': 'fixture-public-client',
+      'QA_OAUTH_CLIENT_SECRET': 'must-not-be-accepted',
+    });
+    expect(secretEnvironment.exitCode, 64);
+    expect(secretEnvironment.stdout, isNot(contains('must-not-be-accepted')));
+    expect(secretEnvironment.stderr, isNot(contains('must-not-be-accepted')));
+
+    final ProcessResult accepted = Process.runSync(
+      '/bin/bash',
+      <String>[runner.path, '--self-test'],
+      environment: <String, String>{
+        'PATH': path,
+        'QA_OAUTH_CLIENT_ID': 'fixture-public-client',
+      },
+      includeParentEnvironment: false,
+    );
+    expect(
+      accepted.exitCode,
+      0,
+      reason: '${accepted.stdout}\n${accepted.stderr}',
+    );
+    expect(accepted.stdout, isNot(contains('fixture-public-client')));
+  });
+
   test(
     'focused runner offline self-test proves healthy and unhealthy wallet pages',
     () {
@@ -216,6 +281,7 @@ void main() {
         <String>[runner.path, '--self-test'],
         environment: <String, String>{
           'PATH': Platform.environment['PATH'] ?? '/usr/bin:/bin',
+          'QA_OAUTH_CLIENT_ID': 'fixture-public-client',
         },
         includeParentEnvironment: false,
       );

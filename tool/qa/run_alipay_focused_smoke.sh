@@ -19,7 +19,7 @@ readonly INTEGRATION_TARGET='integration_test/alipay_focused_smoke_test.dart'
 readonly DRIVER_TARGET='test_driver/integration_test.dart'
 readonly AUDIO_MANIFEST_SCRIPT="$PROJECT_ROOT/tool/prepare_android_audio_manifest.py"
 readonly BACKEND_BASE_URL='http://10.0.2.2:18080/'
-readonly PUBLIC_OAUTH_CLIENT_ID='voice-social-mobile-public'
+readonly PUBLIC_OAUTH_CLIENT_ID="$(printenv QA_OAUTH_CLIENT_ID || true)"
 readonly EXPECTED_NATIVE_MARKER='M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001'
 readonly EXPECTED_BRIDGE_MARKER='M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned'
 readonly MAX_BACK_ATTEMPTS=2
@@ -79,6 +79,12 @@ The live run uses only BACK to cancel the sandbox cashier. It accepts exactly
 sdkCompleted=0 + resultStatus=6001 + pay_task_returned, then requires the
 first-party query/reconcile path to report cancellation. A missing, stale,
 duplicate, timeout, non-target, or otherwise contradictory marker fails closed.
+
+Live mode requires QA_OAUTH_CLIENT_ID in the protected process environment.
+It must be the public OAuth client identifier only: whitespace, '=', and
+secret/confidential-looking values are rejected. OAuth client secrets are never
+accepted or forwarded to Flutter. The value is passed only as a dart-define and
+is never printed.
 USAGE
 }
 
@@ -121,6 +127,38 @@ require_integer() {
   local value="$2"
   [[ "$value" =~ ^[0-9]+$ ]] || fail_configuration "$name must be a non-negative integer"
   (( value <= 600 )) || fail_configuration "$name exceeds the 600 second bound"
+}
+
+public_oauth_client_id_is_valid() {
+  local value="$1"
+  local normalized=''
+  [[ -n "$value" ]] || return 1
+  [[ "$value" != *[[:space:]]* ]] || return 1
+  [[ "$value" != *'='* ]] || return 1
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* &&
+    "$value" != *$'\t'* ]] || return 1
+  normalized="$(printf '%s' "$value" | LC_ALL=C tr '[:upper:]' '[:lower:]')" ||
+    return 1
+  [[ "${#normalized}" -ge 1 && "${#normalized}" -le 256 ]] || return 1
+  [[ "$normalized" != *[![:print:]]* ]] || return 1
+  if [[ "$normalized" =~ (^|[^a-z0-9])(oauth[-_.:/+]?client[-_.:/+]?secret|client[-_.:/+]?secret|secret|password|private[-_.:/+]?key|access[-_.:/+]?key|api[-_.:/+]?key|token|credential|credentials|pat|auth|bearer)([^a-z0-9]|$) ]]; then
+    return 1
+  fi
+  return 0
+}
+
+require_public_oauth_client_id() {
+  [[ -z "${QA_OAUTH_CLIENT_SECRET+x}" &&
+    -z "${OAUTH_CLIENT_SECRET+x}" ]] ||
+    fail_configuration 'OAuth client secrets are forbidden'
+  public_oauth_client_id_is_valid "$PUBLIC_OAUTH_CLIENT_ID" ||
+    fail_configuration 'QA_OAUTH_CLIENT_ID is missing or invalid'
+}
+
+oauth_client_dart_define() {
+  local value="$1"
+  public_oauth_client_id_is_valid "$value" || return 1
+  printf '%s' "--dart-define=OAUTH_CLIENT_ID=$value"
 }
 
 parse_args() {
@@ -234,7 +272,7 @@ resolve_commands() {
   FLUTTER_BIN="$(command -v flutter || true)"
   [[ -n "$ADB_BIN" && -x "$ADB_BIN" ]] || fail_configuration 'adb executable is unavailable'
   [[ -n "$FLUTTER_BIN" && -x "$FLUTTER_BIN" ]] || fail_configuration 'Flutter executable is unavailable'
-  for command_name in python3 git tar mktemp shasum awk grep wc head tail find; do
+  for command_name in python3 git tar mktemp shasum awk grep wc head tail find tr; do
     command -v "$command_name" >/dev/null 2>&1 || fail_configuration "missing command: $command_name"
   done
 }
@@ -543,14 +581,15 @@ run_flutter_target() {
   set +e
   (
     cd "$ANDROID_HOST_DIR"
-    "$FLUTTER_BIN" drive --no-pub \
+    env -u QA_OAUTH_CLIENT_ID -u QA_OAUTH_CLIENT_SECRET -u OAUTH_CLIENT_SECRET \
+      "$FLUTTER_BIN" drive --no-pub \
       --driver="$DRIVER_TARGET" --target="$INTEGRATION_TARGET" \
       --device-id="$SERIAL_VALUE" \
       --dart-define=BACKEND_MODE=live \
       --dart-define=APP_ENV=development \
       --dart-define=ALLOW_INSECURE_HTTP=true \
       --dart-define=API_BASE_URL="$BACKEND_BASE_URL" \
-      --dart-define=OAUTH_CLIENT_ID="$PUBLIC_OAUTH_CLIENT_ID" \
+      "$(oauth_client_dart_define "$PUBLIC_OAUTH_CLIENT_ID")" \
       --dart-define=CLIENT_TYPE=Android \
       --dart-define=CLIENT_INNER_VERSION=6 \
       --dart-define=API_TIMEOUT_SECONDS=15 \
@@ -683,6 +722,18 @@ self_test() {
     : >"$FLUTTER_LOG_PATH"
     LOG_BASELINE_BYTES=0
 
+    local fixture_define invalid_client
+    fixture_define="$(oauth_client_dart_define 'fixture-public-client')"
+    [[ "$fixture_define" == '--dart-define=OAUTH_CLIENT_ID=fixture-public-client' ]] || exit 1
+    [[ "$(oauth_client_dart_define "$PUBLIC_OAUTH_CLIENT_ID")" == "--dart-define=OAUTH_CLIENT_ID=$PUBLIC_OAUTH_CLIENT_ID" ]] || exit 1
+    for invalid_client in '' 'public client' 'public=client' \
+      'public-client-secret' 'public_token' 'Bearer-client'; do
+      if public_oauth_client_id_is_valid "$invalid_client"; then
+        exit 1
+      fi
+    done
+    public_oauth_client_id_is_valid 'public-client-01' || exit 1
+
     printf '%s\n' "$EXPECTED_NATIVE_MARKER" >"$FLUTTER_LOG_PATH"
     if record_marker_baseline; then exit 1; fi
 
@@ -749,12 +800,14 @@ self_test() {
 parse_args "$@"
 if [[ "$SELF_TEST" == true ]]; then
   validate_serial_value
+  require_public_oauth_client_id
   self_test
   exit 0
 fi
 
 validate_serial_value
 validate_bounds
+require_public_oauth_client_id
 [[ "$CONFIRM_CANCEL" == 'I_UNDERSTAND_SANDBOX_CANCEL' ]] ||
   fail_configuration 'explicit --confirm-cancel acknowledgement is required'
 [[ -x "$OPERATOR_SCRIPT" ]] || fail_configuration 'cancel operator is missing or not executable'

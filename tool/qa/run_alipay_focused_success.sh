@@ -18,7 +18,7 @@ readonly DRIVER_TARGET='test_driver/integration_test.dart'
 readonly AUDIO_MANIFEST_SCRIPT="$PROJECT_ROOT/tool/prepare_android_audio_manifest.py"
 readonly BACKEND_BASE_URL='http://10.0.2.2:18080/'
 readonly BACKEND_HEALTH_URL='http://127.0.0.1:18080/health'
-readonly PUBLIC_OAUTH_CLIENT_ID='voice-social-mobile-public'
+readonly PUBLIC_OAUTH_CLIENT_ID="$(printenv QA_OAUTH_CLIENT_ID || true)"
 readonly EXPECTED_FLUTTER_VERSION='3.44.7'
 readonly EXPECTED_DART_VERSION='3.12.2'
 readonly EXPECTED_FLUTTER_REVISION='84fc5cbb223bc12f83d65b647ff8a56caf779ffd'
@@ -88,6 +88,12 @@ the operator-file path and relay port. Wait for ACTION_CONFIRMATION_REQUIRED
 after the order request, then run the operator tool. It fetches the exact
 bound identity in-process and asks only for the success confirmation; no
 success action is approved automatically.
+
+Live mode requires QA_OAUTH_CLIENT_ID in the protected process environment.
+It must be the public OAuth client identifier only: whitespace, '=', and
+secret/confidential-looking values are rejected. OAuth client secrets are never
+accepted or forwarded to Flutter. The value is passed only as a dart-define and
+is never printed.
 USAGE
 }
 
@@ -110,6 +116,38 @@ fail_acceptance() {
   FAIL_REASON="$1"
   printf 'Alipay focused success: acceptance failed (%s)\n' "$1" >&2
   exit "$EXIT_ACCEPTANCE"
+}
+
+public_oauth_client_id_is_valid() {
+  local value="$1"
+  local normalized=''
+  [[ -n "$value" ]] || return 1
+  [[ "$value" != *[[:space:]]* ]] || return 1
+  [[ "$value" != *'='* ]] || return 1
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* &&
+    "$value" != *$'\t'* ]] || return 1
+  normalized="$(printf '%s' "$value" | LC_ALL=C tr '[:upper:]' '[:lower:]')" ||
+    return 1
+  [[ "${#normalized}" -ge 1 && "${#normalized}" -le 256 ]] || return 1
+  [[ "$normalized" != *[![:print:]]* ]] || return 1
+  if [[ "$normalized" =~ (^|[^a-z0-9])(oauth[-_.:/+]?client[-_.:/+]?secret|client[-_.:/+]?secret|secret|password|private[-_.:/+]?key|access[-_.:/+]?key|api[-_.:/+]?key|token|credential|credentials|pat|auth|bearer)([^a-z0-9]|$) ]]; then
+    return 1
+  fi
+  return 0
+}
+
+require_public_oauth_client_id() {
+  [[ -z "${QA_OAUTH_CLIENT_SECRET+x}" &&
+    -z "${OAUTH_CLIENT_SECRET+x}" ]] ||
+    fail_configuration 'OAuth client secrets are forbidden'
+  public_oauth_client_id_is_valid "$PUBLIC_OAUTH_CLIENT_ID" ||
+    fail_configuration 'QA_OAUTH_CLIENT_ID is missing or invalid'
+}
+
+oauth_client_dart_define() {
+  local value="$1"
+  public_oauth_client_id_is_valid "$value" || return 1
+  printf '%s' "--dart-define=OAUTH_CLIENT_ID=$value"
 }
 
 parse_args() {
@@ -781,13 +819,14 @@ prepare_android_host() {
 build_apk() {
   (
     cd "$ANDROID_HOST_DIR"
-    "$FLUTTER_BIN" build apk --debug \
+    env -u QA_OAUTH_CLIENT_ID -u QA_OAUTH_CLIENT_SECRET -u OAUTH_CLIENT_SECRET \
+      "$FLUTTER_BIN" build apk --debug \
       --target="$INTEGRATION_TARGET" \
       --dart-define=BACKEND_MODE=live \
       --dart-define=APP_ENV=development \
       --dart-define=ALLOW_INSECURE_HTTP=true \
       --dart-define=API_BASE_URL="$BACKEND_BASE_URL" \
-      --dart-define=OAUTH_CLIENT_ID="$PUBLIC_OAUTH_CLIENT_ID" \
+      "$(oauth_client_dart_define "$PUBLIC_OAUTH_CLIENT_ID")" \
       --dart-define=CLIENT_TYPE=Android \
       --dart-define=CLIENT_INNER_VERSION=6 \
       --dart-define=API_TIMEOUT_SECONDS=15 \
@@ -1045,6 +1084,17 @@ self_test() {
   log="$root/log"
   FLUTTER_LOG_PATH="$log"
   : >"$log"
+  local fixture_define invalid_client
+  fixture_define="$(oauth_client_dart_define 'fixture-public-client')"
+  [[ "$fixture_define" == '--dart-define=OAUTH_CLIENT_ID=fixture-public-client' ]] || exit 1
+  [[ "$(oauth_client_dart_define "$PUBLIC_OAUTH_CLIENT_ID")" == "--dart-define=OAUTH_CLIENT_ID=$PUBLIC_OAUTH_CLIENT_ID" ]] || exit 1
+  for invalid_client in '' 'public client' 'public=client' \
+    'public-client-secret' 'public_token' 'Bearer-client'; do
+    if public_oauth_client_id_is_valid "$invalid_client"; then
+      exit 1
+    fi
+  done
+  public_oauth_client_id_is_valid 'public-client-01' || exit 1
   printf '%s\n%s\n' "$EXPECTED_NATIVE_MARKER" "$EXPECTED_BRIDGE_MARKER" >"$log"
   [[ "$(exact_marker_count 'M5_ALIPAY_FOCUSED::catalog::PASS' "$log")" == '0' ]] || exit 1
   [[ "$(grep -Fxc "$EXPECTED_NATIVE_MARKER" "$log")" -eq 1 ]] || exit 1
@@ -1097,9 +1147,11 @@ self_test() {
 parse_args "$@"
 validate_serial
 if [[ "$SELF_TEST" == true ]]; then
+  require_public_oauth_client_id
   self_test
   exit 0
 fi
+require_public_oauth_client_id
 validate_environment
 resolve_commands
 create_safe_artifact_dir

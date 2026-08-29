@@ -74,6 +74,13 @@ QA_M5_MYSQL_CONTAINER=<serving MySQL container, for the built-in helper>
 M5_ALIPAY_SCENARIO=success
 ```
 
+The single-device Alipay focused runners use the same protected
+`QA_OAUTH_CLIENT_ID` environment variable. They do not contain a fallback
+client identifier and reject missing, whitespace-containing, `=`-containing, or
+secret/confidential-looking values. The value is forwarded to Flutter only as
+the public `OAUTH_CLIENT_ID` dart-define; it is never printed or accepted from
+an OAuth client-secret variable.
+
 For the success lane, `ACTION_GATE::armed` and
 `ACTION_GATE::waiting_for_order` only mean that the gate is ready. Wait for
 the exact `ACTION_CONFIRMATION_REQUIRED` marker after the order request has
