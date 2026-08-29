@@ -47,6 +47,8 @@ void main() {
     expect(source, isNot(contains('--no-keep-app-running')));
     expect(source, contains('EXPECTED_LAUNCH_MARKER'));
     expect(source, contains('DEFAULT_PRE_LAUNCH_TIMEOUT_SECONDS=300'));
+    expect(source, contains('DEFAULT_POST_LAUNCH_TIMEOUT_SECONDS'));
+    expect(source, contains('POST_LAUNCH_TIMEOUT_SECONDS'));
     expect(source, contains('record_launch_marker_baseline'));
     expect(source, contains('wait_for_native_launcher_start'));
     expect(cancelOperator.readAsStringSync(), contains('--target-serial'));
@@ -111,7 +113,9 @@ void main() {
       expect(walletPreflight, greaterThan(-1));
       expect(forceStop, greaterThan(walletPreflight));
       expect(forceStop, lessThan(hostPreparation));
-      final int operatorStart = source.lastIndexOf('start_cancel_operator\n');
+      final int operatorStart = source.lastIndexOf(
+        'if ! start_cancel_operator; then',
+      );
       expect(launchBaseline, greaterThan(-1));
       expect(flutterBackground, greaterThan(launchBaseline));
       expect(launchWait, greaterThan(flutterBackground));
@@ -124,11 +128,27 @@ void main() {
       expect(source, contains('FLUTTER_REAP_TIMEOUT_SECONDS=10'));
       expect(source, contains('FLUTTER_TOOL_PID_PATH'));
       expect(source, contains('os.setsid()'));
+      expect(source, contains('process_start_time'));
+      expect(source, contains('process_identity_is_current'));
+      expect(source, contains(r'kill -"$signal" "-$expected_group"'));
+      expect(source, isNot(contains('kill "\$OPERATOR_PID"')));
       expect(source, contains('terminate_flutter_target'));
+      expect(source, contains('terminate_cancel_operator'));
       expect(source, contains('signal_flutter_target TERM'));
       expect(source, contains('signal_flutter_target KILL'));
+      expect(source, contains('wait_for_post_launch_completion'));
+      expect(source, contains('post_launch_watchdog_timeout'));
+      expect(source, contains('POST_LAUNCH_WATCHDOG_TIMEOUT'));
       expect(
         source.substring(launchWait, operatorStart),
+        isNot(contains('wait "\$FLUTTER_PID"')),
+      );
+      final int postLaunchWatchdog = source.lastIndexOf(
+        'wait_for_post_launch_completion',
+      );
+      expect(postLaunchWatchdog, greaterThan(operatorStart));
+      expect(
+        source.substring(operatorStart, postLaunchWatchdog),
         isNot(contains('wait "\$FLUTTER_PID"')),
       );
 
@@ -230,13 +250,31 @@ void main() {
       ),
     );
     expect(source, contains('uiautomator dump'));
+    expect(
+      source,
+      contains(
+        r'"$ADB_BIN" -s "$SERIAL_VALUE" shell rm -f "$DEVICE_WALLET_UI_DUMP_PATH"',
+      ),
+    );
     expect(source, contains('clear_wallet_ui_dump'));
     expect(source, contains('foreground_package_is_target'));
+    final int preflightFunction = source.indexOf('wallet_health_preflight()');
+    final int staleRemoteRemoval = source.indexOf(
+      r'shell rm -f "$DEVICE_WALLET_UI_DUMP_PATH"',
+      preflightFunction,
+    );
+    final int freshDump = source.indexOf(
+      'shell uiautomator dump',
+      preflightFunction,
+    );
+    expect(staleRemoteRemoval, greaterThan(preflightFunction));
+    expect(freshDump, greaterThan(staleRemoteRemoval));
     for (final String phrase in <String>[
       'Please wait a minute',
       'Reload',
       'Server busy',
       'try again later',
+      "node.attrib.get('visible-to-user') != 'true'",
     ]) {
       expect(source, contains(phrase));
     }
@@ -260,7 +298,7 @@ void main() {
     expect(cancelSource, contains("node.attrib.get('enabled') != 'true'"));
     expect(
       cancelSource,
-      contains("node.attrib.get('visible-to-user') == 'false'"),
+      contains("node.attrib.get('visible-to-user') != 'true'"),
     );
     expect(successSource, isNot(contains('allowed_degraded_labels')));
     for (final String phrase in <String>[
@@ -291,6 +329,8 @@ void main() {
         reason: 'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
       expect(result.stdout, contains('SELF_TEST::PASS'));
+      expect(result.stdout, contains('WALLET_VISIBILITY_PASS'));
+      expect(result.stdout, contains('POST_LAUNCH_WATCHDOG_PASS'));
     },
   );
 

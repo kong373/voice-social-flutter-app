@@ -24,6 +24,7 @@ readonly EXPECTED_NATIVE_MARKER='M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::result
 readonly EXPECTED_BRIDGE_MARKER='M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned'
 readonly EXPECTED_LAUNCH_MARKER='M5_ALIPAY_FOCUSED::native_launcher::START'
 readonly DEFAULT_PRE_LAUNCH_TIMEOUT_SECONDS=300
+readonly DEFAULT_POST_LAUNCH_TIMEOUT_SECONDS=180
 readonly FLUTTER_REAP_TIMEOUT_SECONDS=10
 readonly MAX_BACK_ATTEMPTS=2
 readonly EXIT_CONFIGURATION=64
@@ -41,6 +42,7 @@ MARKER_TIMEOUT_SECONDS=30
 POLL_INTERVAL_SECONDS=1
 STABLE_POLLS=3
 PRE_LAUNCH_TIMEOUT_SECONDS="$DEFAULT_PRE_LAUNCH_TIMEOUT_SECONDS"
+POST_LAUNCH_TIMEOUT_SECONDS="$DEFAULT_POST_LAUNCH_TIMEOUT_SECONDS"
 FLUTTER_BIN=''
 ADB_BIN=''
 ARTIFACT_DIR=''
@@ -49,7 +51,17 @@ FLUTTER_LOG_PATH=''
 FLUTTER_STATUS_PATH=''
 OPERATOR_LOG_PATH=''
 OPERATOR_PID=''
+OPERATOR_PID_PATH=''
+OPERATOR_PID_START_TIME=''
+OPERATOR_PID_GROUP=''
+OPERATOR_PID_REAPED=false
 FLUTTER_PID=''
+FLUTTER_PID_START_TIME=''
+FLUTTER_PID_GROUP=''
+FLUTTER_PID_REAPED=false
+FLUTTER_TOOL_PID=''
+FLUTTER_TOOL_START_TIME=''
+FLUTTER_TOOL_GROUP=''
 FLUTTER_TOOL_PID_PATH=''
 WALLET_UI_DUMP_PATH=''
 WALLET_UI_DUMP_ACTIVE=false
@@ -79,6 +91,7 @@ Options:
   --cashier-timeout SEC       bounded wait for the Alipay cashier (default: 60)
   --after-back-timeout SEC    bounded wait after each BACK (default: 8)
   --marker-timeout SEC        bounded wait for the PayTask marker (default: 30)
+  --post-launch-timeout SEC   bounded wait after native launcher start (default: 180)
   --poll-interval SEC         poll delay (0 is allowed for self-tests)
   --stable-polls COUNT        consecutive cashier observations (default: 3)
   --self-test                 run offline marker/device/BACK contract checks
@@ -229,6 +242,11 @@ parse_args() {
         MARKER_TIMEOUT_SECONDS="$2"
         shift 2
         ;;
+      --post-launch-timeout)
+        (($# >= 2)) || fail_configuration 'post-launch timeout is missing'
+        POST_LAUNCH_TIMEOUT_SECONDS="$2"
+        shift 2
+        ;;
       --poll-interval)
         (($# >= 2)) || fail_configuration 'poll interval is missing'
         POLL_INTERVAL_SECONDS="$2"
@@ -274,6 +292,7 @@ validate_bounds() {
   require_integer cashier-timeout "$CASHIER_TIMEOUT_SECONDS"
   require_integer after-back-timeout "$AFTER_BACK_TIMEOUT_SECONDS"
   require_integer marker-timeout "$MARKER_TIMEOUT_SECONDS"
+  require_integer post-launch-timeout "$POST_LAUNCH_TIMEOUT_SECONDS"
   require_integer poll-interval "$POLL_INTERVAL_SECONDS"
   require_integer stable-polls "$STABLE_POLLS"
   (( STABLE_POLLS >= 2 )) || fail_configuration 'stable poll count must be at least 2'
@@ -462,7 +481,7 @@ for node in degraded_nodes:
         raise SystemExit(1)
     if node.attrib.get('enabled') != 'true':
         raise SystemExit(1)
-    if node.attrib.get('visible-to-user') == 'false':
+    if node.attrib.get('visible-to-user') != 'true':
         raise SystemExit(1)
     match = bounds_pattern.fullmatch(node.attrib.get('bounds', ''))
     if match is None:
@@ -493,6 +512,8 @@ wallet_health_preflight() {
   WALLET_UI_DUMP_PATH="$ARTIFACT_DIR/.wallet-health-ui.xml"
   : >"$WALLET_UI_DUMP_PATH"
   WALLET_UI_DUMP_ACTIVE=true
+  "$ADB_BIN" -s "$SERIAL_VALUE" shell rm -f "$DEVICE_WALLET_UI_DUMP_PATH" \
+    >/dev/null 2>&1 || fail_device 'stale Alipay sandbox wallet UI dump could not be removed'
   "$ADB_BIN" -s "$SERIAL_VALUE" shell uiautomator dump \
     "$DEVICE_WALLET_UI_DUMP_PATH" >/dev/null 2>&1 ||
     fail_device 'Alipay sandbox wallet UI dump is unavailable'
@@ -669,6 +690,9 @@ wait_for_native_launcher_start() {
   local deadline=$((SECONDS + PRE_LAUNCH_TIMEOUT_SECONDS))
   local state=''
   while (( SECONDS <= deadline )); do
+    if [[ -z "$FLUTTER_TOOL_PID" ]]; then
+      record_flutter_tool_identity || true
+    fi
     state="$(launch_marker_count_from_log_suffix)"
     case "$state" in
       PRESENT)
@@ -695,21 +719,60 @@ wait_for_native_launcher_start() {
   return 1
 }
 
-flutter_process_is_alive() {
-  local pid="$1"
-  local state=''
+process_start_time() {
+  local pid="$1" start=''
+  [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] || return 1
+  start="$(ps -o lstart= -p "$pid" 2>/dev/null | tr -d '\r')" || return 1
+  start="${start#"${start%%[![:space:]]*}"}"
+  start="${start%"${start##*[![:space:]]}"}"
+  [[ -n "$start" ]] && printf '%s\n' "$start"
+}
+
+process_is_alive() {
+  local pid="$1" state=''
   [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] || return 1
   state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d '[:space:]')" || return 1
   [[ -n "$state" && "$state" != Z* ]]
 }
 
+process_exists() {
+  local pid="$1" observed_pid=''
+  [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] || return 1
+  observed_pid="$(ps -o pid= -p "$pid" 2>/dev/null | tr -d '[:space:]')" || return 1
+  [[ "$observed_pid" == "$pid" ]]
+}
+
+flutter_process_is_alive() { process_is_alive "$1"; }
+
 flutter_process_group_id() {
-  local pid="$1"
-  local group_id=''
+  local pid="$1" group_id=''
   [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] || return 1
   group_id="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]')" || return 1
-  [[ "$group_id" =~ ^[0-9]+$ ]] || return 1
-  printf '%s\n' "$group_id"
+  [[ "$group_id" =~ ^[0-9]+$ ]] && printf '%s\n' "$group_id"
+}
+
+process_identity_is_current() {
+  local pid="$1" expected_start="$2" observed_start=''
+  [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 && -n "$expected_start" ]] || return 1
+  observed_start="$(process_start_time "$pid" || true)"
+  [[ -n "$observed_start" && "$observed_start" == "$expected_start" ]]
+}
+
+process_needs_reap() {
+  local pid="$1" expected_start="$2"
+  if process_identity_is_current "$pid" "$expected_start"; then
+    process_is_alive "$pid"
+  else
+    process_exists "$pid"
+  fi
+}
+
+capture_process_identity() {
+  local pid="$1"
+  CAPTURED_PROCESS_START_TIME="$(process_start_time "$pid" || true)"
+  CAPTURED_PROCESS_GROUP_ID="$(flutter_process_group_id "$pid" || true)"
+  [[ -n "$CAPTURED_PROCESS_START_TIME" &&
+    "$CAPTURED_PROCESS_GROUP_ID" =~ ^[0-9]+$ ]]
 }
 
 flutter_tool_pid_from_file() {
@@ -717,85 +780,168 @@ flutter_tool_pid_from_file() {
   [[ -n "$FLUTTER_TOOL_PID_PATH" && -f "$FLUTTER_TOOL_PID_PATH" &&
     ! -L "$FLUTTER_TOOL_PID_PATH" ]] || return 0
   candidate="$(tr -d '[:space:]' <"$FLUTTER_TOOL_PID_PATH" 2>/dev/null || true)"
-  [[ "$candidate" =~ ^[0-9]+$ && "$candidate" -gt 0 ]] || return 0
-  printf '%s\n' "$candidate"
+  [[ "$candidate" =~ ^[0-9]+$ && "$candidate" -gt 0 ]] && printf '%s\n' "$candidate"
+}
+
+record_flutter_tool_identity() {
+  local candidate=''
+  candidate="$(flutter_tool_pid_from_file)" || return 1
+  [[ "$candidate" =~ ^[0-9]+$ && "$candidate" -gt 0 ]] || return 1
+  capture_process_identity "$candidate" || return 1
+  FLUTTER_TOOL_PID="$candidate"
+  FLUTTER_TOOL_START_TIME="$CAPTURED_PROCESS_START_TIME"
+  FLUTTER_TOOL_GROUP="$CAPTURED_PROCESS_GROUP_ID"
+}
+
+record_operator_identity() {
+  local candidate=''
+  [[ -n "$OPERATOR_PID_PATH" && -f "$OPERATOR_PID_PATH" &&
+    ! -L "$OPERATOR_PID_PATH" ]] || return 1
+  candidate="$(tr -d '[:space:]' <"$OPERATOR_PID_PATH" 2>/dev/null || true)"
+  [[ "$candidate" =~ ^[0-9]+$ && "$candidate" == "$OPERATOR_PID" ]] || return 1
+  capture_process_identity "$candidate" || return 1
+  OPERATOR_PID_START_TIME="$CAPTURED_PROCESS_START_TIME"
+  OPERATOR_PID_GROUP="$CAPTURED_PROCESS_GROUP_ID"
+}
+
+signal_owned_process() {
+  local signal="$1" pid="$2" expected_start="$3"
+  process_identity_is_current "$pid" "$expected_start" || return 0
+  kill -"$signal" "$pid" 2>/dev/null || true
+}
+
+signal_owned_process_group() {
+  local signal="$1" pid="$2" expected_start="$3" expected_group="$4"
+  local protected_pid="$5" protected_group="$6" current_group=''
+  process_identity_is_current "$pid" "$expected_start" || return 0
+  current_group="$(flutter_process_group_id "$pid" || true)"
+  if [[ "$expected_group" =~ ^[0-9]+$ && "$expected_group" == "$pid" &&
+    "$current_group" == "$expected_group" && "$expected_group" != '1' &&
+    "$expected_group" != "$$" && "$expected_group" != "$protected_pid" &&
+    "$expected_group" != "$protected_group" ]]; then
+    kill -"$signal" "-$expected_group" 2>/dev/null || true
+  else
+    signal_owned_process "$signal" "$pid" "$expected_start"
+  fi
 }
 
 signal_flutter_target() {
-  local signal="$1"
-  local wrapper_pid="$2"
-  local tool_pid="$3"
-  local expected_tool_group="$4"
-  local wrapper_group="$5"
-  local current_tool_group=''
-  if [[ "$tool_pid" =~ ^[0-9]+$ && "$tool_pid" -gt 0 ]]; then
-    current_tool_group="$(flutter_process_group_id "$tool_pid" || true)"
-    if [[ "$current_tool_group" =~ ^[0-9]+$ &&
-      "$current_tool_group" == "$expected_tool_group" &&
-      "$current_tool_group" == "$tool_pid" &&
-      "$current_tool_group" != '1' &&
-      "$current_tool_group" != "$$" &&
-      "$current_tool_group" != "$wrapper_pid" &&
-      "$current_tool_group" != "$wrapper_group" ]]; then
-      kill -"$signal" "-$current_tool_group" 2>/dev/null || true
-    else
-      kill -"$signal" "$tool_pid" 2>/dev/null || true
-    fi
-  fi
-  if [[ "$wrapper_pid" =~ ^[0-9]+$ && "$wrapper_pid" -gt 0 &&
-    "$wrapper_pid" != "$tool_pid" ]]; then
-    kill -"$signal" "$wrapper_pid" 2>/dev/null || true
-  fi
+  local signal="$1" wrapper_pid="$2" tool_pid="$3" expected_group="$4" wrapper_group="$5"
+  signal_owned_process_group "$signal" "$tool_pid" "$FLUTTER_TOOL_START_TIME" \
+    "$expected_group" "$wrapper_pid" "$wrapper_group"
+  signal_owned_process "$signal" "$wrapper_pid" "$FLUTTER_PID_START_TIME"
+}
+
+signal_cancel_operator() {
+  signal_owned_process_group "$1" "$OPERATOR_PID" "$OPERATOR_PID_START_TIME" \
+    "$OPERATOR_PID_GROUP" "$$" ''
 }
 
 terminate_flutter_target() {
-  local wrapper_pid="$FLUTTER_PID"
-  local tool_pid=''
-  local expected_tool_group=''
-  local wrapper_group=''
-  local deadline=0
-
+  local wrapper_pid="$FLUTTER_PID" tool_pid="$FLUTTER_TOOL_PID"
+  local deadline=0 wrapper_alive=false tool_alive=false
   [[ "$wrapper_pid" =~ ^[0-9]+$ && "$wrapper_pid" -gt 0 ]] || {
     FLUTTER_PID=''
     return 0
   }
-  tool_pid="$(flutter_tool_pid_from_file)" || tool_pid=''
-  if [[ "$tool_pid" =~ ^[0-9]+$ && "$tool_pid" -gt 0 ]]; then
-    expected_tool_group="$(flutter_process_group_id "$tool_pid" || true)"
-  fi
-  wrapper_group="$(flutter_process_group_id "$wrapper_pid" || true)"
-
-  # The Python launcher gives Flutter its own session/process group. Signal
-  # that group first so a hung drive cannot outlive the runner shell.
-  signal_flutter_target TERM "$wrapper_pid" "$tool_pid" \
-    "$expected_tool_group" "$wrapper_group"
+  signal_flutter_target TERM "$wrapper_pid" "$tool_pid" "$FLUTTER_TOOL_GROUP" "$FLUTTER_PID_GROUP"
   deadline=$((SECONDS + FLUTTER_REAP_TIMEOUT_SECONDS))
   while (( SECONDS <= deadline )); do
-    if ! flutter_process_is_alive "$wrapper_pid" &&
-      { [[ -z "$tool_pid" ]] || ! flutter_process_is_alive "$tool_pid"; }; then
-      break
-    fi
+    wrapper_alive=false; tool_alive=false
+    process_needs_reap "$wrapper_pid" "$FLUTTER_PID_START_TIME" && wrapper_alive=true
+    process_needs_reap "$tool_pid" "$FLUTTER_TOOL_START_TIME" && tool_alive=true
+    [[ "$wrapper_alive" == false && "$tool_alive" == false ]] && break
     sleep 1
   done
-
-  # Escalate after the bounded TERM window, then allow only a short bounded
-  # reap window. In particular, never wait indefinitely for a hung Flutter
-  # process on the pre-launch timeout path.
-  if flutter_process_is_alive "$wrapper_pid" ||
-    { [[ -n "$tool_pid" ]] && flutter_process_is_alive "$tool_pid"; }; then
-    signal_flutter_target KILL "$wrapper_pid" "$tool_pid" \
-      "$expected_tool_group" "$wrapper_group"
+  if [[ "$wrapper_alive" == true || "$tool_alive" == true ]]; then
+    signal_flutter_target KILL "$wrapper_pid" "$tool_pid" "$FLUTTER_TOOL_GROUP" "$FLUTTER_PID_GROUP"
+    deadline=$((SECONDS + 2))
+    while (( SECONDS <= deadline )); do
+      wrapper_alive=false; tool_alive=false
+      process_needs_reap "$wrapper_pid" "$FLUTTER_PID_START_TIME" && wrapper_alive=true
+      process_needs_reap "$tool_pid" "$FLUTTER_TOOL_START_TIME" && tool_alive=true
+      [[ "$wrapper_alive" == false && "$tool_alive" == false ]] && break
+      sleep 1
+    done
   fi
-  deadline=$((SECONDS + 2))
-  while flutter_process_is_alive "$wrapper_pid" && (( SECONDS <= deadline )); do
-    sleep 1
-  done
-  if ! flutter_process_is_alive "$wrapper_pid"; then
-    # The process is gone or a zombie, so this wait is a bounded child reap,
-    # not a wait on live Flutter work.
+  if process_identity_is_current "$wrapper_pid" "$FLUTTER_PID_START_TIME" &&
+    ! process_is_alive "$wrapper_pid"; then
     wait "$wrapper_pid" 2>/dev/null || true
   fi
-  FLUTTER_PID=''
+  if process_identity_is_current "$tool_pid" "$FLUTTER_TOOL_START_TIME" &&
+    ! process_is_alive "$tool_pid"; then
+    wait "$tool_pid" 2>/dev/null || true
+  fi
+  FLUTTER_PID=''; FLUTTER_PID_START_TIME=''; FLUTTER_PID_GROUP=''
+  FLUTTER_TOOL_PID=''; FLUTTER_TOOL_START_TIME=''; FLUTTER_TOOL_GROUP=''
+}
+
+terminate_cancel_operator() {
+  local pid="$OPERATOR_PID" deadline=0 alive=false
+  [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] || { OPERATOR_PID=''; return 0; }
+  signal_cancel_operator TERM
+  deadline=$((SECONDS + FLUTTER_REAP_TIMEOUT_SECONDS))
+  while (( SECONDS <= deadline )); do
+    alive=false; process_needs_reap "$pid" "$OPERATOR_PID_START_TIME" && alive=true
+    [[ "$alive" == false ]] && break
+    sleep 1
+  done
+  if [[ "$alive" == true ]]; then
+    signal_cancel_operator KILL
+    deadline=$((SECONDS + 2))
+    while (( SECONDS <= deadline )); do
+      alive=false; process_needs_reap "$pid" "$OPERATOR_PID_START_TIME" && alive=true
+      [[ "$alive" == false ]] && break
+      sleep 1
+    done
+  fi
+  if process_identity_is_current "$pid" "$OPERATOR_PID_START_TIME" &&
+    ! process_is_alive "$pid"; then
+    wait "$pid" 2>/dev/null || true
+  fi
+  OPERATOR_PID=''; OPERATOR_PID_START_TIME=''; OPERATOR_PID_GROUP=''
+}
+
+watchdog_pause() {
+  local remaining=$(($1 - SECONDS)) interval="$POLL_INTERVAL_SECONDS"
+  (( remaining > 0 )) || return 0
+  (( interval > remaining )) && interval="$remaining"
+  (( interval > 0 )) && sleep "$interval"
+}
+
+reap_process_if_done() {
+  local pid="$1" expected_start="$2" wait_status=0
+  if process_needs_reap "$pid" "$expected_start"; then return 1; fi
+  set +e; wait "$pid" 2>/dev/null; wait_status=$?; set -e
+  REAP_STATUS="$wait_status"
+}
+
+reap_flutter_target_if_done() {
+  [[ "$FLUTTER_PID_REAPED" == true ]] && return 0
+  [[ "$FLUTTER_PID" =~ ^[0-9]+$ && "$FLUTTER_PID" -gt 0 ]] || {
+    FLUTTER_PID_REAPED=true; return 0; }
+  reap_process_if_done "$FLUTTER_PID" "$FLUTTER_PID_START_TIME" || return 1
+  FLUTTER_STATUS="$REAP_STATUS"; FLUTTER_PID=''; FLUTTER_PID_REAPED=true
+}
+
+reap_cancel_operator_if_done() {
+  [[ "$OPERATOR_PID_REAPED" == true ]] && return 0
+  [[ "$OPERATOR_PID" =~ ^[0-9]+$ && "$OPERATOR_PID" -gt 0 ]] || {
+    OPERATOR_PID_REAPED=true; return 0; }
+  reap_process_if_done "$OPERATOR_PID" "$OPERATOR_PID_START_TIME" || return 1
+  OPERATOR_STATUS="$REAP_STATUS"; OPERATOR_PID=''; OPERATOR_PID_REAPED=true
+}
+
+wait_for_post_launch_completion() {
+  local deadline=$((SECONDS + POST_LAUNCH_TIMEOUT_SECONDS))
+  while :; do
+    reap_flutter_target_if_done || true; reap_cancel_operator_if_done || true
+    [[ "$FLUTTER_PID_REAPED" == true && "$OPERATOR_PID_REAPED" == true ]] && return 0
+    (( SECONDS >= deadline )) && break
+    watchdog_pause "$deadline"
+  done
+  reap_flutter_target_if_done || true; reap_cancel_operator_if_done || true
+  [[ "$FLUTTER_PID_REAPED" == true && "$OPERATOR_PID_REAPED" == true ]]
 }
 
 prepare_android_host() {
@@ -829,14 +975,15 @@ import os
 import sys
 
 pid_path, command, *args = sys.argv[1:]
-with open(pid_path, "w", encoding="ascii") as stream:
-    stream.write(str(os.getpid()))
 try:
     os.setsid()
 except OSError:
     # The shell fallback remains safe because the reaper verifies the
-    # process group before signalling a negative PGID.
+    # process start time before signalling this PID directly.
     pass
+with open(pid_path, "w", encoding="ascii") as stream:
+    stream.write(str(os.getpid()))
+    stream.flush()
 os.execv(command, [command, *args])
 ' \
       "$FLUTTER_TOOL_PID_PATH" "$FLUTTER_BIN" drive --no-pub \
@@ -862,9 +1009,24 @@ os.execv(command, [command, *args])
 }
 
 start_cancel_operator() {
-  ANDROID_SERIAL="$SERIAL_VALUE" \
-    "$OPERATOR_SCRIPT" --adb "$ADB_BIN" --target-serial "$SERIAL_VALUE" \
-    --flutter-log "$FLUTTER_LOG_PATH" \
+  local deadline=0
+  env -u QA_OAUTH_CLIENT_ID -u QA_OAUTH_CLIENT_SECRET -u OAUTH_CLIENT_SECRET \
+    ANDROID_SERIAL="$SERIAL_VALUE" python3 -c '
+import os
+import sys
+
+pid_path, command, *args = sys.argv[1:]
+try:
+    os.setsid()
+except OSError:
+    pass
+with open(pid_path, "w", encoding="ascii") as stream:
+    stream.write(str(os.getpid()))
+    stream.flush()
+os.execv(command, [command, *args])
+' \
+    "$OPERATOR_PID_PATH" "$OPERATOR_SCRIPT" --adb "$ADB_BIN" \
+    --target-serial "$SERIAL_VALUE" --flutter-log "$FLUTTER_LOG_PATH" \
     --target-timeout "$CASHIER_TIMEOUT_SECONDS" \
     --after-back-timeout "$AFTER_BACK_TIMEOUT_SECONDS" \
     --marker-timeout "$MARKER_TIMEOUT_SECONDS" \
@@ -872,6 +1034,21 @@ start_cancel_operator() {
     --stable-polls "$STABLE_POLLS" \
     >"$OPERATOR_LOG_PATH" 2>&1 &
   OPERATOR_PID=$!
+  OPERATOR_PID_REAPED=false
+  deadline=$((SECONDS + 2))
+  while (( SECONDS <= deadline )); do
+    if record_operator_identity; then
+      return 0
+    fi
+    process_is_alive "$OPERATOR_PID" || break
+    sleep 1
+  done
+  if [[ -z "$OPERATOR_PID_START_TIME" ]] &&
+    capture_process_identity "$OPERATOR_PID"; then
+    OPERATOR_PID_START_TIME="$CAPTURED_PROCESS_START_TIME"
+    OPERATOR_PID_GROUP="$CAPTURED_PROCESS_GROUP_ID"
+  fi
+  return 1
 }
 
 safe_artifact_scan() {
@@ -1014,8 +1191,7 @@ cleanup() {
   local incoming_status=$?
   set +e
   if [[ -n "$OPERATOR_PID" ]]; then
-    kill "$OPERATOR_PID" 2>/dev/null || true
-    wait "$OPERATOR_PID" 2>/dev/null || true
+    terminate_cancel_operator
   fi
   if [[ -n "$FLUTTER_PID" ]]; then
     terminate_flutter_target
@@ -1146,13 +1322,13 @@ FAKE_ADB
     printf '%s\n' '<hierarchy><node package="com.other.wallet" text="Scan" /><node package="com.other.wallet" text="Pay" /><node package="com.other.wallet" text="Home" /></hierarchy>' >"$WALLET_UI_DUMP_PATH"
     wallet_ui_is_healthy && exit 1
     for degraded_text in 'Please wait a minute. Will be back soon.' 'Reload'; do
-      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" bounds="[64,1279][1016,1454]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
+      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" visible-to-user="true" bounds="[64,1279][1016,1454]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
       wallet_ui_is_healthy || exit 1
-      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" bounds="[64,300][1016,360]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
+      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" visible-to-user="true" bounds="[64,300][1016,360]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
       wallet_ui_is_healthy && exit 1
-      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
+      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" visible-to-user="true" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
       wallet_ui_is_healthy && exit 1
-      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.other.wallet" text="%s" enabled="true" bounds="[64,1279][1016,1454]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
+      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.other.wallet" text="%s" enabled="true" visible-to-user="true" bounds="[64,1279][1016,1454]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
       wallet_ui_is_healthy && exit 1
     done
     printf '%s\n' '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="Reload" enabled="false" bounds="[64,1279][1016,1454]" /></hierarchy>' >"$WALLET_UI_DUMP_PATH"
@@ -1163,6 +1339,60 @@ FAKE_ADB
       printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" /></hierarchy>\n' "$unhealthy_text" >"$WALLET_UI_DUMP_PATH"
       wallet_ui_is_healthy && exit 1
     done
+    audit 'WALLET_VISIBILITY_PASS'
+
+    local watchdog_flutter_pid watchdog_tool_pid watchdog_operator_pid
+    local watchdog_flutter_path watchdog_operator_path watchdog_deadline
+    watchdog_flutter_path="$root/watchdog-flutter.pid"
+    watchdog_operator_path="$root/watchdog-operator.pid"
+    : >"$watchdog_flutter_path"
+    : >"$watchdog_operator_path"
+    spawn_watchdog_fixture() {
+      python3 -c 'import os,sys,time; os.setsid(); open(sys.argv[1], "w").write(str(os.getpid())); time.sleep(30)' "$1" &
+      WATCHDOG_LAST_PID=$!
+    }
+    spawn_watchdog_fixture "$watchdog_flutter_path"
+    watchdog_flutter_pid="$WATCHDOG_LAST_PID"
+    spawn_watchdog_fixture "$watchdog_flutter_path"
+    watchdog_tool_pid="$WATCHDOG_LAST_PID"
+    spawn_watchdog_fixture "$watchdog_operator_path"
+    watchdog_operator_pid="$WATCHDOG_LAST_PID"
+    watchdog_deadline=$((SECONDS + 2))
+    while [[ ! -s "$watchdog_flutter_path" || ! -s "$watchdog_operator_path" ]] &&
+      (( SECONDS <= watchdog_deadline )); do
+      sleep 0.1
+    done
+    [[ -s "$watchdog_flutter_path" && -s "$watchdog_operator_path" ]] || exit 1
+
+    FLUTTER_PID="$watchdog_flutter_pid"
+    FLUTTER_PID_REAPED=false
+    capture_process_identity "$FLUTTER_PID" || exit 1
+    FLUTTER_PID_START_TIME="$CAPTURED_PROCESS_START_TIME"
+    FLUTTER_PID_GROUP="$CAPTURED_PROCESS_GROUP_ID"
+    FLUTTER_TOOL_PID="$watchdog_tool_pid"
+    capture_process_identity "$FLUTTER_TOOL_PID" || exit 1
+    [[ "$CAPTURED_PROCESS_GROUP_ID" == "$FLUTTER_TOOL_PID" ]] || exit 1
+    FLUTTER_TOOL_START_TIME="$CAPTURED_PROCESS_START_TIME"
+    FLUTTER_TOOL_GROUP="$CAPTURED_PROCESS_GROUP_ID"
+    OPERATOR_PID="$watchdog_operator_pid"
+    OPERATOR_PID_REAPED=false
+    capture_process_identity "$OPERATOR_PID" || exit 1
+    [[ "$CAPTURED_PROCESS_GROUP_ID" == "$OPERATOR_PID" ]] || exit 1
+    OPERATOR_PID_START_TIME="$CAPTURED_PROCESS_START_TIME"
+    OPERATOR_PID_GROUP="$CAPTURED_PROCESS_GROUP_ID"
+    OPERATOR_PID_PATH="$watchdog_operator_path"
+    POST_LAUNCH_TIMEOUT_SECONDS=0
+    POLL_INTERVAL_SECONDS=0
+    wait_for_post_launch_completion && exit 1
+    FLUTTER_STATUS=124
+    OPERATOR_STATUS=124
+    terminate_cancel_operator
+    terminate_flutter_target
+    wait "$watchdog_tool_pid" 2>/dev/null || true
+    process_is_alive "$watchdog_flutter_pid" && exit 1 || true
+    process_is_alive "$watchdog_tool_pid" && exit 1 || true
+    process_is_alive "$watchdog_operator_pid" && exit 1 || true
+    audit 'POST_LAUNCH_WATCHDOG_PASS'
 
     foreground_is_target 'mResumedActivity: ActivityRecord{com.other.app/.MainActivity}' && exit 1 || true
     foreground_is_target 'mResumedActivity: ActivityRecord{com.eg.android.AlipayGphoneRC/com.alipay.android.msp.ui.views.MspContainerActivity}' || exit 1
@@ -1259,9 +1489,11 @@ create_safe_artifact_dir
 FLUTTER_LOG_PATH="$ARTIFACT_DIR/flutter-drive.log"
 FLUTTER_STATUS_PATH="$ARTIFACT_DIR/flutter-drive.status"
 OPERATOR_LOG_PATH="$ARTIFACT_DIR/cancel-operator.log"
+OPERATOR_PID_PATH="$ARTIFACT_DIR/cancel-operator.pid"
 FLUTTER_TOOL_PID_PATH="$ARTIFACT_DIR/flutter-drive.pid"
 : >"$FLUTTER_LOG_PATH"
 : >"$FLUTTER_TOOL_PID_PATH"
+: >"$OPERATOR_PID_PATH"
 trap cleanup EXIT
 
 git_status="$(git -C "$PROJECT_ROOT" status --porcelain=v1 --untracked-files=all --ignore-submodules=none)" ||
@@ -1281,6 +1513,11 @@ prepare_android_host
 record_launch_marker_baseline || fail_timeout 'Flutter log baseline could not be recorded'
 run_flutter_target &
 FLUTTER_PID=$!
+FLUTTER_PID_REAPED=false
+capture_process_identity "$FLUTTER_PID" ||
+  fail_timeout 'Flutter runner process identity could not be recorded'
+FLUTTER_PID_START_TIME="$CAPTURED_PROCESS_START_TIME"
+FLUTTER_PID_GROUP="$CAPTURED_PROCESS_GROUP_ID"
 if ! wait_for_native_launcher_start; then
   if [[ -s "$FLUTTER_STATUS_PATH" ]]; then
     FAIL_REASON='focused_flutter_target_failed_before_native_launcher'
@@ -1292,16 +1529,33 @@ if ! wait_for_native_launcher_start; then
   audit "FAIL::$FAIL_REASON"
   exit 1
 fi
-start_cancel_operator
-
-set +e
-wait "$FLUTTER_PID"
-FLUTTER_STATUS=$?
-FLUTTER_PID=''
-wait "$OPERATOR_PID"
-OPERATOR_STATUS=$?
-set -e
-OPERATOR_PID=''
+if [[ -z "$FLUTTER_TOOL_PID" || -z "$FLUTTER_TOOL_START_TIME" ]]; then
+  RUN_RESULT='FAIL'
+  FAIL_REASON='flutter_tool_identity_unavailable'
+  terminate_flutter_target
+  audit "FAIL::$FAIL_REASON"
+  exit 1
+fi
+if ! start_cancel_operator; then
+  RUN_RESULT='FAIL'
+  FAIL_REASON='cancel_operator_identity_unavailable'
+  OPERATOR_STATUS=124
+  terminate_cancel_operator
+  terminate_flutter_target
+  audit "FAIL::$FAIL_REASON"
+  exit 1
+fi
+if ! wait_for_post_launch_completion; then
+  RUN_RESULT='FAIL'
+  FAIL_REASON='post_launch_watchdog_timeout'
+  audit 'POST_LAUNCH_WATCHDOG_TIMEOUT'
+  [[ "$FLUTTER_PID_REAPED" == true ]] || FLUTTER_STATUS=124
+  [[ "$OPERATOR_PID_REAPED" == true ]] || OPERATOR_STATUS=124
+  terminate_cancel_operator
+  terminate_flutter_target
+  audit "FAIL::$FAIL_REASON"
+  exit 1
+fi
 
 if [[ "$FLUTTER_STATUS" -ne 0 ]]; then
   RUN_RESULT='FAIL'
