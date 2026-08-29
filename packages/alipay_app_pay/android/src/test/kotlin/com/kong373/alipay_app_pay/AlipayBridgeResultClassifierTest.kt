@@ -1,5 +1,6 @@
 package com.kong373.alipay_app_pay
 
+import com.alipay.sdk.app.EnvUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -42,5 +43,17 @@ class AlipayBridgeResultClassifierTest {
             AlipayBridgeResultClassifier.PAY_TASK_RETURNED,
             result.bridgeOutcome,
         )
+    }
+
+    @Test
+    fun eachPayExplicitlyResetsTheSdkEnvironmentInTheSameProcess() {
+        AlipaySdkEnvironment.setForPay(sandbox = true)
+        assertEquals(EnvUtils.EnvEnum.SANDBOX, EnvUtils.geEnv())
+
+        AlipaySdkEnvironment.setForPay(sandbox = false)
+        assertEquals(EnvUtils.EnvEnum.ONLINE, EnvUtils.geEnv())
+
+        AlipaySdkEnvironment.setForPay(sandbox = true)
+        assertEquals(EnvUtils.EnvEnum.SANDBOX, EnvUtils.geEnv())
     }
 }

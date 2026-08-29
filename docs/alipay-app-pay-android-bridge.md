@@ -107,11 +107,13 @@ balance change.
 
 For an explicitly enabled live local/development build, the Flutter environment
 derives `sandbox: true` and passes that typed boolean through the MethodChannel.
-The Android bridge accepts no string or numeric truthy values. Before the
-official `PayTask.payV2` call it selects `EnvUtils.EnvEnum.SANDBOX`, and only
-debuggable host applications may use that mode. Staging and production always
-pass `sandbox: false`; the native bridge does not call `setEnv` for those
-invocations, so production builds cannot inherit a sandbox opt-in.
+The Android bridge accepts no string or numeric truthy values. Before every
+official `PayTask.payV2` call it explicitly selects
+`EnvUtils.EnvEnum.SANDBOX` for `sandbox: true` or
+`EnvUtils.EnvEnum.ONLINE` for `sandbox: false`. Only debuggable host
+applications may use sandbox mode. The per-invocation reset prevents a
+long-lived process or Flutter engine from carrying a previous sandbox setting
+into an online payment (or the reverse).
 
 The native callback is delivered at most once for an invocation. Dart keeps a
 single-flight result per order number and stores only a SHA-256 digest of the

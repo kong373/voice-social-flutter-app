@@ -44,7 +44,13 @@ def main() -> int:
     require(kotlin, 'arguments["orderStr"]', "server order string input")
     require(kotlin, 'arguments["sandbox"]', "typed sandbox mode input")
     require(kotlin, 'return arguments["sandbox"] as? Boolean', "strict sandbox boolean")
+    require(kotlin, "AlipaySdkEnvironment.setForPay(sandbox)", "per-pay SDK environment reset")
     require(kotlin, "EnvUtils.setEnv(EnvUtils.EnvEnum.SANDBOX)", "sandbox SDK environment")
+    require(kotlin, "EnvUtils.setEnv(EnvUtils.EnvEnum.ONLINE)", "online SDK environment reset")
+    if kotlin.index("AlipaySdkEnvironment.setForPay(sandbox)") > kotlin.index(
+        "PayTask(currentActivity).payV2(orderString, true)"
+    ):
+        raise AssertionError("SDK environment must be selected before PayTask")
     require(kotlin, "ApplicationInfo.FLAG_DEBUGGABLE", "sandbox debuggable guard")
     require(kotlin, 'result.error("sandbox_not_debuggable"', "sandbox release fail-closed")
     require(kotlin, "PayTask(currentActivity).payV2(orderString, true)", "official SDK invocation")

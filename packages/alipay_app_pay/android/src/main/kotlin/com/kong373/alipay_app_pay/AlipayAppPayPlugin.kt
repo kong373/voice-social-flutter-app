@@ -187,9 +187,7 @@ class AlipayAppPayPlugin :
                     if (!activityStillAttached) {
                         AlipayBridgeResultClassifier.nativeNotInvoked()
                     } else {
-                        if (sandbox) {
-                            EnvUtils.setEnv(EnvUtils.EnvEnum.SANDBOX)
-                        }
+                        AlipaySdkEnvironment.setForPay(sandbox)
                         val raw = PayTask(currentActivity).payV2(orderString, true)
                         AlipayBridgeResultClassifier.payTaskReturned(raw["resultStatus"])
                     }
@@ -275,6 +273,21 @@ class AlipayAppPayPlugin :
     private fun isDebuggable(activity: Activity): Boolean =
         activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
+}
+
+/**
+ * PayTask reads a process-wide SDK environment. Set it for every invocation
+ * so a previous sandbox call can never bleed into an online call (or vice
+ * versa) when the Flutter engine stays alive.
+ */
+internal object AlipaySdkEnvironment {
+    fun setForPay(sandbox: Boolean) {
+        if (sandbox) {
+            EnvUtils.setEnv(EnvUtils.EnvEnum.SANDBOX)
+        } else {
+            EnvUtils.setEnv(EnvUtils.EnvEnum.ONLINE)
+        }
+    }
 }
 
 /**
