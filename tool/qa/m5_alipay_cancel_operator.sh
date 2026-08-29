@@ -27,6 +27,7 @@ readonly EXIT_DEVICE=69
 readonly EXIT_TIMEOUT=70
 
 ANDROID_SERIAL_VALUE=''
+TARGET_SERIAL_ARG=''
 FLUTTER_LOG_PATH_ARG=''
 FLUTTER_LOG_PATH_VALUE="${FLUTTER_LOG_PATH:-}"
 ADB_BIN=''
@@ -49,6 +50,7 @@ Required:
 
 Optional test/diagnostic bounds (all are finite):
   --adb PATH             adb executable (defaults to adb on PATH)
+  --target-serial ID     confirm the frozen target serial (must be emulator-5554)
   --target-timeout SEC   wait bound for a stable sandbox cashier (default: 60)
   --after-back-timeout SEC
                          wait bound after each BACK (default: 8)
@@ -113,6 +115,12 @@ parse_args() {
         ADB_BIN="$2"
         shift 2
         ;;
+      --target-serial|--serial)
+        (($# >= 2)) || fail_configuration 'target serial is missing'
+        [[ -z "$TARGET_SERIAL_ARG" ]] || fail_configuration 'target serial supplied more than once'
+        TARGET_SERIAL_ARG="$2"
+        shift 2
+        ;;
       --target-timeout)
         (($# >= 2)) || fail_configuration 'target timeout is missing'
         TARGET_TIMEOUT_SECONDS="$2"
@@ -146,6 +154,14 @@ parse_args() {
 }
 
 validate_serial() {
+  local expected_serial="$TARGET_SERIAL"
+  if [[ -n "$TARGET_SERIAL_ARG" ]]; then
+    [[ "$TARGET_SERIAL_ARG" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]] ||
+      fail_configuration 'target serial has an unsafe format'
+    [[ "$TARGET_SERIAL_ARG" == "$TARGET_SERIAL" ]] ||
+      fail_configuration 'target serial is frozen to emulator-5554'
+    expected_serial="$TARGET_SERIAL_ARG"
+  fi
   if [[ -z "${ANDROID_SERIAL+x}" || -z "$ANDROID_SERIAL" ]]; then
     fail_configuration 'ANDROID_SERIAL is required'
   fi
@@ -153,8 +169,8 @@ validate_serial() {
   # whitespace, and control bytes before it reaches adb.
   [[ "$ANDROID_SERIAL" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]] ||
     fail_configuration 'ANDROID_SERIAL has an unsafe format'
-  [[ "$ANDROID_SERIAL" == "$TARGET_SERIAL" ]] ||
-    fail_configuration 'ANDROID_SERIAL must be emulator-5554'
+  [[ "$ANDROID_SERIAL" == "$expected_serial" ]] ||
+    fail_configuration 'ANDROID_SERIAL does not match the selected target serial'
   ANDROID_SERIAL_VALUE="$ANDROID_SERIAL"
 
   # When the normal M5 environment names the receiver AVD, reject an accidental

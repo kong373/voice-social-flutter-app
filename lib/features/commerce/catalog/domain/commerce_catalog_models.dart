@@ -53,6 +53,7 @@ class RechargeProduct {
     required this.id,
     required this.giftCoins,
     required this.priceCny,
+    this.amountMinor,
     this.bonusGiftCoins = 0,
     this.label = '',
     this.recommended = false,
@@ -62,6 +63,13 @@ class RechargeProduct {
   final String id;
   final int giftCoins;
   final double priceCny;
+
+  /// Server-normalized price in the smallest currency unit when supplied by
+  /// the catalog. Keeping this alongside [priceCny] lets a safety-sensitive
+  /// acceptance path choose a deterministic low-value product without
+  /// re-parsing a floating-point amount.
+  final int? amountMinor;
+
   final int bonusGiftCoins;
   final String label;
   final bool recommended;

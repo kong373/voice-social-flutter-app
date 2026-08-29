@@ -826,6 +826,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       id: id,
       giftCoins: giftCoins,
       priceCny: amount,
+      amountMinor: amountMinor,
       bonusGiftCoins: bonusGiftCoins,
       label: title,
       enabled: true,
