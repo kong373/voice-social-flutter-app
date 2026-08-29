@@ -22,6 +22,9 @@ readonly BACKEND_BASE_URL='http://10.0.2.2:18080/'
 readonly PUBLIC_OAUTH_CLIENT_ID="$(printenv QA_OAUTH_CLIENT_ID || true)"
 readonly EXPECTED_NATIVE_MARKER='M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001'
 readonly EXPECTED_BRIDGE_MARKER='M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned'
+readonly EXPECTED_LAUNCH_MARKER='M5_ALIPAY_FOCUSED::native_launcher::START'
+readonly DEFAULT_PRE_LAUNCH_TIMEOUT_SECONDS=300
+readonly FLUTTER_REAP_TIMEOUT_SECONDS=10
 readonly MAX_BACK_ATTEMPTS=2
 readonly EXIT_CONFIGURATION=64
 readonly EXIT_MARKER=65
@@ -37,16 +40,21 @@ AFTER_BACK_TIMEOUT_SECONDS=8
 MARKER_TIMEOUT_SECONDS=30
 POLL_INTERVAL_SECONDS=1
 STABLE_POLLS=3
+PRE_LAUNCH_TIMEOUT_SECONDS="$DEFAULT_PRE_LAUNCH_TIMEOUT_SECONDS"
 FLUTTER_BIN=''
 ADB_BIN=''
 ARTIFACT_DIR=''
 ANDROID_HOST_DIR=''
 FLUTTER_LOG_PATH=''
+FLUTTER_STATUS_PATH=''
 OPERATOR_LOG_PATH=''
 OPERATOR_PID=''
+FLUTTER_PID=''
+FLUTTER_TOOL_PID_PATH=''
 WALLET_UI_DUMP_PATH=''
 WALLET_UI_DUMP_ACTIVE=false
 LOG_BASELINE_BYTES=0
+LAUNCH_MARKER_BASELINE_BYTES=0
 BACK_COUNT=0
 RUN_RESULT='NOT_RUN'
 FLUTTER_STATUS='NOT_RUN'
@@ -80,6 +88,9 @@ The live run uses only BACK to cancel the sandbox cashier. It accepts exactly
 sdkCompleted=0 + resultStatus=6001 + pay_task_returned, then requires the
 first-party query/reconcile path to report cancellation. A missing, stale,
 duplicate, timeout, non-target, or otherwise contradictory marker fails closed.
+The Flutter build/installation phase has its own bounded 300 second wait for
+the native-launcher START marker. The 60 second cashier timeout begins only
+after that marker is observed.
 
 Live mode requires QA_OAUTH_CLIENT_ID in the protected process environment.
 It must be the public OAuth client identifier only: whitespace, '=', and
@@ -273,7 +284,7 @@ resolve_commands() {
   FLUTTER_BIN="$(command -v flutter || true)"
   [[ -n "$ADB_BIN" && -x "$ADB_BIN" ]] || fail_configuration 'adb executable is unavailable'
   [[ -n "$FLUTTER_BIN" && -x "$FLUTTER_BIN" ]] || fail_configuration 'Flutter executable is unavailable'
-  for command_name in python3 git tar mktemp shasum awk grep wc head tail find tr; do
+  for command_name in python3 git tar mktemp shasum awk grep wc head tail find tr ps; do
     command -v "$command_name" >/dev/null 2>&1 || fail_configuration "missing command: $command_name"
   done
 }
@@ -493,6 +504,15 @@ wallet_health_preflight() {
   audit 'WALLET_HEALTH_PASS'
 }
 
+force_stop_flutter_app() {
+  # keep-app-running preserves the installed package and its data, but the
+  # next drive invocation must not inherit an already-running VM service.
+  # force-stop only terminates this app process; it does not clear data or
+  # uninstall the package.
+  "$ADB_BIN" -s "$SERIAL_VALUE" shell am force-stop "$APP_PACKAGE" \
+    >/dev/null 2>&1 || fail_device 'Flutter app process could not be stopped'
+}
+
 scan_marker_stream() {
   while IFS= read -r line; do
     line="${line%$'\r'}"
@@ -610,6 +630,174 @@ for raw in sys.stdin:
 '
 }
 
+launch_marker_count_from_log_suffix() {
+  local current_bytes=''
+  local marker_count=''
+  current_bytes="$(wc -c <"$FLUTTER_LOG_PATH" 2>/dev/null | tr -d '[:space:]')" || {
+    printf 'INVALID'
+    return 0
+  }
+  [[ "$current_bytes" =~ ^[0-9]+$ &&
+    "$current_bytes" -ge "$LAUNCH_MARKER_BASELINE_BYTES" ]] || {
+    printf 'INVALID'
+    return 0
+  }
+  marker_count="$(tail -c +$((LAUNCH_MARKER_BASELINE_BYTES + 1)) \
+    "$FLUTTER_LOG_PATH" 2>/dev/null |
+    grep -Fxc "$EXPECTED_LAUNCH_MARKER" || true)"
+  [[ "$marker_count" =~ ^[0-9]+$ ]] || {
+    printf 'INVALID'
+    return 0
+  }
+  if (( marker_count == 0 )); then
+    printf 'MISSING'
+  elif (( marker_count == 1 )); then
+    printf 'PRESENT'
+  else
+    printf 'AMBIGUOUS'
+  fi
+}
+
+record_launch_marker_baseline() {
+  LAUNCH_MARKER_BASELINE_BYTES="$(wc -c <"$FLUTTER_LOG_PATH" 2>/dev/null |
+    tr -d '[:space:]')" || return 1
+  [[ "$LAUNCH_MARKER_BASELINE_BYTES" =~ ^[0-9]+$ ]] || return 1
+  [[ "$(launch_marker_count_from_log_suffix)" == 'MISSING' ]]
+}
+
+wait_for_native_launcher_start() {
+  local deadline=$((SECONDS + PRE_LAUNCH_TIMEOUT_SECONDS))
+  local state=''
+  while (( SECONDS <= deadline )); do
+    state="$(launch_marker_count_from_log_suffix)"
+    case "$state" in
+      PRESENT)
+        audit 'NATIVE_LAUNCHER_START_PASS'
+        return 0
+        ;;
+      AMBIGUOUS|INVALID)
+        audit "NATIVE_LAUNCHER_START_FAIL::$state"
+        return 1
+        ;;
+      MISSING)
+        ;;
+    esac
+    # A completed Flutter target without its launch marker cannot become
+    # cancellable; fail promptly instead of consuming the full pre-launch
+    # bound after a catalog/order failure.
+    if [[ -n "$FLUTTER_STATUS_PATH" && -s "$FLUTTER_STATUS_PATH" ]]; then
+      audit 'NATIVE_LAUNCHER_START_FAIL::FLUTTER_TARGET_ENDED'
+      return 1
+    fi
+    pause_between_polls
+  done
+  audit 'NATIVE_LAUNCHER_START_TIMEOUT'
+  return 1
+}
+
+flutter_process_is_alive() {
+  local pid="$1"
+  local state=''
+  [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] || return 1
+  state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d '[:space:]')" || return 1
+  [[ -n "$state" && "$state" != Z* ]]
+}
+
+flutter_process_group_id() {
+  local pid="$1"
+  local group_id=''
+  [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] || return 1
+  group_id="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]')" || return 1
+  [[ "$group_id" =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "$group_id"
+}
+
+flutter_tool_pid_from_file() {
+  local candidate=''
+  [[ -n "$FLUTTER_TOOL_PID_PATH" && -f "$FLUTTER_TOOL_PID_PATH" &&
+    ! -L "$FLUTTER_TOOL_PID_PATH" ]] || return 0
+  candidate="$(tr -d '[:space:]' <"$FLUTTER_TOOL_PID_PATH" 2>/dev/null || true)"
+  [[ "$candidate" =~ ^[0-9]+$ && "$candidate" -gt 0 ]] || return 0
+  printf '%s\n' "$candidate"
+}
+
+signal_flutter_target() {
+  local signal="$1"
+  local wrapper_pid="$2"
+  local tool_pid="$3"
+  local expected_tool_group="$4"
+  local wrapper_group="$5"
+  local current_tool_group=''
+  if [[ "$tool_pid" =~ ^[0-9]+$ && "$tool_pid" -gt 0 ]]; then
+    current_tool_group="$(flutter_process_group_id "$tool_pid" || true)"
+    if [[ "$current_tool_group" =~ ^[0-9]+$ &&
+      "$current_tool_group" == "$expected_tool_group" &&
+      "$current_tool_group" == "$tool_pid" &&
+      "$current_tool_group" != '1' &&
+      "$current_tool_group" != "$$" &&
+      "$current_tool_group" != "$wrapper_pid" &&
+      "$current_tool_group" != "$wrapper_group" ]]; then
+      kill -"$signal" "-$current_tool_group" 2>/dev/null || true
+    else
+      kill -"$signal" "$tool_pid" 2>/dev/null || true
+    fi
+  fi
+  if [[ "$wrapper_pid" =~ ^[0-9]+$ && "$wrapper_pid" -gt 0 &&
+    "$wrapper_pid" != "$tool_pid" ]]; then
+    kill -"$signal" "$wrapper_pid" 2>/dev/null || true
+  fi
+}
+
+terminate_flutter_target() {
+  local wrapper_pid="$FLUTTER_PID"
+  local tool_pid=''
+  local expected_tool_group=''
+  local wrapper_group=''
+  local deadline=0
+
+  [[ "$wrapper_pid" =~ ^[0-9]+$ && "$wrapper_pid" -gt 0 ]] || {
+    FLUTTER_PID=''
+    return 0
+  }
+  tool_pid="$(flutter_tool_pid_from_file)" || tool_pid=''
+  if [[ "$tool_pid" =~ ^[0-9]+$ && "$tool_pid" -gt 0 ]]; then
+    expected_tool_group="$(flutter_process_group_id "$tool_pid" || true)"
+  fi
+  wrapper_group="$(flutter_process_group_id "$wrapper_pid" || true)"
+
+  # The Python launcher gives Flutter its own session/process group. Signal
+  # that group first so a hung drive cannot outlive the runner shell.
+  signal_flutter_target TERM "$wrapper_pid" "$tool_pid" \
+    "$expected_tool_group" "$wrapper_group"
+  deadline=$((SECONDS + FLUTTER_REAP_TIMEOUT_SECONDS))
+  while (( SECONDS <= deadline )); do
+    if ! flutter_process_is_alive "$wrapper_pid" &&
+      { [[ -z "$tool_pid" ]] || ! flutter_process_is_alive "$tool_pid"; }; then
+      break
+    fi
+    sleep 1
+  done
+
+  # Escalate after the bounded TERM window, then allow only a short bounded
+  # reap window. In particular, never wait indefinitely for a hung Flutter
+  # process on the pre-launch timeout path.
+  if flutter_process_is_alive "$wrapper_pid" ||
+    { [[ -n "$tool_pid" ]] && flutter_process_is_alive "$tool_pid"; }; then
+    signal_flutter_target KILL "$wrapper_pid" "$tool_pid" \
+      "$expected_tool_group" "$wrapper_group"
+  fi
+  deadline=$((SECONDS + 2))
+  while flutter_process_is_alive "$wrapper_pid" && (( SECONDS <= deadline )); do
+    sleep 1
+  done
+  if ! flutter_process_is_alive "$wrapper_pid"; then
+    # The process is gone or a zombie, so this wait is a bounded child reap,
+    # not a wait on live Flutter work.
+    wait "$wrapper_pid" 2>/dev/null || true
+  fi
+  FLUTTER_PID=''
+}
+
 prepare_android_host() {
   ANDROID_HOST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/voice-social-alipay-host.XXXXXX")" ||
     fail_configuration 'temporary Android host could not be created'
@@ -632,8 +820,27 @@ run_flutter_target() {
   set +e
   (
     cd "$ANDROID_HOST_DIR"
+    # Flutter drive otherwise stops and uninstalls the package in
+    # DriverService.stop(), which erases the persisted Secure Storage
+    # session. Keep the installed app/data on both pass and test failure.
     env -u QA_OAUTH_CLIENT_ID -u QA_OAUTH_CLIENT_SECRET -u OAUTH_CLIENT_SECRET \
-      "$FLUTTER_BIN" drive --no-pub \
+      python3 -c '
+import os
+import sys
+
+pid_path, command, *args = sys.argv[1:]
+with open(pid_path, "w", encoding="ascii") as stream:
+    stream.write(str(os.getpid()))
+try:
+    os.setsid()
+except OSError:
+    # The shell fallback remains safe because the reaper verifies the
+    # process group before signalling a negative PGID.
+    pass
+os.execv(command, [command, *args])
+' \
+      "$FLUTTER_TOOL_PID_PATH" "$FLUTTER_BIN" drive --no-pub \
+      --keep-app-running \
       --driver="$DRIVER_TARGET" --target="$INTEGRATION_TARGET" \
       --device-id="$SERIAL_VALUE" \
       --dart-define=BACKEND_MODE=live \
@@ -649,7 +856,9 @@ run_flutter_target() {
       2>&1
   ) | safe_flutter_log_filter >"$FLUTTER_LOG_PATH"
   FLUTTER_STATUS="${PIPESTATUS[0]}"
+  printf '%s\n' "$FLUTTER_STATUS" >"$FLUTTER_STATUS_PATH"
   set -e
+  return "$FLUTTER_STATUS"
 }
 
 start_cancel_operator() {
@@ -746,6 +955,9 @@ cleanup() {
     kill "$OPERATOR_PID" 2>/dev/null || true
     wait "$OPERATOR_PID" 2>/dev/null || true
   fi
+  if [[ -n "$FLUTTER_PID" ]]; then
+    terminate_flutter_target
+  fi
   clear_wallet_ui_dump
   if [[ -n "$ANDROID_HOST_DIR" && -d "$ANDROID_HOST_DIR" && ! -L "$ANDROID_HOST_DIR" ]]; then
     rm -rf -- "$ANDROID_HOST_DIR"
@@ -785,6 +997,33 @@ self_test() {
     done
     public_oauth_client_id_is_valid 'public-client-01' || exit 1
 
+    local fake_adb fake_adb_calls forbidden_verb
+    fake_adb="$root/fake-adb"
+    fake_adb_calls="$root/fake-adb.calls"
+    : >"$fake_adb_calls"
+    cat >"$fake_adb" <<'FAKE_ADB'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+: "${FAKE_ADB_CALLS:?}"
+printf '%s\n' "$*" >>"$FAKE_ADB_CALLS"
+for forbidden_verb in clear uninstall; do
+  case " $* " in
+    *" pm ${forbidden_verb} "*) exit 92 ;;
+  esac
+done
+[[ "$*" == '-s emulator-5554 shell am force-stop com.kong373.voice_social_app' ]]
+FAKE_ADB
+    chmod 700 "$fake_adb"
+    ADB_BIN="$fake_adb"
+    SERIAL_VALUE="$DEFAULT_SERIAL"
+    FAKE_ADB_CALLS="$fake_adb_calls"
+    export FAKE_ADB_CALLS
+    force_stop_flutter_app || exit 1
+    [[ "$(wc -l <"$fake_adb_calls" | tr -d '[:space:]')" == '1' ]] || exit 1
+    [[ "$(head -n 1 "$fake_adb_calls")" == \
+      '-s emulator-5554 shell am force-stop com.kong373.voice_social_app' ]] || exit 1
+    audit 'FORCE_STOP_PASS'
+
     printf '%s\n' "$EXPECTED_NATIVE_MARKER" >"$FLUTTER_LOG_PATH"
     if record_marker_baseline; then exit 1; fi
 
@@ -810,6 +1049,23 @@ self_test() {
     record_marker_baseline || exit 1
     MARKER_TIMEOUT_SECONDS=0
     wait_for_marker_pair && exit 1
+
+    : >"$FLUTTER_LOG_PATH"
+    PRE_LAUNCH_TIMEOUT_SECONDS=2
+    POLL_INTERVAL_SECONDS=0
+    record_launch_marker_baseline || exit 1
+    (
+      sleep 0.2
+      printf '%s\n' "$EXPECTED_LAUNCH_MARKER" >>"$FLUTTER_LOG_PATH"
+    ) &
+    local launch_marker_writer_pid=$!
+    wait_for_native_launcher_start || exit 1
+    wait "$launch_marker_writer_pid" || exit 1
+
+    : >"$FLUTTER_LOG_PATH"
+    record_launch_marker_baseline || exit 1
+    PRE_LAUNCH_TIMEOUT_SECONDS=0
+    wait_for_native_launcher_start && exit 1
 
     printf '%s\n%s\n%s\n' \
       "I/flutter ( 12345): $EXPECTED_NATIVE_MARKER" \
@@ -882,8 +1138,11 @@ require_public_oauth_client_id
 resolve_commands
 create_safe_artifact_dir
 FLUTTER_LOG_PATH="$ARTIFACT_DIR/flutter-drive.log"
+FLUTTER_STATUS_PATH="$ARTIFACT_DIR/flutter-drive.status"
 OPERATOR_LOG_PATH="$ARTIFACT_DIR/cancel-operator.log"
+FLUTTER_TOOL_PID_PATH="$ARTIFACT_DIR/flutter-drive.pid"
 : >"$FLUTTER_LOG_PATH"
+: >"$FLUTTER_TOOL_PID_PATH"
 trap cleanup EXIT
 
 git_status="$(git -C "$PROJECT_ROOT" status --porcelain=v1 --untracked-files=all --ignore-submodules=none)" ||
@@ -898,11 +1157,28 @@ audit 'NO_SMS'
 audit 'NO_TENCENT'
 audit 'CANCEL_ONLY'
 wallet_health_preflight
+force_stop_flutter_app
 prepare_android_host
+record_launch_marker_baseline || fail_timeout 'Flutter log baseline could not be recorded'
+run_flutter_target &
+FLUTTER_PID=$!
+if ! wait_for_native_launcher_start; then
+  if [[ -s "$FLUTTER_STATUS_PATH" ]]; then
+    FAIL_REASON='focused_flutter_target_failed_before_native_launcher'
+  else
+    FAIL_REASON='native_launcher_start_timeout'
+  fi
+  RUN_RESULT='FAIL'
+  terminate_flutter_target
+  audit "FAIL::$FAIL_REASON"
+  exit 1
+fi
 start_cancel_operator
-run_flutter_target
 
 set +e
+wait "$FLUTTER_PID"
+FLUTTER_STATUS=$?
+FLUTTER_PID=''
 wait "$OPERATOR_PID"
 OPERATOR_STATUS=$?
 set -e

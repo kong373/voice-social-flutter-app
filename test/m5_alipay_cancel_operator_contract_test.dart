@@ -241,6 +241,12 @@ esac
     expect(source, contains('UI_READY'));
     expect(source, contains('UI_GATE_RESET'));
     expect(source, contains('MspContainerActivity'));
+    expect(source, contains('allowed_degraded_labels'));
+    expect(source, contains('allowed_degraded_markers'));
+    expect(source, contains('bounds_pattern'));
+    expect(source, contains('payment_confirmation_markers'));
+    expect(source, contains('clickable'));
+    expect(source, contains('focusable'));
     expect(source, isNot(contains('input tap')));
     expect(source, isNot(contains('KEYCODE_ENTER')));
     expect(source, isNot(contains('input text')));
@@ -559,6 +565,98 @@ esac
       expect(result.stdout, isNot(contains('KEYCODE_BACK_SENT')));
     }
   });
+
+  test(
+    'only a proven lower-feed degradation is tolerated beside a cancellable MspContainer',
+    () {
+      final Directory sandbox = createSandbox('m5-alipay-cancel-ui-degraded-');
+      final File log = File(sandbox.path + '/flutter-drive.log')
+        ..writeAsStringSync('');
+      final String degradedUi = readyUi(
+        extra:
+            '<node package="$targetPackage" text="Please wait a minute. Will be back soon." '
+            'enabled="true" visible-to-user="true" clickable="false" '
+            'bounds="[64,1279][1016,1454]" />'
+            '<node package="$targetPackage" text="Reload" enabled="true" '
+            'visible-to-user="true" clickable="false" '
+            'bounds="[64,1455][1016,1599]" />',
+      );
+      final File fakeAdb = createFakeAdb(
+        sandbox,
+        stateMode: 'online',
+        targetCalls: 3,
+        defaultUi: degradedUi,
+        markersByBack: <int, List<String>>{
+          1: <String>[validNativeMarker, validBridgeMarker],
+        },
+      );
+      final ProcessResult accepted = runOperator(
+        sandbox,
+        fakeAdb: fakeAdb,
+        flutterLog: log,
+        afterBackTimeout: 1,
+      );
+      expect(
+        accepted.exitCode,
+        0,
+        reason: 'stdout:\n${accepted.stdout}\nstderr:\n${accepted.stderr}',
+      );
+      expect(accepted.stdout, contains('KEYCODE_BACK_SENT::attempt=1'));
+
+      final Map<String, String> rejectedDegradations = <String, String>{
+        'interactive': readyUi(
+          extra:
+              '<node package="$targetPackage" text="Reload" enabled="true" '
+              'visible-to-user="true" clickable="true" '
+              'bounds="[64,1279][1016,1454]" />',
+        ),
+        'wrong-region': readyUi(
+          extra:
+              '<node package="$targetPackage" text="Reload" enabled="true" '
+              'visible-to-user="true" clickable="false" '
+              'bounds="[64,300][1016,360]" />',
+        ),
+        'payment-confirmation': readyUi(
+          extra:
+              '<node package="$targetPackage" text="Confirm payment" '
+              'enabled="true" visible-to-user="true" clickable="true" '
+              'bounds="[64,1000][1016,1100]" />',
+        ),
+      };
+      for (final MapEntry<String, String> entry
+          in rejectedDegradations.entries) {
+        final Directory rejectedSandbox = createSandbox(
+          'm5-alipay-cancel-ui-degraded-${entry.key}-',
+        );
+        final File rejectedLog = File(
+          rejectedSandbox.path + '/flutter-drive.log',
+        )..writeAsStringSync('');
+        final File rejectedAdb = createFakeAdb(
+          rejectedSandbox,
+          stateMode: 'online',
+          targetCalls: 10000,
+          defaultUi: entry.value,
+        );
+        final ProcessResult rejected = runOperator(
+          rejectedSandbox,
+          fakeAdb: rejectedAdb,
+          flutterLog: rejectedLog,
+          targetTimeout: 0,
+        );
+        expect(
+          rejected.exitCode,
+          isNot(0),
+          reason:
+              '${entry.key}\nstdout:\n${rejected.stdout}\nstderr:\n${rejected.stderr}',
+        );
+        expect(
+          File('${rejectedSandbox.path}/keyevent-count.txt').readAsStringSync(),
+          '0',
+          reason: entry.key,
+        );
+      }
+    },
+  );
 
   test('uiautomator dump failure fails closed before BACK', () {
     final Directory sandbox = createSandbox('m5-alipay-cancel-ui-dump-fail-');

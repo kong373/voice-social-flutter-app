@@ -43,6 +43,12 @@ void main() {
       contains('M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned'),
     );
     expect(source, contains('MAX_BACK_ATTEMPTS=2'));
+    expect(source, contains('--keep-app-running'));
+    expect(source, isNot(contains('--no-keep-app-running')));
+    expect(source, contains('EXPECTED_LAUNCH_MARKER'));
+    expect(source, contains('DEFAULT_PRE_LAUNCH_TIMEOUT_SECONDS=300'));
+    expect(source, contains('record_launch_marker_baseline'));
+    expect(source, contains('wait_for_native_launcher_start'));
     expect(cancelOperator.readAsStringSync(), contains('--target-serial'));
     expect(source, contains('stale'));
     expect(source, contains('query_reconcile'));
@@ -59,6 +65,96 @@ void main() {
     ]);
     expect(syntax.exitCode, 0, reason: '${syntax.stdout}\n${syntax.stderr}');
   });
+
+  test(
+    'Flutter drive preserves the authenticated package and starts cashier timeout after launch',
+    () {
+      final String source = runner.readAsStringSync();
+      final int driveInvocation = source.indexOf(
+        '"\$FLUTTER_BIN" drive --no-pub',
+      );
+      final int keepAppRunning = source.indexOf(
+        '--keep-app-running',
+        driveInvocation,
+      );
+      expect(driveInvocation, greaterThan(-1));
+      expect(keepAppRunning, greaterThan(driveInvocation));
+      expect(
+        source.substring(driveInvocation, keepAppRunning),
+        isNot(contains('--no-keep-app-running')),
+      );
+      expect(source, isNot(contains('adb uninstall')));
+      expect(source, isNot(contains('pm clear')));
+      expect(source, contains('force_stop_flutter_app'));
+      expect(
+        source,
+        contains(
+          r'"$ADB_BIN" -s "$SERIAL_VALUE" shell am force-stop "$APP_PACKAGE"',
+        ),
+      );
+      expect(source, contains("APP_PACKAGE='com.kong373.voice_social_app'"));
+      expect(source, contains('FAKE_ADB_CALLS'));
+      expect(source, contains('forbidden_verb in clear uninstall'));
+
+      final int launchBaseline = source.lastIndexOf(
+        'record_launch_marker_baseline || fail_timeout',
+      );
+      final int walletPreflight = source.lastIndexOf(
+        'wallet_health_preflight\n',
+      );
+      final int forceStop = source.lastIndexOf('force_stop_flutter_app\n');
+      final int hostPreparation = source.lastIndexOf('prepare_android_host\n');
+      final int flutterBackground = source.lastIndexOf('run_flutter_target &');
+      final int launchWait = source.lastIndexOf(
+        'if ! wait_for_native_launcher_start; then',
+      );
+      expect(walletPreflight, greaterThan(-1));
+      expect(forceStop, greaterThan(walletPreflight));
+      expect(forceStop, lessThan(hostPreparation));
+      final int operatorStart = source.lastIndexOf('start_cancel_operator\n');
+      expect(launchBaseline, greaterThan(-1));
+      expect(flutterBackground, greaterThan(launchBaseline));
+      expect(launchWait, greaterThan(flutterBackground));
+      expect(operatorStart, greaterThan(launchWait));
+      expect(source, contains('--target-timeout "\$CASHIER_TIMEOUT_SECONDS"'));
+      expect(
+        source.substring(launchWait, operatorStart),
+        isNot(contains('start_cancel_operator')),
+      );
+      expect(source, contains('FLUTTER_REAP_TIMEOUT_SECONDS=10'));
+      expect(source, contains('FLUTTER_TOOL_PID_PATH'));
+      expect(source, contains('os.setsid()'));
+      expect(source, contains('terminate_flutter_target'));
+      expect(source, contains('signal_flutter_target TERM'));
+      expect(source, contains('signal_flutter_target KILL'));
+      expect(
+        source.substring(launchWait, operatorStart),
+        isNot(contains('wait "\$FLUTTER_PID"')),
+      );
+
+      // Exercise the launch wait with a delayed marker. This proves the
+      // pre-launch build window is independent from the operator's cashier
+      // timeout rather than merely checking source text.
+      final ProcessResult selfTest = Process.runSync(
+        '/bin/bash',
+        <String>[runner.path, '--self-test'],
+        environment: <String, String>{
+          'PATH': Platform.environment['PATH'] ?? '/usr/bin:/bin',
+          'QA_OAUTH_CLIENT_ID': 'fixture-public-client',
+        },
+        includeParentEnvironment: false,
+      );
+      expect(
+        selfTest.exitCode,
+        0,
+        reason: 'stdout:\n${selfTest.stdout}\nstderr:\n${selfTest.stderr}',
+      );
+      expect(selfTest.stdout, contains('NATIVE_LAUNCHER_START_PASS'));
+      expect(selfTest.stdout, contains('NATIVE_LAUNCHER_START_TIMEOUT'));
+      expect(selfTest.stdout, contains('FORCE_STOP_PASS'));
+      expect(selfTest.stdout, contains('SELF_TEST::PASS'));
+    },
+  );
 
   test('focused runner rejects AVD-B serial before any live setup', () {
     for (final List<String> arguments in <List<String>>[
@@ -146,7 +242,7 @@ void main() {
     }
     final int preflight = source.lastIndexOf('wallet_health_preflight\n');
     final int hostPreparation = source.lastIndexOf('prepare_android_host\n');
-    final int flutterTarget = source.lastIndexOf('run_flutter_target\n');
+    final int flutterTarget = source.lastIndexOf('run_flutter_target &');
     expect(preflight, greaterThan(-1));
     expect(hostPreparation, greaterThan(-1));
     expect(flutterTarget, greaterThan(-1));

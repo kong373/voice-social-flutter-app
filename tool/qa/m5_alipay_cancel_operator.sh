@@ -348,6 +348,7 @@ ui_xml_state() {
     "$UI_XML_MAX_BYTES" <<'PY'
 import sys
 import xml.etree.ElementTree as ET
+import re
 from pathlib import Path
 
 
@@ -425,8 +426,32 @@ if activity_class_values and not all(
 ):
     verdict("INVALID")
 
-normalized = text.casefold()
-for marker in (
+input_markers = (
+    "edittext",
+    "otp",
+    "one-time",
+    "one time",
+    "passcode",
+    "password",
+    "支付密码",
+    "验证码",
+    "verification code",
+    "security code",
+    "pin",
+)
+
+payment_confirmation_markers = (
+    "confirm payment",
+    "payment confirmation",
+    "pay now",
+    "confirm and pay",
+    "submit payment",
+    "确认支付",
+    "立即支付",
+    "确认付款",
+)
+
+transient_markers = (
     "please wait",
     "please_wait",
     "processing",
@@ -452,35 +477,83 @@ for marker in (
     "重试",
     "重新加载",
     "刷新",
-):
-    if marker in normalized:
-        verdict("RESET")
-
-input_markers = (
-    "edittext",
-    "otp",
-    "one-time",
-    "one time",
-    "passcode",
-    "password",
-    "支付密码",
-    "验证码",
-    "verification code",
-    "security code",
-    "pin",
 )
+
+allowed_degraded_labels = {
+    "please wait a minute. will be back soon.",
+    "reload",
+}
+allowed_degraded_markers = ("please wait a minute", "reload")
+bounds_pattern = re.compile(r"^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$")
+
+def node_labels(node):
+    return {
+        node.attrib.get(attribute, "").strip().casefold()
+        for attribute in ("text", "content-desc")
+        if node.attrib.get(attribute, "").strip()
+    }
+
+def is_visible_enabled(node: ET.Element) -> bool:
+    return (
+        node.attrib.get("enabled") == "true"
+        and node.attrib.get("visible-to-user") == "true"
+    )
+
+def is_noninteractive(node: ET.Element) -> bool:
+    return all(
+        node.attrib.get(attribute) != "true"
+        for attribute in ("clickable", "long-clickable", "focusable")
+    )
+
+def is_allowed_degraded_feed(node: ET.Element) -> bool:
+    labels = node_labels(node)
+    if node.attrib.get("package", "").strip() != package:
+        return False
+    if not labels or not labels.issubset(allowed_degraded_labels):
+        return False
+    if not is_visible_enabled(node) or not is_noninteractive(node):
+        return False
+    match = bounds_pattern.fullmatch(node.attrib.get("bounds", ""))
+    if match is None:
+        return False
+    x1, y1, x2, y2 = (int(value) for value in match.groups())
+    return 0 <= x1 < x2 <= 1080 and 1200 <= y1 < y2 <= 1600
+
+normalized = text.casefold()
+degraded_nodes = []
 for node in nodes:
+    labels = node_labels(node)
     values = [
         value.strip().casefold()
         for value in node.attrib.values()
         if value.strip()
     ]
-    class_name = node.attrib.get("class", "").casefold()
     joined = " ".join(values)
-    if "edittext" in class_name or any(
+    if "edittext" in node.attrib.get("class", "").casefold() or any(
         marker in joined for marker in input_markers
     ):
         verdict("INVALID")
+    if any(
+        marker in " ".join(labels) for marker in payment_confirmation_markers
+    ):
+        verdict("INVALID")
+    if any(marker in " ".join(labels) for marker in allowed_degraded_markers):
+        if is_allowed_degraded_feed(node):
+            degraded_nodes.append(node)
+        else:
+            verdict("RESET")
+
+# A transient/error label in an unrelated attribute or outside a node is never
+# silently ignored. Only the two fixed lower-feed labels may be degraded, and
+# only after the target activity and cancel control checks below succeed.
+for marker in transient_markers:
+    if marker in normalized and not any(
+        marker in " ".join(node_labels(node)) for node in degraded_nodes
+    ):
+        verdict("RESET")
+
+if len(degraded_nodes) > 4:
+    verdict("RESET")
 
 def is_cancel_or_back(label: str) -> bool:
     return any(
@@ -503,10 +576,7 @@ for node in nodes:
         continue
     if node.attrib.get("visible-to-user") != "true":
         continue
-    if (
-        "clickable" in node.attrib
-        and node.attrib.get("clickable") != "true"
-    ):
+    if node.attrib.get("clickable") != "true":
         continue
     ready_controls.append(node)
 if not ready_controls:
