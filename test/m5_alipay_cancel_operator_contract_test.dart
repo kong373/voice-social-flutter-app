@@ -8,6 +8,22 @@ void main() {
       'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001';
   const String validBridgeMarker =
       'M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned';
+  const String targetPackage = 'com.eg.android.AlipayGphoneRC';
+  const String targetActivity = 'MspContainerActivity';
+  const String targetActivityClass =
+      'com.alipay.android.msp.ui.views.MspContainerActivity';
+
+  String readyUi({
+    String package = targetPackage,
+    String activity = targetActivity,
+    String controlText = 'Cancel',
+    String extra = '',
+  }) =>
+      '<hierarchy activity="$activity">'
+      '<node package="$package" class="$targetActivityClass" '
+      'text="$controlText" content-desc="$controlText" enabled="true" '
+      'visible-to-user="true" clickable="true" bounds="[0,0][1080,1920]" />'
+      '$extra</hierarchy>';
 
   Directory createSandbox(String prefix) {
     final Directory sandbox = Directory.systemTemp.createTempSync(prefix);
@@ -25,9 +41,15 @@ void main() {
     required int targetCalls,
     Map<int, List<String>> markersByBack = const <int, List<String>>{},
     Map<int, List<String>> markersByDumpsys = const <int, List<String>>{},
+    Map<int, String> uiByDump = const <int, String>{},
+    Set<int> failedUiDumps = const <int>{},
+    Map<int, String> activityByDumpsys = const <int, String>{},
+    String? defaultUi,
   }) {
     File('${sandbox.path}/dumpsys-count.txt').writeAsStringSync('0');
     File('${sandbox.path}/keyevent-count.txt').writeAsStringSync('0');
+    File('${sandbox.path}/ui-dump-count.txt').writeAsStringSync('0');
+    File('${sandbox.path}/remote-ui.xml').writeAsStringSync('');
     String shellQuote(String value) => "'${value.replaceAll("'", "'\"'\"'")}'";
     String markerCases(Map<int, List<String>> markers) => markers.isEmpty
         ? ''
@@ -46,13 +68,34 @@ void main() {
               .join('\n');
     final String backMarkerCases = markerCases(markersByBack);
     final String dumpsysMarkerCases = markerCases(markersByDumpsys);
+    final String uiDumpCases = uiByDump.entries
+        .map((MapEntry<int, String> entry) {
+          return '        ${entry.key})\n'
+              '          printf %s ${shellQuote(entry.value)} '
+              '>"\$FAKE_REMOTE_UI_XML"\n'
+              '          ;;';
+        })
+        .join('\n');
+    final String failedUiDumpCases = failedUiDumps
+        .map((int count) => '        $count)\n          exit 93;;')
+        .join('\n');
+    final String activityCases = activityByDumpsys.entries
+        .map((MapEntry<int, String> entry) {
+          return '        ${entry.key})\n'
+              '          printf %s ${shellQuote(entry.value)}\n'
+              '          ;;';
+        })
+        .join('\n');
+    final String fallbackUi = shellQuote(defaultUi ?? readyUi());
     final File fakeAdb = File('${sandbox.path}/adb');
     fakeAdb.writeAsStringSync('''#!/usr/bin/env bash
 set -Eeuo pipefail
 : "\${FAKE_ADB_CALLS:?}"
 : "\${FAKE_DUMPSYS_COUNT:?}"
 : "\${FAKE_KEYEVENT_COUNT:?}"
+: "\${FAKE_UI_DUMP_COUNT:?}"
 : "\${FAKE_LOG_PATH:?}"
+: "\${FAKE_REMOTE_UI_XML:?}"
 printf '%s\\n' "\$*" >>"\$FAKE_ADB_CALLS"
 if [[ "\${1:-}" == '-s' ]]; then
   [[ "\${2:-}" == 'emulator-5554' ]]
@@ -77,11 +120,34 @@ $dumpsysMarkerCases
         *)
           ;;
       esac
-      if (( count <= $targetCalls )); then
-        printf '%s\\n' 'mResumedActivity: ActivityRecord{com.eg.android.AlipayGphoneRC/com.alipay.android.msp.ui.views.MspContainerActivity}'
-      else
-        printf '%s\\n' 'mResumedActivity: ActivityRecord{com.kong373.voice_social_app/.MainActivity}'
-      fi
+      case "\$count" in
+$activityCases
+        *)
+          if (( count <= $targetCalls )); then
+            printf '%s\\n' 'mResumedActivity: ActivityRecord{com.eg.android.AlipayGphoneRC/com.alipay.android.msp.ui.views.MspContainerActivity}'
+          else
+            printf '%s\\n' 'mResumedActivity: ActivityRecord{com.kong373.voice_social_app/.MainActivity}'
+          fi
+          ;;
+      esac
+    elif [[ "\${1:-}" == 'uiautomator' && "\${2:-}" == 'dump' && -n "\${3:-}" ]]; then
+      count="\$(<"\$FAKE_UI_DUMP_COUNT")"
+      count=\$((count + 1))
+      printf '%s' "\$count" >"\$FAKE_UI_DUMP_COUNT"
+      case "\$count" in
+$failedUiDumpCases
+$uiDumpCases
+        *)
+          printf '%s' $fallbackUi >"\$FAKE_REMOTE_UI_XML"
+          ;;
+      esac
+      printf 'UI hierchary dumped to: %s\\n' "\${3}"
+    elif [[ "\${1:-}" == 'cat' && "\${2:-}" == *'voice-social-alipay-cancel-ui.xml' ]]; then
+      cat "\$FAKE_REMOTE_UI_XML"
+    elif [[ "\${1:-}" == 'chmod' && "\${2:-}" == '600' && "\${3:-}" == *'voice-social-alipay-cancel-ui.xml' ]]; then
+      :
+    elif [[ "\${1:-}" == 'rm' && "\${2:-}" == '-f' && "\${3:-}" == *'voice-social-alipay-cancel-ui.xml' ]]; then
+      : >"\$FAKE_REMOTE_UI_XML"
     elif [[ "\${1:-}" == 'input' && "\${2:-}" == 'keyevent' && "\${3:-}" == 'KEYCODE_BACK' ]]; then
       count=\"\$(<\"\$FAKE_KEYEVENT_COUNT\")\"
       count=\$((count + 1))
@@ -115,10 +181,12 @@ esac
     String serial = 'emulator-5554',
     String? avdBSerial,
     int afterBackTimeout = 0,
+    int targetTimeout = 1,
   }) {
     final File calls = File('${sandbox.path}/adb-calls.txt');
     final File dumpsysCount = File('${sandbox.path}/dumpsys-count.txt');
     final File keyeventCount = File('${sandbox.path}/keyevent-count.txt');
+    final File uiDumpCount = File(sandbox.path + '/ui-dump-count.txt');
     final String inheritedPath =
         Platform.environment['PATH'] ?? '/usr/bin:/bin';
     return Process.runSync(
@@ -128,7 +196,7 @@ esac
         '--adb',
         fakeAdb.path,
         '--target-timeout',
-        '1',
+        '$targetTimeout',
         '--after-back-timeout',
         '$afterBackTimeout',
         '--marker-timeout',
@@ -145,7 +213,9 @@ esac
         'FAKE_ADB_CALLS': calls.path,
         'FAKE_DUMPSYS_COUNT': dumpsysCount.path,
         'FAKE_KEYEVENT_COUNT': keyeventCount.path,
+        'FAKE_UI_DUMP_COUNT': uiDumpCount.path,
         'FAKE_LOG_PATH': flutterLog.path,
+        'FAKE_REMOTE_UI_XML': sandbox.path + '/remote-ui.xml',
         if (avdBSerial != null) 'QA_AVD_B_SERIAL': avdBSerial,
       },
       includeParentEnvironment: false,
@@ -163,8 +233,18 @@ esac
     expect(source, contains('ANDROID_SERIAL'));
     expect(source, contains('FLUTTER_LOG_PATH'));
     expect(source, contains('KEYCODE_BACK'));
+    expect(source, contains('uiautomator dump'));
+    expect(source, contains('shell cat'));
+    expect(source, contains('DEVICE_UI_DUMP_PATH'));
+    expect(source, contains('UI_XML_MAX_BYTES'));
+    expect(source, contains('chmod 600'));
+    expect(source, contains('UI_READY'));
+    expect(source, contains('UI_GATE_RESET'));
+    expect(source, contains('MspContainerActivity'));
     expect(source, isNot(contains('input tap')));
     expect(source, isNot(contains('KEYCODE_ENTER')));
+    expect(source, isNot(contains('input text')));
+    expect(source, isNot(contains('uiautomator click')));
     expect(source, isNot(contains('adb devices')));
     final ProcessResult syntax = Process.runSync('/bin/bash', <String>[
       '-n',
@@ -214,6 +294,23 @@ esac
     expect(calls, isNot(contains('emulator-5556')));
     expect(calls, isNot(contains('devices')));
     expect(
+      calls
+          .split('\n')
+          .where((String line) => line.contains('uiautomator dump'))
+          .length,
+      3,
+    );
+    expect(
+      calls,
+      contains(
+        'shell chmod 600 /data/local/tmp/voice-social-alipay-cancel-ui.xml',
+      ),
+    );
+    expect(
+      calls,
+      contains('shell rm -f /data/local/tmp/voice-social-alipay-cancel-ui.xml'),
+    );
+    expect(
       calls,
       contains('-s emulator-5554 shell input keyevent KEYCODE_BACK'),
     );
@@ -262,6 +359,226 @@ esac
       2,
     );
     expect(result.stdout, contains('TARGET_STILL_PRESENT_AFTER_BOUNDED_WAIT'));
+  });
+
+  test(
+    'fresh UI gate requires three consecutive ready snapshots after jitter',
+    () {
+      final Directory sandbox = createSandbox('m5-alipay-cancel-ui-jitter-');
+      final File log = File(sandbox.path + '/flutter-drive.log')
+        ..writeAsStringSync('');
+      final String loadingUi = readyUi(
+        extra:
+            '<node package="$targetPackage" class="android.widget.ProgressBar" '
+            'text="Loading" enabled="true" visible-to-user="true" />',
+      );
+      final File fakeAdb = createFakeAdb(
+        sandbox,
+        stateMode: 'online',
+        targetCalls: 5,
+        uiByDump: <int, String>{
+          1: readyUi(),
+          2: loadingUi,
+          3: readyUi(),
+          4: readyUi(),
+          5: readyUi(),
+        },
+        markersByBack: <int, List<String>>{
+          1: <String>[validNativeMarker, validBridgeMarker],
+        },
+      );
+      final ProcessResult result = runOperator(
+        sandbox,
+        fakeAdb: fakeAdb,
+        flutterLog: log,
+        afterBackTimeout: 1,
+      );
+      expect(
+        result.exitCode,
+        0,
+        reason:
+            'stdout:\n' +
+            result.stdout.toString() +
+            '\nstderr:\n' +
+            result.stderr.toString(),
+      );
+      expect(result.stdout, contains('UI_READY::polls=3'));
+      expect(
+        int.parse(File(sandbox.path + '/ui-dump-count.txt').readAsStringSync()),
+        5,
+      );
+      final List<String> calls = File(
+        sandbox.path + '/adb-calls.txt',
+      ).readAsLinesSync();
+      final int backIndex = calls.indexWhere(
+        (String line) => line.contains('input keyevent KEYCODE_BACK'),
+      );
+      expect(backIndex, greaterThanOrEqualTo(0));
+      expect(
+        calls
+            .take(backIndex)
+            .where((String line) => line.contains('uiautomator dump'))
+            .length,
+        greaterThanOrEqualTo(5),
+      );
+    },
+  );
+
+  test('second BACK reruns and resets the three-snapshot UI gate', () {
+    final Directory sandbox = createSandbox('m5-alipay-cancel-ui-second-');
+    final File log = File(sandbox.path + '/flutter-drive.log')
+      ..writeAsStringSync('');
+    final String loadingUi = readyUi(
+      extra:
+          '<node package="$targetPackage" class="android.widget.ProgressBar" '
+          'text="Loading" enabled="true" visible-to-user="true" />',
+    );
+    final File fakeAdb = createFakeAdb(
+      sandbox,
+      stateMode: 'online',
+      targetCalls: 10000,
+      uiByDump: <int, String>{
+        1: readyUi(),
+        2: readyUi(),
+        3: readyUi(),
+        4: loadingUi,
+        5: loadingUi,
+        6: loadingUi,
+        7: readyUi(),
+        8: readyUi(),
+        9: readyUi(),
+      },
+      markersByBack: <int, List<String>>{
+        1: <String>[validNativeMarker],
+        2: <String>[validBridgeMarker],
+      },
+    );
+    final ProcessResult result = runOperator(
+      sandbox,
+      fakeAdb: fakeAdb,
+      flutterLog: log,
+    );
+    expect(
+      result.exitCode,
+      0,
+      reason:
+          'stdout:\n' +
+          result.stdout.toString() +
+          '\nstderr:\n' +
+          result.stderr.toString(),
+    );
+    expect(result.stdout, contains('UI_GATE_RESET'));
+    expect(File(sandbox.path + '/keyevent-count.txt').readAsStringSync(), '2');
+    expect(File(sandbox.path + '/ui-dump-count.txt').readAsStringSync(), '9');
+    final List<String> calls = File(
+      sandbox.path + '/adb-calls.txt',
+    ).readAsLinesSync();
+    expect(
+      calls
+          .where((String line) => line.contains('input keyevent KEYCODE_BACK'))
+          .length,
+      2,
+    );
+  });
+
+  test('unsafe or incomplete cashier UI states fail closed without BACK', () {
+    final String loadingUi = readyUi(
+      extra:
+          '<node package="$targetPackage" class="android.widget.ProgressBar" '
+          'text="Loading" enabled="true" visible-to-user="true" />',
+    );
+    final String inputUi = readyUi(
+      extra:
+          '<node package="$targetPackage" class="android.widget.EditText" '
+          'text="OTP" enabled="true" visible-to-user="true" />',
+    );
+    final String passwordUi = readyUi(
+      extra:
+          '<node package="$targetPackage" class="android.widget.TextView" '
+          'text="请输入支付密码" enabled="true" visible-to-user="true" />',
+    );
+    final Map<String, String> unsafeUi = <String, String>{
+      'loading': loadingUi,
+      'busy': readyUi(
+        extra: '<node package="$targetPackage" text="Server busy" />',
+      ),
+      'error': readyUi(
+        extra: '<node package="$targetPackage" text="Payment error" />',
+      ),
+      'reload': readyUi(
+        extra: '<node package="$targetPackage" text="Reload" />',
+      ),
+      'edittext': inputUi,
+      'otp': readyUi(
+        extra: '<node package="$targetPackage" text="Enter one-time code" />',
+      ),
+      'password': passwordUi,
+      'wrong-package': readyUi(package: 'com.other.wallet'),
+      'wrong-activity': readyUi(activity: 'OtherActivity'),
+      'missing-control': readyUi(controlText: ''),
+      'corrupt': '<hierarchy><node package="$targetPackage"',
+      'oversized':
+          '<hierarchy>' +
+          List<String>.filled(300000, 'x').join() +
+          '</hierarchy>',
+    };
+
+    for (final MapEntry<String, String> entry in unsafeUi.entries) {
+      final Directory sandbox = createSandbox(
+        'm5-alipay-cancel-ui-' + entry.key + '-',
+      );
+      final File log = File(sandbox.path + '/flutter-drive.log')
+        ..writeAsStringSync('');
+      final File fakeAdb = createFakeAdb(
+        sandbox,
+        stateMode: 'online',
+        targetCalls: 10000,
+        defaultUi: entry.value,
+      );
+      final ProcessResult result = runOperator(
+        sandbox,
+        fakeAdb: fakeAdb,
+        flutterLog: log,
+        targetTimeout: 0,
+      );
+      expect(
+        result.exitCode,
+        isNot(0),
+        reason:
+            entry.key +
+            '\nstdout:\n' +
+            result.stdout.toString() +
+            '\nstderr:\n' +
+            result.stderr.toString(),
+      );
+      expect(
+        File(sandbox.path + '/keyevent-count.txt').readAsStringSync(),
+        '0',
+        reason: entry.key,
+      );
+      expect(result.stdout, isNot(contains('KEYCODE_BACK_SENT')));
+    }
+  });
+
+  test('uiautomator dump failure fails closed before BACK', () {
+    final Directory sandbox = createSandbox('m5-alipay-cancel-ui-dump-fail-');
+    final File log = File(sandbox.path + '/flutter-drive.log')
+      ..writeAsStringSync('');
+    final File fakeAdb = createFakeAdb(
+      sandbox,
+      stateMode: 'online',
+      targetCalls: 10000,
+      failedUiDumps: <int>{1},
+    );
+    final ProcessResult result = runOperator(
+      sandbox,
+      fakeAdb: fakeAdb,
+      flutterLog: log,
+      targetTimeout: 0,
+    );
+    expect(result.exitCode, 69);
+    expect(File(sandbox.path + '/keyevent-count.txt').readAsStringSync(), '0');
+    expect(result.stdout, isNot(contains('KEYCODE_BACK_SENT')));
   });
 
   test('stale pre-existing native or bridge marker rejects before adb', () {

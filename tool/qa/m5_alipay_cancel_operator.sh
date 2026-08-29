@@ -15,6 +15,8 @@ readonly TARGET_ACTIVITY='MspContainerActivity'
 readonly TARGET_SERIAL='emulator-5554'
 readonly EXPECTED_NATIVE_MARKER='M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001'
 readonly EXPECTED_BRIDGE_MARKER='M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned'
+readonly DEVICE_UI_DUMP_PATH='/data/local/tmp/voice-social-alipay-cancel-ui.xml'
+readonly UI_XML_MAX_BYTES=262144
 readonly DEFAULT_TARGET_TIMEOUT_SECONDS=60
 readonly DEFAULT_AFTER_BACK_TIMEOUT_SECONDS=8
 readonly DEFAULT_MARKER_TIMEOUT_SECONDS=30
@@ -38,6 +40,8 @@ POLL_INTERVAL_SECONDS="$DEFAULT_POLL_INTERVAL_SECONDS"
 STABLE_POLLS="$DEFAULT_STABLE_POLLS"
 BACK_COUNT=0
 LOG_BASELINE_BYTES=0
+UI_DUMP_LOCAL_PATH=''
+UI_DUMP_ACTIVE=false
 
 usage() {
   cat <<'USAGE'
@@ -56,7 +60,7 @@ Optional test/diagnostic bounds (all are finite):
                          wait bound after each BACK (default: 8)
   --marker-timeout SEC   wait bound for the sanitized result marker (default: 30)
   --poll-interval SEC    delay between polls (default: 1; 0 is allowed for fixtures)
-  --stable-polls COUNT   consecutive foreground observations (default: 3)
+  --stable-polls COUNT   consecutive fresh UI-ready observations (default: 3)
 USAGE
 }
 
@@ -208,7 +212,7 @@ validate_bounds() {
   require_integer marker-timeout "$MARKER_TIMEOUT_SECONDS"
   require_integer poll-interval "$POLL_INTERVAL_SECONDS"
   require_integer stable-polls "$STABLE_POLLS"
-  (( STABLE_POLLS >= 2 )) || fail_configuration 'stable poll count must be at least 2'
+  (( STABLE_POLLS >= 3 )) || fail_configuration 'stable poll count must be at least 3'
 }
 
 resolve_adb() {
@@ -218,6 +222,8 @@ resolve_adb() {
   [[ -n "$ADB_BIN" && -x "$ADB_BIN" ]] || fail_configuration 'adb executable is unavailable'
   [[ "$ADB_BIN" != *$'\n'* && "$ADB_BIN" != *$'\r'* ]] ||
     fail_configuration 'adb executable path is unsafe'
+  command -v python3 >/dev/null 2>&1 ||
+    fail_configuration 'python3 executable is unavailable'
 }
 
 pause_between_polls() {
@@ -248,8 +254,7 @@ foreground_is_target() {
       if (component_start > 0) {
         component = substr($0, component_start + length(package) + 1)
         sub(/[[:space:]}].*$/, "", component)
-        if (length(component) >= length(activity) &&
-            substr(component, length(component) - length(activity) + 1) == activity) {
+        if (component ~ ("(^|\\.)" activity "$")) {
           found = 1
         }
       }
@@ -274,31 +279,296 @@ read_target_state() {
   return 1
 }
 
+cleanup_ui_dump() {
+  if [[ "$UI_DUMP_ACTIVE" == true && -n "$ADB_BIN" &&
+    -n "$ANDROID_SERIAL_VALUE" ]]; then
+    "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell rm -f \
+      "$DEVICE_UI_DUMP_PATH" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$UI_DUMP_LOCAL_PATH" && -f "$UI_DUMP_LOCAL_PATH" &&
+    ! -L "$UI_DUMP_LOCAL_PATH" ]]; then
+    chmod 600 "$UI_DUMP_LOCAL_PATH" >/dev/null 2>&1 || true
+    rm -f -- "$UI_DUMP_LOCAL_PATH" || true
+  fi
+  UI_DUMP_LOCAL_PATH=''
+  UI_DUMP_ACTIVE=false
+}
+
+cleanup_on_exit() {
+  local incoming_status=$?
+  set +e
+  cleanup_ui_dump
+  trap - EXIT
+  exit "$incoming_status"
+}
+
+capture_fresh_ui_xml() {
+  cleanup_ui_dump
+  UI_DUMP_LOCAL_PATH="$(mktemp /tmp/voice-social-alipay-cancel-ui.XXXXXX)" ||
+    fail_device 'temporary UI XML could not be created'
+  chmod 600 "$UI_DUMP_LOCAL_PATH" ||
+    fail_device 'temporary UI XML permissions could not be secured'
+  UI_DUMP_ACTIVE=true
+
+  "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell rm -f \
+    "$DEVICE_UI_DUMP_PATH" >/dev/null 2>&1 ||
+    fail_device 'stale UI XML could not be removed'
+  "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell uiautomator dump \
+    "$DEVICE_UI_DUMP_PATH" >/dev/null 2>&1 ||
+    fail_device 'fresh UI XML dump is unavailable'
+  "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell chmod 600 \
+    "$DEVICE_UI_DUMP_PATH" >/dev/null 2>&1 ||
+    fail_device 'fresh UI XML permissions could not be secured'
+
+  local pipeline_status=0
+  "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell cat \
+    "$DEVICE_UI_DUMP_PATH" |
+    head -c "$((UI_XML_MAX_BYTES + 1))" >"$UI_DUMP_LOCAL_PATH" ||
+    pipeline_status=$?
+  local byte_count=''
+  if ! byte_count="$(wc -c <"$UI_DUMP_LOCAL_PATH" 2>/dev/null |
+    tr -d '[:space:]')"; then
+    fail_device 'fresh UI XML size is unavailable'
+  fi
+  [[ "$byte_count" =~ ^[0-9]+$ ]] ||
+    fail_device 'fresh UI XML size is invalid'
+  (( byte_count > 0 )) || fail_device 'fresh UI XML is empty'
+  (( byte_count <= UI_XML_MAX_BYTES )) ||
+    fail_device 'fresh UI XML exceeds the size limit'
+  (( pipeline_status == 0 )) ||
+    fail_device 'fresh UI XML could not be read'
+  [[ -f "$UI_DUMP_LOCAL_PATH" && ! -L "$UI_DUMP_LOCAL_PATH" ]] ||
+    fail_device 'fresh UI XML is not a regular file'
+  chmod 600 "$UI_DUMP_LOCAL_PATH" ||
+    fail_device 'temporary UI XML permissions could not be restored'
+}
+
+ui_xml_state() {
+  python3 - "$UI_DUMP_LOCAL_PATH" "$TARGET_PACKAGE" "$TARGET_ACTIVITY" \
+    "$UI_XML_MAX_BYTES" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+def verdict(value: str) -> None:
+    print(value)
+    raise SystemExit(0)
+
+
+try:
+    path = Path(sys.argv[1])
+    package = sys.argv[2]
+    activity = sys.argv[3]
+    max_bytes = int(sys.argv[4])
+    raw = path.read_bytes()
+    if not raw or len(raw) > max_bytes or b"\x00" in raw:
+        verdict("INVALID")
+    text = raw.decode("utf-8")
+    if any(ord(character) < 0x20 and character not in "\r\n\t" for character in text):
+        verdict("INVALID")
+    root = ET.fromstring(text)
+except (OSError, UnicodeDecodeError, ValueError, ET.ParseError, IndexError):
+    verdict("INVALID")
+
+if root.tag.rsplit("}", 1)[-1] != "hierarchy":
+    verdict("INVALID")
+nodes = list(root.iter("node"))
+if not nodes:
+    verdict("INVALID")
+
+activity_folded = activity.casefold()
+root_package = root.attrib.get("package", "").strip()
+if root_package and root_package != package:
+    verdict("INVALID")
+target_nodes = [
+    node for node in nodes
+    if node.attrib.get("package", "").strip() == package
+]
+if not target_nodes:
+    verdict("INVALID")
+
+# Some UI dump producers include the current activity on the hierarchy root;
+# others expose it as a node class. If either form is present, a contradictory
+# value is not accepted. The activity-manager foreground check is performed
+# separately for dumps that do not carry this optional XML evidence.
+activity_attribute_values = []
+activity_class_values = []
+for element in root.iter():
+    for key, value in element.attrib.items():
+        key_folded = key.casefold().replace("_", "-")
+        value_folded = value.casefold()
+        if key_folded in {
+            "activity",
+            "current-activity",
+            "resumed-activity",
+            "focused-activity",
+            "window",
+            "window-name",
+        }:
+            activity_attribute_values.append(value_folded)
+        elif key_folded == "class" and activity_folded in value_folded:
+            activity_class_values.append(value_folded)
+def activity_matches(value: str) -> bool:
+    value = value.strip().rstrip("}")
+    return value in {activity_folded, activity_folded.lstrip(".")} or any(
+        value.endswith(separator + activity_folded)
+        for separator in (".", "/")
+    )
+
+if activity_attribute_values and not all(
+    activity_matches(value) for value in activity_attribute_values
+):
+    verdict("INVALID")
+if activity_class_values and not all(
+    activity_matches(value) for value in activity_class_values
+):
+    verdict("INVALID")
+
+normalized = text.casefold()
+for marker in (
+    "please wait",
+    "please_wait",
+    "processing",
+    "loading",
+    "加载",
+    "加载中",
+    "处理中",
+    "请稍候",
+    "稍候",
+    "busy",
+    "server busy",
+    "try again",
+    "繁忙",
+    "稍后",
+    "error",
+    "错误",
+    "失败",
+    "异常",
+    "unavailable",
+    "timeout",
+    "reload",
+    "retry",
+    "重试",
+    "重新加载",
+    "刷新",
+):
+    if marker in normalized:
+        verdict("RESET")
+
+input_markers = (
+    "edittext",
+    "otp",
+    "one-time",
+    "one time",
+    "passcode",
+    "password",
+    "支付密码",
+    "验证码",
+    "verification code",
+    "security code",
+    "pin",
+)
+for node in nodes:
+    values = [
+        value.strip().casefold()
+        for value in node.attrib.values()
+        if value.strip()
+    ]
+    class_name = node.attrib.get("class", "").casefold()
+    joined = " ".join(values)
+    if "edittext" in class_name or any(
+        marker in joined for marker in input_markers
+    ):
+        verdict("INVALID")
+
+def is_cancel_or_back(label: str) -> bool:
+    return any(
+        token in label
+        for token in ("cancel", "back", "取消", "返回")
+    )
+
+ready_controls = []
+for node in nodes:
+    labels = [
+        node.attrib.get(attribute, "").strip().casefold()
+        for attribute in ("text", "content-desc")
+        if node.attrib.get(attribute, "").strip()
+    ]
+    if not any(is_cancel_or_back(label) for label in labels):
+        continue
+    if node.attrib.get("package", "").strip() != package:
+        verdict("INVALID")
+    if node.attrib.get("enabled") != "true":
+        continue
+    if node.attrib.get("visible-to-user") != "true":
+        continue
+    if (
+        "clickable" in node.attrib
+        and node.attrib.get("clickable") != "true"
+    ):
+        continue
+    ready_controls.append(node)
+if not ready_controls:
+    verdict("INVALID")
+
+verdict("READY")
+PY
+}
+
+read_cashier_ui_state() {
+  adb_get_state
+  if ! read_target_state; then
+    return 1
+  fi
+  capture_fresh_ui_xml
+  local state=''
+  if ! state="$(ui_xml_state)"; then
+    fail_device 'fresh UI XML could not be validated'
+  fi
+  case "$state" in
+    READY)
+      return 0
+      ;;
+    RESET)
+      return 1
+      ;;
+    *)
+      fail_device 'Alipay cashier UI is not safely cancellable'
+      ;;
+  esac
+}
+
 wait_for_stable_cashier() {
   local deadline=$((SECONDS + TARGET_TIMEOUT_SECONDS))
   local stable=0
   while (( SECONDS <= deadline )); do
-    if read_target_state; then
+    if read_cashier_ui_state; then
       stable=$((stable + 1))
       if (( stable >= STABLE_POLLS )); then
-        audit "TARGET_STABLE::polls=$STABLE_POLLS"
+        audit "UI_READY::polls=$STABLE_POLLS"
         return 0
       fi
     else
       stable=0
+      audit 'UI_GATE_RESET'
     fi
     pause_between_polls
   done
-  fail_timeout 'sandbox cashier did not become stable'
+  fail_timeout 'Alipay cashier UI did not become safely cancellable'
 }
 
 send_back_once() {
   (( BACK_COUNT < 2 )) || fail_timeout 'BACK budget exhausted'
+  assert_no_marker_before_back
+  wait_for_stable_cashier
+  assert_no_marker_before_back
   BACK_COUNT=$((BACK_COUNT + 1))
   if ! "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell input keyevent KEYCODE_BACK >/dev/null 2>&1; then
     fail_device 'BACK command failed'
   fi
   audit "KEYCODE_BACK_SENT::attempt=$BACK_COUNT"
+  cleanup_ui_dump
 }
 
 wait_for_target_to_leave() {
@@ -447,7 +717,21 @@ record_marker_baseline() {
 assert_no_marker_before_back() {
   local state
   state="$(classify_marker_pair)"
-  [[ "$state" == 'MISSING' ]] || fail_marker 'native or bridge marker appeared before BACK'
+  if (( BACK_COUNT == 0 )); then
+    [[ "$state" == 'MISSING' ]] ||
+      fail_marker 'native or bridge marker appeared before BACK'
+    return 0
+  fi
+  # A first BACK may have produced one half of the paired evidence while the
+  # cashier is still present. A second BACK remains bounded, but a complete,
+  # contradictory, or duplicate pair must never be followed by another key.
+  case "$state" in
+    MISSING|PARTIAL)
+      ;;
+    *)
+      fail_marker 'native or bridge marker appeared before BACK'
+      ;;
+  esac
 }
 
 wait_for_cancel_marker() {
@@ -485,11 +769,10 @@ main() {
   resolve_adb
 
   audit 'START'
+  trap cleanup_on_exit EXIT
   record_marker_baseline
   adb_get_state
   audit 'DEVICE_ONLINE'
-  wait_for_stable_cashier
-  assert_no_marker_before_back
   send_back_once
   if wait_for_target_to_leave; then
     :
