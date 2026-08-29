@@ -682,6 +682,7 @@ coordination = {
     "senderSent": False,
     "receiverPass": False,
     "roomId": None,
+    "receiverJoinedRoomId": None,
     "roomMessageId": None,
     "roomPass": False,
     "receiverLeftRoomId": None,
@@ -934,6 +935,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 room_id = coordination["roomId"]
             self._json(200, {"ready": isinstance(room_id, str), "roomId": room_id})
             return
+        if self.path == "/m5/avchatroom/receiver-joined" and details["role"] == "sender":
+            with lock:
+                room_id = coordination["receiverJoinedRoomId"]
+            self._json(200, {"ready": isinstance(room_id, str), "roomId": room_id})
+            return
         if self.path == "/m5/avchatroom/message-sent":
             with lock:
                 message_id = coordination["roomMessageId"]
@@ -1036,6 +1042,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self._json(409, {"error": "room_id_conflict"})
                     return
                 coordination["roomId"] = room_id
+            self._json(200, {"accepted": True})
+            return
+        if self.path == "/m5/avchatroom/receiver-joined" and details["role"] == "receiver":
+            payload = self._body_json()
+            if (
+                set(payload) != {"runId", "role", "roomId"}
+                or payload.get("runId") != run_id
+                or payload.get("role") != "receiver"
+            ):
+                self._json(409, {"error": "run_or_role_mismatch"})
+                return
+            room_id = payload.get("roomId")
+            if not isinstance(room_id, str) or not opaque_id.fullmatch(room_id):
+                self._json(400, {"error": "invalid_room_id"})
+                return
+            with lock:
+                expected_room_id = coordination["roomId"]
+                existing = coordination["receiverJoinedRoomId"]
+                if not isinstance(expected_room_id, str) or room_id != expected_room_id:
+                    self._json(409, {"error": "room_id_mismatch"})
+                    return
+                if existing not in (None, room_id):
+                    self._json(409, {"error": "receiver_joined_room_id_conflict"})
+                    return
+                coordination["receiverJoinedRoomId"] = room_id
             self._json(200, {"accepted": True})
             return
         if self.path == "/m5/avchatroom/message-sent" and details["role"] == "sender":

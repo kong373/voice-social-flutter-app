@@ -167,6 +167,7 @@ override_serial="$(select_device AVD-A 36 emulator-5554 ignored "$root")"
     expect(integrationSource, contains('saved.roomId.trim().isEmpty'));
     expect(integrationSource, contains('sendPublicMessage'));
     expect(integrationSource, contains('/m5/avchatroom/ready'));
+    expect(integrationSource, contains('/m5/avchatroom/receiver-joined'));
     expect(integrationSource, contains('/m5/avchatroom/message-sent'));
     expect(integrationSource, contains('/m5/avchatroom/pass'));
     expect(integrationSource, contains('/m5/avchatroom/receiver-left'));
@@ -272,6 +273,8 @@ override_serial="$(select_device AVD-A 36 emulator-5554 ignored "$root")"
     expect(runnerSource, contains('self.headers.get_all("Transfer-Encoding")'));
     expect(runnerSource, contains('targetUserId'));
     expect(runnerSource, contains('/m5/avchatroom/ready'));
+    expect(runnerSource, contains('receiverJoinedRoomId'));
+    expect(runnerSource, contains('run_or_role_mismatch'));
     expect(runnerSource, contains('/m5/avchatroom/message-sent'));
     expect(runnerSource, contains('/m5/avchatroom/pass'));
     expect(

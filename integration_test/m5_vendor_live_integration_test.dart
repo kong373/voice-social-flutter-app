@@ -635,6 +635,7 @@ String _avchatRoomFixtureTopic() =>
     'M5 Tencent AVChatRoom ${_registrationNickname()}';
 
 const String _avchatRoomReceiverLeftPath = '/m5/avchatroom/receiver-left';
+const String _avchatRoomReceiverJoinedPath = '/m5/avchatroom/receiver-joined';
 
 class _AvChatRoomFixture {
   const _AvChatRoomFixture({required this.room, required this.created});
@@ -965,7 +966,45 @@ Future<void> _runAvChatRoom(
         return;
       }
       evidence.providerCallback('tencent-im', 'avchatroom_join');
+      if (config.role == 'receiver') {
+        await _postRelayJson(
+          config,
+          _avchatRoomReceiverJoinedPath,
+          <String, Object?>{
+            'runId': _runId,
+            'role': 'receiver',
+            'roomId': selectedRoom.id,
+          },
+        );
+        evidence.invariant('tencent_avchatroom_receiver_group_ready');
+      }
       if (config.role == 'sender') {
+        bool receiverJoined = false;
+        for (
+          int attempt = 0;
+          attempt < _workerCycleWaitAttempts;
+          attempt += 1
+        ) {
+          receiverJoined =
+              await _readRelayValue(
+                config,
+                _avchatRoomReceiverJoinedPath,
+                'roomId',
+              ) ==
+              selectedRoom.id;
+          if (receiverJoined) {
+            break;
+          }
+          await Future<void>.delayed(_workerCycleWaitStep);
+        }
+        if (!receiverJoined) {
+          evidence.invariant('tencent_avchatroom_receiver_group_ready_timeout');
+          evidence.lane('tencent.avchatroom.hint', 'BLOCKED');
+          return;
+        }
+        evidence.invariant(
+          'tencent_avchatroom_sender_waited_for_receiver_group_ready',
+        );
         final String content =
             'M5 ${_registrationNickname()} AVChatRoom authority';
         final RoomMessage sent = await repository.sendPublicMessage(

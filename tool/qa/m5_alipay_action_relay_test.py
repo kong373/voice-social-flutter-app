@@ -479,6 +479,106 @@ class FocusedRelayTest(unittest.TestCase):
                     process.kill()
                     process.wait(timeout=3)
 
+    def test_full_relay_requires_exact_receiver_group_ready_before_sender_proceeds(self) -> None:
+        source = _full_relay_source()
+        with tempfile.TemporaryDirectory(prefix="m5-full-relay-avchatroom-") as directory:
+            private_directory = Path(directory).resolve()
+            private_directory.chmod(0o700)
+            marker = private_directory / "marker"
+            ready = private_directory / "relay-ready"
+            marker.touch(mode=0o600)
+            process = subprocess.Popen(
+                [sys.executable, "-u", "-c", source],
+                env=_full_environment(marker, ready),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                port = _wait_for_relay(process, ready)
+                room_id = "m5-room-001"
+
+                status, value = _request(
+                    port,
+                    "POST",
+                    "/m5/avchatroom/ready",
+                    APP_TOKEN,
+                    {"roomId": room_id},
+                )
+                self.assertEqual((status, value), (200, {"accepted": True}))
+
+                status, value = _request(
+                    port,
+                    "GET",
+                    "/m5/avchatroom/receiver-joined",
+                    APP_TOKEN,
+                )
+                self.assertEqual(
+                    (status, value),
+                    (200, {"ready": False, "roomId": None}),
+                )
+
+                for payload in (
+                    {"runId": "stale-run", "role": "receiver", "roomId": room_id},
+                    {"runId": RUN_ID, "role": "sender", "roomId": room_id},
+                    {"runId": RUN_ID, "role": "receiver", "roomId": "m5-room-002"},
+                ):
+                    with self.subTest(payload=payload):
+                        status, _ = _request(
+                            port,
+                            "POST",
+                            "/m5/avchatroom/receiver-joined",
+                            RECEIVER_TOKEN,
+                            payload,
+                        )
+                        self.assertEqual(status, 409)
+                        status, value = _request(
+                            port,
+                            "GET",
+                            "/m5/avchatroom/receiver-joined",
+                            APP_TOKEN,
+                        )
+                        self.assertEqual(
+                            (status, value),
+                            (200, {"ready": False, "roomId": None}),
+                        )
+
+                status, value = _request(
+                    port,
+                    "POST",
+                    "/m5/avchatroom/receiver-joined",
+                    RECEIVER_TOKEN,
+                    {"runId": RUN_ID, "role": "receiver", "roomId": room_id},
+                )
+                self.assertEqual((status, value), (200, {"accepted": True}))
+
+                status, value = _request(
+                    port,
+                    "GET",
+                    "/m5/avchatroom/receiver-joined",
+                    APP_TOKEN,
+                )
+                self.assertEqual(
+                    (status, value),
+                    (200, {"ready": True, "roomId": room_id}),
+                )
+
+                status, value = _request(
+                    port,
+                    "POST",
+                    "/m5/avchatroom/receiver-joined",
+                    RECEIVER_TOKEN,
+                    {"runId": RUN_ID, "role": "receiver", "roomId": "m5-room-002"},
+                )
+                self.assertEqual(status, 409)
+                self.assertEqual(value.get("error"), "room_id_mismatch")
+            finally:
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=3)
+
     def test_full_relay_expiry_hides_identity_and_rejects_approval(self) -> None:
         source = _full_relay_source().replace(
             "ttl_seconds=120", "ttl_seconds=0.05", 1
