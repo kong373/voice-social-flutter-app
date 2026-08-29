@@ -294,6 +294,44 @@ void main() {
     },
   );
 
+  test(
+    'failed summary preserves unique marker evidence while remaining fail-closed',
+    () {
+      final ProcessResult result = Process.runSync(
+        '/bin/bash',
+        <String>[runner.path, '--self-test'],
+        environment: <String, String>{
+          'PATH': Platform.environment['PATH'] ?? '/usr/bin:/bin',
+          'QA_OAUTH_CLIENT_ID': 'fixture-public-client',
+        },
+        includeParentEnvironment: false,
+      );
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+      );
+      expect(
+        result.stdout,
+        contains(
+          'SUMMARY_PARTIAL_EVIDENCE::conclusion=FAIL::catalog=PASS::'
+          'order=PASS::native_launcher=STARTED::native_result=ACCEPTED::'
+          'query_reconcile=NOT_PROVEN',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'SUMMARY_MISSING_NATIVE::conclusion=FAIL::catalog=PASS::'
+          'order=PASS::native_launcher=STARTED::native_result=NOT_ACCEPTED::'
+          'query_reconcile=NOT_PROVEN',
+        ),
+      );
+      expect(result.stdout, isNot(contains('orderStr')));
+      expect(result.stdout, isNot(contains('secret')));
+    },
+  );
+
   test('public OAuth client is protected, dynamic, and fail-closed', () {
     final String source = runner.readAsStringSync();
     expect(source, contains('printenv QA_OAUTH_CLIENT_ID'));

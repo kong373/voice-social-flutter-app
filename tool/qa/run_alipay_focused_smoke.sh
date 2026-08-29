@@ -903,6 +903,63 @@ for path in root.rglob("*"):
 PY
 }
 
+exact_marker_count() {
+  local marker="$1"
+  if [[ -z "$FLUTTER_LOG_PATH" || ! -f "$FLUTTER_LOG_PATH" ||
+    -L "$FLUTTER_LOG_PATH" ]]; then
+    printf '0'
+    return 0
+  fi
+  local count=''
+  count="$(grep -Fxc -- "$marker" "$FLUTTER_LOG_PATH" 2>/dev/null || true)"
+  [[ "$count" =~ ^[0-9]+$ ]] || count=0
+  printf '%s' "$count"
+}
+
+summary_pass_status() {
+  local marker="$1"
+  [[ "$(exact_marker_count "$marker")" == '1' ]] &&
+    printf 'PASS' || printf 'NOT_PROVEN'
+}
+
+summary_native_launcher_status() {
+  local start_count pass_count
+  start_count="$(exact_marker_count 'M5_ALIPAY_FOCUSED::native_launcher::START')"
+  pass_count="$(exact_marker_count 'M5_ALIPAY_FOCUSED::native_launcher::PASS')"
+  if [[ "$start_count" == '1' && "$pass_count" == '1' ]]; then
+    printf 'PASS'
+  elif [[ "$start_count" == '1' && "$pass_count" == '0' ]]; then
+    printf 'STARTED'
+  else
+    printf 'NOT_PROVEN'
+  fi
+}
+
+summary_native_result_status() {
+  if [[ -z "$FLUTTER_LOG_PATH" || ! -f "$FLUTTER_LOG_PATH" ||
+    -L "$FLUTTER_LOG_PATH" ]]; then
+    printf 'NOT_ACCEPTED'
+    return 0
+  fi
+  local native_valid_count=0
+  local bridge_valid_count=0
+  local invalid_count=0
+  local marker_kind=''
+  while IFS= read -r marker_kind; do
+    case "$marker_kind" in
+      NATIVE_VALID) native_valid_count=$((native_valid_count + 1)) ;;
+      BRIDGE_VALID) bridge_valid_count=$((bridge_valid_count + 1)) ;;
+      NATIVE_INVALID|BRIDGE_INVALID) invalid_count=$((invalid_count + 1)) ;;
+    esac
+  done < <(scan_marker_stream <"$FLUTTER_LOG_PATH" 2>/dev/null || true)
+  if (( native_valid_count == 1 && bridge_valid_count == 1 &&
+    invalid_count == 0 )); then
+    printf 'ACCEPTED'
+  else
+    printf 'NOT_ACCEPTED'
+  fi
+}
+
 write_summary() {
   [[ -n "$ARTIFACT_DIR" && -d "$ARTIFACT_DIR" ]] || return 0
   {
@@ -916,8 +973,13 @@ write_summary() {
       printf 'native_result=sdkCompleted=0,resultStatus=6001,bridge=pay_task_returned\n'
       printf 'query_reconcile=PASS\n'
     else
-      printf 'wallet_health=NOT_PROVEN\ncatalog=NOT_PROVEN\norder=NOT_PROVEN\nnative_launcher=NOT_PROVEN\n'
-      printf 'native_result=NOT_ACCEPTED\nquery_reconcile=NOT_PROVEN\n'
+      printf 'wallet_health=NOT_PROVEN\ncatalog=%s\norder=%s\nnative_launcher=%s\n' \
+        "$(summary_pass_status 'M5_ALIPAY_FOCUSED::catalog::PASS')" \
+        "$(summary_pass_status 'M5_ALIPAY_FOCUSED::order::PASS')" \
+        "$(summary_native_launcher_status)"
+      printf 'native_result=%s\nquery_reconcile=%s\n' \
+        "$(summary_native_result_status)" \
+        "$(summary_pass_status 'M5_ALIPAY_FOCUSED::query_reconcile::PASS')"
     fi
     printf 'payment_confirmation=not_used\nreal_debit=forbidden\nmax_back_attempts=%s\n' "$MAX_BACK_ATTEMPTS"
     printf 'raw_flutter_log=not_saved\n'
@@ -1114,6 +1176,63 @@ FAKE_ADB
     BACK_COUNT=$((BACK_COUNT + 1))
     (( BACK_COUNT == MAX_BACK_ATTEMPTS )) || exit 1
     (( BACK_COUNT < MAX_BACK_ATTEMPTS )) && exit 1 || true
+
+    local summary_dir summary_file summary_log
+    summary_dir="$root/summary-artifact"
+    summary_file="$summary_dir/summary.txt"
+    summary_log="$root/summary-log"
+    mkdir -m 700 "$summary_dir"
+    ARTIFACT_DIR="$summary_dir"
+    FLUTTER_LOG_PATH="$summary_log"
+    SERIAL_VALUE="$DEFAULT_SERIAL"
+    FLUTTER_STATUS=1
+    OPERATOR_STATUS=65
+    RUN_RESULT='FAIL'
+    FAIL_REASON='focused_flow_reported_failure'
+    printf '%s\n' \
+      'M5_ALIPAY_FOCUSED::catalog::PASS' \
+      'M5_ALIPAY_FOCUSED::order::PASS' \
+      'M5_ALIPAY_FOCUSED::native_launcher::START' \
+      "$EXPECTED_NATIVE_MARKER" \
+      "$EXPECTED_BRIDGE_MARKER" \
+      'M5_ALIPAY_FOCUSED::complete::FAIL' >"$summary_log"
+    write_summary
+    [[ -f "$summary_file" ]] || exit 1
+    grep -Fqx 'conclusion=FAIL' "$summary_file" || exit 1
+    grep -Fqx 'reason=focused_flow_reported_failure' "$summary_file" || exit 1
+    grep -Fqx 'catalog=PASS' "$summary_file" || exit 1
+    grep -Fqx 'order=PASS' "$summary_file" || exit 1
+    grep -Fqx 'native_launcher=STARTED' "$summary_file" || exit 1
+    grep -Fqx 'native_result=ACCEPTED' "$summary_file" || exit 1
+    grep -Fqx 'query_reconcile=NOT_PROVEN' "$summary_file" || exit 1
+    grep -Fqi 'orderStr' "$summary_file" && exit 1 || true
+    grep -Fqi 'secret' "$summary_file" && exit 1 || true
+    printf '%s\n' \
+      'SUMMARY_PARTIAL_EVIDENCE::conclusion=FAIL::catalog=PASS::order=PASS::native_launcher=STARTED::native_result=ACCEPTED::query_reconcile=NOT_PROVEN'
+
+    summary_dir="$root/summary-missing-native-artifact"
+    summary_file="$summary_dir/summary.txt"
+    summary_log="$root/summary-missing-native-log"
+    mkdir -m 700 "$summary_dir"
+    ARTIFACT_DIR="$summary_dir"
+    FLUTTER_LOG_PATH="$summary_log"
+    RUN_RESULT='FAIL'
+    FAIL_REASON='accepted_marker_pair_missing_or_duplicated'
+    printf '%s\n' \
+      'M5_ALIPAY_FOCUSED::catalog::PASS' \
+      'M5_ALIPAY_FOCUSED::order::PASS' \
+      'M5_ALIPAY_FOCUSED::native_launcher::START' >"$summary_log"
+    write_summary
+    grep -Fqx 'conclusion=FAIL' "$summary_file" || exit 1
+    grep -Fqx 'catalog=PASS' "$summary_file" || exit 1
+    grep -Fqx 'order=PASS' "$summary_file" || exit 1
+    grep -Fqx 'native_launcher=STARTED' "$summary_file" || exit 1
+    grep -Fqx 'native_result=NOT_ACCEPTED' "$summary_file" || exit 1
+    grep -Fqx 'query_reconcile=NOT_PROVEN' "$summary_file" || exit 1
+    grep -Fqi 'orderStr' "$summary_file" && exit 1 || true
+    grep -Fqi 'secret' "$summary_file" && exit 1 || true
+    printf '%s\n' \
+      'SUMMARY_MISSING_NATIVE::conclusion=FAIL::catalog=PASS::order=PASS::native_launcher=STARTED::native_result=NOT_ACCEPTED::query_reconcile=NOT_PROVEN'
   )
   printf 'SELF_TEST::PASS\n'
 }
