@@ -74,6 +74,36 @@ QA_M5_MYSQL_CONTAINER=<serving MySQL container, for the built-in helper>
 M5_ALIPAY_SCENARIO=success
 ```
 
+For the success lane, `ACTION_GATE::armed` and
+`ACTION_GATE::waiting_for_order` only mean that the gate is ready. Wait for
+the exact `ACTION_CONFIRMATION_REQUIRED` marker after the order request has
+been accepted. Then run the operator tool with the printed relay port and
+0600 operator-file path:
+
+```text
+python3 tool/qa/m5_alipay_action_confirmation_operator.py \
+  --approve --relay-port "$RELAY_PORT" --operator-file "$OPERATOR_FILE"
+```
+
+The tool fetches the exact pending run/device/order identity through the
+authenticated loopback relay and keeps it in process memory while asking for
+the one-time confirmation. It does not print or accept `orderNo` or
+`requestId`, account, or product identifiers through command arguments or
+environment variables. The prompt displays only the response-validated exact
+sandbox amount and the frozen AVD/serial, then reads the confirmation from the
+TTY with echo disabled. A missing, expired, redirected, mismatched, or
+already-consumed pending identity fails closed.
+
+The gate binds the just-created backend response's run ID, AVD, serial,
+backend/Flutter SHAs, order and request IDs, account, product, `amountMinor`,
+gift-coin amount, provider `ALIPAY`, and state `CREATED`. The current backend
+contract does not expose an immutable creation timestamp, so no host-generated
+timestamp is treated as authority. Instead, the exact validated identity has a
+120-second one-shot TTL and is consumed immediately before the first PayTask.
+Both focused and full runners let the child bind an ephemeral loopback port,
+publish it through a private 0600 ready file, and accept it only after matching
+the child PID plus an authenticated, no-redirect readiness request.
+
 The runner requires Docker access to the serving backend, not only a local
 checkout. It fails closed unless `QA_BACKEND_CONTAINER` is running and
 healthy, Docker publishes its `18080/tcp` on host port `18080`, and the

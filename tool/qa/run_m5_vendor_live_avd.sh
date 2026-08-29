@@ -71,7 +71,18 @@ RELAY_PID=''
 RELAY_PORT=''
 RELAY_TOKEN_A=''
 RELAY_TOKEN_B=''
+ACTION_GATE_ENABLED='false'
+ACTION_GATE_STATE_DIR=''
+ACTION_GATE_STATE_PARENT=''
+ACTION_GATE_OPERATOR_FILE=''
+ACTION_GATE_MARKER_FILE=''
+ACTION_GATE_READY_FILE=''
+ACTION_GATE_OPERATOR_TOKEN=''
+RELAY_READY_FILE=''
+RELAY_READY_TOKEN=''
 RUNTIME_TOKEN_FEEDER_PID=''
+RUN_PID_A=''
+RUN_PID_B=''
 DB_HELPER_PID=''
 DB_HELPER_STATE_DIR=''
 DB_HELPER_LOG=''
@@ -340,6 +351,7 @@ attest_debug_apk() {
     --dart-define=M5_EXPECTED_BACKEND_SHA="$BACKEND_SHA_ACTUAL" \
     --dart-define=M5_EXPECTED_BACKEND_DIGEST="$BACKEND_SOURCE_DIGEST_ACTUAL" \
     --dart-define=QA_M5_RUN_ID="$RUN_ID" \
+    --dart-define=M5_EXPECTED_SERIAL='emulator-5554' \
     --dart-define=M5_ALLOW_EXTERNAL_PAYMENT="$payment_define" \
     --dart-define=M5_ALIPAY_SCENARIO="${PAYMENT_SCENARIO:-none}" \
     $confirmation_define $success_confirmation_define >/dev/null 2>&1 ||
@@ -367,11 +379,18 @@ install_attested_apk() {
 sanitize_stream() {
   M5_SECRET_PHONE="$LIVE_PHONE" M5_SECRET_RECEIVER_PHONE="$RECEIVER_PHONE" M5_SECRET_CLIENT="$OAUTH_CLIENT_ID" \
     M5_SECRET_DB_TOKEN="$DB_TOKEN" M5_SECRET_RELAY_A="$RELAY_TOKEN_A" \
-    M5_SECRET_RELAY_B="$RELAY_TOKEN_B" python3 -u -c '
+    M5_SECRET_RELAY_B="$RELAY_TOKEN_B" \
+    M5_SECRET_RELAY_READY="${RELAY_READY_TOKEN:-}" \
+    M5_SECRET_ACTION_OPERATOR="${ACTION_GATE_OPERATOR_TOKEN:-}" python3 -u -c '
 import os
 import re
 import sys
-values = [os.environ.get(name, "") for name in ("M5_SECRET_PHONE", "M5_SECRET_RECEIVER_PHONE", "M5_SECRET_CLIENT", "M5_SECRET_DB_TOKEN", "M5_SECRET_RELAY_A", "M5_SECRET_RELAY_B")]
+values = [os.environ.get(name, "") for name in ("M5_SECRET_PHONE", "M5_SECRET_RECEIVER_PHONE", "M5_SECRET_CLIENT", "M5_SECRET_DB_TOKEN", "M5_SECRET_RELAY_A", "M5_SECRET_RELAY_B", "M5_SECRET_RELAY_READY", "M5_SECRET_ACTION_OPERATOR")]
+alipay_payment_blob = re.compile(
+    r"(?i)[\x22\x27]?(?:orderStr|orderInfo|orderString)[\x22\x27]?\s*[:=]|"
+    r"[\x22\x27]?(?:alipay_sdk|biz_content|sign_type)[\x22\x27]?\s*[:=]|"
+    r"method\s*=\s*alipay\.trade\.app\.pay"
+)
 alipay_sdk_field = re.compile(
     r"(?P<prefix>(?:[\x22\x27]?(?:apdidToken|dynamicKey|apdid|color|webrtcUrl)[\x22\x27]?)[ \t]*[:=][ \t]*)"
     r"(?:(?P<quoted>[\x22](?:\\.|[^\x22\\\r\n])*[\x22]|[\x27](?:\\.|[^\x27\\\r\n])*[\x27])|(?P<bare>[^\s,}\]]+))",
@@ -386,6 +405,10 @@ def redact_alipay_sdk_field(match):
 for line in sys.stdin:
     for value in values:
         if value: line = line.replace(value, "[REDACTED]")
+    if alipay_payment_blob.search(line):
+        sys.stdout.write("[REDACTED_ALIPAY_PAYMENT_PAYLOAD]\n")
+        sys.stdout.flush()
+        continue
     line = re.sub(r"(?<!\d)1[3-9]\d{9}(?!\d)", "[REDACTED_PHONE]", line)
     line = re.sub(r"(?<!\d)\d{6}(?!\d)", "[REDACTED_OTP]", line)
     line = alipay_sdk_field.sub(redact_alipay_sdk_field, line)
@@ -400,8 +423,9 @@ secret_scan() {
   local target="$1"
   M5_SCAN_PHONE="$LIVE_PHONE" M5_SCAN_CLIENT="$OAUTH_CLIENT_ID" \
     M5_SCAN_RECEIVER_PHONE="$RECEIVER_PHONE" M5_SCAN_DB_TOKEN="$DB_TOKEN" \
-    M5_SCAN_RELAY_A="$RELAY_TOKEN_A" \
-    M5_SCAN_RELAY_B="$RELAY_TOKEN_B" python3 - "$target" <<'PY'
+    M5_SCAN_RELAY_A="$RELAY_TOKEN_A" M5_SCAN_RELAY_B="$RELAY_TOKEN_B" \
+    M5_SCAN_RELAY_READY="${RELAY_READY_TOKEN:-}" \
+    M5_SCAN_ACTION_OPERATOR="${ACTION_GATE_OPERATOR_TOKEN:-}" python3 - "$target" <<'PY'
 import os
 import re
 import sys
@@ -414,6 +438,8 @@ needles = [value.encode() for value in (
     os.environ.get("M5_SCAN_DB_TOKEN", ""),
     os.environ.get("M5_SCAN_RELAY_A", ""),
     os.environ.get("M5_SCAN_RELAY_B", ""),
+    os.environ.get("M5_SCAN_RELAY_READY", ""),
+    os.environ.get("M5_SCAN_ACTION_OPERATOR", ""),
 ) if value]
 needles.extend((b'"startNonce":', b"start_nonce=", b"db_start_nonce="))
 sdk_field_prefix = re.compile(
@@ -429,6 +455,11 @@ sdk_field_value = re.compile(
 )
 sdk_field_placeholder = b"[REDACTED_ALIPAY_SDK_FIELD]"
 sdk_text_suffixes = frozenset({".log", ".txt", ".json", ".csv"})
+alipay_payment_blob = re.compile(
+    rb"(?i)[\x22\x27]?(?:orderStr|orderInfo|orderString)[\x22\x27]?[ \t]*[:=]|"
+    rb"[\x22\x27]?(?:alipay_sdk|biz_content|sign_type)[\x22\x27]?[ \t]*[:=]|"
+    rb"method[ \t]*=[ \t]*alipay\.trade\.app\.pay"
+)
 
 def scan_stream(stream, values):
     values = list(dict.fromkeys(values))
@@ -485,6 +516,11 @@ for candidate in iter_files(root):
     with candidate.open("rb") as stream:
         if not scan_stream(stream, needles):
             raise SystemExit(1)
+    if (
+        candidate.suffix.lower() in sdk_text_suffixes
+        and alipay_payment_blob.search(candidate.read_bytes())
+    ):
+        raise SystemExit(1)
     if not scan_alipay_sdk_fields(candidate):
         raise SystemExit(1)
 raise SystemExit(0)
@@ -496,6 +532,8 @@ apk_secret_scan() {
   M5_SCAN_PHONE="$LIVE_PHONE" M5_SCAN_RECEIVER_PHONE="$RECEIVER_PHONE" \
     M5_SCAN_CLIENT="$OAUTH_CLIENT_ID" M5_SCAN_DB_TOKEN="$DB_TOKEN" \
     M5_SCAN_RELAY_A="$RELAY_TOKEN_A" M5_SCAN_RELAY_B="$RELAY_TOKEN_B" \
+    M5_SCAN_RELAY_READY="${RELAY_READY_TOKEN:-}" \
+    M5_SCAN_ACTION_OPERATOR="${ACTION_GATE_OPERATOR_TOKEN:-}" \
     python3 - "$target" <<'PY'
 import os
 import sys
@@ -510,6 +548,8 @@ secret_values = [value.encode() for value in (
     os.environ.get("M5_SCAN_DB_TOKEN", ""),
     os.environ.get("M5_SCAN_RELAY_A", ""),
     os.environ.get("M5_SCAN_RELAY_B", ""),
+    os.environ.get("M5_SCAN_RELAY_READY", ""),
+    os.environ.get("M5_SCAN_ACTION_OPERATOR", ""),
 ) if value]
 # These optional extension JNI libraries are forbidden in the M5 APK because
 # this acceptance build does not use face capture or lip sync. The base Agora
@@ -562,29 +602,74 @@ start_relay() {
   mkdir -p "$ARTIFACT_ROOT/config-relay"
   RELAY_TOKEN_A="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
   RELAY_TOKEN_B="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+  RELAY_READY_FILE="$ARTIFACT_ROOT/config-relay/relay-ready"
+  RELAY_READY_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+  [[ "${#RELAY_READY_TOKEN}" -ge 64 ]] || fail 'runtime relay readiness credential generation failed'
   [[ "${#RELAY_TOKEN_A}" -ge 64 && "${#RELAY_TOKEN_B}" -ge 64 ]] || fail 'runtime relay token generation failed'
-  RELAY_PORT="$(python3 - <<'PY'
-import socket
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()
-PY
-)"
+  local action_gate_flag='false' requested_gate_parent=''
+  if [[ "$PAYMENT_OPT_IN" == 'true' && "${PAYMENT_SCENARIO:-none}" == 'success' ]]; then
+    ACTION_GATE_ENABLED='true'
+    action_gate_flag='true'
+    # Keep the operator credential and marker outside the evidence directory.
+    # Only the path is printed; the credential itself never enters argv, logs,
+    # artifacts, or the Flutter process.
+    requested_gate_parent="${TMPDIR:-/tmp}"
+    ACTION_GATE_STATE_PARENT="$(cd "$requested_gate_parent" && pwd -P)" ||
+      fail 'action-time gate state parent could not be canonicalized'
+    ACTION_GATE_STATE_DIR="$(mktemp -d "$ACTION_GATE_STATE_PARENT/voice-social-m5-action-gate.XXXXXX")" ||
+      fail 'action-time gate state directory could not be created'
+    chmod 700 "$ACTION_GATE_STATE_DIR"
+    ACTION_GATE_OPERATOR_FILE="$ACTION_GATE_STATE_DIR/operator-token"
+    ACTION_GATE_MARKER_FILE="$ACTION_GATE_STATE_DIR/marker"
+    ACTION_GATE_READY_FILE="$ACTION_GATE_STATE_DIR/relay-ready"
+    RELAY_READY_FILE="$ACTION_GATE_READY_FILE"
+    ACTION_GATE_OPERATOR_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+    [[ "${#ACTION_GATE_OPERATOR_TOKEN}" -ge 64 ]] ||
+      fail 'action-time gate operator credential generation failed'
+    (umask 077 &&
+      printf '%s' "$ACTION_GATE_OPERATOR_TOKEN" >"$ACTION_GATE_OPERATOR_FILE" &&
+      chmod 600 "$ACTION_GATE_OPERATOR_FILE" &&
+      : >"$ACTION_GATE_MARKER_FILE" && chmod 600 "$ACTION_GATE_MARKER_FILE") ||
+      fail 'action-time gate private state could not be initialized'
+  fi
   QA_M5_RELAY_TOKEN_A="$RELAY_TOKEN_A" QA_M5_RELAY_TOKEN_B="$RELAY_TOKEN_B" \
     QA_M5_RECEIVER_PHONE="$RECEIVER_PHONE" \
-    python3 -u - "$RELAY_PORT" >/dev/null 2>&1 <<'PY' &
+    QA_M5_RUN_ID="$RUN_ID" QA_M5_ACTION_GATE_ENABLED="$action_gate_flag" \
+    QA_M5_BACKEND_SHA="$BACKEND_SHA_ACTUAL" QA_M5_FLUTTER_SHA="$FLUTTER_SHA_ACTUAL" \
+    QA_M5_ACTION_SERIAL='emulator-5554' QA_M5_AVD_B_SERIAL="$AVD_B_SERIAL" \
+    QA_M5_ACTION_OPERATOR_TOKEN="$ACTION_GATE_OPERATOR_TOKEN" \
+    QA_M5_ACTION_MARKER_FILE="$ACTION_GATE_MARKER_FILE" \
+    QA_M5_ACTION_READY_FILE="$RELAY_READY_FILE" \
+    QA_M5_READY_TOKEN="$RELAY_READY_TOKEN" \
+    PYTHONPATH="$PROJECT_ROOT/tool/qa${PYTHONPATH:+:$PYTHONPATH}" \
+    python3 -u - >/dev/null 2>&1 <<'PY' &
 import hmac
 import http.server
 import json
 import os
+from pathlib import Path
 import re
-import sys
+import stat
 import threading
-port = int(sys.argv[1])
+from m5_alipay_action_gate import (
+    ACTION_CONFIRMATION_REQUIRED,
+    ActionConfirmationGate,
+    ActionGateError,
+    ActionIdentity,
+)
 phone = os.environ["QA_LIVE_PHONE"]
 receiver_phone = os.environ.get("QA_M5_RECEIVER_PHONE") or phone
 client_id = os.environ["QA_OAUTH_CLIENT_ID"]
+run_id = os.environ["QA_M5_RUN_ID"]
+backend_sha = os.environ["QA_M5_BACKEND_SHA"]
+flutter_sha = os.environ["QA_M5_FLUTTER_SHA"]
+action_serial = os.environ["QA_M5_ACTION_SERIAL"]
+avd_b_serial = os.environ.get("QA_M5_AVD_B_SERIAL") or "emulator-5556"
+action_gate_enabled = os.environ.get("QA_M5_ACTION_GATE_ENABLED") == "true"
+operator_token = os.environ.get("QA_M5_ACTION_OPERATOR_TOKEN", "")
+marker_file = os.environ.get("QA_M5_ACTION_MARKER_FILE", "")
+ready_file = Path(os.environ["QA_M5_ACTION_READY_FILE"])
+ready_token = os.environ["QA_M5_READY_TOKEN"]
 tokens = {
     os.environ["QA_M5_RELAY_TOKEN_A"]: {"role": "sender", "phone": phone, "configConsumed": False},
     os.environ["QA_M5_RELAY_TOKEN_B"]: {"role": "receiver", "phone": receiver_phone, "configConsumed": False},
@@ -601,7 +686,136 @@ coordination = {
     "receiverLeftRoomId": None,
 }
 opaque_id = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+safe_value = opaque_id
+safe_run = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
+safe_sha = re.compile(r"^[0-9a-f]{40}$")
+safe_account = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,127}$")
+safe_attribute = re.compile(r"^[A-Z][A-Z0-9_.:-]{0,31}$")
+safe_created_marker = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:+-]{0,127}$")
+max_amount_minor = 10**12
+max_gift_coin_amount = 10**12
 lock = threading.Lock()
+pending_identity = None
+
+def write_action_marker(marker):
+    if marker != ACTION_CONFIRMATION_REQUIRED or not marker_file:
+        raise RuntimeError("marker")
+    path = Path(marker_file)
+    flags = os.O_WRONLY | os.O_APPEND | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600:
+            raise RuntimeError("marker")
+        os.write(descriptor, (marker + "\n").encode("ascii"))
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+gate = ActionConfirmationGate(
+    enabled=action_gate_enabled,
+    expected_run_id=run_id,
+    expected_avd="AVD-A",
+    expected_serial=action_serial,
+    expected_backend_sha=backend_sha,
+    expected_flutter_sha=flutter_sha,
+    ttl_seconds=120,
+    marker_sink=write_action_marker if action_gate_enabled else None,
+)
+
+def gate_error_status(error):
+    return 403 if error.code == "DISABLED" else 409
+
+def action_identity(payload, details):
+    required = {
+        "runId", "avd", "serial", "backendSha", "flutterSha",
+        "orderNo", "requestId", "account", "productId",
+        "amountMinor", "giftCoinAmount", "provider", "status",
+    }
+    optional = {"createdMarker"}
+    if (
+        not isinstance(payload, dict)
+        or not required.issubset(payload)
+        or not set(payload).issubset(required | optional)
+    ):
+        raise ActionGateError("IDENTITY_INVALID")
+    avd = payload.get("avd")
+    expected_avd = "AVD-A" if details.get("role") == "sender" else "AVD-B"
+    if avd != expected_avd:
+        raise ActionGateError("BINDING_MISMATCH")
+    if (
+        not isinstance(payload["runId"], str)
+        or not safe_run.fullmatch(payload["runId"])
+        or not isinstance(payload["serial"], str)
+        or not safe_value.fullmatch(payload["serial"])
+        or not isinstance(payload["backendSha"], str)
+        or not safe_sha.fullmatch(payload["backendSha"])
+        or not isinstance(payload["flutterSha"], str)
+        or not safe_sha.fullmatch(payload["flutterSha"])
+        or not isinstance(payload["orderNo"], str)
+        or not safe_value.fullmatch(payload["orderNo"])
+        or not isinstance(payload["requestId"], str)
+        or not safe_value.fullmatch(payload["requestId"])
+        or not isinstance(payload["account"], str)
+        or not safe_account.fullmatch(payload["account"])
+        or not isinstance(payload["productId"], str)
+        or not safe_value.fullmatch(payload["productId"])
+        or type(payload["amountMinor"]) is not int
+        or not 1 <= payload["amountMinor"] <= max_amount_minor
+        or type(payload["giftCoinAmount"]) is not int
+        or not 1 <= payload["giftCoinAmount"] <= max_gift_coin_amount
+    ):
+        raise ActionGateError("IDENTITY_INVALID")
+    if (
+        payload.get("provider") != "ALIPAY"
+        or payload.get("status") != "CREATED"
+        or not safe_attribute.fullmatch(payload["provider"])
+        or not safe_attribute.fullmatch(payload["status"])
+    ):
+        raise ActionGateError("IDENTITY_INVALID")
+    if "createdMarker" in payload and (
+        not isinstance(payload["createdMarker"], str)
+        or not safe_created_marker.fullmatch(payload["createdMarker"])
+    ):
+        raise ActionGateError("IDENTITY_INVALID")
+    return ActionIdentity(
+        run_id=payload.get("runId"),
+        avd=avd,
+        serial=payload.get("serial"),
+        backend_sha=payload.get("backendSha"),
+        flutter_sha=payload.get("flutterSha"),
+        order_no=payload.get("orderNo"),
+        request_id=payload.get("requestId"),
+        account=payload.get("account"),
+        product_id=payload.get("productId"),
+        amount_minor=payload.get("amountMinor"),
+        gift_coin_amount=payload.get("giftCoinAmount"),
+        provider=payload.get("provider"),
+        status=payload.get("status"),
+        created_marker=payload.get("createdMarker"),
+    )
+
+def identity_payload(value):
+    result = {
+        "runId": value.run_id,
+        "avd": value.avd,
+        "serial": value.serial,
+        "backendSha": value.backend_sha,
+        "flutterSha": value.flutter_sha,
+        "orderNo": value.order_no,
+        "requestId": value.request_id,
+        "account": value.account,
+        "productId": value.product_id,
+        "amountMinor": value.amount_minor,
+        "giftCoinAmount": value.gift_coin_amount,
+    }
+    if value.provider is not None:
+        result["provider"] = value.provider
+    if value.status is not None:
+        result["status"] = value.status
+    if value.created_marker is not None:
+        result["createdMarker"] = value.created_marker
+    return result
 
 def peer_user_id_for(role):
     key = "receiverUserId" if role == "sender" else "senderUserId"
@@ -618,6 +832,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if hmac.compare_digest(supplied, expected):
                     return details
         return None
+    def _operator(self):
+        if not operator_token:
+            return False
+        values = self.headers.get_all("Authorization") or []
+        prefix = "Bearer "
+        supplied = values[0][len(prefix):] if len(values) == 1 and values[0].startswith(prefix) else ""
+        return bool(supplied) and hmac.compare_digest(supplied, operator_token)
+    def _ready(self):
+        values = self.headers.get_all("Authorization") or []
+        prefix = "Bearer "
+        supplied = values[0][len(prefix):] if len(values) == 1 and values[0].startswith(prefix) else ""
+        return bool(supplied) and hmac.compare_digest(supplied, ready_token)
     def _json(self, status, payload):
         body = json.dumps(payload, separators=(",", ":")).encode()
         self.send_response(status)
@@ -640,6 +866,38 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
             return {}
     def do_GET(self):
+        global pending_identity
+        if self.path == "/m5/relay/status":
+            if not self._ready():
+                self._json(401, {"error": "unauthorized"})
+                return
+            self._json(200, {"ready": True})
+            return
+        if self.path == "/m5/alipay/action-confirmation/pending":
+            if not self._operator():
+                self._json(401, {"error": "unauthorized"})
+                return
+            with lock:
+                current = pending_identity
+                status = gate.public_status()
+                if status["expired"]:
+                    pending_identity = None
+                    current = None
+            if current is None or not status["pending"] or status["approved"] or status["consumed"]:
+                self._json(409, {"pending": False})
+                return
+            self._json(200, {"pending": True, **identity_payload(current)})
+            return
+        if self.path == "/m5/alipay/action-confirmation/status":
+            if not self._operator():
+                self._json(401, {"error": "unauthorized"})
+                return
+            with lock:
+                status = gate.public_status()
+                if status["expired"]:
+                    pending_identity = None
+            self._json(200, status)
+            return
         details = self._token()
         if details is None:
             self._json(401, {"error": "unauthorized"})
@@ -650,7 +908,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self._json(409, {"error": "config_already_consumed"})
                     return
                 details["configConsumed"] = True
-            self._json(200, {"phone": details["phone"], "oauthClientId": client_id, "role": details["role"]})
+            serial = action_serial if details["role"] == "sender" else avd_b_serial
+            self._json(200, {"phone": details["phone"], "oauthClientId": client_id, "role": details["role"], "serial": serial})
             return
         if self.path == "/m5/c2c/receiver-pass":
             with lock: ready = coordination["receiverPass"]
@@ -690,9 +949,55 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         self._json(404, {"error": "not_found"})
     def do_POST(self):
+        global pending_identity
+        if self.path == "/m5/alipay/action-confirmation/approve":
+            if not self._operator():
+                self._json(401, {"error": "unauthorized"})
+                return
+            payload = self._body_json()
+            if (
+                not isinstance(payload, dict)
+                or "confirmation" not in payload
+                or not isinstance(payload["confirmation"], str)
+            ):
+                self._json(400, {"error": "invalid_identity"})
+                return
+            try:
+                fields = dict(payload)
+                confirmation = fields.pop("confirmation")
+                identity = action_identity(fields, {"role": "sender"})
+                gate.approve(identity, confirmation)
+            except ActionGateError as error:
+                self._json(gate_error_status(error), {"error": error.code})
+                return
+            self._json(200, {"accepted": True})
+            return
         details = self._token()
         if details is None:
             self._json(401, {"error": "unauthorized"})
+            return
+        if self.path in (
+            "/m5/alipay/action-confirmation/request",
+            "/m5/alipay/action-confirmation/consume",
+        ):
+            if details["role"] != "sender":
+                self._json(409, {"error": "role_or_state_mismatch"})
+                return
+            payload = self._body_json()
+            try:
+                identity = action_identity(payload, details)
+                if self.path.endswith("/request"):
+                    with lock:
+                        gate.request(identity)
+                        pending_identity = identity
+                    self._json(200, {"accepted": True, "status": "PENDING"})
+                else:
+                    with lock:
+                        gate.consume(identity)
+                        pending_identity = None
+                    self._json(200, {"approved": True})
+            except ActionGateError as error:
+                self._json(gate_error_status(error), {"approved": False, "error": error.code})
             return
         if self.path == "/m5/c2c/sender-sent" and details["role"] == "sender":
             with lock: coordination["senderSent"] = True
@@ -767,19 +1072,129 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         self._json(409, {"error": "role_or_state_mismatch"})
     def log_message(self, *_args): return
-http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+
+def write_ready(server):
+    payload = json.dumps(
+        {"pid": os.getpid(), "port": int(server.server_port)},
+        separators=(",", ":"),
+    ).encode("ascii")
+    temporary = ready_file.with_name("." + ready_file.name + ".tmp")
+    flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    descriptor = os.open(temporary, flags, 0o600)
+    try:
+        os.fchmod(descriptor, 0o600)
+        os.write(descriptor, payload)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.replace(temporary, ready_file)
+    metadata = ready_file.lstat()
+    if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600:
+        raise RuntimeError("ready")
+
+server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+server.daemon_threads = True
+write_ready(server)
+server.serve_forever()
 PY
   RELAY_PID=$!
+  local readiness_endpoint='/m5/relay/status' readiness_token="$RELAY_READY_TOKEN"
+  if [[ "$ACTION_GATE_ENABLED" == 'true' ]]; then
+    readiness_endpoint='/m5/alipay/action-confirmation/status'
+    readiness_token="$ACTION_GATE_OPERATOR_TOKEN"
+  fi
   for _ in {1..60}; do
     kill -0 "$RELAY_PID" 2>/dev/null || fail 'runtime relay exited'
-    if python3 - "$RELAY_PORT" <<'PY'
-import socket
+    if [[ -f "$RELAY_READY_FILE" && ! -L "$RELAY_READY_FILE" ]]; then
+      RELAY_PORT="$(M5_RELAY_READY_TOKEN="$readiness_token" python3 - \
+        "$RELAY_READY_FILE" "$RELAY_PID" "$readiness_endpoint" <<'PY'
+import json
+import os
+from pathlib import Path
+import stat
 import sys
+import urllib.request
+
+path = Path(sys.argv[1])
+expected_pid = int(sys.argv[2])
+endpoint = sys.argv[3]
 try:
-    with socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=1): pass
-except OSError: raise SystemExit(1)
+    metadata = path.lstat()
+    if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600:
+        raise SystemExit(1)
+    if endpoint == "/m5/alipay/action-confirmation/status":
+        parent = path.parent.lstat()
+        if not stat.S_ISDIR(parent.st_mode) or stat.S_IMODE(parent.st_mode) != 0o700:
+            raise SystemExit(1)
+    os.kill(expected_pid, 0)
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        checked = os.fstat(descriptor)
+        if not stat.S_ISREG(checked.st_mode) or stat.S_IMODE(checked.st_mode) != 0o600:
+            raise SystemExit(1)
+        value = json.loads(os.read(descriptor, 256).decode("ascii"))
+    finally:
+        os.close(descriptor)
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"pid", "port"}
+        or type(value["pid"]) is not int
+        or type(value["port"]) is not int
+        or value["pid"] != expected_pid
+        or not 1 <= value["port"] <= 65535
+    ):
+        raise SystemExit(1)
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{value['port']}{endpoint}",
+        headers={"Authorization": "Bearer " + os.environ["M5_RELAY_READY_TOKEN"]},
+        method="GET",
+    )
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *_args, **_kwargs):
+            return None
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), NoRedirect()
+    )
+    with opener.open(request, timeout=1) as response:
+        if response.geturl() != request.full_url or response.status != 200:
+            raise SystemExit(1)
+        status = json.loads(response.read(512))
+    if endpoint == "/m5/alipay/action-confirmation/status":
+        if (
+            not isinstance(status, dict)
+            or type(status.get("pending")) is not bool
+            or type(status.get("approved")) is not bool
+            or type(status.get("consumed")) is not bool
+            or type(status.get("expired")) is not bool
+        ):
+            raise SystemExit(1)
+    elif status != {"ready": True}:
+        raise SystemExit(1)
+    print(value["port"])
+except (OSError, ValueError, TypeError, UnicodeError, json.JSONDecodeError):
+    raise SystemExit(1)
 PY
-    then return 0; fi
+      )" || RELAY_PORT=''
+      if [[ "$RELAY_PORT" =~ ^[0-9]+$ && "$RELAY_PORT" -ge 1 &&
+        "$RELAY_PORT" -le 65535 ]]; then
+        if [[ "$ACTION_GATE_ENABLED" == 'true' ]]; then
+          printf 'ACTION_GATE::armed::operator_file=%s::relay_port=%s\n' \
+            "$ACTION_GATE_OPERATOR_FILE" "$RELAY_PORT"
+          # This is only an armed gate. Do not imply that approval is pending
+          # until the app has created an order and the relay has emitted the
+          # fixed ACTION_CONFIRMATION_REQUIRED marker.
+          printf 'ACTION_GATE::waiting_for_order\n'
+        fi
+        return 0
+      fi
+    fi
     sleep 0.1
   done
   fail 'runtime relay did not become ready'
@@ -1205,6 +1620,7 @@ run_flutter_test() {
     --dart-define=QA_M5_FIXTURE_ID="$FIXTURE_ID" --dart-define=M5_EXPECTED_FLUTTER_SHA="$FLUTTER_SHA_ACTUAL" \
     --dart-define=M5_EXPECTED_BACKEND_SHA="$BACKEND_SHA_ACTUAL" --dart-define=M5_EXPECTED_BACKEND_DIGEST="$BACKEND_SOURCE_DIGEST_ACTUAL" \
     --dart-define=QA_M5_RUN_ID="$RUN_ID" \
+    --dart-define=M5_EXPECTED_SERIAL="$serial" \
     --dart-define=M5_ALLOW_EXTERNAL_PAYMENT="$payment_define" \
     --dart-define=M5_ALIPAY_SCENARIO="${PAYMENT_SCENARIO:-none}" \
     $confirmation_define $success_confirmation_define >"$raw" 2>&1
@@ -1236,13 +1652,14 @@ write_route_evidence() {
   local marker output
   for marker in \
     M5_AUTHORITY_INVARIANT:: M5_VENDOR_EVENT:: M5_LANE:: \
-    M5_ACCEPTANCE:: M5_PROVIDER_CALLS::; do
+    M5_ACCEPTANCE:: M5_PROVIDER_CALLS:: ACTION_CONFIRMATION_REQUIRED; do
     case "$marker" in
       M5_AUTHORITY_INVARIANT::) output='authority-invariants.txt' ;;
       M5_VENDOR_EVENT::) output='vendor-events.txt' ;;
       M5_LANE::) output='lane-verdicts.txt' ;;
       M5_ACCEPTANCE::) output='evidence-verdict.txt' ;;
       M5_PROVIDER_CALLS::) output='provider-calls.txt' ;;
+      ACTION_CONFIRMATION_REQUIRED) output='action-confirmation.txt' ;;
     esac
     awk -v marker="$marker" 'index($0, marker) {
       line=$0
@@ -1304,6 +1721,13 @@ run_one() {
     write_result "$dir" "$avd" FAIL device_unavailable UNAVAILABLE unknown 0 0 0 0 0 ''
     return 1
   }
+  if [[ "$PAYMENT_OPT_IN" == 'true' &&
+    "${PAYMENT_SCENARIO:-none}" == 'success' &&
+    "$avd" == 'AVD-A' && "$serial" != 'emulator-5554' ]]; then
+    write_db_fallback "$dir"
+    write_result "$dir" "$avd" FAIL focused_serial_mismatch UNAVAILABLE unknown 0 0 0 0 0 ''
+    return 1
+  fi
   if ! clear_test_app_data "$serial"; then
     write_db_fallback "$dir"
     write_result "$dir" "$avd" FAIL app_data_clear_failed UNAVAILABLE unknown 0 0 0 0 0 ''
@@ -1518,7 +1942,32 @@ cleanup() {
     OVERALL_RESULT='FAIL'
   fi
   stop_runtime_relay_token_feeder
+  local run_pid
+  for run_pid in "$RUN_PID_A" "$RUN_PID_B"; do
+    if [[ "$run_pid" =~ ^[0-9]+$ ]]; then
+      kill "$run_pid" 2>/dev/null || true
+      wait "$run_pid" 2>/dev/null || true
+    fi
+  done
+  RUN_PID_A=''
+  RUN_PID_B=''
   if [[ -n "$RELAY_PID" ]]; then kill "$RELAY_PID" 2>/dev/null || true; wait "$RELAY_PID" 2>/dev/null || true; fi
+  if [[ -n "$RELAY_READY_FILE" && -f "$RELAY_READY_FILE" && ! -L "$RELAY_READY_FILE" ]]; then
+    rm -f -- "$RELAY_READY_FILE"
+  fi
+  if [[ -n "$ACTION_GATE_STATE_PARENT" && -n "$ACTION_GATE_STATE_DIR" &&
+    "$ACTION_GATE_STATE_DIR" == "$ACTION_GATE_STATE_PARENT"/voice-social-m5-action-gate.* &&
+    -d "$ACTION_GATE_STATE_DIR" &&
+    ! -L "$ACTION_GATE_STATE_DIR" ]]; then
+    rm -rf -- "$ACTION_GATE_STATE_DIR"
+    ACTION_GATE_STATE_DIR=''
+    ACTION_GATE_OPERATOR_FILE=''
+    ACTION_GATE_MARKER_FILE=''
+    ACTION_GATE_READY_FILE=''
+  fi
+  ACTION_GATE_STATE_PARENT=''
+  RELAY_READY_FILE=''
+  RELAY_READY_TOKEN=''
   local started_serial
   if [[ -f "$STARTED_SERIALS_FILE" ]]; then
     while IFS= read -r started_serial; do
@@ -1550,10 +1999,22 @@ cleanup() {
     done
   fi
   if [[ -d "$ARTIFACT_ROOT" ]]; then
+    # Raw Flutter output may contain a signed Alipay order payload. Normal
+    # completion sanitizes then unlinks it in run_flutter_test; this bounded
+    # cleanup also covers signals and early failures before evidence scanning.
+    local avd_log_dir raw_log
+    for avd_log_dir in \
+      "$ARTIFACT_ROOT/AVD-A/logs" "$ARTIFACT_ROOT/AVD-B/logs"; do
+      [[ -d "$avd_log_dir" && ! -L "$avd_log_dir" ]] || continue
+      while IFS= read -r -d '' raw_log; do
+        [[ -f "$raw_log" && ! -L "$raw_log" ]] && rm -f -- "$raw_log"
+      done < <(find "$avd_log_dir" -maxdepth 1 -type f -name '*.raw.log' -print0)
+    done
     write_summary || true
     if secret_scan "$ARTIFACT_ROOT"; then printf 'status=PASS\n' >"$ARTIFACT_ROOT/aggregate-secret-scan.txt"; else OVERALL_RESULT='FAIL'; printf 'status=FAIL\n' >"$ARTIFACT_ROOT/aggregate-secret-scan.txt"; write_summary || true; fi
     write_manifest || true
   fi
+  ACTION_GATE_OPERATOR_TOKEN=''
   trap - EXIT
   exit "$incoming_status"
 }
@@ -1628,6 +2089,7 @@ start_db_evidence_helper
 set +e
 run_one AVD-A "$A_API" "$A_PROFILE" "$A_PHYSICAL" "$A_DENSITY" "$A_WIDTH" "$A_HEIGHT" "$A_DPR" "$AVD_A_SERIAL" "$AVD_A_NAME" &
 pid_a=$!
+RUN_PID_A="$pid_a"
 if wait_for_sender_login_marker "$pid_a"; then
   # Two concurrent Flutter tool startups can contend on the SDK startup lock
   # and leave one Driver extension paused indefinitely. Start the receiver
@@ -1635,13 +2097,17 @@ if wait_for_sender_login_marker "$pid_a"; then
   # the sender then waits on the protected relay for this receiver.
   run_one AVD-B "$B_API" "$B_PROFILE" "$B_PHYSICAL" "$B_DENSITY" "$B_WIDTH" "$B_HEIGHT" "$B_DPR" "$AVD_B_SERIAL" "$AVD_B_NAME" &
   pid_b=$!
+  RUN_PID_B="$pid_b"
   wait "$pid_a"
   status_a=$?
+  RUN_PID_A=''
   wait "$pid_b"
   status_b=$?
+  RUN_PID_B=''
 else
   wait "$pid_a"
   status_a=$?
+  RUN_PID_A=''
   status_b=1
   LAST_RESULT_REASON='sender_login_marker_missing'
 fi

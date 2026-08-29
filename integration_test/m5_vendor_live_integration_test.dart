@@ -60,6 +60,10 @@ const Duration _c2cHistoryRefreshInterval = Duration(seconds: 1);
 // (120s), so a native watchdog result reaches the evidence stream with its
 // explicit marker instead of racing a second, indistinguishable Dart timeout.
 const Duration _m5AlipayNativeTimeout = Duration(seconds: 150);
+// A success PayTask is never started while this bounded action-time gate is
+// pending.  A missing or expired host approval therefore fails closed before
+// any native payment surface can open.
+const Duration _m5AlipayActionConfirmationTimeout = Duration(seconds: 120);
 const String _expectedFlutterSha = String.fromEnvironment(
   'M5_EXPECTED_FLUTTER_SHA',
   defaultValue: '',
@@ -70,6 +74,10 @@ const String _expectedBackendSha = String.fromEnvironment(
 );
 const String _expectedBackendDigest = String.fromEnvironment(
   'M5_EXPECTED_BACKEND_DIGEST',
+  defaultValue: '',
+);
+const String _expectedSerial = String.fromEnvironment(
+  'M5_EXPECTED_SERIAL',
   defaultValue: '',
 );
 const bool _allowExternalPayment = bool.fromEnvironment(
@@ -205,6 +213,8 @@ void main() {
               dependencies,
               evidence,
               session,
+              config: config,
+              avd: avd,
               paymentOwner: config.role == 'sender',
             );
           }
@@ -1203,6 +1213,8 @@ Future<void> _runAlipaySandbox(
   AppDependencies dependencies,
   _M5Evidence evidence,
   AuthSession session, {
+  required _RuntimeConfig config,
+  required String avd,
   required bool paymentOwner,
 }) async {
   final BackendRouteCatalog routes = const BackendRouteCatalog();
@@ -1213,6 +1225,10 @@ Future<void> _runAlipaySandbox(
     evidence.lane('alipay.query-reconcile', 'NOT_RUN');
     evidence.lane('alipay.settlement', 'NOT_RUN');
     evidence.lane('alipay.reconcile-idempotency', 'NOT_RUN');
+  }
+
+  void markReconcileBlocked() {
+    evidence.lane('alipay.reconcile-idempotency', 'BLOCKED');
   }
 
   List<RechargeProduct> products;
@@ -1277,10 +1293,26 @@ Future<void> _runAlipaySandbox(
     evidence.lane('alipay.reconcile-idempotency', 'NOT_RUN');
     return;
   }
-  final RechargeProduct product = products.firstWhere(
-    (RechargeProduct item) => item.enabled,
-    orElse: () => products.first,
-  );
+  final RechargeProduct? product = products
+      .where(
+        (RechargeProduct item) => item.enabled && (item.amountMinor ?? 0) > 0,
+      )
+      .fold<RechargeProduct?>(null, (
+        RechargeProduct? current,
+        RechargeProduct candidate,
+      ) {
+        if (current == null ||
+            (candidate.amountMinor ?? 0) < (current.amountMinor ?? 0)) {
+          return candidate;
+        }
+        return current;
+      });
+  if (product == null) {
+    evidence.violation('alipay_positive_product_missing');
+    evidence.lane('alipay.catalog', 'FAIL');
+    markPaymentNotRun();
+    return;
+  }
   RechargeOrder order;
   try {
     order = await dependencies.commerceCatalogRepository.createRechargeOrder(
@@ -1290,6 +1322,25 @@ Future<void> _runAlipaySandbox(
       platform: ClientStorePlatform.android,
       youthModeEnabled: false,
     );
+    final int? orderAmountMinor = order.product.amountMinor;
+    if (order.orderNo.trim().isEmpty ||
+        order.paymentOrderString?.isNotEmpty != true ||
+        order.account != session.mobile ||
+        order.product.id != product.id ||
+        orderAmountMinor == null ||
+        orderAmountMinor <= 0 ||
+        orderAmountMinor != product.amountMinor ||
+        order.product.totalGiftCoins <= 0 ||
+        order.product.totalGiftCoins != product.totalGiftCoins ||
+        order.channel != PaymentChannelType.alipay ||
+        order.state != RechargeOrderState.created) {
+      evidence.violation('alipay_authoritative_order_identity_mismatch');
+      evidence.lane('alipay.order', 'FAIL');
+      evidence.lane('alipay.native.launch-cancel', 'BLOCKED');
+      evidence.lane('alipay.native.launch-success', 'BLOCKED');
+      evidence.lane('alipay.query-reconcile', 'BLOCKED');
+      return;
+    }
     evidence.route(
       capability: 'alipay.order',
       method: 'POST',
@@ -1310,6 +1361,26 @@ Future<void> _runAlipaySandbox(
     evidence.lane('alipay.native.launch-cancel', 'BLOCKED');
     evidence.lane('alipay.query-reconcile', 'BLOCKED');
     return;
+  }
+  if (_paymentScenario == 'success') {
+    // This is intentionally the final client-side operation after the
+    // server-created order and immediately before the first PayTask.  The
+    // relay emits only ACTION_CONFIRMATION_REQUIRED and waits for a fresh,
+    // run/AVD/order-bound host approval; build-time defines cannot satisfy it.
+    final bool actionConfirmed = await _awaitAlipayActionConfirmation(
+      config: config,
+      avd: avd,
+      order: order,
+      evidence: evidence,
+    );
+    if (!actionConfirmed) {
+      evidence.invariant('alipay_action_confirmation_fail_closed');
+      evidence.lane('alipay.native.launch-success', 'BLOCKED');
+      evidence.lane('alipay.query-reconcile', 'BLOCKED');
+      evidence.lane('alipay.settlement', 'BLOCKED');
+      markReconcileBlocked();
+      return;
+    }
   }
   RechargeOrder result;
   try {
@@ -1387,7 +1458,7 @@ Future<void> _runAlipaySandbox(
       evidence.lane('alipay.native.launch-success', 'FAIL');
       evidence.lane('alipay.query-reconcile', 'FAIL');
       evidence.lane('alipay.settlement', 'BLOCKED');
-      evidence.lane('alipay.reconcile-idempotency', 'BLOCKED');
+      markReconcileBlocked();
       return;
     }
     final RechargeOrder repeated = await dependencies.commerceCatalogRepository
@@ -1451,6 +1522,130 @@ Future<void> _runAlipaySandbox(
   }
 }
 
+Future<bool> _awaitAlipayActionConfirmation({
+  required _RuntimeConfig config,
+  required String avd,
+  required RechargeOrder order,
+  required _M5Evidence evidence,
+}) async {
+  final int? amountMinor = order.product.amountMinor;
+  if (_runtimeConfigPort < 1 ||
+      avd != 'AVD-A' ||
+      _expectedSerial != 'emulator-5554' ||
+      config.serial != _expectedSerial ||
+      !_isSha40(_expectedBackendSha) ||
+      !_isSha40(_expectedFlutterSha) ||
+      order.orderNo.trim().isEmpty ||
+      order.account.trim().isEmpty ||
+      order.product.id.trim().isEmpty ||
+      amountMinor == null ||
+      amountMinor <= 0 ||
+      order.product.totalGiftCoins <= 0 ||
+      order.channel != PaymentChannelType.alipay ||
+      order.state != RechargeOrderState.created) {
+    return false;
+  }
+  final String requestId = _alipayActionRequestId(order);
+  final Map<String, Object?> identity = <String, Object?>{
+    'runId': _runId,
+    'avd': avd,
+    'serial': config.serial,
+    'backendSha': _expectedBackendSha,
+    'flutterSha': _expectedFlutterSha,
+    // This value is sent only over the authenticated localhost relay and is
+    // never included in a marker, exception, screenshot, or report.
+    'orderNo': order.orderNo,
+    'requestId': requestId,
+    'account': order.account,
+    'productId': order.product.id,
+    'amountMinor': amountMinor,
+    'giftCoinAmount': order.product.totalGiftCoins,
+    'provider': 'ALIPAY',
+    'status': 'CREATED',
+  };
+  try {
+    await _postRelayJson(
+      config,
+      '/m5/alipay/action-confirmation/request',
+      identity,
+    );
+  } catch (_) {
+    evidence.invariant('alipay_action_confirmation_request_failed');
+    return false;
+  }
+  // Emit this fixed marker only after the relay accepted the pending order.
+  // The host operator sees the marker while the app remains before PayTask.
+  evidence.actionConfirmationRequired();
+  final Stopwatch stopwatch = Stopwatch()..start();
+  while (stopwatch.elapsed < _m5AlipayActionConfirmationTimeout) {
+    if (await _consumeAlipayActionConfirmation(config, identity)) {
+      evidence.actionConfirmationGranted();
+      return true;
+    }
+    await Future<void>.delayed(const Duration(seconds: 1));
+  }
+  evidence.invariant('alipay_action_confirmation_timeout');
+  return false;
+}
+
+String _alipayActionRequestId(RechargeOrder order) {
+  final String canonical = <String>[
+    'voice-social:alipay-success-action',
+    'run=$_runId',
+    'serial=$_expectedSerial',
+    'backend=$_expectedBackendSha',
+    'flutter=$_expectedFlutterSha',
+    'order=${order.orderNo}',
+    'account=${order.account}',
+    'product=${order.product.id}',
+    'amount=${order.product.amountMinor}',
+    'giftCoin=${order.product.totalGiftCoins}',
+    'provider=ALIPAY',
+    'status=CREATED',
+  ].join('|');
+  return 'alipay-action-${sha256.convert(utf8.encode(canonical))}';
+}
+
+Future<bool> _consumeAlipayActionConfirmation(
+  _RuntimeConfig config,
+  Map<String, Object?> identity,
+) async {
+  final List<int> encodedPayload = utf8.encode(jsonEncode(identity));
+  final HttpClient client = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 3)
+    ..idleTimeout = const Duration(seconds: 3);
+  try {
+    final HttpClientRequest request = await client
+        .post(
+          '10.0.2.2',
+          _runtimeConfigPort,
+          '/m5/alipay/action-confirmation/consume',
+        )
+        .timeout(const Duration(seconds: 3));
+    request.followRedirects = false;
+    request.headers
+      ..set(HttpHeaders.authorizationHeader, 'Bearer ${config.relayToken}')
+      ..contentType = ContentType.json;
+    request.contentLength = encodedPayload.length;
+    request.add(encodedPayload);
+    final HttpClientResponse response = await request.close().timeout(
+      const Duration(seconds: 3),
+    );
+    final String body = await utf8.decoder.bind(response).join();
+    if (response.statusCode != HttpStatus.ok) {
+      return false;
+    }
+    final Object? decoded = jsonDecode(body);
+    return decoded is Map<String, Object?> && decoded['approved'] == true;
+  } catch (_) {
+    // A relay outage, malformed response, or stale grant can never authorize
+    // a native call. The bounded caller will time out and fail closed.
+    return false;
+  } finally {
+    client.close(force: true);
+  }
+}
+
 Future<_RuntimeConfig> _fetchRuntimeConfig() async {
   if (_runtimeConfigPort < 1) {
     throw TestFailure('M5 runtime config relay is not configured.');
@@ -1463,6 +1658,7 @@ Future<_RuntimeConfig> _fetchRuntimeConfig() async {
     final HttpClientRequest request = await client
         .get('10.0.2.2', _runtimeConfigPort, _runtimeConfigPath)
         .timeout(const Duration(seconds: 5));
+    request.followRedirects = false;
     request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
     final HttpClientResponse response = await request.close().timeout(
       const Duration(seconds: 5),
@@ -1479,9 +1675,11 @@ Future<_RuntimeConfig> _fetchRuntimeConfig() async {
     final String oauthClientId =
         decoded['oauthClientId']?.toString().trim() ?? '';
     final String role = decoded['role']?.toString().trim() ?? '';
+    final String serial = decoded['serial']?.toString().trim() ?? '';
     if (!RegExp(r'^1[3-9]\d{9}$').hasMatch(phone) ||
         oauthClientId.isEmpty ||
-        (role != 'sender' && role != 'receiver')) {
+        (role != 'sender' && role != 'receiver') ||
+        !RegExp(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$').hasMatch(serial)) {
       throw TestFailure('M5 runtime config relay omitted required values.');
     }
     return _RuntimeConfig(
@@ -1489,6 +1687,7 @@ Future<_RuntimeConfig> _fetchRuntimeConfig() async {
       oauthClientId: oauthClientId,
       relayToken: token,
       role: role,
+      serial: serial,
     );
   } finally {
     client.close(force: true);
@@ -1503,6 +1702,7 @@ Future<void> _postRelaySignal(_RuntimeConfig config, String path) async {
     final HttpClientRequest request = await client
         .post('10.0.2.2', _runtimeConfigPort, path)
         .timeout(const Duration(seconds: 3));
+    request.followRedirects = false;
     request.headers.set(
       HttpHeaders.authorizationHeader,
       'Bearer ${config.relayToken}',
@@ -1532,6 +1732,7 @@ Future<void> _postRelayJson(
     final HttpClientRequest request = await client
         .post('10.0.2.2', _runtimeConfigPort, path)
         .timeout(const Duration(seconds: 3));
+    request.followRedirects = false;
     request.headers
       ..set(HttpHeaders.authorizationHeader, 'Bearer ${config.relayToken}')
       ..contentType = ContentType.json;
@@ -1589,6 +1790,7 @@ Future<bool> _readRelaySignal(_RuntimeConfig config, String path) async {
     final HttpClientRequest request = await client
         .get('10.0.2.2', _runtimeConfigPort, path)
         .timeout(const Duration(seconds: 3));
+    request.followRedirects = false;
     request.headers.set(
       HttpHeaders.authorizationHeader,
       'Bearer ${config.relayToken}',
@@ -1623,6 +1825,7 @@ Future<String?> _readRelayValue(
     final HttpClientRequest request = await client
         .get('10.0.2.2', _runtimeConfigPort, path)
         .timeout(const Duration(seconds: 3));
+    request.followRedirects = false;
     request.headers.set(
       HttpHeaders.authorizationHeader,
       'Bearer ${config.relayToken}',
@@ -1661,6 +1864,7 @@ Future<int?> _readRelayIntValue(
     final HttpClientRequest request = await client
         .get('10.0.2.2', _runtimeConfigPort, path)
         .timeout(const Duration(seconds: 3));
+    request.followRedirects = false;
     request.headers.set(
       HttpHeaders.authorizationHeader,
       'Bearer ${config.relayToken}',
@@ -1720,6 +1924,7 @@ class _RuntimeConfig {
     required this.oauthClientId,
     required this.relayToken,
     required this.role,
+    required this.serial,
   });
 
   final String phone;
@@ -1729,6 +1934,7 @@ class _RuntimeConfig {
   // this single emulator run.
   final String relayToken;
   final String role;
+  final String serial;
 }
 
 /// Keeps the C2C acceptance condition explicit while a receiver waits for a
@@ -1779,6 +1985,8 @@ class _M5Evidence {
   bool _paymentOptedIn = false;
   bool _paymentOwner = false;
   bool _paymentSuccessFlowVerified = false;
+  bool _actionConfirmationRequired = false;
+  bool _actionConfirmationGranted = false;
   bool? _alipaySdkCompleted;
   String? _alipayResultStatus;
   String? _alipayBridgeOutcome;
@@ -1944,6 +2152,23 @@ class _M5Evidence {
     debugPrint('M5_PAYMENT_SUCCESS_FLOW_VERIFIED::${value ? 1 : 0}');
   }
 
+  void actionConfirmationRequired() {
+    if (_actionConfirmationRequired) {
+      violation('alipay_action_confirmation_marker_duplicated');
+      return;
+    }
+    _actionConfirmationRequired = true;
+    debugPrint('ACTION_CONFIRMATION_REQUIRED');
+  }
+
+  void actionConfirmationGranted() {
+    if (!_actionConfirmationRequired || _actionConfirmationGranted) {
+      violation('alipay_action_confirmation_state_invalid');
+      return;
+    }
+    _actionConfirmationGranted = true;
+  }
+
   void paymentNativeResult(RechargeOrder order) {
     _alipaySdkCompleted = order.sdkCompleted;
     _alipayResultStatus = order.resultStatus;
@@ -2000,6 +2225,12 @@ class _M5Evidence {
     if (_paymentOptedIn && _paymentOwner && _alipayProviderCalls <= 0) {
       violation('alipay_sdk_callback_missing');
     }
+    if (_paymentOptedIn &&
+        _paymentOwner &&
+        _paymentScenario == 'success' &&
+        !_actionConfirmationGranted) {
+      violation('alipay_action_confirmation_missing');
+    }
     if (!_sdkCallbackObserved) {
       violation('provider_sdk_callback_missing');
     }
@@ -2048,6 +2279,8 @@ class _M5Evidence {
       'paymentSuccessProven':
           successPayment && _paymentSuccessFlowVerified && fullyPass,
       'paymentFlowVerified': successPayment && _paymentSuccessFlowVerified,
+      'actionConfirmationRequired': _actionConfirmationRequired,
+      'actionConfirmationGranted': _actionConfirmationGranted,
       'alipayNativeResult': <String, Object?>{
         'sdkCompleted': _alipaySdkCompleted,
         'resultStatus': _alipayResultStatus,

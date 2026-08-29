@@ -427,6 +427,13 @@ override_serial="$(select_device AVD-A 36 emulator-5554 ignored "$root")"
       contains('M5_PAYMENT_CONFIRMATION=I_UNDERSTAND_SANDBOX_PAYMENT'),
     );
     expect(integrationSource, contains('I_UNDERSTAND_SANDBOX_PAYMENT'));
+    expect(
+      runnerSource,
+      contains(
+        'ACTION_GATE_STATE_PARENT="\$(cd "\$requested_gate_parent" && pwd -P)"',
+      ),
+    );
+    expect(runnerSource, contains('M5_SCAN_ACTION_OPERATOR'));
     expect(integrationSource, contains("defaultValue: 'none'"));
     expect(integrationSource, contains("'none',"));
     expect(integrationSource, contains("'cancel',"));
@@ -441,6 +448,22 @@ override_serial="$(select_device AVD-A 36 emulator-5554 ignored "$root")"
     expect(optInGate, greaterThanOrEqualTo(0));
     expect(orderCreation, greaterThan(optInGate));
     expect(nativeInvocation, greaterThan(orderCreation));
+    expect(
+      integrationSource,
+      contains('item.enabled && (item.amountMinor ?? 0) > 0'),
+    );
+    expect(
+      integrationSource,
+      contains('(candidate.amountMinor ?? 0) < (current.amountMinor ?? 0)'),
+    );
+    expect(
+      integrationSource.indexOf('alipay_positive_product_missing'),
+      greaterThan(optInGate),
+    );
+    expect(
+      integrationSource.indexOf('alipay_positive_product_missing'),
+      lessThan(orderCreation),
+    );
     expect(integrationSource, contains("'alipay.order', 'NOT_OPTED_IN'"));
     expect(
       integrationSource,
@@ -696,6 +719,11 @@ override_serial="$(select_device AVD-A 36 emulator-5554 ignored "$root")"
     expect(runnerSource, contains('begin openssh private key'));
     expect(runnerSource, contains('M5_SECRET_RECEIVER_PHONE'));
     expect(runnerSource, contains('>/dev/null 2>&1 <<\'PY\' &'));
+    expect(runnerSource, contains('RUN_PID_A='));
+    expect(runnerSource, contains('RUN_PID_B='));
+    expect(runnerSource, contains("-name '*.raw.log' -print0"));
+    expect(runnerSource, contains('[REDACTED_ALIPAY_PAYMENT_PAYLOAD]'));
+    expect(runnerSource, contains('orderStr|orderInfo|orderString'));
     expect(integrationSource, contains('M5_RUNTIME_CONFIG_PORT'));
     expect(integrationSource, contains('M5_RUNTIME_CONFIG_PORT'));
     expect(integrationSource, isNot(contains('debugPrint(config.phone')));
@@ -714,6 +742,12 @@ eval "$(sed -n '/^sanitize_stream() {/,/^}/p' "$M5_RUNNER")"
 printf '%s\n' \
   'flutter prefix {"APDIDTOKEN":"synthetic-apdid-token","DynamicKey":"synthetic-dynamic-key","aPdId":"synthetic-apdid","COLOR":"synthetic-color-value","WeBrTcUrL":"https://fixture.invalid/webrtc"}' \
   'logcat prefix apdidToken=synthetic-apdid-token dynamicKey:synthetic-dynamic-key apdid=synthetic-apdid color=synthetic-color-value webrtcUrl=https://fixture.invalid/webrtc' \
+  'orderStr=app_id=fixture&sign=synthetic-signed-order' \
+  'ORDERINFO:method=alipay.trade.app.pay&biz_content=synthetic-order' \
+  'orderString=synthetic-payment-blob' \
+  '{"orderInfo":"synthetic-quoted-payment-blob"}' \
+  'alipay_sdk=fixture-sdk&sign_type=RSA2' \
+  'method=alipay.trade.app.pay&app_id=fixture' \
   'M5_ROUTE_STATUS::alipay::POST::/m5/alipay::200::success' \
   'M5_PROVIDER_CALLS::1::0' \
   'M5_ACCEPTANCE::NO_PAY' | sanitize_stream
@@ -734,10 +768,25 @@ printf '%s\n' \
       'synthetic-apdid',
       'synthetic-color-value',
       'https://fixture.invalid/webrtc',
+      'synthetic-signed-order',
+      'synthetic-order',
+      'synthetic-payment-blob',
+      'synthetic-quoted-payment-blob',
+      'fixture-sdk',
     ]) {
       expect(sanitized, isNot(contains(fixtureValue)));
     }
     expect(sanitized, contains('[REDACTED_ALIPAY_SDK_FIELD]'));
+    expect(
+      RegExp(
+        '^\\[REDACTED_ALIPAY_PAYMENT_PAYLOAD\\]\$',
+        multiLine: true,
+      ).allMatches(sanitized).length,
+      6,
+    );
+    expect(sanitized.toLowerCase(), isNot(contains('orderstr=')));
+    expect(sanitized.toLowerCase(), isNot(contains('orderinfo:')));
+    expect(sanitized.toLowerCase(), isNot(contains('orderstring=')));
     expect(
       sanitized,
       contains('M5_ROUTE_STATUS::alipay::POST::/m5/alipay::200::success'),
@@ -792,6 +841,14 @@ printf '%s\n' \
   'M5_PROVIDER_CALLS::1::0' >"$root/logs/unsanitized.log"
 if secret_scan "$root"; then
   printf '%s\n' 'secret_scan unexpectedly accepted unsanitized SDK fields' >&2
+  exit 1
+fi
+rm -f -- "$root/logs/unsanitized.log"
+printf '%s\n' \
+  '{"orderString":"app_id=fixture&method=alipay.trade.app.pay&sign=synthetic"}' \
+  'M5_PROVIDER_CALLS::1::0' >"$root/logs/unsanitized-payment.log"
+if secret_scan "$root"; then
+  printf '%s\n' 'secret_scan unexpectedly accepted Alipay payment payload' >&2
   exit 1
 fi
 ''';
