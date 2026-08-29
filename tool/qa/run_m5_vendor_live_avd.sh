@@ -641,8 +641,9 @@ start_relay() {
     QA_M5_ACTION_MARKER_FILE="$ACTION_GATE_MARKER_FILE" \
     QA_M5_ACTION_READY_FILE="$RELAY_READY_FILE" \
     QA_M5_READY_TOKEN="$RELAY_READY_TOKEN" \
+    PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH="$PROJECT_ROOT/tool/qa${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 -u - >/dev/null 2>&1 <<'PY' &
+    python3 -B -u - >/dev/null 2>&1 <<'PY' &
 import hmac
 import http.server
 import json

@@ -57,7 +57,9 @@ def _relay_source() -> str:
 def _full_relay_source() -> str:
     source = FULL_RUNNER.read_text(encoding="utf-8")
     match = re.search(
-        r"python3 -u - >/dev/null 2>&1 <<'PY' &\n"
+        r"PYTHONDONTWRITEBYTECODE=1 \\\n"
+        r"\s+PYTHONPATH=\"\$PROJECT_ROOT/tool/qa\$\{PYTHONPATH:\+:\$PYTHONPATH\}\" \\\n"
+        r"\s+python3 -B -u - >/dev/null 2>&1 <<'PY' &\n"
         r"(?P<python>.*?)\nPY\n",
         source,
         flags=re.DOTALL,
@@ -171,6 +173,15 @@ def _wait_for_relay(process: subprocess.Popen[bytes], ready: Path) -> int:
 
 
 class FocusedRelayTest(unittest.TestCase):
+    def test_full_relay_launcher_disables_python_bytecode_writes(self) -> None:
+        source = FULL_RUNNER.read_text(encoding="utf-8")
+        self.assertRegex(
+            source,
+            r"PYTHONDONTWRITEBYTECODE=1 \\\n"
+            r"\s+PYTHONPATH=\"\$PROJECT_ROOT/tool/qa\$\{PYTHONPATH:\+:\$PYTHONPATH\}\" \\\n"
+            r"\s+python3 -B -u - >/dev/null 2>&1 <<'PY' &",
+        )
+
     def test_full_sanitizer_drops_signed_payment_payload_lines(self) -> None:
         raw_lines = (
             "orderStr=app_id=public&sign=signed-payload\n"
