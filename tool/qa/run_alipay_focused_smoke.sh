@@ -60,8 +60,9 @@ Usage: run_alipay_focused_smoke.sh [options]
 This is an explicitly authorized, cancellation-only Alipay sandbox smoke. It
 requires a persisted authenticated app session and never performs a payment.
 Before any Flutter target starts, the selected serial must show the audited
-Alipay sandbox home UI (exact package plus Scan, Pay, and Home labels) without
-any known busy/reload text; an unknown or unhealthy page is rejected.
+Alipay sandbox home UI (exact package plus Scan, Pay, and Home labels). This
+cancel-only lane permits only the audited lower-feed degradation; an action
+area error, unknown error, malformed page, or unhealthy cashier is rejected.
 
 Options:
   --serial ID                 target Android serial (default: emulator-5554)
@@ -370,6 +371,7 @@ wallet_ui_is_healthy() {
     ! -L "$WALLET_UI_DUMP_PATH" ]] || return 1
   python3 - "$WALLET_UI_DUMP_PATH" "$TARGET_PACKAGE" 2>/dev/null <<'PY'
 import xml.etree.ElementTree as ET
+import re
 import sys
 from pathlib import Path
 
@@ -381,18 +383,7 @@ try:
 except (ET.ParseError, OSError, ValueError):
     raise SystemExit(1)
 
-normalized = text.casefold()
 if root.tag != 'hierarchy':
-    raise SystemExit(1)
-if any(
-    phrase in normalized
-    for phrase in (
-        'please wait a minute',
-        'reload',
-        'server busy',
-        'try again later',
-    )
-):
     raise SystemExit(1)
 
 target_nodes = [
@@ -408,6 +399,66 @@ labels = {
 }
 if not {'scan', 'pay', 'home'}.issubset(labels):
     raise SystemExit(1)
+
+# The audited API-29 sandbox wallet can leave its lower home-feed card in a
+# degraded state while the native cashier remains usable.  This exception is
+# deliberately local to the cancellation runner: it cannot be enabled by an
+# environment variable or command-line flag, and it does not relax any PayTask
+# result check.  Unknown errors, errors outside the fixed lower-feed region,
+# hidden/disabled nodes, or errors attributed to another package fail closed.
+always_rejected = ('server busy', 'try again later')
+normalized = text.casefold()
+if any(phrase in normalized for phrase in always_rejected):
+    raise SystemExit(1)
+
+allowed_degraded_markers = ('please wait a minute', 'reload')
+allowed_degraded_labels = {
+    'please wait a minute. will be back soon.',
+    'reload',
+}
+degraded_nodes = []
+for node in root.iter('node'):
+    node_labels = {
+        node.attrib.get(attribute, '').strip().casefold()
+        for attribute in ('text', 'content-desc')
+        if node.attrib.get(attribute, '').strip()
+    }
+    if any(
+        marker in label
+        for marker in allowed_degraded_markers
+        for label in node_labels
+    ):
+        if not node_labels.issubset(allowed_degraded_labels):
+            raise SystemExit(1)
+        degraded_nodes.append(node)
+
+for phrase in allowed_degraded_markers:
+    if phrase in normalized and not any(
+        any(
+            phrase in node.attrib.get(attribute, '').strip().casefold()
+            for attribute in ('text', 'content-desc')
+        )
+        for node in degraded_nodes
+    ):
+        raise SystemExit(1)
+
+if len(degraded_nodes) > 4:
+    raise SystemExit(1)
+
+bounds_pattern = re.compile(r'^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$')
+for node in degraded_nodes:
+    if node.attrib.get('package') != target_package:
+        raise SystemExit(1)
+    if node.attrib.get('enabled') != 'true':
+        raise SystemExit(1)
+    if node.attrib.get('visible-to-user') == 'false':
+        raise SystemExit(1)
+    match = bounds_pattern.fullmatch(node.attrib.get('bounds', ''))
+    if match is None:
+        raise SystemExit(1)
+    x1, y1, x2, y2 = (int(value) for value in match.groups())
+    if not (0 <= x1 < x2 <= 1080 and 1200 <= y1 < y2 <= 1600):
+        raise SystemExit(1)
 PY
 }
 
@@ -776,7 +827,21 @@ self_test() {
     wallet_ui_is_healthy && exit 1
     printf '%s\n' '<hierarchy><node package="com.other.wallet" text="Scan" /><node package="com.other.wallet" text="Pay" /><node package="com.other.wallet" text="Home" /></hierarchy>' >"$WALLET_UI_DUMP_PATH"
     wallet_ui_is_healthy && exit 1
-    for unhealthy_text in 'Please wait a minute' 'Reload' 'Server busy' 'try again later'; do
+    for degraded_text in 'Please wait a minute. Will be back soon.' 'Reload'; do
+      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" bounds="[64,1279][1016,1454]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
+      wallet_ui_is_healthy || exit 1
+      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" bounds="[64,300][1016,360]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
+      wallet_ui_is_healthy && exit 1
+      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
+      wallet_ui_is_healthy && exit 1
+      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.other.wallet" text="%s" enabled="true" bounds="[64,1279][1016,1454]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
+      wallet_ui_is_healthy && exit 1
+    done
+    printf '%s\n' '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="Reload" enabled="false" bounds="[64,1279][1016,1454]" /></hierarchy>' >"$WALLET_UI_DUMP_PATH"
+    wallet_ui_is_healthy && exit 1
+    printf '%s\n' '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="Reload" enabled="true" visible-to-user="false" bounds="[64,1279][1016,1454]" /></hierarchy>' >"$WALLET_UI_DUMP_PATH"
+    wallet_ui_is_healthy && exit 1
+    for unhealthy_text in 'Server busy' 'try again later'; do
       printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" /></hierarchy>\n' "$unhealthy_text" >"$WALLET_UI_DUMP_PATH"
       wallet_ui_is_healthy && exit 1
     done

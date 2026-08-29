@@ -10,10 +10,14 @@ void main() {
   final File cancelOperator = File(
     'tool/qa/m5_alipay_cancel_operator.sh',
   ).absolute;
+  final File successRunner = File(
+    'tool/qa/run_alipay_focused_success.sh',
+  ).absolute;
 
   test('focused Alipay runner and integration target are present', () {
     expect(runner.existsSync(), isTrue);
     expect(integration.existsSync(), isTrue);
+    expect(successRunner.existsSync(), isTrue);
     expect(runner.statSync().mode & 73, isNonZero);
   });
 
@@ -148,6 +152,29 @@ void main() {
     expect(flutterTarget, greaterThan(-1));
     expect(preflight, lessThan(hostPreparation));
     expect(preflight, lessThan(flutterTarget));
+  });
+
+  test('only cancel smoke permits the audited lower-feed degradation', () {
+    final String cancelSource = runner.readAsStringSync();
+    final String successSource = successRunner.readAsStringSync();
+    expect(cancelSource, contains('allowed_degraded_labels'));
+    expect(cancelSource, contains('allowed_degraded_markers'));
+    expect(cancelSource, contains('please wait a minute. will be back soon.'));
+    expect(cancelSource, contains('1200 <= y1 < y2 <= 1600'));
+    expect(cancelSource, contains("node.attrib.get('enabled') != 'true'"));
+    expect(
+      cancelSource,
+      contains("node.attrib.get('visible-to-user') == 'false'"),
+    );
+    expect(successSource, isNot(contains('allowed_degraded_labels')));
+    for (final String phrase in <String>[
+      'please wait a minute',
+      'reload',
+      'server busy',
+      'try again later',
+    ]) {
+      expect(successSource, contains(phrase));
+    }
   });
 
   test(
