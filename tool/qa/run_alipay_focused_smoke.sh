@@ -481,13 +481,16 @@ for node in degraded_nodes:
         raise SystemExit(1)
     if node.attrib.get('enabled') != 'true':
         raise SystemExit(1)
-    if node.attrib.get('visible-to-user') != 'true':
+    # API-29 uiautomator may omit visible-to-user for nodes that are still
+    # present in the active window.  An explicitly false value remains fatal.
+    visible_value = node.attrib.get('visible-to-user', '')
+    if visible_value not in ('', 'true'):
         raise SystemExit(1)
     match = bounds_pattern.fullmatch(node.attrib.get('bounds', ''))
     if match is None:
         raise SystemExit(1)
     x1, y1, x2, y2 = (int(value) for value in match.groups())
-    if not (0 <= x1 < x2 <= 1080 and 1200 <= y1 < y2 <= 1600):
+    if not (0 <= x1 < x2 <= 1080 and 1200 <= y1 < y2 <= 1920):
         raise SystemExit(1)
 PY
 }
@@ -1324,7 +1327,13 @@ FAKE_ADB
     for degraded_text in 'Please wait a minute. Will be back soon.' 'Reload'; do
       printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" visible-to-user="true" bounds="[64,1279][1016,1454]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
       wallet_ui_is_healthy || exit 1
+      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" bounds="[72,1452][1008,1566]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
+      wallet_ui_is_healthy || exit 1
+      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" bounds="[426,1626][654,1632]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
+      wallet_ui_is_healthy || exit 1
       printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" visible-to-user="true" bounds="[64,300][1016,360]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
+      wallet_ui_is_healthy && exit 1
+      printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" bounds="[64,1900][1016,1921]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
       wallet_ui_is_healthy && exit 1
       printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="%s" enabled="true" visible-to-user="true" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
       wallet_ui_is_healthy && exit 1

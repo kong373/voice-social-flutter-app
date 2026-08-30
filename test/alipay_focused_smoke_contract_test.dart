@@ -274,7 +274,7 @@ void main() {
       'Reload',
       'Server busy',
       'try again later',
-      "node.attrib.get('visible-to-user') != 'true'",
+      "visible_value not in ('', 'true')",
     ]) {
       expect(source, contains(phrase));
     }
@@ -294,11 +294,12 @@ void main() {
     expect(cancelSource, contains('allowed_degraded_labels'));
     expect(cancelSource, contains('allowed_degraded_markers'));
     expect(cancelSource, contains('please wait a minute. will be back soon.'));
-    expect(cancelSource, contains('1200 <= y1 < y2 <= 1600'));
+    expect(cancelSource, contains('1200 <= y1 < y2 <= 1920'));
     expect(cancelSource, contains("node.attrib.get('enabled') != 'true'"));
+    expect(cancelSource, contains("visible_value not in ('', 'true')"));
     expect(
       cancelSource,
-      contains("node.attrib.get('visible-to-user') != 'true'"),
+      contains('API-29 uiautomator may omit visible-to-user'),
     );
     expect(successSource, isNot(contains('allowed_degraded_labels')));
     for (final String phrase in <String>[
