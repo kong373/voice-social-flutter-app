@@ -331,6 +331,8 @@ void main() {
       );
       expect(result.stdout, contains('SELF_TEST::PASS'));
       expect(result.stdout, contains('WALLET_VISIBILITY_PASS'));
+      expect(result.stdout, contains('WALLET_BASE_DEGRADED_LABEL_PASS'));
+      expect(result.stdout, contains('SUMMARY_WALLET_HEALTH_PASS'));
       expect(result.stdout, contains('POST_LAUNCH_WATCHDOG_PASS'));
     },
   );

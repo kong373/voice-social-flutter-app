@@ -69,6 +69,7 @@ LOG_BASELINE_BYTES=0
 LAUNCH_MARKER_BASELINE_BYTES=0
 BACK_COUNT=0
 RUN_RESULT='NOT_RUN'
+WALLET_HEALTH_STATUS='NOT_PROVEN'
 FLUTTER_STATUS='NOT_RUN'
 OPERATOR_STATUS='NOT_RUN'
 FAIL_REASON='not_started'
@@ -443,6 +444,7 @@ if any(phrase in normalized for phrase in always_rejected):
 
 allowed_degraded_markers = ('please wait a minute', 'reload')
 allowed_degraded_labels = {
+    'please wait a minute',
     'please wait a minute. will be back soon.',
     'reload',
 }
@@ -524,6 +526,7 @@ wallet_health_preflight() {
     >"$WALLET_UI_DUMP_PATH" 2>/dev/null ||
     fail_device 'Alipay sandbox wallet UI dump cannot be read'
   wallet_ui_is_healthy || fail_device 'Alipay sandbox wallet health is not proven'
+  WALLET_HEALTH_STATUS='PASS'
   clear_wallet_ui_dump
   audit 'WALLET_HEALTH_PASS'
 }
@@ -1149,11 +1152,13 @@ write_summary() {
     printf 'flutter_status=%s\noperator_status=%s\nreason=%s\n' \
       "$FLUTTER_STATUS" "$OPERATOR_STATUS" "$FAIL_REASON"
     if [[ "$RUN_RESULT" == 'PASS' ]]; then
-      printf 'wallet_health=PASS\ncatalog=PASS\norder=PASS\nnative_launcher=PASS\n'
+      printf 'wallet_health=%s\ncatalog=PASS\norder=PASS\nnative_launcher=PASS\n' \
+        "$WALLET_HEALTH_STATUS"
       printf 'native_result=sdkCompleted=0,resultStatus=6001,bridge=pay_task_returned\n'
       printf 'query_reconcile=PASS\n'
     else
-      printf 'wallet_health=NOT_PROVEN\ncatalog=%s\norder=%s\nnative_launcher=%s\n' \
+      printf 'wallet_health=%s\ncatalog=%s\norder=%s\nnative_launcher=%s\n' \
+        "$WALLET_HEALTH_STATUS" \
         "$(summary_pass_status 'M5_ALIPAY_FOCUSED::catalog::PASS')" \
         "$(summary_pass_status 'M5_ALIPAY_FOCUSED::order::PASS')" \
         "$(summary_native_launcher_status)"
@@ -1340,6 +1345,9 @@ FAKE_ADB
       printf '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.other.wallet" text="%s" enabled="true" visible-to-user="true" bounds="[64,1279][1016,1454]" /></hierarchy>\n' "$degraded_text" >"$WALLET_UI_DUMP_PATH"
       wallet_ui_is_healthy && exit 1
     done
+    printf '%s\n' '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="Please wait a minute" enabled="true" visible-to-user="true" bounds="[64,1279][1016,1454]" /></hierarchy>' >"$WALLET_UI_DUMP_PATH"
+    wallet_ui_is_healthy || exit 1
+    audit 'WALLET_BASE_DEGRADED_LABEL_PASS'
     printf '%s\n' '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="Reload" enabled="false" bounds="[64,1279][1016,1454]" /></hierarchy>' >"$WALLET_UI_DUMP_PATH"
     wallet_ui_is_healthy && exit 1
     printf '%s\n' '<hierarchy><node package="com.eg.android.AlipayGphoneRC" text="Scan" /><node package="com.eg.android.AlipayGphoneRC" text="Pay" /><node package="com.eg.android.AlipayGphoneRC" text="Home" /><node package="com.eg.android.AlipayGphoneRC" text="Reload" enabled="true" visible-to-user="false" bounds="[64,1279][1016,1454]" /></hierarchy>' >"$WALLET_UI_DUMP_PATH"
@@ -1349,6 +1357,7 @@ FAKE_ADB
       wallet_ui_is_healthy && exit 1
     done
     audit 'WALLET_VISIBILITY_PASS'
+    WALLET_HEALTH_STATUS='PASS'
 
     local watchdog_flutter_pid watchdog_tool_pid watchdog_operator_pid
     local watchdog_flutter_path watchdog_operator_path watchdog_deadline
@@ -1438,6 +1447,7 @@ FAKE_ADB
     write_summary
     [[ -f "$summary_file" ]] || exit 1
     grep -Fqx 'conclusion=FAIL' "$summary_file" || exit 1
+    grep -Fqx 'wallet_health=PASS' "$summary_file" || exit 1
     grep -Fqx 'reason=focused_flow_reported_failure' "$summary_file" || exit 1
     grep -Fqx 'catalog=PASS' "$summary_file" || exit 1
     grep -Fqx 'order=PASS' "$summary_file" || exit 1
@@ -1446,6 +1456,7 @@ FAKE_ADB
     grep -Fqx 'query_reconcile=NOT_PROVEN' "$summary_file" || exit 1
     grep -Fqi 'orderStr' "$summary_file" && exit 1 || true
     grep -Fqi 'secret' "$summary_file" && exit 1 || true
+    audit 'SUMMARY_WALLET_HEALTH_PASS'
     printf '%s\n' \
       'SUMMARY_PARTIAL_EVIDENCE::conclusion=FAIL::catalog=PASS::order=PASS::native_launcher=STARTED::native_result=ACCEPTED::query_reconcile=NOT_PROVEN'
 

@@ -17,6 +17,7 @@ readonly EXPECTED_NATIVE_MARKER='M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::result
 readonly EXPECTED_BRIDGE_MARKER='M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned'
 readonly DEVICE_UI_DUMP_PATH='/data/local/tmp/voice-social-alipay-cancel-ui.xml'
 readonly UI_XML_MAX_BYTES=262144
+readonly MAX_FRESH_UI_DUMP_ATTEMPTS=2
 readonly DEFAULT_TARGET_TIMEOUT_SECONDS=60
 readonly DEFAULT_AFTER_BACK_TIMEOUT_SECONDS=8
 readonly DEFAULT_MARKER_TIMEOUT_SECONDS=30
@@ -303,44 +304,58 @@ cleanup_on_exit() {
 }
 
 capture_fresh_ui_xml() {
-  cleanup_ui_dump
-  UI_DUMP_LOCAL_PATH="$(mktemp /tmp/voice-social-alipay-cancel-ui.XXXXXX)" ||
-    fail_device 'temporary UI XML could not be created'
-  chmod 600 "$UI_DUMP_LOCAL_PATH" ||
-    fail_device 'temporary UI XML permissions could not be secured'
-  UI_DUMP_ACTIVE=true
+  local attempt=1
+  while (( attempt <= MAX_FRESH_UI_DUMP_ATTEMPTS )); do
+    cleanup_ui_dump
+    UI_DUMP_LOCAL_PATH="$(mktemp /tmp/voice-social-alipay-cancel-ui.XXXXXX)" ||
+      fail_device 'temporary UI XML could not be created'
+    chmod 600 "$UI_DUMP_LOCAL_PATH" ||
+      fail_device 'temporary UI XML permissions could not be secured'
+    UI_DUMP_ACTIVE=true
 
-  "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell rm -f \
-    "$DEVICE_UI_DUMP_PATH" >/dev/null 2>&1 ||
-    fail_device 'stale UI XML could not be removed'
-  "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell uiautomator dump \
-    "$DEVICE_UI_DUMP_PATH" >/dev/null 2>&1 ||
-    fail_device 'fresh UI XML dump is unavailable'
-  "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell chmod 600 \
-    "$DEVICE_UI_DUMP_PATH" >/dev/null 2>&1 ||
-    fail_device 'fresh UI XML permissions could not be secured'
+    "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell rm -f \
+      "$DEVICE_UI_DUMP_PATH" >/dev/null 2>&1 ||
+      fail_device 'stale UI XML could not be removed'
+    "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell uiautomator dump \
+      "$DEVICE_UI_DUMP_PATH" >/dev/null 2>&1 ||
+      fail_device 'fresh UI XML dump is unavailable'
+    if ! "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell chmod 600 \
+      "$DEVICE_UI_DUMP_PATH" >/dev/null 2>&1; then
+      # API-29 can transiently reject the remote chmod after a fresh dump. Do
+      # not read that file: discard it and perform at most one new dump, with
+      # the same stale-file removal and secure-mode check on the retry.
+      cleanup_ui_dump
+      if (( attempt < MAX_FRESH_UI_DUMP_ATTEMPTS )); then
+        attempt=$((attempt + 1))
+        continue
+      fi
+      fail_device 'fresh UI XML permissions could not be secured'
+    fi
 
-  local pipeline_status=0
-  "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell cat \
-    "$DEVICE_UI_DUMP_PATH" |
-    head -c "$((UI_XML_MAX_BYTES + 1))" >"$UI_DUMP_LOCAL_PATH" ||
-    pipeline_status=$?
-  local byte_count=''
-  if ! byte_count="$(wc -c <"$UI_DUMP_LOCAL_PATH" 2>/dev/null |
-    tr -d '[:space:]')"; then
-    fail_device 'fresh UI XML size is unavailable'
-  fi
-  [[ "$byte_count" =~ ^[0-9]+$ ]] ||
-    fail_device 'fresh UI XML size is invalid'
-  (( byte_count > 0 )) || fail_device 'fresh UI XML is empty'
-  (( byte_count <= UI_XML_MAX_BYTES )) ||
-    fail_device 'fresh UI XML exceeds the size limit'
-  (( pipeline_status == 0 )) ||
-    fail_device 'fresh UI XML could not be read'
-  [[ -f "$UI_DUMP_LOCAL_PATH" && ! -L "$UI_DUMP_LOCAL_PATH" ]] ||
-    fail_device 'fresh UI XML is not a regular file'
-  chmod 600 "$UI_DUMP_LOCAL_PATH" ||
-    fail_device 'temporary UI XML permissions could not be restored'
+    local pipeline_status=0
+    "$ADB_BIN" -s "$ANDROID_SERIAL_VALUE" shell cat \
+      "$DEVICE_UI_DUMP_PATH" |
+      head -c "$((UI_XML_MAX_BYTES + 1))" >"$UI_DUMP_LOCAL_PATH" ||
+      pipeline_status=$?
+    local byte_count=''
+    if ! byte_count="$(wc -c <"$UI_DUMP_LOCAL_PATH" 2>/dev/null |
+      tr -d '[:space:]')"; then
+      fail_device 'fresh UI XML size is unavailable'
+    fi
+    [[ "$byte_count" =~ ^[0-9]+$ ]] ||
+      fail_device 'fresh UI XML size is invalid'
+    (( byte_count > 0 )) || fail_device 'fresh UI XML is empty'
+    (( byte_count <= UI_XML_MAX_BYTES )) ||
+      fail_device 'fresh UI XML exceeds the size limit'
+    (( pipeline_status == 0 )) ||
+      fail_device 'fresh UI XML could not be read'
+    [[ -f "$UI_DUMP_LOCAL_PATH" && ! -L "$UI_DUMP_LOCAL_PATH" ]] ||
+      fail_device 'fresh UI XML is not a regular file'
+    chmod 600 "$UI_DUMP_LOCAL_PATH" ||
+      fail_device 'temporary UI XML permissions could not be restored'
+    return 0
+  done
+  fail_device 'fresh UI XML permissions could not be secured'
 }
 
 ui_xml_state() {

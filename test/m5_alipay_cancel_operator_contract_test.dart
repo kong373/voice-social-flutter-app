@@ -43,12 +43,15 @@ void main() {
     Map<int, List<String>> markersByDumpsys = const <int, List<String>>{},
     Map<int, String> uiByDump = const <int, String>{},
     Set<int> failedUiDumps = const <int>{},
+    Set<int> failedRemoteChmods = const <int>{},
     Map<int, String> activityByDumpsys = const <int, String>{},
     String? defaultUi,
   }) {
     File('${sandbox.path}/dumpsys-count.txt').writeAsStringSync('0');
     File('${sandbox.path}/keyevent-count.txt').writeAsStringSync('0');
     File('${sandbox.path}/ui-dump-count.txt').writeAsStringSync('0');
+    File('${sandbox.path}/remote-cat-count.txt').writeAsStringSync('0');
+    File('${sandbox.path}/remote-chmod-count.txt').writeAsStringSync('0');
     File('${sandbox.path}/remote-ui.xml').writeAsStringSync('');
     String shellQuote(String value) => "'${value.replaceAll("'", "'\"'\"'")}'";
     String markerCases(Map<int, List<String>> markers) => markers.isEmpty
@@ -79,6 +82,9 @@ void main() {
     final String failedUiDumpCases = failedUiDumps
         .map((int count) => '        $count)\n          exit 93;;')
         .join('\n');
+    final String failedRemoteChmodCases = failedRemoteChmods
+        .map((int count) => '        $count)\n          exit 94;;')
+        .join('\n');
     final String activityCases = activityByDumpsys.entries
         .map((MapEntry<int, String> entry) {
           return '        ${entry.key})\n'
@@ -94,8 +100,10 @@ set -Eeuo pipefail
 : "\${FAKE_DUMPSYS_COUNT:?}"
 : "\${FAKE_KEYEVENT_COUNT:?}"
 : "\${FAKE_UI_DUMP_COUNT:?}"
+: "\${FAKE_REMOTE_CAT_COUNT:?}"
 : "\${FAKE_LOG_PATH:?}"
 : "\${FAKE_REMOTE_UI_XML:?}"
+: "\${FAKE_REMOTE_CHMOD_COUNT:?}"
 printf '%s\\n' "\$*" >>"\$FAKE_ADB_CALLS"
 if [[ "\${1:-}" == '-s' ]]; then
   [[ "\${2:-}" == 'emulator-5554' ]]
@@ -143,9 +151,20 @@ $uiDumpCases
       esac
       printf 'UI hierchary dumped to: %s\\n' "\${3}"
     elif [[ "\${1:-}" == 'cat' && "\${2:-}" == *'voice-social-alipay-cancel-ui.xml' ]]; then
+      count="\$(<"\$FAKE_REMOTE_CAT_COUNT")"
+      count=\$((count + 1))
+      printf '%s' "\$count" >"\$FAKE_REMOTE_CAT_COUNT"
       cat "\$FAKE_REMOTE_UI_XML"
     elif [[ "\${1:-}" == 'chmod' && "\${2:-}" == '600' && "\${3:-}" == *'voice-social-alipay-cancel-ui.xml' ]]; then
-      :
+      count="\$(<"\$FAKE_REMOTE_CHMOD_COUNT")"
+      count=\$((count + 1))
+      printf '%s' "\$count" >"\$FAKE_REMOTE_CHMOD_COUNT"
+      case "\$count" in
+$failedRemoteChmodCases
+        *)
+          :
+          ;;
+      esac
     elif [[ "\${1:-}" == 'rm' && "\${2:-}" == '-f' && "\${3:-}" == *'voice-social-alipay-cancel-ui.xml' ]]; then
       : >"\$FAKE_REMOTE_UI_XML"
     elif [[ "\${1:-}" == 'input' && "\${2:-}" == 'keyevent' && "\${3:-}" == 'KEYCODE_BACK' ]]; then
@@ -214,8 +233,10 @@ esac
         'FAKE_DUMPSYS_COUNT': dumpsysCount.path,
         'FAKE_KEYEVENT_COUNT': keyeventCount.path,
         'FAKE_UI_DUMP_COUNT': uiDumpCount.path,
+        'FAKE_REMOTE_CAT_COUNT': sandbox.path + '/remote-cat-count.txt',
         'FAKE_LOG_PATH': flutterLog.path,
         'FAKE_REMOTE_UI_XML': sandbox.path + '/remote-ui.xml',
+        'FAKE_REMOTE_CHMOD_COUNT': sandbox.path + '/remote-chmod-count.txt',
         if (avdBSerial != null) 'QA_AVD_B_SERIAL': avdBSerial,
       },
       includeParentEnvironment: false,
@@ -237,6 +258,7 @@ esac
     expect(source, contains('shell cat'));
     expect(source, contains('DEVICE_UI_DUMP_PATH'));
     expect(source, contains('UI_XML_MAX_BYTES'));
+    expect(source, contains('MAX_FRESH_UI_DUMP_ATTEMPTS=2'));
     expect(source, contains('chmod 600'));
     expect(source, contains('UI_READY'));
     expect(source, contains('UI_GATE_RESET'));
@@ -689,6 +711,91 @@ esac
     );
     expect(result.exitCode, 69);
     expect(File(sandbox.path + '/keyevent-count.txt').readAsStringSync(), '0');
+    expect(result.stdout, isNot(contains('KEYCODE_BACK_SENT')));
+  });
+
+  test(
+    'one transient remote chmod failure retries a fresh dump before BACK',
+    () {
+      final Directory sandbox = createSandbox(
+        'm5-alipay-cancel-ui-chmod-retry-',
+      );
+      final File log = File(sandbox.path + '/flutter-drive.log')
+        ..writeAsStringSync('');
+      final File fakeAdb = createFakeAdb(
+        sandbox,
+        stateMode: 'online',
+        targetCalls: 3,
+        failedRemoteChmods: <int>{1},
+        markersByBack: <int, List<String>>{
+          1: <String>[validNativeMarker, validBridgeMarker],
+        },
+      );
+      final ProcessResult result = runOperator(
+        sandbox,
+        fakeAdb: fakeAdb,
+        flutterLog: log,
+        afterBackTimeout: 1,
+      );
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+      );
+      expect(result.stdout, contains('KEYCODE_BACK_SENT::attempt=1'));
+      expect(
+        int.parse(File(sandbox.path + '/ui-dump-count.txt').readAsStringSync()),
+        4,
+      );
+      expect(
+        int.parse(
+          File(sandbox.path + '/remote-chmod-count.txt').readAsStringSync(),
+        ),
+        4,
+      );
+      expect(
+        int.parse(
+          File(sandbox.path + '/remote-cat-count.txt').readAsStringSync(),
+        ),
+        3,
+      );
+    },
+  );
+
+  test('repeated remote chmod failure fails closed after one fresh retry', () {
+    final Directory sandbox = createSandbox('m5-alipay-cancel-ui-chmod-fail-');
+    final File log = File(sandbox.path + '/flutter-drive.log')
+      ..writeAsStringSync('');
+    final File fakeAdb = createFakeAdb(
+      sandbox,
+      stateMode: 'online',
+      targetCalls: 10000,
+      failedRemoteChmods: <int>{1, 2},
+    );
+    final ProcessResult result = runOperator(
+      sandbox,
+      fakeAdb: fakeAdb,
+      flutterLog: log,
+      targetTimeout: 0,
+    );
+    expect(result.exitCode, 69);
+    expect(File(sandbox.path + '/keyevent-count.txt').readAsStringSync(), '0');
+    expect(
+      int.parse(File(sandbox.path + '/ui-dump-count.txt').readAsStringSync()),
+      2,
+    );
+    expect(
+      int.parse(
+        File(sandbox.path + '/remote-chmod-count.txt').readAsStringSync(),
+      ),
+      2,
+    );
+    expect(
+      int.parse(
+        File(sandbox.path + '/remote-cat-count.txt').readAsStringSync(),
+      ),
+      0,
+    );
     expect(result.stdout, isNot(contains('KEYCODE_BACK_SENT')));
   });
 
