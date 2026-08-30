@@ -244,6 +244,9 @@ esac
     expect(source, contains('allowed_degraded_labels'));
     expect(source, contains('allowed_degraded_markers'));
     expect(source, contains('bounds_pattern'));
+    expect(source, contains("visible_value not in ('', 'true')"));
+    expect(source, contains('1200 <= y1 < y2 <= 1920'));
+    expect(source, contains('API-29 uiautomator may omit visible-to-user'));
     expect(source, contains('payment_confirmation_markers'));
     expect(source, contains('clickable'));
     expect(source, contains('focusable'));
@@ -575,11 +578,10 @@ esac
       final String degradedUi = readyUi(
         extra:
             '<node package="$targetPackage" text="Please wait a minute. Will be back soon." '
-            'enabled="true" visible-to-user="true" clickable="false" '
-            'bounds="[64,1279][1016,1454]" />'
+            'enabled="true" clickable="false" '
+            'bounds="[72,1452][1008,1566]" />'
             '<node package="$targetPackage" text="Reload" enabled="true" '
-            'visible-to-user="true" clickable="false" '
-            'bounds="[64,1455][1016,1599]" />',
+            'clickable="false" bounds="[426,1626][654,1632]" />',
       );
       final File fakeAdb = createFakeAdb(
         sandbox,
@@ -615,6 +617,17 @@ esac
               '<node package="$targetPackage" text="Reload" enabled="true" '
               'visible-to-user="true" clickable="false" '
               'bounds="[64,300][1016,360]" />',
+        ),
+        'explicitly-hidden': readyUi(
+          extra:
+              '<node package="$targetPackage" text="Reload" enabled="true" '
+              'visible-to-user="false" clickable="false" '
+              'bounds="[426,1626][654,1632]" />',
+        ),
+        'outside-screen': readyUi(
+          extra:
+              '<node package="$targetPackage" text="Reload" enabled="true" '
+              'clickable="false" bounds="[64,1900][1016,1921]" />',
         ),
         'payment-confirmation': readyUi(
           extra:

@@ -494,10 +494,12 @@ def node_labels(node):
     }
 
 def is_visible_enabled(node: ET.Element) -> bool:
-    return (
-        node.attrib.get("enabled") == "true"
-        and node.attrib.get("visible-to-user") == "true"
-    )
+    # API-29 uiautomator may omit visible-to-user for a node that is present
+    # in the active window. An explicit false or unknown value still fails.
+    visible_value = node.attrib.get('visible-to-user', '')
+    if visible_value not in ('', 'true'):
+        return False
+    return node.attrib.get("enabled") == "true"
 
 def is_noninteractive(node: ET.Element) -> bool:
     return all(
@@ -517,7 +519,7 @@ def is_allowed_degraded_feed(node: ET.Element) -> bool:
     if match is None:
         return False
     x1, y1, x2, y2 = (int(value) for value in match.groups())
-    return 0 <= x1 < x2 <= 1080 and 1200 <= y1 < y2 <= 1600
+    return 0 <= x1 < x2 <= 1080 and 1200 <= y1 < y2 <= 1920
 
 normalized = text.casefold()
 degraded_nodes = []
