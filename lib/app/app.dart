@@ -21,26 +21,42 @@ bool shouldUseVideoRuntimeDemo({
 
 bool get videoRuntimeDemoEnabled => shouldUseVideoRuntimeDemo(isLive: false);
 
-class VoiceSocialApp extends StatelessWidget {
+class VoiceSocialApp extends StatefulWidget {
   const VoiceSocialApp({required this.dependencies, super.key});
 
   final AppDependencies dependencies;
 
   @override
+  State<VoiceSocialApp> createState() => _VoiceSocialAppState();
+}
+
+class _VoiceSocialAppState extends State<VoiceSocialApp> {
+  @override
   Widget build(BuildContext context) {
     return AppDependencyScope(
-      dependencies: dependencies,
+      dependencies: widget.dependencies,
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'Voice Social App',
         theme: AppTheme.dark(),
-        home: shouldUseQaConsole(isLive: dependencies.environment.isLive)
+        home: shouldUseQaConsole(isLive: widget.dependencies.environment.isLive)
             ? const QaConsoleHost()
-            : shouldUseVideoRuntimeDemo(isLive: dependencies.environment.isLive)
-            ? MainShell(dependencies: dependencies, onSignOut: () async {})
-            : AppGate(dependencies: dependencies),
+            : shouldUseVideoRuntimeDemo(
+                isLive: widget.dependencies.environment.isLive,
+              )
+            ? MainShell(
+                dependencies: widget.dependencies,
+                onSignOut: () async {},
+              )
+            : AppGate(dependencies: widget.dependencies),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    widget.dependencies.dispose();
+    super.dispose();
   }
 }
 

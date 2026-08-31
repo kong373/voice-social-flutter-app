@@ -1,24 +1,37 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/decoration_purchase_request_id.dart';
+import 'package:voice_social_app/features/commerce/catalog/domain/alipay_request_id.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_repository.dart';
+import 'package:voice_social_app/features/commerce/infrastructure/alipay_app_pay_adapter.dart';
 
 class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   BackendCommerceCatalogRepository({
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
     String Function()? decorationPurchaseRequestIdGenerator,
+    String Function()? alipayCreateRequestIdGenerator,
+    AlipayAppPayAdapter? alipayAppPayAdapter,
   }) : _apiClient = apiClient,
        _routes = routes,
        _decorationPurchaseRequestIdGenerator =
            decorationPurchaseRequestIdGenerator ??
-           newDecorationPurchaseRequestId;
+           newDecorationPurchaseRequestId,
+       _alipayCreateRequestIdGenerator =
+           alipayCreateRequestIdGenerator ?? newAlipayCreateRequestId,
+       _alipayAppPayAdapter =
+           alipayAppPayAdapter ?? const DisabledAlipayAppPayAdapter();
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
   final String Function() _decorationPurchaseRequestIdGenerator;
+  final String Function() _alipayCreateRequestIdGenerator;
+  final AlipayAppPayAdapter _alipayAppPayAdapter;
   final Map<String, Future<DecorationItem>> _pendingDecorationPurchases =
       <String, Future<DecorationItem>>{};
   final Map<String, Future<DecorationItem>> _pendingDecorationEquips =
@@ -27,26 +40,38 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       <String, Future<void>>{};
   final Map<String, String> _decorationPurchaseRequestIds = <String, String>{};
   final Map<String, String> _decorationEquipRequestIds = <String, String>{};
+  final Map<String, Future<RechargeOrder>> _pendingAlipayOrderCreations =
+      <String, Future<RechargeOrder>>{};
+  final Map<String, String> _alipayCreateRequestIds = <String, String>{};
+  // The native bridge is only one half of the payment boundary.  Keep the
+  // server's catalog readiness separately so a local SDK cannot enable order
+  // creation while the authenticated backend port is fail-closed.
+  bool _serverOrderCreationReady = false;
 
   @override
   bool get supportsRechargeCatalog => true;
 
   @override
-  bool get supportsPaymentChannelInvocation => false;
+  bool get supportsPaymentChannelInvocation =>
+      _serverOrderCreationReady && _alipayAppPayAdapter.isAvailable;
 
   @override
   List<PaymentChannelType> availableChannels(ClientStorePlatform platform) =>
-      platform == ClientStorePlatform.ios
+      !supportsPaymentChannelInvocation
+      ? const <PaymentChannelType>[]
+      : platform == ClientStorePlatform.ios
       ? const <PaymentChannelType>[PaymentChannelType.appleIap]
-      : const <PaymentChannelType>[
-          PaymentChannelType.wechat,
-          PaymentChannelType.alipay,
-        ];
+      : _alipayAppPayAdapter.isAvailable
+      ? const <PaymentChannelType>[PaymentChannelType.alipay]
+      : const <PaymentChannelType>[];
 
   @override
   Future<List<RechargeProduct>> fetchRechargeProducts({
     required ClientStorePlatform platform,
   }) async {
+    // A refresh that is in flight must not leave an earlier READY result
+    // usable if the server later reports a blocked or malformed contract.
+    _serverOrderCreationReady = false;
     final String expectedPlatform = platform == ClientStorePlatform.android
         ? 'ANDROID'
         : 'IOS';
@@ -60,14 +85,25 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     );
     final Map<String, Object?> envelope =
         response.data! as Map<String, Object?>;
+    final String orderCreationStatus = _string(
+      envelope['orderCreationStatus'],
+    ).toUpperCase();
+    final bool validOrderCreationStatus =
+        orderCreationStatus == 'READY' ||
+        orderCreationStatus == 'VENDOR_BLOCKED';
+    // The catalog endpoint is the server authority.  Local SDK availability
+    // is intentionally not folded into this protocol check; it is intersected
+    // by supportsPaymentChannelInvocation after the response is accepted.
     if (_string(envelope['platform']).toUpperCase() != expectedPlatform ||
-        _string(envelope['orderCreationStatus']).toUpperCase() !=
-            'VENDOR_BLOCKED') {
+        !validOrderCreationStatus ||
+        (expectedPlatform != 'ANDROID' && orderCreationStatus == 'READY')) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
-        message: '充值商品目录平台或支付失败关闭状态与请求不一致',
+        message: '充值商品目录平台或支付可用状态与请求不一致',
       );
     }
+    _serverOrderCreationReady =
+        expectedPlatform == 'ANDROID' && orderCreationStatus == 'READY';
     return items.map(_rechargeProductFromMap).toList(growable: false);
   }
 
@@ -81,10 +117,12 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         message: '青少年模式已开启，暂不能创建新的充值订单',
       );
     }
-    return const RechargeEligibility(
-      allowed: false,
-      message: '正式支付渠道尚未接入，当前只能查看充值商品，不能创建或支付订单',
-    );
+    return supportsPaymentChannelInvocation
+        ? const RechargeEligibility(allowed: true, message: '')
+        : const RechargeEligibility(
+            allowed: false,
+            message: '正式支付渠道尚未接入，当前只能查看充值商品，不能创建或支付订单',
+          );
   }
 
   @override
@@ -95,41 +133,214 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     required ClientStorePlatform platform,
     required bool youthModeEnabled,
   }) async {
-    if (!availableChannels(platform).contains(channel)) {
+    if (platform != ClientStorePlatform.android ||
+        channel != PaymentChannelType.alipay ||
+        !supportsPaymentChannelInvocation) {
       throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '当前平台不支持所选支付方式',
+        kind: ApiFailureKind.configuration,
+        message: '支付宝支付尚未配置或当前平台不可用',
       );
     }
-    if (!product.enabled || product.id.trim().isEmpty) {
+    if (!_isValidAlipayProduct(product)) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
         message: '充值商品无效，请刷新商品目录后重试',
       );
     }
-    final RechargeEligibility eligibility = await checkRechargeEligibility(
-      youthModeEnabled: youthModeEnabled,
+    if (account.isEmpty || account.trim() != account) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '充值账号无效，请重新登录后重试',
+      );
+    }
+    if (youthModeEnabled) {
+      throw const ApiException(
+        kind: ApiFailureKind.forbidden,
+        message: '青少年模式已开启，暂不能创建新的充值订单',
+      );
+    }
+    final String intentKey = _alipayCreateIntentKey(
+      account: account,
+      productId: product.id,
+      platform: platform,
     );
-    throw ApiException(
-      kind: youthModeEnabled
-          ? ApiFailureKind.forbidden
-          : ApiFailureKind.configuration,
-      message: eligibility.message,
+    final Future<RechargeOrder>? pending =
+        _pendingAlipayOrderCreations[intentKey];
+    if (pending != null) {
+      return pending;
+    }
+    final String requestId = _alipayCreateRequestIds.putIfAbsent(
+      intentKey,
+      _alipayCreateRequestIdGenerator,
     );
+    late final Future<RechargeOrder> operation;
+    operation = _createAlipayRechargeOrder(
+      intentKey: intentKey,
+      requestId: requestId,
+      account: account,
+      product: product,
+    );
+    late final Future<RechargeOrder> retainedOperation;
+    retainedOperation = operation.whenComplete(() {
+      if (identical(
+        _pendingAlipayOrderCreations[intentKey],
+        retainedOperation,
+      )) {
+        _pendingAlipayOrderCreations.remove(intentKey);
+      }
+    });
+    _pendingAlipayOrderCreations[intentKey] = retainedOperation;
+    return retainedOperation;
+  }
+
+  Future<RechargeOrder> _createAlipayRechargeOrder({
+    required String intentKey,
+    required String requestId,
+    required String account,
+    required RechargeProduct product,
+  }) async {
+    try {
+      final ApiResponse response = await _apiClient.post(
+        _routes.createAlipayRechargeOrder,
+        headers: <String, String>{'X-Request-Id': requestId},
+        body: <String, Object?>{
+          // The backend must bind account to the authenticated principal. It
+          // is included for the legacy contract, never used as an authority
+          // by the client.
+          'account': account,
+          'productId': product.id,
+          'channel': 'ALIPAY',
+          'platform': 'ANDROID',
+        },
+      );
+      final RechargeOrder order = _alipayRechargeOrderFromResponse(
+        response.data,
+        account: account,
+        product: product,
+      );
+      // A valid server response closes this logical creation intent. An
+      // ambiguous failure deliberately retains the key for a later retry.
+      if (_alipayCreateRequestIds[intentKey] == requestId) {
+        _alipayCreateRequestIds.remove(intentKey);
+      }
+      return order;
+    } catch (error) {
+      if (!_shouldRetainAlipayCreateRequestId(error) &&
+          _alipayCreateRequestIds[intentKey] == requestId) {
+        _alipayCreateRequestIds.remove(intentKey);
+      }
+      rethrow;
+    }
   }
 
   @override
   Future<RechargeOrder> invokePayment(RechargeOrder order) async {
-    throw const ApiException(
-      kind: ApiFailureKind.configuration,
-      message: '支付渠道 SDK 尚未接入，当前版本不能调起支付',
+    if (order.channel != PaymentChannelType.alipay ||
+        !supportsPaymentChannelInvocation) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '支付宝支付尚未配置或当前平台不可用',
+      );
+    }
+    final String? orderString = order.paymentOrderString;
+    if (orderString == null || orderString.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '服务端未返回有效的支付宝支付串',
+      );
+    }
+    final AlipayAppPayResult result = await _alipayAppPayAdapter.pay(
+      orderNo: order.orderNo,
+      orderString: orderString,
     );
+    // Every native outcome remains a provisional UI status.  Even 9000 is
+    // followed by queryRechargeOrder, which is the only authority allowed to
+    // report a successful recharge.
+    final String message = switch ((result.isSdkSuccess, result.outcome)) {
+      (true, _) => '支付宝已返回完成，正在等待服务端确认',
+      (false, AlipayAppPayOutcome.sdkCompleted) ||
+      (false, AlipayAppPayOutcome.processing) => '支付宝处理中，正在等待服务端确认',
+      (false, AlipayAppPayOutcome.userCanceled) => '已取消支付宝页面，订单状态仍需服务端核验',
+      (false, AlipayAppPayOutcome.networkError) => '支付宝网络状态不确定，订单状态仍需服务端核验',
+      (false, AlipayAppPayOutcome.failed) => '支付宝返回失败，订单状态仍需服务端核验',
+      (false, AlipayAppPayOutcome.unavailable) => '支付宝支付当前不可用，订单状态仍需服务端核验',
+    };
+    final RechargeOrder provisional = order
+        .copyWith(state: RechargeOrderState.confirming, message: message)
+        .withNativeBridgeResult(
+          sdkCompleted: result.sdkCompleted,
+          resultStatus: result.resultStatus,
+          outcome: result.outcome.name,
+          reason: result.reason.name,
+          bridgeOutcome: result.bridgeOutcome?.wireName,
+        );
+    if (_isTrustedNativeUserCancellation(result)) {
+      // A local PayTask cancellation is the only native outcome that may
+      // request the explicit first-party cancel mutation. The mutation
+      // response is deliberately ignored: the following DB-only GET remains
+      // the sole authority for the order state.
+      try {
+        await _cancelAlipayRechargeOrder(provisional);
+      } catch (_) {
+        // Even if the cancel write is unavailable, force the read below so a
+        // concurrent provider callback or a retried request can determine the
+        // authoritative state. Never infer cancellation locally.
+      }
+      try {
+        return await _queryRechargeOrderStatus(provisional);
+      } catch (_) {
+        return provisional;
+      }
+    }
+    // A native result is never authoritative.  Reconciliation is an explicit
+    // authenticated write path, while the following GET is a DB-only
+    // projection.  The recovery method also runs from the result page, so an
+    // app killed between PayTask and this call can still recover the order.
+    try {
+      return await queryRechargeOrder(provisional);
+    } catch (_) {
+      return provisional;
+    }
   }
 
   @override
   Future<RechargeOrder> queryRechargeOrder(RechargeOrder order) async {
+    if (order.channel == PaymentChannelType.alipay &&
+        !_isTerminalAlipayOrderState(order.state)) {
+      if (_hasTrustedNativeCancellationEvidence(order)) {
+        // A process/network interruption can happen after PayTask returns but
+        // before the initial cancel POST reaches the backend. Replaying the
+        // same stable idempotency key is safe when the backend already cached
+        // an UNKNOWN cancellation result, and gives the backend another
+        // chance to close/query before the normal reconcile flow.
+        try {
+          await _cancelAlipayRechargeOrder(order);
+        } catch (_) {
+          // Reconciliation remains best effort and the DB-only GET below is
+          // still mandatory. Never infer cancellation from this write.
+        }
+      }
+      // Best effort: the read below remains mandatory even if provider
+      // reconciliation is unavailable. This keeps the DB projection the only
+      // source of final payment authority and makes manual refresh recoverable.
+      try {
+        await _reconcileAlipayRechargeOrder(order);
+      } catch (_) {
+        // Continue to the read-only status endpoint.
+      }
+    }
+    return _queryRechargeOrderStatus(order);
+  }
+
+  /// Reads the first-party order projection without invoking a provider or a
+  /// provider-capable reconcile operation. This is intentionally used after
+  /// an explicit local PayTask cancellation mutation.
+  Future<RechargeOrder> _queryRechargeOrderStatus(RechargeOrder order) async {
+    final String statusRoute = order.channel == PaymentChannelType.alipay
+        ? _routes.alipayRechargeOrderStatus
+        : _routes.rechargeOrderStatus;
     final ApiResponse response = await _apiClient.get(
-      _routes.rechargeOrderStatus,
+      statusRoute,
       query: <String, String>{'orderNo': order.orderNo},
     );
     final Object? raw = response.data;
@@ -179,6 +390,109 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
           ? '订单已取消'
           : '服务端仍在确认订单',
     );
+  }
+
+  Future<void> _reconcileAlipayRechargeOrder(RechargeOrder order) async {
+    final String requestId = _alipayReconcileRequestId(order.orderNo);
+    await _apiClient.post(
+      _routes.reconcileAlipayRechargeOrder,
+      query: <String, String>{'orderNo': order.orderNo},
+      headers: <String, String>{'X-Request-Id': requestId},
+    );
+  }
+
+  Future<void> _cancelAlipayRechargeOrder(RechargeOrder order) async {
+    await _apiClient.post(
+      _routes.cancelAlipayRechargeOrder,
+      query: <String, String>{'orderNo': order.orderNo},
+      headers: <String, String>{
+        'X-Request-Id': _alipayCancelRequestId(order.orderNo),
+      },
+    );
+  }
+
+  /// Only the exact native cancellation evidence may enter the explicit
+  /// cancel write path. Contradictory bridge payloads remain on reconcile.
+  static bool _isTrustedNativeUserCancellation(AlipayAppPayResult result) =>
+      !result.sdkCompleted &&
+      result.outcome == AlipayAppPayOutcome.userCanceled &&
+      result.reason == AlipayAppPayReason.userCanceled &&
+      result.resultStatus == '6001' &&
+      isTrustedRechargeNativeCancellationBridgeOutcome(
+        result.bridgeOutcome?.wireName,
+      );
+
+  /// Query recovery only retains the bridge evidence that was copied onto the
+  /// order by [invokePayment]. No other native result is permitted to trigger
+  /// the close-capable cancellation route.
+  static bool _hasTrustedNativeCancellationEvidence(RechargeOrder order) =>
+      order.hasTrustedNativeCancellationEvidence;
+
+  static bool _isTerminalAlipayOrderState(RechargeOrderState state) =>
+      switch (state) {
+        RechargeOrderState.succeeded ||
+        RechargeOrderState.failed ||
+        RechargeOrderState.canceled ||
+        RechargeOrderState.unavailable => true,
+        RechargeOrderState.created ||
+        RechargeOrderState.invoking ||
+        RechargeOrderState.confirming => false,
+      };
+
+  /// Stable for one first-party order, so retries of an uncertain native
+  /// outcome share the backend's idempotency boundary without exposing the
+  /// signed order string or any credential.
+  static String _alipayReconcileRequestId(String orderNo) {
+    final String digest = sha256
+        .convert(utf8.encode('voice-social:alipay-reconcile:$orderNo'))
+        .toString();
+    return 'alipay-rec-$digest';
+  }
+
+  /// Stable for one first-party order so repeated local cancel attempts replay
+  /// the same authenticated backend idempotency boundary.
+  static String _alipayCancelRequestId(String orderNo) {
+    final String digest = sha256
+        .convert(utf8.encode('voice-social:alipay-cancel:$orderNo'))
+        .toString();
+    return 'alipay-cancel-$digest';
+  }
+
+  static String _alipayCreateIntentKey({
+    required String account,
+    required String productId,
+    required ClientStorePlatform platform,
+  }) {
+    final String canonical = <String>[
+      'voice-social:alipay-create',
+      account.length.toString(),
+      account,
+      productId.length.toString(),
+      productId,
+      platform.name,
+    ].join(':');
+    return sha256.convert(utf8.encode(canonical)).toString();
+  }
+
+  static bool _shouldRetainAlipayCreateRequestId(Object error) {
+    if (error is! ApiException) {
+      return true;
+    }
+    if (error.kind == ApiFailureKind.conflict) {
+      return error.code != 40903;
+    }
+    return switch (error.kind) {
+      ApiFailureKind.timeout ||
+      ApiFailureKind.network ||
+      ApiFailureKind.protocol ||
+      ApiFailureKind.server => true,
+      ApiFailureKind.configuration ||
+      ApiFailureKind.unauthorized ||
+      ApiFailureKind.forbidden ||
+      ApiFailureKind.validation ||
+      ApiFailureKind.business => false,
+      ApiFailureKind.conflict => false,
+    };
   }
 
   @override
@@ -512,9 +826,131 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       id: id,
       giftCoins: giftCoins,
       priceCny: amount,
+      amountMinor: amountMinor,
       bonusGiftCoins: bonusGiftCoins,
       label: title,
       enabled: true,
+    );
+  }
+
+  static bool _isValidAlipayProduct(RechargeProduct product) {
+    if (!product.enabled ||
+        product.id.isEmpty ||
+        product.id.trim() != product.id ||
+        product.id.codeUnits.any(
+          (int codeUnit) => codeUnit < 0x20 || codeUnit == 0x7f,
+        ) ||
+        product.giftCoins <= 0 ||
+        product.bonusGiftCoins < 0 ||
+        product.totalGiftCoins <= 0 ||
+        !product.priceCny.isFinite ||
+        product.priceCny <= 0) {
+      return false;
+    }
+    final double amountMinor = product.priceCny * 100;
+    return amountMinor.isFinite && amountMinor > 0 && amountMinor.round() > 0;
+  }
+
+  static RechargeOrder _alipayRechargeOrderFromResponse(
+    Object? value, {
+    required String account,
+    required RechargeProduct product,
+  }) {
+    if (value is! Map<String, Object?> || value.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '支付宝下单响应不是有效对象',
+      );
+    }
+    final String orderNo = _requiredString(value, 'orderNo', '支付宝下单');
+    final String? orderString = _strictOptionalString(
+      value['orderStr'] ?? value['orderString'] ?? value['orderInfo'],
+    );
+    if (orderString == null ||
+        orderString.length > 64 * 1024 ||
+        orderString.trim() != orderString ||
+        orderString.codeUnits.any(
+          (int codeUnit) => codeUnit < 0x20 || codeUnit == 0x7f,
+        )) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '支付宝下单响应缺少有效支付串',
+      );
+    }
+    final String? responseProductId = _strictOptionalString(
+      value['productId'] ?? value['rechargeProductId'],
+    );
+    final int? responseAmountMinor = _strictInt(value['amountMinor']);
+    final int? responseGiftCoinAmount = _strictInt(
+      value['giftCoinAmount'] ?? value['ncoin'],
+    );
+    final int expectedAmountMinor = (product.priceCny * 100).round();
+    if (responseProductId == null || responseProductId != product.id) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '支付宝订单商品与请求不一致',
+      );
+    }
+    if (responseAmountMinor == null ||
+        responseAmountMinor != expectedAmountMinor) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '支付宝订单金额与请求商品不一致',
+      );
+    }
+    if (responseGiftCoinAmount == null ||
+        responseGiftCoinAmount != product.totalGiftCoins) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '支付宝订单礼物币数量与请求商品不一致',
+      );
+    }
+    final String? responseChannel = _optionalString(
+      value['channel'] ?? value['channelName'] ?? value['payType'],
+    );
+    if (responseChannel != null &&
+        !const <String>{
+          'ALIPAY',
+          '支付宝',
+          'ALIPAY_APP',
+        }.contains(responseChannel.toUpperCase())) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '支付宝订单支付方式与请求不一致',
+      );
+    }
+    final String? responsePlatform = _optionalString(value['platform']);
+    if (responsePlatform != null &&
+        !const <String>{
+          'ANDROID',
+          'ANDROID_APP',
+        }.contains(responsePlatform.toUpperCase())) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '支付宝订单平台与请求不一致',
+      );
+    }
+    final String status = _string(
+      value['status'],
+      fallback: 'CREATED',
+    ).toUpperCase();
+    if (!const <String>{'CREATED', 'PENDING', 'CONFIRMING'}.contains(status)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '支付宝订单初始状态无效',
+      );
+    }
+    // `account` is retained in the in-memory order for the legacy model only;
+    // the authenticated backend remains the authority for account ownership.
+    return RechargeOrder(
+      orderNo: orderNo,
+      account: account,
+      product: product,
+      channel: PaymentChannelType.alipay,
+      state: RechargeOrderState.created,
+      createdAt: DateTime.now(),
+      message: '订单已创建，等待调起支付宝',
+      paymentOrderString: orderString,
     );
   }
 
@@ -918,6 +1354,20 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     final String text = value?.toString().trim() ?? '';
     return text.isEmpty ? fallback : text;
   }
+
+  static String? _strictOptionalString(Object? value) {
+    if (value is! String || value.isEmpty || value.trim() != value) {
+      return null;
+    }
+    if (value.codeUnits.any(
+      (int codeUnit) => codeUnit < 0x20 || codeUnit == 0x7f,
+    )) {
+      return null;
+    }
+    return value;
+  }
+
+  static int? _strictInt(Object? value) => value is int ? value : null;
 
   static String? _optionalString(Object? value) {
     final String text = value?.toString().trim() ?? '';

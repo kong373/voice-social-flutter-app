@@ -265,7 +265,9 @@ class MockCommerceRepository implements CommerceRepository {
     for (final RefundApplication item in _refunds.values) {
       if (item.account == account &&
           (item.status == RefundStatus.reviewing ||
-              item.status == RefundStatus.resubmitted)) {
+              item.status == RefundStatus.resubmitted ||
+              item.status == RefundStatus.approved ||
+              item.status == RefundStatus.completed)) {
         active = item;
         break;
       }

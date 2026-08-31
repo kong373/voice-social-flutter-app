@@ -538,15 +538,18 @@ void main() {
           }),
           '/app-api/refund/result' => () {
             resultReads += 1;
+            final String resultStatus = resultReads <= 2
+                ? 'REJECTED'
+                : 'APPROVED';
             return _Response.ok(<String, Object?>{
               'refundId': refundId,
               'orderNo': 'order-1',
               'amountMinor': 600,
               'reason': '重复充值',
-              'status': resultReads <= 2 ? 'REJECTED' : 'APPROVED',
-              'resultMessage': resultReads <= 2 ? '资料不足' : '',
+              'status': resultStatus,
+              'resultMessage': resultStatus == 'REJECTED' ? '资料不足' : '',
               'submittedAt': '2026-08-21T10:00:00Z',
-              'providerStatus': 'VENDOR_BLOCKED',
+              'providerStatus': resultStatus,
               'completed': false,
               'currency': 'CASH_CNY',
             });
@@ -559,7 +562,7 @@ void main() {
             'status': 'SUBMITTED',
             'resultMessage': '',
             'submittedAt': '2026-08-21T10:05:00Z',
-            'providerStatus': 'VENDOR_BLOCKED',
+            'providerStatus': 'SUBMITTED',
             'completed': false,
             'currency': 'CASH_CNY',
           }),
@@ -716,7 +719,7 @@ void main() {
             'status': 'REJECTED',
             'resultMessage': '资料不足',
             'submittedAt': '2026-08-22T10:02:00Z',
-            'providerStatus': 'VENDOR_BLOCKED',
+            'providerStatus': 'REJECTED',
             'completed': false,
           },
           <String, Object?>{
@@ -753,6 +756,50 @@ void main() {
       expect(applications.first.account, 'order-history-2');
       expect(applications.first.status, RefundStatus.rejected);
       expect(harness.requests, hasLength(1));
+    },
+  );
+
+  test(
+    'Alipay refund provider observations map to authoritative business states',
+    () async {
+      final List<(String, String, bool, RefundStatus)> fixtures =
+          <(String, String, bool, RefundStatus)>[
+            ('SUBMITTED', 'READY', false, RefundStatus.reviewing),
+            ('APPROVED', 'APPROVED', false, RefundStatus.approved),
+            ('APPROVED', 'PROCESSING', false, RefundStatus.approved),
+            ('APPROVED', 'PENDING', false, RefundStatus.approved),
+            ('APPROVED', 'UNKNOWN', false, RefundStatus.approved),
+            ('COMPLETED', 'REFUNDED', true, RefundStatus.completed),
+            ('REJECTED', 'REJECTED', false, RefundStatus.rejected),
+            ('CANCELLED', 'CANCELLED', false, RefundStatus.unavailable),
+          ];
+      int fixtureIndex = 0;
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        final (String status, String providerStatus, bool completed, _) =
+            fixtures[fixtureIndex++];
+        return _Response.ok(<String, Object?>{
+          'refundId': 'refund-alipay-fixture',
+          'orderNo': 'order-alipay-fixture',
+          'amountMinor': 600,
+          'reason': '重复充值',
+          'status': status,
+          'resultMessage': status == 'REJECTED' ? '资料不足' : '',
+          'submittedAt': '2026-08-22T10:00:00Z',
+          'providerStatus': providerStatus,
+          'completed': completed,
+          'currency': 'CASH_CNY',
+        });
+      });
+      addTearDown(harness.close);
+
+      for (final (String _, String _, bool _, RefundStatus expected)
+          in fixtures) {
+        final RefundApplication result = await harness.repository
+            .fetchRefundResult('refund-alipay-fixture');
+        expect(result.status, expected);
+        expect(result.completed, expected == RefundStatus.completed);
+      }
+      expect(fixtureIndex, fixtures.length);
     },
   );
 
@@ -2496,7 +2543,7 @@ void main() {
             'status': 'REJECTED',
             'resultMessage': '资料不足',
             'submittedAt': '2026-08-22T10:00:00Z',
-            'providerStatus': 'VENDOR_BLOCKED',
+            'providerStatus': 'REJECTED',
             'completed': false,
           });
         }
@@ -2521,7 +2568,7 @@ void main() {
           'status': 'SUBMITTED',
           'resultMessage': '',
           'submittedAt': '2026-08-22T10:01:00Z',
-          'providerStatus': 'VENDOR_BLOCKED',
+          'providerStatus': 'SUBMITTED',
           'completed': false,
         });
       });
@@ -2564,7 +2611,7 @@ void main() {
             'status': submitted ? 'SUBMITTED' : 'REJECTED',
             'resultMessage': submitted ? '' : '资料不足',
             'submittedAt': '2026-08-22T10:00:00Z',
-            'providerStatus': 'VENDOR_BLOCKED',
+            'providerStatus': submitted ? 'SUBMITTED' : 'REJECTED',
             'completed': false,
           });
         }
@@ -2617,7 +2664,7 @@ void main() {
             'status': 'REJECTED',
             'resultMessage': '资料不足',
             'submittedAt': '2026-08-22T10:00:00Z',
-            'providerStatus': 'VENDOR_BLOCKED',
+            'providerStatus': 'REJECTED',
             'completed': false,
             'currency': 'CASH_CNY',
           });
@@ -2633,7 +2680,7 @@ void main() {
             'status': 'SUBMITTED',
             'resultMessage': '',
             'submittedAt': '2026-08-22T10:01:00Z',
-            'providerStatus': 'VENDOR_BLOCKED',
+            'providerStatus': 'SUBMITTED',
             'completed': false,
             'currency': 'CASH_CNY',
           });
@@ -2678,7 +2725,7 @@ void main() {
         'status': status,
         'resultMessage': status == 'REJECTED' ? '资料不足' : '',
         'submittedAt': '2026-08-22T10:00:00Z',
-        'providerStatus': 'VENDOR_BLOCKED',
+        'providerStatus': status == 'REJECTED' ? 'REJECTED' : 'SUBMITTED',
         'completed': status == 'COMPLETED',
         'currency': 'CASH_CNY',
       };
@@ -2891,6 +2938,42 @@ void main() {
         );
       } finally {
         await resultHarness.close();
+      }
+
+      final List<(String, String, bool)> contradictoryStates =
+          <(String, String, bool)>[
+            ('APPROVED', 'READY', false),
+            ('APPROVED', 'VENDOR_BLOCKED', false),
+            ('COMPLETED', 'PENDING', true),
+            ('REJECTED', 'APPROVED', false),
+            ('CANCELLED', 'REFUNDED', false),
+          ];
+      for (final (String status, String providerStatus, bool completed)
+          in contradictoryStates) {
+        final _Harness harness = await _Harness.start(
+          (RequestRecord request) => _Response.ok(<String, Object?>{
+            'refundId': 'refund-contradiction',
+            'orderNo': 'order-authority',
+            'amountMinor': 100,
+            'reason': '重复充值',
+            'status': status,
+            'resultMessage': status == 'REJECTED' ? '资料不足' : '',
+            'submittedAt': '2026-08-22T10:00:00Z',
+            'providerStatus': providerStatus,
+            'completed': completed,
+          }),
+        );
+        await expectLater(
+          harness.repository.fetchRefundResult('refund-contradiction'),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.protocol,
+            ),
+          ),
+        );
+        await harness.close();
       }
     },
   );

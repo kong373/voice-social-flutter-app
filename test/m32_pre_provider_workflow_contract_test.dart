@@ -51,6 +51,20 @@ void main() {
     expect(workflow, contains('disable-spellchecker: true'));
   });
 
+  test('M3.2 AVD review uses a supported deterministic GPU backend', () {
+    expect(workflow, contains('-gpu swiftshader'));
+    expect(workflow, isNot(contains('-gpu swiftshader_indirect')));
+  });
+
+  test('M3.2 validation never overwrites the live server summary', () {
+    expect(workflow, contains(r'> "$root/contract-summary-response.json"'));
+    expect(
+      RegExp(r'contract-summary-response\.json').allMatches(workflow).length,
+      2,
+    );
+    expect(workflow, isNot(contains(r'> "$root/contract-summary.json"')));
+  });
+
   test('M3.2 room flow follows the authoritative lifecycle contract', () {
     expect(
       workflow,

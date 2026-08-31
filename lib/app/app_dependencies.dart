@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
@@ -13,9 +15,18 @@ import 'package:voice_social_app/features/account/data/backend_auth_repository.d
 import 'package:voice_social_app/features/account/data/device_identity_provider.dart';
 import 'package:voice_social_app/features/account/data/mock_auth_repository.dart';
 import 'package:voice_social_app/features/account/domain/auth_repository.dart';
+import 'package:voice_social_app/features/im/application/tencent_im_avchat_room_coordinator.dart';
+import 'package:voice_social_app/features/im/application/im_session_coordinator.dart';
+import 'package:voice_social_app/features/im/data/backend_im_session_credential_repository.dart';
+import 'package:voice_social_app/features/im/domain/im_authoritative_refresh_bus.dart';
+import 'package:voice_social_app/features/im/domain/im_session_adapter.dart';
+import 'package:voice_social_app/features/im/domain/im_session_credentials.dart';
+import 'package:voice_social_app/features/im/domain/im_session_repository.dart';
+import 'package:voice_social_app/features/im/infrastructure/tencent_im_session_adapter.dart';
 import 'package:voice_social_app/features/commerce/catalog/data/backend_commerce_catalog_repository.dart';
 import 'package:voice_social_app/features/commerce/catalog/data/mock_commerce_catalog_repository.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_repository.dart';
+import 'package:voice_social_app/features/commerce/infrastructure/alipay_app_pay_adapter.dart';
 import 'package:voice_social_app/features/commerce/data/backend_commerce_repository.dart';
 import 'package:voice_social_app/features/commerce/data/mock_commerce_repository.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
@@ -35,6 +46,7 @@ import 'package:voice_social_app/features/room/application/room_controller.dart'
 import 'package:voice_social_app/features/room/data/backend_room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_room_repository.dart';
+import 'package:voice_social_app/features/room/data/backend_rtc_token_repository.dart';
 import 'package:voice_social_app/features/room/data/mock_room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/data/mock_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/data/mock_room_repository.dart';
@@ -58,6 +70,11 @@ class AppDependencies {
     required this.environment,
     required this.sessionManager,
     required this.authController,
+    required this.imSessionAdapter,
+    required this.imSessionCredentialRepository,
+    required this.imSessionCoordinator,
+    required this.imAuthoritativeRefreshBus,
+    required this.tencentImAvChatRoomCoordinator,
     required this.currentTime,
     required this.liveReadOnlyRepository,
     required this.accountComplianceRepository,
@@ -67,6 +84,7 @@ class AppDependencies {
     required this.communityRepository,
     required this.commerceRepository,
     required this.commerceCatalogRepository,
+    required this.alipayAppPayAdapter,
     required this.messageRepository,
     required this.roomRepository,
     required this.roomOperationsRepository,
@@ -105,6 +123,12 @@ class AppDependencies {
     DynamicRepository? dynamicRepository,
     MessageRepository? messageRepository,
     ExternalUrlOpener? externalUrlOpener,
+    ImSessionAdapter? imSessionAdapter,
+    ImSessionCredentialRepository? imSessionCredentialRepository,
+    ImSessionCoordinator? imSessionCoordinator,
+    ImAuthoritativeRefreshBus? imAuthoritativeRefreshBus,
+    TencentImAvChatRoomCoordinator? tencentImAvChatRoomCoordinator,
+    Duration? alipayNativeTimeout,
   }) {
     return _build(
       environment: environment,
@@ -115,6 +139,12 @@ class AppDependencies {
       dynamicRepositoryOverride: dynamicRepository,
       messageRepositoryOverride: messageRepository,
       externalUrlOpenerOverride: externalUrlOpener,
+      imSessionAdapterOverride: imSessionAdapter,
+      imSessionCredentialRepositoryOverride: imSessionCredentialRepository,
+      imSessionCoordinatorOverride: imSessionCoordinator,
+      imAuthoritativeRefreshBusOverride: imAuthoritativeRefreshBus,
+      tencentImAvChatRoomCoordinatorOverride: tencentImAvChatRoomCoordinator,
+      alipayNativeTimeout: alipayNativeTimeout,
     );
   }
 
@@ -127,7 +157,14 @@ class AppDependencies {
     DynamicRepository? dynamicRepositoryOverride,
     MessageRepository? messageRepositoryOverride,
     ExternalUrlOpener? externalUrlOpenerOverride,
+    ImSessionAdapter? imSessionAdapterOverride,
+    ImSessionCredentialRepository? imSessionCredentialRepositoryOverride,
+    ImSessionCoordinator? imSessionCoordinatorOverride,
+    ImAuthoritativeRefreshBus? imAuthoritativeRefreshBusOverride,
+    TencentImAvChatRoomCoordinator? tencentImAvChatRoomCoordinatorOverride,
+    Duration? alipayNativeTimeout,
   }) {
+    final DateTime Function() currentTime = () => mockNow ?? DateTime.now();
     final AuthSessionManager sessionManager = AuthSessionManager(store);
     final ApiClient apiClient = ApiClient(
       baseUri: Uri.parse(environment.apiBaseUrl),
@@ -154,6 +191,72 @@ class AppDependencies {
             routes: routes,
           )
         : const MockAuthRepository();
+    ImSessionAdapter buildProductionTencentImAdapter() {
+      // The official callback only marks a provider event as eligible after
+      // this adapter compares its transient sender metadata with the active
+      // server-issued system account.  C2C remains groupId=null; an AVChatRoom
+      // event must additionally match the currently joined group. This avoids
+      // a hard-coded admin name, current-user/self trust, or a blanket
+      // trusted=true shortcut.
+      late final TencentImSessionAdapter adapter;
+      final OfficialTencentImSdkClient sdkClient = OfficialTencentImSdkClient(
+        trustedHintEvaluator:
+            ({
+              required String? senderUserId,
+              required String? groupId,
+              required bool? isSelf,
+            }) => adapter.isTrustedProviderHint(
+              senderUserId: senderUserId,
+              groupId: groupId,
+              isSelf: isSelf,
+            ),
+      );
+      adapter = TencentImSessionAdapter(sdkClient: sdkClient);
+      return adapter;
+    }
+
+    final ImSessionAdapter imSessionAdapter =
+        imSessionAdapterOverride ??
+        (environment.isLive
+            ? environment.enableTencentIm
+                  ? buildProductionTencentImAdapter()
+                  : const BlockedImSessionAdapter()
+            : FakeImSessionAdapter(now: currentTime));
+    final ImSessionCredentialRepository imSessionCredentialRepository =
+        imSessionCredentialRepositoryOverride ??
+        (environment.isLive
+            ? environment.enableTencentIm
+                  ? BackendImSessionCredentialRepository(
+                      apiClient: apiClient,
+                      routes: routes,
+                      now: currentTime,
+                    )
+                  : const BlockedImSessionCredentialRepository()
+            : FakeImSessionCredentialRepository(
+                userIdProvider: () {
+                  final int? userId = sessionManager.session?.userId;
+                  return userId == null
+                      ? ''
+                      : ImSessionCredentials.userIdForPlatformUserId(userId);
+                },
+                now: currentTime,
+              ));
+    final ImAuthoritativeRefreshBus imAuthoritativeRefreshBus =
+        imAuthoritativeRefreshBusOverride ?? ImAuthoritativeRefreshBus();
+    final ImSessionCoordinator imSessionCoordinator =
+        imSessionCoordinatorOverride ??
+        ImSessionCoordinator(
+          adapter: imSessionAdapter,
+          credentialsRepository: imSessionCredentialRepository,
+          authoritativeRefreshBus: imAuthoritativeRefreshBus,
+          now: currentTime,
+        );
+    final TencentImAvChatRoomCoordinator tencentImAvChatRoomCoordinator =
+        tencentImAvChatRoomCoordinatorOverride ??
+        TencentImAvChatRoomCoordinator(
+          sessionAdapter: imSessionAdapter,
+          now: currentTime,
+        );
     final AccountComplianceRepository accountComplianceRepository =
         accountComplianceRepositoryOverride ??
         (environment.isLive
@@ -169,6 +272,15 @@ class AppDependencies {
                 supportsRealNameSubmission: true,
               )
             : MockAccountComplianceRepository());
+    final AlipayAppPayAdapter alipayAppPayAdapter =
+        environment.isLive && environment.enableAlipayAppPay
+        ? MethodChannelAlipayAppPayAdapter(
+            enabled: true,
+            sandbox: environment.useAlipaySandbox,
+            consentChecker: sessionManager.hasAcceptedConsent,
+            nativeTimeout: alipayNativeTimeout ?? const Duration(minutes: 2),
+          )
+        : const DisabledAlipayAppPayAdapter();
     final DiscoveryRepository discoveryRepository =
         discoveryRepositoryOverride ??
         (environment.isLive
@@ -208,6 +320,7 @@ class AppDependencies {
       commerceCatalogRepository = BackendCommerceCatalogRepository(
         apiClient: apiClient,
         routes: routes,
+        alipayAppPayAdapter: alipayAppPayAdapter,
       );
     } else {
       final MockCommerceRepository mockCommerceRepository =
@@ -226,10 +339,25 @@ class AppDependencies {
                 currentUserIdProvider: () =>
                     sessionManager.session?.userId ?? 0,
                 nativePermissionAdapter: nativePermissionAdapter,
+                privateRealtimeAvailabilityProvider: () =>
+                    imSessionCoordinator.realtimeReady,
               )
             : MockMessageRepository(now: mockNow));
+    final RtcTokenRepository? rtcTokenRepository =
+        environment.isLive && environment.enableAgoraRtc
+        ? BackendRtcTokenRepository(
+            apiClient: apiClient,
+            routes: routes,
+            now: currentTime,
+          )
+        : null;
     final RoomRepository roomRepository = environment.isLive
-        ? BackendRoomRepository(apiClient: apiClient, routes: routes)
+        ? BackendRoomRepository(
+            apiClient: apiClient,
+            routes: routes,
+            rtcTokenRepository: rtcTokenRepository,
+            now: currentTime,
+          )
         : MockRoomRepository();
     final RoomOperationsRepository roomOperationsRepository = environment.isLive
         ? BackendRoomOperationsRepository(apiClient: apiClient, routes: routes)
@@ -243,7 +371,21 @@ class AppDependencies {
         ? BackendRoomPkRepository(apiClient: apiClient, routes: routes)
         : MockRoomPkRepository();
     final RtcAdapter rtcAdapter = environment.isLive
-        ? const SnapshotOnlyRtcAdapter()
+        ? rtcTokenRepository == null
+              ? const SnapshotOnlyRtcAdapter()
+              : AgoraRtcAdapter(
+                  credentialsProvider: (String roomId) async {
+                    final session = sessionManager.session;
+                    if (session == null) {
+                      throw StateError('用户未登录，不能刷新 RTC 凭证');
+                    }
+                    return rtcTokenRepository.buildRtcToken(
+                      roomId: roomId,
+                      currentUserId: session.userId,
+                    );
+                  },
+                  microphonePermissionAdapter: nativePermissionAdapter,
+                )
         : MockRtcAdapter();
     final RoomRealtimeGateway realtimeGateway = environment.isLive
         ? const SnapshotOnlyRoomRealtimeGateway()
@@ -260,6 +402,7 @@ class AppDependencies {
       repository: authRepository,
       sessionManager: sessionManager,
       deviceIdentityProvider: deviceIdentityProvider,
+      imSessionCoordinator: imSessionCoordinator,
       allowsDevelopmentTools:
           environment.deploymentEnvironment.allowsDevelopmentTools,
     );
@@ -270,7 +413,12 @@ class AppDependencies {
       environment: environment,
       sessionManager: sessionManager,
       authController: authController,
-      currentTime: () => mockNow ?? DateTime.now(),
+      imSessionAdapter: imSessionAdapter,
+      imSessionCredentialRepository: imSessionCredentialRepository,
+      imSessionCoordinator: imSessionCoordinator,
+      imAuthoritativeRefreshBus: imAuthoritativeRefreshBus,
+      tencentImAvChatRoomCoordinator: tencentImAvChatRoomCoordinator,
+      currentTime: currentTime,
       liveReadOnlyRepository: liveReadOnlyRepository,
       accountComplianceRepository: accountComplianceRepository,
       discoveryRepository: discoveryRepository,
@@ -279,6 +427,7 @@ class AppDependencies {
       communityRepository: communityRepository,
       commerceRepository: commerceRepository,
       commerceCatalogRepository: commerceCatalogRepository,
+      alipayAppPayAdapter: alipayAppPayAdapter,
       messageRepository: messageRepository,
       roomRepository: roomRepository,
       roomOperationsRepository: roomOperationsRepository,
@@ -294,6 +443,11 @@ class AppDependencies {
   final AppEnvironment environment;
   final AuthSessionManager sessionManager;
   final AuthController authController;
+  final ImSessionAdapter imSessionAdapter;
+  final ImSessionCredentialRepository imSessionCredentialRepository;
+  final ImSessionCoordinator imSessionCoordinator;
+  final ImAuthoritativeRefreshBus imAuthoritativeRefreshBus;
+  final TencentImAvChatRoomCoordinator tencentImAvChatRoomCoordinator;
   final DateTime Function() currentTime;
   final LiveReadOnlyRepository liveReadOnlyRepository;
   final AccountComplianceRepository accountComplianceRepository;
@@ -303,6 +457,7 @@ class AppDependencies {
   final CommunityRepository communityRepository;
   final CommerceRepository commerceRepository;
   final CommerceCatalogRepository commerceCatalogRepository;
+  final AlipayAppPayAdapter alipayAppPayAdapter;
   final MessageRepository messageRepository;
   final RoomRepository roomRepository;
   final RoomOperationsRepository roomOperationsRepository;
@@ -312,6 +467,22 @@ class AppDependencies {
   final RoomRealtimeGateway realtimeGateway;
   final RoomAudioService roomAudioService;
   final ExternalUrlOpener externalUrlOpener;
+
+  /// Releases process-scoped controllers when the app/test tree is torn down.
+  /// In particular, the IM coordinator owns a renewal Timer; leaving it
+  /// alive after a widget test would make Flutter report a pending timer even
+  /// though the visible tree has been disposed.
+  void dispose() {
+    authController.dispose();
+    imSessionCoordinator.dispose();
+    unawaited(tencentImAvChatRoomCoordinator.dispose());
+    final ImSessionAdapter adapter = imSessionAdapter;
+    if (adapter is TencentImSessionAdapter) {
+      unawaited(adapter.dispose());
+    } else if (adapter is FakeImSessionAdapter) {
+      unawaited(adapter.dispose());
+    }
+  }
 
   RoomController createRoomController({
     required String roomId,
@@ -331,6 +502,7 @@ class AppDependencies {
       rtcAdapter: rtcAdapter,
       realtimeGateway: realtimeGateway,
       allowSyntheticPublicMessages: !environment.isLive,
+      tencentImAvChatRoomCoordinator: tencentImAvChatRoomCoordinator,
     );
   }
 }

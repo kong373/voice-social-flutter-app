@@ -3,6 +3,8 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/im/application/tencent_im_avchat_room_coordinator.dart';
+import 'package:voice_social_app/features/im/domain/tencent_im_room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_intent_digest.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_permission_policy.dart';
@@ -13,6 +15,16 @@ import 'package:voice_social_app/features/room/infrastructure/room_realtime_gate
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
 class RoomController extends ChangeNotifier {
+  /// The backend IM outbox is a 30-second fixed-delay worker. Keep the
+  /// default client window above two worker periods so a room entered just
+  /// after a worker tick can still observe the next two attempts. Tests may
+  /// inject shorter values without changing this production guarantee.
+  static const Duration _defaultTencentImReadinessPollInterval = Duration(
+    seconds: 5,
+  );
+  static const Duration _defaultTencentImReadinessPollWindow = Duration(
+    seconds: 65,
+  );
   static final Random _secureRandom = Random.secure();
   static final Expando<Object> _rtcTransportOwners = Expando<Object>(
     'roomRtcTransportOwner',
@@ -33,6 +45,11 @@ class RoomController extends ChangeNotifier {
     RoomPermissionPolicy permissionPolicy = const RoomPermissionPolicy(),
     bool allowSyntheticPublicMessages = true,
     String Function(String prefix)? requestIdGenerator,
+    TencentImAvChatRoomCoordinator? tencentImAvChatRoomCoordinator,
+    Duration tencentImReadinessPollInterval =
+        _defaultTencentImReadinessPollInterval,
+    Duration tencentImReadinessPollWindow =
+        _defaultTencentImReadinessPollWindow,
   }) : _currentUserId = currentUserId,
        _accessToken = accessToken,
        _repository = repository,
@@ -41,7 +58,25 @@ class RoomController extends ChangeNotifier {
        _roomOperationsRepository = roomOperationsRepository,
        _permissionPolicy = permissionPolicy,
        _allowSyntheticPublicMessages = allowSyntheticPublicMessages,
-       _requestIdGenerator = requestIdGenerator ?? _secureRequestId;
+       _requestIdGenerator = requestIdGenerator ?? _secureRequestId,
+       _tencentImAvChatRoomCoordinator = tencentImAvChatRoomCoordinator,
+       _tencentImReadinessPollInterval = _positiveDuration(
+         tencentImReadinessPollInterval,
+         'tencentImReadinessPollInterval',
+       ),
+       _tencentImReadinessPollWindow = _positiveDuration(
+         tencentImReadinessPollWindow,
+         'tencentImReadinessPollWindow',
+       ) {
+    final TencentImAvChatRoomCoordinator? coordinator =
+        _tencentImAvChatRoomCoordinator;
+    if (coordinator != null) {
+      _tencentImRefreshRegistration = coordinator.registerRefreshHandler(
+        roomId: roomId,
+        onRefresh: _refreshFromTencentHint,
+      );
+    }
+  }
 
   final String roomId;
   final String title;
@@ -54,6 +89,12 @@ class RoomController extends ChangeNotifier {
   final RoomPermissionPolicy _permissionPolicy;
   final bool _allowSyntheticPublicMessages;
   final String Function(String prefix) _requestIdGenerator;
+  final TencentImAvChatRoomCoordinator? _tencentImAvChatRoomCoordinator;
+  final Duration _tencentImReadinessPollInterval;
+  final Duration _tencentImReadinessPollWindow;
+  TencentImRoomRefreshRegistration? _tencentImRefreshRegistration;
+  TencentImAvChatRoomSession? _tencentImSession;
+  _CancelableTencentImReadinessWait? _tencentImReadinessWait;
 
   RoomSnapshot? _snapshot;
   final List<RoomMessage> _messages = <RoomMessage>[];
@@ -66,10 +107,19 @@ class RoomController extends ChangeNotifier {
   bool _giftSubmitting = false;
   bool _realtimeDegraded = false;
   bool _mutedInRoom = false;
+  // Publication is an explicit user intent. Entering or reconnecting a room
+  // never infers this from an occupied seat; authority refreshes may revoke
+  // it and must clear it before any provider call can publish again.
+  bool _rtcAudioRequested = false;
+  bool _rtcConnected = false;
+  bool _rtcPublicationActive = false;
+  Future<void> _rtcAudioTail = Future<void>.value();
+  int _rtcAudioAuthorityGeneration = 0;
   bool _refreshingFromEvent = false;
   bool _joinCancelled = false;
   bool _disposed = false;
   int _sessionEpoch = 0;
+  int _tencentImReadinessPollGeneration = 0;
   Object? _transportLeaseId;
   String? _errorMessage;
   String? _pendingJoinRequestRoomId;
@@ -176,11 +226,14 @@ class RoomController extends ChangeNotifier {
         _status == RoomSessionStatus.leaving) {
       return;
     }
+    _invalidateTencentImReadinessPoll();
     final int sessionEpoch = ++_sessionEpoch;
     _joinCancelled = false;
     _pendingJoinRequestRoomId = null;
     _pendingJoinRequestId = null;
     _mutedInRoom = false;
+    _rtcAudioRequested = false;
+    _rtcConnected = false;
     _status = RoomSessionStatus.joining;
     _errorMessage = null;
     _historyErrorKind = null;
@@ -191,6 +244,18 @@ class RoomController extends ChangeNotifier {
     RoomSnapshot? enteredSnapshot;
     Object? transportLease;
     try {
+      // Tencent permits one AVChatRoom per user. Fence and bounded-quit any
+      // previous shared coordinator binding before this HTTP enter can be
+      // rebound to the new navigation target.
+      final TencentImAvChatRoomCoordinator? tencentCoordinator =
+          _tencentImAvChatRoomCoordinator;
+      if (tencentCoordinator != null) {
+        // `leave` fences the shared coordinator synchronously and queues a
+        // bounded provider quit. Never make first-party HTTP enter wait for a
+        // vendor operation that may be slow or unavailable; the subsequent
+        // coordinator.enter is serialized behind this cleanup.
+        unawaited(_ignoreTencentLeave(tencentCoordinator.leave()));
+      }
       final RoomSnapshot snapshot = await _repository.enterRoom(
         roomId: roomId,
         password: password,
@@ -205,6 +270,8 @@ class RoomController extends ChangeNotifier {
       if (!snapshot.isSnapshotOnly) {
         transportLease = _claimTransportLease();
         await _rtcAdapter.join(snapshot.rtc);
+        _rtcConnected = true;
+        _rtcPublicationActive = false;
         if (!_isCurrent(sessionEpoch) || _joinCancelled) {
           await _abandonEnteredRoom(snapshot, sessionEpoch: sessionEpoch);
           return;
@@ -250,6 +317,11 @@ class RoomController extends ChangeNotifier {
             ),
         ]);
       _status = RoomSessionStatus.joined;
+      await _bindTencentImRoom(snapshot, sessionEpoch: sessionEpoch);
+      if (!_isCurrent(sessionEpoch) || _joinCancelled) {
+        await _abandonEnteredRoom(snapshot, sessionEpoch: sessionEpoch);
+        return;
+      }
       await _loadPublicHistory(snapshot, sessionEpoch: sessionEpoch);
       if (micCoordinationMode == MicCoordinationMode.approval) {
         await _loadMicRequests(sessionEpoch: sessionEpoch);
@@ -288,6 +360,240 @@ class RoomController extends ChangeNotifier {
     }
     if (_isCurrent(sessionEpoch)) {
       _notify();
+    }
+  }
+
+  Future<void> _bindTencentImRoom(
+    RoomSnapshot snapshot, {
+    required int sessionEpoch,
+  }) async {
+    _invalidateTencentImReadinessPoll();
+    final int readinessPollGeneration = _tencentImReadinessPollGeneration;
+    final TencentImAvChatRoomCoordinator? coordinator =
+        _tencentImAvChatRoomCoordinator;
+    if (coordinator == null || !_isCurrent(sessionEpoch)) {
+      return;
+    }
+    final TencentImRoomSessionSource? source =
+        _repository is TencentImRoomSessionSource
+        ? _repository as TencentImRoomSessionSource
+        : null;
+    final TencentImAvChatRoomSession? session = source
+        ?.takeTencentImRoomSession(snapshot.roomId);
+    final TencentImAvChatRoomSession? roomBoundSession =
+        session?.roomId == snapshot.roomId ? session : null;
+    _tencentImSession = roomBoundSession;
+    if (roomBoundSession == null) {
+      // A provider-blocked/malformed projection is deliberately HTTP-only;
+      // clear only this room's current provider binding if one remains.
+      await coordinator.leaveIfCurrent(roomId: snapshot.roomId);
+      return;
+    }
+    // The coordinator fences the current room synchronously and serializes
+    // the bounded SDK join behind any prior cleanup. The authoritative HTTP
+    // room and its history must not wait for that optional provider call.
+    unawaited(_ignoreTencentEnter(coordinator.enter(roomBoundSession)));
+    if (!_isCurrent(sessionEpoch) ||
+        !identical(_tencentImSession, roomBoundSession) ||
+        roomBoundSession.isReady) {
+      return;
+    }
+    final TencentImRoomReadinessSource? readinessSource =
+        _repository is TencentImRoomReadinessSource
+        ? _repository as TencentImRoomReadinessSource
+        : null;
+    if (readinessSource == null) {
+      return;
+    }
+    // Enter already succeeded over HTTP. Polling is deliberately detached so
+    // a slow/blocked provider readiness projection cannot delay room UI.
+    unawaited(
+      _pollTencentImReadiness(
+        coordinator: coordinator,
+        readinessSource: readinessSource,
+        pendingSession: roomBoundSession,
+        sessionEpoch: sessionEpoch,
+        pollGeneration: readinessPollGeneration,
+      ),
+    );
+  }
+
+  Future<void> _pollTencentImReadiness({
+    required TencentImAvChatRoomCoordinator coordinator,
+    required TencentImRoomReadinessSource readinessSource,
+    required TencentImAvChatRoomSession pendingSession,
+    required int sessionEpoch,
+    required int pollGeneration,
+  }) async {
+    final Stopwatch pollWindow = Stopwatch()..start();
+    for (int attempt = 0; ; attempt += 1) {
+      if (!_isCurrentTencentImReadinessPoll(
+        sessionEpoch: sessionEpoch,
+        pollGeneration: pollGeneration,
+        pendingSession: pendingSession,
+      )) {
+        return;
+      }
+      if (attempt > 0) {
+        final Duration? remaining = _remainingReadinessPollWindow(pollWindow);
+        if (remaining == null) {
+          return;
+        }
+        final Duration delay = remaining < _tencentImReadinessPollInterval
+            ? remaining
+            : _tencentImReadinessPollInterval;
+        if (!await _waitForTencentImReadiness(delay)) {
+          return;
+        }
+        if (!_isCurrentTencentImReadinessPoll(
+              sessionEpoch: sessionEpoch,
+              pollGeneration: pollGeneration,
+              pendingSession: pendingSession,
+            ) ||
+            _remainingReadinessPollWindow(pollWindow) == null) {
+          return;
+        }
+      }
+
+      final Duration? fetchBudget = _remainingReadinessPollWindow(pollWindow);
+      if (fetchBudget == null) {
+        return;
+      }
+      TencentImAvChatRoomSession? latest;
+      try {
+        latest = await readinessSource
+            .fetchTencentImRoomReadiness(pendingSession.roomId)
+            .timeout(fetchBudget);
+      } on Object {
+        // A readiness route outage leaves the already successful HTTP room
+        // usable. The bounded loop gives transient recovery a chance without
+        // surfacing provider details or blocking navigation.
+        continue;
+      }
+      if (latest == null) {
+        continue;
+      }
+      // A read response from another navigation/session is never rebound,
+      // even when its room is otherwise valid. The session handle is the
+      // first-party lease fence; version may advance while the member stays
+      // in the same room, but it may not move backwards.
+      if (latest.roomId != pendingSession.roomId ||
+          latest.sessionId != pendingSession.sessionId ||
+          latest.groupId != pendingSession.groupId ||
+          latest.groupType != pendingSession.groupType ||
+          latest.version < pendingSession.version) {
+        return;
+      }
+      // A response that completed after the bounded window cannot authorize
+      // a provider join, even when it reports READY.
+      if (_remainingReadinessPollWindow(pollWindow) == null) {
+        return;
+      }
+      if (!latest.isReady) {
+        continue;
+      }
+      if (!_isCurrentTencentImReadinessPoll(
+        sessionEpoch: sessionEpoch,
+        pollGeneration: pollGeneration,
+        pendingSession: pendingSession,
+      )) {
+        return;
+      }
+      _tencentImSession = latest;
+      try {
+        await coordinator.enter(latest);
+      } on Object {
+        // Provider readiness is optional. A coordinator disposal or provider
+        // rejection must not turn the detached polling task into an
+        // unhandled asynchronous error.
+      }
+      return;
+    }
+  }
+
+  bool _isCurrentTencentImReadinessPoll({
+    required int sessionEpoch,
+    required int pollGeneration,
+    required TencentImAvChatRoomSession pendingSession,
+  }) {
+    return _isCurrent(sessionEpoch) &&
+        pollGeneration == _tencentImReadinessPollGeneration &&
+        _tencentImSession?.roomId == pendingSession.roomId &&
+        _tencentImSession?.sessionId == pendingSession.sessionId &&
+        _tencentImSession?.groupId == pendingSession.groupId;
+  }
+
+  Duration? _remainingReadinessPollWindow(Stopwatch pollWindow) {
+    final Duration remaining =
+        _tencentImReadinessPollWindow - pollWindow.elapsed;
+    return remaining <= Duration.zero ? null : remaining;
+  }
+
+  Future<bool> _waitForTencentImReadiness(Duration duration) {
+    if (_disposed) {
+      return Future<bool>.value(false);
+    }
+    final _CancelableTencentImReadinessWait wait =
+        _CancelableTencentImReadinessWait(duration);
+    _tencentImReadinessWait = wait;
+    return wait.future.whenComplete(() {
+      if (identical(_tencentImReadinessWait, wait)) {
+        _tencentImReadinessWait = null;
+      }
+    });
+  }
+
+  void _invalidateTencentImReadinessPoll() {
+    _tencentImReadinessPollGeneration += 1;
+    _tencentImReadinessWait?.cancel();
+    _tencentImReadinessWait = null;
+  }
+
+  /// Provider custom elements are metadata-only invalidation hints. The
+  /// authoritative HTTP history replaces the rendered list; no custom payload
+  /// is ever parsed into a message or permission decision here.
+  Future<void> _refreshFromTencentHint(String hintedRoomId) async {
+    final RoomSnapshot? snapshot = _snapshot;
+    final String normalizedRoomId = hintedRoomId.trim();
+    if (_disposed ||
+        _status != RoomSessionStatus.joined ||
+        snapshot == null ||
+        normalizedRoomId != roomId ||
+        snapshot.roomId != normalizedRoomId ||
+        _refreshingFromEvent) {
+      return;
+    }
+    final int sessionEpoch = _sessionEpoch;
+    _refreshingFromEvent = true;
+    try {
+      final List<RoomMessage> history = await _repository.fetchPublicMessages(
+        normalizedRoomId,
+      );
+      if (!_isJoinedEpoch(sessionEpoch) ||
+          _snapshot?.roomId != normalizedRoomId) {
+        return;
+      }
+      _historyErrorKind = null;
+      _historyErrorMessage = null;
+      _messages
+        ..clear()
+        ..addAll(history);
+      _notify();
+    } catch (error) {
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return;
+      }
+      _historyErrorKind = error is ApiException
+          ? error.kind
+          : ApiFailureKind.protocol;
+      _historyErrorMessage = error is ApiException
+          ? error.message
+          : '公屏历史暂时不可用';
+      _notify();
+    } finally {
+      if (_isCurrent(sessionEpoch)) {
+        _refreshingFromEvent = false;
+      }
     }
   }
 
@@ -356,6 +662,8 @@ class RoomController extends ChangeNotifier {
     _micRequestPending = true;
     _errorMessage = null;
     _notify();
+    bool serverMicMutationCommitted = false;
+    final RoomSnapshot? previousSnapshot = _snapshot;
     try {
       if (micCoordinationMode == MicCoordinationMode.approval) {
         final RoomOperationsRepository? operations = _roomOperationsRepository;
@@ -393,6 +701,7 @@ class RoomController extends ChangeNotifier {
         );
       }
       await _repository.requestMic(seat.backendIndex);
+      serverMicMutationCommitted = true;
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
@@ -411,15 +720,25 @@ class RoomController extends ChangeNotifier {
           message: '麦位状态尚未确认，请刷新后重试',
         );
       }
-      _snapshot = refreshed;
-      // A live HTTP_STATE_ONLY room can persist the seat transition without
-      // claiming that an RTC engine joined. Audio remains vendor-blocked.
-      if (!_snapshot!.isSnapshotOnly) {
-        await _rtcAdapter.setLocalAudioEnabled(true);
+      final int authorityGeneration = _rtcAudioAuthorityGeneration;
+      final bool publishAudio = _snapshotAllowsRtcPublication(refreshed);
+      await _reconcileRtcForSnapshot(refreshed, publishAudio: publishAudio);
+      // A successful first-party seat mutation may still return a
+      // snapshot-only projection when the token/readiness endpoint is
+      // unavailable. Keep the server seat result, but never retain a local
+      // publication intent that could later publish without a fresh token.
+      _rtcAudioRequested =
+          authorityGeneration == _rtcAudioAuthorityGeneration &&
+          publishAudio &&
+          _snapshotAllowsRtcPublication(refreshed);
+      if (!_rtcAudioRequested && publishAudio) {
+        await _disableRtcPublication();
       }
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
+      _snapshot = refreshed;
+      serverMicMutationCommitted = false;
       if (allowsSyntheticPublicMessages) {
         _messages.add(
           RoomMessage(
@@ -433,6 +752,12 @@ class RoomController extends ChangeNotifier {
     } catch (error) {
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
+      }
+      if (serverMicMutationCommitted) {
+        await _rollbackMicMutation(
+          sessionEpoch: sessionEpoch,
+          fallbackSnapshot: previousSnapshot,
+        );
       }
       _errorMessage = _messageFor(error, fallback: '申请上麦失败');
       return false;
@@ -505,16 +830,17 @@ class RoomController extends ChangeNotifier {
     _micRequestPending = true;
     _errorMessage = null;
     _notify();
+    bool serverInviteMutationCommitted = false;
+    final RoomSnapshot? previousSnapshot = _snapshot;
     try {
       await operations.resolveMicRequest(
         requestId: requestId,
         accepted: accepted,
       );
+      serverInviteMutationCommitted = true;
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
-      // Accept confirms only the first-party seat row. No RTC/provider call
-      // is made here; the live adapter remains VENDOR_BLOCKED.
       if (accepted) {
         final RoomSnapshot refreshed = await _repository.reconnectRoom(
           roomId: roomId,
@@ -523,11 +849,40 @@ class RoomController extends ChangeNotifier {
         if (!_isJoinedEpoch(sessionEpoch)) {
           return false;
         }
+        final MicSeat? ownSeat = _seatInSnapshot(refreshed);
+        if (ownSeat == null || !ownSeat.isOccupied) {
+          throw const ApiException(
+            kind: ApiFailureKind.business,
+            message: '麦位状态尚未确认，请刷新后重试',
+          );
+        }
+        final int authorityGeneration = _rtcAudioAuthorityGeneration;
+        final bool publishAudio = _snapshotAllowsRtcPublication(refreshed);
+        await _reconcileRtcForSnapshot(refreshed, publishAudio: publishAudio);
+        _rtcAudioRequested =
+            authorityGeneration == _rtcAudioAuthorityGeneration &&
+            publishAudio &&
+            _snapshotAllowsRtcPublication(refreshed);
+        if (!_rtcAudioRequested && publishAudio) {
+          await _disableRtcPublication();
+        }
+        if (!_isJoinedEpoch(sessionEpoch)) {
+          return false;
+        }
         _snapshot = refreshed;
       }
+      serverInviteMutationCommitted = false;
       await _loadMicRequests(sessionEpoch: sessionEpoch);
       return true;
     } catch (error) {
+      if (_isJoinedEpoch(sessionEpoch) && serverInviteMutationCommitted) {
+        await _rollbackInviteMutation(
+          operations,
+          requestId: requestId,
+          sessionEpoch: sessionEpoch,
+          fallbackSnapshot: previousSnapshot,
+        );
+      }
       if (_isJoinedEpoch(sessionEpoch)) {
         _errorMessage = _messageFor(error, fallback: '处理上麦邀请失败');
       }
@@ -582,14 +937,10 @@ class RoomController extends ChangeNotifier {
       return false;
     }
     final int sessionEpoch = _sessionEpoch;
+    bool serverMicMutationCommitted = false;
     try {
       await _repository.leaveMic();
-      if (!_isJoinedEpoch(sessionEpoch)) {
-        return false;
-      }
-      if (!_snapshot!.isSnapshotOnly) {
-        await _rtcAdapter.setLocalAudioEnabled(false);
-      }
+      serverMicMutationCommitted = true;
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
@@ -600,7 +951,13 @@ class RoomController extends ChangeNotifier {
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
+      await _reconcileRtcForSnapshot(refreshed, publishAudio: false);
+      _rtcAudioRequested = false;
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return false;
+      }
       _snapshot = refreshed;
+      serverMicMutationCommitted = false;
       if (allowsSyntheticPublicMessages) {
         _messages.add(
           const RoomMessage(sender: '系统', content: '你已离开麦位。', isSystem: true),
@@ -612,15 +969,49 @@ class RoomController extends ChangeNotifier {
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
+      if (serverMicMutationCommitted) {
+        // The first-party leave has already committed. Reconcile the local
+        // snapshot and leave any stale provider channel rather than retaining
+        // a publisher token after the member is off mic.
+        try {
+          await _rtcAdapter.leave();
+        } catch (_) {
+          // Preserve the original operation error.
+        }
+        try {
+          final RoomSnapshot refreshed = await _repository.reconnectRoom(
+            roomId: roomId,
+            currentUserId: _currentUserId,
+          );
+          if (_isJoinedEpoch(sessionEpoch)) {
+            await _reconcileRtcForSnapshot(refreshed, publishAudio: false);
+          }
+          if (_isJoinedEpoch(sessionEpoch)) {
+            _snapshot = refreshed;
+          }
+        } catch (_) {
+          // Keep the previous snapshot if the compensating read is unavailable.
+        }
+      }
       _errorMessage = _messageFor(error, fallback: '下麦失败');
       _notify();
       return false;
     }
   }
 
-  Future<bool> toggleMicrophone() async {
+  Future<bool> toggleMicrophone() {
     if (!allows(RoomCapability.toggleMicrophone) ||
-        _status != RoomSessionStatus.joined) {
+        _status != RoomSessionStatus.joined ||
+        _mutedInRoom) {
+      return Future<bool>.value(false);
+    }
+    return _withRtcAudioMutex<bool>(_toggleMicrophoneLocked);
+  }
+
+  Future<bool> _toggleMicrophoneLocked() async {
+    if (!allows(RoomCapability.toggleMicrophone) ||
+        _status != RoomSessionStatus.joined ||
+        _mutedInRoom) {
       return false;
     }
     final int sessionEpoch = _sessionEpoch;
@@ -629,15 +1020,33 @@ class RoomController extends ChangeNotifier {
       return false;
     }
     final bool nextMuted = !micMuted;
+    final int authorityGeneration = _rtcAudioAuthorityGeneration;
+    bool serverMicMutationCommitted = false;
     try {
       await _repository.setSelfMicrophoneMuted(
         backendMicIndex: ownSeat.backendIndex,
         muted: nextMuted,
       );
+      serverMicMutationCommitted = true;
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
-      await _rtcAdapter.setLocalAudioEnabled(!nextMuted);
+      final bool publishAudio =
+          !nextMuted &&
+          authorityGeneration == _rtcAudioAuthorityGeneration &&
+          _snapshotAllowsRtcTogglePublication();
+      await _rtcAdapter.setLocalAudioEnabled(publishAudio);
+      _rtcPublicationActive = publishAudio;
+      final bool authorityStillCurrent =
+          authorityGeneration == _rtcAudioAuthorityGeneration &&
+          _isJoinedEpoch(sessionEpoch) &&
+          !_mutedInRoom &&
+          (!publishAudio || _snapshotAllowsRtcTogglePublication());
+      if (!authorityStillCurrent && _rtcPublicationActive) {
+        await _rtcAdapter.setLocalAudioEnabled(false);
+        _rtcPublicationActive = false;
+      }
+      _rtcAudioRequested = authorityStillCurrent && publishAudio;
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
@@ -656,11 +1065,37 @@ class RoomController extends ChangeNotifier {
         ];
         _snapshot = snapshot.copyWith(seats: updated);
       }
+      serverMicMutationCommitted = false;
       _notify();
       return true;
     } catch (error) {
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
+      }
+      if (serverMicMutationCommitted) {
+        try {
+          await _repository.setSelfMicrophoneMuted(
+            backendMicIndex: ownSeat.backendIndex,
+            muted: !nextMuted,
+          );
+        } catch (_) {
+          // Preserve the original error while keeping the rollback best effort.
+        }
+        final bool restoreAudio =
+            nextMuted &&
+            authorityGeneration == _rtcAudioAuthorityGeneration &&
+            !_mutedInRoom &&
+            _snapshotAllowsRtcTogglePublication();
+        try {
+          await _rtcAdapter.setLocalAudioEnabled(restoreAudio);
+          _rtcPublicationActive = restoreAudio;
+          _rtcAudioRequested = restoreAudio;
+        } catch (_) {
+          // Keep the transport muted if permission or provider state prevents
+          // restoring the previous publication state.
+          _rtcPublicationActive = false;
+          _rtcAudioRequested = false;
+        }
       }
       _errorMessage = _messageFor(error, fallback: '麦克风状态更新失败');
       _notify();
@@ -883,7 +1318,21 @@ class RoomController extends ChangeNotifier {
       }
       if (!snapshot.isSnapshotOnly) {
         _claimTransportLease();
-        await _rtcAdapter.reconnect(snapshot.rtc);
+        final bool publishAudio =
+            _rtcAudioRequested && _snapshotAllowsRtcPublication(snapshot);
+        if (!publishAudio && _rtcAudioRequested) {
+          // A reconnect response is authoritative. If the member lost the
+          // seat, was muted, or was downgraded to audience, stop publication
+          // before applying the replacement token/role.
+          _rtcAudioRequested = false;
+          await _disableRtcPublication();
+        }
+        await _reconcileRtcForSnapshot(
+          snapshot,
+          publishAudio: publishAudio,
+          forceReconnect: true,
+        );
+        _rtcConnected = true;
         if (!_isCurrent(sessionEpoch)) {
           return;
         }
@@ -898,12 +1347,20 @@ class RoomController extends ChangeNotifier {
           }
         }
       } else {
+        await _withRtcAudioMutex<void>(_rtcAdapter.leave);
+        _rtcConnected = false;
+        _rtcPublicationActive = false;
+        _rtcAudioRequested = false;
         _realtimeDegraded = false;
       }
       if (!_isCurrent(sessionEpoch)) {
         return;
       }
       _snapshot = snapshot;
+      await _bindTencentImRoom(snapshot, sessionEpoch: sessionEpoch);
+      if (!_isCurrent(sessionEpoch)) {
+        return;
+      }
       if (_allowSyntheticPublicMessages && !snapshot.isSnapshotOnly) {
         _messages.add(
           const RoomMessage(
@@ -937,6 +1394,23 @@ class RoomController extends ChangeNotifier {
     final RoomSessionStatus previousStatus = _status;
     final Object? transportLease = _transportLeaseId;
     final int sessionEpoch = _invalidateSession();
+    final TencentImAvChatRoomCoordinator? tencentCoordinator =
+        _tencentImAvChatRoomCoordinator;
+    final TencentImAvChatRoomSession? tencentSession = _tencentImSession;
+    _tencentImSession = null;
+    if (tencentCoordinator != null) {
+      // leaveIfCurrent fences the local session synchronously and starts a
+      // bounded provider quit. The first-party HTTP exit must not wait for or
+      // depend on that vendor operation.
+      unawaited(
+        _ignoreTencentLeave(
+          tencentCoordinator.leaveIfCurrent(
+            roomId: _snapshot?.roomId ?? roomId,
+            sessionId: tencentSession?.sessionId,
+          ),
+        ),
+      );
+    }
     if (_status == RoomSessionStatus.joining ||
         _status == RoomSessionStatus.idle ||
         (_status == RoomSessionStatus.failed && _snapshot == null)) {
@@ -1029,6 +1503,9 @@ class RoomController extends ChangeNotifier {
     if (!RoomRealtimeEventCodes.allowed.contains(event.code)) {
       return;
     }
+    if (_isRtcAuthorityEvent(event.code)) {
+      _rtcAudioAuthorityGeneration += 1;
+    }
     final int activeEpoch = sessionEpoch ?? _sessionEpoch;
     switch (event.code) {
       case RoomRealtimeEventCodes.publicChat:
@@ -1082,6 +1559,8 @@ class RoomController extends ChangeNotifier {
         return;
       case RoomRealtimeEventCodes.mutedInRoom:
         _mutedInRoom = true;
+        _rtcAudioRequested = false;
+        unawaited(_disableRtcPublication());
         _messages.add(
           const RoomMessage(
             sender: '系统',
@@ -1099,8 +1578,14 @@ class RoomController extends ChangeNotifier {
         _notify();
         return;
       case RoomRealtimeEventCodes.putOnMic:
+        unawaited(_refreshAfterRealtimeEvent(sessionEpoch: activeEpoch));
+        return;
       case RoomRealtimeEventCodes.takeDownMic:
       case RoomRealtimeEventCodes.closeMic:
+        _rtcAudioRequested = false;
+        unawaited(_disableRtcPublication());
+        unawaited(_refreshAfterRealtimeEvent(sessionEpoch: activeEpoch));
+        return;
       case RoomRealtimeEventCodes.openMic:
       case RoomRealtimeEventCodes.micInfo:
       case RoomRealtimeEventCodes.roomTopic:
@@ -1122,6 +1607,7 @@ class RoomController extends ChangeNotifier {
       return;
     }
     _refreshingFromEvent = true;
+    final RoomSnapshot? previous = _snapshot;
     try {
       final RoomSnapshot refreshed = await _repository.reconnectRoom(
         roomId: roomId,
@@ -1130,7 +1616,28 @@ class RoomController extends ChangeNotifier {
       if (!_isJoinedEpoch(sessionEpoch)) {
         return;
       }
+      Object? rtcError;
+      try {
+        await _reconcileAuthoritativeRtc(previous, refreshed);
+      } catch (_) {
+        // The HTTP snapshot remains authoritative even when the provider
+        // transport cannot apply it. Publication is fail-closed and the next
+        // explicit mic action will obtain another server token.
+        rtcError = const RtcAdapterException(
+          failure: RtcAdapterFailure.provider,
+          message: '实时音频通道暂时不可用',
+        );
+        _rtcAudioRequested = false;
+        await _disableRtcPublication();
+      }
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return;
+      }
       _snapshot = refreshed;
+      if (rtcError != null) {
+        _realtimeDegraded = true;
+        _errorMessage = (rtcError as RtcAdapterException).message;
+      }
       _notify();
     } catch (_) {
       if (_isJoinedEpoch(sessionEpoch)) {
@@ -1148,6 +1655,20 @@ class RoomController extends ChangeNotifier {
     RoomSnapshot snapshot, {
     required int sessionEpoch,
   }) async {
+    final TencentImAvChatRoomCoordinator? tencentCoordinator =
+        _tencentImAvChatRoomCoordinator;
+    final TencentImAvChatRoomSession? tencentSession = _tencentImSession;
+    _tencentImSession = null;
+    if (tencentCoordinator != null) {
+      unawaited(
+        _ignoreTencentLeave(
+          tencentCoordinator.leaveIfCurrent(
+            roomId: tencentSession?.roomId ?? snapshot.roomId,
+            sessionId: tencentSession?.sessionId,
+          ),
+        ),
+      );
+    }
     if (_canCompensateJoin(sessionEpoch)) {
       try {
         await _repository.exitRoom(snapshot.roomId);
@@ -1180,6 +1701,8 @@ class RoomController extends ChangeNotifier {
 
   int _invalidateSession() {
     _sessionEpoch += 1;
+    _invalidateTencentImReadinessPoll();
+    _rtcAudioAuthorityGeneration += 1;
     _micQueueEpoch += 1;
     _joinCancelled = true;
     _micRequestPending = false;
@@ -1194,6 +1717,9 @@ class RoomController extends ChangeNotifier {
     _historyErrorKind = null;
     _historyErrorMessage = null;
     _refreshingFromEvent = false;
+    _rtcAudioRequested = false;
+    _rtcConnected = false;
+    _rtcPublicationActive = false;
     return _sessionEpoch;
   }
 
@@ -1215,9 +1741,320 @@ class RoomController extends ChangeNotifier {
       transportLease != null &&
       _rtcTransportOwners[_rtcAdapter] == transportLease;
 
+  Future<void> _leaveOwnedRtcTransport(Object transportLease) async {
+    await _withRtcAudioMutex<void>(() async {
+      // The lease may have been handed to a newer controller while this
+      // cleanup waited behind an older audio operation. Never let a stale
+      // queued cleanup leave that newer session.
+      if (!_ownsRtcTransport(transportLease)) {
+        return;
+      }
+      try {
+        await _rtcAdapter.leave();
+      } finally {
+        if (_ownsRtcTransport(transportLease)) {
+          _rtcTransportOwners[_rtcAdapter] = null;
+        }
+      }
+    });
+  }
+
+  Future<void> _disposeOwnedRtcTransport(Object transportLease) async {
+    try {
+      await _leaveOwnedRtcTransport(transportLease);
+    } catch (_) {
+      // Disposal is best effort; the controller is already terminal and must
+      // not surface an asynchronous provider error.
+    }
+  }
+
   bool _ownsRealtimeTransport(Object? transportLease) =>
       transportLease != null &&
       _realtimeTransportOwners[_realtimeGateway] == transportLease;
+
+  /// Reconciles a first-party room snapshot with the provider transport. A
+  /// snapshot-only response tears down any previously joined provider channel;
+  /// an interactive response always rejoins with its current role/token before
+  /// the caller explicitly chooses whether to publish audio.
+  Future<void> _reconcileRtcForSnapshot(
+    RoomSnapshot snapshot, {
+    required bool publishAudio,
+    bool forceReconnect = true,
+  }) async {
+    if (_disposed) {
+      return;
+    }
+    if (snapshot.isSnapshotOnly) {
+      await _withRtcAudioMutex<void>(_rtcAdapter.leave);
+      _rtcConnected = false;
+      _rtcPublicationActive = false;
+      _rtcAudioRequested = false;
+      return;
+    }
+    final int authorityGeneration = _rtcAudioAuthorityGeneration;
+    try {
+      await _withRtcAudioMutex<void>(() async {
+        // Keep reconnect and the subsequent publication update in the same
+        // serialized operation. Otherwise a local toggle could run between
+        // them and be silently replaced by a stale role/token transition.
+        if (_disposed || authorityGeneration != _rtcAudioAuthorityGeneration) {
+          return;
+        }
+        if (forceReconnect || !_rtcConnected) {
+          await _rtcAdapter.reconnect(snapshot.rtc);
+          if (_disposed ||
+              authorityGeneration != _rtcAudioAuthorityGeneration) {
+            return;
+          }
+          _rtcConnected = true;
+          _rtcPublicationActive = false;
+        }
+        // Re-evaluate authority after any reconnect await and immediately
+        // before the native publication call. A realtime mute can arrive in
+        // that window and must turn this into a safe disable.
+        final bool effectivePublishAudio =
+            publishAudio &&
+            authorityGeneration == _rtcAudioAuthorityGeneration &&
+            _snapshotAllowsRtcPublication(snapshot);
+        await _rtcAdapter.setLocalAudioEnabled(effectivePublishAudio);
+        _rtcPublicationActive = effectivePublishAudio;
+        if (effectivePublishAudio &&
+            (_disposed ||
+                authorityGeneration != _rtcAudioAuthorityGeneration ||
+                !_snapshotAllowsRtcPublication(snapshot))) {
+          await _rtcAdapter.setLocalAudioEnabled(false);
+          _rtcPublicationActive = false;
+        }
+      });
+    } catch (_) {
+      _rtcConnected = false;
+      _rtcPublicationActive = false;
+      rethrow;
+    }
+  }
+
+  Future<void> _reconcileAuthoritativeRtc(
+    RoomSnapshot? previous,
+    RoomSnapshot refreshed,
+  ) async {
+    final bool wasAudioRequested = _rtcAudioRequested;
+    final bool mayPublish = _snapshotAllowsRtcPublication(refreshed);
+    final bool shouldPublish = _rtcAudioRequested && mayPublish;
+    if (!mayPublish && wasAudioRequested) {
+      // This is intentionally done before applying a replacement role/token.
+      // A stale publisher must never remain live while a seat revoke or mute
+      // is being reconciled.
+      _rtcAudioRequested = false;
+      await _disableRtcPublication();
+    }
+
+    if (refreshed.isSnapshotOnly) {
+      await _reconcileRtcForSnapshot(refreshed, publishAudio: false);
+      return;
+    }
+
+    final bool transportChanged =
+        previous == null || previous.isSnapshotOnly != refreshed.isSnapshotOnly;
+    final bool roleOrIdentityChanged =
+        previous == null ||
+        previous.rtc.provider.trim().toLowerCase() !=
+            refreshed.rtc.provider.trim().toLowerCase() ||
+        previous.rtc.appId != refreshed.rtc.appId ||
+        previous.rtc.channelId != refreshed.rtc.channelId ||
+        previous.rtc.uid != refreshed.rtc.uid ||
+        previous.rtc.role.trim().toLowerCase() !=
+            refreshed.rtc.role.trim().toLowerCase();
+    final bool tokenChanged =
+        previous == null || previous.rtc.token != refreshed.rtc.token;
+    final bool needsReconnect =
+        !_rtcConnected ||
+        transportChanged ||
+        roleOrIdentityChanged ||
+        // A refreshed token is authoritative even after publication was
+        // revoked above. Otherwise a broadcaster whose seat was removed
+        // would stay joined with the old token and could later publish with
+        // stale credentials when the seat is granted again.
+        tokenChanged;
+
+    await _reconcileRtcForSnapshot(
+      refreshed,
+      publishAudio: shouldPublish,
+      forceReconnect: needsReconnect,
+    );
+  }
+
+  bool _snapshotAllowsRtcPublication(RoomSnapshot snapshot) {
+    if (snapshot.isSnapshotOnly || _mutedInRoom) {
+      return false;
+    }
+    final MicSeat? ownSeat = _seatInSnapshot(snapshot);
+    if (ownSeat == null ||
+        !ownSeat.isOccupied ||
+        ownSeat.state == MicSeatState.occupiedMuted) {
+      return false;
+    }
+    return switch (snapshot.rtc.role.trim().toLowerCase()) {
+      'broadcaster' || 'publisher' || 'host' || 'speaker' || 'anchor' => true,
+      _ => false,
+    };
+  }
+
+  /// Checks the stable authority needed for a local mic toggle. The seat's
+  /// occupied-muted bit is intentionally ignored here because the next local
+  /// unmute operation is the action that changes that bit; all realtime
+  /// authority changes invalidate the captured generation before publication.
+  bool _snapshotAllowsRtcTogglePublication() {
+    final RoomSnapshot? snapshot = _snapshot;
+    if (snapshot == null || snapshot.isSnapshotOnly || _mutedInRoom) {
+      return false;
+    }
+    final MicSeat? ownSeat = _ownSeat();
+    if (ownSeat == null || !ownSeat.isOccupied) {
+      return false;
+    }
+    return switch (snapshot.rtc.role.trim().toLowerCase()) {
+      'broadcaster' || 'publisher' || 'host' || 'speaker' || 'anchor' => true,
+      _ => false,
+    };
+  }
+
+  bool _isRtcAuthorityEvent(int code) {
+    return switch (code) {
+      RoomRealtimeEventCodes.mutedInRoom ||
+      RoomRealtimeEventCodes.unmutedInRoom ||
+      RoomRealtimeEventCodes.putOnMic ||
+      RoomRealtimeEventCodes.takeDownMic ||
+      RoomRealtimeEventCodes.closeMic ||
+      RoomRealtimeEventCodes.openMic ||
+      RoomRealtimeEventCodes.micInfo ||
+      RoomRealtimeEventCodes.roomAutoLock => true,
+      _ => false,
+    };
+  }
+
+  MicSeat? _seatInSnapshot(RoomSnapshot snapshot) {
+    for (final MicSeat seat in snapshot.seats) {
+      if (seat.userId == _currentUserId) {
+        return seat;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _disableRtcPublication() async {
+    await _withRtcAudioMutex<void>(() async {
+      if (!_rtcConnected && !_rtcPublicationActive) {
+        return;
+      }
+      try {
+        await _rtcAdapter.setLocalAudioEnabled(false);
+      } catch (_) {
+        // If a provider refuses the mute operation during a role revoke, leave
+        // the channel so publication is still fail-closed.
+        try {
+          await _rtcAdapter.leave();
+        } catch (_) {
+          // Preserve the authority refresh result; the next action retries.
+        }
+        _rtcConnected = false;
+      } finally {
+        _rtcPublicationActive = false;
+      }
+    });
+  }
+
+  Future<T> _withRtcAudioMutex<T>(Future<T> Function() operation) {
+    final Future<void> previous = _rtcAudioTail;
+    final Completer<void> release = Completer<void>();
+    final Future<void> ready = previous.catchError(
+      (Object _, StackTrace __) {},
+    );
+    final Future<T> result = ready.then<T>((_) async {
+      try {
+        return await operation();
+      } finally {
+        if (!release.isCompleted) {
+          release.complete();
+        }
+      }
+    });
+    _rtcAudioTail = ready.then<void>((_) => release.future);
+    return result;
+  }
+
+  Future<void> _rollbackMicMutation({
+    required int sessionEpoch,
+    required RoomSnapshot? fallbackSnapshot,
+  }) async {
+    try {
+      await _repository.leaveMic();
+    } catch (_) {
+      // Preserve the original failure; the authority rollback is best effort.
+    }
+    if (!_isJoinedEpoch(sessionEpoch)) {
+      return;
+    }
+    try {
+      final RoomSnapshot restored = await _repository.reconnectRoom(
+        roomId: roomId,
+        currentUserId: _currentUserId,
+      );
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return;
+      }
+      await _reconcileRtcForSnapshot(restored, publishAudio: false);
+      if (_isJoinedEpoch(sessionEpoch)) {
+        _snapshot = restored;
+      }
+    } catch (_) {
+      try {
+        await _rtcAdapter.leave();
+      } catch (_) {
+        // Keep rollback best effort and retain the original failure.
+      }
+      if (_isJoinedEpoch(sessionEpoch) && fallbackSnapshot != null) {
+        _snapshot = fallbackSnapshot;
+      }
+    }
+  }
+
+  Future<void> _rollbackInviteMutation(
+    RoomOperationsRepository operations, {
+    required String requestId,
+    required int sessionEpoch,
+    required RoomSnapshot? fallbackSnapshot,
+  }) async {
+    try {
+      await operations.resolveMicRequest(requestId: requestId, accepted: false);
+    } catch (_) {
+      // Preserve the original failure; an accepted invite may be immutable.
+    }
+    if (!_isJoinedEpoch(sessionEpoch)) {
+      return;
+    }
+    try {
+      final RoomSnapshot restored = await _repository.reconnectRoom(
+        roomId: roomId,
+        currentUserId: _currentUserId,
+      );
+      if (!_isJoinedEpoch(sessionEpoch)) {
+        return;
+      }
+      await _reconcileRtcForSnapshot(restored, publishAudio: false);
+      if (_isJoinedEpoch(sessionEpoch)) {
+        _snapshot = restored;
+      }
+    } catch (_) {
+      try {
+        await _rtcAdapter.leave();
+      } catch (_) {
+        // Keep rollback best effort and retain the original failure.
+      }
+      if (_isJoinedEpoch(sessionEpoch) && fallbackSnapshot != null) {
+        _snapshot = fallbackSnapshot;
+      }
+    }
+  }
 
   void _notify() {
     if (!_disposed) {
@@ -1252,13 +2089,13 @@ class RoomController extends ChangeNotifier {
     }
     if (_ownsRtcTransport(transportLease)) {
       try {
-        await _rtcAdapter.leave();
+        await _leaveOwnedRtcTransport(transportLease!);
       } catch (error) {
         firstError ??= error;
       }
-      if (_ownsRtcTransport(transportLease)) {
-        _rtcTransportOwners[_rtcAdapter] = null;
-      }
+      _rtcConnected = false;
+      _rtcPublicationActive = false;
+      _rtcAudioRequested = false;
     }
     if (_transportLeaseId == transportLease) {
       _transportLeaseId = null;
@@ -1401,6 +2238,26 @@ class RoomController extends ChangeNotifier {
     return value;
   }
 
+  static Future<void> _ignoreTencentLeave(Future<void> leave) async {
+    try {
+      await leave;
+    } catch (_) {
+      // Provider cleanup is best effort. The first-party HTTP room state owns
+      // the user-visible leave/compensation result.
+    }
+  }
+
+  static Future<void> _ignoreTencentEnter(
+    Future<TencentImAvChatRoomJoinResult> enter,
+  ) async {
+    try {
+      await enter;
+    } catch (_) {
+      // Provider join is optional. The first-party HTTP room stays usable
+      // when the SDK rejects, times out, or is unavailable.
+    }
+  }
+
   static String _secureRequestId(String prefix) {
     final String entropy = List<String>.generate(
       32,
@@ -1436,6 +2293,8 @@ class RoomController extends ChangeNotifier {
       return;
     }
     _sessionEpoch += 1;
+    _invalidateTencentImReadinessPoll();
+    _rtcAudioAuthorityGeneration += 1;
     _micQueueEpoch += 1;
     _disposed = true;
     _joinCancelled = true;
@@ -1447,6 +2306,23 @@ class RoomController extends ChangeNotifier {
     _giftRequestId = null;
     _giftRequestKey = null;
     _refreshingFromEvent = false;
+    _rtcAudioRequested = false;
+    _rtcConnected = false;
+    _rtcPublicationActive = false;
+    final TencentImAvChatRoomCoordinator? tencentCoordinator =
+        _tencentImAvChatRoomCoordinator;
+    final TencentImAvChatRoomSession? tencentSession = _tencentImSession;
+    _tencentImSession = null;
+    _tencentImRefreshRegistration?.cancel();
+    _tencentImRefreshRegistration = null;
+    if (tencentCoordinator != null && tencentSession != null) {
+      unawaited(
+        tencentCoordinator.leaveIfCurrent(
+          roomId: tencentSession.roomId,
+          sessionId: tencentSession.sessionId,
+        ),
+      );
+    }
     final Object? transportLease = _transportLeaseId;
     final StreamSubscription<RoomRealtimeEvent>? subscription =
         _realtimeSubscription;
@@ -1459,13 +2335,41 @@ class RoomController extends ChangeNotifier {
       unawaited(_realtimeGateway.disconnect());
     }
     if (_ownsRtcTransport(transportLease)) {
-      _rtcTransportOwners[_rtcAdapter] = null;
-      unawaited(_rtcAdapter.leave());
+      unawaited(_disposeOwnedRtcTransport(transportLease!));
     }
     if (_transportLeaseId == transportLease) {
       _transportLeaseId = null;
     }
     super.dispose();
+  }
+
+  static Duration _positiveDuration(Duration value, String name) {
+    if (value <= Duration.zero) {
+      throw ArgumentError.value(value, name, 'duration must be positive');
+    }
+    return value;
+  }
+}
+
+class _CancelableTencentImReadinessWait {
+  _CancelableTencentImReadinessWait(Duration duration) {
+    _timer = Timer(duration, () => _complete(true));
+  }
+
+  final Completer<bool> _completer = Completer<bool>();
+  late final Timer _timer;
+
+  Future<bool> get future => _completer.future;
+
+  void cancel() {
+    _timer.cancel();
+    _complete(false);
+  }
+
+  void _complete(bool value) {
+    if (!_completer.isCompleted) {
+      _completer.complete(value);
+    }
   }
 }
 

@@ -24,7 +24,19 @@ enum PaymentOrderStatus {
   unknown,
 }
 
-enum RefundStatus { reviewing, approved, rejected, resubmitted, unavailable }
+/// Statuses returned by the first-party refund service.
+///
+/// `approved` means a human/backend approval only. It is intentionally
+/// distinct from `completed`, which is the only terminal status that says the
+/// refund has arrived. Neither status authorizes a client-side balance write.
+enum RefundStatus {
+  reviewing,
+  approved,
+  completed,
+  rejected,
+  resubmitted,
+  unavailable,
+}
 
 enum RefundScope { accountLegacy, order }
 
@@ -240,6 +252,7 @@ class RefundApplication {
     required this.rejectedReason,
     required this.createdAt,
     this.currency = LedgerCurrency.cashCny,
+    this.completed = false,
   });
 
   final String id;
@@ -251,10 +264,14 @@ class RefundApplication {
   final DateTime createdAt;
   final LedgerCurrency currency;
 
+  /// True only when the backend returned terminal `COMPLETED`.
+  final bool completed;
+
   RefundApplication copyWith({
     RefundStatus? status,
     String? statusText,
     String? rejectedReason,
+    bool? completed,
   }) {
     return RefundApplication(
       id: id,
@@ -265,6 +282,7 @@ class RefundApplication {
       rejectedReason: rejectedReason ?? this.rejectedReason,
       createdAt: createdAt,
       currency: currency,
+      completed: completed ?? this.completed,
     );
   }
 }

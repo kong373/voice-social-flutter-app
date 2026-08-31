@@ -3,15 +3,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/core/storage/key_value_store.dart';
 import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/account/presentation/consent_page.dart';
+import '../integration_test/m2_4_test_support.dart';
 
 void main() {
   test('consent acceptance is bound to the app-owned version', () async {
     final AuthSessionManager oldManager = AuthSessionManager(
       MemoryKeyValueStore(<String, String>{
-        AuthSessionManager.consentStorageKey: 'accepted',
+        'compliance.consent.v1': 'accepted:app-owned-v1',
       }),
     );
     expect(await oldManager.hasAcceptedConsent(), isFalse);
+
+    final AuthSessionManager previousVersionManager = AuthSessionManager(
+      MemoryKeyValueStore(<String, String>{
+        AuthSessionManager.consentStorageKey: 'accepted:app-owned-v1',
+      }),
+    );
+    expect(await previousVersionManager.hasAcceptedConsent(), isFalse);
 
     final AuthSessionManager manager = AuthSessionManager(
       MemoryKeyValueStore(),
@@ -38,7 +46,10 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('App-owned v1'), findsWidgets);
+    expect(find.textContaining('App-owned v2'), findsWidgets);
+    expect(find.textContaining('支付宝 App Pay SDK'), findsOneWidget);
+    expect(find.textContaining('声网 Agora'), findsOneWidget);
+    expect(find.textContaining('腾讯云即时通信 IM'), findsOneWidget);
     await tester.tap(find.byKey(const Key('consent-submit')));
     expect(accepted, isFalse);
 
@@ -60,6 +71,37 @@ void main() {
     await tester.pump();
 
     expect(accepted, isTrue);
+  });
+
+  testWidgets('consent test helper reaches the checkbox at 360x800', (
+    WidgetTester tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    var accepted = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            if (accepted) {
+              return const Text('登录 / 注册');
+            }
+            return ConsentPage(
+              onAccept: () async {
+                setState(() => accepted = true);
+              },
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await acceptConsentIfVisible(tester);
+
+    expect(accepted, isTrue);
+    expect(find.text('登录 / 注册'), findsOneWidget);
   });
 
   testWidgets('consent save failure remains visible and does not advance', (

@@ -177,6 +177,9 @@ jobs:
           cp -R integration_test .ci_app/integration_test
           cp -R packages .ci_app/packages
           cp pubspec.yaml pubspec.lock analysis_options.yaml .ci_app/
+          mkdir -p .ci_app/tool
+          cp tool/prepare_android_audio_manifest.py .ci_app/tool/
+          python3 tool/prepare_android_audio_manifest.py .ci_app
 
       - name: Build live public-client debug APK
         working-directory: .ci_app
@@ -188,6 +191,7 @@ jobs:
             --dart-define=BACKEND_MODE=live \
             --dart-define=APP_ENV=development \
             --dart-define=ALLOW_INSECURE_HTTP=true \
+            --dart-define=ENABLE_AGORA_RTC=true \
             --dart-define=API_BASE_URL=http://10.0.2.2:8765/ \
             --dart-define=OAUTH_CLIENT_ID=voice-social-mobile-public
 

@@ -16,6 +16,12 @@ enum MicSeatState { available, locked, mutedAvailable, occupied, occupiedMuted }
 
 enum RtcSolution { agora, zego, unknown }
 
+/// Agora's native numeric uid is carried through the backend's signed Java
+/// integer user-id contract. A server that adopts account-string tokens can
+/// widen this in a future provider-specific adapter without changing the
+/// provider-neutral model.
+const int rtcUidMax = 0x7FFFFFFF;
+
 enum RoomTransportMode { interactive, snapshotOnly }
 
 enum RoomEntrySource {
@@ -44,16 +50,97 @@ enum RoomEntrySource {
 
 class RtcCredentials {
   const RtcCredentials({
-    required this.solution,
+    this.solution = RtcSolution.unknown,
+    this.provider = '',
+    this.appId = '',
     required this.token,
     required this.channelId,
-    required this.userId,
-  });
+    int? uid,
+    int? userId,
+    this.role = '',
+    this.expiresAt,
+    Duration? ttl,
+    int? ttlSeconds,
+  }) : uid = uid ?? userId ?? 0,
+       _ttl = ttl,
+       _ttlSeconds = ttlSeconds;
 
   final RtcSolution solution;
+
+  /// Provider name returned by the first-party token endpoint.
+  ///
+  /// This is a public routing value (currently `agora`), not a provider
+  /// credential. Provider signing secrets must never be present in this
+  /// model.
+  final String provider;
+
+  /// Public Agora App ID. The backend supplies this value at runtime; it is
+  /// intentionally not a build-time define or a source constant.
+  final String appId;
   final String token;
   final String channelId;
-  final int userId;
+
+  /// Numeric provider user ID. The current backend token contract uses the
+  /// positive signed Java integer range even though the native SDK accepts a
+  /// wider unsigned value.
+  final int uid;
+
+  /// Backend role (for example `audience` or `broadcaster`).
+  final String role;
+
+  /// Absolute token expiry, when supplied by the backend.
+  final DateTime? expiresAt;
+
+  /// Token lifetime. The backend's canonical field is `ttlSeconds`; a
+  /// Duration is retained as a convenience for callers that already use
+  /// Dart time values.
+  final Duration? _ttl;
+  final int? _ttlSeconds;
+
+  Duration? get ttl {
+    final int? seconds = _ttlSeconds;
+    return _ttl ?? (seconds == null ? null : Duration(seconds: seconds));
+  }
+
+  int? get ttlSeconds => _ttlSeconds ?? _ttl?.inSeconds;
+
+  /// Compatibility alias used by the existing room domain/controller code.
+  int get userId => uid;
+
+  /// The provider value normalized for old local/mock fixtures that only set
+  /// the historical [solution] enum.
+  String get effectiveProvider {
+    final String normalized = provider.trim().toLowerCase();
+    if (normalized.isNotEmpty) {
+      return normalized;
+    }
+    return switch (solution) {
+      RtcSolution.agora => 'agora',
+      RtcSolution.zego => 'zego',
+      RtcSolution.unknown => '',
+    };
+  }
+
+  bool get hasUsablePublicCredentials =>
+      provider.trim().toLowerCase() == 'agora' &&
+      appId.trim().isNotEmpty &&
+      token.trim().isNotEmpty &&
+      channelId.trim().isNotEmpty &&
+      uid > 0 &&
+      uid <= rtcUidMax &&
+      role.trim().isNotEmpty &&
+      (expiresAt != null || (ttlSeconds ?? 0) > 0);
+
+  /// Safe diagnostics representation. Ephemeral token material is omitted.
+  Map<String, Object?> toRedactedJson() => <String, Object?>{
+    'provider': effectiveProvider,
+    'appId': appId,
+    'channelId': channelId,
+    'uid': uid,
+    'role': role,
+    'expiresAt': expiresAt?.toUtc().toIso8601String(),
+    'ttlSeconds': ttlSeconds,
+  };
 }
 
 class MicSeat {
@@ -119,6 +206,7 @@ class RoomMessage {
     this.createdAt,
     this.deliveryMode,
     this.realtimeStatus,
+    this.eventVersion,
   });
 
   final String? roomId;
@@ -131,6 +219,10 @@ class RoomMessage {
   final DateTime? createdAt;
   final String? deliveryMode;
   final String? realtimeStatus;
+
+  /// Server-issued signed 64-bit ordering for metadata-only realtime hints.
+  /// The room UI never treats it as provider authorization.
+  final int? eventVersion;
 }
 
 class RoomSnapshot {

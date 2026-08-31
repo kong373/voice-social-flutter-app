@@ -2,7 +2,10 @@
 
 `tool/live_development.sh` is the single local entry point for first-party
 development integration. It keeps the normal debug build in mock mode while
-making a live development run explicit and fail-closed.
+making a live development run explicit and fail-closed. The optional
+`--enable-agora-rtc` and `--enable-tencent-im` switches are the only ways this
+launcher enables the live first-party Agora audio transport or Tencent Cloud
+IM session; when omitted, it passes explicit `false` defines for both.
 
 ## Required inputs
 
@@ -58,6 +61,10 @@ SDK fails before Flutter can build or install anything:
 The launcher also forces `ENABLE_QA_CONSOLE=false` and
 `ENABLE_VIDEO_RUNTIME_DEMO=false`; a live build cannot route into either
 Mock-backed shell even when the host environment requests one.
+Tencent Cloud IM remains blocked unless `--enable-tencent-im` is supplied. The
+switch is a strict boolean opt-in: it accepts no value, and the corresponding
+environment, Dart-define, Flutter-tool, and Gradle aliases are rejected before
+Flutter starts.
 
 Only the wrapper's options are accepted. A small allowlist of non-defining
 diagnostic flags (`--verbose`, `--quiet`, `--wrap`, `--no-wrap`, `--color`,
@@ -70,15 +77,73 @@ diagnostic flags (`--verbose`, `--quiet`, `--wrap`, `--no-wrap`, `--color`,
   --target android-emulator \
   --dry-run
 
-# Run on an Android Emulator / BlueStacks device.
+# Run on an Android Emulator / BlueStacks device with snapshot-only room audio.
 ./tool/live_development.sh run \
   --target android-emulator \
   --device emulator-5554
 
+# Opt into the server-issued Agora audio transport for this run.
+./tool/live_development.sh run \
+  --target android-emulator \
+  --device emulator-5554 \
+  --enable-agora-rtc
+
 # Build a debug APK with the Android Emulator address baked in.
 ./tool/live_development.sh build-apk \
   --target android-emulator
+
+# Build a debug APK with the live Agora audio transport enabled.
+./tool/live_development.sh build-apk \
+  --target android-emulator \
+  --enable-agora-rtc
+
+# Opt into the server-issued Tencent Cloud IM session for this run.
+./tool/live_development.sh run \
+  --target android-emulator \
+  --device emulator-5554 \
+  --enable-tencent-im
+
+# Build a debug APK with the live Tencent Cloud IM session enabled.
+./tool/live_development.sh build-apk \
+  --target android-emulator \
+  --enable-tencent-im
 ```
+
+A successful `build-apk` retains the installable artifact and its checksum at:
+
+```text
+build/live-development/app-debug.apk
+build/live-development/app-debug.apk.sha256
+```
+
+The launcher prints the absolute retained path and SHA-256 only after both
+files have been written successfully. A real build clears the previous fixed
+pair before Flutter starts, so a failed build cannot leave a stale artifact
+that looks current. A dry run does not create or remove either file.
+
+## Isolated Android host
+
+The Android target works from a clean checkout even though this repository does
+not track an `android/` directory. Before a live run or APK build, the launcher
+requires `git status --porcelain --untracked-files=normal` to be empty, then
+creates a temporary Flutter Android host under `TMPDIR`, overlays the tracked
+checkout sources, runs `tool/prepare_android_audio_manifest.py`, and performs a
+locked `flutter pub get`. Flutter then runs from that temporary host. The
+generated directory is removed on exit, so the ignored `android/` host never
+pollutes this checkout or becomes a commit candidate. A dirty checkout fails
+before Flutter starts; commit or remove local changes first so the app source
+being built is unambiguous and no untracked secret can enter the host.
+For `build-apk`, the launcher copies the non-empty regular APK into the fixed,
+ignored `build/live-development/` directory and writes its SHA-256 sidecar
+before removing the temporary host. It refuses symbolic-link or non-directory
+output parents and symbolic-link/non-regular output files. Existing content
+elsewhere under `build/` is never removed.
+
+`tool/bootstrap_local.sh` remains available for general local Flutter runners,
+but it copies a generated platform host into the checkout and therefore is not
+used by the live Android launcher. The audio manifest helper keeps
+`RECORD_AUDIO` and removes `CAMERA`, `READ_PHONE_STATE`,
+`FOREGROUND_SERVICE_MEDIA_PROJECTION`, and Agora screen-capture components.
 
 For a host Flutter target, change both the environment and selector. This is a
 `run` target; do not use it to build an Android APK:
@@ -100,6 +165,8 @@ BACKEND_MODE=live
 APP_ENV=development
 ENABLE_QA_CONSOLE=false
 ENABLE_VIDEO_RUNTIME_DEMO=false
+ENABLE_AGORA_RTC=<true only when --enable-agora-rtc is present; otherwise false>
+ENABLE_TENCENT_IM=<true only when --enable-tencent-im is present; otherwise false>
 API_BASE_URL=<validated target URL>
 OAUTH_CLIENT_ID=<public client id>
 ALLOW_INSECURE_HTTP=true
@@ -111,6 +178,15 @@ through ordinary host environment variables. Flutter receives no OAuth or
 vendor secret. `--dry-run`
 prints only the target, API origin, and whether the public client is configured;
 it never prints the client identifier itself.
+
+The `ENABLE_AGORA_RTC` and `ENABLE_TENCENT_IM` environment variables and
+related environment aliases (`AGORA_RTC`, `AGORA_ENABLE_RTC`, `TENCENT_IM`,
+`TENCENT_ENABLE_IM`, `DART_DEFINES`, `FLUTTER_TOOL_ARGS`, and Gradle
+project-define variables) are rejected. Arbitrary `--dart-define`,
+`--dart-define-from-file`, Gradle define, and Android project-argument aliases
+remain rejected as well; the wrapper owns every runtime define and never
+accepts an OAuth or vendor secret. Use the explicit `--enable-tencent-im`
+switch when Tencent Cloud IM is intentionally enabled.
 
 The launcher uses an explicit two-level environment policy. Environment
 variable and CLI argument checks are case-insensitive: names that clearly
@@ -140,8 +216,11 @@ attempt to enumerate every possible credential suffix.
 
 ## What this does not do
 
-The launcher does not call `/health`, request an SMS, authenticate a user,
-create a room, send a message, create an order, charge a wallet, or invoke an
-RTC, IM, push, payment, or storage provider. Those are separate integration
-and acceptance steps. The backend must be started independently on port
-`18080` before a live run can make a read or authentication request.
+The launcher itself does not call `/health`, request an SMS, authenticate a
+user, create a room, send a message, create an order, charge a wallet, or
+invoke an RTC, IM, push, payment, or storage provider. A launched app can
+perform the explicitly selected first-party flows; Tencent Cloud IM remains
+blocked unless `--enable-tencent-im` is supplied, and Phase 1 only establishes
+its session lifecycle (no message send/receive). The backend must be started
+independently on port `18080` before a live run can make a read or
+authentication request.

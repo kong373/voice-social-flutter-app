@@ -13,8 +13,8 @@ class AuthSessionManager {
   /// Keeping the version in the value (rather than treating a historical
   /// `accepted` flag as permanent) makes a changed agreement invalidate the
   /// old acknowledgement on the next cold start.
-  static const String consentVersion = 'app-owned-v1';
-  static const String consentStorageKey = 'compliance.consent.v1';
+  static const String consentVersion = 'app-owned-v2';
+  static const String consentStorageKey = 'compliance.consent.v2';
   static const String consentStorageValue = 'accepted:$consentVersion';
   static const String _installIdKey = 'device.install-id.v1';
   static const String pendingRefreshStorageKey = 'auth.refresh.pending.v1';

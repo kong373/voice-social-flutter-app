@@ -131,7 +131,9 @@ jobs:
             --exclude=.review_app \
             --exclude=artifacts \
             --exclude=build \
+            --exclude='/android' \
             ./ .review_app/
+          python3 tool/prepare_android_audio_manifest.py .review_app
           python3 - <<'PY'
           from pathlib import Path
           path = Path('.review_app/android/app/src/main/AndroidManifest.xml')
@@ -254,7 +256,9 @@ jobs:
             --exclude=.review_app \
             --exclude=artifacts \
             --exclude=build \
+            --exclude='/android' \
             ./ .review_app/
+          python3 tool/prepare_android_audio_manifest.py .review_app
           python3 - <<'PY'
           from pathlib import Path
           path = Path('.review_app/android/app/src/main/AndroidManifest.xml')
@@ -324,7 +328,7 @@ jobs:
           disable-spellchecker: true
           emulator-options: >-
             -no-window
-            -gpu swiftshader_indirect
+            -gpu swiftshader
             -noaudio
             -no-boot-anim
             -no-snapshot
@@ -343,7 +347,7 @@ jobs:
           root="evidence/${{ matrix.id }}"
           curl --fail --silent --max-time 5 \
             "http://127.0.0.1:${CONTRACT_PORT}/__qa__/summary" \
-            > "$root/contract-summary.json"
+            > "$root/contract-summary-response.json"
           jq -e '
             .conclusion == "PASS" and
             .providerCallsMade == false and
@@ -351,7 +355,7 @@ jobs:
             .developmentOutboxSecretObserved == false and
             (.missingEndpoints | length) == 0 and
             (.violations | length) == 0
-          ' "$root/contract-summary.json"
+          ' "$root/contract-summary-response.json"
           screenshot_count="$(find "$root/screenshots" -type f -name '*.png' | wc -l | tr -d ' ')"
           test "$screenshot_count" -ge 9
           if grep -E 'FATAL EXCEPTION|AndroidRuntime.*FATAL|ANR in com\.kong373|MissingPluginException|RenderFlex overflowed|Unhandled Exception' \

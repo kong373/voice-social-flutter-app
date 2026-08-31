@@ -43,6 +43,9 @@ class AppEnvironment {
     this.apiTimeout = const Duration(seconds: 15),
     this.liveProbePath = '/',
     this.allowInsecureHttp = false,
+    this.enableAgoraRtc = false,
+    this.enableAlipayAppPay = false,
+    this.enableTencentIm = false,
     @Deprecated('Mobile clients are public clients and never carry a secret.')
     String oauthClientSecret = '',
   });
@@ -74,6 +77,9 @@ class AppEnvironment {
         defaultValue: '/',
       ),
       allowInsecureHttp: const bool.fromEnvironment('ALLOW_INSECURE_HTTP'),
+      enableAgoraRtc: const bool.fromEnvironment('ENABLE_AGORA_RTC'),
+      enableAlipayAppPay: const bool.fromEnvironment('ENABLE_ALIPAY_APP_PAY'),
+      enableTencentIm: const bool.fromEnvironment('ENABLE_TENCENT_IM'),
     );
   }
 
@@ -88,6 +94,9 @@ class AppEnvironment {
     required String realtimeEndpoint,
     required String liveProbePath,
     required bool allowInsecureHttp,
+    bool enableAgoraRtc = false,
+    bool enableAlipayAppPay = false,
+    bool enableTencentIm = false,
     bool releaseBuild = kReleaseMode,
   }) {
     final DeploymentEnvironment deploymentEnvironment =
@@ -127,6 +136,9 @@ class AppEnvironment {
       apiTimeout: Duration(seconds: timeoutSeconds),
       liveProbePath: liveProbePath,
       allowInsecureHttp: allowInsecureHttp,
+      enableAgoraRtc: enableAgoraRtc,
+      enableAlipayAppPay: enableAlipayAppPay,
+      enableTencentIm: enableTencentIm,
     );
   }
 
@@ -155,6 +167,32 @@ class AppEnvironment {
   final Duration apiTimeout;
   final String liveProbePath;
   final bool allowInsecureHttp;
+
+  /// Explicit opt-in for the live Agora transport. It is false by default;
+  /// the adapter is only wired when live mode also receives complete,
+  /// server-issued RTC credentials from the authenticated token endpoint.
+  final bool enableAgoraRtc;
+
+  /// Explicit opt-in for the first-party Android Alipay bridge. The default
+  /// is disabled; enabling it still requires a server-issued order string and
+  /// the native official SDK host plugin. No payment credential is read by
+  /// the Flutter client.
+  final bool enableAlipayAppPay;
+
+  /// Whether an enabled live Alipay bridge must select the official sandbox
+  /// endpoint. Sandbox mode is intentionally derived from the deployment
+  /// environment rather than accepted as an independent credential-like
+  /// define: local/development live builds may opt in, while staging and
+  /// production can never accidentally switch the native SDK to sandbox.
+  bool get useAlipaySandbox =>
+      isLive &&
+      enableAlipayAppPay &&
+      deploymentEnvironment.allowsDevelopmentTools;
+
+  /// Explicit opt-in for the live Tencent IM transport.  It is effective only
+  /// when [isLive] is true; mock mode always uses the in-memory fake adapter.
+  /// No SDK app id or signing material is accepted from dart-defines.
+  final bool enableTencentIm;
 
   /// Compatibility getter for older callers. The value is deliberately empty.
   @Deprecated('Mobile clients are public clients and never carry a secret.')
@@ -203,6 +241,10 @@ class AppEnvironment {
     'developmentOutboxConfigured': false,
     'realtimeEndpointConfigured': realtimeEndpoint.trim().isNotEmpty,
     'allowInsecureHttp': allowInsecureHttp,
+    'enableAgoraRtc': enableAgoraRtc,
+    'enableAlipayAppPay': enableAlipayAppPay,
+    'useAlipaySandbox': useAlipaySandbox,
+    'enableTencentIm': enableTencentIm,
   };
 
   void validateLiveConfiguration() {

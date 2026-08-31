@@ -9,6 +9,9 @@ readonly SCRIPT_NAME="live-development"
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly REQUIRED_FLUTTER_VERSION='3.44.7'
 readonly REQUIRED_DART_VERSION='3.12.2'
+readonly LIVE_APK_OUTPUT_DIR="${ROOT_DIR}/build/live-development"
+readonly LIVE_APK_OUTPUT_PATH="${LIVE_APK_OUTPUT_DIR}/app-debug.apk"
+readonly LIVE_APK_SHA256_PATH="${LIVE_APK_OUTPUT_DIR}/app-debug.apk.sha256"
 cd "$ROOT_DIR"
 
 usage() {
@@ -31,6 +34,14 @@ Options:
   --target <name>    Required target selector; also accepts --target=<name>.
   --device <id>      Required Flutter device id for `run`; rejected by
                      `build-apk`.
+  --enable-agora-rtc Explicitly opt into the first-party server-issued Agora
+                     audio transport. Without this switch the value is false.
+  --enable-alipay-app-pay Explicitly opt into the first-party Android Alipay
+                     App Pay bridge. It still requires a server-issued order
+                     string; no Alipay credential is accepted by this wrapper.
+  --enable-tencent-im Explicitly opt into the first-party server-issued
+                      Tencent Cloud IM session. Without this switch the value
+                      is false.
   --dry-run          Validate configuration and print a redacted plan only.
   --help             Show this help.
 
@@ -39,9 +50,13 @@ ENABLE_QA_CONSOLE=false, ENABLE_VIDEO_RUNTIME_DEMO=false, and
 ALLOW_INSECURE_HTTP=true for the explicitly local development targets. APK
 builds are restricted to android-emulator because an Android APK cannot reach
 the Mac through 127.0.0.1.
+Successful APK builds are retained as build/live-development/app-debug.apk
+with a matching app-debug.apk.sha256 sidecar before the isolated host is
+removed.
 It rejects OAuth Client Secrets, vendor secrets, user Dart-define aliases, and
 --dart-define-from-file. API_BASE_URL is an origin with an optional root `/`;
-the client metadata defines are fixed by this wrapper.
+the client metadata, ENABLE_AGORA_RTC, ENABLE_ALIPAY_APP_PAY, and
+ENABLE_TENCENT_IM defines are fixed by this wrapper.
 Only non-defining diagnostic flags (--verbose, --quiet, --wrap, --no-wrap,
 --color, --no-color, --suppress-analytics, --disable-analytics) may be passed
 after `--`; runtime defines, device selection, and project arguments belong to
@@ -69,6 +84,29 @@ is_token_name() {
   [[ "$normalized_name" =~ (^|_)token(_|$) ]]
 }
 
+is_runtime_define_environment_name() {
+  local normalized_name
+  normalized_name="$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  [[ "$normalized_name" == 'enable_agora_rtc' ||
+    "$normalized_name" == 'enable_alipay_app_pay' ||
+    "$normalized_name" == 'agora_rtc' ||
+    "$normalized_name" == 'agora_enable_rtc' ||
+    "$normalized_name" == 'enable_tencent_im' ||
+    "$normalized_name" == 'tencent_im' ||
+    "$normalized_name" == 'tencent_enable_im' ||
+    "$normalized_name" == 'dart_define' ||
+    "$normalized_name" == 'dart_defines' ||
+    "$normalized_name" == 'dart_define_from_file' ||
+    "$normalized_name" == 'dart_defines_from_file' ||
+    "$normalized_name" == 'flutter_dart_define' ||
+    "$normalized_name" == 'flutter_dart_defines' ||
+    "$normalized_name" == 'flutter_dart_define_from_file' ||
+    "$normalized_name" == 'flutter_dart_defines_from_file' ||
+    "$normalized_name" == 'flutter_tool_args' ||
+    "$normalized_name" == 'gradle_opts' ||
+    "$normalized_name" == 'org_gradle_project_'* ]]
+}
+
 reject_confidential_environment() {
   local name
   SECRET_LIKE_ENV_NAMES=''
@@ -78,6 +116,30 @@ reject_confidential_environment() {
     fi
     if is_token_name "$name"; then
       SECRET_LIKE_ENV_NAMES+="${name}"$'\n'
+    fi
+  done < <(env)
+}
+
+reject_runtime_define_environment() {
+  local name
+  local normalized_name
+  while IFS='=' read -r name _; do
+    if is_runtime_define_environment_name "$name"; then
+      normalized_name="$(printf '%s' "$name" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+      if [[ "$normalized_name" == 'enable_agora_rtc' ||
+        "$normalized_name" == 'agora_rtc' ||
+        "$normalized_name" == 'agora_enable_rtc' ]]; then
+        fail 'ENABLE_AGORA_RTC is controlled only by --enable-agora-rtc'
+      fi
+      if [[ "$normalized_name" == 'enable_alipay_app_pay' ]]; then
+        fail 'ENABLE_ALIPAY_APP_PAY is controlled only by --enable-alipay-app-pay'
+      fi
+      if [[ "$normalized_name" == 'enable_tencent_im' ||
+        "$normalized_name" == 'tencent_im' ||
+        "$normalized_name" == 'tencent_enable_im' ]]; then
+        fail 'ENABLE_TENCENT_IM is controlled only by --enable-tencent-im'
+      fi
+      fail 'runtime defines are owned by this wrapper and cannot come from the environment'
     fi
   done < <(env)
 }
@@ -252,12 +314,225 @@ print_plan() {
   printf 'app_env=development\n'
   printf 'qa_console=false\n'
   printf 'video_runtime_demo=false\n'
+  printf 'enable_agora_rtc=%s\n' "$ENABLE_AGORA_RTC"
+  printf 'enable_alipay_app_pay=%s\n' "$ENABLE_ALIPAY_APP_PAY"
+  printf 'enable_tencent_im=%s\n' "$ENABLE_TENCENT_IM"
   printf 'oauth_client_id_configured=true\n'
   if [[ "$COMMAND" == 'run' ]]; then
     printf 'flutter_action=flutter run --no-pub\n'
   else
     printf 'flutter_action=flutter build apk --debug --no-pub\n'
   fi
+}
+
+ANDROID_HOST_DIR=''
+APK_COPY_TEMP=''
+APK_HASH_TEMP=''
+APK_PUBLISH_IN_PROGRESS=false
+
+cleanup_android_host() {
+  if [[ -n "${ANDROID_HOST_DIR:-}" && -d "$ANDROID_HOST_DIR" ]]; then
+    rm -rf "$ANDROID_HOST_DIR"
+  fi
+}
+
+cleanup_live_temporary_files() {
+  if [[ -n "${APK_COPY_TEMP:-}" && ( -e "$APK_COPY_TEMP" || -L "$APK_COPY_TEMP" ) ]]; then
+    rm -f "$APK_COPY_TEMP"
+  fi
+  if [[ -n "${APK_HASH_TEMP:-}" && ( -e "$APK_HASH_TEMP" || -L "$APK_HASH_TEMP" ) ]]; then
+    rm -f "$APK_HASH_TEMP"
+  fi
+  if [[ "${APK_PUBLISH_IN_PROGRESS:-false}" == true ]]; then
+    if [[ -f "$LIVE_APK_OUTPUT_PATH" || -L "$LIVE_APK_OUTPUT_PATH" ]]; then
+      rm -f "$LIVE_APK_OUTPUT_PATH"
+    fi
+    if [[ -f "$LIVE_APK_SHA256_PATH" || -L "$LIVE_APK_SHA256_PATH" ]]; then
+      rm -f "$LIVE_APK_SHA256_PATH"
+    fi
+  fi
+}
+
+cleanup_live_runtime() {
+  cleanup_live_temporary_files
+  cleanup_android_host
+}
+
+ensure_real_directory() {
+  local path="$1"
+  local label="$2"
+  if [[ -e "$path" || -L "$path" ]]; then
+    [[ ! -L "$path" && -d "$path" ]] ||
+      fail "$label must be a real directory and not a symbolic link"
+    return 0
+  fi
+  mkdir "$path" || fail "unable to create $label"
+  [[ ! -L "$path" && -d "$path" ]] ||
+    fail "$label must be a real directory and not a symbolic link"
+}
+
+validate_live_apk_output_targets() {
+  local output_path
+  for output_path in "$LIVE_APK_OUTPUT_PATH" "$LIVE_APK_SHA256_PATH"; do
+    [[ ! -L "$output_path" ]] ||
+      fail 'live APK output files must not be symbolic links'
+    [[ ! -e "$output_path" || -f "$output_path" ]] ||
+      fail 'live APK output files must be regular files'
+  done
+}
+
+prepare_live_apk_output_directory() {
+  command -v shasum >/dev/null 2>&1 ||
+    fail 'shasum is required to retain the live APK checksum'
+  ensure_real_directory "$ROOT_DIR/build" 'live APK build parent'
+  ensure_real_directory "$LIVE_APK_OUTPUT_DIR" 'live APK output directory'
+  validate_live_apk_output_targets
+}
+
+clear_live_apk_output() {
+  validate_live_apk_output_targets
+  rm -f "$LIVE_APK_OUTPUT_PATH" "$LIVE_APK_SHA256_PATH" ||
+    fail 'unable to clear the previous live APK output'
+}
+
+publish_live_apk() {
+  local source_apk="${ANDROID_HOST_DIR}/build/app/outputs/flutter-apk/app-debug.apk"
+  [[ -f "$source_apk" && ! -L "$source_apk" && -s "$source_apk" ]] ||
+    fail 'expected Flutter APK was not produced as a non-empty regular file'
+
+  validate_live_apk_contents "$source_apk"
+  prepare_live_apk_output_directory
+  APK_COPY_TEMP="$(mktemp "${LIVE_APK_OUTPUT_DIR}/.app-debug.apk.XXXXXX")" ||
+    fail 'unable to create the temporary live APK output'
+  APK_HASH_TEMP="$(mktemp "${LIVE_APK_OUTPUT_DIR}/.app-debug.apk.sha256.XXXXXX")" ||
+    fail 'unable to create the temporary live APK checksum output'
+
+  cp "$source_apk" "$APK_COPY_TEMP" || fail 'unable to copy the live APK output'
+  chmod 600 "$APK_COPY_TEMP" || fail 'unable to secure the live APK output'
+
+  local checksum_line
+  local checksum
+  checksum_line="$(shasum -a 256 "$APK_COPY_TEMP")" ||
+    fail 'unable to compute the live APK SHA-256'
+  checksum="${checksum_line%% *}"
+  [[ "$checksum" =~ ^[0-9a-f]{64}$ ]] ||
+    fail 'live APK SHA-256 output was invalid'
+  printf '%s  app-debug.apk\n' "$checksum" >"$APK_HASH_TEMP" ||
+    fail 'unable to write the live APK SHA-256 sidecar'
+  chmod 600 "$APK_HASH_TEMP" ||
+    fail 'unable to secure the live APK SHA-256 sidecar'
+
+  # Revalidate immediately before replacing the two fixed output files. The
+  # temporary names are created inside the validated directory, so neither the
+  # APK bytes nor their checksum are copied through a user-controlled path.
+  validate_live_apk_output_targets
+  APK_PUBLISH_IN_PROGRESS=true
+  mv -f "$APK_COPY_TEMP" "$LIVE_APK_OUTPUT_PATH" ||
+    fail 'unable to retain the live APK output'
+  APK_COPY_TEMP=''
+  if ! mv -f "$APK_HASH_TEMP" "$LIVE_APK_SHA256_PATH"; then
+    rm -f "$LIVE_APK_OUTPUT_PATH"
+    fail 'unable to retain the live APK SHA-256 sidecar'
+  fi
+  APK_HASH_TEMP=''
+  APK_PUBLISH_IN_PROGRESS=false
+
+  printf 'live_apk_path=%s\n' "$LIVE_APK_OUTPUT_PATH"
+  printf 'live_apk_sha256=%s\n' "$checksum"
+}
+
+validate_live_apk_contents() {
+  local apk="$1"
+  local scan_status
+  set +e
+  python3 - "$apk" >/dev/null 2>&1 <<'PY'
+import sys
+import zipfile
+
+FORBIDDEN_NAMES = (
+    "libagora_face_capture_extension.so",
+    "libagora_lip_sync_extension.so",
+)
+PEM_MARKERS = (
+    b"-----BEGIN " b"PRIVATE " b"KEY-----",
+    b"-----BEGIN " b"RSA " b"PRIVATE " b"KEY-----",
+    b"-----BEGIN " b"EC " b"PRIVATE " b"KEY-----",
+    b"-----BEGIN " b"OPENSSH " b"PRIVATE " b"KEY-----",
+)
+MARKER_TAIL_LENGTH = max(len(marker) for marker in PEM_MARKERS) - 1
+CHUNK_SIZE = 65536
+
+try:
+    with zipfile.ZipFile(sys.argv[1]) as archive:
+        for info in archive.infolist():
+            name = info.filename
+            if any(name.endswith(forbidden) for forbidden in FORBIDDEN_NAMES):
+                raise SystemExit(1)
+            if info.is_dir():
+                continue
+            with archive.open(info) as handle:
+                tail = b""
+                while True:
+                    chunk = handle.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    data = tail + chunk
+                    if any(marker in data for marker in PEM_MARKERS):
+                        raise SystemExit(1)
+                    tail = data[-MARKER_TAIL_LENGTH:]
+except (OSError, zipfile.BadZipFile):
+    raise SystemExit(2)
+raise SystemExit(0)
+PY
+  scan_status=$?
+  set -e
+  case "$scan_status" in
+    0) ;;
+    1) fail 'live APK contains forbidden Agora extension artifacts or private-key PEM material' ;;
+    *) fail 'unable to inspect the live APK contents' ;;
+  esac
+}
+
+prepare_android_host() {
+  local temp_root="${TMPDIR:-/tmp}"
+  command -v git >/dev/null 2>&1 ||
+    fail 'git is required to create the isolated Android host'
+  command -v tar >/dev/null 2>&1 ||
+    fail 'tar is required to create the isolated Android host'
+  command -v python3 >/dev/null 2>&1 ||
+    fail 'python3 is required to apply the audio-only Android manifest'
+  [[ -d "$temp_root" ]] || mkdir -p "$temp_root" ||
+    fail 'unable to create the temporary directory for the Android host'
+
+  ANDROID_HOST_DIR="$(mktemp -d "$temp_root/voice-social-live-android.XXXXXX")" ||
+    fail 'unable to create an isolated Android host directory'
+  trap cleanup_live_runtime EXIT HUP INT TERM
+
+  # Create the platform host in a temporary directory first.  Overlaying the
+  # tracked checkout afterwards preserves this project's pubspec and sources
+  # while ensuring the generated android/ directory never appears in the
+  # checkout (it is intentionally ignored there).
+  "${CLEAN_ENV[@]}" "$FLUTTER_BIN" create \
+    --platforms=android \
+    --org=com.kong373 \
+    --project-name=voice_social_app \
+    --no-pub \
+    "$ANDROID_HOST_DIR"
+  git -C "$ROOT_DIR" archive --format=tar HEAD |
+    tar -x -C "$ANDROID_HOST_DIR"
+  python3 "$ROOT_DIR/tool/prepare_android_audio_manifest.py" "$ANDROID_HOST_DIR"
+  (
+    cd "$ANDROID_HOST_DIR"
+    "${CLEAN_ENV[@]}" "$FLUTTER_BIN" pub get --enforce-lockfile
+  )
+}
+
+require_clean_checkout_for_android() {
+  local status
+  status="$(git -C "$ROOT_DIR" status --porcelain --untracked-files=normal)" ||
+    fail 'unable to verify that the checkout is clean before Android live launch'
+  [[ -z "$status" ]] ||
+    fail 'Android live launch requires a clean checkout; commit or remove local changes first'
 }
 
 COMMAND="${1:-}"
@@ -276,10 +551,14 @@ TARGET="${LIVE_DEVELOPMENT_TARGET:-}"
 API_BASE_URL_VALUE="${API_BASE_URL:-}"
 OAUTH_CLIENT_ID_VALUE="${OAUTH_CLIENT_ID:-}"
 DEVICE_ID=''
+ENABLE_AGORA_RTC=false
+ENABLE_ALIPAY_APP_PAY=false
+ENABLE_TENCENT_IM=false
 DRY_RUN=false
 EXTRA_ARGS=()
 
 reject_confidential_environment
+reject_runtime_define_environment
 build_clean_environment
 
 if [[ -n "${BACKEND_MODE:-}" && "${BACKEND_MODE}" != 'live' ]]; then
@@ -329,6 +608,27 @@ while (($# > 0)); do
       DEVICE_ID="${1#*=}"
       shift
       ;;
+    --enable-agora-rtc)
+      ENABLE_AGORA_RTC=true
+      shift
+      ;;
+    --enable-agora-rtc=*)
+      fail '--enable-agora-rtc is a flag and does not accept a value'
+      ;;
+    --enable-alipay-app-pay)
+      ENABLE_ALIPAY_APP_PAY=true
+      shift
+      ;;
+    --enable-alipay-app-pay=*)
+      fail '--enable-alipay-app-pay is a flag and does not accept a value'
+      ;;
+    --enable-tencent-im)
+      ENABLE_TENCENT_IM=true
+      shift
+      ;;
+    --enable-tencent-im=*)
+      fail '--enable-tencent-im is a flag and does not accept a value'
+      ;;
     --dry-run)
       DRY_RUN=true
       shift
@@ -370,13 +670,29 @@ if [[ "$DRY_RUN" == true ]]; then
   exit 0
 fi
 
+if [[ "$TARGET" == 'android-emulator' ]]; then
+  require_clean_checkout_for_android
+fi
+
 check_flutter
+
+if [[ "$COMMAND" == 'build-apk' ]]; then
+  prepare_live_apk_output_directory
+  clear_live_apk_output
+fi
+
+if [[ "$TARGET" == 'android-emulator' ]]; then
+  prepare_android_host
+fi
 
 DEFINES=(
   "--dart-define=BACKEND_MODE=live"
   "--dart-define=APP_ENV=development"
   '--dart-define=ENABLE_QA_CONSOLE=false'
   '--dart-define=ENABLE_VIDEO_RUNTIME_DEMO=false'
+  "--dart-define=ENABLE_AGORA_RTC=${ENABLE_AGORA_RTC}"
+  "--dart-define=ENABLE_ALIPAY_APP_PAY=${ENABLE_ALIPAY_APP_PAY}"
+  "--dart-define=ENABLE_TENCENT_IM=${ENABLE_TENCENT_IM}"
   "--dart-define=API_BASE_URL=${API_BASE_URL_VALUE}"
   '--dart-define=ALLOW_INSECURE_HTTP=true'
   "--dart-define=OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID_VALUE}"
@@ -399,9 +715,16 @@ fi
   # The child receives an explicit SDK/runtime allowlist. This strips ordinary
   # host tokens and unknown cloud/profile/config variables without relying on a
   # never-complete credential-name denylist.
+  if [[ -n "$ANDROID_HOST_DIR" ]]; then
+    cd "$ANDROID_HOST_DIR"
+  fi
   if ((${#EXTRA_ARGS[@]} > 0)); then
     "${CLEAN_ENV[@]}" "$FLUTTER_BIN" "${FLUTTER_ARGS[@]}" "${DEFINES[@]}" "${EXTRA_ARGS[@]}"
   else
     "${CLEAN_ENV[@]}" "$FLUTTER_BIN" "${FLUTTER_ARGS[@]}" "${DEFINES[@]}"
   fi
 )
+
+if [[ "$COMMAND" == 'build-apk' ]]; then
+  publish_live_apk
+fi

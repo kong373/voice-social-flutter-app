@@ -116,26 +116,65 @@ Future<AppDependencies> launchAndAuthenticate(WidgetTester tester) async {
 /// The production gate intentionally requires both an end-of-document scroll
 /// and an explicit checkbox before enabling the continue action.
 Future<void> acceptConsentIfVisible(WidgetTester tester) async {
-  if (find.text('同意并继续').evaluate().isEmpty) {
+  final Finder consentSubmit = find.byKey(const Key('consent-submit'));
+  if (consentSubmit.evaluate().isEmpty) {
     return;
   }
-  await tester.drag(
-    find.byKey(const Key('consent-scroll')),
-    const Offset(0, -1200),
-  );
-  await tester.pumpAndSettle();
+  final Finder consentScroll = find.byKey(const Key('consent-scroll'));
   final Finder consentTile = find.byKey(
     const Key('consent-agreement-checkbox'),
   );
+  final Finder consentScrollable = find.descendant(
+    of: consentScroll,
+    matching: find.byType(Scrollable),
+  );
+
+  // The consent ListView lazily builds its children. A single large drag can
+  // leave the keyed agreement tile unbuilt on short viewports (notably
+  // 360x800), making ensureVisible fail before it can scroll the list.
+  expect(consentScroll, findsOneWidget);
+  expect(consentScrollable, findsOneWidget);
+  await tester.scrollUntilVisible(
+    consentTile,
+    240,
+    scrollable: consentScrollable,
+  );
+  await pumpQaUntil(
+    tester,
+    () => consentTile.evaluate().isNotEmpty,
+    description: 'consent agreement tile to appear',
+  );
+  expect(consentTile, findsOneWidget);
   await tester.ensureVisible(consentTile);
   final Finder consentCheckbox = find.descendant(
     of: consentTile,
     matching: find.byType(Checkbox),
   );
-  await tester.tap(consentCheckbox);
+  await pumpQaUntil(
+    tester,
+    () => consentCheckbox.evaluate().isNotEmpty,
+    description: 'consent agreement checkbox to appear',
+  );
+  expect(consentCheckbox, findsOneWidget);
+  await tester.ensureVisible(consentCheckbox);
+  await tester.tap(consentCheckbox.hitTestable());
   await tester.pump();
-  await tester.tap(find.text('同意并继续').hitTestable());
+  expect(consentSubmit, findsOneWidget);
+  await tester.ensureVisible(consentSubmit);
+  final Finder consentSubmitAction = consentSubmit.hitTestable();
+  await pumpQaUntil(
+    tester,
+    () => consentSubmitAction.evaluate().isNotEmpty,
+    description: 'consent submit action to become tappable',
+  );
+  expect(consentSubmitAction, findsOneWidget);
+  await tester.tap(consentSubmitAction);
   await tester.pumpAndSettle();
+  await pumpQaUntil(
+    tester,
+    () => find.text('登录 / 注册').evaluate().isNotEmpty,
+    description: 'login page after consent acceptance',
+  );
 }
 
 Future<void> showQaImeAndWait(WidgetTester tester, Finder input) async {

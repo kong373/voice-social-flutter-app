@@ -30,6 +30,18 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
 
   static const int _ownedPageSize = 50;
   static const int _ownedPageCountCap = 100;
+  // Room creation and editing are first-party writes. Their readiness
+  // projection is informational and may legitimately move between these
+  // bounded states as a vendor is configured or disabled. Do not pin the
+  // client contract to the historical VENDOR_BLOCKED default, and never
+  // accept an arbitrary provider-supplied string here.
+  static const Set<String> _roomReadinessStatuses = <String>{
+    'READY',
+    'UNCONFIGURED',
+    'DISABLED',
+    'VENDOR_BLOCKED',
+    'UNKNOWN',
+  };
 
   @override
   Future<RoomConfiguration?> fetchOwnedRoom() async {
@@ -367,10 +379,12 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
                 configuration.topicTitle.trim() ||
             _requiredBool(updateData, 'autoLockMic') !=
                 configuration.autoLockMic ||
-            _requiredExactNonEmptyString(updateData, 'rtcStatus') !=
-                'VENDOR_BLOCKED' ||
-            _requiredExactNonEmptyString(updateData, 'imStatus') !=
-                'VENDOR_BLOCKED' ||
+            !_roomReadinessStatuses.contains(
+              _requiredExactNonEmptyString(updateData, 'rtcStatus'),
+            ) ||
+            !_roomReadinessStatuses.contains(
+              _requiredExactNonEmptyString(updateData, 'imStatus'),
+            ) ||
             _requiredBool(updateData, 'providerInvocation') ||
             updateVersion != _nextVersion(expectedVersion)) {
           throw const ApiException(
@@ -850,16 +864,13 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
         message: '创建房间响应 created 与 reused 必须互斥',
       );
     }
-    if (_requiredExactNonEmptyString(data, 'rtcStatus') != 'VENDOR_BLOCKED') {
+    final String rtcStatus = _requiredExactNonEmptyString(data, 'rtcStatus');
+    final String imStatus = _requiredExactNonEmptyString(data, 'imStatus');
+    if (!_roomReadinessStatuses.contains(rtcStatus) ||
+        !_roomReadinessStatuses.contains(imStatus)) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
-        message: '创建房间响应 rtcStatus 必须为 VENDOR_BLOCKED',
-      );
-    }
-    if (_requiredExactNonEmptyString(data, 'imStatus') != 'VENDOR_BLOCKED') {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '创建房间响应 imStatus 必须为 VENDOR_BLOCKED',
+        message: '创建房间响应 readiness 状态无法识别',
       );
     }
     if (_requiredBool(data, 'providerInvocation')) {

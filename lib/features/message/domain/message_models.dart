@@ -8,6 +8,77 @@ enum ChatMessageStatus {
   received,
 }
 
+/// Delivery state returned by the first-party message projection.
+///
+/// These values describe what the backend knows about provider delivery; they
+/// do not turn a provider acknowledgement into message content or an
+/// application-auth success claim.
+enum MessageDeliveryStatus {
+  pending,
+  processing,
+  retry,
+  unknown,
+  delivered,
+  failed,
+  vendorBlocked,
+}
+
+/// Capability/projection status returned in response-level `imStatus` fields.
+/// `READY` is deliberately separate from per-message delivery state: it says
+/// the IM capability is available, not that a particular message was
+/// delivered.
+enum MessageImStatus {
+  ready,
+  pending,
+  processing,
+  retry,
+  unknown,
+  delivered,
+  failed,
+  vendorBlocked,
+}
+
+extension MessageDeliveryStatusWireValue on MessageDeliveryStatus {
+  String get wireValue => switch (this) {
+    MessageDeliveryStatus.pending => 'PENDING',
+    MessageDeliveryStatus.processing => 'PROCESSING',
+    MessageDeliveryStatus.retry => 'RETRY',
+    MessageDeliveryStatus.unknown => 'UNKNOWN',
+    MessageDeliveryStatus.delivered => 'DELIVERED',
+    MessageDeliveryStatus.failed => 'FAILED',
+    MessageDeliveryStatus.vendorBlocked => 'VENDOR_BLOCKED',
+  };
+}
+
+MessageDeliveryStatus? tryParseMessageDeliveryStatus(Object? value) {
+  final String normalized = value is String ? value.trim().toUpperCase() : '';
+  return switch (normalized) {
+    'PENDING' => MessageDeliveryStatus.pending,
+    'PROCESSING' => MessageDeliveryStatus.processing,
+    'RETRY' => MessageDeliveryStatus.retry,
+    'UNKNOWN' => MessageDeliveryStatus.unknown,
+    'DELIVERED' || 'DELIVERED_TO_RECIPIENT' => MessageDeliveryStatus.delivered,
+    'FAILED' => MessageDeliveryStatus.failed,
+    'VENDOR_BLOCKED' => MessageDeliveryStatus.vendorBlocked,
+    _ => null,
+  };
+}
+
+MessageImStatus? tryParseMessageImStatus(Object? value) {
+  final String normalized = value is String ? value.trim().toUpperCase() : '';
+  return switch (normalized) {
+    'READY' => MessageImStatus.ready,
+    'PENDING' => MessageImStatus.pending,
+    'PROCESSING' => MessageImStatus.processing,
+    'RETRY' => MessageImStatus.retry,
+    'UNKNOWN' => MessageImStatus.unknown,
+    'DELIVERED' || 'DELIVERED_TO_RECIPIENT' => MessageImStatus.delivered,
+    'FAILED' => MessageImStatus.failed,
+    'VENDOR_BLOCKED' => MessageImStatus.vendorBlocked,
+    _ => null,
+  };
+}
+
 class ConversationSummary {
   const ConversationSummary({
     required this.id,
@@ -106,6 +177,7 @@ class ChatMessage {
     required this.createdAt,
     required this.isMine,
     required this.status,
+    this.deliveryStatus = MessageDeliveryStatus.unknown,
   });
 
   final String id;
@@ -116,8 +188,13 @@ class ChatMessage {
   final DateTime createdAt;
   final bool isMine;
   final ChatMessageStatus status;
+  final MessageDeliveryStatus deliveryStatus;
 
-  ChatMessage copyWith({ChatMessageStatus? status, String? conversationId}) {
+  ChatMessage copyWith({
+    ChatMessageStatus? status,
+    String? conversationId,
+    MessageDeliveryStatus? deliveryStatus,
+  }) {
     return ChatMessage(
       id: id,
       conversationId: conversationId ?? this.conversationId,
@@ -127,6 +204,7 @@ class ChatMessage {
       createdAt: createdAt,
       isMine: isMine,
       status: status ?? this.status,
+      deliveryStatus: deliveryStatus ?? this.deliveryStatus,
     );
   }
 }

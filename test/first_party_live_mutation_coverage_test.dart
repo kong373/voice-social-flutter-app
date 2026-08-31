@@ -832,7 +832,14 @@ Map<String, Object?> _refundMap({required String status}) => <String, Object?>{
   'status': status,
   'resultMessage': status == 'REJECTED' ? '资料不足' : '',
   'submittedAt': '2030-08-25T00:00:00Z',
-  'providerStatus': 'VENDOR_BLOCKED',
+  'providerStatus': switch (status) {
+    'SUBMITTED' || 'RESUBMITTED' => 'SUBMITTED',
+    'APPROVED' => 'APPROVED',
+    'COMPLETED' => 'REFUNDED',
+    'REJECTED' => 'REJECTED',
+    'CANCELLED' || 'CANCELED' => 'CANCELLED',
+    _ => 'VENDOR_BLOCKED',
+  },
   'completed': status == 'COMPLETED',
 };
 

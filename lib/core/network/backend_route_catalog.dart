@@ -170,6 +170,10 @@ class BackendRouteCatalog {
     this.createWechatRechargeOrder = '/app-economy-api/pay/v1/wechat/order',
     this.createAlipayRechargeOrder = '/app-economy-api/pay/ali/order',
     this.createAppleRechargeOrder = '/app-economy-api/pay/apple/order',
+    this.cancelAlipayRechargeOrder = '/app-economy-api/pay/ali/order/cancel',
+    this.reconcileAlipayRechargeOrder =
+        '/app-economy-api/pay/ali/order/reconcile',
+    this.alipayRechargeOrderStatus = '/app-economy-api/pay/ali/order/status',
     this.rechargeOrderStatus = '/app-economy-api/pay/isOrderSuccess',
     this.normalGiftCatalog = '/app-mini-api/mini/v1/gift/list',
     this.userDecorations = '/app-api/user/userDecorations/getList',
@@ -179,6 +183,7 @@ class BackendRouteCatalog {
     this.privateChatHistory = '/app-api/user/imMessage/queryChat',
     this.chatUserStatus = '/app-api/user/imMessage/queryUserStatus',
     this.chatUserInfo = '/app-api/user/imMessage/getUserInfoInChat',
+    this.imCredential = '/app-mini-api/mini/v1/im/credential',
     this.dynamicNotifications = '/app-api/dynamic/queryUserDynamicNotify',
     this.clearDynamicNotifications = '/app-api/dynamic/emptyUserDynamicNotify',
     this.dynamicNotificationBadge = '/app-api/dynamic/queryDynamicNotifyRedHot',
@@ -362,6 +367,9 @@ class BackendRouteCatalog {
   final String createWechatRechargeOrder;
   final String createAlipayRechargeOrder;
   final String createAppleRechargeOrder;
+  final String cancelAlipayRechargeOrder;
+  final String reconcileAlipayRechargeOrder;
+  final String alipayRechargeOrderStatus;
   final String rechargeOrderStatus;
   final String normalGiftCatalog;
   final String userDecorations;
@@ -371,6 +379,7 @@ class BackendRouteCatalog {
   final String privateChatHistory;
   final String chatUserStatus;
   final String chatUserInfo;
+  final String imCredential;
   final String dynamicNotifications;
   final String clearDynamicNotifications;
   final String dynamicNotificationBadge;

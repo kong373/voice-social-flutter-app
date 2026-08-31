@@ -609,6 +609,7 @@ class RefundResultPage extends StatefulWidget {
 class _RefundResultPageState extends State<RefundResultPage> {
   late RefundApplication _application;
   bool _refreshing = false;
+  String? _refreshError;
 
   CommerceRepository get _repository =>
       widget.repository ?? AppDependencyScope.of(context).commerceRepository;
@@ -617,26 +618,42 @@ class _RefundResultPageState extends State<RefundResultPage> {
   void initState() {
     super.initState();
     _application = widget.application;
+    // A submitted/approved result is only a snapshot supplied by the
+    // previous screen. Resolve it against the authenticated backend as soon
+    // as this page is mounted so a stale snapshot cannot look terminal.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _refundStatusNeedsRefresh(_application.status)) {
+        _refresh();
+      }
+    });
   }
 
   Future<void> _refresh() async {
     if (_refreshing) {
       return;
     }
-    setState(() => _refreshing = true);
+    setState(() {
+      _refreshing = true;
+      _refreshError = null;
+    });
     try {
       final RefundApplication updated = await _repository.fetchRefundResult(
         _application.id,
         expectedOrderNo: _application.account,
       );
       if (mounted) {
-        setState(() => _application = updated);
+        setState(() {
+          _application = updated;
+          _refreshError = null;
+        });
       }
     } catch (error) {
       if (mounted) {
+        final String message = _messageFor(error);
+        setState(() => _refreshError = message);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) {
@@ -649,20 +666,28 @@ class _RefundResultPageState extends State<RefundResultPage> {
     if (_refreshing) {
       return;
     }
-    setState(() => _refreshing = true);
+    setState(() {
+      _refreshing = true;
+      _refreshError = null;
+    });
     try {
       final RefundApplication updated = await _repository.resubmitRefund(
         _application.id,
         expectedOrderNo: _application.account,
       );
       if (mounted) {
-        setState(() => _application = updated);
+        setState(() {
+          _application = updated;
+          _refreshError = null;
+        });
       }
     } catch (error) {
       if (mounted) {
+        final String message = _messageFor(error);
+        setState(() => _refreshError = message);
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) {
@@ -691,10 +716,14 @@ class _RefundResultPageState extends State<RefundResultPage> {
           _CommerceStatusCard(
             icon: _refundIcon(_application.status),
             title: _application.statusText,
-            description: _application.rejectedReason.isEmpty
-                ? '平台将根据提交资料进行人工审核。'
-                : _application.rejectedReason,
+            description: _descriptionForApplication,
           ),
+          if (_refreshError != null) ...<Widget>[
+            const SizedBox(height: 10),
+            _CommerceInfoBanner(
+              text: '状态查询失败：$_refreshError。当前状态未改变，可点击右上角刷新重试。',
+            ),
+          ],
           const SizedBox(height: 14),
           _CommercePanel(
             padding: const EdgeInsets.all(16),
@@ -726,4 +755,23 @@ class _RefundResultPageState extends State<RefundResultPage> {
       ),
     );
   }
+
+  String get _descriptionForApplication {
+    return switch (_application.status) {
+      RefundStatus.reviewing ||
+      RefundStatus.resubmitted => '退款申请正在服务端处理中，审核和结果以权威退款接口为准。客户端不会自行入账。',
+      RefundStatus.approved => '服务端已审批通过，退款是否最终完成仍以服务端后续状态为准。客户端不会自行入账。',
+      RefundStatus.completed => '服务端已确认退款完成。客户端不会自行修改余额，余额以服务端账本为准。',
+      RefundStatus.rejected =>
+        _application.rejectedReason.isEmpty
+            ? '服务端已拒绝本次退款申请，可修正资料后重新提交。'
+            : '服务端拒绝原因：${_application.rejectedReason}。可修正资料后重新提交。',
+      RefundStatus.unavailable => '服务端当前无法提供可继续处理的退款结果，请稍后刷新查询。',
+    };
+  }
 }
+
+bool _refundStatusNeedsRefresh(RefundStatus status) =>
+    status == RefundStatus.reviewing ||
+    status == RefundStatus.resubmitted ||
+    status == RefundStatus.approved;

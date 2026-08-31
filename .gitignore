@@ -20,6 +20,8 @@ web/
 !packages/first_party_native_permissions/android/**
 !packages/first_party_native_permissions/ios/
 !packages/first_party_native_permissions/ios/**
+!packages/alipay_app_pay/android/
+!packages/alipay_app_pay/android/**
 
 # IDE
 .idea/

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/data/backend_room_repository.dart';
+import 'package:voice_social_app/features/im/domain/tencent_im_room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
 
@@ -380,6 +381,44 @@ void main() {
     expect(server.requests.single.body, <String, Object?>{
       'roomId': 'room-abc',
     });
+  });
+
+  test('Tencent readiness uses the authenticated room-context GET', () async {
+    final _RunningServer server = await _RunningServer.start((
+      _CapturedRequest request,
+    ) {
+      expect(request.method, 'GET');
+      expect(request.path, '/app-room-api/room/com/v1/queryRoomOtherInfo');
+      expect(request.query, <String, String>{'roomId': 'room-abc'});
+      return const _Reply(
+        data: <String, Object?>{
+          'roomId': 'room-abc',
+          'sessionId': 'session-abc',
+          'version': 0x80000000,
+          'realtimeGroup': <String, Object?>{
+            'provider': 'tencent-im',
+            'type': 'AVCHATROOM',
+            'groupType': 'AVChatRoom',
+            'groupId': 'group-abc',
+            'status': 'READY',
+            'messageMode': 'METADATA_HINT',
+            'contentAuthority': 'HTTP',
+          },
+        },
+      );
+    });
+    addTearDown(server.close);
+    final BackendRoomRepository repository = BackendRoomRepository(
+      apiClient: server.client,
+    );
+
+    final TencentImAvChatRoomSession? session = await repository
+        .fetchTencentImRoomReadiness('room-abc');
+    expect(session, isNotNull);
+    expect(session!.roomId, 'room-abc');
+    expect(session.sessionId, 'session-abc');
+    expect(session.groupId, 'group-abc');
+    expect(session.version, 0x80000000);
   });
 
   test('empty snapshot envelope is rejected as a protocol error', () async {

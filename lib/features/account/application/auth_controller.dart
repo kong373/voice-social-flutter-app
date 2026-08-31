@@ -6,6 +6,7 @@ import 'package:voice_social_app/features/account/data/auth_session_manager.dart
 import 'package:voice_social_app/features/account/data/device_identity_provider.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/account/domain/auth_repository.dart';
+import 'package:voice_social_app/features/im/application/im_session_coordinator.dart';
 
 enum AuthFlowStage {
   initializing,
@@ -23,15 +24,18 @@ class AuthController extends ChangeNotifier {
     required AuthRepository repository,
     required AuthSessionManager sessionManager,
     required DeviceIdentityProvider deviceIdentityProvider,
+    ImSessionCoordinator? imSessionCoordinator,
     bool allowsDevelopmentTools = false,
   }) : _repository = repository,
        _sessionManager = sessionManager,
        _deviceIdentityProvider = deviceIdentityProvider,
+       _imSessionCoordinator = imSessionCoordinator,
        _allowsDevelopmentTools = allowsDevelopmentTools;
 
   final AuthRepository _repository;
   final AuthSessionManager _sessionManager;
   final DeviceIdentityProvider _deviceIdentityProvider;
+  final ImSessionCoordinator? _imSessionCoordinator;
   final bool _allowsDevelopmentTools;
 
   AuthFlowStage _stage = AuthFlowStage.initializing;
@@ -70,20 +74,24 @@ class AuthController extends ChangeNotifier {
     try {
       final bool accepted = await _sessionManager.hasAcceptedConsent();
       if (!accepted) {
+        await _disconnectImSession();
         _stage = AuthFlowStage.consentRequired;
         notifyListeners();
         return;
       }
       final AuthSession? restored = await _sessionManager.restore();
       if (restored == null) {
+        await _disconnectImSession();
         _stage = AuthFlowStage.signedOut;
       } else if (restored.shouldRefreshAccess) {
         await refreshSession();
       } else {
         _stage = AuthFlowStage.signedIn;
+        await _connectImSession(restored);
       }
     } on FormatException {
       _sessionGeneration += 1;
+      await _disconnectImSession();
       try {
         await _sessionManager.clear();
         _errorMessage = '本地登录信息损坏，请重新登录';
@@ -101,6 +109,7 @@ class AuthController extends ChangeNotifier {
       // A secure-storage failure makes the local session state unverifiable.
       // It is safer to clear it than to continue with unknown credentials.
       _sessionGeneration += 1;
+      await _disconnectImSession();
       try {
         await _sessionManager.clear();
         _errorMessage = _messageFor(error, fallback: '登录状态无法恢复，请重新登录');
@@ -200,6 +209,10 @@ class AuthController extends ChangeNotifier {
       )) {
         return false;
       }
+      await _connectImSession(authenticatedSession);
+      if (!identical(_sessionManager.session, authenticatedSession)) {
+        return false;
+      }
       _clearPendingChallenge();
       _stage = AuthFlowStage.signedIn;
       return true;
@@ -235,6 +248,10 @@ class AuthController extends ChangeNotifier {
         authenticatedSession,
         operationGeneration,
       )) {
+        return false;
+      }
+      await _connectImSession(authenticatedSession);
+      if (!identical(_sessionManager.session, authenticatedSession)) {
         return false;
       }
       _pendingPhone = null;
@@ -274,6 +291,7 @@ class AuthController extends ChangeNotifier {
     final AuthSession? current = _sessionManager.session;
     if (current == null || !current.canRefresh) {
       _sessionGeneration += 1;
+      await _disconnectImSession();
       try {
         await _sessionManager.clear();
         _stage = AuthFlowStage.signedOut;
@@ -304,6 +322,10 @@ class AuthController extends ChangeNotifier {
           )) {
         return false;
       }
+      await _connectImSession(refreshed);
+      if (!identical(_sessionManager.session, refreshed)) {
+        return false;
+      }
       _stage = AuthFlowStage.signedIn;
       return true;
     } catch (error) {
@@ -319,6 +341,7 @@ class AuthController extends ChangeNotifier {
         // Never offer a retry with that uncertain credential: erase it and
         // require a fresh login instead of risking family-wide revocation.
         _sessionGeneration += 1;
+        await _disconnectImSession();
         bool clearFailed = false;
         try {
           await _sessionManager.clear();
@@ -343,6 +366,9 @@ class AuthController extends ChangeNotifier {
         _stage = current.isAccessExpired
             ? AuthFlowStage.recoveryRequired
             : AuthFlowStage.signedIn;
+        if (current.isAccessExpired) {
+          await _disconnectImSession();
+        }
       }
       _errorMessage = refreshOutcomeAmbiguous
           ? '刷新结果无法确认，为保护账号已清除本地会话，请重新登录'
@@ -364,6 +390,7 @@ class AuthController extends ChangeNotifier {
 
   Future<void> discardSessionAndSignOut() async {
     _sessionGeneration += 1;
+    await _disconnectImSession();
     try {
       await _sessionManager.clear();
       _stage = AuthFlowStage.signedOut;
@@ -419,6 +446,7 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
     final AuthSession? current = _sessionManager.session;
     try {
+      await _disconnectImSession();
       if (current != null) {
         try {
           await _repository.logout(current);
@@ -447,6 +475,35 @@ class AuthController extends ChangeNotifier {
     } finally {
       _busy = false;
       notifyListeners();
+    }
+  }
+
+  /// IM is an optional secondary session.  Its failures are intentionally
+  /// swallowed here so first-party authentication remains authoritative; the
+  /// coordinator keeps the failed/blocked state available to realtime callers.
+  Future<void> _connectImSession(AuthSession session) async {
+    final ImSessionCoordinator? coordinator = _imSessionCoordinator;
+    if (coordinator == null) {
+      return;
+    }
+    try {
+      await coordinator.ensureAuthenticated(session);
+    } catch (_) {
+      // Fail closed for realtime only.  Never turn a successful first-party
+      // login or refresh into an auth failure because IM is unavailable.
+    }
+  }
+
+  Future<void> _disconnectImSession() async {
+    final ImSessionCoordinator? coordinator = _imSessionCoordinator;
+    if (coordinator == null) {
+      return;
+    }
+    try {
+      await coordinator.logout();
+    } catch (_) {
+      // Local first-party logout continues even if the provider cannot be
+      // reached.  The coordinator has still cleared its in-memory credential.
     }
   }
 

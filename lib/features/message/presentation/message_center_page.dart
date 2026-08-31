@@ -13,6 +13,9 @@ class _MessageCenterPageState extends State<MessageCenterPage>
   bool _loading = true;
   String? _error;
   int _loadRequestId = 0;
+  ImAuthoritativeRefreshBus? _refreshBus;
+  ImAuthoritativeRefreshSubscription? _refreshSubscription;
+  Future<void>? _refreshFlight;
 
   MessageRepository get _repository =>
       AppDependencyScope.of(context).messageRepository;
@@ -23,9 +26,39 @@ class _MessageCenterPageState extends State<MessageCenterPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final ImAuthoritativeRefreshBus refreshBus = AppDependencyScope.of(
+      context,
+    ).imAuthoritativeRefreshBus;
+    if (!identical(_refreshBus, refreshBus)) {
+      _refreshSubscription?.cancel();
+      _refreshBus = refreshBus;
+      _refreshSubscription = refreshBus.subscribe(_onAuthoritativeRefresh);
+    }
     if (_conversations == null && _loading) {
       _load();
     }
+  }
+
+  Future<void> _onAuthoritativeRefresh(ImAuthoritativeRefreshRequest request) {
+    final Future<void>? active = _refreshFlight;
+    if (active != null) {
+      return active;
+    }
+    final Future<void> operation = _load(showLoading: false);
+    _refreshFlight = operation;
+    operation.then<void>(
+      (_) {
+        if (identical(_refreshFlight, operation)) {
+          _refreshFlight = null;
+        }
+      },
+      onError: (Object _, StackTrace __) {
+        if (identical(_refreshFlight, operation)) {
+          _refreshFlight = null;
+        }
+      },
+    );
+    return operation;
   }
 
   Future<void> _load({bool showLoading = true}) async {
@@ -34,6 +67,9 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     }
     final int requestId = ++_loadRequestId;
     final MessageRepository repository = _repository;
+    final AppDependencies dependencies = AppDependencyScope.of(context);
+    final int authUserIdAtStart =
+        dependencies.sessionManager.session?.userId ?? 0;
     final bool replaceWithLoading = showLoading && _conversations == null;
     if (replaceWithLoading || _error != null) {
       setState(() {
@@ -44,7 +80,11 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     try {
       final List<ConversationSummary> value = await repository
           .fetchConversations();
-      if (!mounted || requestId != _loadRequestId) {
+      final int authUserIdAfterFetch =
+          dependencies.sessionManager.session?.userId ?? 0;
+      if (!mounted ||
+          requestId != _loadRequestId ||
+          authUserIdAfterFetch != authUserIdAtStart) {
         return;
       }
       setState(() {
@@ -76,6 +116,8 @@ class _MessageCenterPageState extends State<MessageCenterPage>
   @override
   void dispose() {
     _cancelPendingLoads();
+    _refreshSubscription?.cancel();
+    _refreshSubscription = null;
     super.dispose();
   }
 
