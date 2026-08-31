@@ -383,6 +383,47 @@ esac
   );
 
   test(
+    'failed run summary reflects none/watchdog/operator failure and never claims cancellation',
+    () {
+      final ProcessResult result = Process.runSync(
+        '/bin/bash',
+        <String>[runner.path, '--self-test'],
+        environment: <String, String>{
+          'PATH': Platform.environment['PATH'] ?? '/usr/bin:/bin',
+        },
+        includeParentEnvironment: false,
+      );
+      expect(
+        result.exitCode,
+        0,
+        reason: 'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+      );
+      expect(result.stdout, contains('SUMMARY_FAIL_CLOSED_PASS'));
+      expect(
+        result.stdout,
+        contains(
+          'native_result=sdkCompleted=0,resultStatus=none,bridge=dart_watchdog_timeout',
+        ),
+      );
+      expect(result.stdout, contains('flutter_failure=dart_watchdog_timeout'));
+      expect(result.stdout, contains('operator_failure=unsafe_cashier_ui'));
+      expect(result.stdout, contains('payment_status=NOT_PROVEN'));
+      expect(result.stdout, contains('canceled_order_count=NOT_PROVEN'));
+      expect(result.stdout, contains('payment_provider_events=NOT_PROVEN'));
+      expect(result.stdout, contains('wallet_transactions=NOT_PROVEN'));
+      expect(result.stdout, contains('ledger_journals=NOT_PROVEN'));
+      expect(result.stdout, contains('ledger_entries=NOT_PROVEN'));
+      expect(
+        result.stdout,
+        isNot(contains('native_cancel=sdkCompleted=0,resultStatus=6001')),
+      );
+      expect(result.stdout, isNot(contains('payment_status=CANCELED')));
+      expect(result.stdout, isNot(contains('canceled_order_count=1')));
+      expect(result.stdout, isNot(contains('db_zero_mutations=PASS')));
+    },
+  );
+
+  test(
     'operator accepts only a selected physical serial and exact cancel pair',
     () {
       final Directory root = sandbox('alipay-physical-operator-pass-');

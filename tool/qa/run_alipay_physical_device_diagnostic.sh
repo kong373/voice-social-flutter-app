@@ -83,6 +83,9 @@ DB_PROVIDER_EVENTS='NOT_PROVEN'
 DB_WALLET_TRANSACTIONS='NOT_PROVEN'
 DB_LEDGER_JOURNALS='NOT_PROVEN'
 DB_LEDGER_ENTRIES='NOT_PROVEN'
+CANCEL_CONTRACT_VERIFIED=false
+DB_START_COMPLETED=false
+DB_COLLECT_COMPLETED=false
 
 usage() {
   cat <<'USAGE'
@@ -591,6 +594,11 @@ run_db_evidence_hook() {
     FAIL_REASON="db_evidence_${phase}_hook_failed"
     return 1
   }
+  if [[ "$phase" == start ]]; then
+    DB_START_COMPLETED=true
+  else
+    DB_COLLECT_COMPLETED=true
+  fi
 }
 
 prepare_android_host() {
@@ -712,21 +720,196 @@ evaluate_marker_contract() {
   return 0
 }
 
+summary_native_marker_count() {
+  [[ -f "$FLUTTER_LOG_PATH" && ! -L "$FLUTTER_LOG_PATH" ]] || {
+    printf '0'
+    return 0
+  }
+  local count=''
+  count="$(grep -Ec '^M5_ALIPAY_NATIVE_RESULT::sdkCompleted=[01]::resultStatus=[A-Za-z0-9_.-]{1,32}$' "$FLUTTER_LOG_PATH" 2>/dev/null || true)"
+  [[ "$count" =~ ^[0-9]+$ ]] || count=0
+  printf '%s' "$count"
+}
+
+summary_bridge_marker_count() {
+  [[ -f "$FLUTTER_LOG_PATH" && ! -L "$FLUTTER_LOG_PATH" ]] || {
+    printf '0'
+    return 0
+  }
+  local count=''
+  count="$(grep -Ec '^M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::[A-Za-z0-9_.-]{1,40}$' "$FLUTTER_LOG_PATH" 2>/dev/null || true)"
+  [[ "$count" =~ ^[0-9]+$ ]] || count=0
+  printf '%s' "$count"
+}
+
+summary_native_marker_value() {
+  local count line sdk status
+  count="$(summary_native_marker_count)"
+  if [[ "$count" == 0 ]]; then
+    printf 'NOT_OBSERVED'
+    return 0
+  fi
+  if [[ "$count" != 1 ]]; then
+    printf 'AMBIGUOUS'
+    return 0
+  fi
+  line="$(grep -E '^M5_ALIPAY_NATIVE_RESULT::sdkCompleted=[01]::resultStatus=[A-Za-z0-9_.-]{1,32}$' "$FLUTTER_LOG_PATH" 2>/dev/null | head -n 1 || true)"
+  sdk="${line#M5_ALIPAY_NATIVE_RESULT::sdkCompleted=}"
+  status="${sdk#*::resultStatus=}"
+  sdk="${sdk%%::*}"
+  [[ "$sdk" == 0 || "$sdk" == 1 ]] || sdk='UNTRUSTED'
+  case "$status" in
+    6001|9000|none|processing|4000|4001|5000|8000|unknown) ;;
+    *) status='UNTRUSTED' ;;
+  esac
+  printf 'sdkCompleted=%s,resultStatus=%s' "$sdk" "$status"
+}
+
+summary_bridge_marker_value() {
+  local count line value
+  count="$(summary_bridge_marker_count)"
+  if [[ "$count" == 0 ]]; then
+    printf 'NOT_OBSERVED'
+    return 0
+  fi
+  if [[ "$count" != 1 ]]; then
+    printf 'AMBIGUOUS'
+    return 0
+  fi
+  line="$(grep -E '^M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::[A-Za-z0-9_.-]{1,40}$' "$FLUTTER_LOG_PATH" 2>/dev/null | head -n 1 || true)"
+  value="${line#M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::}"
+  case "$value" in
+    pay_task_returned|native_watchdog_timeout|dart_watchdog_timeout|native_not_invoked|native_exception|native_unavailable|timeout|server-busy|none) ;;
+    *) value='UNTRUSTED' ;;
+  esac
+  printf '%s' "$value"
+}
+
+summary_native_result_value() {
+  local native bridge
+  native="$(summary_native_marker_value)"
+  bridge="$(summary_bridge_marker_value)"
+  if [[ "$native" == NOT_OBSERVED && "$bridge" == NOT_OBSERVED ]]; then
+    printf 'NOT_OBSERVED'
+  else
+    printf '%s,bridge=%s' "$native" "$bridge"
+  fi
+}
+
+summary_flutter_failure_value() {
+  local bridge native
+  bridge="$(summary_bridge_marker_value)"
+  native="$(summary_native_marker_value)"
+  case "$bridge" in
+    dart_watchdog_timeout|native_watchdog_timeout|native_not_invoked|native_exception|native_unavailable|timeout|server-busy|none)
+      printf '%s' "$bridge"
+      return 0
+      ;;
+  esac
+  if [[ "$native" == *'resultStatus=none' ]]; then
+    printf 'none'
+    return 0
+  fi
+  if [[ -f "$FLUTTER_LOG_PATH" && ! -L "$FLUTTER_LOG_PATH" ]] &&
+    [[ "$(exact_marker_count 'M5_ALIPAY_FOCUSED::complete::FAIL')" == 1 ]]; then
+    printf 'focused_flow_failed'
+    return 0
+  fi
+  case "$FAIL_REASON" in
+    post_launch_watchdog_timeout|native_launcher_start_timeout)
+      printf 'watchdog_timeout'
+      ;;
+    focused_flutter_target_failed*)
+      printf 'flutter_target_failed'
+      ;;
+    *)
+      printf 'NOT_OBSERVED'
+      ;;
+  esac
+}
+
+summary_operator_failure_value() {
+  if [[ -f "$OPERATOR_LOG_PATH" && ! -L "$OPERATOR_LOG_PATH" ]]; then
+    if grep -Fq 'Alipay cashier UI contains unsafe state' "$OPERATOR_LOG_PATH" ||
+      grep -Fq 'Alipay cashier UI is not safely cancellable' "$OPERATOR_LOG_PATH"; then
+      printf 'unsafe_cashier_ui'
+      return 0
+    fi
+    if grep -Fq 'result marker rejected' "$OPERATOR_LOG_PATH"; then
+      printf 'marker_rejected'
+      return 0
+    fi
+    if grep -Fq 'bounded wait expired' "$OPERATOR_LOG_PATH"; then
+      printf 'bounded_wait_expired'
+      return 0
+    fi
+    if grep -Fq 'physical device rejected' "$OPERATOR_LOG_PATH"; then
+      printf 'physical_device_rejected'
+      return 0
+    fi
+  fi
+  if [[ "$OPERATOR_STATUS" == 0 ]]; then
+    printf 'none'
+  elif [[ "$OPERATOR_STATUS" =~ ^[0-9]+$ ]]; then
+    printf 'operator_exit_nonzero'
+  else
+    printf 'NOT_OBSERVED'
+  fi
+}
+
+summary_db_phases() {
+  if [[ "$DB_START_COMPLETED" == true && "$DB_COLLECT_COMPLETED" == true ]]; then
+    printf 'start,collect'
+  elif [[ "$DB_START_COMPLETED" == true ]]; then
+    printf 'start'
+  elif [[ "$DB_COLLECT_COMPLETED" == true ]]; then
+    printf 'collect'
+  else
+    printf 'none'
+  fi
+}
+
 write_summary() {
   [[ -n "$ARTIFACT_DIR" && -d "$ARTIFACT_DIR" ]] || return 0
-  local conclusion='PHYSICAL_DEVICE_DIAGNOSTIC_FAIL'
-  [[ "$RUN_RESULT" == PASS ]] && conclusion='PHYSICAL_DEVICE_DIAGNOSTIC_PASS'
+  local native_result flutter_failure operator_failure db_phases
+  local accepted=false conclusion='PHYSICAL_DEVICE_DIAGNOSTIC_FAIL'
+  local payment_status='NOT_PROVEN' canceled_order_count='NOT_PROVEN'
+  local provider_events='NOT_PROVEN' wallet_transactions='NOT_PROVEN'
+  local ledger_journals='NOT_PROVEN' ledger_entries='NOT_PROVEN'
+  local observed_at='NOT_PROVEN' db_zero_mutations='NOT_PROVEN'
+  native_result="$(summary_native_result_value)"
+  flutter_failure="$(summary_flutter_failure_value)"
+  operator_failure="$(summary_operator_failure_value)"
+  db_phases="$(summary_db_phases)"
+  # A successful-looking marker is never enough for artifact success.  The
+  # summary may claim CANCELED/count=1/zero only after the exact native pair,
+  # successful operator, and the collect-phase validator all passed.
+  if [[ "$RUN_RESULT" == PASS && "$CANCEL_CONTRACT_VERIFIED" == true &&
+    "$DB_COLLECT_COMPLETED" == true && "$DB_STATUS" == PASS &&
+    "$native_result" == 'sdkCompleted=0,resultStatus=6001,bridge=pay_task_returned' ]]; then
+    accepted=true
+    conclusion='PHYSICAL_DEVICE_DIAGNOSTIC_PASS'
+    payment_status='CANCELED'
+    canceled_order_count=1
+    provider_events=0
+    wallet_transactions=0
+    ledger_journals=0
+    ledger_entries=0
+    observed_at='attested'
+    db_zero_mutations='PASS'
+  fi
   {
     printf 'lane=PHYSICAL_DEVICE_DIAGNOSTIC\nconclusion=%s\n' "$conclusion"
     printf 'device_class=physical\nserial=redacted\napi_base=127.0.0.1:18080\nreverse=tcp:18080->tcp:18080\n'
     printf 'flutter_version=%s\ndart_version=%s\n' "$EXPECTED_FLUTTER_VERSION" "$EXPECTED_DART_VERSION"
-    printf 'flutter_sha=%s\nbackend_sha=%s\nrun_id=redacted\nrun_started_at=attested\nobserved_at=attested\n' "$FLUTTER_SHA" "$BACKEND_SHA"
+    printf 'flutter_sha=%s\nbackend_sha=%s\nrun_id=redacted\nrun_started_at=attested\nobserved_at=%s\n' "$FLUTTER_SHA" "$BACKEND_SHA" "$observed_at"
     printf 'screen_width=%s\nscreen_height=%s\n' "$SCREEN_WIDTH" "$SCREEN_HEIGHT"
     printf 'flutter_status=%s\noperator_status=%s\nback_attempts=%s\n' "$FLUTTER_STATUS" "$OPERATOR_STATUS" "$BACK_COUNT"
-    printf 'native_cancel=sdkCompleted=0,resultStatus=6001,bridge=pay_task_returned\n'
-    printf 'payment_provider=alipay-sandbox\npayment_status=CANCELED\ncanceled_order_count=1\n'
-    printf 'payment_provider_events=%s\nprovider_events=%s\nwallet_transactions=%s\nledger_journals=%s\nledger_entries=%s\n' "$DB_PROVIDER_EVENTS" "$DB_PROVIDER_EVENTS" "$DB_WALLET_TRANSACTIONS" "$DB_LEDGER_JOURNALS" "$DB_LEDGER_ENTRIES"
-    printf 'db_zero_mutations=%s\ndb_evidence_phases=start,collect\nevidence_binding=serial+run_id+flutter_sha+backend_sha+run_started_at+observed_at\nsecrets=redacted\nreason=%s\nraw_flutter_log=not_saved\n' "$DB_STATUS" "$FAIL_REASON"
+    printf 'native_cancel=%s\nnative_result=%s\n' "$native_result" "$native_result"
+    printf 'flutter_failure=%s\noperator_failure=%s\n' "$flutter_failure" "$operator_failure"
+    printf 'payment_provider=alipay-sandbox\npayment_status=%s\ncanceled_order_count=%s\n' "$payment_status" "$canceled_order_count"
+    printf 'payment_provider_events=%s\nprovider_events=%s\nwallet_transactions=%s\nledger_journals=%s\nledger_entries=%s\n' "$provider_events" "$provider_events" "$wallet_transactions" "$ledger_journals" "$ledger_entries"
+    printf 'db_zero_mutations=%s\ndb_evidence_phases=%s\nevidence_binding=serial+run_id+flutter_sha+backend_sha+run_started_at+observed_at\nsecrets=redacted\nacceptance_gate=%s\nreason=%s\nraw_flutter_log=not_saved\n' "$db_zero_mutations" "$db_phases" "$accepted" "$FAIL_REASON"
   } >"$ARTIFACT_DIR/summary.txt"
 }
 
@@ -841,27 +1024,83 @@ self_test() {
     artifact="$root/artifact"
     mkdir -m 700 "$artifact"
     ARTIFACT_DIR="$artifact"
+    FLUTTER_LOG_PATH="$root/success-flutter.log"
+    printf '%s\n%s\n' \
+      "$EXPECTED_NATIVE_MARKER" "$EXPECTED_BRIDGE_MARKER" >"$FLUTTER_LOG_PATH"
+    OPERATOR_LOG_PATH="$root/success-operator.log"
+    : >"$OPERATOR_LOG_PATH"
     SCREEN_WIDTH=1440
     SCREEN_HEIGHT=3200
-    RUN_RESULT='FAIL'
-    FAIL_REASON='self_test'
+    RUN_RESULT='PASS'
+    FAIL_REASON='none'
+    CANCEL_CONTRACT_VERIFIED=true
+    DB_START_COMPLETED=true
+    DB_COLLECT_COMPLETED=true
     DB_STATUS='PASS'
     DB_PROVIDER_EVENTS=0
     DB_WALLET_TRANSACTIONS=0
     DB_LEDGER_JOURNALS=0
     DB_LEDGER_ENTRIES=0
     BACK_COUNT=1
-    FLUTTER_STATUS='NOT_RUN'
-    OPERATOR_STATUS='NOT_RUN'
+    FLUTTER_STATUS=0
+    OPERATOR_STATUS=0
+    write_summary
+    grep -Fqx 'conclusion=PHYSICAL_DEVICE_DIAGNOSTIC_PASS' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'native_result=sdkCompleted=0,resultStatus=6001,bridge=pay_task_returned' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'payment_status=CANCELED' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'canceled_order_count=1' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'db_zero_mutations=PASS' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'acceptance_gate=true' "$artifact/summary.txt" || exit 1
+
+    FLUTTER_LOG_PATH="$root/flutter-drive.log"
+    printf '%s\n%s\n%s\n' \
+      'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=none' \
+      'M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::dart_watchdog_timeout' \
+      'M5_ALIPAY_FOCUSED::complete::FAIL' >"$FLUTTER_LOG_PATH"
+    OPERATOR_LOG_PATH="$root/cancel-operator.log"
+    printf '%s\n' \
+      'PHYSICAL_DEVICE_DIAGNOSTIC operator: physical device rejected (Alipay cashier UI contains unsafe state)' \
+      >"$OPERATOR_LOG_PATH"
+    SCREEN_WIDTH=1440
+    SCREEN_HEIGHT=3200
+    RUN_RESULT='FAIL'
+    FAIL_REASON='physical cancellation operator failed'
+    CANCEL_CONTRACT_VERIFIED=false
+    DB_START_COMPLETED=true
+    DB_COLLECT_COMPLETED=false
+    DB_STATUS='NOT_PROVEN'
+    DB_PROVIDER_EVENTS='NOT_PROVEN'
+    DB_WALLET_TRANSACTIONS='NOT_PROVEN'
+    DB_LEDGER_JOURNALS='NOT_PROVEN'
+    DB_LEDGER_ENTRIES='NOT_PROVEN'
+    BACK_COUNT=1
+    FLUTTER_STATUS='TIMEOUT'
+    OPERATOR_STATUS=69
     write_summary
     grep -Fqx 'lane=PHYSICAL_DEVICE_DIAGNOSTIC' "$artifact/summary.txt" || exit 1
     grep -Fqx 'device_class=physical' "$artifact/summary.txt" || exit 1
     grep -Fqx 'serial=redacted' "$artifact/summary.txt" || exit 1
-    grep -Fqx 'db_zero_mutations=PASS' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'native_result=sdkCompleted=0,resultStatus=none,bridge=dart_watchdog_timeout' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'flutter_failure=dart_watchdog_timeout' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'operator_failure=unsafe_cashier_ui' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'payment_status=NOT_PROVEN' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'canceled_order_count=NOT_PROVEN' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'payment_provider_events=NOT_PROVEN' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'wallet_transactions=NOT_PROVEN' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'ledger_journals=NOT_PROVEN' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'ledger_entries=NOT_PROVEN' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'db_zero_mutations=NOT_PROVEN' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'db_evidence_phases=start' "$artifact/summary.txt" || exit 1
+    grep -Fqx 'acceptance_gate=false' "$artifact/summary.txt" || exit 1
+    grep -Fq 'native_cancel=sdkCompleted=0,resultStatus=6001' "$artifact/summary.txt" && exit 1 || true
+    grep -Fq 'payment_status=CANCELED' "$artifact/summary.txt" && exit 1 || true
+    grep -Fq 'canceled_order_count=1' "$artifact/summary.txt" && exit 1 || true
+    grep -Fq 'db_zero_mutations=PASS' "$artifact/summary.txt" && exit 1 || true
     grep -Fqi 'emulator_pass' "$artifact/summary.txt" && exit 1 || true
     grep -Fqi 'R58PHYSICAL001' "$artifact/summary.txt" && exit 1 || true
     safe_artifact_scan || exit 1
-    audit 'DB_ZERO_MUTATIONS_PASS'
+    grep -E '^(native_result|flutter_failure|operator_failure|payment_status|canceled_order_count|payment_provider_events|wallet_transactions|ledger_journals|ledger_entries|db_zero_mutations|db_evidence_phases|acceptance_gate)=' "$artifact/summary.txt"
+    audit 'SUMMARY_FAIL_CLOSED_PASS'
     audit 'ARTIFACT_REDACTION_PASS'
     audit 'PHYSICAL_DEVICE_DIAGNOSTIC_PASS'
   )
@@ -942,6 +1181,7 @@ if [[ -s "$FLUTTER_STATUS_PATH" && "$FLUTTER_STATUS" != 0 ]]; then
 fi
 evaluate_marker_contract || fail_marker "$FAIL_REASON"
 [[ "$OPERATOR_STATUS" == 0 ]] || fail_marker 'physical cancellation operator failed'
+CANCEL_CONTRACT_VERIFIED=true
 BACK_COUNT="$(awk -F= '/^PHYSICAL_DEVICE_DIAGNOSTIC::KEYCODE_BACK_SENT::attempt=/ { value = $NF } END { print value + 0 }' "$OPERATOR_LOG_PATH")"
 run_db_evidence_hook collect || fail_device "$FAIL_REASON"
 verify_zero_mutations || fail_device "$FAIL_REASON"
