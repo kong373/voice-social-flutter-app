@@ -358,7 +358,10 @@ done
 column_exists recharge_order created_at || { printf '%s\n' SCHEMA_MISSING; exit 0; }
 printf '%s\n' SCHEMA_OK
 
-snapshot_query="SELECT UTC_TIMESTAMP(6), COALESCE((SELECT MAX(id) FROM recharge_order), 0), COALESCE((SELECT MAX(id) FROM payment_provider_event), 0), COALESCE((SELECT MAX(id) FROM wallet_transaction), 0), COALESCE((SELECT MAX(id) FROM ledger_journal), 0), COALESCE((SELECT MAX(id) FROM ledger_posting), 0)"
+# mysql --batch separates columns with tabs.  Emit one explicitly delimited
+# scalar so the host-side strict marker parser sees the same wire format in a
+# real container that the offline contract fixtures exercise.
+snapshot_query="SELECT CONCAT_WS('|', UTC_TIMESTAMP(6), COALESCE((SELECT MAX(id) FROM recharge_order), 0), COALESCE((SELECT MAX(id) FROM payment_provider_event), 0), COALESCE((SELECT MAX(id) FROM wallet_transaction), 0), COALESCE((SELECT MAX(id) FROM ledger_journal), 0), COALESCE((SELECT MAX(id) FROM ledger_posting), 0))"
 snapshot() {
   value="$(mysql_query "$snapshot_query")"
   case "$value" in *$'\n'*) exit 30 ;; esac
@@ -386,14 +389,14 @@ for value in "$baseline_recharge" "$baseline_provider_event" "$baseline_wallet_t
 done
 
 before="$(snapshot)"
-metrics_query="SELECT COUNT(*), COALESCE(SUM(payment_provider = 'alipay-sandbox'), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED'), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED' AND provider_status IN ('TRADE_CLOSED', 'TRADE_NOT_EXIST')), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED' AND provider_status IS NOT NULL AND provider_status NOT IN ('TRADE_CLOSED', 'TRADE_NOT_EXIST')), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED' AND provider_status IS NULL), 0), (SELECT COUNT(*) FROM payment_provider_event WHERE id > $baseline_provider_event), (SELECT COUNT(*) FROM wallet_transaction WHERE id > $baseline_wallet_transaction), (SELECT COUNT(*) FROM ledger_journal WHERE id > $baseline_ledger_journal), (SELECT COUNT(*) FROM ledger_posting WHERE id > $baseline_ledger_posting) FROM recharge_order WHERE id > $baseline_recharge AND created_at >= STR_TO_DATE('$baseline_timestamp', '%Y-%m-%d %H:%i:%s.%f')"
+metrics_query="SELECT CONCAT_WS('|', COUNT(*), COALESCE(SUM(payment_provider = 'alipay-sandbox'), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED'), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED' AND provider_status IN ('TRADE_CLOSED', 'TRADE_NOT_EXIST')), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED' AND provider_status IS NOT NULL AND provider_status NOT IN ('TRADE_CLOSED', 'TRADE_NOT_EXIST')), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED' AND provider_status IS NULL), 0), (SELECT COUNT(*) FROM payment_provider_event WHERE id > $baseline_provider_event), (SELECT COUNT(*) FROM wallet_transaction WHERE id > $baseline_wallet_transaction), (SELECT COUNT(*) FROM ledger_journal WHERE id > $baseline_ledger_journal), (SELECT COUNT(*) FROM ledger_posting WHERE id > $baseline_ledger_posting)) FROM recharge_order WHERE id > $baseline_recharge AND created_at >= STR_TO_DATE('$baseline_timestamp', '%Y-%m-%d %H:%i:%s.%f')"
 metrics="$(mysql_query "$metrics_query")"
 middle="$(snapshot)"
 metrics_repeat="$(mysql_query "$metrics_query")"
 after="$(snapshot)"
 case "$metrics" in *$'\n'*|'') exit 39 ;; esac
 case "$metrics_repeat" in *$'\n'*|'') exit 40 ;; esac
-printf 'B|%s\nM|%s\nC|%s\nE|%s\nF|%s\n' "$before" "$metrics" "$middle" "$metrics_repeat" "$after"
+printf 'B|%s\nM|%s\nC|%s\nF|%s\nE|%s\n' "$before" "$metrics" "$middle" "$metrics_repeat" "$after"
 unset database_secret MYSQL_PWD
 """
 MYSQL_SCRIPT = MYSQL_PHYSICAL_EVIDENCE_SCRIPT

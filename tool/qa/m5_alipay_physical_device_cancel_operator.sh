@@ -439,6 +439,11 @@ def labels(node):
         if node.attrib.get(attribute, "").strip()
     }
 
+def is_visible(node):
+    # Android 16 omits visible-to-user from a real foreground UI dump.  Treat
+    # omission as visible, but continue rejecting an explicit false value.
+    return node.attrib.get("visible-to-user", "") in ("", "true")
+
 all_values = " ".join(
     value.strip().casefold() for node in target_nodes for value in node.attrib.values() if value.strip()
 )
@@ -478,7 +483,7 @@ ready_controls = []
 for node in target_nodes:
     if not any(is_cancel_label(value) for value in labels(node)):
         continue
-    if node.attrib.get("enabled") != "true" or node.attrib.get("visible-to-user") != "true":
+    if node.attrib.get("enabled") != "true" or not is_visible(node):
         continue
     if node.attrib.get("clickable") != "true" or not valid_bounds(node):
         continue
@@ -673,7 +678,7 @@ operator_self_test() {
     printf '%s\n' "$EXPECTED_NATIVE_MARKER" >"$log"
     LOG_BASELINE_BYTES="$(wc -c <"$log" | tr -d '[:space:]')"
     [[ "$(marker_state_from_file_prefix)" != 'MISSING' ]] || exit 1
-    printf '%s\n' '<hierarchy package="com.eg.android.AlipayGphoneRC"><node package="com.eg.android.AlipayGphoneRC" text="Cancel" content-desc="Cancel" enabled="true" visible-to-user="true" clickable="true" bounds="[40,2800][1400,3000]" /></hierarchy>' >"$root/ui.xml"
+    printf '%s\n' '<hierarchy package="com.eg.android.AlipayGphoneRC"><node package="com.eg.android.AlipayGphoneRC" text="Cancel" content-desc="Cancel" enabled="true" clickable="true" bounds="[40,2800][1400,3000]" /></hierarchy>' >"$root/ui.xml"
     UI_DUMP_LOCAL_PATH="$root/ui.xml"
     SCREEN_WIDTH=1440
     SCREEN_HEIGHT=3200

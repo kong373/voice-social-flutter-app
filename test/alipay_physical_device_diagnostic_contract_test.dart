@@ -346,6 +346,12 @@ esac
     expect(runnerSource, contains('recharge_order.status=CANCELLED'));
     expect(runnerSource, contains('canceledOrderCount'));
     expect(
+      runnerSource,
+      contains(
+        'DB_EVIDENCE_STATE_DIR="\$(cd "\$DB_EVIDENCE_STATE_DIR" && pwd -P)"',
+      ),
+    );
+    expect(
       runnerSource.lastIndexOf('run_db_evidence_hook start'),
       lessThan(runnerSource.lastIndexOf('adb_get_state')),
     );

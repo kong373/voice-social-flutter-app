@@ -81,12 +81,43 @@ class PhysicalAlipayDbEvidenceContractTest(unittest.TestCase):
         script = evidence.MYSQL_PHYSICAL_EVIDENCE_SCRIPT
         self.assertIn("UTC_TIMESTAMP(6)", script)
         self.assertIn("MYSQL_PWD=", script)
+        self.assertGreaterEqual(script.count("CONCAT_WS('|',"), 2)
         for table in evidence.TABLES:
             self.assertIn(f"MAX(id) FROM {table}", script)
         for forbidden in ("INSERT ", "UPDATE ", "DELETE ", "DROP ", "ALTER ", "TRUNCATE "):
             self.assertNotIn(forbidden, script.upper())
         self.assertIn("TRADE_NOT_EXIST", script)
         self.assertIn("TRADE_CLOSED", script)
+
+    def test_real_mysql_wire_markers_parse_in_exact_start_and_collect_order(self) -> None:
+        start_output = (
+            "SCHEMA_OK\n"
+            "S|2026-09-01 01:02:03.123456|100|200|300|400|500\n"
+        )
+        start = evidence._parse_db_output(start_output, "start")
+        self.assertEqual(start.start_snapshot.max_ids, MAX_IDS)
+
+        collect_output = "\n".join(
+            (
+                "SCHEMA_OK",
+                "B|2026-09-01 01:02:03.123456|101|200|300|400|500",
+                "M|1|1|1|1|0|0|0|0|0|0",
+                "C|2026-09-01 01:02:03.223456|101|200|300|400|500",
+                "F|1|1|1|1|0|0|0|0|0|0",
+                "E|2026-09-01 01:02:04.123456|101|200|300|400|500",
+                "",
+            )
+        )
+        collect = evidence._parse_db_output(collect_output, "collect")
+        self.assertEqual(collect.metrics, collect.metrics_repeat)
+        self.assertEqual(collect.after_snapshot.max_ids["recharge_order"], 101)
+
+        with self.assertRaisesRegex(evidence.CollectorError, "INVALID_MARKER"):
+            evidence._parse_db_output(
+                "SCHEMA_OK\n"
+                "S|2026-09-01 01:02:03.123456\t100\t200\t300\t400\t500\n",
+                "start",
+            )
 
     def test_two_phase_state_and_output_bindings_are_private_and_exact(self) -> None:
         with tempfile.TemporaryDirectory() as root:

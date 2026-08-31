@@ -302,7 +302,10 @@ try:
 except (OSError, UnicodeDecodeError, ValueError, ET.ParseError, IndexError):
     verdict("INVALID")
 
-if root.tag.rsplit("}", 1)[-1] != "hierarchy" or root.attrib.get("package") != package:
+if root.tag.rsplit("}", 1)[-1] != "hierarchy":
+    verdict("INVALID")
+root_package = root.attrib.get("package", "").strip()
+if root_package and root_package != package:
     verdict("INVALID")
 if width <= 0 or height <= 0: verdict("INVALID")
 nodes = [node for node in root.iter() if node.tag.rsplit("}", 1)[-1] == "node"]
@@ -314,8 +317,14 @@ def normalized(value):
 def labels(node):
     return {normalized(node.attrib.get(name, "")) for name in ("text", "content-desc") if node.attrib.get(name, "").strip()}
 
+def is_visible(node):
+    # Android 16's real `uiautomator dump` omits visible-to-user.  The dump is
+    # already scoped to the foreground hierarchy, so absence is acceptable;
+    # an explicit false value remains fail-closed.
+    return node.attrib.get("visible-to-user", "") in ("", "true")
+
 errors = {normalized(value) for value in errors}
-error_nodes = [node for node in nodes if node.attrib.get("visible-to-user") == "true" and labels(node) & errors]
+error_nodes = [node for node in nodes if is_visible(node) and labels(node) & errors]
 if len(error_nodes) != 1: verdict("INVALID")
 
 dangerous = (
@@ -347,7 +356,7 @@ def valid_bounds(node):
 
 close_nodes = []
 for node in nodes:
-    if node.attrib.get("visible-to-user") != "true" or node.attrib.get("enabled") != "true":
+    if not is_visible(node) or node.attrib.get("enabled") != "true":
         continue
     if node.attrib.get("clickable") != "true" or not labels(node) & safe_labels:
         continue
@@ -455,7 +464,7 @@ probe_self_test() {
     trap 'rm -rf -- "$root"' EXIT
     ui="$root/ui.xml"
     SCREEN_WIDTH=1080; SCREEN_HEIGHT=1920
-    printf '%s\n' '<hierarchy package="com.eg.android.AlipayGphoneRC"><node package="com.eg.android.AlipayGphoneRC" class="android.widget.TextView" text="人气太旺啦，稍候再试试。(6)" visible-to-user="true" /><node package="com.eg.android.AlipayGphoneRC" class="android.widget.Button" text="确定" enabled="true" visible-to-user="true" clickable="true" bounds="[400,900][680,1020]" /></hierarchy>' >"$ui"
+    printf '%s\n' '<hierarchy rotation="0"><node package="com.eg.android.AlipayGphoneRC" class="android.widget.TextView" text="人气太旺啦，稍候再试试。(6)" /><node package="com.eg.android.AlipayGphoneRC" class="android.widget.Button" text="确定" enabled="true" clickable="true" bounds="[400,900][680,1020]" /></hierarchy>' >"$ui"
     UI_DUMP_LOCAL_PATH="$ui"; state="$(ui_dialog_state)"; [[ "$state" == 'READY 540 960' ]] || exit 1
     sed 's/人气太旺啦，稍候再试试。(6)/Server busy, please try again later. (6)/' "$ui" >"$root/english.xml"
     UI_DUMP_LOCAL_PATH="$root/english.xml"; [[ "$(ui_dialog_state)" == 'READY 540 960' ]] || exit 1

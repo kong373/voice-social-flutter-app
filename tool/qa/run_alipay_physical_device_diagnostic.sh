@@ -1137,9 +1137,11 @@ git_status="$(git -C "$PROJECT_ROOT" status --porcelain=v1 --untracked-files=all
 [[ -z "$git_status" ]] || fail_configuration 'Flutter checkout must be clean for physical acceptance'
 resolve_backend_sha
 initialize_run_binding
-DB_EVIDENCE_STATE_DIR="$(mktemp -d /tmp/voice-social-alipay-physical-evidence.XXXXXX)" ||
+DB_EVIDENCE_STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/voice-social-alipay-physical-evidence.XXXXXX")" ||
   fail_configuration 'DB evidence state directory could not be created'
 chmod 700 "$DB_EVIDENCE_STATE_DIR" || fail_configuration 'DB evidence state permissions failed'
+DB_EVIDENCE_STATE_DIR="$(cd "$DB_EVIDENCE_STATE_DIR" && pwd -P)" ||
+  fail_configuration 'DB evidence state canonicalization failed'
 run_db_evidence_hook start || fail_device "$FAIL_REASON"
 [[ -f "$DB_EVIDENCE_STATE_DIR/baseline.json" && ! -L "$DB_EVIDENCE_STATE_DIR/baseline.json" ]] ||
   fail_device 'DB evidence start phase did not publish a private baseline'
