@@ -6,8 +6,12 @@ umask 077
 # Narrow, cancellation-neutral diagnostic for one already visible Alipay
 # sandbox error dialog. It never creates an order, starts Flutter, enters
 # text, or confirms payment. The only permitted device write is one dynamic
-# tap on the exact non-payment dismiss button.
+# device-side click on the exact non-payment dismiss button.
 
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
+readonly PROJECT_ROOT
+readonly HELPER_BUILD_SCRIPT="$PROJECT_ROOT/tool/qa/build_alipay_atomic_dialog_helper.sh"
+readonly HELPER_SOURCE_FILE="$PROJECT_ROOT/tool/qa/alipay_atomic_dialog/AlipayConfigErrorDismissTest.java"
 readonly TARGET_PACKAGE='com.eg.android.AlipayGphoneRC'
 readonly TARGET_COMPONENT='com.eg.android.AlipayGphoneRC/com.alipay.android.msp.ui.views.MspContainerActivity'
 readonly ERROR_TEXT_ZH='人气太旺啦，稍候再试试。(6)'
@@ -21,6 +25,11 @@ readonly EXIT_MARKER=65
 readonly EXIT_DEVICE=69
 readonly EXIT_TIMEOUT=70
 readonly EXPECTED_BRIDGE_MARKER='M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned'
+readonly EXPECTED_LAUNCH_MARKER='M5_ALIPAY_FOCUSED::native_launcher::START'
+readonly INVOCATION_MARKER_PREFIX='M5_ALIPAY_PROBE_INVOCATION'
+readonly ATOMIC_HELPER_MARKER='ALIPAY_ATOMIC_DIALOG_PROBE::DISMISS_CLICKED'
+readonly ATOMIC_HELPER_CLASS='com.kong373.voicesocial.qa.AlipayConfigErrorDismissTest#testDismissConfigError'
+readonly DEVICE_HELPER_PATH='/data/local/tmp/voice-social-alipay-atomic-dialog-helper.jar'
 
 SELF_TEST=false
 SERIAL_VALUE=''
@@ -28,6 +37,14 @@ SERIAL_ARG=''
 FLUTTER_LOG_PATH=''
 FLUTTER_LOG_ARG=''
 ADB_BIN=''
+SDK_ROOT=''
+SDK_ROOT_ARG=''
+JAVA_HOME_VALUE=''
+JAVA_HOME_ARG=''
+ATOMIC_HELPER_JAR=''
+HELPER_BUILD_DIR=''
+INVOCATION_ID=''
+INVOCATION_ID_ARG=''
 DIALOG_TIMEOUT_SECONDS="$DEFAULT_DIALOG_TIMEOUT_SECONDS"
 MARKER_TIMEOUT_SECONDS="$DEFAULT_MARKER_TIMEOUT_SECONDS"
 POLL_INTERVAL_SECONDS="$DEFAULT_POLL_INTERVAL_SECONDS"
@@ -57,6 +74,9 @@ exact Chinese dismiss button.
 Required:
   --serial ID                 explicit physical-device serial
   --flutter-log PATH          absolute private Flutter log file
+  --sdk-root PATH             absolute Android SDK root used for a fresh build
+  --java-home PATH            absolute Java home used for a fresh build
+  --invocation-id HEX         32 lowercase hex chars bound to this PayTask call
 
 Optional bounded controls:
   --adb PATH                  adb executable (defaults to adb on PATH)
@@ -127,6 +147,18 @@ parse_args() {
         (($# >= 2)) || fail_configuration 'adb path is missing'
         [[ -z "$ADB_BIN" ]] || fail_configuration 'adb path supplied more than once'
         ADB_BIN="$2"; shift 2 ;;
+      --sdk-root)
+        (($# >= 2)) || fail_configuration 'Android SDK root is missing'
+        [[ -z "$SDK_ROOT_ARG" ]] || fail_configuration 'Android SDK root supplied more than once'
+        SDK_ROOT_ARG="$2"; SDK_ROOT="$2"; shift 2 ;;
+      --java-home)
+        (($# >= 2)) || fail_configuration 'Java home is missing'
+        [[ -z "$JAVA_HOME_ARG" ]] || fail_configuration 'Java home supplied more than once'
+        JAVA_HOME_ARG="$2"; JAVA_HOME_VALUE="$2"; shift 2 ;;
+      --invocation-id)
+        (($# >= 2)) || fail_configuration 'invocation ID is missing'
+        [[ -z "$INVOCATION_ID_ARG" ]] || fail_configuration 'invocation ID supplied more than once'
+        INVOCATION_ID_ARG="$2"; INVOCATION_ID="$2"; shift 2 ;;
       --dialog-timeout)
         (($# >= 2)) || fail_configuration 'dialog timeout is missing'
         DIALOG_TIMEOUT_SECONDS="$2"; shift 2 ;;
@@ -165,6 +197,41 @@ validate_log_path() {
   [[ -f "$FLUTTER_LOG_PATH" && ! -L "$FLUTTER_LOG_PATH" ]] ||
     fail_configuration 'private Flutter log file is unavailable'
   [[ -r "$FLUTTER_LOG_PATH" ]] || fail_configuration 'private Flutter log is unreadable'
+  python3 - "$FLUTTER_LOG_PATH" <<'PY' || fail_configuration 'private Flutter log permissions are unsafe'
+import os, stat, sys
+value = os.stat(sys.argv[1], follow_symlinks=False)
+raise SystemExit(0 if value.st_uid == os.getuid() and not (stat.S_IMODE(value.st_mode) & 0o077) else 1)
+PY
+}
+
+validate_helper_source_attestation() {
+  [[ -n "$SDK_ROOT_ARG" ]] || fail_configuration '--sdk-root is required'
+  [[ "$SDK_ROOT" == /* && -d "$SDK_ROOT" && ! -L "$SDK_ROOT" &&
+    "$SDK_ROOT" != *$'\n'* && "$SDK_ROOT" != *$'\r'* &&
+    "$SDK_ROOT" != *$'\t'* && "$SDK_ROOT" != *'..'* ]] ||
+    fail_configuration 'Android SDK root is unsafe'
+  [[ -n "$JAVA_HOME_ARG" && "$JAVA_HOME_VALUE" == /* && -d "$JAVA_HOME_VALUE" &&
+    ! -L "$JAVA_HOME_VALUE" && -x "$JAVA_HOME_VALUE/bin/javac" &&
+    -x "$JAVA_HOME_VALUE/bin/jar" && "$JAVA_HOME_VALUE" != *'..'* ]] ||
+    fail_configuration 'Java home is unsafe or incomplete'
+  [[ -n "$INVOCATION_ID_ARG" && "$INVOCATION_ID" =~ ^[a-f0-9]{32}$ ]] ||
+    fail_configuration '--invocation-id must be exactly 32 lowercase hex chars'
+  [[ -x "$HELPER_BUILD_SCRIPT" && ! -L "$HELPER_BUILD_SCRIPT" &&
+    -f "$HELPER_SOURCE_FILE" && ! -L "$HELPER_SOURCE_FILE" ]] ||
+    fail_configuration 'tracked helper sources are unavailable'
+  command -v git >/dev/null 2>&1 || fail_configuration 'git is unavailable for source attestation'
+  [[ "$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null || true)" == "$PROJECT_ROOT" ]] ||
+    fail_configuration 'helper source repository authority is unavailable'
+  git -C "$PROJECT_ROOT" ls-files --error-unmatch \
+    tool/qa/m5_alipay_error_dialog_probe.sh \
+    tool/qa/build_alipay_atomic_dialog_helper.sh \
+    tool/qa/alipay_atomic_dialog/AlipayConfigErrorDismissTest.java >/dev/null 2>&1 ||
+    fail_configuration 'helper sources are not tracked'
+  git -C "$PROJECT_ROOT" diff --quiet HEAD -- \
+    tool/qa/m5_alipay_error_dialog_probe.sh \
+    tool/qa/build_alipay_atomic_dialog_helper.sh \
+    tool/qa/alipay_atomic_dialog/AlipayConfigErrorDismissTest.java ||
+    fail_configuration 'helper sources differ from the committed checkout'
 }
 
 validate_bounds() {
@@ -231,6 +298,42 @@ verify_physical_device() {
     fail_device 'device properties identify an emulator or qemu'
   [[ -n "$hardware$model$product$device$board" ]] || fail_device 'physical identity is unavailable'
   audit 'DEVICE_ONLINE'; audit 'PHYSICAL_DEVICE_VERIFIED'
+}
+
+prepare_atomic_helper() {
+  "$ADB_BIN" -s "$SERIAL_VALUE" push "$ATOMIC_HELPER_JAR" "$DEVICE_HELPER_PATH" >/dev/null 2>&1 ||
+    fail_device 'atomic UiAutomator helper could not be staged'
+  "$ADB_BIN" -s "$SERIAL_VALUE" shell chmod 600 "$DEVICE_HELPER_PATH" >/dev/null 2>&1 ||
+    fail_device 'atomic UiAutomator helper permissions failed'
+}
+
+build_atomic_helper() {
+  HELPER_BUILD_DIR="$(mktemp -d /tmp/voice-social-alipay-atomic-helper.XXXXXX)" ||
+    fail_configuration 'private helper build directory could not be created'
+  chmod 700 "$HELPER_BUILD_DIR" ||
+    fail_configuration 'private helper build directory permissions failed'
+  ATOMIC_HELPER_JAR="$HELPER_BUILD_DIR/helper.jar"
+  "$HELPER_BUILD_SCRIPT" --sdk-root "$SDK_ROOT" --java-home "$JAVA_HOME_VALUE" \
+    --output "$ATOMIC_HELPER_JAR" >/dev/null ||
+    fail_configuration 'tracked atomic helper build failed'
+  [[ -f "$ATOMIC_HELPER_JAR" && ! -L "$ATOMIC_HELPER_JAR" && -r "$ATOMIC_HELPER_JAR" ]] ||
+    fail_configuration 'fresh atomic helper jar is unavailable'
+  python3 - "$ATOMIC_HELPER_JAR" <<'PY' || fail_configuration 'fresh atomic helper jar permissions are unsafe'
+import os, stat, sys
+value = os.stat(sys.argv[1], follow_symlinks=False)
+raise SystemExit(0 if value.st_uid == os.getuid() and not (stat.S_IMODE(value.st_mode) & 0o077) else 1)
+PY
+}
+
+cleanup_local_helper() {
+  if [[ -n "$ATOMIC_HELPER_JAR" && -f "$ATOMIC_HELPER_JAR" && ! -L "$ATOMIC_HELPER_JAR" ]]; then
+    chmod 600 "$ATOMIC_HELPER_JAR" >/dev/null 2>&1 || true
+    rm -f -- "$ATOMIC_HELPER_JAR" || true
+  fi
+  if [[ -n "$HELPER_BUILD_DIR" && -d "$HELPER_BUILD_DIR" && ! -L "$HELPER_BUILD_DIR" ]]; then
+    rmdir -- "$HELPER_BUILD_DIR" >/dev/null 2>&1 || true
+  fi
+  ATOMIC_HELPER_JAR=''; HELPER_BUILD_DIR=''
 }
 
 read_screen_size() {
@@ -318,6 +421,7 @@ cleanup_on_exit() {
   local status=$?
   set +e
   cleanup_ui_dump
+  cleanup_local_helper
   release_serial_lock
   trap - EXIT
   exit "$status"
@@ -619,7 +723,9 @@ stabilize_before_tap() {
 }
 
 scan_marker_stream() {
-  awk -v expected_bridge="$EXPECTED_BRIDGE_MARKER" '
+  awk -v expected_bridge="$EXPECTED_BRIDGE_MARKER" \
+    -v expected_start="$INVOCATION_MARKER_PREFIX::START::$INVOCATION_ID" \
+    -v expected_return="$INVOCATION_MARKER_PREFIX::RETURN::$INVOCATION_ID" '
     function strip_flutter_prefix(line) {
       if (line ~ /^[VDIWEF]\/flutter \([[:space:]]*[0-9]+\): /)
         sub(/^[VDIWEF]\/flutter \([[:space:]]*[0-9]+\): /, "", line)
@@ -630,6 +736,12 @@ scan_marker_stream() {
       if (line ~ /^M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::/) {
         if (line == expected_bridge) print "BRIDGE_VALID"
         else print "BRIDGE_INVALID"
+        next
+      }
+      if (line ~ /^M5_ALIPAY_PROBE_INVOCATION::/) {
+        if (line == expected_start) print "INVOCATION_START_VALID"
+        else if (line == expected_return) print "INVOCATION_RETURN_VALID"
+        else print "INVOCATION_INVALID"
         next
       }
       if (line ~ /^M5_ALIPAY_NATIVE_RESULT::/) {
@@ -649,20 +761,23 @@ marker_state_from_prefix() {
   local kind seen=0
   while IFS=' ' read -r kind _; do
     case "$kind" in
-      BRIDGE_VALID|BRIDGE_INVALID|NATIVE_VALID|NATIVE_INVALID) seen=$((seen + 1)) ;;
+      BRIDGE_VALID|BRIDGE_INVALID|NATIVE_VALID|NATIVE_INVALID|INVOCATION_RETURN_VALID|INVOCATION_INVALID)
+        seen=$((seen + 1)) ;;
     esac
   done < <(head -c "$LOG_BASELINE_BYTES" "$FLUTTER_LOG_PATH" 2>/dev/null | scan_marker_stream || true)
   if (( seen > 0 )); then printf 'PRESENT'; else printf 'MISSING'; fi
 }
 
 classify_appended_markers() {
-  local current_bytes kind code bridge=0 native=0 invalid=0 result_status=''
+  local current_bytes kind code bridge=0 native=0 invocation_return=0 invalid=0 result_status=''
   current_bytes="$(wc -c <"$FLUTTER_LOG_PATH" 2>/dev/null | tr -d '[:space:]')" || { printf INVALID; return; }
   [[ "$current_bytes" =~ ^[0-9]+$ && "$current_bytes" -ge "$LOG_BASELINE_BYTES" ]] || { printf INVALID; return; }
   while IFS=' ' read -r kind code; do
     case "$kind" in
       BRIDGE_VALID) bridge=$((bridge + 1)) ;;
-      BRIDGE_INVALID|NATIVE_INVALID) invalid=$((invalid + 1)) ;;
+      INVOCATION_RETURN_VALID) invocation_return=$((invocation_return + 1)) ;;
+      BRIDGE_INVALID|NATIVE_INVALID|INVOCATION_INVALID|INVOCATION_START_VALID)
+        invalid=$((invalid + 1)) ;;
       NATIVE_VALID)
         native=$((native + 1))
         result_status="$code"
@@ -670,17 +785,27 @@ classify_appended_markers() {
     esac
   done < <(tail -c +$((LOG_BASELINE_BYTES + 1)) "$FLUTTER_LOG_PATH" 2>/dev/null | scan_marker_stream || true)
   if (( invalid > 0 )); then printf 'INVALID'
-  elif (( bridge > 1 || native > 1 )); then printf 'AMBIGUOUS'
-  elif (( bridge == 1 && native == 1 )); then printf 'RETURNED %s' "$result_status"
+  elif (( bridge > 1 || native > 1 || invocation_return > 1 )); then printf 'AMBIGUOUS'
+  elif (( bridge == 1 && native == 1 && invocation_return == 1 )); then printf 'RETURNED %s' "$result_status"
   else printf 'MISSING'
   fi
 }
 
 record_marker_baseline() {
+  local launch_count='' invocation_start_count='' invocation_total_count=''
   LOG_BASELINE_BYTES="$(wc -c <"$FLUTTER_LOG_PATH" 2>/dev/null | tr -d '[:space:]')" ||
     fail_configuration 'private Flutter log size is unavailable'
   [[ "$LOG_BASELINE_BYTES" =~ ^[0-9]+$ ]] || fail_configuration 'private Flutter log size is invalid'
   [[ "$(marker_state_from_prefix)" == MISSING ]] || fail_marker 'stale PayTask marker before this run'
+  launch_count="$(head -c "$LOG_BASELINE_BYTES" "$FLUTTER_LOG_PATH" 2>/dev/null |
+    grep -Fxc -- "$EXPECTED_LAUNCH_MARKER" || true)"
+  [[ "$launch_count" == 1 ]] || fail_marker 'current PayTask invocation start marker is missing or duplicated'
+  invocation_start_count="$(head -c "$LOG_BASELINE_BYTES" "$FLUTTER_LOG_PATH" 2>/dev/null |
+    grep -Fxc -- "$INVOCATION_MARKER_PREFIX::START::$INVOCATION_ID" || true)"
+  invocation_total_count="$(head -c "$LOG_BASELINE_BYTES" "$FLUTTER_LOG_PATH" 2>/dev/null |
+    grep -Ec '^M5_ALIPAY_PROBE_INVOCATION::' || true)"
+  [[ "$invocation_start_count" == 1 && "$invocation_total_count" == 1 ]] ||
+    fail_marker 'PayTask invocation token is missing, duplicated, or mismatched'
 }
 
 assert_no_marker_before_tap() {
@@ -709,6 +834,26 @@ wait_for_paytask_return() {
   fail_timeout 'PayTask return markers were not observed'
 }
 
+invoke_atomic_helper() {
+  local output='' status=0 marker_count=''
+  (( CLICK_COUNT == 0 )) || fail_device 'dismiss action budget already consumed'
+  # The final adb command performs the fresh selector verification and the
+  # related UiObject click in one device-side UiAutomator process. Mark this
+  # phase first so EXIT cleanup can never issue another device command after
+  # a possible click.
+  TAP_COMPLETED=true
+  set +e
+  output="$("$ADB_BIN" -s "$SERIAL_VALUE" shell uiautomator runtest \
+    "$DEVICE_HELPER_PATH" -c "$ATOMIC_HELPER_CLASS" 2>/dev/null)"
+  status=$?
+  set -e
+  [[ "$status" -eq 0 ]] || fail_device 'atomic UiAutomator helper rejected the dialog'
+  marker_count="$(printf '%s\n' "$output" | grep -Fxc -- "$ATOMIC_HELPER_MARKER" || true)"
+  [[ "$marker_count" == 1 ]] || fail_device 'atomic UiAutomator helper marker is missing or duplicated'
+  CLICK_COUNT=1
+  audit 'DISMISS_BUTTON_TAPPED::count=1'
+}
+
 probe_self_test() {
   (
     set -Eeuo pipefail
@@ -716,6 +861,7 @@ probe_self_test() {
     root="$(mktemp -d /tmp/voice-social-alipay-error-dialog-self-test.XXXXXX)"
     trap 'rm -rf -- "$root"' EXIT
     ui="$root/ui.xml"
+    INVOCATION_ID='0123456789abcdef0123456789abcdef'
     SCREEN_WIDTH=1080; SCREEN_HEIGHT=1920
     printf '%s\n' '<hierarchy rotation="0"><node package="com.eg.android.AlipayGphoneRC" class="android.widget.LinearLayout"><node package="com.eg.android.AlipayGphoneRC" class="android.widget.TextView" text="人气太旺啦，稍候再试试。(6)" /><node package="com.eg.android.AlipayGphoneRC" class="android.widget.Button" text="确定" enabled="true" clickable="true" bounds="[400,900][680,1020]" /></node></hierarchy>' >"$ui"
     UI_DUMP_LOCAL_PATH="$ui"; state="$(ui_dialog_state)"; [[ "$state" == READY\ 540\ 960\ 0\ * ]] || exit 1
@@ -731,15 +877,15 @@ probe_self_test() {
     UI_DUMP_LOCAL_PATH="$root/payment-button.xml"; state="$(ui_dialog_state)"; [[ "$state" == INVALID || "$state" == UNSAFE ]] || exit 1
     sed 's/\[400,900\]\[680,1020\]/[0,0][1200,2100]/' "$ui" >"$root/bad-bounds.xml"
     UI_DUMP_LOCAL_PATH="$root/bad-bounds.xml"; [[ "$(ui_dialog_state)" == INVALID ]] || exit 1
-    FLUTTER_LOG_PATH="$root/flutter.log"; : >"$FLUTTER_LOG_PATH"; LOG_BASELINE_BYTES=0
+    FLUTTER_LOG_PATH="$root/flutter.log"; printf '%s\n%s\n' "$EXPECTED_LAUNCH_MARKER" "$INVOCATION_MARKER_PREFIX::START::$INVOCATION_ID" >"$FLUTTER_LOG_PATH"; LOG_BASELINE_BYTES=0
     record_marker_baseline
-    printf '%s\n%s\n' 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=4000' "$EXPECTED_BRIDGE_MARKER" >>"$FLUTTER_LOG_PATH"
+    printf '%s\n%s\n%s\n' "$INVOCATION_MARKER_PREFIX::RETURN::$INVOCATION_ID" 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=4000' "$EXPECTED_BRIDGE_MARKER" >>"$FLUTTER_LOG_PATH"
     [[ "$(classify_appended_markers)" == 'RETURNED 4000' ]] || exit 1
-    : >"$FLUTTER_LOG_PATH"; record_marker_baseline
-    printf '%s\n%s\n' 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=1::resultStatus=9000' "$EXPECTED_BRIDGE_MARKER" >>"$FLUTTER_LOG_PATH"
+    printf '%s\n%s\n' "$EXPECTED_LAUNCH_MARKER" "$INVOCATION_MARKER_PREFIX::START::$INVOCATION_ID" >"$FLUTTER_LOG_PATH"; record_marker_baseline
+    printf '%s\n%s\n%s\n' "$INVOCATION_MARKER_PREFIX::RETURN::$INVOCATION_ID" 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=1::resultStatus=9000' "$EXPECTED_BRIDGE_MARKER" >>"$FLUTTER_LOG_PATH"
     [[ "$(classify_appended_markers)" == INVALID ]] || exit 1
-    : >"$FLUTTER_LOG_PATH"; record_marker_baseline
-    printf '%s\n%s\n%s\n' 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=4000' 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=4000' "$EXPECTED_BRIDGE_MARKER" >>"$FLUTTER_LOG_PATH"
+    printf '%s\n%s\n' "$EXPECTED_LAUNCH_MARKER" "$INVOCATION_MARKER_PREFIX::START::$INVOCATION_ID" >"$FLUTTER_LOG_PATH"; record_marker_baseline
+    printf '%s\n%s\n%s\n%s\n' "$INVOCATION_MARKER_PREFIX::RETURN::$INVOCATION_ID" 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=4000' 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=4000' "$EXPECTED_BRIDGE_MARKER" >>"$FLUTTER_LOG_PATH"
     [[ "$(classify_appended_markers)" == AMBIGUOUS ]] || exit 1
     audit 'PARSER_FAIL_CLOSED_PASS'; audit 'MARKER_FAIL_CLOSED_PASS'; audit 'SELF_TEST_PASS'
   )
@@ -749,30 +895,23 @@ probe_self_test() {
 main() {
   parse_args "$@"
   if [[ "$SELF_TEST" == true ]]; then probe_self_test; exit 0; fi
-  validate_serial; validate_log_path; validate_bounds; resolve_adb
+  validate_serial; validate_log_path; validate_helper_source_attestation; validate_bounds; resolve_adb
   trap cleanup_on_exit EXIT
   acquire_serial_lock
   adb_get_state
   verify_physical_device
   read_screen_size
   read_target_state || fail_device 'Alipay error-dialog activity is not foreground'
-  local ready_x ready_y
   wait_for_safe_error_dialog
   audit 'ERROR_DIALOG_MATCHED'
-  ready_x="$MATCH_X"
-  ready_y="$MATCH_Y"
   stabilize_before_tap
+  # Build and stage only after the host-side UI gates have passed. The helper
+  # still revalidates the live accessibility objects immediately before click.
+  build_atomic_helper
+  prepare_atomic_helper
   record_marker_baseline
   assert_no_marker_before_tap
-  (( CLICK_COUNT == 0 )) || fail_device 'dismiss tap budget already consumed'
-  [[ "$ready_x" =~ ^[0-9]+$ && "$ready_y" =~ ^[0-9]+$ ]] || fail_device 'dismiss coordinates are invalid'
-  # Mark the tap phase before the one device write so EXIT cleanup can never
-  # issue a remote command after an attempted tap.
-  TAP_COMPLETED=true
-  "$ADB_BIN" -s "$SERIAL_VALUE" shell input tap "$ready_x" "$ready_y" >/dev/null 2>&1 ||
-    fail_device 'dismiss tap failed'
-  CLICK_COUNT=1
-  audit 'DISMISS_BUTTON_TAPPED::count=1'
+  invoke_atomic_helper
   # No device operation occurs after the tap; only the private Flutter log is read.
   wait_for_paytask_return
   audit 'PASS'

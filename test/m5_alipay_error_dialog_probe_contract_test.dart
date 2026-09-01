@@ -4,6 +4,15 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   final File probe = File('tool/qa/m5_alipay_error_dialog_probe.sh').absolute;
+  final File builder = File(
+    'tool/qa/build_alipay_atomic_dialog_helper.sh',
+  ).absolute;
+  final File helperSource = File(
+    'tool/qa/alipay_atomic_dialog/AlipayConfigErrorDismissTest.java',
+  ).absolute;
+  final File focusedTarget = File(
+    'integration_test/alipay_focused_smoke_test.dart',
+  ).absolute;
   const String serial = 'R58PHYSICAL001';
   const String packageName = 'com.eg.android.AlipayGphoneRC';
   const String bridgeMarker =
@@ -12,6 +21,19 @@ void main() {
       'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=4000';
   const String successMarker =
       'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=1::resultStatus=9000';
+  const String launchMarker = 'M5_ALIPAY_FOCUSED::native_launcher::START';
+  const String invocationId = '0123456789abcdef0123456789abcdef';
+  const String invocationStart =
+      'M5_ALIPAY_PROBE_INVOCATION::START::$invocationId';
+  const String invocationReturn =
+      'M5_ALIPAY_PROBE_INVOCATION::RETURN::$invocationId';
+  final String sdkRoot =
+      Platform.environment['ANDROID_SDK_ROOT'] ??
+      Platform.environment['ANDROID_HOME'] ??
+      '/Users/kongzheng/Library/Android/sdk';
+  final String javaHome = Directory(
+    Platform.environment['JAVA_HOME'] ?? '/usr',
+  ).resolveSymbolicLinksSync();
 
   Directory sandbox(String prefix) {
     final Directory value = Directory.systemTemp.createTempSync(prefix);
@@ -103,11 +125,15 @@ if args[0] == "get-state":
             time.sleep(0.01)
     print("device")
     raise SystemExit(0)
+if args[0] == "push":
+    if len(args) != 3 or not pathlib.Path(args[1]).is_file():
+        raise SystemExit(93)
+    raise SystemExit(0)
 if args[0] != "shell":
-    raise SystemExit(93)
+    raise SystemExit(94)
 args = args[1:]
 if not args:
-    raise SystemExit(94)
+    raise SystemExit(95)
 command = args[0]
 if command == "getprop":
     values = {
@@ -129,28 +155,34 @@ elif command == "dumpsys" and args[1:3] == ["activity", "activities"]:
     frame = frames[min(index, len(frames) - 1)]
     print(frame.read_text(), end="")
     count.write_text(str(index + 1))
-elif command == "uiautomator" and args[1] == "dump":
-    count = pathlib.Path(os.environ["FAKE_DUMP_COUNT"])
-    index = int(count.read_text())
-    frames = sorted(pathlib.Path(os.environ["FAKE_UI_DIR"]).glob("*.xml"))
-    frame = frames[min(index, len(frames) - 1)]
-    pathlib.Path(os.environ["FAKE_REMOTE_UI"]).write_text(frame.read_text())
-    count.write_text(str(index + 1))
+elif command == "uiautomator":
+    if len(args) >= 2 and args[1] == "dump":
+        count = pathlib.Path(os.environ["FAKE_DUMP_COUNT"])
+        index = int(count.read_text())
+        frames = sorted(pathlib.Path(os.environ["FAKE_UI_DIR"]).glob("*.xml"))
+        frame = frames[min(index, len(frames) - 1)]
+        pathlib.Path(os.environ["FAKE_REMOTE_UI"]).write_text(frame.read_text())
+        count.write_text(str(index + 1))
+    elif len(args) >= 2 and args[1] == "runtest":
+        if os.environ.get("FAKE_HELPER_FAIL") == "1":
+            raise SystemExit(97)
+        tap_file = pathlib.Path(os.environ["FAKE_TAPS"])
+        count = int(tap_file.read_text()) + 1
+        tap_file.write_text(str(count))
+        marker_file = pathlib.Path(os.environ["FAKE_MARKERS"])
+        markers = marker_file.read_text()
+        if markers:
+            with pathlib.Path(os.environ["FAKE_LOG"]).open("a") as output:
+                output.write(markers + "\\n")
+        print("ALIPAY_ATOMIC_DIALOG_PROBE::DISMISS_CLICKED")
+    else:
+        raise SystemExit(96)
 elif command == "cat":
     print(pathlib.Path(os.environ["FAKE_REMOTE_UI"]).read_text(), end="")
 elif command in ("chmod", "rm"):
     pass
-elif command == "input" and len(args) >= 2 and args[1] == "tap":
-    tap_file = pathlib.Path(os.environ["FAKE_TAPS"])
-    count = int(tap_file.read_text()) + 1
-    tap_file.write_text(str(count))
-    marker_file = pathlib.Path(os.environ["FAKE_MARKERS"])
-    markers = marker_file.read_text()
-    if markers:
-        with pathlib.Path(os.environ["FAKE_LOG"]).open("a") as output:
-            output.write(markers + "\\n")
 else:
-    raise SystemExit(95)
+    raise SystemExit(98)
 ''');
     Process.runSync('/bin/chmod', <String>['0755', fake.path]);
     return fake;
@@ -163,6 +195,7 @@ else:
     String? holdFile,
     String? startedFile,
     String? releaseFile,
+    bool helperFail = false,
   }) {
     final String inheritedPath =
         Platform.environment['PATH'] ?? '/usr/bin:/bin';
@@ -180,6 +213,7 @@ else:
       if (holdFile != null) 'FAKE_HOLD_FILE': holdFile,
       if (startedFile != null) 'FAKE_STARTED_FILE': startedFile,
       if (releaseFile != null) 'FAKE_RELEASE_FILE': releaseFile,
+      if (helperFail) 'FAKE_HELPER_FAIL': '1',
     };
   }
 
@@ -192,6 +226,12 @@ else:
       serial,
       '--flutter-log',
       log.path,
+      '--sdk-root',
+      sdkRoot,
+      '--java-home',
+      javaHome,
+      '--invocation-id',
+      invocationId,
       '--dialog-timeout',
       '1',
       '--marker-timeout',
@@ -205,14 +245,20 @@ else:
     Directory root, {
     required List<String> uiFrames,
     required List<String> activityFrames,
-    List<String> markersAfterTap = const <String>[nativeMarker, bridgeMarker],
-    String logContents = '',
+    List<String> markersAfterTap = const <String>[
+      invocationReturn,
+      nativeMarker,
+      bridgeMarker,
+    ],
+    String logContents = '$launchMarker\n$invocationStart\n',
     String? androidSerial,
     String selectedSerial = serial,
     int markerTimeout = 1,
+    bool helperFail = false,
   }) {
     final File log = File('${root.path}/flutter.log')
       ..writeAsStringSync(logContents);
+    Process.runSync('/bin/chmod', <String>['0600', log.path]);
     final File fake = fakeAdb(
       root,
       uiFrames: uiFrames,
@@ -225,7 +271,7 @@ else:
       '/bin/bash',
       args,
       environment: <String, String>{
-        ...fakeEnvironment(root, logPath: log.path),
+        ...fakeEnvironment(root, logPath: log.path, helperFail: helperFail),
         if (androidSerial != null) 'ANDROID_SERIAL': androidSerial,
       },
       includeParentEnvironment: false,
@@ -246,17 +292,70 @@ else:
     expect(source, contains("TARGET_PACKAGE='com.eg.android.AlipayGphoneRC'"));
     expect(source, contains('人气太旺啦，稍候再试试。(6)'));
     expect(source, contains('uiautomator dump'));
-    expect(source, contains('input tap'));
+    expect(source, contains('uiautomator runtest'));
+    expect(source, contains('--sdk-root'));
+    expect(source, contains('--java-home'));
+    expect(source, contains('--invocation-id'));
+    expect(source, contains(r'git -C "$PROJECT_ROOT" diff --quiet HEAD'));
+    expect(source, contains('build_alipay_atomic_dialog_helper.sh'));
+    expect(source, isNot(contains('--atomic-helper-jar')));
     expect(source, contains('CLICK_COUNT=0'));
     expect(source, contains(bridgeMarker));
     expect(source, contains('sdkCompleted=0'));
     expect(source, isNot(contains('Server busy')));
     expect(source, isNot(contains('input keyevent')));
+    expect(source, isNot(contains('input tap')));
     expect(source, isNot(contains('KEYCODE_ENTER')));
     expect(source, isNot(contains('flutter drive')));
     expect(source, isNot(contains('run_m5_vendor_live_avd')));
     expect(source, isNot(contains('payV2')));
+    final String targetSource = focusedTarget.readAsStringSync();
+    expect(targetSource, contains('QA_ALIPAY_PROBE_INVOCATION_ID'));
+    expect(targetSource, contains('M5_ALIPAY_PROBE_INVOCATION::'));
+    expect(targetSource, contains("_probeInvocationMarker('START')"));
+    expect(targetSource, contains("_probeInvocationMarker('RETURN')"));
   });
+
+  test(
+    'device helper has one related-object click and no host coordinates',
+    () {
+      expect(builder.existsSync(), isTrue);
+      expect(helperSource.existsSync(), isTrue);
+      final ProcessResult syntax = Process.runSync('/bin/bash', <String>[
+        '-n',
+        builder.path,
+      ]);
+      expect(syntax.exitCode, 0, reason: '${syntax.stdout}\n${syntax.stderr}');
+      final String buildSource = builder.readAsStringSync();
+      final String javaSource = helperSource.readAsStringSync();
+      expect(buildSource, contains('uiautomator.jar'));
+      expect(buildSource, contains('android.test.base.jar'));
+      expect(buildSource, contains('classes.dex'));
+      expect(buildSource, isNot(contains(' adb ')));
+      expect(javaSource, contains('getFromParent(buttonSelector())'));
+      expect(javaSource, contains('device.getCurrentPackageName()'));
+      expect(javaSource, contains('device.getCurrentActivityName()'));
+      expect(javaSource, contains('人气太旺啦，稍候再试试。(6)'));
+      expect(javaSource, contains('className("android.widget.Button")'));
+      expect(javaSource, contains('classNameMatches'));
+      expect(javaSource, contains('clickable(true)'));
+      expect(
+        javaSource,
+        contains('packageNameMatches(FOREIGN_PACKAGE_PATTERN)'),
+      );
+      expect(javaSource, contains('error.getVisibleBounds()'));
+      expect(
+        javaSource,
+        contains('error TextView is hidden or has empty bounds'),
+      );
+      expect(javaSource, contains('System.out.println(PASS_MARKER)'));
+      expect('actionButton.click()'.allMatches(javaSource), hasLength(1));
+      expect(RegExp(r'\.click\(').allMatches(javaSource), hasLength(1));
+      expect(javaSource, isNot(contains('swipe(')));
+      expect(javaSource, isNot(contains('setText(')));
+      expect(javaSource, isNot(contains('pressKeyCode(')));
+    },
+  );
 
   test(
     'offline self-test covers strict parser and marker fail-closed behavior',
@@ -276,7 +375,7 @@ else:
     },
   );
 
-  test('valid dialog is stable, taps once, and has no adb after the tap', () {
+  test('valid dialog is stable, atomically clicks once, and ends adb', () {
     final Directory root = sandbox('alipay-error-dialog-valid-');
     final ProcessResult result = runProbe(
       root,
@@ -299,7 +398,7 @@ else:
     );
     final List<String> calls = File('${root.path}/adb.calls').readAsLinesSync();
     final int tapIndex = calls.lastIndexWhere(
-      (String line) => line.contains('shell input tap 540 960'),
+      (String line) => line.contains('shell uiautomator runtest'),
     );
     expect(tapIndex, greaterThanOrEqualTo(0));
     expect(tapIndex, calls.length - 1);
@@ -448,44 +547,56 @@ else:
     expect(File('${root.path}/tap.count').readAsStringSync(), '0');
   });
 
-  test('stale, duplicate, success, none, and missing markers never pass', () {
-    final List<List<String>> cases = <List<String>>[
-      <String>[nativeMarker],
-      <String>[nativeMarker, nativeMarker, bridgeMarker],
-      <String>[successMarker, bridgeMarker],
-      <String>[
-        'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=none',
-        bridgeMarker,
-      ],
-      <String>[bridgeMarker],
-    ];
-    for (int index = 0; index < cases.length; index++) {
-      final List<String> markers = cases[index];
-      final bool staleBeforeTap = index == 0;
-      final Directory root = sandbox('alipay-error-dialog-markers-');
-      final ProcessResult result = runProbe(
-        root,
-        uiFrames: <String>[validUi()],
-        activityFrames: <String>[
-          activityFor(
-            '$packageName/com.alipay.android.msp.ui.views.MspContainerActivity',
-          ),
+  test(
+    'stale, duplicate, success, none, and missing markers never pass',
+    () {
+      final List<List<String>> cases = <List<String>>[
+        <String>[nativeMarker],
+        <String>[invocationReturn, nativeMarker, nativeMarker, bridgeMarker],
+        <String>[invocationReturn, successMarker, bridgeMarker],
+        <String>[
+          invocationReturn,
+          'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=none',
+          bridgeMarker,
         ],
-        markersAfterTap: markers,
-        logContents: staleBeforeTap ? '$nativeMarker\n' : '',
-        markerTimeout: 0,
-      );
-      expect(
-        result.exitCode,
-        isNonZero,
-        reason: '${result.stdout}\n${result.stderr}',
-      );
-      expect(
-        File('${root.path}/tap.count').readAsStringSync(),
-        staleBeforeTap ? '0' : '1',
-      );
-    }
-  });
+        <String>[invocationReturn, bridgeMarker],
+        <String>[
+          'M5_ALIPAY_PROBE_INVOCATION::RETURN::ffffffffffffffffffffffffffffffff',
+          nativeMarker,
+          bridgeMarker,
+        ],
+      ];
+      for (int index = 0; index < cases.length; index++) {
+        final List<String> markers = cases[index];
+        final bool staleBeforeTap = index == 0;
+        final Directory root = sandbox('alipay-error-dialog-markers-');
+        final ProcessResult result = runProbe(
+          root,
+          uiFrames: <String>[validUi()],
+          activityFrames: <String>[
+            activityFor(
+              '$packageName/com.alipay.android.msp.ui.views.MspContainerActivity',
+            ),
+          ],
+          markersAfterTap: markers,
+          logContents: staleBeforeTap
+              ? '$launchMarker\n$invocationStart\n$nativeMarker\n'
+              : '$launchMarker\n$invocationStart\n',
+          markerTimeout: 0,
+        );
+        expect(
+          result.exitCode,
+          isNonZero,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+        expect(
+          File('${root.path}/tap.count').readAsStringSync(),
+          staleBeforeTap ? '0' : '1',
+        );
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
 
   test('serial mismatch is rejected before any adb call', () {
     final Directory root = sandbox('alipay-error-dialog-serial-');
@@ -503,14 +614,34 @@ else:
     expect(File('${root.path}/adb.calls').readAsStringSync(), isEmpty);
   });
 
+  test('device-side helper rejection never emits a native return', () {
+    final Directory root = sandbox('alipay-error-dialog-helper-reject-');
+    final ProcessResult result = runProbe(
+      root,
+      uiFrames: <String>[validUi()],
+      activityFrames: <String>[
+        activityFor(
+          '$packageName/com.alipay.android.msp.ui.views.MspContainerActivity',
+        ),
+      ],
+      helperFail: true,
+      markerTimeout: 0,
+    );
+    expect(result.exitCode, isNonZero);
+    expect(File('${root.path}/tap.count').readAsStringSync(), '0');
+    expect(result.stdout, isNot(contains('PAYTASK_RETURNED')));
+  });
+
   test(
     'serial lock blocks a second instance before its first adb call',
     () async {
       final Directory root = sandbox('alipay-error-dialog-lock-');
       final File logOne = File('${root.path}/flutter-one.log')
-        ..writeAsStringSync('');
+        ..writeAsStringSync('$launchMarker\n$invocationStart\n');
       final File logTwo = File('${root.path}/flutter-two.log')
-        ..writeAsStringSync('');
+        ..writeAsStringSync('$launchMarker\n$invocationStart\n');
+      Process.runSync('/bin/chmod', <String>['0600', logOne.path]);
+      Process.runSync('/bin/chmod', <String>['0600', logTwo.path]);
       final File fake = fakeAdb(
         root,
         uiFrames: <String>[validUi()],
@@ -519,7 +650,7 @@ else:
             '$packageName/com.alipay.android.msp.ui.views.MspContainerActivity',
           ),
         ],
-        markersAfterTap: <String>[nativeMarker, bridgeMarker],
+        markersAfterTap: <String>[invocationReturn, nativeMarker, bridgeMarker],
       );
       final File hold = File('${root.path}/hold');
       final File started = File('${root.path}/started');

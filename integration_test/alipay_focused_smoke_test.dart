@@ -11,6 +11,9 @@ import 'package:voice_social_app/features/commerce/infrastructure/alipay_app_pay
 
 const String _expectedNativeResultStatus = '6001';
 const String _expectedBridgeOutcome = 'pay_task_returned';
+const String _probeInvocationId = String.fromEnvironment(
+  'QA_ALIPAY_PROBE_INVOCATION_ID',
+);
 
 void _focusedMarker(String stage, String result) {
   // Keep the evidence vocabulary fixed and free of order/account data. The
@@ -28,6 +31,12 @@ void _nativeResultMarker(AlipayAppPayResult result) {
   debugPrint('M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::$bridgeOutcome');
 }
 
+void _probeInvocationMarker(String stage) {
+  if (_probeInvocationId.isNotEmpty) {
+    debugPrint('M5_ALIPAY_PROBE_INVOCATION::$stage::$_probeInvocationId');
+  }
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -43,6 +52,10 @@ void main() {
             !dependencies.environment.enableAlipayAppPay ||
             !dependencies.environment.useAlipaySandbox) {
           throw TestFailure('Alipay focused smoke configuration is invalid.');
+        }
+        if (_probeInvocationId.isNotEmpty &&
+            !RegExp(r'^[a-f0-9]{32}$').hasMatch(_probeInvocationId)) {
+          throw TestFailure('Alipay probe invocation ID is invalid.');
         }
 
         await dependencies.authController.initialize();
@@ -88,9 +101,11 @@ void main() {
         _focusedMarker('order', 'PASS');
 
         _focusedMarker('native_launcher', 'START');
+        _probeInvocationMarker('START');
         final AlipayAppPayResult nativeResult = await dependencies
             .alipayAppPayAdapter
             .pay(orderNo: order.orderNo, orderString: serverOrderString);
+        _probeInvocationMarker('RETURN');
         _nativeResultMarker(nativeResult);
 
         // This is deliberately a cancellation-only lane. A 9000 result,
