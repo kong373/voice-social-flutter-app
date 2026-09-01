@@ -7,6 +7,9 @@ void main() {
   final File runner = File(
     'tool/qa/run_alipay_physical_device_diagnostic.sh',
   ).absolute;
+  final File isolationIntegration = File(
+    'integration_test/alipay_native_isolation_smoke_test.dart',
+  ).absolute;
   final File operator = File(
     'tool/qa/m5_alipay_physical_device_cancel_operator.sh',
   ).absolute;
@@ -172,6 +175,7 @@ esac
 
   test('physical runner and operator are present and shell-valid', () {
     expect(runner.existsSync(), isTrue);
+    expect(isolationIntegration.existsSync(), isTrue);
     expect(operator.existsSync(), isTrue);
     expect(runner.statSync().mode & 73, isNonZero);
     expect(operator.statSync().mode & 73, isNonZero);
@@ -309,6 +313,27 @@ esac
     expect(runnerSource, contains('PHYSICAL_DEVICE_DIAGNOSTIC'));
     expect(operatorSource, contains('PHYSICAL_DEVICE_DIAGNOSTIC'));
     expect(runnerSource, contains("EXPECTED_FLUTTER_VERSION='3.44.7'"));
+    expect(
+      runnerSource,
+      contains(
+        "INTEGRATION_TARGET='integration_test/alipay_native_isolation_smoke_test.dart'",
+      ),
+    );
+    expect(
+      runnerSource,
+      isNot(contains('integration_test/alipay_focused_smoke_test.dart')),
+    );
+    expect(runnerSource, contains('QA_ALIPAY_NATIVE_ISOLATION_RUN_ID'));
+    expect(runnerSource, contains('QA_ALIPAY_PROBE_INVOCATION_ID'));
+    expect(runnerSource, contains('ISOLATION_RUN_ID'));
+    expect(runnerSource, contains('PROBE_INVOCATION_ID'));
+    expect(runnerSource, contains(r'^[a-f0-9]{32}$'));
+    expect(
+      runnerSource,
+      contains(
+        "TARGET_ISOLATION_ACTIVITY='com.kong373.alipay_app_pay.NativeAlipayIsolationActivity'",
+      ),
+    );
     expect(runnerSource, contains("API_BASE_URL='http://127.0.0.1:18080/'"));
     expect(runnerSource, contains('adb reverse tcp:18080 tcp:18080'));
     expect(operatorSource, contains('adb reverse tcp:18080 tcp:18080'));
@@ -343,6 +368,17 @@ esac
     }
     expect(runnerSource, contains('9000'));
     expect(runnerSource, contains('resultStatus=none'));
+    expect(runnerSource, contains('EXPECTED_PAYLOAD_STAGED_MARKER_PREFIX'));
+    expect(runnerSource, contains('EXPECTED_ISOLATION_RETURN_MARKER_PREFIX'));
+    expect(runnerSource, contains('EXPECTED_ISOLATION_FAIL_MARKER_PREFIX'));
+    for (final String hostPayloadForbidden in <String>[
+      'payload-file',
+      'orderStr',
+      'run-as',
+      'am start',
+    ]) {
+      expect(runnerSource, isNot(contains(hostPayloadForbidden)));
+    }
     expect(runnerSource, contains('recharge_order.status=CANCELLED'));
     expect(runnerSource, contains('canceledOrderCount'));
     expect(
@@ -385,6 +421,10 @@ esac
       expect(result.stdout, contains('DB_ZERO_MUTATIONS_PASS'));
       expect(result.stdout, contains('ARTIFACT_REDACTION_PASS'));
       expect(result.stdout, contains('PHYSICAL_DEVICE_DIAGNOSTIC'));
+      expect(result.stdout, contains('ISOLATION_IDS_PASS'));
+      expect(result.stdout, contains('ISOLATION_MARKER_FILTER_PASS'));
+      expect(result.stdout, contains('ISOLATION_WATCHDOG_FAIL_CLOSED_PASS'));
+      expect(result.stdout, contains('ISOLATION_NEGATIVE_MARKER_PASS'));
     },
   );
 
@@ -426,6 +466,7 @@ esac
       expect(result.stdout, isNot(contains('payment_status=CANCELED')));
       expect(result.stdout, isNot(contains('canceled_order_count=1')));
       expect(result.stdout, isNot(contains('db_zero_mutations=PASS')));
+      expect(result.stdout, isNot(contains('PAYTASK_RETURN::')));
     },
   );
 

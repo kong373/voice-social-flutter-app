@@ -16,8 +16,9 @@ readonly REVERSE_SPEC='tcp:18080 tcp:18080'
 readonly APP_PACKAGE='com.kong373.voice_social_app'
 readonly TARGET_PACKAGE='com.eg.android.AlipayGphoneRC'
 readonly TARGET_ACTIVITY='MspContainerActivity'
+readonly TARGET_ISOLATION_ACTIVITY='com.kong373.alipay_app_pay.NativeAlipayIsolationActivity'
 readonly OPERATOR_SCRIPT="$PROJECT_ROOT/tool/qa/m5_alipay_physical_device_cancel_operator.sh"
-readonly INTEGRATION_TARGET='integration_test/alipay_focused_smoke_test.dart'
+readonly INTEGRATION_TARGET='integration_test/alipay_native_isolation_smoke_test.dart'
 readonly DRIVER_TARGET='test_driver/integration_test.dart'
 readonly AUDIO_MANIFEST_SCRIPT="$PROJECT_ROOT/tool/prepare_android_audio_manifest.py"
 readonly EXPECTED_NATIVE_MARKER='M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001'
@@ -25,7 +26,15 @@ readonly EXPECTED_BRIDGE_MARKER='M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_retur
 readonly REJECTED_SUCCESS_MARKER='M5_ALIPAY_NATIVE_RESULT::sdkCompleted=1::resultStatus=9000'
 readonly REJECTED_NONE_MARKER='M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=none'
 readonly PHYSICAL_EVIDENCE_SCHEMA='alipay-physical-cancel-v1'
-readonly EXPECTED_LAUNCH_MARKER='M5_ALIPAY_FOCUSED::native_launcher::START'
+readonly EXPECTED_ISOLATION_MARKER_PREFIX='M5_ALIPAY_NATIVE_ISOLATION::'
+readonly EXPECTED_ISOLATION_ENTER_MARKER_PREFIX="${EXPECTED_ISOLATION_MARKER_PREFIX}ENTER_TEST::"
+readonly EXPECTED_PAYLOAD_STAGED_MARKER_PREFIX="${EXPECTED_ISOLATION_MARKER_PREFIX}PAYLOAD_STAGED::"
+readonly EXPECTED_ISOLATION_START_MARKER_PREFIX="${EXPECTED_ISOLATION_MARKER_PREFIX}START::"
+readonly EXPECTED_ISOLATION_LAUNCH_CALL_MARKER_PREFIX="${EXPECTED_ISOLATION_MARKER_PREFIX}LAUNCH_CALL::"
+readonly EXPECTED_ISOLATION_LAUNCH_RETURN_MARKER_PREFIX="${EXPECTED_ISOLATION_MARKER_PREFIX}LAUNCH_RETURN::"
+readonly EXPECTED_ISOLATION_RETURN_MARKER_PREFIX="${EXPECTED_ISOLATION_MARKER_PREFIX}PAYTASK_RETURN::"
+readonly EXPECTED_ISOLATION_FAIL_MARKER_PREFIX="${EXPECTED_ISOLATION_MARKER_PREFIX}FAIL::"
+readonly EXPECTED_PROBE_MARKER_PREFIX='M5_ALIPAY_PROBE_INVOCATION::'
 readonly DEFAULT_PRE_LAUNCH_TIMEOUT_SECONDS=300
 readonly DEFAULT_POST_LAUNCH_TIMEOUT_SECONDS=240
 readonly DEFAULT_CASHIER_TIMEOUT_SECONDS=60
@@ -72,6 +81,8 @@ SCREEN_WIDTH=0
 SCREEN_HEIGHT=0
 RUN_ID=''
 RUN_STARTED_AT=0
+ISOLATION_RUN_ID=''
+PROBE_INVOCATION_ID=''
 FLUTTER_SHA=''
 BACKEND_SHA=''
 RUN_RESULT='NOT_RUN'
@@ -92,8 +103,11 @@ usage() {
 Usage: run_alipay_physical_device_diagnostic.sh --serial ID --confirm-cancel [options]
 
 PHYSICAL_DEVICE_DIAGNOSTIC runs one cancellation-only Alipay sandbox check on
-one explicitly selected physical Android device.  It never starts an
-emulator, discovers devices, sends SMS, taps a coordinate, or confirms payment.
+one explicitly selected physical Android device. The Flutter target stages its
+strict app-private isolation input and launches the debug-only native activity;
+this host runner only starts the Flutter target, runs the bounded cancel
+operator, and validates fixed markers. It never starts an emulator, discovers
+devices, sends SMS, taps a coordinate, or confirms payment.
 
 Required in live mode:
   --serial ID                 explicit physical-device serial
@@ -121,11 +135,15 @@ The hook receives QA_ALIPAY_PHYSICAL_EVIDENCE_BASELINE_FILE for its private
 start-phase UTC_TIMESTAMP(6)/MAX(id) baseline; it must not write the final
 evidence path until collect.
 
-The only accepted native cancellation evidence is exactly
-sdkCompleted=0/resultStatus=6001 together with bridge=pay_task_returned. 9000,
-none, timeout, server-busy, stale, missing, duplicate, or contradictory
-markers fail closed. The DB evidence must prove zero provider events, wallet
-transactions, ledger journals, and ledger entries for this run.
+The isolation test must emit one run-bound ENTER_TEST and PAYLOAD_STAGED; the
+isolation activity must then emit one START,
+PAYTASK_RETURN, and probe START/RETURN sequence. The only accepted native
+cancellation evidence is exactly sdkCompleted=0/resultStatus=6001 together
+with bridge=pay_task_returned. 9000, none, timeout, server-busy, stale,
+missing, duplicate, or contradictory markers fail closed. Native or Dart
+watchdog timeout is an explicit failure. The DB evidence must prove zero
+provider events, wallet transactions, ledger journals, and ledger entries for
+this run.
 The post-run collector must query the scoped recharge_order rows and assert
 provider=alipay-sandbox, database status=CANCELLED, and exactly one row; the
 redacted evidence normalizes that status to CANCELED.
@@ -335,6 +353,14 @@ initialize_run_binding() {
   RUN_ID="physical-${RUN_STARTED_AT}-$(python3 -c 'import uuid; print(uuid.uuid4().hex)')" ||
     fail_configuration 'run id could not be established'
   [[ "$RUN_ID" =~ ^[A-Za-z0-9_.:-]{1,96}$ ]] || fail_configuration 'run id is invalid'
+  ISOLATION_RUN_ID="$(python3 -c 'import secrets; print(secrets.token_hex(16))')" ||
+    fail_configuration 'native isolation run id could not be established'
+  PROBE_INVOCATION_ID="$(python3 -c 'import secrets; print(secrets.token_hex(16))')" ||
+    fail_configuration 'native probe id could not be established'
+  [[ "$ISOLATION_RUN_ID" =~ ^[a-f0-9]{32}$ ]] ||
+    fail_configuration 'native isolation run id is invalid'
+  [[ "$PROBE_INVOCATION_ID" =~ ^[a-f0-9]{32}$ ]] ||
+    fail_configuration 'native probe id is invalid'
   FLUTTER_SHA="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null)" ||
     fail_configuration 'Flutter source SHA could not be established'
   [[ "$FLUTTER_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || fail_configuration 'Flutter source SHA is invalid'
@@ -492,23 +518,47 @@ force_stop_flutter_app() {
 }
 
 safe_flutter_log_filter() {
-  # The Flutter tool's raw output is never persisted. Only fixed marker
-  # namespaces survive, excluding order strings, account data, and tokens.
+  # The Flutter tool's raw output is never persisted. Only fixed, run-bound
+  # marker namespaces survive. Native logcat prefixes are stripped before the
+  # allowlist is written to the private artifact log.
   python3 -u -c '
 import re
 import sys
-patterns = (
-    re.compile(r"^(?:[VDIWEF]/flutter \(\s*[0-9]+\): )?M5_ALIPAY_NATIVE_RESULT::sdkCompleted=[01]::resultStatus=[A-Za-z0-9_.-]{1,32}$"),
-    re.compile(r"^(?:[VDIWEF]/flutter \(\s*[0-9]+\): )?M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::[A-Za-z0-9_.-]{1,40}$"),
-    re.compile(r"^(?:[VDIWEF]/flutter \(\s*[0-9]+\): )?M5_ALIPAY_FOCUSED::(?:catalog|order|native_launcher|query_reconcile|complete)::(?:START|PASS|FAIL)$"),
+isolation_run_id = re.escape(sys.argv[1])
+probe_id = re.escape(sys.argv[2])
+prefix = r"(?:[VDIWEF]/[A-Za-z0-9_.-]+\s*\(\s*[0-9]+\): )?"
+isolation_failure_reasons = (
+    "INVALID_LAUNCH", "ALREADY_ACTIVE", "STALE_RESULT", "PAYLOAD_REJECTED",
+    "RESULT_WRITE_FAILED", "NATIVE_EXCEPTION", "NATIVE_UNAVAILABLE",
 )
+failure_stages = (
+    "startup", "config", "files", "negative_launch", "negative_settle",
+    "negative_check", "payload_stage", "native_launch", "native_wait",
+    "authoritative_reconcile",
+)
+bridge_outcomes = (
+    "pay_task_returned", "native_watchdog_timeout", "dart_watchdog_timeout",
+    "native_not_invoked", "native_exception", "native_unavailable",
+    "timeout", "server-busy", "none",
+)
+patterns = (
+    re.compile(prefix + r"M5_ALIPAY_NATIVE_ISOLATION::(?:ENTER_TEST|PAYLOAD_STAGED|LAUNCH_CALL|LAUNCH_RETURN|START)::" + isolation_run_id + r"$"),
+    re.compile(prefix + r"M5_ALIPAY_NATIVE_ISOLATION::PAYTASK_RETURN::" + isolation_run_id + r"::(?:resultStatus=(?:none|[A-Za-z0-9_.-]{1,32})::sdkCompleted=[01]|sdkCompleted=[01]::resultStatus=(?:none|[A-Za-z0-9_.-]{1,32}))$"),
+    re.compile(prefix + r"M5_ALIPAY_NATIVE_ISOLATION::FAIL::" + isolation_run_id + r"::reason=(?:" + "|".join(isolation_failure_reasons) + r")$"),
+    re.compile(prefix + r"M5_ALIPAY_NATIVE_ISOLATION::FAIL_STAGE::(?:" + "|".join(failure_stages) + r")$"),
+    re.compile(prefix + r"M5_ALIPAY_PROBE_INVOCATION::(?:START|RETURN)::" + probe_id + r"$"),
+    re.compile(prefix + r"M5_ALIPAY_NATIVE_RESULT::sdkCompleted=[01]::resultStatus=[A-Za-z0-9_.-]{1,32}$"),
+    re.compile(prefix + r"M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::(?:" + "|".join(bridge_outcomes) + r")$"),
+    re.compile(prefix + r"M5_ALIPAY_FOCUSED::(?:catalog|order|native_launcher|query_reconcile|complete)::(?:START|PASS|FAIL)$"),
+)
+prefix_re = re.compile(prefix)
 for raw in sys.stdin:
     line = raw.rstrip("\r\n")
     for pattern in patterns:
         if pattern.fullmatch(line) is not None:
-            print(re.sub(r"^[VDIWEF]/flutter \(\s*[0-9]+\): ", "", line), flush=True)
+            print(prefix_re.sub("", line, count=1), flush=True)
             break
-'
+' "$ISOLATION_RUN_ID" "$PROBE_INVOCATION_ID"
 }
 
 exact_marker_count() {
@@ -635,6 +685,9 @@ run_flutter_target() {
       --dart-define=CLIENT_INNER_VERSION=6 \
       --dart-define=PHYSICAL_DEVICE_DIAGNOSTIC_RUN_ID="$RUN_ID" \
       --dart-define=PHYSICAL_DEVICE_DIAGNOSTIC_RUN_STARTED_AT="$RUN_STARTED_AT" \
+      --dart-define=QA_ALIPAY_NATIVE_ISOLATION_RUN_ID="$ISOLATION_RUN_ID" \
+      --dart-define=QA_ALIPAY_PROBE_INVOCATION_ID="$PROBE_INVOCATION_ID" \
+      --dart-define=QA_ALIPAY_NATIVE_ISOLATION_NEGATIVE_ONLY=false \
       "$(oauth_client_dart_define "$PUBLIC_OAUTH_CLIENT_ID")" 2>&1
   ) | safe_flutter_log_filter >"$FLUTTER_LOG_PATH"
   local status="${PIPESTATUS[0]}"
@@ -674,18 +727,48 @@ terminate_process() {
   process_alive "$pid" && kill -KILL "$pid" 2>/dev/null || true
 }
 
-launch_marker_count() { exact_marker_count "$EXPECTED_LAUNCH_MARKER"; }
+isolation_marker() {
+  local prefix="$1"
+  printf '%s%s' "$prefix" "$ISOLATION_RUN_ID"
+}
 
-wait_for_native_launcher_start() {
-  local deadline=$((SECONDS + PRE_LAUNCH_TIMEOUT_SECONDS)) count='0'
+probe_marker() {
+  local stage="$1"
+  printf '%s%s::%s' "$EXPECTED_PROBE_MARKER_PREFIX" "$stage" "$PROBE_INVOCATION_ID"
+}
+
+wait_for_isolation_marker() {
+  local marker="$1" success_audit="$2" timeout_seconds="$3"
+  local deadline=$((SECONDS + timeout_seconds)) count='0'
   while (( SECONDS <= deadline )); do
-    count="$(launch_marker_count)"
-    if [[ "$count" == 1 ]]; then audit 'NATIVE_LAUNCHER_START_PASS'; return 0; fi
-    [[ "$count" == 0 ]] || fail_marker 'native launcher start marker is stale or duplicated'
-    [[ ! -s "$FLUTTER_STATUS_PATH" ]] || fail_marker 'Flutter target ended before native launcher start'
+    count="$(exact_marker_count "$marker")"
+    if [[ "$count" == 1 ]]; then
+      audit "$success_audit"
+      return 0
+    fi
+    [[ "$count" == 0 ]] || fail_marker 'isolation marker is stale or duplicated'
+    [[ ! -s "$FLUTTER_STATUS_PATH" ]] || fail_marker 'Flutter target ended before isolation marker'
     pause_between_polls
   done
-  fail_timeout 'native launcher start marker was not observed'
+  fail_timeout 'isolation marker was not observed'
+}
+
+wait_for_isolation_payload_staged() {
+  wait_for_isolation_marker \
+    "$(isolation_marker "$EXPECTED_PAYLOAD_STAGED_MARKER_PREFIX")" \
+    'ISOLATION_PAYLOAD_STAGED_PASS' "$PRE_LAUNCH_TIMEOUT_SECONDS"
+}
+
+wait_for_isolation_start() {
+  wait_for_isolation_marker \
+    "$(isolation_marker "$EXPECTED_ISOLATION_START_MARKER_PREFIX")" \
+    'ISOLATION_NATIVE_START_PASS' "$MARKER_TIMEOUT_SECONDS"
+}
+
+# Kept as a compatibility alias for callers that used the focused runner's
+# old name. The marker contract is now the debug-only isolation activity.
+wait_for_native_launcher_start() {
+  wait_for_isolation_start
 }
 
 wait_for_completion() {
@@ -698,10 +781,39 @@ wait_for_completion() {
 }
 
 evaluate_marker_contract() {
-  local native_count bridge_count
+  local native_count bridge_count isolation_return_count isolation_cancel_count
+  local enter_count staged_count start_count launch_call_count launch_return_count
+  local probe_start_count probe_return_count isolation_fail_count
   native_count="$(exact_marker_count "$EXPECTED_NATIVE_MARKER")"
   bridge_count="$(exact_marker_count "$EXPECTED_BRIDGE_MARKER")"
-  [[ "$native_count" == 1 && "$bridge_count" == 1 ]] || { FAIL_REASON='trusted_cancel_marker_pair_missing_or_duplicated'; return 1; }
+  enter_count="$(exact_marker_count "$(isolation_marker "$EXPECTED_ISOLATION_ENTER_MARKER_PREFIX")")"
+  staged_count="$(exact_marker_count "$(isolation_marker "$EXPECTED_PAYLOAD_STAGED_MARKER_PREFIX")")"
+  start_count="$(exact_marker_count "$(isolation_marker "$EXPECTED_ISOLATION_START_MARKER_PREFIX")")"
+  launch_call_count="$(exact_marker_count "$(isolation_marker "$EXPECTED_ISOLATION_LAUNCH_CALL_MARKER_PREFIX")")"
+  launch_return_count="$(exact_marker_count "$(isolation_marker "$EXPECTED_ISOLATION_LAUNCH_RETURN_MARKER_PREFIX")")"
+  probe_start_count="$(exact_marker_count "$(probe_marker START)")"
+  probe_return_count="$(exact_marker_count "$(probe_marker RETURN)")"
+  isolation_return_count="$(grep -Ec "^${EXPECTED_ISOLATION_RETURN_MARKER_PREFIX}${ISOLATION_RUN_ID}::" "$FLUTTER_LOG_PATH" 2>/dev/null || true)"
+  isolation_cancel_count="$(exact_marker_count "$(isolation_marker "$EXPECTED_ISOLATION_RETURN_MARKER_PREFIX")::resultStatus=6001::sdkCompleted=0")"
+  isolation_fail_count="$(grep -Ec "^${EXPECTED_ISOLATION_FAIL_MARKER_PREFIX}${ISOLATION_RUN_ID}::reason=" "$FLUTTER_LOG_PATH" 2>/dev/null || true)"
+  [[ "$isolation_fail_count" == 0 ]] || {
+    FAIL_REASON='isolation_activity_failed'
+    return 1
+  }
+  [[ "$native_count" == 1 && "$bridge_count" == 1 ]] || {
+    FAIL_REASON='trusted_cancel_marker_pair_missing_or_duplicated'
+    return 1
+  }
+  [[ "$enter_count" == 1 && "$staged_count" == 1 && "$start_count" == 1 &&
+    "$launch_call_count" == 1 && "$launch_return_count" == 1 &&
+    "$probe_start_count" == 1 && "$probe_return_count" == 1 ]] || {
+    FAIL_REASON='isolation_marker_missing_or_duplicated'
+    return 1
+  }
+  [[ "$isolation_return_count" == 1 && "$isolation_cancel_count" == 1 ]] || {
+    FAIL_REASON='isolation_paytask_return_missing_or_not_cancel'
+    return 1
+  }
   if [[ "$(exact_marker_count "$REJECTED_SUCCESS_MARKER")" != 0 ||
     "$(exact_marker_count "$REJECTED_NONE_MARKER")" != 0 ]] ||
     grep -Eq 'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=1::|M5_ALIPAY_NATIVE_RESULT::[^[:space:]]*resultStatus=(9000|none)|M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::(timeout|server-busy|none)' "$FLUTTER_LOG_PATH"; then
@@ -737,7 +849,7 @@ summary_bridge_marker_count() {
     return 0
   }
   local count=''
-  count="$(grep -Ec '^M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::[A-Za-z0-9_.-]{1,40}$' "$FLUTTER_LOG_PATH" 2>/dev/null || true)"
+  count="$(grep -Ec '^M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::(pay_task_returned|native_watchdog_timeout|dart_watchdog_timeout|native_not_invoked|native_exception|native_unavailable|timeout|server-busy|none)$' "$FLUTTER_LOG_PATH" 2>/dev/null || true)"
   [[ "$count" =~ ^[0-9]+$ ]] || count=0
   printf '%s' "$count"
 }
@@ -776,7 +888,7 @@ summary_bridge_marker_value() {
     printf 'AMBIGUOUS'
     return 0
   fi
-  line="$(grep -E '^M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::[A-Za-z0-9_.-]{1,40}$' "$FLUTTER_LOG_PATH" 2>/dev/null | head -n 1 || true)"
+  line="$(grep -E '^M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::(pay_task_returned|native_watchdog_timeout|dart_watchdog_timeout|native_not_invoked|native_exception|native_unavailable|timeout|server-busy|none)$' "$FLUTTER_LOG_PATH" 2>/dev/null | head -n 1 || true)"
   value="${line#M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::}"
   case "$value" in
     pay_task_returned|native_watchdog_timeout|dart_watchdog_timeout|native_not_invoked|native_exception|native_unavailable|timeout|server-busy|none) ;;
@@ -877,10 +989,23 @@ write_summary() {
   local provider_events='NOT_PROVEN' wallet_transactions='NOT_PROVEN'
   local ledger_journals='NOT_PROVEN' ledger_entries='NOT_PROVEN'
   local observed_at='NOT_PROVEN' db_zero_mutations='NOT_PROVEN'
+  local isolation_entered='NOT_OBSERVED' isolation_staged='NOT_OBSERVED'
+  local isolation_started='NOT_OBSERVED'
+  local isolation_returned='NOT_OBSERVED' probe_started='NOT_OBSERVED' probe_returned='NOT_OBSERVED'
   native_result="$(summary_native_result_value)"
   flutter_failure="$(summary_flutter_failure_value)"
   operator_failure="$(summary_operator_failure_value)"
   db_phases="$(summary_db_phases)"
+  if [[ -n "$ISOLATION_RUN_ID" ]]; then
+    isolation_entered="$(exact_marker_count "$(isolation_marker "$EXPECTED_ISOLATION_ENTER_MARKER_PREFIX")")"
+    isolation_staged="$(exact_marker_count "$(isolation_marker "$EXPECTED_PAYLOAD_STAGED_MARKER_PREFIX")")"
+    isolation_started="$(exact_marker_count "$(isolation_marker "$EXPECTED_ISOLATION_START_MARKER_PREFIX")")"
+    isolation_returned="$(grep -Ec "^${EXPECTED_ISOLATION_RETURN_MARKER_PREFIX}${ISOLATION_RUN_ID}::" "$FLUTTER_LOG_PATH" 2>/dev/null || true)"
+  fi
+  if [[ -n "$PROBE_INVOCATION_ID" ]]; then
+    probe_started="$(exact_marker_count "$(probe_marker START)")"
+    probe_returned="$(exact_marker_count "$(probe_marker RETURN)")"
+  fi
   # A successful-looking marker is never enough for artifact success.  The
   # summary may claim CANCELED/count=1/zero only after the exact native pair,
   # successful operator, and the collect-phase validator all passed.
@@ -902,10 +1027,11 @@ write_summary() {
     printf 'lane=PHYSICAL_DEVICE_DIAGNOSTIC\nconclusion=%s\n' "$conclusion"
     printf 'device_class=physical\nserial=redacted\napi_base=127.0.0.1:18080\nreverse=tcp:18080->tcp:18080\n'
     printf 'flutter_version=%s\ndart_version=%s\n' "$EXPECTED_FLUTTER_VERSION" "$EXPECTED_DART_VERSION"
-    printf 'flutter_sha=%s\nbackend_sha=%s\nrun_id=redacted\nrun_started_at=attested\nobserved_at=%s\n' "$FLUTTER_SHA" "$BACKEND_SHA" "$observed_at"
+    printf 'flutter_sha=%s\nbackend_sha=%s\nrun_id=redacted\nisolation_run_id=redacted\nprobe_invocation_id=redacted\nrun_started_at=attested\nobserved_at=%s\n' "$FLUTTER_SHA" "$BACKEND_SHA" "$observed_at"
     printf 'screen_width=%s\nscreen_height=%s\n' "$SCREEN_WIDTH" "$SCREEN_HEIGHT"
     printf 'flutter_status=%s\noperator_status=%s\nback_attempts=%s\n' "$FLUTTER_STATUS" "$OPERATOR_STATUS" "$BACK_COUNT"
     printf 'native_cancel=%s\nnative_result=%s\n' "$native_result" "$native_result"
+    printf 'isolation_markers=enter_test:%s,staged:%s,start:%s,paytask_return:%s,probe_start:%s,probe_return:%s\n' "$isolation_entered" "$isolation_staged" "$isolation_started" "$isolation_returned" "$probe_started" "$probe_returned"
     printf 'flutter_failure=%s\noperator_failure=%s\n' "$flutter_failure" "$operator_failure"
     printf 'payment_provider=alipay-sandbox\npayment_status=%s\ncanceled_order_count=%s\n' "$payment_status" "$canceled_order_count"
     printf 'payment_provider_events=%s\nprovider_events=%s\nwallet_transactions=%s\nledger_journals=%s\nledger_entries=%s\n' "$provider_events" "$provider_events" "$wallet_transactions" "$ledger_journals" "$ledger_entries"
@@ -976,6 +1102,8 @@ self_test() {
     [[ "$MAX_BACK_ATTEMPTS" == 2 ]] || exit 1
     [[ "$EXPECTED_FLUTTER_VERSION" == '3.44.7' ]] || exit 1
     [[ "$TARGET_ACTIVITY" == 'MspContainerActivity' ]] || exit 1
+    [[ "$TARGET_ISOLATION_ACTIVITY" == 'com.kong373.alipay_app_pay.NativeAlipayIsolationActivity' ]] || exit 1
+    [[ "$EXPECTED_ISOLATION_MARKER_PREFIX" == 'M5_ALIPAY_NATIVE_ISOLATION::' ]] || exit 1
     public_oauth_client_id_is_valid 'fixture-public-client' || exit 1
     for invalid in '' 'public client' 'public-client-secret' 'public_token'; do
       public_oauth_client_id_is_valid "$invalid" && exit 1
@@ -984,6 +1112,11 @@ self_test() {
     RUN_STARTED_AT="$(python3 -c 'import time; print(int(time.time()))')"
     FLUTTER_SHA="$(python3 -c 'print("2" * 40)')"
     BACKEND_SHA="$(python3 -c 'print("1" * 40)')"
+    ISOLATION_RUN_ID='0123456789abcdef0123456789abcdef'
+    PROBE_INVOCATION_ID='fedcba9876543210fedcba9876543210'
+    [[ "$ISOLATION_RUN_ID" =~ ^[a-f0-9]{32}$ ]] || exit 1
+    [[ "$PROBE_INVOCATION_ID" =~ ^[a-f0-9]{32}$ ]] || exit 1
+    audit 'ISOLATION_IDS_PASS'
     local db_file="$root/db.json"
     DB_EVIDENCE_FILE="$db_file"
     SERIAL_VALUE='R58PHYSICAL001'
@@ -1025,8 +1158,25 @@ self_test() {
     mkdir -m 700 "$artifact"
     ARTIFACT_DIR="$artifact"
     FLUTTER_LOG_PATH="$root/success-flutter.log"
-    printf '%s\n%s\n' \
-      "$EXPECTED_NATIVE_MARKER" "$EXPECTED_BRIDGE_MARKER" >"$FLUTTER_LOG_PATH"
+    printf '%s\n' \
+      "$(isolation_marker "$EXPECTED_ISOLATION_ENTER_MARKER_PREFIX")" \
+      "$(isolation_marker "$EXPECTED_PAYLOAD_STAGED_MARKER_PREFIX")" \
+      "$(isolation_marker "$EXPECTED_ISOLATION_START_MARKER_PREFIX")" \
+      "$(isolation_marker "$EXPECTED_ISOLATION_LAUNCH_CALL_MARKER_PREFIX")" \
+      "$(isolation_marker "$EXPECTED_ISOLATION_LAUNCH_RETURN_MARKER_PREFIX")" \
+      "$(isolation_marker "$EXPECTED_ISOLATION_RETURN_MARKER_PREFIX")::resultStatus=6001::sdkCompleted=0" \
+      "$(probe_marker START)" \
+      "$(probe_marker RETURN)" \
+      "$EXPECTED_NATIVE_MARKER" \
+      "$EXPECTED_BRIDGE_MARKER" \
+      'M5_ALIPAY_FOCUSED::catalog::PASS' \
+      'M5_ALIPAY_FOCUSED::order::PASS' \
+      'M5_ALIPAY_FOCUSED::native_launcher::START' \
+      'M5_ALIPAY_FOCUSED::native_launcher::PASS' \
+      'M5_ALIPAY_FOCUSED::query_reconcile::PASS' \
+      'M5_ALIPAY_FOCUSED::complete::PASS' >"$FLUTTER_LOG_PATH"
+    evaluate_marker_contract || exit 1
+    audit 'ISOLATION_MARKER_FILTER_PASS'
     OPERATOR_LOG_PATH="$root/success-operator.log"
     : >"$OPERATOR_LOG_PATH"
     SCREEN_WIDTH=1440
@@ -1051,6 +1201,37 @@ self_test() {
     grep -Fqx 'canceled_order_count=1' "$artifact/summary.txt" || exit 1
     grep -Fqx 'db_zero_mutations=PASS' "$artifact/summary.txt" || exit 1
     grep -Fqx 'acceptance_gate=true' "$artifact/summary.txt" || exit 1
+
+    FLUTTER_LOG_PATH="$root/isolation-marker-input.log"
+    local stale_isolation_id='ffffffffffffffffffffffffffffffff'
+    printf '%s\n' \
+      "I/flutter ( 101): $(isolation_marker "$EXPECTED_PAYLOAD_STAGED_MARKER_PREFIX")" \
+      "I/VoiceAlipayIsolation( 102): $(isolation_marker "$EXPECTED_ISOLATION_START_MARKER_PREFIX")" \
+      "I/VoiceAlipayIsolation( 102): $(isolation_marker "$EXPECTED_ISOLATION_RETURN_MARKER_PREFIX")::resultStatus=6001::sdkCompleted=0" \
+      "I/flutter ( 101): $(probe_marker START)" \
+      "I/flutter ( 101): ${EXPECTED_PAYLOAD_STAGED_MARKER_PREFIX}${stale_isolation_id}" \
+      'I/flutter ( 101): raw-private-value-must-not-escape' \
+      "I/VoiceAlipayIsolation( 102): $(isolation_marker "$EXPECTED_ISOLATION_RETURN_MARKER_PREFIX")::resultStatus=6001::sdkCompleted=0::private=raw-private-value" >"$FLUTTER_LOG_PATH"
+    local filtered="$root/isolation-filtered.log"
+    safe_flutter_log_filter <"$FLUTTER_LOG_PATH" >"$filtered"
+    grep -Fqx "$(isolation_marker "$EXPECTED_PAYLOAD_STAGED_MARKER_PREFIX")" "$filtered" || exit 1
+    grep -Fqx "$(isolation_marker "$EXPECTED_ISOLATION_START_MARKER_PREFIX")" "$filtered" || exit 1
+    grep -Fqx "$(isolation_marker "$EXPECTED_ISOLATION_RETURN_MARKER_PREFIX")::resultStatus=6001::sdkCompleted=0" "$filtered" || exit 1
+    grep -Fq "$stale_isolation_id" "$filtered" && exit 1 || true
+    grep -Fq 'raw-private-value' "$filtered" && exit 1 || true
+    audit 'ISOLATION_MARKER_FILTER_PASS'
+
+    FLUTTER_LOG_PATH="$root/isolation-negative.log"
+    printf '%s\n' \
+      "$(isolation_marker "$EXPECTED_ISOLATION_ENTER_MARKER_PREFIX")" \
+      "$(isolation_marker "$EXPECTED_PAYLOAD_STAGED_MARKER_PREFIX")" \
+      "$(isolation_marker "$EXPECTED_ISOLATION_START_MARKER_PREFIX")" \
+      "$(isolation_marker "$EXPECTED_ISOLATION_LAUNCH_CALL_MARKER_PREFIX")" \
+      "$(isolation_marker "$EXPECTED_ISOLATION_LAUNCH_RETURN_MARKER_PREFIX")" \
+      "$(isolation_marker "$EXPECTED_ISOLATION_FAIL_MARKER_PREFIX")::reason=NATIVE_EXCEPTION" >"$FLUTTER_LOG_PATH"
+    evaluate_marker_contract && exit 1 || true
+    [[ "$FAIL_REASON" == 'isolation_activity_failed' ]] || exit 1
+    audit 'ISOLATION_NEGATIVE_MARKER_PASS'
 
     FLUTTER_LOG_PATH="$root/flutter-drive.log"
     printf '%s\n%s\n%s\n' \
@@ -1100,6 +1281,7 @@ self_test() {
     grep -Fqi 'R58PHYSICAL001' "$artifact/summary.txt" && exit 1 || true
     safe_artifact_scan || exit 1
     grep -E '^(native_result|flutter_failure|operator_failure|payment_status|canceled_order_count|payment_provider_events|wallet_transactions|ledger_journals|ledger_entries|db_zero_mutations|db_evidence_phases|acceptance_gate)=' "$artifact/summary.txt"
+    audit 'ISOLATION_WATCHDOG_FAIL_CLOSED_PASS'
     audit 'SUMMARY_FAIL_CLOSED_PASS'
     audit 'ARTIFACT_REDACTION_PASS'
     audit 'PHYSICAL_DEVICE_DIAGNOSTIC_PASS'
@@ -1163,7 +1345,8 @@ audit 'CANCEL_ONLY'
 audit 'NO_REAL_DEBIT'
 run_flutter_target &
 FLUTTER_PID=$!
-wait_for_native_launcher_start
+wait_for_isolation_payload_staged
+wait_for_isolation_start
 start_operator
 if ! wait_for_completion; then
   RUN_RESULT='FAIL'
