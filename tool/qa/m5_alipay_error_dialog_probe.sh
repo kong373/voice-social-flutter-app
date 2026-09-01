@@ -17,6 +17,7 @@ readonly TARGET_COMPONENT='com.eg.android.AlipayGphoneRC/com.alipay.android.msp.
 readonly ERROR_TEXT_ZH='人气太旺啦，稍候再试试。(6)'
 readonly DEVICE_UI_DUMP_PATH='/data/local/tmp/voice-social-alipay-error-dialog-ui.xml'
 readonly UI_XML_MAX_BYTES=262144
+readonly MAX_SHARED_ANCESTOR_DEPTH=3
 readonly DEFAULT_DIALOG_TIMEOUT_SECONDS=30
 readonly DEFAULT_MARKER_TIMEOUT_SECONDS=30
 readonly DEFAULT_POLL_INTERVAL_SECONDS=1
@@ -452,7 +453,7 @@ capture_fresh_ui_xml() {
 }
 
 ui_dialog_state() {
-  python3 - "$UI_DUMP_LOCAL_PATH" "$TARGET_PACKAGE" "$SCREEN_WIDTH" "$SCREEN_HEIGHT" "$UI_XML_MAX_BYTES" "$ERROR_TEXT_ZH" <<'PY'
+  python3 - "$UI_DUMP_LOCAL_PATH" "$TARGET_PACKAGE" "$SCREEN_WIDTH" "$SCREEN_HEIGHT" "$UI_XML_MAX_BYTES" "$ERROR_TEXT_ZH" "$MAX_SHARED_ANCESTOR_DEPTH" <<'PY'
 import hashlib
 import json
 import re
@@ -473,6 +474,7 @@ try:
     height = int(sys.argv[4])
     max_bytes = int(sys.argv[5])
     expected_error = sys.argv[6]
+    max_shared_ancestor_depth = int(sys.argv[7])
     raw = path.read_bytes()
     if not raw or len(raw) > max_bytes or b"\x00" in raw:
         verdict("INVALID")
@@ -502,6 +504,8 @@ rotation = root.attrib.get("rotation", "")
 if rotation not in {"0", "1", "2", "3"}:
     verdict("INVALID")
 if width <= 0 or height <= 0:
+    verdict("INVALID")
+if max_shared_ancestor_depth < 1 or max_shared_ancestor_depth > 3:
     verdict("INVALID")
 
 nodes = [node for node in root.iter() if local_name(node.tag) == "node"]
@@ -606,11 +610,6 @@ parent_by_id = {}
 for parent in root.iter():
     for child in list(parent):
         parent_by_id[id(child)] = parent
-error_parent = parent_by_id.get(id(error_node))
-button_parent = parent_by_id.get(id(button_node))
-if error_parent is None or error_parent is not button_parent:
-    verdict("INVALID")
-container_class = error_parent.attrib.get("class", "")
 allowed_containers = {
     "android.app.Dialog",
     "android.view.ViewGroup",
@@ -622,13 +621,47 @@ allowed_containers = {
     "android.widget.GridLayout",
     "android.widget.ScrollView",
 }
-if container_class not in allowed_containers:
+
+
+def ancestor_path(node):
+    result = []
+    current = node
+    for depth in range(1, max_shared_ancestor_depth + 1):
+        current = parent_by_id.get(id(current))
+        if current is None:
+            break
+        result.append((depth, current))
+    return result
+
+
+error_ancestors = ancestor_path(error_node)
+button_ancestors = ancestor_path(button_node)
+button_by_id = {id(node): depth for depth, node in button_ancestors}
+shared = None
+for error_depth, ancestor in error_ancestors:
+    button_depth = button_by_id.get(id(ancestor))
+    if button_depth is not None:
+        shared = (error_depth, button_depth, ancestor)
+        break
+if shared is None:
     verdict("INVALID")
-children = list(error_parent)
-if len(children) != 2 or error_node not in children or button_node not in children:
+error_depth, button_depth, common_ancestor = shared
+if common_ancestor.attrib.get("class", "") not in allowed_containers:
     verdict("INVALID")
-if any(child is not error_node and child is not button_node for child in children):
-    verdict("INVALID")
+for depth, ancestor in error_ancestors:
+    if depth > error_depth:
+        break
+    if ancestor.attrib.get("package") != package:
+        verdict("INVALID")
+    if ancestor.attrib.get("class", "") not in allowed_containers:
+        verdict("INVALID")
+for depth, ancestor in button_ancestors:
+    if depth > button_depth:
+        break
+    if ancestor.attrib.get("package") != package:
+        verdict("INVALID")
+    if ancestor.attrib.get("class", "") not in allowed_containers:
+        verdict("INVALID")
 
 
 bounds_pattern = re.compile(r"^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$")

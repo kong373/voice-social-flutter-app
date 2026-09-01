@@ -63,6 +63,38 @@ void main() {
         '</node></node></hierarchy>';
   }
 
+  String nestedRealDialogUi() {
+    return '<hierarchy rotation="0">'
+        '<node package="$packageName" class="android.widget.FrameLayout">'
+        '<node package="$packageName" class="android.widget.LinearLayout">'
+        '<node package="$packageName" class="android.widget.TextView" '
+        'text="人气太旺啦，稍候再试试。(6)" visible-to-user="true" />'
+        '<node package="$packageName" class="android.widget.LinearLayout">'
+        '<node package="$packageName" class="android.widget.Button" '
+        'text="确定" enabled="true" visible-to-user="true" '
+        'clickable="true" bounds="[400,900][680,1020]" />'
+        '</node></node></node></hierarchy>';
+  }
+
+  String deepCommonAncestorUi() {
+    return '<hierarchy rotation="0">'
+        '<node package="$packageName" class="android.widget.LinearLayout">'
+        '<node package="$packageName" class="android.widget.FrameLayout">'
+        '<node package="$packageName" class="android.widget.LinearLayout">'
+        '<node package="$packageName" class="android.widget.FrameLayout">'
+        '<node package="$packageName" class="android.widget.TextView" '
+        'text="人气太旺啦，稍候再试试。(6)" visible-to-user="true" />'
+        '</node></node></node>'
+        '<node package="$packageName" class="android.widget.FrameLayout">'
+        '<node package="$packageName" class="android.widget.LinearLayout">'
+        '<node package="$packageName" class="android.widget.FrameLayout">'
+        '<node package="$packageName" class="android.widget.LinearLayout">'
+        '<node package="$packageName" class="android.widget.Button" '
+        'text="确定" enabled="true" visible-to-user="true" '
+        'clickable="true" bounds="[400,900][680,1020]" />'
+        '</node></node></node></node></node></hierarchy>';
+  }
+
   String uiWith(String insertion) {
     return '<hierarchy rotation="0">'
         '<node package="$packageName" class="android.widget.FrameLayout">'
@@ -332,7 +364,9 @@ else:
       expect(buildSource, contains('android.test.base.jar'));
       expect(buildSource, contains('classes.dex'));
       expect(buildSource, isNot(contains(' adb ')));
-      expect(javaSource, contains('getFromParent(buttonSelector())'));
+      expect(javaSource, contains('requireBoundedAncestorRelation'));
+      expect(javaSource, contains('MAX_SHARED_ANCESTOR_DEPTH'));
+      expect(javaSource, contains('ALLOWED_CONTAINER_CLASSES'));
       expect(javaSource, contains('device.getCurrentPackageName()'));
       expect(javaSource, contains('device.getCurrentActivityName()'));
       expect(javaSource, contains('人气太旺啦，稍候再试试。(6)'));
@@ -466,8 +500,21 @@ else:
     },
   );
 
-  test('same-parent ancestry, bounds, and rotation are binding', () {
+  test('bounded nested ancestry is accepted; far ancestry stays rejected', () {
     final Directory root = sandbox('alipay-error-dialog-ancestry-');
+    final ProcessResult nested = runProbe(
+      root,
+      uiFrames: <String>[nestedRealDialogUi()],
+      activityFrames: <String>[
+        activityFor(
+          '$packageName/com.alipay.android.msp.ui.views.MspContainerActivity',
+        ),
+      ],
+      markerTimeout: 0,
+    );
+    expect(nested.exitCode, 0, reason: '${nested.stdout}\n${nested.stderr}');
+    expect(File('${root.path}/tap.count').readAsStringSync(), '1');
+
     final String brothers =
         '<hierarchy package="$packageName" rotation="0">'
         '<node package="$packageName" class="android.widget.LinearLayout">'
@@ -487,6 +534,7 @@ else:
     );
     for (final String fixture in <String>[
       brothers,
+      deepCommonAncestorUi(),
       badBounds,
       invalidRotation,
     ]) {

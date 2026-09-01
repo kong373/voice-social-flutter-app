@@ -1,6 +1,7 @@
 package com.kong373.voicesocial.qa;
 
 import android.graphics.Rect;
+import android.view.accessibility.AccessibilityNodeInfo;
 
 import com.android.uiautomator.core.UiDevice;
 import com.android.uiautomator.core.UiObject;
@@ -8,10 +9,14 @@ import com.android.uiautomator.core.UiObjectNotFoundException;
 import com.android.uiautomator.core.UiSelector;
 import com.android.uiautomator.testrunner.UiAutomatorTestCase;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Device-side, fail-closed dismissal of one exact Alipay sandbox CONFIG_ERROR
- * dialog. The final click resolves a sibling selector from the exact error
- * node at action time, so no host-side coordinates are ever used.
+ * dialog. The final click resolves the exact button selector only after a
+ * bounded, allowlisted accessibility-ancestor check at action time, so no
+ * host-side coordinates are ever used.
  */
 public final class AlipayConfigErrorDismissTest extends UiAutomatorTestCase {
     private static final String TARGET_PACKAGE = "com.eg.android.AlipayGphoneRC";
@@ -28,6 +33,18 @@ public final class AlipayConfigErrorDismissTest extends UiAutomatorTestCase {
         "支付", "付款", "充值", "密码", "验证码", "银行卡", "余额",
         "pay", "payment", "password", "passcode", "otp", "security code"
     };
+    private static final int MAX_SHARED_ANCESTOR_DEPTH = 3;
+    private static final String[] ALLOWED_CONTAINER_CLASSES = {
+        "android.app.Dialog",
+        "android.view.ViewGroup",
+        "android.widget.ConstraintLayout",
+        "android.widget.FrameLayout",
+        "android.widget.LinearLayout",
+        "android.widget.RelativeLayout",
+        "android.widget.TableLayout",
+        "android.widget.GridLayout",
+        "android.widget.ScrollView"
+    };
 
     private static final class Snapshot {
         final Rect bounds;
@@ -36,6 +53,30 @@ public final class AlipayConfigErrorDismissTest extends UiAutomatorTestCase {
         Snapshot(Rect bounds, int rotation) {
             this.bounds = new Rect(bounds);
             this.rotation = rotation;
+        }
+    }
+
+    private static final class InspectableUiObject extends UiObject {
+        InspectableUiObject(UiSelector selector) {
+            super(selector);
+        }
+
+        AccessibilityNodeInfo node() throws UiObjectNotFoundException {
+            AccessibilityNodeInfo value = findAccessibilityNodeInfo(5000);
+            if (value == null) {
+                throw new UiObjectNotFoundException("accessibility node is unavailable");
+            }
+            return value;
+        }
+    }
+
+    private static final class Ancestor {
+        final AccessibilityNodeInfo node;
+        final int depth;
+
+        Ancestor(AccessibilityNodeInfo node, int depth) {
+            this.node = node;
+            this.depth = depth;
         }
     }
 
@@ -66,6 +107,82 @@ public final class AlipayConfigErrorDismissTest extends UiAutomatorTestCase {
 
     private static void requireNoObject(UiSelector selector, String message) {
         assertFalse(message, object(selector).exists());
+    }
+
+    private static boolean allowedContainer(AccessibilityNodeInfo node) {
+        CharSequence className = node.getClassName();
+        if (className == null) {
+            return false;
+        }
+        String value = className.toString();
+        for (String allowed : ALLOWED_CONTAINER_CLASSES) {
+            if (allowed.equals(value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<Ancestor> ancestors(AccessibilityNodeInfo node) {
+        List<Ancestor> result = new ArrayList<Ancestor>();
+        AccessibilityNodeInfo current = node.getParent();
+        for (int depth = 1;
+                current != null && depth <= MAX_SHARED_ANCESTOR_DEPTH;
+                depth++) {
+            result.add(new Ancestor(current, depth));
+            current = current.getParent();
+        }
+        return result;
+    }
+
+    private static boolean sameAccessibilityNode(
+            AccessibilityNodeInfo left, AccessibilityNodeInfo right) {
+        return left != null && right != null && left.equals(right);
+    }
+
+    private static void requireBoundedAncestorRelation(
+            UiObject error, UiObject button) throws UiObjectNotFoundException {
+        AccessibilityNodeInfo errorNode = new InspectableUiObject(errorSelector().instance(0)).node();
+        AccessibilityNodeInfo buttonNode = new InspectableUiObject(buttonSelector().instance(0)).node();
+        List<Ancestor> errorAncestors = ancestors(errorNode);
+        List<Ancestor> buttonAncestors = ancestors(buttonNode);
+        Ancestor common = null;
+        Ancestor buttonCommon = null;
+        for (Ancestor errorAncestor : errorAncestors) {
+            for (Ancestor buttonAncestor : buttonAncestors) {
+                if (sameAccessibilityNode(errorAncestor.node, buttonAncestor.node)) {
+                    common = errorAncestor;
+                    buttonCommon = buttonAncestor;
+                    break;
+                }
+            }
+            if (common != null) {
+                break;
+            }
+        }
+        assertNotNull("error and dismiss Button have no bounded common ancestor", common);
+        assertTrue("common ancestor depth is unsafe", common.depth <= MAX_SHARED_ANCESTOR_DEPTH);
+        assertTrue("button common ancestor depth is unsafe",
+                buttonCommon.depth <= MAX_SHARED_ANCESTOR_DEPTH);
+
+        for (Ancestor ancestor : errorAncestors) {
+            if (ancestor.depth > common.depth) {
+                break;
+            }
+            assertEquals("ancestor package is not Alipay", TARGET_PACKAGE,
+                    String.valueOf(ancestor.node.getPackageName()));
+            assertTrue("ancestor class is not an allowlisted container",
+                    allowedContainer(ancestor.node));
+        }
+        for (Ancestor ancestor : buttonAncestors) {
+            if (ancestor.depth > buttonCommon.depth) {
+                break;
+            }
+            assertEquals("ancestor package is not Alipay", TARGET_PACKAGE,
+                    String.valueOf(ancestor.node.getPackageName()));
+            assertTrue("ancestor class is not an allowlisted container",
+                    allowedContainer(ancestor.node));
+        }
     }
 
     private static boolean sameNode(UiObject left, UiObject right)
@@ -134,14 +251,11 @@ public final class AlipayConfigErrorDismissTest extends UiAutomatorTestCase {
         UiObject error = object(errorSelector().instance(0));
         UiObject globalButton = object(buttonSelector().instance(0));
         UiObject onlyClickable = object(new UiSelector().clickable(true).instance(0));
-        UiObject relatedButton = error.getFromParent(buttonSelector());
-        assertTrue("dismiss Button is not a direct sibling of the error", relatedButton.exists());
-        assertTrue("related Button differs from the global unique Button",
-                sameNode(relatedButton, globalButton));
-        assertTrue("related Button is not the only clickable node",
-                sameNode(relatedButton, onlyClickable));
-        assertTrue("dismiss Button is disabled", relatedButton.isEnabled());
-        assertTrue("dismiss Button is not clickable", relatedButton.isClickable());
+        assertTrue("global Button differs from the only clickable node",
+                sameNode(globalButton, onlyClickable));
+        requireBoundedAncestorRelation(error, globalButton);
+        assertTrue("dismiss Button is disabled", globalButton.isEnabled());
+        assertTrue("dismiss Button is not clickable", globalButton.isClickable());
 
         int width = device.getDisplayWidth();
         int height = device.getDisplayHeight();
@@ -152,18 +266,19 @@ public final class AlipayConfigErrorDismissTest extends UiAutomatorTestCase {
         assertTrue("error TextView leaves the display",
                 errorBounds.left >= 0 && errorBounds.top >= 0
                         && errorBounds.right <= width && errorBounds.bottom <= height);
-        Rect bounds = relatedButton.getVisibleBounds();
+        Rect bounds = globalButton.getVisibleBounds();
         assertTrue("dismiss bounds are empty", bounds.width() > 1 && bounds.height() > 1);
         assertTrue("dismiss bounds leave the display",
                 bounds.left >= 0 && bounds.top >= 0
                         && bounds.right <= width && bounds.bottom <= height);
         assertTrue("dismiss surface is too large",
                 ((long) bounds.width()) * bounds.height() <= ((long) width) * height * 40 / 100);
-        return relatedButton;
+        return globalButton;
     }
 
     public void testDismissConfigError() throws Exception {
         UiDevice device = getUiDevice();
+        device.setCompressedLayoutHeirarchy(false);
         device.waitForIdle(1000);
         UiObject firstButton = verifyAndResolveButton(device);
         Snapshot first = new Snapshot(firstButton.getVisibleBounds(), device.getDisplayRotation());
@@ -176,7 +291,7 @@ public final class AlipayConfigErrorDismissTest extends UiAutomatorTestCase {
         assertEquals("display rotation changed before action", first.rotation, second.rotation);
 
         // Resolve the relation a final time immediately before the action. A
-        // page transition invalidates the error->sibling selector and fails
+        // page transition invalidates the bounded ancestor relation and fails
         // closed instead of reusing host coordinates.
         UiObject actionButton = verifyAndResolveButton(device);
         assertEquals("dialog bounds changed at action time",
