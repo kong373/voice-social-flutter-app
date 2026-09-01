@@ -159,22 +159,29 @@ class NativeAlipayIsolationActivity : Activity() {
         }
         try {
             workerThread.execute {
-                val result = try {
-                    EnvUtils.setEnv(EnvUtils.EnvEnum.SANDBOX)
-                    val raw = PayTask(this).payV2(payload.orderString, true)
-                    NativeAlipayIsolationContract.classifyPayTaskReturn(raw["resultStatus"])
-                } catch (_: RuntimeException) {
-                    NativeAlipayIsolationResult.nativeException()
-                } catch (_: LinkageError) {
-                    NativeAlipayIsolationResult.nativeUnavailable()
+                var result = NativeAlipayIsolationResult.nativeUnavailable()
+                try {
+                    result = try {
+                        EnvUtils.setEnv(EnvUtils.EnvEnum.SANDBOX)
+                        val raw = PayTask(this).payV2(payload.orderString, true)
+                        NativeAlipayIsolationContract.classifyPayTaskReturn(raw["resultStatus"])
+                    } catch (_: RuntimeException) {
+                        NativeAlipayIsolationResult.nativeException()
+                    } catch (_: LinkageError) {
+                        NativeAlipayIsolationResult.nativeUnavailable()
+                    }
+                } finally {
+                    // Even an unexpected Error must not strand the global
+                    // payment gate. The default safe result contains no SDK
+                    // payload and cannot authorize payment or cancellation.
+                    completeWorker(
+                        watchdogFuture,
+                        resultFile,
+                        safeRunId,
+                        owner,
+                        result,
+                    )
                 }
-                completeWorker(
-                    watchdogFuture,
-                    resultFile,
-                    safeRunId,
-                    owner,
-                    result,
-                )
             }
             AlipayNativeIsolationLaunchRegistry.completeStarted(
                 requestedWireId,

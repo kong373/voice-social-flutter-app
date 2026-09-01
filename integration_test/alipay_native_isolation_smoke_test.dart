@@ -93,13 +93,27 @@ Future<void> _stagePayload({
   await temporary.rename(payload.path);
 }
 
-Future<void> _launchNativeIsolation() async {
+Future<void> _launchNativeIsolation({bool expectRejected = false}) async {
   _marker('LAUNCH_CALL', _runId);
-  final bool? launched = await _nativeIsolationChannel
-      .invokeMethod<bool>('launchNativeIsolation', <String, Object>{
-        'runId': _runId,
-      })
-      .timeout(const Duration(seconds: 10));
+  bool? launched;
+  try {
+    launched = await _nativeIsolationChannel
+        .invokeMethod<bool>('launchNativeIsolation', <String, Object>{
+          'runId': _runId,
+        })
+        .timeout(const Duration(seconds: 10));
+  } on PlatformException catch (error) {
+    if (expectRejected && error.code == 'debug_unavailable') {
+      _marker('LAUNCH_REJECTED', _runId);
+      return;
+    }
+    rethrow;
+  }
+  if (expectRejected) {
+    throw TestFailure(
+      'Native isolation unexpectedly accepted missing payload.',
+    );
+  }
   if (launched != true) {
     throw TestFailure('Native isolation launcher unavailable.');
   }
@@ -145,6 +159,7 @@ Future<AlipayAppPayResult> _waitForNativeResult(Directory files) async {
       };
       const Set<String> allowedOutcomes = <String>{
         'pay_task_returned',
+        'native_watchdog_timeout',
         'native_exception',
         'native_unavailable',
       };
@@ -189,10 +204,14 @@ Future<AlipayAppPayResult> _waitForNativeResult(Directory files) async {
           bridgeOutcome: provenance,
         ),
         _ => AlipayAppPayResult(
-          outcome: AlipayAppPayOutcome.failed,
-          reason: bridgeOutcome == 'native_unavailable'
-              ? AlipayAppPayReason.nativeUnavailable
-              : AlipayAppPayReason.vendorFailed,
+          outcome: bridgeOutcome == 'native_watchdog_timeout'
+              ? AlipayAppPayOutcome.processing
+              : AlipayAppPayOutcome.failed,
+          reason: switch (bridgeOutcome) {
+            'native_watchdog_timeout' => AlipayAppPayReason.timeout,
+            'native_unavailable' => AlipayAppPayReason.nativeUnavailable,
+            _ => AlipayAppPayReason.vendorFailed,
+          },
           sdkCompleted: false,
           resultStatus: resultStatus == 'none' ? null : resultStatus,
           bridgeOutcome: provenance,
@@ -255,7 +274,7 @@ void main() {
 
         if (_negativeOnly) {
           failureStage = 'negative_launch';
-          await _launchNativeIsolation();
+          await _launchNativeIsolation(expectRejected: true);
           failureStage = 'negative_settle';
           await Future<void>.delayed(const Duration(seconds: 2));
           failureStage = 'negative_check';
