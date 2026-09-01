@@ -371,6 +371,12 @@ esac
     expect(runnerSource, contains('EXPECTED_PAYLOAD_STAGED_MARKER_PREFIX'));
     expect(runnerSource, contains('EXPECTED_ISOLATION_RETURN_MARKER_PREFIX'));
     expect(runnerSource, contains('EXPECTED_ISOLATION_FAIL_MARKER_PREFIX'));
+    expect(runnerSource, contains('EXECUTOR_UNAVAILABLE'));
+    expect(runnerSource, contains('REENTRY_REJECTED'));
+    expect(
+      runnerSource,
+      contains('native isolation failed before the awaited marker'),
+    );
     for (final String hostPayloadForbidden in <String>[
       'payload-file',
       'orderStr',
@@ -425,6 +431,7 @@ esac
       expect(result.stdout, contains('ISOLATION_MARKER_FILTER_PASS'));
       expect(result.stdout, contains('ISOLATION_WATCHDOG_FAIL_CLOSED_PASS'));
       expect(result.stdout, contains('ISOLATION_NEGATIVE_MARKER_PASS'));
+      expect(result.stdout, contains('ISOLATION_EARLY_FAIL_FAST_PASS'));
     },
   );
 

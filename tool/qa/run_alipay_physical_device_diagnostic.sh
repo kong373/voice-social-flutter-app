@@ -529,7 +529,8 @@ probe_id = re.escape(sys.argv[2])
 prefix = r"(?:[VDIWEF]/[A-Za-z0-9_.-]+\s*\(\s*[0-9]+\): )?"
 isolation_failure_reasons = (
     "INVALID_LAUNCH", "ALREADY_ACTIVE", "STALE_RESULT", "PAYLOAD_REJECTED",
-    "RESULT_WRITE_FAILED", "NATIVE_EXCEPTION", "NATIVE_UNAVAILABLE",
+    "EXECUTOR_UNAVAILABLE", "REENTRY_REJECTED", "RESULT_WRITE_FAILED",
+    "NATIVE_EXCEPTION", "NATIVE_UNAVAILABLE",
 )
 failure_stages = (
     "startup", "config", "files", "negative_launch", "negative_settle",
@@ -739,7 +740,7 @@ probe_marker() {
 
 wait_for_isolation_marker() {
   local marker="$1" success_audit="$2" timeout_seconds="$3"
-  local deadline=$((SECONDS + timeout_seconds)) count='0'
+  local deadline=$((SECONDS + timeout_seconds)) count='0' fail_count='0'
   while (( SECONDS <= deadline )); do
     count="$(exact_marker_count "$marker")"
     if [[ "$count" == 1 ]]; then
@@ -747,6 +748,8 @@ wait_for_isolation_marker() {
       return 0
     fi
     [[ "$count" == 0 ]] || fail_marker 'isolation marker is stale or duplicated'
+    fail_count="$(grep -Ec "^${EXPECTED_ISOLATION_FAIL_MARKER_PREFIX}${ISOLATION_RUN_ID}::reason=" "$FLUTTER_LOG_PATH" 2>/dev/null || true)"
+    [[ "$fail_count" == 0 ]] || fail_marker 'native isolation failed before the awaited marker'
     [[ ! -s "$FLUTTER_STATUS_PATH" ]] || fail_marker 'Flutter target ended before isolation marker'
     pause_between_polls
   done
@@ -1232,6 +1235,23 @@ self_test() {
     evaluate_marker_contract && exit 1 || true
     [[ "$FAIL_REASON" == 'isolation_activity_failed' ]] || exit 1
     audit 'ISOLATION_NEGATIVE_MARKER_PASS'
+
+    FLUTTER_LOG_PATH="$root/isolation-early-fail.log"
+    FLUTTER_STATUS_PATH="$root/isolation-early-fail.status"
+    : >"$FLUTTER_STATUS_PATH"
+    printf '%s\n' \
+      "$(isolation_marker "$EXPECTED_ISOLATION_FAIL_MARKER_PREFIX")::reason=EXECUTOR_UNAVAILABLE" \
+      >"$FLUTTER_LOG_PATH"
+    set +e
+    (
+      wait_for_isolation_marker \
+        "$(isolation_marker "$EXPECTED_ISOLATION_START_MARKER_PREFIX")" \
+        'MUST_NOT_PASS' 10
+    ) >/dev/null 2>&1
+    local early_fail_status=$?
+    set -e
+    [[ "$early_fail_status" == "$EXIT_MARKER" ]] || exit 1
+    audit 'ISOLATION_EARLY_FAIL_FAST_PASS'
 
     FLUTTER_LOG_PATH="$root/flutter-drive.log"
     printf '%s\n%s\n%s\n' \
