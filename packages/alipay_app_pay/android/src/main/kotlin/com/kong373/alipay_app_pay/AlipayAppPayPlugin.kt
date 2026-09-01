@@ -1,9 +1,11 @@
 package com.kong373.alipay_app_pay
 
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.alipay.sdk.app.EnvUtils
 import com.alipay.sdk.app.PayTask
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -35,6 +37,7 @@ class AlipayAppPayPlugin :
         private const val CHANNEL = "voice_social_app/alipay_app_pay"
         private const val MAX_ORDER_STRING_LENGTH = 64 * 1024
         private const val PAY_TIMEOUT_SECONDS = 120L
+        private const val NATIVE_ISOLATION_TAG = "VoiceAlipayIsolation"
     }
 
     private lateinit var channel: MethodChannel
@@ -106,6 +109,14 @@ class AlipayAppPayPlugin :
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        if (call.method == AlipayNativeIsolationLaunchContract.METHOD) {
+            launchNativeIsolation(call, result)
+            return
+        }
+        if (call.method == AlipayNativeIsolationLaunchContract.FILES_DIRECTORY_METHOD) {
+            nativeIsolationFilesDirectory(call, result)
+            return
+        }
         if (call.method != "pay") {
             result.notImplemented()
             return
@@ -211,6 +222,80 @@ class AlipayAppPayPlugin :
         }
     }
 
+    private fun launchNativeIsolation(call: MethodCall, result: MethodChannel.Result) {
+        val runId = AlipayNativeIsolationLaunchContract.parseRunId(call.arguments)
+        if (runId == null) {
+            result.error("invalid_request", "原生隔离请求无效", null)
+            return
+        }
+        val currentActivity = synchronized(this) {
+            if (detachedFromEngine || active) {
+                null
+            } else {
+                activity?.takeUnless { it.isFinishing || it.isDestroyed }
+            }
+        }
+        if (currentActivity == null) {
+            result.error("activity_unavailable", "原生隔离页面当前不可用", null)
+            return
+        }
+        if (!isDebuggable(currentActivity)) {
+            result.error("debug_only", "原生隔离页面仅允许在可调试构建中运行", null)
+            return
+        }
+        Log.i(NATIVE_ISOLATION_TAG, "M5_ALIPAY_NATIVE_ISOLATION::LAUNCH_REQUEST::$runId")
+        try {
+            val intent = Intent().apply {
+                setClassName(
+                    currentActivity.packageName,
+                    AlipayNativeIsolationLaunchContract.ACTIVITY_CLASS,
+                )
+                putExtra(AlipayNativeIsolationLaunchContract.RUN_ID_EXTRA, runId)
+            }
+            currentActivity.startActivity(intent)
+            Log.i(NATIVE_ISOLATION_TAG, "M5_ALIPAY_NATIVE_ISOLATION::LAUNCH_SUCCESS::$runId")
+            result.success(true)
+        } catch (_: RuntimeException) {
+            Log.e(NATIVE_ISOLATION_TAG, "M5_ALIPAY_NATIVE_ISOLATION::LAUNCH_FAIL::$runId")
+            result.error("debug_unavailable", "原生隔离页面当前不可用", null)
+        }
+    }
+
+    private fun nativeIsolationFilesDirectory(
+        call: MethodCall,
+        result: MethodChannel.Result,
+    ) {
+        if (AlipayNativeIsolationLaunchContract.parseRunId(call.arguments) == null) {
+            result.error("invalid_request", "原生隔离请求无效", null)
+            return
+        }
+        val currentActivity = synchronized(this) {
+            if (detachedFromEngine || active) {
+                null
+            } else {
+                activity?.takeUnless { it.isFinishing || it.isDestroyed }
+            }
+        }
+        if (currentActivity == null) {
+            result.error("activity_unavailable", "原生隔离页面当前不可用", null)
+            return
+        }
+        if (!isDebuggable(currentActivity)) {
+            result.error("debug_only", "原生隔离页面仅允许在可调试构建中运行", null)
+            return
+        }
+        try {
+            val files = currentActivity.filesDir.canonicalFile
+            if (files.name != "files" || files.parentFile?.name != currentActivity.packageName) {
+                result.error("debug_unavailable", "原生隔离目录当前不可用", null)
+                return
+            }
+            result.success(files.absolutePath)
+        } catch (_: RuntimeException) {
+            result.error("debug_unavailable", "原生隔离目录当前不可用", null)
+        }
+    }
+
     @Synchronized
     private fun clearActive(invocationToken: Long) {
         if (activeInvocation == invocationToken) {
@@ -273,6 +358,30 @@ class AlipayAppPayPlugin :
     private fun isDebuggable(activity: Activity): Boolean =
         activity.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
 
+}
+
+/**
+ * Strict, non-sensitive contract for launching the debug-only same-application
+ * isolation Activity. The Activity remains non-exported and is absent from
+ * release manifests; this MethodChannel call can only originate in the app's
+ * Flutter engine.
+ */
+internal object AlipayNativeIsolationLaunchContract {
+    const val METHOD = "launchNativeIsolation"
+    const val FILES_DIRECTORY_METHOD = "nativeIsolationFilesDirectory"
+    const val ACTIVITY_CLASS =
+        "com.kong373.alipay_app_pay.NativeAlipayIsolationActivity"
+    const val RUN_ID_EXTRA = "runId"
+    private val RUN_ID_PATTERN = Regex("^[a-f0-9]{32}$")
+
+    fun parseRunId(arguments: Any?): String? {
+        val values = arguments as? Map<*, *> ?: return null
+        if (values.size != 1 || values.keys != setOf(RUN_ID_EXTRA)) {
+            return null
+        }
+        val runId = values[RUN_ID_EXTRA] as? String ?: return null
+        return runId.takeIf(RUN_ID_PATTERN::matches)
+    }
 }
 
 /**

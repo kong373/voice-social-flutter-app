@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!--
+          Same-application, debug-only isolation lane for the official Alipay
+          PayTask. It is not exported and is absent from release manifests.
+        -->
+        <activity
+            android:name="com.kong373.alipay_app_pay.NativeAlipayIsolationActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask" />
+    </application>
+</manifest>

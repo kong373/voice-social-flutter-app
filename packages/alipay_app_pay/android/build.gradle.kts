@@ -51,6 +51,9 @@ dependencies {
     // private key, public key, certificate, or amount authority.
     implementation("com.alipay.sdk:alipaysdk-android:15.8.42")
     testImplementation("junit:junit:4.13.2")
+    // Local JVM tests exercise the strict JSON contract with a real parser;
+    // Android's mockable android.jar otherwise stubs org.json methods.
+    testImplementation("org.json:json:20240303")
 }
 
 kotlin {
