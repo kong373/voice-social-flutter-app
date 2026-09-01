@@ -66,6 +66,7 @@ DOCKER_SOCKET_ENV_NAMES = ("QA_DOCKER_SOCKET", "M5_DOCKER_SOCKET", "DOCKER_HOST"
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
 SERIAL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 SHA1_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+CREATE_REQUEST_ID_RE = re.compile(r"^qa-alipay-[a-f0-9]{32}$")
 EPOCH_RE = re.compile(r"^[1-9][0-9]{0,11}$")
 CONTAINER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 DB_TIMESTAMP_RE = re.compile(
@@ -106,6 +107,7 @@ class Config:
     run_started_at: int
     flutter_sha: str = dataclasses.field(repr=False)
     backend_sha: str = dataclasses.field(repr=False)
+    create_request_id: str = dataclasses.field(repr=False)
     evidence_file: str = dataclasses.field(repr=False)
     state_dir: str = dataclasses.field(repr=False)
     baseline_file: str = dataclasses.field(repr=False)
@@ -148,6 +150,7 @@ class DbResult:
 class _Baseline:
     utc_timestamp: str
     max_ids: Mapping[str, int]
+    create_request_id_sha256: str
     consumed: bool
 
 
@@ -270,6 +273,9 @@ def read_config(environment: Mapping[str, str] | None = None) -> Config:
     backend_sha = _first_env(env, ("QA_ALIPAY_PHYSICAL_BACKEND_SHA",)).lower()
     if not SHA1_RE.fullmatch(flutter_sha or "") or not SHA1_RE.fullmatch(backend_sha or ""):
         raise CollectorError("CONFIGURATION")
+    create_request_id = _first_env(env, ("QA_ALIPAY_PHYSICAL_CREATE_REQUEST_ID",))
+    if not CREATE_REQUEST_ID_RE.fullmatch(create_request_id or ""):
+        raise CollectorError("CONFIGURATION")
 
     state_dir_value = _first_env(env, ("QA_ALIPAY_PHYSICAL_EVIDENCE_STATE_DIR",))
     state_dir = _require_private_directory(state_dir_value)
@@ -308,6 +314,7 @@ def read_config(environment: Mapping[str, str] | None = None) -> Config:
         run_started_at=run_started_at,
         flutter_sha=flutter_sha,
         backend_sha=backend_sha,
+        create_request_id=create_request_id,
         evidence_file=str(evidence_file),
         state_dir=str(state_dir),
         baseline_file=str(baseline),
@@ -319,7 +326,8 @@ def read_config(environment: Mapping[str, str] | None = None) -> Config:
 
 # This is a fixed script.  It expands the database credentials only inside
 # the selected container and emits aggregate markers rather than row values.
-# The host sends the five baseline numbers to the script over stdin in collect.
+# The host sends the start snapshot plus the request id to the script over
+# stdin in collect so the exact current-run binding never enters a command line.
 MYSQL_PHYSICAL_EVIDENCE_SCRIPT = r"""
 set -eu
 database="${MYSQL_DATABASE:-}"
@@ -355,7 +363,9 @@ done
 for column in payment_provider status provider_status; do
   column_exists recharge_order "$column" || { printf '%s\n' SCHEMA_MISSING; exit 0; }
 done
-column_exists recharge_order created_at || { printf '%s\n' SCHEMA_MISSING; exit 0; }
+for column in created_at idempotency_key; do
+  column_exists recharge_order "$column" || { printf '%s\n' SCHEMA_MISSING; exit 0; }
+done
 printf '%s\n' SCHEMA_OK
 
 # mysql --batch separates columns with tabs.  Emit one explicitly delimited
@@ -380,6 +390,7 @@ IFS= read -r baseline_provider_event || exit 33
 IFS= read -r baseline_wallet_transaction || exit 34
 IFS= read -r baseline_ledger_journal || exit 35
 IFS= read -r baseline_ledger_posting || exit 36
+IFS= read -r create_request_id || exit 41
 case "$baseline_timestamp" in
   ????-??-??\ ??\:??\:??.??????) ;;
   *) exit 37 ;;
@@ -387,9 +398,13 @@ esac
 for value in "$baseline_recharge" "$baseline_provider_event" "$baseline_wallet_transaction" "$baseline_ledger_journal" "$baseline_ledger_posting"; do
   case "$value" in ''|*[!0-9]*) exit 38 ;; esac
 done
+case "$create_request_id" in
+  qa-alipay-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+  *) exit 42 ;;
+esac
 
 before="$(snapshot)"
-metrics_query="SELECT CONCAT_WS('|', COUNT(*), COALESCE(SUM(payment_provider = 'alipay-sandbox'), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED'), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED' AND provider_status IN ('TRADE_CLOSED', 'TRADE_NOT_EXIST')), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED' AND provider_status IS NOT NULL AND provider_status NOT IN ('TRADE_CLOSED', 'TRADE_NOT_EXIST')), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED' AND provider_status IS NULL), 0), (SELECT COUNT(*) FROM payment_provider_event WHERE id > $baseline_provider_event), (SELECT COUNT(*) FROM wallet_transaction WHERE id > $baseline_wallet_transaction), (SELECT COUNT(*) FROM ledger_journal WHERE id > $baseline_ledger_journal), (SELECT COUNT(*) FROM ledger_posting WHERE id > $baseline_ledger_posting)) FROM recharge_order WHERE id > $baseline_recharge AND created_at >= STR_TO_DATE('$baseline_timestamp', '%Y-%m-%d %H:%i:%s.%f')"
+metrics_query="SELECT CONCAT_WS('|', COUNT(*), COALESCE(SUM(payment_provider = 'alipay-sandbox'), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED'), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED' AND provider_status IN ('TRADE_CLOSED', 'TRADE_NOT_EXIST')), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED' AND provider_status IS NOT NULL AND provider_status NOT IN ('TRADE_CLOSED', 'TRADE_NOT_EXIST')), 0), COALESCE(SUM(payment_provider = 'alipay-sandbox' AND status = 'CANCELLED' AND provider_status IS NULL), 0), (SELECT COUNT(*) FROM payment_provider_event WHERE id > $baseline_provider_event), (SELECT COUNT(*) FROM wallet_transaction WHERE id > $baseline_wallet_transaction), (SELECT COUNT(*) FROM ledger_journal WHERE id > $baseline_ledger_journal), (SELECT COUNT(*) FROM ledger_posting WHERE id > $baseline_ledger_posting)) FROM recharge_order WHERE id > $baseline_recharge AND created_at >= STR_TO_DATE('$baseline_timestamp', '%Y-%m-%d %H:%i:%s.%f') AND idempotency_key = '$create_request_id'"
 metrics="$(mysql_query "$metrics_query")"
 middle="$(snapshot)"
 metrics_repeat="$(mysql_query "$metrics_query")"
@@ -478,7 +493,7 @@ def _run_mysql(config: Config, phase: str, baseline: _Baseline | None = None) ->
             raise CollectorError("INVALID_BASELINE")
         input_value = baseline.utc_timestamp + "\n" + "\n".join(
             str(baseline.max_ids[name]) for name in TABLES
-        ) + "\n"
+        ) + "\n" + config.create_request_id + "\n"
     script = "export M5_ALIPAY_PHYSICAL_PHASE=" + phase + "\n" + MYSQL_PHYSICAL_EVIDENCE_SCRIPT
     try:
         completed = subprocess.run(
@@ -506,6 +521,8 @@ def _validate_config_object(config: Config) -> None:
         raise CollectorError("CONFIGURATION")
     if not RUN_ID_RE.fullmatch(config.run_id or "") or not SHA1_RE.fullmatch(config.flutter_sha or "") or not SHA1_RE.fullmatch(config.backend_sha or ""):
         raise CollectorError("CONFIGURATION")
+    if not CREATE_REQUEST_ID_RE.fullmatch(config.create_request_id or ""):
+        raise CollectorError("CONFIGURATION")
     if type(config.run_started_at) is not int or config.run_started_at <= 0:
         raise CollectorError("CONFIGURATION")
     if not CONTAINER_RE.fullmatch(config.mysql_container or ""):
@@ -531,6 +548,7 @@ def _baseline_from_result(config: Config, result: DbResult) -> dict[str, object]
         "runStartedAt": config.run_started_at,
         "flutterSha": config.flutter_sha,
         "backendSha": config.backend_sha,
+        "createRequestIdSha256": _sha256(config.create_request_id),
         "utcTimestamp": snapshot.utc_timestamp,
         "maxIds": {name: snapshot.max_ids[name] for name in TABLES},
         "consumed": False,
@@ -563,6 +581,7 @@ def _read_baseline(config: Config) -> _Baseline:
         "runStartedAt",
         "flutterSha",
         "backendSha",
+        "createRequestIdSha256",
         "utcTimestamp",
         "maxIds",
         "consumed",
@@ -572,9 +591,14 @@ def _read_baseline(config: Config) -> _Baseline:
         raise CollectorError("INVALID_BASELINE")
     if value["runIdSha256"] != _sha256(config.run_id) or value["serialSha256"] != _sha256(config.serial):
         raise CollectorError("INVALID_BASELINE")
+    if value["createRequestIdSha256"] != _sha256(config.create_request_id):
+        raise CollectorError("INVALID_BASELINE")
     if value["runStartedAt"] != config.run_started_at or value["flutterSha"] != config.flutter_sha or value["backendSha"] != config.backend_sha:
         raise CollectorError("INVALID_BASELINE")
     timestamp = _parse_timestamp(value["utcTimestamp"])
+    create_request_id_sha256 = value["createRequestIdSha256"]
+    if not isinstance(create_request_id_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", create_request_id_sha256):
+        raise CollectorError("INVALID_BASELINE")
     max_ids = value["maxIds"]
     if not isinstance(max_ids, dict) or set(max_ids) != set(TABLES):
         raise CollectorError("INVALID_BASELINE")
@@ -584,7 +608,7 @@ def _read_baseline(config: Config) -> _Baseline:
         if type(item) is not int or item < 0 or item > MAX_UNSIGNED_BIGINT:
             raise CollectorError("INVALID_BASELINE")
         parsed_ids[name] = item
-    return _Baseline(timestamp, parsed_ids, False)
+    return _Baseline(timestamp, parsed_ids, create_request_id_sha256, False)
 
 
 def _atomic_json_write(path: Path, value: Mapping[str, object], *, replace: bool) -> None:
@@ -740,7 +764,15 @@ def collect(
 def self_test() -> int:
     """Offline contract check; this path never resolves Docker or MySQL."""
 
-    required = (*TABLES, "UTC_TIMESTAMP(6)", "MYSQL_PWD=", "TRADE_CLOSED", "TRADE_NOT_EXIST")
+    required = (
+        *TABLES,
+        "UTC_TIMESTAMP(6)",
+        "MYSQL_PWD=",
+        "TRADE_CLOSED",
+        "TRADE_NOT_EXIST",
+        "idempotency_key",
+        "create_request_id",
+    )
     if any(item not in MYSQL_PHYSICAL_EVIDENCE_SCRIPT for item in required):
         return 1
     upper = MYSQL_PHYSICAL_EVIDENCE_SCRIPT.upper()

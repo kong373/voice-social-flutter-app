@@ -17,6 +17,8 @@ SERIAL = "R58PHYSICAL001"
 RUN_ID = "physical-contract"
 FLUTTER_SHA = "a" * 40
 BACKEND_SHA = "b" * 40
+CREATE_REQUEST_ID = "qa-alipay-0123456789abcdef0123456789abcdef"
+OTHER_CREATE_REQUEST_ID = "qa-alipay-fedcba9876543210fedcba9876543210"
 BASELINE_TIMESTAMP = "2026-09-01 01:02:03.123456"
 MAX_IDS = {
     "recharge_order": 100,
@@ -35,6 +37,7 @@ def _config(state_dir: str, evidence_file: str) -> evidence.Config:
         run_started_at=int(time.time()),
         flutter_sha=FLUTTER_SHA,
         backend_sha=BACKEND_SHA,
+        create_request_id=CREATE_REQUEST_ID,
         evidence_file=evidence_file,
         state_dir=state_dir,
         baseline_file=str(Path(state_dir) / "baseline.json"),
@@ -88,6 +91,10 @@ class PhysicalAlipayDbEvidenceContractTest(unittest.TestCase):
             self.assertNotIn(forbidden, script.upper())
         self.assertIn("TRADE_NOT_EXIST", script)
         self.assertIn("TRADE_CLOSED", script)
+        self.assertIn("IFS= read -r create_request_id", script)
+        self.assertIn("column_exists recharge_order \"$column\"", script)
+        self.assertIn("idempotency_key", script)
+        self.assertIn("idempotency_key = '$create_request_id'", script)
 
     def test_real_mysql_wire_markers_parse_in_exact_start_and_collect_order(self) -> None:
         start_output = (
@@ -119,6 +126,36 @@ class PhysicalAlipayDbEvidenceContractTest(unittest.TestCase):
                 "start",
             )
 
+    def test_read_config_requires_valid_create_request_id(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            os.chmod(root, 0o700)
+            resolved_root = str(Path(root).resolve())
+            environment = {
+                "QA_ALIPAY_PHYSICAL_EVIDENCE_PHASE": "start",
+                "QA_ALIPAY_PHYSICAL_SERIAL": SERIAL,
+                "QA_ALIPAY_PHYSICAL_RUN_ID": RUN_ID,
+                "QA_ALIPAY_PHYSICAL_RUN_STARTED_AT": str(int(time.time())),
+                "QA_ALIPAY_PHYSICAL_FLUTTER_SHA": FLUTTER_SHA,
+                "QA_ALIPAY_PHYSICAL_BACKEND_SHA": BACKEND_SHA,
+                "QA_ALIPAY_PHYSICAL_DB_EVIDENCE_FILE": str(Path(resolved_root) / "evidence.json"),
+                "QA_ALIPAY_PHYSICAL_EVIDENCE_STATE_DIR": resolved_root,
+                "QA_ALIPAY_PHYSICAL_MYSQL_CONTAINER": "voice-social-m3-development-mysql-1",
+                "PATH": "/usr/bin:/bin",
+            }
+            with patch.object(
+                evidence, "_resolve_docker", return_value=("docker", {"PATH": "/usr/bin:/bin"})
+            ):
+                with self.assertRaisesRegex(evidence.CollectorError, "CONFIGURATION"):
+                    evidence.read_config(environment)
+                invalid = dict(environment)
+                invalid["QA_ALIPAY_PHYSICAL_CREATE_REQUEST_ID"] = "qa-alipay-NOT-VALID"
+                with self.assertRaisesRegex(evidence.CollectorError, "CONFIGURATION"):
+                    evidence.read_config(invalid)
+                valid = dict(environment)
+                valid["QA_ALIPAY_PHYSICAL_CREATE_REQUEST_ID"] = CREATE_REQUEST_ID
+                config = evidence.read_config(valid)
+            self.assertEqual(config.create_request_id, CREATE_REQUEST_ID)
+
     def test_two_phase_state_and_output_bindings_are_private_and_exact(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             os.chmod(root, 0o700)
@@ -129,6 +166,9 @@ class PhysicalAlipayDbEvidenceContractTest(unittest.TestCase):
             baseline = Path(config.baseline_file)
             self.assertTrue(baseline.is_file())
             self.assertEqual(baseline.stat().st_mode & 0o777, 0o600)
+            baseline_data = baseline.read_text(encoding="utf-8")
+            self.assertIn("createRequestIdSha256", baseline_data)
+            self.assertNotIn(CREATE_REQUEST_ID, baseline_data)
             self.assertFalse(Path(output).exists())
 
             collect_config = evidence.Config(**{**config.__dict__, "phase": "collect"})
@@ -172,6 +212,7 @@ class PhysicalAlipayDbEvidenceContractTest(unittest.TestCase):
             encoded = output_path.read_text(encoding="utf-8")
             self.assertNotIn("order_no", encoded)
             self.assertNotIn("provider_order_id", encoded)
+            self.assertNotIn(CREATE_REQUEST_ID, encoded)
             with self.assertRaises(evidence.CollectorError):
                 evidence.collect(collect_config)
 
@@ -242,6 +283,73 @@ class PhysicalAlipayDbEvidenceContractTest(unittest.TestCase):
                 with self.assertRaisesRegex(evidence.CollectorError, "INVARIANT_VIOLATION"):
                     evidence.collect(collect_config)
             self.assertFalse(Path(output).exists())
+
+    def test_collect_rejects_baseline_bound_to_different_create_request_id(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            os.chmod(root, 0o700)
+            output = str(Path(root) / "evidence.json")
+            config = _config(root, output)
+            with patch.object(evidence, "_run_mysql", return_value=_db_start_result()):
+                evidence.start(config)
+            collect_config = evidence.Config(
+                **{
+                    **config.__dict__,
+                    "phase": "collect",
+                    "create_request_id": OTHER_CREATE_REQUEST_ID,
+                }
+            )
+            with patch.object(evidence, "_run_mysql") as runner:
+                with self.assertRaisesRegex(evidence.CollectorError, "INVALID_BASELINE"):
+                    evidence.collect(collect_config)
+            runner.assert_not_called()
+
+    def test_run_mysql_collect_passes_exact_request_id_over_stdin(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            os.chmod(root, 0o700)
+            config = evidence.Config(
+                **{
+                    **_config(root, str(Path(root) / "evidence.json")).__dict__,
+                    "phase": "collect",
+                }
+            )
+            baseline = evidence._Baseline(
+                BASELINE_TIMESTAMP,
+                MAX_IDS,
+                evidence._sha256(CREATE_REQUEST_ID),
+                False,
+            )
+            completed = type(
+                "Completed",
+                (),
+                {
+                    "returncode": 0,
+                    "stdout": "\n".join(
+                        (
+                            "SCHEMA_OK",
+                            "B|2026-09-01 01:02:03.123456|101|200|300|400|500",
+                            "M|1|1|1|1|0|0|0|0|0|0",
+                            "C|2026-09-01 01:02:03.223456|101|200|300|400|500",
+                            "F|1|1|1|1|0|0|0|0|0|0",
+                            "E|2026-09-01 01:02:04.123456|101|200|300|400|500",
+                            "",
+                        )
+                    ),
+                },
+            )()
+            with patch.object(evidence.subprocess, "run", return_value=completed) as run:
+                evidence._run_mysql(config, "collect", baseline)
+            self.assertEqual(run.call_args.kwargs["input"], "\n".join(
+                (
+                    BASELINE_TIMESTAMP,
+                    "100",
+                    "200",
+                    "300",
+                    "400",
+                    "500",
+                    CREATE_REQUEST_ID,
+                    "",
+                )
+            ))
 
 
 if __name__ == "__main__":

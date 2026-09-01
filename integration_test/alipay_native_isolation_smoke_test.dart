@@ -6,7 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
+import 'package:voice_social_app/core/network/api_client.dart';
+import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
+import 'package:voice_social_app/features/commerce/catalog/data/backend_commerce_catalog_repository.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/alipay_focused_smoke_selection.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/infrastructure/alipay_app_pay_adapter.dart';
@@ -33,7 +36,7 @@ void _marker(String stage, String result) {
 }
 
 void _focusedMarker(String stage, String result) {
-  debugPrint('M5_ALIPAY_FOCUSED::$stage::$result');
+  debugPrint('M5_ALIPAY_FOCUSED::$stage::$result::$_runId');
 }
 
 void _probeMarker(String stage) {
@@ -287,7 +290,7 @@ void main() {
           if (payloadExists || resultExists) {
             throw TestFailure('Native isolation negative gate failed.');
           }
-          _marker('NEGATIVE_GATE', 'PASS');
+          _marker('NEGATIVE_GATE', '$_runId::PASS');
           await tester.pump();
           return;
         }
@@ -302,7 +305,25 @@ void main() {
           throw TestFailure('Persisted account identity missing.');
         }
 
-        final repository = dependencies.commerceCatalogRepository;
+        final ApiClient diagnosticApiClient = ApiClient(
+          baseUri: Uri.parse(dependencies.environment.apiBaseUrl),
+          clientType: dependencies.environment.clientType,
+          clientInnerVersion: dependencies.environment.clientInnerVersion,
+          authorizationProvider: () =>
+              dependencies.sessionManager.authorizationHeader,
+          requestHeadersProvider: () => <String, String>{
+            if (dependencies.environment.oauthClientId.trim().isNotEmpty)
+              'Client-Id': dependencies.environment.oauthClientId,
+          },
+          timeout: dependencies.environment.apiTimeout,
+        );
+        final BackendCommerceCatalogRepository repository =
+            BackendCommerceCatalogRepository(
+              apiClient: diagnosticApiClient,
+              routes: const BackendRouteCatalog(),
+              alipayCreateRequestIdGenerator: () => 'qa-alipay-$_runId',
+              alipayAppPayAdapter: dependencies.alipayAppPayAdapter,
+            );
         final List<RechargeProduct> products = await repository
             .fetchRechargeProducts(platform: ClientStorePlatform.android);
         final RechargeProduct? product =
@@ -338,11 +359,11 @@ void main() {
         _probeMarker('RETURN');
         debugPrint(
           'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=${nativeResult.sdkCompleted ? 1 : 0}::'
-          'resultStatus=${nativeResult.resultStatus ?? 'none'}',
+          'resultStatus=${nativeResult.resultStatus ?? 'none'}::runId=$_runId',
         );
         debugPrint(
           'M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::'
-          '${nativeResult.bridgeOutcome?.wireName ?? 'none'}',
+          '${nativeResult.bridgeOutcome?.wireName ?? 'none'}::runId=$_runId',
         );
 
         final RechargeOrder provisional = createdOrder
@@ -385,7 +406,7 @@ void main() {
         _focusedMarker('complete', 'PASS');
         await tester.pump();
       } catch (_) {
-        _marker('FAIL_STAGE', failureStage);
+        _marker('FAIL_STAGE', '$_runId::stage=$failureStage');
         _focusedMarker('complete', 'FAIL');
         throw TestFailure('Native Alipay isolation evidence incomplete.');
       } finally {

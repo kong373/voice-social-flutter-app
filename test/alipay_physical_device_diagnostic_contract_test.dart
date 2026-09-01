@@ -18,11 +18,12 @@ void main() {
   ).absolute;
 
   const String serial = 'R58PHYSICAL001';
+  const String isolationRunId = '0123456789abcdef0123456789abcdef';
   const String targetPackage = 'com.eg.android.AlipayGphoneRC';
   const String nativeCancel =
-      'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001';
+      'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001::runId=$isolationRunId';
   const String bridgeReturned =
-      'M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned';
+      'M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned::runId=$isolationRunId';
 
   Directory sandbox(String prefix) {
     final Directory value = Directory.systemTemp.createTempSync(prefix);
@@ -146,6 +147,8 @@ esac
         adb.path,
         '--serial',
         selectedSerial,
+        '--isolation-run-id',
+        isolationRunId,
         '--flutter-log',
         log.path,
         '--cashier-timeout',
@@ -328,6 +331,33 @@ esac
     expect(runnerSource, contains('ISOLATION_RUN_ID'));
     expect(runnerSource, contains('PROBE_INVOCATION_ID'));
     expect(runnerSource, contains(r'^[a-f0-9]{32}$'));
+    expect(runnerSource, contains(r'qa-alipay-${ISOLATION_RUN_ID}'));
+    expect(runnerSource, contains('QA_ALIPAY_PHYSICAL_CREATE_REQUEST_ID'));
+    expect(runnerSource, contains('env -i'));
+    expect(runnerSource, contains('OFFICIAL_DB_EVIDENCE_COMMAND'));
+    expect(
+      runnerSource,
+      contains('only the tracked official DB evidence collector is accepted'),
+    );
+    expect(runnerSource, contains(r'archive --format=tar "$FLUTTER_SHA"'));
+    expect(runnerSource, contains('read_exit_status_file'));
+    expect(runnerSource, contains('PHYSICAL_DEVICE_LOCK_ACQUIRED'));
+    expect(runnerSource, contains("lock_parent='/private/tmp'"));
+    expect(runnerSource, contains('resolve_db_docker_runtime'));
+    expect(runnerSource, contains('/opt/homebrew/bin/docker'));
+    expect(
+      runnerSource,
+      isNot(contains('printenv QA_ALIPAY_PHYSICAL_DOCKER_BIN')),
+    );
+    expect(
+      runnerSource,
+      contains('QA_ALIPAY_PHYSICAL_DOCKER_BIN=\${DB_DOCKER_BIN}'),
+    );
+    expect(
+      runnerSource,
+      contains("hook_environment=(env -i 'PATH=/usr/bin:/bin')"),
+    );
+    expect(operatorSource, contains('--isolation-run-id'));
     expect(
       runnerSource,
       contains(
@@ -343,8 +373,18 @@ esac
       operatorSource,
       contains("TARGET_PACKAGE='com.eg.android.AlipayGphoneRC'"),
     );
-    expect(operatorSource, contains(nativeCancel));
-    expect(operatorSource, contains(bridgeReturned));
+    expect(
+      operatorSource,
+      contains(
+        r'EXPECTED_NATIVE_MARKER="${NATIVE_RESULT_PREFIX}sdkCompleted=0::resultStatus=6001::runId=${ISOLATION_RUN_ID}"',
+      ),
+    );
+    expect(
+      operatorSource,
+      contains(
+        r'EXPECTED_BRIDGE_MARKER="${BRIDGE_OUTCOME_PREFIX}pay_task_returned::runId=${ISOLATION_RUN_ID}"',
+      ),
+    );
     expect(runnerSource, contains('MAX_BACK_ATTEMPTS=2'));
     expect(operatorSource, contains('MAX_BACK_ATTEMPTS=2'));
     for (final String field in <String>[
@@ -395,7 +435,11 @@ esac
     );
     expect(
       runnerSource.lastIndexOf('run_db_evidence_hook start'),
-      lessThan(runnerSource.lastIndexOf('adb_get_state')),
+      greaterThan(runnerSource.lastIndexOf('prepare_android_host')),
+    );
+    expect(
+      runnerSource.lastIndexOf('run_db_evidence_hook start'),
+      lessThan(runnerSource.lastIndexOf('run_flutter_target &')),
     );
     expect(
       runnerSource.lastIndexOf('run_db_evidence_hook collect'),

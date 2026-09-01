@@ -12,10 +12,8 @@ readonly TARGET_PACKAGE='com.eg.android.AlipayGphoneRC'
 readonly TARGET_ACTIVITY='MspContainerActivity'
 readonly API_BASE_URL='http://127.0.0.1:18080/'
 readonly REVERSE_SPEC='tcp:18080 tcp:18080'
-readonly EXPECTED_NATIVE_MARKER='M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001'
-readonly EXPECTED_BRIDGE_MARKER='M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned'
-readonly REJECTED_SUCCESS_MARKER='M5_ALIPAY_NATIVE_RESULT::sdkCompleted=1::resultStatus=9000'
-readonly REJECTED_NONE_MARKER='M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=none'
+readonly NATIVE_RESULT_PREFIX='M5_ALIPAY_NATIVE_RESULT::'
+readonly BRIDGE_OUTCOME_PREFIX='M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::'
 readonly DEVICE_UI_DUMP_PATH='/data/local/tmp/voice-social-alipay-physical-diagnostic-ui.xml'
 readonly UI_XML_MAX_BYTES=262144
 readonly MAX_FRESH_UI_DUMP_ATTEMPTS=2
@@ -34,6 +32,8 @@ readonly EXIT_TIMEOUT=70
 SELF_TEST=false
 SERIAL_VALUE=''
 SERIAL_ARG=''
+ISOLATION_RUN_ID=''
+ISOLATION_RUN_ID_ARG=''
 FLUTTER_LOG_PATH=''
 FLUTTER_LOG_ARG=''
 ADB_BIN=''
@@ -48,10 +48,14 @@ SCREEN_WIDTH=0
 SCREEN_HEIGHT=0
 UI_DUMP_LOCAL_PATH=''
 UI_DUMP_ACTIVE=false
+EXPECTED_NATIVE_MARKER=''
+EXPECTED_BRIDGE_MARKER=''
+REJECTED_SUCCESS_MARKER=''
+REJECTED_NONE_MARKER=''
 
 usage() {
   cat <<'USAGE'
-Usage: m5_alipay_physical_device_cancel_operator.sh --serial ID --flutter-log PATH [options]
+Usage: m5_alipay_physical_device_cancel_operator.sh --serial ID --isolation-run-id ID --flutter-log PATH [options]
 
 PHYSICAL_DEVICE_DIAGNOSTIC is a cancellation-only operator for one already
 connected physical Android device.  It does not discover devices and it never
@@ -59,6 +63,7 @@ confirms or submits a payment.
 
 Required:
   --serial ID                 explicit physical-device serial
+  --isolation-run-id ID       exact 32-hex native isolation invocation id
   --flutter-log PATH          absolute private Flutter driver log
 
 Optional bounded controls:
@@ -132,6 +137,19 @@ parse_args() {
         SERIAL_VALUE="${argument#*=}"
         shift
         ;;
+      --isolation-run-id)
+        (($# >= 2)) || fail_configuration 'native isolation run id is missing'
+        [[ -z "$ISOLATION_RUN_ID_ARG" ]] || fail_configuration 'native isolation run id supplied more than once'
+        ISOLATION_RUN_ID_ARG="$2"
+        ISOLATION_RUN_ID="$2"
+        shift 2
+        ;;
+      --isolation-run-id=*)
+        [[ -z "$ISOLATION_RUN_ID_ARG" ]] || fail_configuration 'native isolation run id supplied more than once'
+        ISOLATION_RUN_ID_ARG="${argument#*=}"
+        ISOLATION_RUN_ID="${argument#*=}"
+        shift
+        ;;
       --flutter-log|--flutter-log-path|--log-path)
         (($# >= 2)) || fail_configuration 'Flutter log path is missing'
         [[ -z "$FLUTTER_LOG_ARG" ]] || fail_configuration 'Flutter log path supplied more than once'
@@ -196,6 +214,15 @@ validate_serial() {
     "$ANDROID_SERIAL" != "$SERIAL_VALUE" ]]; then
     fail_configuration 'ANDROID_SERIAL disagrees with --serial'
   fi
+}
+
+initialize_bound_markers() {
+  [[ "$ISOLATION_RUN_ID" =~ ^[a-f0-9]{32}$ ]] ||
+    fail_configuration '--isolation-run-id must be exactly 32 lowercase hex characters'
+  EXPECTED_NATIVE_MARKER="${NATIVE_RESULT_PREFIX}sdkCompleted=0::resultStatus=6001::runId=${ISOLATION_RUN_ID}"
+  EXPECTED_BRIDGE_MARKER="${BRIDGE_OUTCOME_PREFIX}pay_task_returned::runId=${ISOLATION_RUN_ID}"
+  REJECTED_SUCCESS_MARKER="${NATIVE_RESULT_PREFIX}sdkCompleted=1::resultStatus=9000::runId=${ISOLATION_RUN_ID}"
+  REJECTED_NONE_MARKER="${NATIVE_RESULT_PREFIX}sdkCompleted=0::resultStatus=none::runId=${ISOLATION_RUN_ID}"
 }
 
 validate_log_path() {
@@ -541,10 +568,6 @@ scan_marker_stream() {
     }
     {
       line = $0
-      if (line ~ /^[VDIWEF]\/flutter \([[:space:]]*[0-9]+\): M5_ALIPAY_NATIVE_RESULT::/ ||
-          line ~ /^[VDIWEF]\/flutter \([[:space:]]*[0-9]+\): M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::/) {
-        sub(/^[VDIWEF]\/flutter \([[:space:]]*[0-9]+\): /, "", line)
-      }
       if (line ~ /^M5_ALIPAY_NATIVE_RESULT::/ || line ~ /^M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::/) inspect(line)
     }
   '
@@ -659,6 +682,8 @@ operator_self_test() {
     [[ "$REVERSE_SPEC" == 'tcp:18080 tcp:18080' ]] || exit 1
     root="$(mktemp -d /tmp/voice-social-alipay-physical-operator-self-test.XXXXXX)"
     trap 'rm -rf -- "$root"' EXIT
+    ISOLATION_RUN_ID='0123456789abcdef0123456789abcdef'
+    initialize_bound_markers
     log="$root/flutter.log"
     : >"$log"
     FLUTTER_LOG_PATH="$log"
@@ -700,6 +725,8 @@ main() {
     exit 0
   fi
   validate_serial
+  [[ -n "$ISOLATION_RUN_ID_ARG" ]] || fail_configuration '--isolation-run-id is required'
+  initialize_bound_markers
   validate_log_path
   validate_bounds
   resolve_adb
