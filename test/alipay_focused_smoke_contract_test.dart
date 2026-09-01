@@ -449,6 +449,21 @@ void main() {
     expect(source, contains('queryRechargeOrder'));
     expect(source, contains('M5_ALIPAY_NATIVE_RESULT::'));
     expect(source, contains('M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::'));
+    final int rejectedCancellation = source.indexOf(
+      'if (!trustedCancellation)',
+    );
+    final int failureReconcile = source.indexOf(
+      'await repository.queryRechargeOrder(provisional);',
+      rejectedCancellation,
+    );
+    final int rejectedFailure = source.indexOf(
+      'The native PayTask cancellation marker was rejected.',
+      rejectedCancellation,
+    );
+    expect(rejectedCancellation, greaterThan(-1));
+    expect(failureReconcile, greaterThan(rejectedCancellation));
+    expect(rejectedFailure, greaterThan(failureReconcile));
+    expect(source, contains("nativeResult.resultStatus != '9000'"));
     expect(source, isNot(contains('sendSmsCode')));
     expect(source, isNot(contains('signInWithSms')));
     expect(source, isNot(contains('ENABLE_TENCENT_IM=true')));

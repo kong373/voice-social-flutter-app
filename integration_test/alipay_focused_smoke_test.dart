@@ -108,6 +108,16 @@ void main() {
         _probeInvocationMarker('RETURN');
         _nativeResultMarker(nativeResult);
 
+        final RechargeOrder provisional = order
+            .copyWith(state: RechargeOrderState.confirming)
+            .withNativeBridgeResult(
+              sdkCompleted: nativeResult.sdkCompleted,
+              resultStatus: nativeResult.resultStatus,
+              outcome: nativeResult.outcome.name,
+              reason: nativeResult.reason.name,
+              bridgeOutcome: nativeResult.bridgeOutcome?.wireName,
+            );
+
         // This is deliberately a cancellation-only lane. A 9000 result,
         // sdkCompleted=true, missing status, timeout, or any other bridge
         // outcome fails closed and is never treated as payment success.
@@ -118,21 +128,26 @@ void main() {
             nativeResult.reason == AlipayAppPayReason.userCanceled &&
             nativeResult.bridgeOutcome?.wireName == _expectedBridgeOutcome;
         if (!trustedCancellation) {
+          // CONFIG_ERROR, a watchdog timeout, and other explicit non-success
+          // outcomes still require an authority pass for this exact order.
+          // This never enters the cancellation mutation because the bridge
+          // evidence is not 6001/pay_task_returned.  A native 9000 remains
+          // outside this cancellation-only diagnostic and is not reconciled
+          // here without the separate success approval lane.
+          if (!nativeResult.sdkCompleted &&
+              nativeResult.resultStatus != '9000') {
+            try {
+              await repository.queryRechargeOrder(provisional);
+              _focusedMarker('query_reconcile', 'PASS');
+            } catch (_) {
+              _focusedMarker('query_reconcile', 'FAIL');
+            }
+          }
           throw TestFailure(
             'The native PayTask cancellation marker was rejected.',
           );
         }
         _focusedMarker('native_launcher', 'PASS');
-
-        final RechargeOrder provisional = order
-            .copyWith(state: RechargeOrderState.confirming)
-            .withNativeBridgeResult(
-              sdkCompleted: nativeResult.sdkCompleted,
-              resultStatus: nativeResult.resultStatus,
-              outcome: nativeResult.outcome.name,
-              reason: nativeResult.reason.name,
-              bridgeOutcome: nativeResult.bridgeOutcome?.wireName,
-            );
         final RechargeOrder authoritative = await repository.queryRechargeOrder(
           provisional,
         );
