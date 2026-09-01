@@ -198,15 +198,48 @@ elif command == "uiautomator":
     elif len(args) >= 2 and args[1] == "runtest":
         if os.environ.get("FAKE_HELPER_FAIL") == "1":
             raise SystemExit(97)
-        tap_file = pathlib.Path(os.environ["FAKE_TAPS"])
-        count = int(tap_file.read_text()) + 1
-        tap_file.write_text(str(count))
-        marker_file = pathlib.Path(os.environ["FAKE_MARKERS"])
-        markers = marker_file.read_text()
-        if markers:
-            with pathlib.Path(os.environ["FAKE_LOG"]).open("a") as output:
-                output.write(markers + "\\n")
-        print("ALIPAY_ATOMIC_DIALOG_PROBE::DISMISS_CLICKED")
+        verify = any("#testVerifyConfigError" in value for value in args)
+        mode = os.environ.get(
+            "FAKE_VERIFY_MODE" if verify else "FAKE_CLICK_MODE",
+            "ok",
+        )
+        if not verify:
+            tap_file = pathlib.Path(os.environ["FAKE_TAPS"])
+            count = int(tap_file.read_text()) + 1
+            tap_file.write_text(str(count))
+            marker_file = pathlib.Path(os.environ["FAKE_MARKERS"])
+            markers = marker_file.read_text()
+            if markers:
+                with pathlib.Path(os.environ["FAKE_LOG"]).open("a") as output:
+                    output.write(markers + "\\n")
+        marker = (
+            "ALIPAY_ATOMIC_DIALOG_PROBE::VERIFY_PASSED"
+            if verify
+            else "ALIPAY_ATOMIC_DIALOG_PROBE::DISMISS_CLICKED"
+        )
+        def emit(value):
+            if mode == "carrier":
+                print("INSTRUMENTATION_STATUS: stream=" + value, file=sys.stderr)
+            else:
+                print(value, file=sys.stderr)
+        if mode == "missing":
+            emit("OK (1 test)")
+        elif mode == "duplicate":
+            emit(marker)
+            emit(marker)
+            emit("OK (1 test)")
+        elif mode == "rc0-junit-failure":
+            emit(marker)
+            emit("FAILURES!!!")
+            emit("INSTRUMENTATION_STATUS_CODE: -1")
+        elif mode == "nonzero-success":
+            emit(marker)
+            emit("OK (1 test)")
+            raise SystemExit(7)
+        else:
+            # Java System.out from the real helper is observed on stderr.
+            emit(marker)
+            emit("OK (1 test)")
     else:
         raise SystemExit(96)
 elif command == "cat":
@@ -228,11 +261,15 @@ else:
     String? startedFile,
     String? releaseFile,
     bool helperFail = false,
+    String verifyMode = 'ok',
+    String clickMode = 'ok',
   }) {
     final String inheritedPath =
         Platform.environment['PATH'] ?? '/usr/bin:/bin';
     return <String, String>{
       'PATH': inheritedPath,
+      'FAKE_VERIFY_MODE': verifyMode,
+      'FAKE_CLICK_MODE': clickMode,
       'FAKE_LOG': logPath ?? '${root.path}/flutter.log',
       'FAKE_CALLS': callsPath ?? '${root.path}/adb.calls',
       'FAKE_TAPS': '${root.path}/tap.count',
@@ -287,6 +324,8 @@ else:
     String selectedSerial = serial,
     int markerTimeout = 1,
     bool helperFail = false,
+    String verifyMode = 'ok',
+    String clickMode = 'ok',
   }) {
     final File log = File('${root.path}/flutter.log')
       ..writeAsStringSync(logContents);
@@ -303,7 +342,13 @@ else:
       '/bin/bash',
       args,
       environment: <String, String>{
-        ...fakeEnvironment(root, logPath: log.path, helperFail: helperFail),
+        ...fakeEnvironment(
+          root,
+          logPath: log.path,
+          helperFail: helperFail,
+          verifyMode: verifyMode,
+          clickMode: clickMode,
+        ),
         if (androidSerial != null) 'ANDROID_SERIAL': androidSerial,
       },
       includeParentEnvironment: false,
@@ -330,6 +375,11 @@ else:
     expect(source, contains('--invocation-id'));
     expect(source, contains(r'git -C "$PROJECT_ROOT" diff --quiet HEAD'));
     expect(source, contains('build_alipay_atomic_dialog_helper.sh'));
+    expect(source, contains('ATOMIC_VERIFY_HELPER_CLASS'));
+    expect(source, contains('testVerifyConfigError'));
+    expect(source, contains('DIALOG_VERIFY_PASSED'));
+    expect(source, contains('validate_atomic_helper_output'));
+    expect(source, contains('2>&1'));
     expect(source, isNot(contains('--atomic-helper-jar')));
     expect(source, contains('CLICK_COUNT=0'));
     expect(source, contains(bridgeMarker));
@@ -370,6 +420,8 @@ else:
       expect(javaSource, contains('device.getCurrentPackageName()'));
       expect(javaSource, contains('device.getCurrentActivityName()'));
       expect(javaSource, contains('人气太旺啦，稍候再试试。(6)'));
+      expect(javaSource, contains('testVerifyConfigError'));
+      expect(javaSource, contains('VERIFY_PASSED'));
       expect(javaSource, contains('className("android.widget.Button")'));
       expect(javaSource, contains('classNameMatches'));
       expect(javaSource, contains('clickable(true)'));
@@ -419,9 +471,12 @@ else:
           '$packageName/com.alipay.android.msp.ui.views.MspContainerActivity',
         ),
       ],
+      verifyMode: 'carrier',
+      clickMode: 'carrier',
     );
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     expect(result.stdout, contains('ERROR_DIALOG_MATCHED'));
+    expect(result.stdout, contains('DIALOG_VERIFY_PASSED'));
     expect(result.stdout, contains('DISMISS_BUTTON_TAPPED::count=1'));
     expect(result.stdout, contains('resultStatus=4000'));
     expect(result.stdout, contains('PASS'));
@@ -438,6 +493,78 @@ else:
     expect(tapIndex, calls.length - 1);
     expect(calls.join('\n'), isNot(contains('input keyevent')));
   });
+
+  test('verify helper requires stderr marker and a clean JUnit summary', () {
+    for (final String mode in <String>[
+      'missing',
+      'duplicate',
+      'rc0-junit-failure',
+    ]) {
+      final Directory root = sandbox('alipay-error-dialog-verify-$mode-');
+      final ProcessResult result = runProbe(
+        root,
+        uiFrames: <String>[validUi()],
+        activityFrames: <String>[
+          activityFor(
+            '$packageName/com.alipay.android.msp.ui.views.MspContainerActivity',
+          ),
+        ],
+        verifyMode: mode,
+        markerTimeout: 0,
+      );
+      expect(
+        result.exitCode,
+        isNonZero,
+        reason: '${result.stdout}\n${result.stderr}',
+      );
+      expect(File('${root.path}/tap.count').readAsStringSync(), '0');
+      final List<String> calls = File(
+        '${root.path}/adb.calls',
+      ).readAsLinesSync();
+      expect(
+        calls.where((String line) => line.contains('testVerifyConfigError')),
+        isNotEmpty,
+      );
+      expect(
+        calls.where((String line) => line.contains('testDismissConfigError')),
+        isEmpty,
+      );
+    }
+  });
+
+  test(
+    'click helper marker is strict and no adb call follows the click attempt',
+    () {
+      for (final String mode in <String>['missing', 'duplicate']) {
+        final Directory root = sandbox('alipay-error-dialog-click-$mode-');
+        final ProcessResult result = runProbe(
+          root,
+          uiFrames: <String>[validUi()],
+          activityFrames: <String>[
+            activityFor(
+              '$packageName/com.alipay.android.msp.ui.views.MspContainerActivity',
+            ),
+          ],
+          clickMode: mode,
+          markerTimeout: 0,
+        );
+        expect(
+          result.exitCode,
+          isNonZero,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+        expect(File('${root.path}/tap.count').readAsStringSync(), '1');
+        final List<String> calls = File(
+          '${root.path}/adb.calls',
+        ).readAsLinesSync();
+        final int clickIndex = calls.lastIndexWhere(
+          (String line) => line.contains('testDismissConfigError'),
+        );
+        expect(clickIndex, greaterThanOrEqualTo(0));
+        expect(clickIndex, calls.length - 1);
+      }
+    },
+  );
 
   test(
     'strict tree rejects text/content-desc normalization and unsafe surfaces',

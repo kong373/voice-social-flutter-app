@@ -28,6 +28,8 @@ public final class AlipayConfigErrorDismissTest extends UiAutomatorTestCase {
             "^(?!com\\.eg\\.android\\.AlipayGphoneRC$).+$";
     private static final String PASS_MARKER =
             "ALIPAY_ATOMIC_DIALOG_PROBE::DISMISS_CLICKED";
+    private static final String VERIFY_PASS_MARKER =
+            "ALIPAY_ATOMIC_DIALOG_PROBE::VERIFY_PASSED";
 
     private static final String[] DANGEROUS_TEXT = {
         "支付", "付款", "充值", "密码", "验证码", "银行卡", "余额",
@@ -300,5 +302,18 @@ public final class AlipayConfigErrorDismissTest extends UiAutomatorTestCase {
                 second.rotation, device.getDisplayRotation());
         assertTrue("atomic dismiss action failed", actionButton.click());
         System.out.println(PASS_MARKER);
+    }
+
+    /**
+     * Read-only preflight for the same exact dialog relation used by the
+     * action test. This intentionally resolves the object but never clicks,
+     * types, swipes, or sends a key event.
+     */
+    public void testVerifyConfigError() throws Exception {
+        UiDevice device = getUiDevice();
+        device.setCompressedLayoutHeirarchy(false);
+        device.waitForIdle(1000);
+        verifyAndResolveButton(device);
+        System.out.println(VERIFY_PASS_MARKER);
     }
 }

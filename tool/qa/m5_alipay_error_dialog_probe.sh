@@ -29,7 +29,9 @@ readonly EXPECTED_BRIDGE_MARKER='M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_retur
 readonly EXPECTED_LAUNCH_MARKER='M5_ALIPAY_FOCUSED::native_launcher::START'
 readonly INVOCATION_MARKER_PREFIX='M5_ALIPAY_PROBE_INVOCATION'
 readonly ATOMIC_HELPER_MARKER='ALIPAY_ATOMIC_DIALOG_PROBE::DISMISS_CLICKED'
+readonly ATOMIC_VERIFY_HELPER_MARKER='ALIPAY_ATOMIC_DIALOG_PROBE::VERIFY_PASSED'
 readonly ATOMIC_HELPER_CLASS='com.kong373.voicesocial.qa.AlipayConfigErrorDismissTest#testDismissConfigError'
+readonly ATOMIC_VERIFY_HELPER_CLASS='com.kong373.voicesocial.qa.AlipayConfigErrorDismissTest#testVerifyConfigError'
 readonly DEVICE_HELPER_PATH='/data/local/tmp/voice-social-alipay-atomic-dialog-helper.jar'
 
 SELF_TEST=false
@@ -867,6 +869,57 @@ wait_for_paytask_return() {
   fail_timeout 'PayTask return markers were not observed'
 }
 
+validate_atomic_helper_output() {
+  local output="$1" expected_marker="$2" phase="$3"
+  local normalized marker_count summary_count failure_count
+  # UiAutomator writes the complete JUnit report and Java System.out to the
+  # remote stderr stream. Normalize only CRLF; never print or persist the
+  # report because it can contain vendor diagnostics outside this allowlist.
+  normalized="$(printf '%s\n' "$output" | tr -d '\r')"
+  failure_count="$(printf '%s\n' "$normalized" | grep -Eic \
+    '(^|[^[:alnum:]_])(FAILURES!!!|FAILURES|Failure|INSTRUMENTATION_FAILED|Exception|Throwable|AssertionError|Stack trace)([^[:alnum:]_]|$)|INSTRUMENTATION_STATUS_CODE:[[:space:]]*-[0-9]+' || true)"
+  [[ "$failure_count" == 0 ]] ||
+    fail_device "atomic UiAutomator $phase report contains a failure"
+  # UiAutomator may carry Java System.out through an exact instrumentation
+  # stream line instead of emitting a bare line. Accept only those two
+  # complete-line forms; never substring-match a stack trace or arbitrary
+  # diagnostic text.
+  marker_count="$(printf '%s\n' "$normalized" | awk -v expected="$expected_marker" '
+    {
+      if ($0 == expected) count++
+      else if (index($0, "INSTRUMENTATION_STATUS: stream=") == 1 &&
+          substr($0, length("INSTRUMENTATION_STATUS: stream=") + 1) == expected) count++
+    }
+    END { print count + 0 }
+  ')"
+  [[ "$marker_count" == 1 ]] ||
+    fail_device "atomic UiAutomator $phase marker is missing or duplicated"
+  summary_count="$(printf '%s\n' "$normalized" | awk '
+    {
+      if ($0 == "OK (1 test)") count++
+      else if (index($0, "INSTRUMENTATION_STATUS: stream=") == 1 &&
+          substr($0, length("INSTRUMENTATION_STATUS: stream=") + 1) == "OK (1 test)") count++
+    }
+    END { print count + 0 }
+  ')"
+  [[ "$summary_count" == 1 ]] ||
+    fail_device "atomic UiAutomator $phase success summary is missing or duplicated"
+}
+
+invoke_verify_helper() {
+  local output='' status=0
+  set +e
+  output="$("$ADB_BIN" -s "$SERIAL_VALUE" shell uiautomator runtest \
+    "$DEVICE_HELPER_PATH" -c "$ATOMIC_VERIFY_HELPER_CLASS" 2>&1)"
+  status=$?
+  set -e
+  # Parse the merged stream before considering rc: runtest can return zero
+  # while reporting a failed JUnit invocation.
+  validate_atomic_helper_output "$output" "$ATOMIC_VERIFY_HELPER_MARKER" 'verify'
+  [[ "$status" -eq 0 ]] || fail_device 'atomic UiAutomator verify helper exited unsuccessfully'
+  audit 'DIALOG_VERIFY_PASSED'
+}
+
 invoke_atomic_helper() {
   local output='' status=0 marker_count=''
   (( CLICK_COUNT == 0 )) || fail_device 'dismiss action budget already consumed'
@@ -877,12 +930,13 @@ invoke_atomic_helper() {
   TAP_COMPLETED=true
   set +e
   output="$("$ADB_BIN" -s "$SERIAL_VALUE" shell uiautomator runtest \
-    "$DEVICE_HELPER_PATH" -c "$ATOMIC_HELPER_CLASS" 2>/dev/null)"
+    "$DEVICE_HELPER_PATH" -c "$ATOMIC_HELPER_CLASS" 2>&1)"
   status=$?
   set -e
-  [[ "$status" -eq 0 ]] || fail_device 'atomic UiAutomator helper rejected the dialog'
-  marker_count="$(printf '%s\n' "$output" | grep -Fxc -- "$ATOMIC_HELPER_MARKER" || true)"
-  [[ "$marker_count" == 1 ]] || fail_device 'atomic UiAutomator helper marker is missing or duplicated'
+  # The helper's click is the final device operation. Validate the already
+  # captured merged output locally; no adb command follows this invocation.
+  validate_atomic_helper_output "$output" "$ATOMIC_HELPER_MARKER" 'click'
+  [[ "$status" -eq 0 ]] || fail_device 'atomic UiAutomator helper exited unsuccessfully'
   CLICK_COUNT=1
   audit 'DISMISS_BUTTON_TAPPED::count=1'
 }
@@ -942,9 +996,16 @@ main() {
   # still revalidates the live accessibility objects immediately before click.
   build_atomic_helper
   prepare_atomic_helper
-  record_marker_baseline
-  assert_no_marker_before_tap
-  invoke_atomic_helper
+    record_marker_baseline
+    assert_no_marker_before_tap
+    invoke_verify_helper
+    assert_no_marker_before_tap
+    # Re-snapshot the live foreground and UI after the read-only device-side
+    # verification. The click helper is launched only after this fresh,
+    # stable host-side check passes.
+    stabilize_before_tap
+    assert_no_marker_before_tap
+    invoke_atomic_helper
   # No device operation occurs after the tap; only the private Flutter log is read.
   wait_for_paytask_return
   audit 'PASS'
