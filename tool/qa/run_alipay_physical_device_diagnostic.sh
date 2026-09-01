@@ -60,6 +60,7 @@ DB_EVIDENCE_COMMAND_ARG=''
 DB_EVIDENCE_STATE_DIR=''
 DB_DOCKER_BIN=''
 DB_DOCKER_SOCKET=''
+DB_PYTHON_BIN=''
 PUBLIC_OAUTH_CLIENT_ID="$(printenv QA_OAUTH_CLIENT_ID || true)"
 PRE_LAUNCH_TIMEOUT_SECONDS="$DEFAULT_PRE_LAUNCH_TIMEOUT_SECONDS"
 POST_LAUNCH_TIMEOUT_SECONDS="$DEFAULT_POST_LAUNCH_TIMEOUT_SECONDS"
@@ -486,6 +487,42 @@ PY
   DB_DOCKER_SOCKET="$endpoint"
 }
 
+resolve_db_python_runtime() {
+  local candidate='' canonical trusted_candidate
+  for trusted_candidate in \
+    /opt/homebrew/bin/python3 \
+    /usr/local/bin/python3 \
+    /usr/bin/python3; do
+    if [[ -x "$trusted_candidate" ]]; then
+      candidate="$trusted_candidate"
+      canonical="$(/usr/bin/python3 - "$candidate" <<'PY'
+import os
+import stat
+import sys
+from pathlib import Path
+
+try:
+    path = Path(sys.argv[1]).resolve(strict=True)
+    metadata = path.lstat()
+except (OSError, RuntimeError):
+    raise SystemExit(1)
+if not path.is_absolute() or not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+    raise SystemExit(1)
+if not os.access(path, os.X_OK):
+    raise SystemExit(1)
+print(path)
+PY
+)" || continue
+      if "$canonical" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' \
+        >/dev/null 2>&1; then
+        DB_PYTHON_BIN="$canonical"
+        return 0
+      fi
+    fi
+  done
+  fail_configuration 'trusted Python 3.10 or newer is unavailable for DB evidence'
+}
+
 create_safe_directory() {
   if [[ -z "$ARTIFACT_DIR_ARG" ]]; then
     ARTIFACT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/voice-social-alipay-physical.XXXXXX")" || fail_configuration 'artifact directory could not be created'
@@ -780,8 +817,8 @@ run_db_evidence_hook() {
     hook_environment+=("QA_MYSQL_CONTAINER=${QA_MYSQL_CONTAINER}")
   [[ -z "${MYSQL_CONTAINER:-}" ]] ||
     hook_environment+=("MYSQL_CONTAINER=${MYSQL_CONTAINER}")
-  [[ -n "$DB_DOCKER_BIN" && -n "$DB_DOCKER_SOCKET" ]] ||
-    fail_configuration 'pinned Docker runtime is unavailable'
+  [[ -n "$DB_DOCKER_BIN" && -n "$DB_DOCKER_SOCKET" && -n "$DB_PYTHON_BIN" ]] ||
+    fail_configuration 'pinned DB evidence runtime is unavailable'
   hook_environment+=("QA_ALIPAY_PHYSICAL_DOCKER_BIN=${DB_DOCKER_BIN}")
   hook_environment+=("QA_DOCKER_SOCKET=${DB_DOCKER_SOCKET}")
   # The start phase must record a private DB UTC_TIMESTAMP(6) plus MAX(id)
@@ -804,7 +841,7 @@ run_db_evidence_hook() {
     QA_ALIPAY_PHYSICAL_EVIDENCE_STATE_DIR="$DB_EVIDENCE_STATE_DIR" \
     QA_ALIPAY_PHYSICAL_EVIDENCE_BASELINE_FILE="$DB_EVIDENCE_STATE_DIR/baseline.json" \
     QA_ALIPAY_PHYSICAL_EVIDENCE_SCHEMA="$PHYSICAL_EVIDENCE_SCHEMA" \
-    "$DB_EVIDENCE_COMMAND" >/dev/null 2>&1
+    "$DB_PYTHON_BIN" "$DB_EVIDENCE_COMMAND" >/dev/null 2>&1
   status=$?
   set -e
   [[ "$status" -eq 0 ]] || {
@@ -1363,6 +1400,7 @@ self_test() {
     mkdir -m 700 "$DB_EVIDENCE_STATE_DIR"
     DB_DOCKER_BIN='/usr/bin/true'
     DB_DOCKER_SOCKET='unix:///private/tmp/voice-social-self-test.sock'
+    DB_PYTHON_BIN='/usr/bin/env'
     DB_EVIDENCE_COMMAND="$root/evidence-hook.sh"
     printf '%s\n' \
       '#!/usr/bin/env bash' \
@@ -1567,6 +1605,7 @@ require_public_oauth_client_id
 [[ -f "$PROJECT_ROOT/pubspec.yaml" && -f "$PROJECT_ROOT/$INTEGRATION_TARGET" && -f "$PROJECT_ROOT/$DRIVER_TARGET" ]] || fail_configuration 'physical Flutter target is missing'
 resolve_commands
 resolve_db_docker_runtime
+resolve_db_python_runtime
 create_safe_directory
 FLUTTER_LOG_PATH="$ARTIFACT_DIR/flutter-drive.log"
 FLUTTER_STATUS_PATH="$ARTIFACT_DIR/flutter-drive.status"

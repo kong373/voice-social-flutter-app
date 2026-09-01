@@ -344,6 +344,8 @@ esac
     expect(runnerSource, contains('PHYSICAL_DEVICE_LOCK_ACQUIRED'));
     expect(runnerSource, contains("lock_parent='/private/tmp'"));
     expect(runnerSource, contains('resolve_db_docker_runtime'));
+    expect(runnerSource, contains('resolve_db_python_runtime'));
+    expect(runnerSource, contains('sys.version_info >= (3, 10)'));
     expect(runnerSource, contains('/opt/homebrew/bin/docker'));
     expect(
       runnerSource,
@@ -353,6 +355,7 @@ esac
       runnerSource,
       contains('QA_ALIPAY_PHYSICAL_DOCKER_BIN=\${DB_DOCKER_BIN}'),
     );
+    expect(runnerSource, contains(r'"$DB_PYTHON_BIN" "$DB_EVIDENCE_COMMAND"'));
     expect(
       runnerSource,
       contains("hook_environment=(env -i 'PATH=/usr/bin:/bin')"),
