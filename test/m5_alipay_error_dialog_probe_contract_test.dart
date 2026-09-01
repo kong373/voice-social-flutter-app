@@ -5,16 +5,23 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final File probe = File('tool/qa/m5_alipay_error_dialog_probe.sh').absolute;
   final File builder = File(
-    'tool/qa/build_alipay_atomic_dialog_helper.sh',
+    'tool/qa/build_alipay_androidx_dialog_helper.sh',
   ).absolute;
   final File helperSource = File(
-    'tool/qa/alipay_atomic_dialog/AlipayConfigErrorDismissTest.java',
+    'tool/qa/alipay_androidx_dialog_helper/helper/src/androidTest/java/'
+    'com/kong373/voicesocial/qa/AlipayConfigErrorDismissTest.java',
+  ).absolute;
+  final Directory helperProject = Directory(
+    'tool/qa/alipay_androidx_dialog_helper',
   ).absolute;
   final File focusedTarget = File(
     'integration_test/alipay_focused_smoke_test.dart',
   ).absolute;
   const String serial = 'R58PHYSICAL001';
   const String packageName = 'com.eg.android.AlipayGphoneRC';
+  const String helperApplicationId = 'com.kong373.voicesocial.qa.alipayhelper';
+  const String helperTestPackage =
+      'com.kong373.voicesocial.qa.alipayhelper.test';
   const String bridgeMarker =
       'M5_ALIPAY_NATIVE_BRIDGE_OUTCOME::pay_task_returned';
   const String nativeMarker =
@@ -31,9 +38,27 @@ void main() {
       Platform.environment['ANDROID_SDK_ROOT'] ??
       Platform.environment['ANDROID_HOME'] ??
       '/Users/kongzheng/Library/Android/sdk';
-  final String javaHome = Directory(
-    Platform.environment['JAVA_HOME'] ?? '/usr',
-  ).resolveSymbolicLinksSync();
+  final String javaHome =
+      <String>[
+        '/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home',
+        if (Platform.environment['JAVA_HOME'] != null)
+          Platform.environment['JAVA_HOME']!,
+      ].firstWhere(
+        (String candidate) {
+          final File java = File('$candidate/bin/java');
+          if (!java.existsSync()) return false;
+          final ProcessResult version = Process.runSync(java.path, <String>[
+            '-version',
+          ]);
+          final String output = '${version.stdout}\n${version.stderr}';
+          return version.exitCode == 0 && output.contains('version "21.');
+        },
+        orElse: () {
+          throw StateError(
+            'Java 21 home is unavailable for the helper contract',
+          );
+        },
+      );
 
   Directory sandbox(String prefix) {
     final Directory value = Directory.systemTemp.createTempSync(prefix);
@@ -157,8 +182,8 @@ if args[0] == "get-state":
             time.sleep(0.01)
     print("device")
     raise SystemExit(0)
-if args[0] == "push":
-    if len(args) != 3 or not pathlib.Path(args[1]).is_file():
+if args[0] == "install":
+    if len(args) != 3 or args[1] != "-r" or not pathlib.Path(args[2]).is_file():
         raise SystemExit(93)
     raise SystemExit(0)
 if args[0] != "shell":
@@ -196,52 +221,58 @@ elif command == "uiautomator":
         pathlib.Path(os.environ["FAKE_REMOTE_UI"]).write_text(frame.read_text())
         count.write_text(str(index + 1))
     elif len(args) >= 2 and args[1] == "runtest":
-        if os.environ.get("FAKE_HELPER_FAIL") == "1":
-            raise SystemExit(97)
-        verify = any("#testVerifyConfigError" in value for value in args)
-        mode = os.environ.get(
-            "FAKE_VERIFY_MODE" if verify else "FAKE_CLICK_MODE",
-            "ok",
-        )
-        if not verify:
-            tap_file = pathlib.Path(os.environ["FAKE_TAPS"])
-            count = int(tap_file.read_text()) + 1
-            tap_file.write_text(str(count))
-            marker_file = pathlib.Path(os.environ["FAKE_MARKERS"])
-            markers = marker_file.read_text()
-            if markers:
-                with pathlib.Path(os.environ["FAKE_LOG"]).open("a") as output:
-                    output.write(markers + "\\n")
-        marker = (
-            "ALIPAY_ATOMIC_DIALOG_PROBE::VERIFY_PASSED"
-            if verify
-            else "ALIPAY_ATOMIC_DIALOG_PROBE::DISMISS_CLICKED"
-        )
-        def emit(value):
-            if mode == "carrier":
-                print("INSTRUMENTATION_STATUS: stream=" + value, file=sys.stderr)
-            else:
-                print(value, file=sys.stderr)
-        if mode == "missing":
-            emit("OK (1 test)")
-        elif mode == "duplicate":
-            emit(marker)
-            emit(marker)
-            emit("OK (1 test)")
-        elif mode == "rc0-junit-failure":
-            emit(marker)
-            emit("FAILURES!!!")
-            emit("INSTRUMENTATION_STATUS_CODE: -1")
-        elif mode == "nonzero-success":
-            emit(marker)
-            emit("OK (1 test)")
-            raise SystemExit(7)
-        else:
-            # Java System.out from the real helper is observed on stderr.
-            emit(marker)
-            emit("OK (1 test)")
+        raise SystemExit(96)
     else:
         raise SystemExit(96)
+elif command == "am" and len(args) >= 2 and args[1] == "instrument":
+    if os.environ.get("FAKE_HELPER_FAIL") == "1":
+        raise SystemExit(97)
+    verify = any("#testVerifyConfigError" in value for value in args)
+    mode = os.environ.get(
+        "FAKE_VERIFY_MODE" if verify else "FAKE_CLICK_MODE",
+        "ok",
+    )
+    if not verify:
+        tap_file = pathlib.Path(os.environ["FAKE_TAPS"])
+        count = int(tap_file.read_text()) + 1
+        tap_file.write_text(str(count))
+        marker_file = pathlib.Path(os.environ["FAKE_MARKERS"])
+        markers = marker_file.read_text()
+        if markers:
+            with pathlib.Path(os.environ["FAKE_LOG"]).open("a") as output:
+                output.write(markers + "\\n")
+    marker = (
+        "ALIPAY_ATOMIC_DIALOG_PROBE::VERIFY_PASSED"
+        if verify
+        else "ALIPAY_ATOMIC_DIALOG_PROBE::DISMISS_CLICKED"
+    )
+    def emit(value):
+        if mode == "carrier":
+            print("INSTRUMENTATION_STATUS: stream=" + value, file=sys.stderr)
+        else:
+            print(value, file=sys.stderr)
+    if mode == "missing":
+        emit("OK (1 test)")
+    elif mode == "duplicate":
+        emit(marker)
+        emit(marker)
+        emit("OK (1 test)")
+    elif mode == "rc0-junit-failure":
+        emit(marker)
+        emit("FAILURES!!!")
+        emit("INSTRUMENTATION_STATUS_CODE: -2")
+        print("INSTRUMENTATION_CODE: 0", file=sys.stderr)
+    elif mode == "nonzero-success":
+        emit(marker)
+        emit("OK (1 test)")
+        print("INSTRUMENTATION_CODE: -1", file=sys.stderr)
+        raise SystemExit(7)
+    else:
+        # The helper emits its bounded marker as instrumentation status. A
+        # successful AndroidJUnitRunner terminal code is Activity.RESULT_OK.
+        emit(marker)
+        emit("OK (1 test)")
+        print("INSTRUMENTATION_CODE: -1", file=sys.stderr)
 elif command == "cat":
     print(pathlib.Path(os.environ["FAKE_REMOTE_UI"]).read_text(), end="")
 elif command in ("chmod", "rm"):
@@ -369,16 +400,16 @@ else:
     expect(source, contains("TARGET_PACKAGE='com.eg.android.AlipayGphoneRC'"));
     expect(source, contains('人气太旺啦，稍候再试试。(6)'));
     expect(source, contains('uiautomator dump'));
-    expect(source, contains('uiautomator runtest'));
+    expect(source, contains('am instrument'));
     expect(source, contains('--sdk-root'));
     expect(source, contains('--java-home'));
     expect(source, contains('--invocation-id'));
     expect(source, contains(r'git -C "$PROJECT_ROOT" diff --quiet HEAD'));
-    expect(source, contains('build_alipay_atomic_dialog_helper.sh'));
+    expect(source, contains('build_alipay_androidx_dialog_helper.sh'));
     expect(source, contains('ATOMIC_VERIFY_HELPER_CLASS'));
     expect(source, contains('testVerifyConfigError'));
     expect(source, contains('DIALOG_VERIFY_PASSED'));
-    expect(source, contains('validate_atomic_helper_output'));
+    expect(source, contains('validate_androidx_helper_output'));
     expect(source, contains('2>&1'));
     expect(source, isNot(contains('--atomic-helper-jar')));
     expect(source, contains('CLICK_COUNT=0'));
@@ -391,6 +422,21 @@ else:
     expect(source, isNot(contains('flutter drive')));
     expect(source, isNot(contains('run_m5_vendor_live_avd')));
     expect(source, isNot(contains('payV2')));
+    expect(source, isNot(contains('uiautomator runtest')));
+    expect(source, isNot(contains('UiAutomatorTestCase')));
+    expect(source, isNot(contains('RepetitiveTest')));
+    expect(
+      source,
+      isNot(
+        contains(
+          "read_target_state || fail_device 'Alipay error-dialog activity is not foreground'",
+        ),
+      ),
+    );
+    expect(
+      source.indexOf('install_atomic_helper'),
+      lessThan(source.indexOf('wait_for_safe_error_dialog')),
+    );
     final String targetSource = focusedTarget.readAsStringSync();
     expect(targetSource, contains('QA_ALIPAY_PROBE_INVOCATION_ID'));
     expect(targetSource, contains('M5_ALIPAY_PROBE_INVOCATION::'));
@@ -410,31 +456,89 @@ else:
       expect(syntax.exitCode, 0, reason: '${syntax.stdout}\n${syntax.stderr}');
       final String buildSource = builder.readAsStringSync();
       final String javaSource = helperSource.readAsStringSync();
-      expect(buildSource, contains('uiautomator.jar'));
-      expect(buildSource, contains('android.test.base.jar'));
-      expect(buildSource, contains('classes.dex'));
+      final String helperBuildSource = File(
+        '${helperProject.path}/helper/build.gradle.kts',
+      ).readAsStringSync();
+      final String helperManifest = File(
+        '${helperProject.path}/helper/src/main/AndroidManifest.xml',
+      ).readAsStringSync();
+      final String helperTestManifest = File(
+        '${helperProject.path}/helper/src/androidTest/AndroidManifest.xml',
+      ).readAsStringSync();
+      expect(helperBuildSource, contains(helperApplicationId));
+      expect(helperBuildSource, isNot(contains(packageName)));
+      expect(helperBuildSource, isNot(contains(helperTestPackage)));
+      expect(helperManifest, isNot(contains(packageName)));
+      expect(helperManifest, isNot(contains('com.kong373.voice_social_app')));
+      expect(helperTestManifest, contains('tools:node="remove"'));
+      expect(helperTestManifest, contains('android.permission.INTERNET'));
+      expect(helperTestManifest, contains('android.permission.REORDER_TASKS'));
+      expect(
+        helperTestManifest,
+        contains('InstrumentationActivityInvoker\$BootstrapActivity'),
+      );
+      expect(
+        helperTestManifest,
+        contains('InstrumentationActivityInvoker\$EmptyActivity'),
+      );
+      expect(
+        helperTestManifest,
+        contains('InstrumentationActivityInvoker\$EmptyFloatingActivity'),
+      );
+      expect(
+        File(
+          '${helperProject.path}/helper/build.gradle.kts',
+        ).readAsStringSync(),
+        contains('androidx.test.uiautomator:uiautomator:2.4.0'),
+      );
+      expect(
+        File(
+          '${helperProject.path}/helper/build.gradle.kts',
+        ).readAsStringSync(),
+        contains('androidx.test:runner:1.7.0'),
+      );
+      expect(
+        File(
+          '${helperProject.path}/helper/build.gradle.kts',
+        ).readAsStringSync(),
+        contains('androidx.test.ext:junit:1.3.0'),
+      );
+      expect(buildSource, contains('assembleDebug'));
+      expect(buildSource, contains('assembleDebugAndroidTest'));
+      expect(buildSource, contains('apkanalyzer'));
+      expect(buildSource, contains('assert_minimal_manifest'));
+      expect(buildSource, contains('uses-permission'));
+      expect(buildSource, contains('service'));
+      expect(buildSource, contains('provider'));
+      expect(buildSource, contains('receiver'));
+      expect(buildSource, contains('activity'));
       expect(buildSource, isNot(contains(' adb ')));
       expect(javaSource, contains('requireBoundedAncestorRelation'));
       expect(javaSource, contains('MAX_SHARED_ANCESTOR_DEPTH'));
       expect(javaSource, contains('ALLOWED_CONTAINER_CLASSES'));
-      expect(javaSource, contains('device.getCurrentPackageName()'));
-      expect(javaSource, contains('device.getCurrentActivityName()'));
+      expect(javaSource, contains('requireTargetForeground'));
+      expect(javaSource, contains('dumpsys activity activities'));
       expect(javaSource, contains('人气太旺啦，稍候再试试。(6)'));
       expect(javaSource, contains('testVerifyConfigError'));
       expect(javaSource, contains('VERIFY_PASSED'));
-      expect(javaSource, contains('className("android.widget.Button")'));
-      expect(javaSource, contains('classNameMatches'));
+      expect(javaSource, contains('clazz("android.widget.Button")'));
+      expect(javaSource, contains('.clazz(UNSAFE_CLASS_PATTERN)'));
       expect(javaSource, contains('clickable(true)'));
-      expect(
-        javaSource,
-        contains('packageNameMatches(FOREIGN_PACKAGE_PATTERN)'),
-      );
-      expect(javaSource, contains('error.getVisibleBounds()'));
+      expect(javaSource, contains('rejectForeignWindowRoots'));
+      expect(javaSource, contains('SYSTEM_UI_PACKAGE'));
+      expect(javaSource, contains('getWindowRoots()'));
+      expect(javaSource, contains('By.pkg(TARGET_PACKAGE)'));
+      expect(javaSource, contains('errors.get(0).getVisibleBounds()'));
       expect(
         javaSource,
         contains('error TextView is hidden or has empty bounds'),
       );
-      expect(javaSource, contains('System.out.println(PASS_MARKER)'));
+      expect(javaSource, contains('emitStatusMarker(PASS_MARKER)'));
+      expect(javaSource, contains('AndroidJUnit4'));
+      expect(javaSource, contains('UiObject2'));
+      expect(javaSource, isNot(contains('UiAutomatorTestCase')));
+      expect(javaSource, isNot(contains('getCurrentPackageName')));
+      expect(javaSource, contains('executeShellCommand'));
       expect('actionButton.click()'.allMatches(javaSource), hasLength(1));
       expect(RegExp(r'\.click\(').allMatches(javaSource), hasLength(1));
       expect(javaSource, isNot(contains('swipe(')));
@@ -486,12 +590,62 @@ else:
       greaterThanOrEqualTo(3),
     );
     final List<String> calls = File('${root.path}/adb.calls').readAsLinesSync();
+    final List<int> installIndices = <int>[];
+    for (int index = 0; index < calls.length; index++) {
+      if (calls[index].contains(' install -r ')) {
+        installIndices.add(index);
+      }
+    }
+    expect(installIndices, hasLength(2));
+    expect(installIndices[0], lessThan(installIndices[1]));
+    final int verifyIndex = calls.lastIndexWhere(
+      (String line) =>
+          line.contains('shell am instrument') &&
+          line.contains('testVerifyConfigError'),
+    );
+    expect(verifyIndex, greaterThan(installIndices[1]));
     final int tapIndex = calls.lastIndexWhere(
-      (String line) => line.contains('shell uiautomator runtest'),
+      (String line) =>
+          line.contains('shell am instrument') &&
+          line.contains('testDismissConfigError'),
     );
     expect(tapIndex, greaterThanOrEqualTo(0));
     expect(tapIndex, calls.length - 1);
     expect(calls.join('\n'), isNot(contains('input keyevent')));
+  });
+
+  test('initial non-target and transient conflict wait for the wallet dialog', () {
+    final Directory root = sandbox('alipay-error-dialog-wait-');
+    final ProcessResult result = runProbe(
+      root,
+      uiFrames: <String>[validUi()],
+      activityFrames: <String>[
+        activityFor('com.android.launcher/com.android.launcher3.Launcher'),
+        'topResumedActivity: ActivityRecord{$packageName/com.alipay.android.msp.ui.views.MspContainerActivity}\n'
+            'mFocusedApp: ActivityRecord{com.kong373.voice_social_app/.MainActivity}',
+        activityFor(
+          '$packageName/com.alipay.android.msp.ui.views.MspContainerActivity',
+        ),
+      ],
+      markerTimeout: 0,
+    );
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains('ERROR_DIALOG_MATCHED'));
+    expect(result.stdout, contains('PASS'));
+    expect(File('${root.path}/tap.count').readAsStringSync(), '1');
+    expect(
+      int.parse(File('${root.path}/activity.count').readAsStringSync()),
+      greaterThanOrEqualTo(3),
+    );
+    final List<String> calls = File('${root.path}/adb.calls').readAsLinesSync();
+    final int installIndex = calls.indexWhere(
+      (String line) => line.contains(' install -r '),
+    );
+    final int firstActivityIndex = calls.indexWhere(
+      (String line) => line.contains('shell dumpsys activity activities'),
+    );
+    expect(installIndex, greaterThanOrEqualTo(0));
+    expect(firstActivityIndex, greaterThan(installIndex));
   });
 
   test('verify helper requires stderr marker and a clean JUnit summary', () {
@@ -863,6 +1017,9 @@ else:
         while (!started.existsSync() && DateTime.now().isBefore(deadline)) {
           await Future<void>.delayed(const Duration(milliseconds: 10));
         }
+        if (!started.existsSync()) {
+          first.kill(ProcessSignal.sigterm);
+        }
         expect(started.existsSync(), isTrue);
         second = await Process.start(
           '/bin/bash',
@@ -870,19 +1027,26 @@ else:
           environment: envTwo,
           includeParentEnvironment: false,
         );
-        secondExit = await second.exitCode.timeout(const Duration(seconds: 3));
+        // The second process should be rejected by the serial lock quickly;
+        // leave enough room for a slow shell startup without coupling this
+        // assertion to the AndroidX Gradle build time of the first process.
+        secondExit = await second.exitCode.timeout(const Duration(seconds: 10));
       } finally {
         if (second != null && secondExit == null) {
           second.kill(ProcessSignal.sigterm);
         }
         hold.writeAsStringSync('held');
         release.writeAsStringSync('release');
-        firstExit = await first.exitCode.timeout(const Duration(seconds: 5));
+        // Once released, the first process still performs a fresh standalone
+        // helper build before its fake device flow. That build is deliberately
+        // part of the contract, so do not use a short pre-AndroidX timeout.
+        firstExit = await first.exitCode.timeout(const Duration(seconds: 90));
       }
       expect(secondExit, isNotNull);
       expect(secondExit, isNonZero);
       expect(File(callsTwo).readAsStringSync(), isEmpty);
       expect(firstExit, 0);
     },
+    timeout: const Timeout(Duration(minutes: 3)),
   );
 }

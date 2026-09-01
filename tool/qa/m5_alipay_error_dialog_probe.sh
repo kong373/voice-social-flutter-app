@@ -10,8 +10,20 @@ umask 077
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
 readonly PROJECT_ROOT
-readonly HELPER_BUILD_SCRIPT="$PROJECT_ROOT/tool/qa/build_alipay_atomic_dialog_helper.sh"
-readonly HELPER_SOURCE_FILE="$PROJECT_ROOT/tool/qa/alipay_atomic_dialog/AlipayConfigErrorDismissTest.java"
+readonly HELPER_BUILD_SCRIPT="$PROJECT_ROOT/tool/qa/build_alipay_androidx_dialog_helper.sh"
+readonly HELPER_SOURCE_DIR="$PROJECT_ROOT/tool/qa/alipay_androidx_dialog_helper"
+readonly HELPER_TEST_PACKAGE='com.kong373.voicesocial.qa.alipayhelper.test'
+readonly HELPER_SOURCE_PATHS=(
+  tool/qa/build_alipay_androidx_dialog_helper.sh
+  tool/qa/alipay_androidx_dialog_helper/.gitignore
+  tool/qa/alipay_androidx_dialog_helper/settings.gradle.kts
+  tool/qa/alipay_androidx_dialog_helper/build.gradle.kts
+  tool/qa/alipay_androidx_dialog_helper/helper/build.gradle.kts
+  tool/qa/alipay_androidx_dialog_helper/helper/src/main/AndroidManifest.xml
+  tool/qa/alipay_androidx_dialog_helper/helper/src/androidTest/AndroidManifest.xml
+  tool/qa/alipay_androidx_dialog_helper/helper/src/main/java/com/kong373/voicesocial/qa/alipayhelper/HelperMarker.java
+  tool/qa/alipay_androidx_dialog_helper/helper/src/androidTest/java/com/kong373/voicesocial/qa/AlipayConfigErrorDismissTest.java
+)
 readonly TARGET_PACKAGE='com.eg.android.AlipayGphoneRC'
 readonly TARGET_COMPONENT='com.eg.android.AlipayGphoneRC/com.alipay.android.msp.ui.views.MspContainerActivity'
 readonly ERROR_TEXT_ZH='人气太旺啦，稍候再试试。(6)'
@@ -32,7 +44,9 @@ readonly ATOMIC_HELPER_MARKER='ALIPAY_ATOMIC_DIALOG_PROBE::DISMISS_CLICKED'
 readonly ATOMIC_VERIFY_HELPER_MARKER='ALIPAY_ATOMIC_DIALOG_PROBE::VERIFY_PASSED'
 readonly ATOMIC_HELPER_CLASS='com.kong373.voicesocial.qa.AlipayConfigErrorDismissTest#testDismissConfigError'
 readonly ATOMIC_VERIFY_HELPER_CLASS='com.kong373.voicesocial.qa.AlipayConfigErrorDismissTest#testVerifyConfigError'
-readonly DEVICE_HELPER_PATH='/data/local/tmp/voice-social-alipay-atomic-dialog-helper.jar'
+readonly ATOMIC_RUNNER="$HELPER_TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner"
+readonly HELPER_BASE_APK_NAME='alipay-androidx-dialog-helper.apk'
+readonly HELPER_TEST_APK_NAME='alipay-androidx-dialog-helper-androidTest.apk'
 
 SELF_TEST=false
 SERIAL_VALUE=''
@@ -44,7 +58,8 @@ SDK_ROOT=''
 SDK_ROOT_ARG=''
 JAVA_HOME_VALUE=''
 JAVA_HOME_ARG=''
-ATOMIC_HELPER_JAR=''
+ATOMIC_HELPER_BASE_APK=''
+ATOMIC_HELPER_TEST_APK=''
 HELPER_BUILD_DIR=''
 INVOCATION_ID=''
 INVOCATION_ID_ARG=''
@@ -220,20 +235,21 @@ validate_helper_source_attestation() {
   [[ -n "$INVOCATION_ID_ARG" && "$INVOCATION_ID" =~ ^[a-f0-9]{32}$ ]] ||
     fail_configuration '--invocation-id must be exactly 32 lowercase hex chars'
   [[ -x "$HELPER_BUILD_SCRIPT" && ! -L "$HELPER_BUILD_SCRIPT" &&
-    -f "$HELPER_SOURCE_FILE" && ! -L "$HELPER_SOURCE_FILE" ]] ||
+    -d "$HELPER_SOURCE_DIR" && ! -L "$HELPER_SOURCE_DIR" ]] ||
     fail_configuration 'tracked helper sources are unavailable'
   command -v git >/dev/null 2>&1 || fail_configuration 'git is unavailable for source attestation'
   [[ "$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null || true)" == "$PROJECT_ROOT" ]] ||
     fail_configuration 'helper source repository authority is unavailable'
+  local helper_path
   git -C "$PROJECT_ROOT" ls-files --error-unmatch \
-    tool/qa/m5_alipay_error_dialog_probe.sh \
-    tool/qa/build_alipay_atomic_dialog_helper.sh \
-    tool/qa/alipay_atomic_dialog/AlipayConfigErrorDismissTest.java >/dev/null 2>&1 ||
-    fail_configuration 'helper sources are not tracked'
+    tool/qa/m5_alipay_error_dialog_probe.sh >/dev/null 2>&1 ||
+    fail_configuration 'probe source is not tracked'
+  for helper_path in "${HELPER_SOURCE_PATHS[@]}"; do
+    git -C "$PROJECT_ROOT" ls-files --error-unmatch "$helper_path" >/dev/null 2>&1 ||
+      fail_configuration 'AndroidX helper source is not tracked'
+  done
   git -C "$PROJECT_ROOT" diff --quiet HEAD -- \
-    tool/qa/m5_alipay_error_dialog_probe.sh \
-    tool/qa/build_alipay_atomic_dialog_helper.sh \
-    tool/qa/alipay_atomic_dialog/AlipayConfigErrorDismissTest.java ||
+    tool/qa/m5_alipay_error_dialog_probe.sh "${HELPER_SOURCE_PATHS[@]}" ||
     fail_configuration 'helper sources differ from the committed checkout'
 }
 
@@ -303,40 +319,52 @@ verify_physical_device() {
   audit 'DEVICE_ONLINE'; audit 'PHYSICAL_DEVICE_VERIFIED'
 }
 
-prepare_atomic_helper() {
-  "$ADB_BIN" -s "$SERIAL_VALUE" push "$ATOMIC_HELPER_JAR" "$DEVICE_HELPER_PATH" >/dev/null 2>&1 ||
-    fail_device 'atomic UiAutomator helper could not be staged'
-  "$ADB_BIN" -s "$SERIAL_VALUE" shell chmod 600 "$DEVICE_HELPER_PATH" >/dev/null 2>&1 ||
-    fail_device 'atomic UiAutomator helper permissions failed'
-}
-
 build_atomic_helper() {
-  HELPER_BUILD_DIR="$(mktemp -d /tmp/voice-social-alipay-atomic-helper.XXXXXX)" ||
+  HELPER_BUILD_DIR="$(mktemp -d /tmp/voice-social-alipay-androidx-helper.XXXXXX)" ||
     fail_configuration 'private helper build directory could not be created'
   chmod 700 "$HELPER_BUILD_DIR" ||
     fail_configuration 'private helper build directory permissions failed'
-  ATOMIC_HELPER_JAR="$HELPER_BUILD_DIR/helper.jar"
+  ATOMIC_HELPER_BASE_APK="$HELPER_BUILD_DIR/$HELPER_BASE_APK_NAME"
+  ATOMIC_HELPER_TEST_APK="$HELPER_BUILD_DIR/$HELPER_TEST_APK_NAME"
   "$HELPER_BUILD_SCRIPT" --sdk-root "$SDK_ROOT" --java-home "$JAVA_HOME_VALUE" \
-    --output "$ATOMIC_HELPER_JAR" >/dev/null ||
-    fail_configuration 'tracked atomic helper build failed'
-  [[ -f "$ATOMIC_HELPER_JAR" && ! -L "$ATOMIC_HELPER_JAR" && -r "$ATOMIC_HELPER_JAR" ]] ||
-    fail_configuration 'fresh atomic helper jar is unavailable'
-  python3 - "$ATOMIC_HELPER_JAR" <<'PY' || fail_configuration 'fresh atomic helper jar permissions are unsafe'
+    --output-dir "$HELPER_BUILD_DIR" >/dev/null ||
+    fail_configuration 'tracked AndroidX helper build failed'
+  [[ -f "$ATOMIC_HELPER_BASE_APK" && ! -L "$ATOMIC_HELPER_BASE_APK" &&
+    -r "$ATOMIC_HELPER_BASE_APK" && -s "$ATOMIC_HELPER_BASE_APK" ]] ||
+    fail_configuration 'fresh helper base APK is unavailable'
+  [[ -f "$ATOMIC_HELPER_TEST_APK" && ! -L "$ATOMIC_HELPER_TEST_APK" &&
+    -r "$ATOMIC_HELPER_TEST_APK" && -s "$ATOMIC_HELPER_TEST_APK" ]] ||
+    fail_configuration 'fresh AndroidX instrumentation APK is unavailable'
+  python3 - "$ATOMIC_HELPER_BASE_APK" "$ATOMIC_HELPER_TEST_APK" <<'PY' || fail_configuration 'fresh AndroidX helper APK permissions are unsafe'
 import os, stat, sys
-value = os.stat(sys.argv[1], follow_symlinks=False)
-raise SystemExit(0 if value.st_uid == os.getuid() and not (stat.S_IMODE(value.st_mode) & 0o077) else 1)
+for argument in sys.argv[1:]:
+    value = os.stat(argument, follow_symlinks=False)
+    if value.st_uid != os.getuid() or (stat.S_IMODE(value.st_mode) & 0o077):
+        raise SystemExit(1)
 PY
 }
 
+install_atomic_helper() {
+  "$ADB_BIN" -s "$SERIAL_VALUE" install -r "$ATOMIC_HELPER_BASE_APK" >/dev/null 2>&1 ||
+    fail_device 'AndroidX helper base APK could not be installed'
+  "$ADB_BIN" -s "$SERIAL_VALUE" install -r "$ATOMIC_HELPER_TEST_APK" >/dev/null 2>&1 ||
+    fail_device 'AndroidX instrumentation APK could not be installed'
+  audit 'ANDROIDX_HELPER_INSTALLED'
+}
+
 cleanup_local_helper() {
-  if [[ -n "$ATOMIC_HELPER_JAR" && -f "$ATOMIC_HELPER_JAR" && ! -L "$ATOMIC_HELPER_JAR" ]]; then
-    chmod 600 "$ATOMIC_HELPER_JAR" >/dev/null 2>&1 || true
-    rm -f -- "$ATOMIC_HELPER_JAR" || true
-  fi
+  # The builder leaves only the two APKs in this private directory. Remove
+  # files one-by-one and then the directory; never recurse over a caller path.
+  for apk in "$ATOMIC_HELPER_BASE_APK" "$ATOMIC_HELPER_TEST_APK"; do
+    if [[ -n "$apk" && -f "$apk" && ! -L "$apk" ]]; then
+      chmod 600 "$apk" >/dev/null 2>&1 || true
+      rm -f -- "$apk" || true
+    fi
+  done
   if [[ -n "$HELPER_BUILD_DIR" && -d "$HELPER_BUILD_DIR" && ! -L "$HELPER_BUILD_DIR" ]]; then
     rmdir -- "$HELPER_BUILD_DIR" >/dev/null 2>&1 || true
   fi
-  ATOMIC_HELPER_JAR=''; HELPER_BUILD_DIR=''
+  ATOMIC_HELPER_BASE_APK=''; ATOMIC_HELPER_TEST_APK=''; HELPER_BUILD_DIR=''
 }
 
 read_screen_size() {
@@ -367,8 +395,10 @@ foreground_state() {
       slash = index(value, "/")
       if (slash == 0) return
       normalized = normalize_component(value)
+      if (first_component == "") first_component = normalized
+      else if (first_component != normalized) conflict_found = 1
       if (normalized == target) target_found = 1
-      else conflict_found = 1
+      else non_target_found = 1
       component_found = 1
     }
     {
@@ -385,7 +415,7 @@ foreground_state() {
     }
     END {
       if (conflict_found || missing_component_found) print "CONFLICT"
-      else if (target_found && field_found && component_found) print "OK"
+      else if (target_found && !non_target_found && field_found && component_found) print "OK"
       else if (field_found) print "WRONG"
       else print "MISSING"
     }
@@ -393,7 +423,9 @@ foreground_state() {
 }
 
 read_target_state() {
-  local dump='' status=0 state=''
+  local mode="${1:-strict}" dump='' status=0 state=''
+  [[ "$mode" == strict || "$mode" == transition ]] ||
+    fail_configuration 'foreground state mode is invalid'
   dump="$($ADB_BIN -s "$SERIAL_VALUE" shell dumpsys activity activities 2>/dev/null)" || status=$?
   [[ "$status" -eq 0 ]] || fail_device 'activity state is unavailable'
   if grep -Eiq '(^|[[:space:]])(device offline|unauthorized|no devices? found)' <<<"$dump"; then
@@ -402,7 +434,9 @@ read_target_state() {
   state="$(foreground_state <<<"$dump")"
   case "$state" in
     OK) return 0 ;;
-    CONFLICT) fail_device 'foreground Activity authority fields conflict' ;;
+    CONFLICT)
+      if [[ "$mode" == transition ]]; then return 1; fi
+      fail_device 'foreground Activity authority fields conflict' ;;
     WRONG|MISSING) return 1 ;;
     *) fail_device 'foreground Activity state is malformed' ;;
   esac
@@ -720,7 +754,11 @@ wait_for_safe_error_dialog() {
   local deadline=$((SECONDS + DIALOG_TIMEOUT_SECONDS)) state=''
   local ready_x='' ready_y=''
   while (( SECONDS <= deadline )); do
-    if read_target_state; then
+    # During a real cross-app transition Android can briefly report old and
+    # new authority fields together. Treat that as "not ready yet" only in
+    # this pre-match loop. Every snapshot and action-time check below remains
+    # strict and rejects any disagreement.
+    if read_target_state transition; then
       capture_fresh_ui_xml
       state="$(ui_dialog_state)" || fail_device 'error dialog parser failed'
       cleanup_ui_dump
@@ -869,21 +907,29 @@ wait_for_paytask_return() {
   fail_timeout 'PayTask return markers were not observed'
 }
 
-validate_atomic_helper_output() {
+validate_androidx_helper_output() {
   local output="$1" expected_marker="$2" phase="$3"
-  local normalized marker_count summary_count failure_count
-  # UiAutomator writes the complete JUnit report and Java System.out to the
-  # remote stderr stream. Normalize only CRLF; never print or persist the
-  # report because it can contain vendor diagnostics outside this allowlist.
+  local normalized marker_count summary_count failure_count instrumentation_count
+  # AndroidJUnitRunner writes the JUnit report and explicit instrumentation
+  # status bundles to the merged stream. Normalize only CRLF; never print or
+  # persist the report because it can contain vendor diagnostics outside this
+  # allowlist.
   normalized="$(printf '%s\n' "$output" | tr -d '\r')"
   failure_count="$(printf '%s\n' "$normalized" | grep -Eic \
     '(^|[^[:alnum:]_])(FAILURES!!!|FAILURES|Failure|INSTRUMENTATION_FAILED|Exception|Throwable|AssertionError|Stack trace)([^[:alnum:]_]|$)|INSTRUMENTATION_STATUS_CODE:[[:space:]]*-[0-9]+' || true)"
   [[ "$failure_count" == 0 ]] ||
-    fail_device "atomic UiAutomator $phase report contains a failure"
-  # UiAutomator may carry Java System.out through an exact instrumentation
-  # stream line instead of emitting a bare line. Accept only those two
-  # complete-line forms; never substring-match a stack trace or arbitrary
-  # diagnostic text.
+    fail_device "AndroidX instrumentation $phase report contains a failure"
+  instrumentation_count="$(printf '%s\n' "$normalized" | grep -Ec \
+    '^INSTRUMENTATION_CODE:[[:space:]]*-?[0-9]+$' || true)"
+  [[ "$instrumentation_count" == 1 ]] ||
+    fail_device "AndroidX instrumentation $phase terminal code is missing or duplicated"
+  # Android instrumentation uses Activity.RESULT_OK (-1) as its successful
+  # terminal result. Zero is not a successful AndroidJUnitRunner terminal
+  # code even when the adb shell command itself exits zero.
+  [[ "$(printf '%s\n' "$normalized" | grep -Ec '^INSTRUMENTATION_CODE:[[:space:]]*-1$' || true)" == 1 ]] ||
+    fail_device "AndroidX instrumentation $phase terminal code is not successful"
+  # The helper emits a bounded status bundle; accept only complete-line forms
+  # and never substring-match a stack trace or arbitrary diagnostic text.
   marker_count="$(printf '%s\n' "$normalized" | awk -v expected="$expected_marker" '
     {
       if ($0 == expected) count++
@@ -893,7 +939,7 @@ validate_atomic_helper_output() {
     END { print count + 0 }
   ')"
   [[ "$marker_count" == 1 ]] ||
-    fail_device "atomic UiAutomator $phase marker is missing or duplicated"
+    fail_device "AndroidX instrumentation $phase marker is missing or duplicated"
   summary_count="$(printf '%s\n' "$normalized" | awk '
     {
       if ($0 == "OK (1 test)") count++
@@ -903,20 +949,21 @@ validate_atomic_helper_output() {
     END { print count + 0 }
   ')"
   [[ "$summary_count" == 1 ]] ||
-    fail_device "atomic UiAutomator $phase success summary is missing or duplicated"
+    fail_device "AndroidX instrumentation $phase success summary is missing or duplicated"
 }
 
 invoke_verify_helper() {
   local output='' status=0
   set +e
-  output="$("$ADB_BIN" -s "$SERIAL_VALUE" shell uiautomator runtest \
-    "$DEVICE_HELPER_PATH" -c "$ATOMIC_VERIFY_HELPER_CLASS" 2>&1)"
+  output="$("$ADB_BIN" -s "$SERIAL_VALUE" shell am instrument -w -r \
+    -e class "$ATOMIC_VERIFY_HELPER_CLASS" "$ATOMIC_RUNNER" 2>&1)"
   status=$?
   set -e
-  # Parse the merged stream before considering rc: runtest can return zero
+  # Parse the merged instrumentation stream before considering rc: a runner
+  # can return zero
   # while reporting a failed JUnit invocation.
-  validate_atomic_helper_output "$output" "$ATOMIC_VERIFY_HELPER_MARKER" 'verify'
-  [[ "$status" -eq 0 ]] || fail_device 'atomic UiAutomator verify helper exited unsuccessfully'
+  validate_androidx_helper_output "$output" "$ATOMIC_VERIFY_HELPER_MARKER" 'verify'
+  [[ "$status" -eq 0 ]] || fail_device 'AndroidX instrumentation verify helper exited unsuccessfully'
   audit 'DIALOG_VERIFY_PASSED'
 }
 
@@ -924,19 +971,19 @@ invoke_atomic_helper() {
   local output='' status=0 marker_count=''
   (( CLICK_COUNT == 0 )) || fail_device 'dismiss action budget already consumed'
   # The final adb command performs the fresh selector verification and the
-  # related UiObject click in one device-side UiAutomator process. Mark this
+  # related UiObject click in one device-side AndroidX instrumentation process. Mark this
   # phase first so EXIT cleanup can never issue another device command after
   # a possible click.
   TAP_COMPLETED=true
   set +e
-  output="$("$ADB_BIN" -s "$SERIAL_VALUE" shell uiautomator runtest \
-    "$DEVICE_HELPER_PATH" -c "$ATOMIC_HELPER_CLASS" 2>&1)"
+  output="$("$ADB_BIN" -s "$SERIAL_VALUE" shell am instrument -w -r \
+    -e class "$ATOMIC_HELPER_CLASS" "$ATOMIC_RUNNER" 2>&1)"
   status=$?
   set -e
   # The helper's click is the final device operation. Validate the already
   # captured merged output locally; no adb command follows this invocation.
-  validate_atomic_helper_output "$output" "$ATOMIC_HELPER_MARKER" 'click'
-  [[ "$status" -eq 0 ]] || fail_device 'atomic UiAutomator helper exited unsuccessfully'
+  validate_androidx_helper_output "$output" "$ATOMIC_HELPER_MARKER" 'click'
+  [[ "$status" -eq 0 ]] || fail_device 'AndroidX instrumentation helper exited unsuccessfully'
   CLICK_COUNT=1
   audit 'DISMISS_BUTTON_TAPPED::count=1'
 }
@@ -988,24 +1035,30 @@ main() {
   adb_get_state
   verify_physical_device
   read_screen_size
-  read_target_state || fail_device 'Alipay error-dialog activity is not foreground'
+  # Install both fresh helper APKs before inspecting or acting on the wallet
+  # surface. A first-time Android package-install confirmation can otherwise
+  # steal the wallet foreground while a PayTask is already in progress.
+  build_atomic_helper
+  install_atomic_helper
+  # Installing an inert helper may temporarily leave the wallet on the
+  # launcher (or another benign foreground). The PayTask owner is expected to
+  # bring the wallet/dialog forward after this preparation step, so the
+  # bounded wait below is the first foreground assertion.
   wait_for_safe_error_dialog
   audit 'ERROR_DIALOG_MATCHED'
   stabilize_before_tap
-  # Build and stage only after the host-side UI gates have passed. The helper
-  # still revalidates the live accessibility objects immediately before click.
-  build_atomic_helper
-  prepare_atomic_helper
-    record_marker_baseline
-    assert_no_marker_before_tap
-    invoke_verify_helper
-    assert_no_marker_before_tap
-    # Re-snapshot the live foreground and UI after the read-only device-side
-    # verification. The click helper is launched only after this fresh,
-    # stable host-side check passes.
-    stabilize_before_tap
-    assert_no_marker_before_tap
-    invoke_atomic_helper
+  # The AndroidX test still revalidates live accessibility objects immediately
+  # before click; the base and test APKs target the inert helper package.
+  record_marker_baseline
+  assert_no_marker_before_tap
+  invoke_verify_helper
+  assert_no_marker_before_tap
+  # Re-snapshot the live foreground and UI after the read-only device-side
+  # verification. The click helper is launched only after this fresh,
+  # stable host-side check passes.
+  stabilize_before_tap
+  assert_no_marker_before_tap
+  invoke_atomic_helper
   # No device operation occurs after the tap; only the private Flutter log is read.
   wait_for_paytask_return
   audit 'PASS'
