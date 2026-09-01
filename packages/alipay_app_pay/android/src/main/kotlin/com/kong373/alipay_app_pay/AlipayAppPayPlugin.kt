@@ -36,8 +36,8 @@ class AlipayAppPayPlugin :
     companion object {
         private const val CHANNEL = "voice_social_app/alipay_app_pay"
         private const val MAX_ORDER_STRING_LENGTH = 64 * 1024
-        private const val PAY_TIMEOUT_SECONDS = 120L
         private const val NATIVE_ISOLATION_TAG = "VoiceAlipayIsolation"
+        private const val NATIVE_LAUNCH_CLAIM_TIMEOUT_MILLIS = 5_000L
     }
 
     private lateinit var channel: MethodChannel
@@ -46,8 +46,6 @@ class AlipayAppPayPlugin :
     private val mainHandler = Handler(Looper.getMainLooper())
     @Volatile
     private var activity: Activity? = null
-    @Volatile
-    private var active = false
     private var activeInvocation: Long? = null
     private var engineGeneration = 0L
     private var detachedFromEngine = false
@@ -76,7 +74,11 @@ class AlipayAppPayPlugin :
         engineGeneration += 1
         channel.setMethodCallHandler(null)
         activity = null
-        executor?.shutdownNow()
+        // Let an accepted-but-queued worker run its attached=false path and
+        // finally release the process gate. Interrupting/removing it here
+        // could strand the lease forever; a running PayTask is likewise
+        // allowed to return before the gate is released.
+        executor?.shutdown()
         timeoutExecutor?.shutdownNow()
         executor = null
         timeoutExecutor = null
@@ -129,6 +131,7 @@ class AlipayAppPayPlugin :
         }
         val currentActivity: Activity
         val invocationToken: Long
+        val normalPaymentLease: AlipayPaymentGate.ClaimedHandle
         synchronized(this) {
             if (detachedFromEngine) {
                 result.error("activity_unavailable", "支付桥接未就绪", null)
@@ -143,25 +146,31 @@ class AlipayAppPayPlugin :
                 result.error("sandbox_not_debuggable", "沙箱支付仅允许在可调试构建中运行", null)
                 return
             }
-            if (active) {
+            val lease = AlipayProcessPaymentGate.acquire(AlipayPaymentLane.NORMAL)
+            if (lease == null) {
                 result.error("payment_in_progress", "已有支付宝支付正在处理", null)
                 return
             }
-            active = true
             engineGeneration += 1
             invocationToken = engineGeneration
             activeInvocation = invocationToken
             currentActivity = attachedActivity
+
+            // The lease is process-wide and remains held until PayTask's
+            // worker actually returns, even when the channel watchdog fires.
+            // Keep it in the local invocation closure from this point on.
+            normalPaymentLease = lease
         }
 
         // PayTask.payV2 performs network and app-switch work. Keep it off the
         // Flutter/UI thread, then send only a small status classification back
         // on the main thread. Never forward the SDK's memo/result strings.
         val completion = AtomicBoolean(false)
+        val lease = normalPaymentLease
         val timeoutExecutor = this.timeoutExecutor
         val workerExecutor = this.executor
         if (timeoutExecutor == null || workerExecutor == null) {
-            clearActive(invocationToken)
+            clearActive(invocationToken, lease)
             result.error("unavailable", "支付宝支付桥接当前不可用", null)
             return
         }
@@ -169,8 +178,8 @@ class AlipayAppPayPlugin :
             timeoutExecutor.schedule(
                 {
                     if (completion.compareAndSet(false, true)) {
-                        // Deliver a provisional timeout, but keep `active`
-                        // locked until the original PayTask worker returns.
+                        // Deliver a provisional timeout, but keep the process
+                        // gate locked until the original PayTask worker returns.
                         // A retry must receive payment_in_progress rather than
                         // queueing a second SDK invocation.
                         deliver(
@@ -180,45 +189,50 @@ class AlipayAppPayPlugin :
                         )
                     }
                 },
-                PAY_TIMEOUT_SECONDS,
+                AlipayPaymentTimeout.PAY_TIMEOUT_SECONDS,
                 TimeUnit.SECONDS,
             )
         } catch (_: RejectedExecutionException) {
-            clearActive(invocationToken)
+            clearActive(invocationToken, lease)
             result.error("unavailable", "支付宝支付桥接当前不可用", null)
             return
         }
         try {
             workerExecutor.execute {
-                val status = try {
-                    val activityStillAttached = synchronized(this) {
-                        !detachedFromEngine && activity === currentActivity &&
-                            !currentActivity.isFinishing && !currentActivity.isDestroyed
+                try {
+                    val status = try {
+                        val activityStillAttached = synchronized(this) {
+                            !detachedFromEngine && activity === currentActivity &&
+                                !currentActivity.isFinishing && !currentActivity.isDestroyed
+                        }
+                        if (!activityStillAttached) {
+                            AlipayBridgeResultClassifier.nativeNotInvoked()
+                        } else {
+                            AlipaySdkEnvironment.setForPay(sandbox)
+                            val raw = PayTask(currentActivity).payV2(orderString, true)
+                            AlipayBridgeResultClassifier.payTaskReturned(raw["resultStatus"])
+                        }
+                    } catch (_: RuntimeException) {
+                        AlipayBridgeResultClassifier.nativeException()
+                    } catch (_: LinkageError) {
+                        AlipayBridgeResultClassifier.nativeUnavailable()
                     }
-                    if (!activityStillAttached) {
-                        AlipayBridgeResultClassifier.nativeNotInvoked()
-                    } else {
-                        AlipaySdkEnvironment.setForPay(sandbox)
-                        val raw = PayTask(currentActivity).payV2(orderString, true)
-                        AlipayBridgeResultClassifier.payTaskReturned(raw["resultStatus"])
+                    if (completion.compareAndSet(false, true)) {
+                        timeout.cancel(false)
+                        deliver(result, status, invocationToken)
                     }
-                } catch (_: RuntimeException) {
-                    AlipayBridgeResultClassifier.nativeException()
-                } catch (_: LinkageError) {
-                    AlipayBridgeResultClassifier.nativeUnavailable()
+                } finally {
+                    // A late worker return is the only point at which this
+                    // process lease may be released after a watchdog timeout.
+                    clearActive(invocationToken, lease)
                 }
-                if (completion.compareAndSet(false, true)) {
-                    timeout.cancel(false)
-                    deliver(result, status, invocationToken)
-                }
-                clearActive(invocationToken)
             }
         } catch (_: RejectedExecutionException) {
             timeout.cancel(false)
             if (completion.compareAndSet(false, true)) {
                 result.error("unavailable", "支付宝支付桥接当前不可用", null)
             }
-            clearActive(invocationToken)
+            clearActive(invocationToken, lease)
         }
     }
 
@@ -228,22 +242,65 @@ class AlipayAppPayPlugin :
             result.error("invalid_request", "原生隔离请求无效", null)
             return
         }
-        val currentActivity = synchronized(this) {
-            if (detachedFromEngine || active) {
-                null
-            } else {
-                activity?.takeUnless { it.isFinishing || it.isDestroyed }
+        val currentActivity: Activity
+        val isolationReservation: AlipayPaymentGate.ReservationHandle
+        synchronized(this) {
+            if (detachedFromEngine) {
+                result.error("activity_unavailable", "原生隔离页面当前不可用", null)
+                return
             }
-        }
-        if (currentActivity == null) {
-            result.error("activity_unavailable", "原生隔离页面当前不可用", null)
-            return
-        }
-        if (!isDebuggable(currentActivity)) {
-            result.error("debug_only", "原生隔离页面仅允许在可调试构建中运行", null)
-            return
+            val attachedActivity = activity
+            if (attachedActivity == null ||
+                attachedActivity.isFinishing ||
+                attachedActivity.isDestroyed
+            ) {
+                result.error("activity_unavailable", "原生隔离页面当前不可用", null)
+                return
+            }
+            if (!isDebuggable(attachedActivity)) {
+                result.error("debug_only", "原生隔离页面仅允许在可调试构建中运行", null)
+                return
+            }
+            isolationReservation = AlipayProcessPaymentGate.reserveIsolation(runId) ?: run {
+                result.error("payment_in_progress", "已有支付宝支付正在处理", null)
+                return
+            }
+            currentActivity = attachedActivity
         }
         Log.i(NATIVE_ISOLATION_TAG, "M5_ALIPAY_NATIVE_ISOLATION::LAUNCH_REQUEST::$runId")
+        if (!AlipayNativeIsolationLaunchRegistry.register(
+                isolationReservation.wireId,
+                isolationReservation.runId,
+            ) { started ->
+                mainHandler.post {
+                    if (started) {
+                        Log.i(
+                            NATIVE_ISOLATION_TAG,
+                            "M5_ALIPAY_NATIVE_ISOLATION::LAUNCH_SUCCESS::$runId",
+                        )
+                        result.success(true)
+                    } else {
+                        result.error("debug_unavailable", "原生隔离页面当前不可用", null)
+                    }
+                }
+            }
+        ) {
+            AlipayProcessPaymentGate.releaseIfUnclaimed(isolationReservation)
+            result.error("debug_unavailable", "原生隔离页面当前不可用", null)
+            return
+        }
+        val claimWatchdog = Runnable {
+            // startActivity can return before Android delivers onCreate (or
+            // never deliver it at all). Expire only an unclaimed reservation;
+            // a claimed PayTask lease must remain protected until it returns.
+            if (AlipayProcessPaymentGate.releaseIfUnclaimed(isolationReservation)) {
+                AlipayNativeIsolationLaunchRegistry.completeFailed(
+                    isolationReservation.wireId,
+                    isolationReservation.runId,
+                )
+            }
+        }
+        mainHandler.postDelayed(claimWatchdog, NATIVE_LAUNCH_CLAIM_TIMEOUT_MILLIS)
         try {
             val intent = Intent().apply {
                 setClassName(
@@ -251,13 +308,20 @@ class AlipayAppPayPlugin :
                     AlipayNativeIsolationLaunchContract.ACTIVITY_CLASS,
                 )
                 putExtra(AlipayNativeIsolationLaunchContract.RUN_ID_EXTRA, runId)
+                putExtra(
+                    AlipayNativeIsolationLaunchContract.LEASE_ID_EXTRA,
+                    isolationReservation.wireId,
+                )
             }
             currentActivity.startActivity(intent)
-            Log.i(NATIVE_ISOLATION_TAG, "M5_ALIPAY_NATIVE_ISOLATION::LAUNCH_SUCCESS::$runId")
-            result.success(true)
         } catch (_: RuntimeException) {
+            mainHandler.removeCallbacks(claimWatchdog)
+            AlipayNativeIsolationLaunchRegistry.completeFailed(
+                isolationReservation.wireId,
+                isolationReservation.runId,
+            )
+            AlipayProcessPaymentGate.releaseIfUnclaimed(isolationReservation)
             Log.e(NATIVE_ISOLATION_TAG, "M5_ALIPAY_NATIVE_ISOLATION::LAUNCH_FAIL::$runId")
-            result.error("debug_unavailable", "原生隔离页面当前不可用", null)
         }
     }
 
@@ -270,7 +334,7 @@ class AlipayAppPayPlugin :
             return
         }
         val currentActivity = synchronized(this) {
-            if (detachedFromEngine || active) {
+            if (detachedFromEngine || AlipayProcessPaymentGate.activeLane() != null) {
                 null
             } else {
                 activity?.takeUnless { it.isFinishing || it.isDestroyed }
@@ -297,11 +361,18 @@ class AlipayAppPayPlugin :
     }
 
     @Synchronized
-    private fun clearActive(invocationToken: Long) {
+    private fun clearActive(
+        invocationToken: Long,
+        lease: AlipayPaymentGate.ClaimedHandle,
+    ) {
         if (activeInvocation == invocationToken) {
-            active = false
             activeInvocation = null
         }
+        // The capability is bound to this exact worker lease. Releasing it
+        // outside the invocation-token branch is harmless if a stale
+        // callback races a later engine generation, while avoiding a gate
+        // wedge if bookkeeping was already cleared.
+        AlipayProcessPaymentGate.release(lease)
     }
 
     private fun deliver(
@@ -372,6 +443,7 @@ internal object AlipayNativeIsolationLaunchContract {
     const val ACTIVITY_CLASS =
         "com.kong373.alipay_app_pay.NativeAlipayIsolationActivity"
     const val RUN_ID_EXTRA = "runId"
+    const val LEASE_ID_EXTRA = "alipayLeaseId"
     private val RUN_ID_PATTERN = Regex("^[a-f0-9]{32}$")
 
     fun parseRunId(arguments: Any?): String? {

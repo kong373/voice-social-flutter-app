@@ -89,6 +89,21 @@ class NativeAlipayIsolationContractTest {
     }
 
     @Test
+    fun watchdogTimeoutUsesFixedSafeResult() {
+        val timeout = NativeAlipayIsolationResult.nativeWatchdogTimeout()
+
+        assertFalse(timeout.sdkCompleted)
+        assertEquals("none", timeout.resultStatus)
+        assertEquals("native_watchdog_timeout", timeout.bridgeOutcome)
+
+        val encoded = NativeAlipayIsolationContract.resultJson(runId, timeout)
+        assertFalse(encoded.contains("orderStr", ignoreCase = true))
+        assertFalse(encoded.contains("sign", ignoreCase = true))
+        assertFalse(encoded.contains("secret", ignoreCase = true))
+        assertFalse(encoded.contains("token", ignoreCase = true))
+    }
+
+    @Test
     fun launcherAcceptsOnlyOneStrictRunId() {
         assertEquals(
             runId,
