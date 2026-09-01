@@ -20,6 +20,10 @@ void main() {
   const String serial = 'R58PHYSICAL001';
   const String isolationRunId = '0123456789abcdef0123456789abcdef';
   const String targetPackage = 'com.eg.android.AlipayGphoneRC';
+  const String mspCashierActivity =
+      'com.alipay.android.msp.ui.views.MspContainerActivity';
+  const String flyBirdCashierActivity =
+      'com.alipay.android.app.flybird.ui.window.FlyBirdWindowActivity';
   const String nativeCancel =
       'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=6001::runId=$isolationRunId';
   const String bridgeReturned =
@@ -39,6 +43,9 @@ void main() {
     Directory root, {
     String state = 'online',
     String package = targetPackage,
+    String activity = mspCashierActivity,
+    String activityDumpPrefix = 'mResumedActivity: ActivityRecord{',
+    String activityDumpSuffix = '}',
     String? reverseMapping = 'tcp:18080 tcp:18080',
     String qemuKernel = '0',
     int cashierDumps = 3,
@@ -98,7 +105,7 @@ case "\${1:-}" in
         [[ "\${2:-}" == 'activity' && "\${3:-}" == 'activities' ]] || exit 92
         count=\$(<"\${FAKE_DUMPSYS}"); count=\$((count + 1)); printf '%s' "\$count" >"\${FAKE_DUMPSYS}"
         if (( count <= $cashierDumps )); then
-          printf '%s\\n' 'mResumedActivity: ActivityRecord{${package}/com.alipay.android.msp.ui.views.MspContainerActivity}'
+          printf '%s\\n' '${activityDumpPrefix}${package}/${activity}${activityDumpSuffix}'
         else
           printf '%s\\n' 'mResumedActivity: ActivityRecord{com.kong373.voice_social_app/.MainActivity}'
         fi
@@ -106,7 +113,7 @@ case "\${1:-}" in
       uiautomator)
         [[ "\${2:-}" == 'dump' ]] || exit 93
         count=\$(<"\${FAKE_UI}"); count=\$((count + 1)); printf '%s' "\$count" >"\${FAKE_UI}"
-        printf '%s' '<hierarchy package="${package}"><node package="${package}" class="com.alipay.android.msp.ui.views.MspContainerActivity" text="Cancel" content-desc="Cancel" enabled="true" visible-to-user="true" clickable="true" bounds="[40,2800][1400,3000]" /></hierarchy>' >"\${FAKE_REMOTE_UI}"
+        printf '%s' '<hierarchy package="${package}"><node package="${package}" class="${activity}" text="Cancel" content-desc="Cancel" enabled="true" visible-to-user="true" clickable="true" bounds="[40,2800][1400,3000]" /></hierarchy>' >"\${FAKE_REMOTE_UI}"
         ;;
       cat)
         cat "\${FAKE_REMOTE_UI}"
@@ -379,6 +386,22 @@ esac
     expect(
       operatorSource,
       contains(
+        "TARGET_ACTIVITY_MSP='com.alipay.android.msp.ui.views.MspContainerActivity'",
+      ),
+    );
+    expect(
+      operatorSource,
+      contains(
+        "TARGET_ACTIVITY_FLYBIRD='com.alipay.android.app.flybird.ui.window.FlyBirdWindowActivity'",
+      ),
+    );
+    expect(
+      operatorSource,
+      contains('component == activity_msp || component == activity_flybird'),
+    );
+    expect(
+      operatorSource,
+      contains(
         r'EXPECTED_NATIVE_MARKER="${NATIVE_RESULT_PREFIX}sdkCompleted=0::resultStatus=6001::runId=${ISOLATION_RUN_ID}"',
       ),
     );
@@ -524,31 +547,43 @@ esac
     },
   );
 
-  test(
-    'operator accepts only a selected physical serial and exact cancel pair',
-    () {
-      final Directory root = sandbox('alipay-physical-operator-pass-');
-      final File adb = fakeAdb(
-        root,
-        markersAfterBack: <String>[nativeCancel, bridgeReturned],
-      );
-      final ProcessResult result = runOperator(root, adb: adb);
-      expect(
-        result.exitCode,
-        0,
-        reason: 'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
-      );
-      expect(result.stdout, contains('PHYSICAL_DEVICE_DIAGNOSTIC::PASS'));
-      expect(File('${root.path}/back.count').readAsStringSync(), '1');
-      final String calls = File('${root.path}/adb.calls').readAsStringSync();
-      expect(calls, contains('-s $serial'));
-      expect(calls, isNot(contains('emulator-5554')));
-      expect(calls, isNot(contains('devices')));
-    },
-  );
+  test('operator accepts only the two exact sandbox cashier activities', () {
+    const List<String> dumpPrefixes = <String>[
+      'mResumedActivity: ActivityRecord{',
+      'topResumedActivity = ActivityRecord {',
+      'mFocusedApp=ActivityRecord{',
+    ];
+    for (final String activity in <String>[
+      mspCashierActivity,
+      flyBirdCashierActivity,
+    ]) {
+      for (final String dumpPrefix in dumpPrefixes) {
+        final Directory root = sandbox('alipay-physical-operator-pass-');
+        final File adb = fakeAdb(
+          root,
+          activity: activity,
+          activityDumpPrefix: dumpPrefix,
+          markersAfterBack: <String>[nativeCancel, bridgeReturned],
+        );
+        final ProcessResult result = runOperator(root, adb: adb);
+        expect(
+          result.exitCode,
+          0,
+          reason:
+              'activity=$activity dumpPrefix=$dumpPrefix\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+        );
+        expect(result.stdout, contains('PHYSICAL_DEVICE_DIAGNOSTIC::PASS'));
+        expect(File('${root.path}/back.count').readAsStringSync(), '1');
+        final String calls = File('${root.path}/adb.calls').readAsStringSync();
+        expect(calls, contains('-s $serial'));
+        expect(calls, isNot(contains('emulator-5554')));
+        expect(calls, isNot(contains('devices')));
+      }
+    }
+  });
 
   test(
-    'wrong serial, qemu/emulator, missing reverse, and wrong package fail before BACK',
+    'wrong serial, qemu/emulator, reverse, package, and activity fail before BACK',
     () {
       final Directory wrongSerialRoot = sandbox(
         'alipay-physical-wrong-serial-',
@@ -601,6 +636,27 @@ esac
       );
       expect(wrongPackage.exitCode, isNot(0));
       expect(File('${packageRoot.path}/back.count').readAsStringSync(), '0');
+
+      for (final String dumpPrefix in <String>[
+        'mResumedActivity: ActivityRecord{',
+        'topResumedActivity = ActivityRecord {',
+        'mFocusedApp=ActivityRecord{',
+      ]) {
+        final Directory activityRoot = sandbox(
+          'alipay-physical-wrong-activity-',
+        );
+        final File activityAdb = fakeAdb(
+          activityRoot,
+          activity: 'com.alipay.android.msp.ui.views.UnapprovedActivity',
+          activityDumpPrefix: dumpPrefix,
+        );
+        final ProcessResult wrongActivity = runOperator(
+          activityRoot,
+          adb: activityAdb,
+        );
+        expect(wrongActivity.exitCode, isNot(0));
+        expect(File('${activityRoot.path}/back.count').readAsStringSync(), '0');
+      }
     },
   );
 

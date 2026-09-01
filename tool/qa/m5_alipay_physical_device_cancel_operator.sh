@@ -9,7 +9,8 @@ umask 077
 # Every adb invocation below is scoped to the one explicit --serial value.
 
 readonly TARGET_PACKAGE='com.eg.android.AlipayGphoneRC'
-readonly TARGET_ACTIVITY='MspContainerActivity'
+readonly TARGET_ACTIVITY_MSP='com.alipay.android.msp.ui.views.MspContainerActivity'
+readonly TARGET_ACTIVITY_FLYBIRD='com.alipay.android.app.flybird.ui.window.FlyBirdWindowActivity'
 readonly API_BASE_URL='http://127.0.0.1:18080/'
 readonly REVERSE_SPEC='tcp:18080 tcp:18080'
 readonly NATIVE_RESULT_PREFIX='M5_ALIPAY_NATIVE_RESULT::'
@@ -338,13 +339,15 @@ verify_reverse() {
 
 foreground_is_target() {
   local dump="$1"
-  awk -v package="$TARGET_PACKAGE" -v activity="$TARGET_ACTIVITY" '
-    /(^|[[:space:]])(mResumedActivity|ResumedActivity|topResumedActivity|mFocusedApp):/ {
+  awk -v package="$TARGET_PACKAGE" \
+    -v activity_msp="$TARGET_ACTIVITY_MSP" \
+    -v activity_flybird="$TARGET_ACTIVITY_FLYBIRD" '
+    /(^|[[:space:]])(mResumedActivity|ResumedActivity|topResumedActivity|mFocusedApp)[[:space:]]*[:=]/ {
       start = index($0, package "/")
       if (start > 0) {
         component = substr($0, start + length(package) + 1)
         sub(/[[:space:]}].*$/, "", component)
-        if (component ~ ("(^|\\.)" activity "$")) found = 1
+        if (component == activity_msp || component == activity_flybird) found = 1
       }
     }
     END { exit(found ? 0 : 1) }
@@ -417,7 +420,7 @@ capture_fresh_ui_xml() {
 }
 
 ui_xml_state() {
-  python3 - "$UI_DUMP_LOCAL_PATH" "$TARGET_PACKAGE" "$TARGET_ACTIVITY" \
+  python3 - "$UI_DUMP_LOCAL_PATH" "$TARGET_PACKAGE" \
     "$SCREEN_WIDTH" "$SCREEN_HEIGHT" "$UI_XML_MAX_BYTES" <<'PY'
 import re
 import sys
@@ -433,10 +436,9 @@ def verdict(value: str) -> None:
 try:
     path = Path(sys.argv[1])
     package = sys.argv[2]
-    activity = sys.argv[3].casefold().lstrip(".")
-    width = int(sys.argv[4])
-    height = int(sys.argv[5])
-    max_bytes = int(sys.argv[6])
+    width = int(sys.argv[3])
+    height = int(sys.argv[4])
+    max_bytes = int(sys.argv[5])
     raw = path.read_bytes()
     if not raw or len(raw) > max_bytes or b"\x00" in raw:
         verdict("INVALID")
