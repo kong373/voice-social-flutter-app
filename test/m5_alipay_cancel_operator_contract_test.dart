@@ -200,7 +200,7 @@ esac
     String serial = 'emulator-5554',
     String? avdBSerial,
     int afterBackTimeout = 0,
-    int targetTimeout = 1,
+    int targetTimeout = 2,
   }) {
     final File calls = File('${sandbox.path}/adb-calls.txt');
     final File dumpsysCount = File('${sandbox.path}/dumpsys-count.txt');
