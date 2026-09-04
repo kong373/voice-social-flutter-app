@@ -14,23 +14,22 @@ abstract interface class AppleIapStoreKit2Adapter {
 
   Stream<AppleIapTransaction> get transactionUpdates;
 
-  Future<AppleIapAvailabilityStatus> availability();
+  Future<bool> isAvailable();
 
-  Future<List<AppleStoreProduct>> loadProducts(List<String> productIds);
+  Future<List<AppleIapStoreProduct>> fetchProducts(
+    Set<String> storeProductIds,
+  );
 
   Future<AppleIapPurchaseResult> purchase({
-    required String productId,
+    required String storeProductId,
     required String appAccountToken,
   });
 
-  Future<List<AppleIapTransaction>> recoverUnfinished({
-    bool synchronizeStore = false,
-  });
+  Future<List<AppleIapTransaction>> unfinishedTransactions();
 
-  /// Completes a StoreKit transaction after the backend has acknowledged
-  /// delivery. Callers must never invoke this before a `DELIVERED` or
-  /// `ALREADY_DELIVERED` response with `finishAllowed=true`.
   Future<bool> finish(String transactionId);
+
+  Future<void> synchronize();
 }
 
 class DisabledAppleIapStoreKit2Adapter implements AppleIapStoreKit2Adapter {
@@ -44,32 +43,30 @@ class DisabledAppleIapStoreKit2Adapter implements AppleIapStoreKit2Adapter {
       const Stream<AppleIapTransaction>.empty();
 
   @override
-  Future<AppleIapAvailabilityStatus> availability() async =>
-      const AppleIapAvailabilityStatus(
-        state: AppleIapAvailability.unsupportedPlatform,
-      );
+  Future<bool> isAvailable() async => false;
 
   @override
-  Future<List<AppleStoreProduct>> loadProducts(
-    List<String> productIds,
-  ) async => const <AppleStoreProduct>[];
+  Future<List<AppleIapStoreProduct>> fetchProducts(
+    Set<String> storeProductIds,
+  ) async => const <AppleIapStoreProduct>[];
 
   @override
   Future<AppleIapPurchaseResult> purchase({
-    required String productId,
+    required String storeProductId,
     required String appAccountToken,
   }) async => const AppleIapPurchaseResult(
-    outcome: AppleIapPurchaseOutcome.unavailable,
-    reason: 'unsupported_platform',
+    state: AppleIapPurchaseState.unavailable,
   );
 
   @override
-  Future<List<AppleIapTransaction>> recoverUnfinished({
-    bool synchronizeStore = false,
-  }) async => const <AppleIapTransaction>[];
+  Future<List<AppleIapTransaction>> unfinishedTransactions() async =>
+      const <AppleIapTransaction>[];
 
   @override
   Future<bool> finish(String transactionId) async => false;
+
+  @override
+  Future<void> synchronize() async {}
 }
 
 class MethodChannelAppleIapStoreKit2Adapter
@@ -102,8 +99,8 @@ class MethodChannelAppleIapStoreKit2Adapter
   static const EventChannel _defaultEventChannel = EventChannel(
     'voice_social_app/apple_iap_storekit2/transactions',
   );
-  static const int _maximumProductCount = 100;
   static const int _maximumIdentifierLength = 255;
+  static const int _maximumProductCount = 100;
   static const int _maximumJwsLength = 128 * 1024;
 
   final MethodChannel _methodChannel;
@@ -124,79 +121,76 @@ class MethodChannelAppleIapStoreKit2Adapter
     }
     return _updates ??= (_transactionEventStream ??
             _eventChannel.receiveBroadcastStream())
-        .map<AppleIapTransaction>(
-          (Object? raw) => _parseTransaction(raw, expectedSource: null),
-        )
+        .map<AppleIapTransaction>(_parseTransaction)
         .asBroadcastStream();
   }
 
   @override
-  Future<AppleIapAvailabilityStatus> availability() async {
+  Future<bool> isAvailable() async {
     if (!isPlatformSupported) {
-      return const AppleIapAvailabilityStatus(
-        state: AppleIapAvailability.unsupportedPlatform,
-      );
+      return false;
     }
-    final Object? raw = await _invoke('availability', const <String, Object?>{});
-    final Map<String, Object?> data = _requireMap(raw, 'StoreKit availability');
-    final String minimumOsVersion = _optionalString(
-          data['minimumOsVersion'],
-        ) ??
-        '15.0';
-    final AppleIapAvailability state = switch (
-      _requiredString(data['state'], 'state').toLowerCase()
-    ) {
-      'available' => AppleIapAvailability.available,
-      'payments_disabled' => AppleIapAvailability.paymentsDisabled,
-      'unsupported_os' => AppleIapAvailability.unsupportedOs,
-      'unsupported_platform' => AppleIapAvailability.unsupportedPlatform,
-      _ => AppleIapAvailability.unavailable,
-    };
-    return AppleIapAvailabilityStatus(
-      state: state,
-      minimumOsVersion: minimumOsVersion,
+    final Map<String, Object?> data = _requireMap(
+      await _invoke('availability', const <String, Object?>{}),
+      'StoreKit 可用性',
     );
+    final String state = _requiredString(data['state'], 'state').toLowerCase();
+    return state == 'available';
   }
 
   @override
-  Future<List<AppleStoreProduct>> loadProducts(
-    List<String> productIds,
+  Future<List<AppleIapStoreProduct>> fetchProducts(
+    Set<String> storeProductIds,
   ) async {
     if (!isPlatformSupported) {
-      return const <AppleStoreProduct>[];
+      return const <AppleIapStoreProduct>[];
     }
-    final List<String> normalized = _normalizeIdentifiers(
-      productIds,
-      label: 'StoreKit product IDs',
-    );
+    if (storeProductIds.isEmpty ||
+        storeProductIds.length > _maximumProductCount) {
+      throw ArgumentError.value(
+        storeProductIds,
+        'storeProductIds',
+        '数量需为 1～100',
+      );
+    }
+    final List<String> normalized = storeProductIds
+        .map((String id) => _identifier(id, 'storeProductId'))
+        .toList(growable: false)
+      ..sort();
     final Object? raw = await _invoke('loadProducts', <String, Object?>{
       'productIds': normalized,
     });
-    if (raw is! List<Object?>) {
+    if (raw is! List) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: 'StoreKit 商品响应不是数组',
       );
     }
-    final List<AppleStoreProduct> products = <AppleStoreProduct>[];
-    for (final Object? item in raw) {
-      final Map<String, Object?> map = _requireMap(item, 'StoreKit product');
-      final AppleStoreProduct product = AppleStoreProduct(
-        id: _identifier(map['id'], 'id'),
-        displayName: _requiredString(map['displayName'], 'displayName'),
-        description: _requiredString(map['description'], 'description'),
-        displayPrice: _requiredString(map['displayPrice'], 'displayPrice'),
-        productType: _requiredString(map['productType'], 'productType'),
-      );
-      if (!product.isConsumable) {
-        throw const ApiException(
-          kind: ApiFailureKind.protocol,
-          message: 'StoreKit 返回了非消耗型充值商品',
-        );
-      }
-      products.add(product);
-    }
-    if (products.map((AppleStoreProduct item) => item.id).toSet().length !=
+    final List<AppleIapStoreProduct> products = raw
+        .map<AppleIapStoreProduct>((Object? item) {
+          final Map<String, Object?> data = _requireMap(item, 'StoreKit 商品');
+          final String type = _requiredString(
+            data['productType'],
+            'productType',
+          ).toLowerCase();
+          if (type != 'consumable') {
+            throw const ApiException(
+              kind: ApiFailureKind.protocol,
+              message: 'StoreKit 返回了非消耗型充值商品',
+            );
+          }
+          return AppleIapStoreProduct(
+            storeProductId: _identifier(data['id'], 'id'),
+            displayName: _requiredString(data['displayName'], 'displayName'),
+            description: _requiredString(data['description'], 'description'),
+            displayPrice: _requiredString(data['displayPrice'], 'displayPrice'),
+          );
+        })
+        .toList(growable: false);
+    if (products
+            .map((AppleIapStoreProduct item) => item.storeProductId)
+            .toSet()
+            .length !=
         products.length) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -208,48 +202,46 @@ class MethodChannelAppleIapStoreKit2Adapter
 
   @override
   Future<AppleIapPurchaseResult> purchase({
-    required String productId,
+    required String storeProductId,
     required String appAccountToken,
   }) async {
     if (!isPlatformSupported) {
       return const AppleIapPurchaseResult(
-        outcome: AppleIapPurchaseOutcome.unavailable,
-        reason: 'unsupported_platform',
+        state: AppleIapPurchaseState.unavailable,
       );
     }
-    final String normalizedProductId = _identifier(productId, 'productId');
-    final String normalizedToken = _canonicalUuid(
-      appAccountToken,
-      'appAccountToken',
-    );
     final Object? raw = await _invoke('purchase', <String, Object?>{
-      'productId': normalizedProductId,
-      'appAccountToken': normalizedToken,
+      'productId': _identifier(storeProductId, 'storeProductId'),
+      'appAccountToken': _canonicalUuid(
+        appAccountToken,
+        'appAccountToken',
+      ),
     });
-    final Map<String, Object?> data = _requireMap(raw, 'StoreKit purchase');
+    final Map<String, Object?> data = _requireMap(raw, 'StoreKit 购买');
     final String outcome = _requiredString(
       data['outcome'],
       'outcome',
     ).toLowerCase();
+    if (outcome == 'transaction') {
+      final AppleIapTransaction transaction = _parseTransaction(
+        data['transaction'],
+      );
+      return AppleIapPurchaseResult(
+        state: transaction.locallyVerified
+            ? AppleIapPurchaseState.verified
+            : AppleIapPurchaseState.unverified,
+        transaction: transaction,
+      );
+    }
     return switch (outcome) {
-      'transaction' => AppleIapPurchaseResult(
-        outcome: AppleIapPurchaseOutcome.transaction,
-        transaction: _parseTransaction(
-          data['transaction'],
-          expectedSource: AppleIapTransactionSource.purchase,
-        ),
-      ),
       'pending' => const AppleIapPurchaseResult(
-        outcome: AppleIapPurchaseOutcome.pending,
-        reason: 'pending',
+        state: AppleIapPurchaseState.pending,
       ),
       'user_cancelled' => const AppleIapPurchaseResult(
-        outcome: AppleIapPurchaseOutcome.userCancelled,
-        reason: 'user_cancelled',
+        state: AppleIapPurchaseState.canceled,
       ),
       'failed' => const AppleIapPurchaseResult(
-        outcome: AppleIapPurchaseOutcome.failed,
-        reason: 'storekit_failed',
+        state: AppleIapPurchaseState.failed,
       ),
       _ => throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -259,30 +251,22 @@ class MethodChannelAppleIapStoreKit2Adapter
   }
 
   @override
-  Future<List<AppleIapTransaction>> recoverUnfinished({
-    bool synchronizeStore = false,
-  }) async {
+  Future<List<AppleIapTransaction>> unfinishedTransactions() async {
     if (!isPlatformSupported) {
       return const <AppleIapTransaction>[];
     }
     final Object? raw = await _invoke(
       'recoverUnfinished',
-      <String, Object?>{'synchronizeStore': synchronizeStore},
-      timeout: synchronizeStore ? const Duration(seconds: 90) : null,
+      const <String, Object?>{'synchronizeStore': false},
     );
-    if (raw is! List<Object?>) {
+    if (raw is! List) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: 'StoreKit 未完成交易响应不是数组',
       );
     }
     final List<AppleIapTransaction> transactions = raw
-        .map<AppleIapTransaction>(
-          (Object? item) => _parseTransaction(
-            item,
-            expectedSource: AppleIapTransactionSource.unfinished,
-          ),
-        )
+        .map<AppleIapTransaction>(_parseTransaction)
         .toList(growable: false);
     if (transactions
             .map((AppleIapTransaction item) => item.transactionId)
@@ -314,27 +298,38 @@ class MethodChannelAppleIapStoreKit2Adapter
     return raw;
   }
 
+  @override
+  Future<void> synchronize() async {
+    if (!isPlatformSupported) {
+      return;
+    }
+    await _invoke(
+      'recoverUnfinished',
+      const <String, Object?>{'synchronizeStore': true},
+      timeout: const Duration(seconds: 90),
+    );
+  }
+
   Future<Object?> _invoke(
     String method,
     Map<String, Object?> arguments, {
     Duration? timeout,
   }) async {
     try {
-      final Future<Object?> request = _invoker != null
-          ? _invoker(method, arguments)
+      final AppleIapMethodInvoker? invoker = _invoker;
+      final Future<Object?> request = invoker != null
+          ? invoker(method, arguments)
           : _methodChannel.invokeMethod<Object?>(method, arguments);
       return await request.timeout(timeout ?? _nativeTimeout);
-    } on TimeoutException catch (error) {
-      throw ApiException(
+    } on TimeoutException {
+      throw const ApiException(
         kind: ApiFailureKind.timeout,
-        message: 'StoreKit 原生操作超时，交易保持未完成并等待恢复',
-        cause: error,
+        message: 'StoreKit 操作超时，交易保持未完成并等待恢复',
       );
-    } on MissingPluginException catch (error) {
-      throw ApiException(
+    } on MissingPluginException {
+      throw const ApiException(
         kind: ApiFailureKind.configuration,
         message: 'StoreKit 2 原生桥未注册',
-        cause: error,
       );
     } on PlatformException catch (error) {
       throw ApiException(
@@ -348,46 +343,22 @@ class MethodChannelAppleIapStoreKit2Adapter
           'invalid_request' => 'Apple 充值请求无效',
           _ => 'Apple IAP 暂不可用，交易不会被客户端认定为成功',
         },
-        cause: error,
       );
     }
   }
 
-  static AppleIapTransaction _parseTransaction(
-    Object? raw, {
-    required AppleIapTransactionSource? expectedSource,
-  }) {
-    final Map<String, Object?> data = _requireMap(raw, 'StoreKit transaction');
-    final String sourceName = _requiredString(data['source'], 'source');
-    final AppleIapTransactionSource source = switch (sourceName.toLowerCase()) {
-      'purchase' => AppleIapTransactionSource.purchase,
-      'updates' => AppleIapTransactionSource.updates,
-      'unfinished' => AppleIapTransactionSource.unfinished,
-      _ => throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: 'StoreKit 交易来源无效',
-      ),
-    };
-    if (expectedSource != null && source != expectedSource) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: 'StoreKit 交易来源与当前操作不一致',
-      );
-    }
-    final String verificationName = _requiredString(
+  static AppleIapTransaction _parseTransaction(Object? raw) {
+    final Map<String, Object?> data = _requireMap(raw, 'StoreKit 交易');
+    final String verification = _requiredString(
       data['verification'],
       'verification',
-    );
-    final AppleIapVerification verification = switch (
-      verificationName.toLowerCase()
-    ) {
-      'verified' => AppleIapVerification.verified,
-      'unverified' => AppleIapVerification.unverified,
-      _ => throw const ApiException(
+    ).toLowerCase();
+    if (verification != 'verified' && verification != 'unverified') {
+      throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: 'StoreKit 交易验证状态无效',
-      ),
-    };
+      );
+    }
     final String signedTransaction = _requiredString(
       data['signedTransaction'],
       'signedTransaction',
@@ -399,50 +370,35 @@ class MethodChannelAppleIapStoreKit2Adapter
         message: 'StoreKit 交易 JWS 格式无效',
       );
     }
-    final DateTime? purchaseDate = DateTime.tryParse(
-      _requiredString(data['purchaseDate'], 'purchaseDate'),
-    );
-    if (purchaseDate == null) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: 'StoreKit 交易时间无效',
-      );
-    }
+    final Object? rawToken = data['appAccountToken'];
     return AppleIapTransaction(
       transactionId: _transactionId(data['transactionId']),
-      originalTransactionId: _transactionId(
-        data['originalTransactionId'],
-      ),
-      productId: _identifier(data['productId'], 'productId'),
-      appAccountToken: switch (_optionalString(data['appAccountToken'])) {
-        final String value => _canonicalUuid(value, 'appAccountToken'),
+      originalTransactionId: switch (data['originalTransactionId']) {
         null => null,
+        final Object value => _transactionId(value),
       },
-      purchaseDate: purchaseDate.toUtc(),
+      storeProductId: _identifier(data['productId'], 'productId'),
+      appAccountToken: rawToken == null
+          ? null
+          : _canonicalUuid(rawToken, 'appAccountToken'),
       signedTransaction: signedTransaction,
-      verification: verification,
-      source: source,
+      locallyVerified: verification == 'verified',
     );
   }
 
   static Map<String, Object?> _requireMap(Object? raw, String label) {
-    if (raw is! Map<Object?, Object?>) {
+    if (raw is! Map) {
       throw ApiException(
         kind: ApiFailureKind.protocol,
-        message: '$label 响应不是对象',
+        message: '$label响应不是对象',
       );
     }
-    final Map<String, Object?> result = <String, Object?>{};
-    for (final MapEntry<Object?, Object?> entry in raw.entries) {
-      if (entry.key is! String) {
-        throw ApiException(
-          kind: ApiFailureKind.protocol,
-          message: '$label 包含非字符串字段',
-        );
-      }
-      result[entry.key! as String] = entry.value;
-    }
-    return result;
+    return raw.map<String, Object?>(
+      (Object? key, Object? value) => MapEntry<String, Object?>(
+        key.toString(),
+        value,
+      ),
+    );
   }
 
   static String _requiredString(Object? raw, String field) {
@@ -453,29 +409,6 @@ class MethodChannelAppleIapStoreKit2Adapter
       );
     }
     return raw;
-  }
-
-  static String? _optionalString(Object? raw) {
-    if (raw == null) {
-      return null;
-    }
-    return _requiredString(raw, 'optional field');
-  }
-
-  static List<String> _normalizeIdentifiers(
-    List<String> values, {
-    required String label,
-  }) {
-    if (values.isEmpty || values.length > _maximumProductCount) {
-      throw ArgumentError.value(values, label, '数量需为 1～100');
-    }
-    final List<String> normalized = values
-        .map((String value) => _identifier(value, label))
-        .toList(growable: false);
-    if (normalized.toSet().length != normalized.length) {
-      throw ArgumentError.value(values, label, '不得包含重复标识');
-    }
-    return normalized;
   }
 
   static String _identifier(Object? raw, String field) {
@@ -501,8 +434,8 @@ class MethodChannelAppleIapStoreKit2Adapter
     return value;
   }
 
-  static String _canonicalUuid(String raw, String field) {
-    final String value = raw.trim().toLowerCase();
+  static String _canonicalUuid(Object? raw, String field) {
+    final String value = _requiredString(raw, field).toLowerCase();
     if (!RegExp(
       r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
     ).hasMatch(value)) {
