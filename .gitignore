@@ -10,8 +10,7 @@ coverage/
 .metadata
 
 # Generated platform files (M0 uses tool/bootstrap_local.sh).
-# The Android host is tracked because release builds must be reproducible.
-ios/
+# Android and iOS hosts are tracked because release builds must be reproducible.
 linux/
 macos/
 windows/
@@ -56,5 +55,7 @@ test/failures/
 !test/goldens/linux/
 !test/goldens/linux/**
 *.apk
+*.ipa
+*.xcarchive
 *.mp4
 *.webm

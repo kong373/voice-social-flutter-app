@@ -74,6 +74,14 @@ public final class FirstPartyNativePermissionsPlugin: NSObject, FlutterPlugin {
       case .denied: result("permanentlyDenied")
       @unknown default: result("unavailable")
       }
+    case "camera":
+      switch AVCaptureDevice.authorizationStatus(for: .video) {
+      case .notDetermined: result("notDetermined")
+      case .authorized: result("granted")
+      case .denied: result("permanentlyDenied")
+      case .restricted: result("restricted")
+      @unknown default: result("unavailable")
+      }
     case "notifications":
       UNUserNotificationCenter.current().getNotificationSettings { settings in
         DispatchQueue.main.async { result(Self.notificationState(settings.authorizationStatus)) }
@@ -106,6 +114,10 @@ public final class FirstPartyNativePermissionsPlugin: NSObject, FlutterPlugin {
     case "microphone":
       AVAudioSession.sharedInstance().requestRecordPermission { _ in
         self.status(kind: kind, result: result)
+      }
+    case "camera":
+      AVCaptureDevice.requestAccess(for: .video) { _ in
+        DispatchQueue.main.async { self.status(kind: kind, result: result) }
       }
     case "notifications":
       UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in

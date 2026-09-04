@@ -36,6 +36,10 @@ void main() {
         await adapter.request(PermissionKind.notifications),
         PermissionState.granted,
       );
+      expect(
+        await adapter.status(PermissionKind.camera),
+        PermissionState.permanentlyDenied,
+      );
       await adapter.openAppSettings();
 
       expect(calls, <NativePermissionCall>[
@@ -46,6 +50,10 @@ void main() {
         const NativePermissionCall(
           method: 'request',
           arguments: <String, Object?>{'kind': 'notifications'},
+        ),
+        const NativePermissionCall(
+          method: 'status',
+          arguments: <String, Object?>{'kind': 'camera'},
         ),
         const NativePermissionCall(method: 'openAppSettings'),
       ]);

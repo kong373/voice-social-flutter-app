@@ -23,7 +23,7 @@ void main() {
         platformType: 1,
       );
 
-      expect(snapshot.permissions, hasLength(3));
+      expect(snapshot.permissions, hasLength(4));
       expect(
         snapshot.permissions.every(
           (PermissionSetting item) => item.state == PermissionState.unavailable,
@@ -95,6 +95,7 @@ void main() {
       final _FakeNativePermissionAdapter adapter =
           _FakeNativePermissionAdapter(<PermissionKind, PermissionState>{
             PermissionKind.microphone: PermissionState.granted,
+            PermissionKind.camera: PermissionState.notDetermined,
             PermissionKind.notifications: PermissionState.denied,
             PermissionKind.photos: PermissionState.restricted,
           });
@@ -114,6 +115,7 @@ void main() {
         snapshot.permissions.map((PermissionSetting item) => item.state),
         <PermissionState>[
           PermissionState.granted,
+          PermissionState.notDetermined,
           PermissionState.denied,
           PermissionState.restricted,
         ],
@@ -136,7 +138,7 @@ void main() {
           account: 'user-1',
           currentVersion: 6,
           platformType: 1,
-        )).permissions[1].state,
+        )).permissions[2].state,
         PermissionState.granted,
       );
     },

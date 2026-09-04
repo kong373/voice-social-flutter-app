@@ -34,7 +34,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('适配器未接入'), findsNWidgets(3));
+      expect(find.text('适配器未接入'), findsNWidgets(4));
       expect(find.textContaining('不会把未知状态伪装成尚未请求'), findsOneWidget);
       await tester.tap(find.text('通知'));
       await tester.pumpAndSettle();
@@ -147,6 +147,13 @@ class _UnavailablePermissionRepository extends MockAccountComplianceRepository {
           state: PermissionState.unavailable,
           title: '麦克风',
           purpose: '语音',
+          managedByPlatform: null,
+        ),
+        PermissionSetting(
+          kind: PermissionKind.camera,
+          state: PermissionState.unavailable,
+          title: '相机',
+          purpose: '拍摄',
           managedByPlatform: null,
         ),
         PermissionSetting(
