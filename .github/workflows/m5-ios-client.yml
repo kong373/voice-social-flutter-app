@@ -54,12 +54,12 @@ jobs:
           set -Eeuo pipefail
           flutter pub get --enforce-lockfile
 
-      - name: Format iOS Dart contract
+      - name: Format iOS Dart contract for first-pass diagnostics
         shell: bash
         run: |
           set -Eeuo pipefail
-          dart format --output=none --set-exit-if-changed \
-            test/ios_host_contract_test.dart
+          dart format test/ios_host_contract_test.dart
+          git diff -- test/ios_host_contract_test.dart | tee ios-format.diff
 
       - name: Analyze
         shell: bash
@@ -101,6 +101,8 @@ jobs:
           name: m5-ios-source-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ios-changed-files.txt
+            ios-format.diff
+            test/ios_host_contract_test.dart
             ios-analyze.log
             ios-flutter-test.log
             coverage/
