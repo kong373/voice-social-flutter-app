@@ -1,0 +1,38 @@
+name: M5 StoreKit Phase 2 source snapshot
+
+on:
+  push:
+    branches:
+      - codex/m5-ios-phase2
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Package selected text sources
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          tar -czf storekit-phase2-source.tgz \
+            lib/app/app_dependencies.dart \
+            lib/core/network/backend_route_catalog.dart \
+            lib/features/commerce/catalog/data/backend_commerce_catalog_repository.dart \
+            lib/features/commerce/catalog/domain/commerce_catalog_models.dart \
+            lib/features/commerce/catalog/domain/commerce_catalog_repository.dart \
+            lib/features/commerce/presentation/commerce_catalog_pages.dart \
+            .github/workflows/m5-ios-client.yml \
+            pubspec.yaml \
+            pubspec.lock \
+            ios/Podfile \
+            ios/Podfile.lock
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: m5-storekit-phase2-source-${{ github.run_id }}
+          path: storekit-phase2-source.tgz
+          if-no-files-found: error
+          retention-days: 1
