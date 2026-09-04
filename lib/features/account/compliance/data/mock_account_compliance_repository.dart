@@ -70,6 +70,13 @@ class MockAccountComplianceRepository implements AccountComplianceRepository {
           managedByPlatform: true,
         ),
         PermissionSetting(
+          kind: PermissionKind.camera,
+          state: PermissionState.notDetermined,
+          title: '相机',
+          purpose: '拍摄头像或动态照片，仅在主动拍摄时使用。',
+          managedByPlatform: true,
+        ),
+        PermissionSetting(
           kind: PermissionKind.notifications,
           state: PermissionState.notDetermined,
           title: '通知',

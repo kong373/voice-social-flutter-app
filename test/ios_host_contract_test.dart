@@ -34,6 +34,7 @@ void main() {
       'ios/Flutter/AppFrameworkInfo.plist',
       'ios/Flutter/Debug.xcconfig',
       'ios/Flutter/Release.xcconfig',
+      'ios/Flutter/Profile.xcconfig',
       'ios/Runner/AppDelegate.swift',
       'ios/Runner/SceneDelegate.swift',
       'ios/Runner/Info.plist',
@@ -102,6 +103,20 @@ void main() {
       expect(info, isNot(contains('<key>CFBundleURLTypes</key>')));
     });
 
+    test(
+      'implements camera permission through the first-party native bridge',
+      () {
+        final String swift = File(
+          'packages/first_party_native_permissions/ios/'
+          'first_party_native_permissions/Sources/'
+          'first_party_native_permissions/FirstPartyNativePermissionsPlugin.swift',
+        ).readAsStringSync();
+        expect(swift, contains('case "camera"'));
+        expect(swift, contains('AVCaptureDevice.authorizationStatus'));
+        expect(swift, contains('AVCaptureDevice.requestAccess'));
+      },
+    );
+
     test('keeps unconfigured Apple capabilities absent and fail-closed', () {
       final String entitlements = File(
         'ios/Runner/Runner.entitlements',
@@ -121,6 +136,9 @@ void main() {
     });
 
     test('installs Flutter plugins through CocoaPods and implicit engine', () {
+      final String pubspec = File('pubspec.yaml').readAsStringSync();
+      expect(pubspec, contains('enable-swift-package-manager: false'));
+
       final String podfile = File('ios/Podfile').readAsStringSync();
       expect(podfile, contains("platform :ios, '13.0'"));
       expect(podfile, contains('flutter_install_all_ios_pods'));
@@ -129,6 +147,26 @@ void main() {
         podfile,
         contains(
           "config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'",
+        ),
+      );
+      final String profileConfig = File(
+        'ios/Flutter/Profile.xcconfig',
+      ).readAsStringSync();
+      expect(
+        profileConfig,
+        contains(
+          'Pods/Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig',
+        ),
+      );
+      expect(profileConfig, contains('#include "Generated.xcconfig"'));
+      final String project = File(
+        'ios/Runner.xcodeproj/project.pbxproj',
+      ).readAsStringSync();
+      expect(project, contains('path = Flutter/Profile.xcconfig;'));
+      expect(
+        project,
+        contains(
+          'baseConfigurationReference = C1A0503A2C92800100A10001 /* Profile.xcconfig */;',
         ),
       );
 
@@ -143,6 +181,62 @@ void main() {
       ).readAsStringSync();
       expect(scene, contains('FlutterSceneDelegate'));
     });
+
+    test(
+      'keeps the iOS workflow read-only and normalizes helper toolchains',
+      () {
+        final String workflow = File(
+          '.github/workflows/m5-ios-client.yml',
+        ).readAsStringSync();
+        expect(workflow, contains('      - main'));
+        expect(workflow, contains('permissions:\n  contents: read'));
+        expect(workflow, isNot(contains('contents: write')));
+        expect(workflow, isNot(contains('git push')));
+        expect(workflow, isNot(contains('git commit')));
+        expect(
+          workflow,
+          contains('Canonicalize inherited Android toolchain paths'),
+        );
+        expect(workflow, contains('Enforce iOS-only branch scope'));
+        expect(
+          workflow,
+          contains("github.ref_name == 'codex/m5-ios-client-reviewed'"),
+        );
+        expect(workflow, contains('canonical_java_home='));
+        expect(workflow, contains('canonical_sdk_root='));
+        expect(workflow, contains('Generate isolated Android wrapper'));
+        expect(workflow, contains("test \"\$(pod --version)\" = '1.16.2'"));
+        expect(workflow, contains('pod install --deployment'));
+        expect(workflow, isNot(contains('pod install --repo-update')));
+        expect(
+          workflow,
+          contains('cmp -s ios/Podfile.lock ios/Pods/Manifest.lock'),
+        );
+        expect(workflow, contains('git diff --exit-code --'));
+      },
+    );
+
+    test(
+      'tracks one immutable Pod lock and removes self-mutating workflows',
+      () {
+        expect(File('ios/Podfile.lock').existsSync(), isTrue);
+        final ProcessResult trackedLock = Process.runSync('git', <String>[
+          'ls-files',
+          '--error-unmatch',
+          'ios/Podfile.lock',
+        ]);
+        expect(trackedLock.exitCode, 0);
+
+        for (final String path in <String>[
+          '.github/workflows/ios-phase1-authoritative.yml',
+          '.github/workflows/ios-phase1-bootstrap.yml',
+          '.github/workflows/ios-phase1-finalize.yml',
+          '.github/workflows/ios-phase1-reconcile.yml',
+        ]) {
+          expect(File(path).existsSync(), isFalse, reason: path);
+        }
+      },
+    );
 
     test('documents static, verified, pending and exempt boundaries', () {
       final String document = File(

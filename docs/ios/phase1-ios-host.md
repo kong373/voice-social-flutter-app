@@ -21,6 +21,9 @@ backpack.
   - `tencent_cloud_chat_sdk`;
   - `flutter_secure_storage`.
 - CocoaPods installs the existing Flutter plugins with deployment target 13.0.
+- Swift Package Manager is disabled at the project level so CI and local builds
+  resolve the pinned native plugin graph through `Podfile.lock` instead of
+  cloning mutable provider repositories during an application build.
 - `CLIENT_TYPE=iOS` is required for live runs so the backend receives platform
   type 2.
 - Microphone, photo-library, photo-save and camera purpose strings describe the

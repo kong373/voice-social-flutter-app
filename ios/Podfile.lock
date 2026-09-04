@@ -1,0 +1,72 @@
+PODS:
+  - agora_rtc_engine (6.6.3):
+    - AgoraIrisRTC_iOS2 (= 4.6.2-build.1)
+    - AgoraVideo_Special_iOS (= 4.6.2.70)
+    - Flutter
+  - AgoraIrisRTC_iOS2 (4.6.2-build.1)
+  - AgoraVideo_Special_iOS (4.6.2.70)
+  - first_party_native_permissions (0.1.0):
+    - Flutter
+  - Flutter (1.0.0)
+  - flutter_secure_storage_darwin (10.0.0):
+    - Flutter
+    - FlutterMacOS
+  - HydraAsync (2.0.6)
+  - integration_test (0.0.1):
+    - Flutter
+  - iris_method_channel (0.0.1):
+    - Flutter
+  - tencent_cloud_chat_sdk (8.0.0):
+    - Flutter
+    - HydraAsync
+    - TXIMSDK_Plus_iOS_XCFramework (~> 9.0.7652)
+  - TXIMSDK_Plus_iOS_XCFramework (9.0.7667)
+
+DEPENDENCIES:
+  - agora_rtc_engine (from `.symlinks/plugins/agora_rtc_engine/ios`)
+  - first_party_native_permissions (from `.symlinks/plugins/first_party_native_permissions/ios`)
+  - Flutter (from `Flutter`)
+  - flutter_secure_storage_darwin (from `.symlinks/plugins/flutter_secure_storage_darwin/darwin`)
+  - integration_test (from `.symlinks/plugins/integration_test/ios`)
+  - iris_method_channel (from `.symlinks/plugins/iris_method_channel/ios`)
+  - tencent_cloud_chat_sdk (from `.symlinks/plugins/tencent_cloud_chat_sdk/ios`)
+
+SPEC REPOS:
+  trunk:
+    - AgoraIrisRTC_iOS2
+    - AgoraVideo_Special_iOS
+    - HydraAsync
+    - TXIMSDK_Plus_iOS_XCFramework
+
+EXTERNAL SOURCES:
+  agora_rtc_engine:
+    :path: ".symlinks/plugins/agora_rtc_engine/ios"
+  first_party_native_permissions:
+    :path: ".symlinks/plugins/first_party_native_permissions/ios"
+  Flutter:
+    :path: Flutter
+  flutter_secure_storage_darwin:
+    :path: ".symlinks/plugins/flutter_secure_storage_darwin/darwin"
+  integration_test:
+    :path: ".symlinks/plugins/integration_test/ios"
+  iris_method_channel:
+    :path: ".symlinks/plugins/iris_method_channel/ios"
+  tencent_cloud_chat_sdk:
+    :path: ".symlinks/plugins/tencent_cloud_chat_sdk/ios"
+
+SPEC CHECKSUMS:
+  agora_rtc_engine: eb07ef3cf67c06a20fbdfc7f67b09c5ffb4be324
+  AgoraIrisRTC_iOS2: 13996c3c78134da357634f6a1a12741436658886
+  AgoraVideo_Special_iOS: 9bd42c487f936f4d335d5630e2632f0b08e214f5
+  first_party_native_permissions: 3d0890f3990ee1731e64489150b3aae116289978
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_secure_storage_darwin: acdb3f316ed05a3e68f856e0353b133eec373a23
+  HydraAsync: 8d589bd725b0224f899afafc9a396327405f8063
+  integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
+  iris_method_channel: 7d661cf3259b3009ae423508470dbeb9374446ee
+  tencent_cloud_chat_sdk: f03289e1fab169c20aaf7ed513942e197fb23f91
+  TXIMSDK_Plus_iOS_XCFramework: 7776eb7a18b71a4b9daae8f43b230e9fa06cfc24
+
+PODFILE CHECKSUM: 481650e8fb010a91d039f97af46e130197fa2421
+
+COCOAPODS: 1.16.2

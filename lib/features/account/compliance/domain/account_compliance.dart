@@ -4,7 +4,7 @@ enum RestrictionKind { none, account, device, chat }
 
 enum AppealState { none, pending, approved, rejected }
 
-enum PermissionKind { microphone, notifications, photos }
+enum PermissionKind { microphone, camera, notifications, photos }
 
 /// State returned by the authoritative permission source.
 ///

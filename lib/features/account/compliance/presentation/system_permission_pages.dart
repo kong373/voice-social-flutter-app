@@ -589,6 +589,7 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
 
 IconData _permissionIcon(PermissionKind kind) => switch (kind) {
   PermissionKind.microphone => Icons.mic_none_rounded,
+  PermissionKind.camera => Icons.photo_camera_outlined,
   PermissionKind.notifications => Icons.notifications_none_rounded,
   PermissionKind.photos => Icons.photo_library_outlined,
 };
@@ -603,6 +604,7 @@ String _permissionStateLabel(PermissionState state) => switch (state) {
 };
 Color _permissionTone(PermissionKind kind) => switch (kind) {
   PermissionKind.microphone => AccountOxygenColors.violet,
+  PermissionKind.camera => AppColors.warning,
   PermissionKind.notifications => AccountOxygenColors.cyan,
   PermissionKind.photos => AccountOxygenColors.pink,
 };

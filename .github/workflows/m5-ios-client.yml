@@ -3,7 +3,11 @@ name: M5 iOS client
 on:
   push:
     branches:
+      - main
       - codex/m5-ios-client
+      - codex/m5-ios-client-reviewed
+      - codex/m5-unified-release-candidate
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -29,6 +33,11 @@ jobs:
           fetch-depth: 0
 
       - name: Enforce iOS-only branch scope
+        if: >-
+          github.ref_name == 'codex/m5-ios-client' ||
+          github.ref_name == 'codex/m5-ios-client-reviewed' ||
+          github.head_ref == 'codex/m5-ios-client' ||
+          github.head_ref == 'codex/m5-ios-client-reviewed'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -54,6 +63,41 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: gradle
+
+      - name: Canonicalize inherited Android toolchain paths
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          canonical_java_home="$(cd "$JAVA_HOME" && pwd -P)"
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -n "$sdk_root"
+          canonical_sdk_root="$(cd "$sdk_root" && pwd -P)"
+          test -x "$canonical_java_home/bin/java"
+          test -x "$canonical_java_home/bin/javac"
+          test -x "$canonical_java_home/bin/jar"
+          test ! -L "$canonical_java_home"
+          test ! -L "$canonical_sdk_root"
+          {
+            echo "JAVA_HOME=$canonical_java_home"
+            echo "ANDROID_HOME=$canonical_sdk_root"
+            echo "ANDROID_SDK_ROOT=$canonical_sdk_root"
+          } >> "$GITHUB_ENV"
+
+      - name: Generate isolated Android wrapper for inherited helper contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test ! -e android
+          host_dir="${RUNNER_TEMP}/voice-social-android-host"
+          test ! -e "$host_dir"
+          flutter create \
+            --platforms=android \
+            --org=com.kong373 \
+            --project-name=voice_social_app \
+            --no-pub \
+            "$host_dir"
+          mv "$host_dir/android" android
+          test -x android/gradlew
 
       - name: Verify locked dependencies
         shell: bash
@@ -170,6 +214,12 @@ jobs:
           set -Eeuo pipefail
           flutter pub get --enforce-lockfile
 
+      - name: Prepare iOS engine artifacts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter precache --ios
+
       - name: Validate iOS source files
         shell: bash
         run: |
@@ -188,7 +238,24 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          pod install --repo-update 2>&1 | tee ../ios-pod-install.log
+          test "$(pod --version)" = '1.16.2'
+          pod install --deployment 2>&1 | tee ../ios-pod-install.log
+
+      - name: Verify locked native dependency graph
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -s ios/Podfile.lock
+          grep -Fq 'agora_rtc_engine' ios/Podfile.lock
+          grep -Fq 'flutter_secure_storage_darwin' ios/Podfile.lock
+          grep -Fq 'first_party_native_permissions' ios/Podfile.lock
+          grep -Fq 'tencent_cloud_chat_sdk' ios/Podfile.lock
+          test -s ios/Pods/Manifest.lock
+          cmp -s ios/Podfile.lock ios/Pods/Manifest.lock
+          git diff --exit-code -- \
+            ios/Podfile.lock \
+            ios/Runner.xcodeproj/project.pbxproj \
+            ios/Runner.xcworkspace/contents.xcworkspacedata
 
       - name: Inspect resolved iOS plugin registration
         shell: bash
@@ -223,6 +290,13 @@ jobs:
           bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
             build/ios/iphonesimulator/Runner.app/Info.plist)"
           test "$bundle_id" = 'com.kong373.voiceSocialApp'
+          git diff --exit-code -- \
+            pubspec.yaml \
+            ios/Flutter/AppFrameworkInfo.plist \
+            ios/Runner.xcodeproj/project.pbxproj \
+            ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme \
+            ios/Runner.xcworkspace/contents.xcworkspacedata \
+            ios/Podfile.lock
 
       - name: Inspect simulator app boundaries
         shell: bash
