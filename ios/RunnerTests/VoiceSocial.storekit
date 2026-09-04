@@ -1,0 +1,109 @@
+{
+  "identifier" : "VOICE-SOCIAL-LOCAL-STOREKIT",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "6.00",
+      "familyShareable" : false,
+      "internalID" : "A6D70961-81A7-47A4-9895-3B26AAFE1001",
+      "localizations" : [
+        {
+          "description" : "仅用于本地 StoreKit 自动化的 60 礼物币消耗型商品。",
+          "displayName" : "60 礼物币",
+          "locale" : "zh_CN"
+        },
+        {
+          "description" : "Local StoreKit consumable for 60 gift coins.",
+          "displayName" : "60 Gift Coins",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.kong373.voiceSocial.giftcoins.60",
+      "referenceName" : "Voice Social 60 Gift Coins",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "30.00",
+      "familyShareable" : false,
+      "internalID" : "A6D70961-81A7-47A4-9895-3B26AAFE1002",
+      "localizations" : [
+        {
+          "description" : "仅用于本地 StoreKit 自动化的 300 礼物币消耗型商品。",
+          "displayName" : "300 礼物币",
+          "locale" : "zh_CN"
+        },
+        {
+          "description" : "Local StoreKit consumable for 300 gift coins.",
+          "displayName" : "300 Gift Coins",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.kong373.voiceSocial.giftcoins.300",
+      "referenceName" : "Voice Social 300 Gift Coins",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "0",
+    "_developerTeamID" : "",
+    "_failTransactionsEnabled" : false,
+    "_locale" : "zh_CN",
+    "_storefront" : "CHN",
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Purchase"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Verification"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Store Sync"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Subscription Status"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Transaction"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Manage Subscriptions Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Refund Request Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Offer Code Redeem Sheet"
+      }
+    ]
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}
