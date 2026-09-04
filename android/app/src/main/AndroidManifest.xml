@@ -1,4 +1,16 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Voice Social uses Agora for audio only. Remove optional video, phone
+         state, and screen-capture surfaces contributed by the RTC AAR. -->
+    <uses-permission
+        android:name="android.permission.CAMERA"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.READ_PHONE_STATE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
+        tools:node="remove" />
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"
@@ -30,6 +42,12 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <activity
+            android:name="io.agora.rtc2.extensions.MediaProjectionMgr$LocalScreenCaptureAssistantActivity"
+            tools:node="remove" />
+        <service
+            android:name="io.agora.rtc2.extensions.MediaProjectionMgr$LocalScreenSharingService"
+            tools:node="remove" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

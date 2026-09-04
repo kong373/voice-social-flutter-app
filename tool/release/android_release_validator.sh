@@ -75,6 +75,21 @@ contains_forbidden_surface() {
   return 1
 }
 
+contains_forbidden_permission() {
+  local source_file="$1"
+  grep -Fq 'android.permission.CAMERA' "$source_file" && return 0
+  grep -Fq 'android.permission.READ_PHONE_STATE' "$source_file" && return 0
+  grep -Fq 'android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION' "$source_file" && return 0
+  return 1
+}
+
+contains_forbidden_agora_component() {
+  local source_file="$1"
+  grep -Fq "MediaProjectionMgr\$LocalScreenCaptureAssistantActivity" "$source_file" && return 0
+  grep -Fq "MediaProjectionMgr\$LocalScreenSharingService" "$source_file" && return 0
+  return 1
+}
+
 contains_debug_certificate() {
   local source_file="$1"
   grep -Eiq 'Android Debug|debug\.keystore|CN=Android Debug' "$source_file"
@@ -170,6 +185,12 @@ validate_apk() {
   if contains_forbidden_surface "$manifest_file"; then
     fail 'debug_only_surface_in_apk_manifest'
   fi
+  if contains_forbidden_permission "$manifest_file"; then
+    fail 'unused_permission_in_apk_manifest'
+  fi
+  if contains_forbidden_agora_component "$manifest_file"; then
+    fail 'unused_agora_component_in_apk_manifest'
+  fi
 
   while IFS= read -r dex_file; do
     [[ -n "$dex_file" ]] || continue
@@ -230,6 +251,12 @@ validate_aab() {
     if contains_forbidden_surface "$manifest_file"; then
       fail 'debug_only_surface_in_aab_manifest'
     fi
+    if contains_forbidden_permission "$manifest_file"; then
+      fail 'unused_permission_in_aab_manifest'
+    fi
+    if contains_forbidden_agora_component "$manifest_file"; then
+      fail 'unused_agora_component_in_aab_manifest'
+    fi
     contains_debuggable_marker "$manifest_file" &&
       fail 'aab_is_debuggable'
   else
@@ -287,15 +314,20 @@ NativeAlipayIsolationActivity.class"
   if contains_jar_signature_metadata "$forbidden_file"; then
     fail 'self_test_partial_jar_signature_metadata_accepted'
   fi
-  local safe_certificate debug_certificate safe_manifest debug_manifest
+  local safe_certificate debug_certificate safe_manifest debug_manifest forbidden_manifest
   safe_certificate="$(mktemp)"
   debug_certificate="$(mktemp)"
   safe_manifest="$(mktemp)"
   debug_manifest="$(mktemp)"
+  forbidden_manifest="$(mktemp)"
   printf 'Signer: CN=Voice Social Release\n' >"$safe_certificate"
   printf 'Signer: CN=Android Debug, O=Android\n' >"$debug_certificate"
   printf 'application: label=Voice Social\n' >"$safe_manifest"
   printf 'application-debuggable\n' >"$debug_manifest"
+  printf '%s\n' \
+    'uses-permission android:name="android.permission.READ_PHONE_STATE"' \
+    "service android:name=\"io.agora.rtc2.extensions.MediaProjectionMgr\$LocalScreenSharingService\"" \
+    >"$forbidden_manifest"
   if contains_debug_certificate "$safe_certificate"; then
     fail 'self_test_safe_certificate_false_positive'
   fi
@@ -308,8 +340,18 @@ NativeAlipayIsolationActivity.class"
   if ! contains_debuggable_marker "$debug_manifest"; then
     fail 'self_test_debuggable_marker_not_detected'
   fi
+  if contains_forbidden_permission "$safe_manifest" ||
+    contains_forbidden_agora_component "$safe_manifest"; then
+    fail 'self_test_safe_manifest_permission_false_positive'
+  fi
+  if ! contains_forbidden_permission "$forbidden_manifest"; then
+    fail 'self_test_forbidden_permission_not_detected'
+  fi
+  if ! contains_forbidden_agora_component "$forbidden_manifest"; then
+    fail 'self_test_forbidden_agora_component_not_detected'
+  fi
   rm -f "$safe_file" "$forbidden_file" "$safe_certificate" "$debug_certificate" \
-    "$safe_manifest" "$debug_manifest"
+    "$safe_manifest" "$debug_manifest" "$forbidden_manifest"
   printf 'android-release-validator=self-test-PASS\n'
 }
 

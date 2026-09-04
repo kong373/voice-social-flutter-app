@@ -5,6 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final Directory root = Directory.current;
   final File gradleBuild = File('${root.path}/android/app/build.gradle.kts');
+  final File releaseManifest = File(
+    '${root.path}/android/app/src/main/AndroidManifest.xml',
+  );
   final File rootIgnore = File('${root.path}/.gitignore');
   final File androidIgnore = File('${root.path}/android/.gitignore');
   final File androidBuild = File('${root.path}/android/build.gradle.kts');
@@ -133,6 +136,50 @@ void main() {
     expect(source, contains('KeyStore'));
     expect(source, isNot(contains('signingConfigs.getByName("debug")')));
     expect(source, isNot(contains('signing with the debug keys')));
+  });
+
+  test('release manifest removes unused Agora video and phone surfaces', () {
+    final String manifestSource = releaseManifest.readAsStringSync();
+    expect(
+      manifestSource,
+      contains('xmlns:tools="http://schemas.android.com/tools"'),
+    );
+    for (final String permission in <String>[
+      'android.permission.CAMERA',
+      'android.permission.READ_PHONE_STATE',
+      'android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION',
+    ]) {
+      expect(
+        manifestSource,
+        matches(
+          RegExp(
+            '<uses-permission(?:(?!<uses-permission).)*'
+            'android:name="$permission"(?:(?!<uses-permission).)*'
+            'tools:node="remove"',
+            dotAll: true,
+          ),
+        ),
+      );
+    }
+    for (final String component in <String>[
+      'MediaProjectionMgr\$LocalScreenCaptureAssistantActivity',
+      'MediaProjectionMgr\$LocalScreenSharingService',
+    ]) {
+      expect(
+        manifestSource,
+        contains('android:name="io.agora.rtc2.extensions.$component"'),
+      );
+    }
+
+    final String validatorSource = releaseValidator.readAsStringSync();
+    expect(validatorSource, contains('contains_forbidden_permission'));
+    expect(validatorSource, contains('android.permission.READ_PHONE_STATE'));
+    expect(
+      validatorSource,
+      contains('android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION'),
+    );
+    expect(validatorSource, contains('LocalScreenCaptureAssistantActivity'));
+    expect(validatorSource, contains('LocalScreenSharingService'));
   });
 
   test(
