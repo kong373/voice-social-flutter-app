@@ -91,17 +91,38 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          ! grep -RInE \
+          if grep -RInE \
+            --include='*.swift' \
+            --include='*.h' \
+            --include='*.m' \
+            --include='*.plist' \
+            --include='*.entitlements' \
+            --include='*.xcconfig' \
+            --include='*.pbxproj' \
+            --include='Podfile' \
+            --include='*.md' \
             'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|DEVELOPMENT_TEAM[[:space:]]*=' \
-            ios docs/ios
-          ! grep -RInE \
+            ios docs/ios; then
+            echo 'Private-key material or an Apple Team ID was committed.' >&2
+            exit 1
+          fi
+          if grep -RInE \
+            --include='*.plist' \
+            --include='*.entitlements' \
             '<key>(aps-environment|com\.apple\.developer\.associated-domains|com\.apple\.security\.application-groups)</key>' \
-            ios/Runner
-          ! grep -RInE \
+            ios/Runner; then
+            echo 'An unapproved Apple entitlement was enabled.' >&2
+            exit 1
+          fi
+          if grep -InE \
             '<key>(CFBundleURLTypes|NSAllowsArbitraryLoads)</key>' \
-            ios/Runner/Info.plist
+            ios/Runner/Info.plist; then
+            echo 'An unapproved URL scheme or global ATS bypass was enabled.' >&2
+            exit 1
+          fi
           grep -Fq 'ALIPAY_IOS=UNSUPPORTED_FAIL_CLOSED' \
             docs/ios/phase1-ios-host.md
+          echo 'ios_capability_and_secret_hygiene=PASS'
 
       - name: Upload source evidence
         if: always()
