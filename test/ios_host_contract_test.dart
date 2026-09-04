@@ -75,9 +75,7 @@ void main() {
       );
       expect(
         project,
-        contains(
-          'PRODUCT_BUNDLE_IDENTIFIER = com.kong373.voiceSocialApp;',
-        ),
+        contains('PRODUCT_BUNDLE_IDENTIFIER = com.kong373.voiceSocialApp;'),
       );
       expect(
         project,
@@ -129,7 +127,9 @@ void main() {
       expect(podfile, contains('use_frameworks!'));
       expect(
         podfile,
-        contains("config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'"),
+        contains(
+          "config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'",
+        ),
       );
 
       final String delegate = File(
