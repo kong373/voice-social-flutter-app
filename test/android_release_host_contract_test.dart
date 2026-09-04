@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -182,6 +184,59 @@ void main() {
     expect(validatorSource, contains('LocalScreenSharingService'));
   });
 
+  test('launcher icons use the frozen Voice Social brand source', () {
+    final File master = File(
+      '${root.path}/assets/branding/voice-social-app-icon-1024.png',
+    );
+    expect(master.existsSync(), isTrue);
+    expect(
+      sha256.convert(master.readAsBytesSync()).toString(),
+      '515e50dc2863b8d59c9e757ce5b90ae53fcdefde69cb6683fba0a17ac0ad6bd4',
+    );
+    expect(pngDimensions(master), (1024, 1024));
+
+    const Map<String, ({int size, String flutterDefaultSha})>
+    icons = <String, ({int size, String flutterDefaultSha})>{
+      'mipmap-mdpi': (
+        size: 48,
+        flutterDefaultSha:
+            'c7c0c0189145e4e32a401c61c9bdc615754b0264e7afae24e834bb81049eaf81',
+      ),
+      'mipmap-hdpi': (
+        size: 72,
+        flutterDefaultSha:
+            '6a7c8f0d703e3682108f9662f813302236240d3f8f638bb391e32bfb96055fef',
+      ),
+      'mipmap-xhdpi': (
+        size: 96,
+        flutterDefaultSha:
+            'e14aa40904929bf313fded22cf7e7ffcbf1d1aac4263b5ef1be8bfce650397aa',
+      ),
+      'mipmap-xxhdpi': (
+        size: 144,
+        flutterDefaultSha:
+            '4d470bf22d5c17d84edc5f82516d1ba8a1c09559cd761cefb792f86d9f52b540',
+      ),
+      'mipmap-xxxhdpi': (
+        size: 192,
+        flutterDefaultSha:
+            '3c34e1f298d0c9ea3455d46db6b7759c8211a49e9ec6e44b635fc5c87dfb4180',
+      ),
+    };
+    for (final MapEntry<String, ({int size, String flutterDefaultSha})> entry
+        in icons.entries) {
+      final File icon = File(
+        '${root.path}/android/app/src/main/res/${entry.key}/ic_launcher.png',
+      );
+      expect(icon.existsSync(), isTrue);
+      expect(pngDimensions(icon), (entry.value.size, entry.value.size));
+      expect(
+        sha256.convert(icon.readAsBytesSync()).toString(),
+        isNot(entry.value.flutterDefaultSha),
+      );
+    }
+  });
+
   test(
     'AGP 9 compatibility workaround is explicit for the pinned Agora SDK',
     () {
@@ -282,4 +337,17 @@ void main() {
       );
     },
   );
+}
+
+(int, int) pngDimensions(File file) {
+  final Uint8List bytes = file.readAsBytesSync();
+  if (bytes.length < 24 ||
+      bytes[0] != 0x89 ||
+      bytes[1] != 0x50 ||
+      bytes[2] != 0x4e ||
+      bytes[3] != 0x47) {
+    throw StateError('Not a PNG: ${file.path}');
+  }
+  final ByteData data = ByteData.sublistView(bytes);
+  return (data.getUint32(16), data.getUint32(20));
 }
