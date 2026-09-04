@@ -87,16 +87,20 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test ! -e android
-          host_dir="${RUNNER_TEMP}/voice-social-android-host"
-          test ! -e "$host_dir"
-          flutter create \
-            --platforms=android \
-            --org=com.kong373 \
-            --project-name=voice_social_app \
-            --no-pub \
-            "$host_dir"
-          mv "$host_dir/android" android
+          if [[ -d android ]]; then
+            git ls-files --error-unmatch android/gradlew >/dev/null
+          else
+            test ! -e android
+            host_dir="${RUNNER_TEMP}/voice-social-android-host"
+            test ! -e "$host_dir"
+            flutter create \
+              --platforms=android \
+              --org=com.kong373 \
+              --project-name=voice_social_app \
+              --no-pub \
+              "$host_dir"
+            mv "$host_dir/android" android
+          fi
           test -x android/gradlew
 
       - name: Verify locked dependencies

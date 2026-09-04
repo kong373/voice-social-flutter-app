@@ -226,6 +226,11 @@ void main() {
         expect(workflow, contains('canonical_java_home='));
         expect(workflow, contains('canonical_sdk_root='));
         expect(workflow, contains('Generate isolated Android wrapper'));
+        expect(workflow, contains('if [[ -d android ]]; then'));
+        expect(
+          workflow,
+          contains('git ls-files --error-unmatch android/gradlew'),
+        );
         expect(workflow, contains("readonly COCOAPODS_VERSION='1.16.2'"));
         expect(
           workflow,
