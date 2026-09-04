@@ -48,18 +48,27 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Set up Java 21 for inherited Android helper contracts
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
       - name: Verify locked dependencies
         shell: bash
         run: |
           set -Eeuo pipefail
           flutter pub get --enforce-lockfile
 
-      - name: Format iOS Dart contract for first-pass diagnostics
+      - name: Check iOS Dart contract formatting
         shell: bash
         run: |
           set -Eeuo pipefail
-          dart format test/ios_host_contract_test.dart
-          git diff -- test/ios_host_contract_test.dart | tee ios-format.diff
+          dart format \
+            --output=none \
+            --set-exit-if-changed \
+            test/ios_host_contract_test.dart
 
       - name: Analyze
         shell: bash
@@ -101,8 +110,6 @@ jobs:
           name: m5-ios-source-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ios-changed-files.txt
-            ios-format.diff
-            test/ios_host_contract_test.dart
             ios-analyze.log
             ios-flutter-test.log
             coverage/
