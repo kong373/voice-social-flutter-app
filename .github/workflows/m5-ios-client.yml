@@ -204,7 +204,6 @@ jobs:
           {
             flutter --version
             xcodebuild -version
-            pod --version
             sw_vers
           } | tee ios-toolchain.txt
 
@@ -239,17 +238,24 @@ jobs:
         run: |
           set -Eeuo pipefail
           readonly COCOAPODS_VERSION='1.16.2'
-          if ! gem list --local --installed cocoapods \
-            --version "$COCOAPODS_VERSION" >/dev/null 2>&1; then
+          cocoapods_bin="$(ruby -r rubygems -e 'print Gem.user_dir')/bin/pod"
+          if [[ ! -x "$cocoapods_bin" ]] || \
+             [[ "$("$cocoapods_bin" "_${COCOAPODS_VERSION}_" --version 2>/dev/null || true)" \
+               != "$COCOAPODS_VERSION" ]]; then
             gem install --user-install cocoapods --version \
               "$COCOAPODS_VERSION" --no-document
           fi
-          cocoapods_bin="$(ruby -r rubygems -e 'print Gem.user_dir')/bin/pod"
           test -x "$cocoapods_bin"
           test "$("$cocoapods_bin" "_${COCOAPODS_VERSION}_" --version)" = \
             "$COCOAPODS_VERSION"
-          "$cocoapods_bin" "_${COCOAPODS_VERSION}_" install --deployment \
+          printf 'CocoaPods %s\n' "$COCOAPODS_VERSION" >> ../ios-toolchain.txt
+          expected_lock="${RUNNER_TEMP}/voice-social-Podfile.lock.expected"
+          cp Podfile.lock "$expected_lock"
+          echo "$(dirname "$cocoapods_bin")" >> "$GITHUB_PATH"
+          "$cocoapods_bin" "_${COCOAPODS_VERSION}_" install --no-repo-update \
             2>&1 | tee ../ios-pod-install.log
+          python3 ../tool/qa/verify_ios_pod_lock.py \
+            "$expected_lock" Podfile.lock | tee ../ios-pod-lock-portability.txt
 
       - name: Verify locked native dependency graph
         shell: bash
@@ -263,7 +269,6 @@ jobs:
           test -s ios/Pods/Manifest.lock
           cmp -s ios/Podfile.lock ios/Pods/Manifest.lock
           git diff --exit-code -- \
-            ios/Podfile.lock \
             ios/Runner.xcodeproj/project.pbxproj \
             ios/Runner.xcworkspace/contents.xcworkspacedata
 
@@ -282,6 +287,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          test "$(pod --version)" = '1.16.2'
           flutter build ios \
             --simulator \
             --debug \
@@ -300,6 +306,8 @@ jobs:
           bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
             build/ios/iphonesimulator/Runner.app/Info.plist)"
           test "$bundle_id" = 'com.kong373.voiceSocialApp'
+          cp "${RUNNER_TEMP}/voice-social-Podfile.lock.expected" \
+            ios/Podfile.lock
           git diff --exit-code -- \
             pubspec.yaml \
             ios/Flutter/AppFrameworkInfo.plist \
@@ -334,6 +342,7 @@ jobs:
           path: |
             ios-toolchain.txt
             ios-pod-install.log
+            ios-pod-lock-portability.txt
             ios-simulator-build.log
             ios-runner-binary.sha256
             ios-xcode-project-list.txt

@@ -49,6 +49,7 @@ void main() {
       'ios/Runner.xcworkspace/contents.xcworkspacedata',
       'ios/RunnerTests/RunnerTests.swift',
       'docs/ios/phase1-ios-host.md',
+      'tool/qa/verify_ios_pod_lock.py',
       '.github/workflows/m5-ios-client.yml',
     ];
 
@@ -218,10 +219,14 @@ void main() {
           workflow,
           contains(
             '"\$cocoapods_bin" "_\${COCOAPODS_VERSION}_" '
-            'install --deployment',
+            'install --no-repo-update',
           ),
         );
+        expect(workflow, isNot(contains('install --deployment')));
         expect(workflow, isNot(contains('pod install --repo-update')));
+        expect(workflow, isNot(contains('pod update')));
+        expect(workflow, contains('Podfile.lock.expected'));
+        expect(workflow, contains('verify_ios_pod_lock.py'));
         expect(
           workflow,
           contains('cmp -s ios/Podfile.lock ios/Pods/Manifest.lock'),
@@ -229,6 +234,78 @@ void main() {
         expect(workflow, contains('git diff --exit-code --'));
       },
     );
+
+    test('allows only local path-pod checksum portability drift', () {
+      final Directory sandbox = Directory.systemTemp.createTempSync(
+        'ios-pod-lock-contract-',
+      );
+      addTearDown(() => sandbox.deleteSync(recursive: true));
+      final File expected = File('${sandbox.path}/expected.lock');
+      final File actual = File('${sandbox.path}/actual.lock');
+      const String prefix = '''PODS:
+  - LocalPod (1.0.0)
+  - RemotePod (2.0.0)
+
+DEPENDENCIES:
+  - LocalPod (from `.symlinks/plugins/local/ios`)
+  - RemotePod
+
+SPEC REPOS:
+  trunk:
+    - RemotePod
+
+EXTERNAL SOURCES:
+  LocalPod:
+    :path: ".symlinks/plugins/local/ios"
+
+SPEC CHECKSUMS:
+''';
+      const String suffix = '''
+PODFILE CHECKSUM: 3333333333333333333333333333333333333333
+
+COCOAPODS: 1.16.2
+''';
+      expected.writeAsStringSync(
+        '${prefix}  LocalPod: 1111111111111111111111111111111111111111\n'
+        '  RemotePod: 2222222222222222222222222222222222222222\n'
+        '$suffix',
+      );
+      actual.writeAsStringSync(
+        '${prefix}  LocalPod: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'
+        '  RemotePod: 2222222222222222222222222222222222222222\n'
+        '$suffix',
+      );
+
+      ProcessResult verify() => Process.runSync('python3', <String>[
+        'tool/qa/verify_ios_pod_lock.py',
+        expected.path,
+        actual.path,
+      ]);
+
+      expect(verify().exitCode, 0);
+
+      actual.writeAsStringSync(
+        '${prefix}  LocalPod: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'
+        '  RemotePod: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n'
+        '$suffix',
+      );
+      expect(verify().exitCode, isNot(0));
+
+      actual.writeAsStringSync(
+        '${prefix.replaceFirst('LocalPod (1.0.0)', 'LocalPod (1.0.1)')}'
+        '  LocalPod: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'
+        '  RemotePod: 2222222222222222222222222222222222222222\n'
+        '$suffix',
+      );
+      expect(verify().exitCode, isNot(0));
+
+      actual.writeAsStringSync(
+        '${prefix}  LocalPod: not-a-checksum\n'
+        '  RemotePod: 2222222222222222222222222222222222222222\n'
+        '$suffix',
+      );
+      expect(verify().exitCode, isNot(0));
+    });
 
     test(
       'tracks one immutable Pod lock and removes self-mutating workflows',
