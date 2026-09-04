@@ -14,22 +14,20 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Package selected text sources
+      - name: Package StoreKit-related text sources
         shell: bash
         run: |
           set -Eeuo pipefail
           tar -czf storekit-phase2-source.tgz \
-            lib/app/app_dependencies.dart \
-            lib/core/network/backend_route_catalog.dart \
-            lib/features/commerce/catalog/data/backend_commerce_catalog_repository.dart \
-            lib/features/commerce/catalog/domain/commerce_catalog_models.dart \
-            lib/features/commerce/catalog/domain/commerce_catalog_repository.dart \
-            lib/features/commerce/presentation/commerce_catalog_pages.dart \
+            lib/app \
+            lib/core/network \
+            lib/features/commerce \
+            ios \
+            test \
             .github/workflows/m5-ios-client.yml \
+            analysis_options.yaml \
             pubspec.yaml \
-            pubspec.lock \
-            ios/Podfile \
-            ios/Podfile.lock
+            pubspec.lock
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: m5-storekit-phase2-source-${{ github.run_id }}
