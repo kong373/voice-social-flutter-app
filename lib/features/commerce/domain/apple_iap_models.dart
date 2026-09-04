@@ -1,154 +1,141 @@
-enum AppleIapAvailability {
-  available,
-  paymentsDisabled,
-  unsupportedOs,
-  unsupportedPlatform,
-  unavailable,
-}
-
-class AppleIapAvailabilityStatus {
-  const AppleIapAvailabilityStatus({
-    required this.state,
-    this.minimumOsVersion = '15.0',
-  });
-
-  final AppleIapAvailability state;
-  final String minimumOsVersion;
-
-  bool get canMakePayments => state == AppleIapAvailability.available;
-}
-
-class AppleStoreProduct {
-  const AppleStoreProduct({
-    required this.id,
-    required this.displayName,
-    required this.description,
-    required this.displayPrice,
-    required this.productType,
-  });
-
-  final String id;
-  final String displayName;
-  final String description;
-  final String displayPrice;
-  final String productType;
-
-  bool get isConsumable => productType.toLowerCase() == 'consumable';
-}
-
-enum AppleIapVerification { verified, unverified }
-
-enum AppleIapTransactionSource { purchase, updates, unfinished }
-
-class AppleIapTransaction {
-  const AppleIapTransaction({
-    required this.transactionId,
-    required this.originalTransactionId,
-    required this.productId,
-    required this.appAccountToken,
-    required this.purchaseDate,
-    required this.signedTransaction,
-    required this.verification,
-    required this.source,
-  });
-
-  final String transactionId;
-  final String originalTransactionId;
-  final String productId;
-  final String? appAccountToken;
-  final DateTime purchaseDate;
-
-  /// Apple-signed JWS held only in memory while the authenticated backend
-  /// verifies and records the transaction. It must never be logged or used by
-  /// the client as delivery authority.
-  final String signedTransaction;
-  final AppleIapVerification verification;
-  final AppleIapTransactionSource source;
-}
-
-enum AppleIapPurchaseOutcome {
-  transaction,
+enum AppleIapPurchaseState {
+  verified,
+  unverified,
   pending,
-  userCancelled,
+  canceled,
   failed,
   unavailable,
 }
 
+class AppleIapStoreProduct {
+  const AppleIapStoreProduct({
+    required this.storeProductId,
+    required this.displayName,
+    required this.description,
+    required this.displayPrice,
+  });
+
+  final String storeProductId;
+  final String displayName;
+  final String description;
+  final String displayPrice;
+}
+
+class AppleIapTransaction {
+  const AppleIapTransaction({
+    required this.transactionId,
+    required this.storeProductId,
+    required this.appAccountToken,
+    required this.signedTransaction,
+    required this.locallyVerified,
+    this.originalTransactionId,
+  });
+
+  final String transactionId;
+  final String? originalTransactionId;
+  final String storeProductId;
+  final String? appAccountToken;
+
+  /// Apple-signed JWS retained in memory only until the authenticated Backend
+  /// acknowledges exactly-once delivery. It must never be logged or persisted.
+  final String signedTransaction;
+  final bool locallyVerified;
+
+  @override
+  String toString() =>
+      'AppleIapTransaction(transactionId: $transactionId, '
+      'storeProductId: $storeProductId, locallyVerified: $locallyVerified, '
+      'signedTransaction: [REDACTED])';
+}
+
 class AppleIapPurchaseResult {
   const AppleIapPurchaseResult({
-    required this.outcome,
+    required this.state,
     this.transaction,
-    this.reason = '',
+    this.message = '',
   });
 
-  final AppleIapPurchaseOutcome outcome;
+  final AppleIapPurchaseState state;
   final AppleIapTransaction? transaction;
-  final String reason;
-}
-
-class AppleIapCatalogItem {
-  const AppleIapCatalogItem({
-    required this.productId,
-    required this.storeProductId,
-    required this.giftCoins,
-    required this.priceCny,
-    required this.enabled,
-    this.amountMinor,
-    this.bonusGiftCoins = 0,
-    this.label = '',
-    this.recommended = false,
-  });
-
-  final String productId;
-  final String storeProductId;
-  final int giftCoins;
-  final double priceCny;
-  final int? amountMinor;
-  final int bonusGiftCoins;
-  final String label;
-  final bool recommended;
-  final bool enabled;
-}
-
-class AppleIapCatalog {
-  const AppleIapCatalog({
-    required this.orderCreationReady,
-    required this.items,
-  });
-
-  final bool orderCreationReady;
-  final List<AppleIapCatalogItem> items;
+  final String message;
 }
 
 class AppleIapOrderBinding {
   const AppleIapOrderBinding({
     required this.orderNo,
+    required this.productId,
     required this.storeProductId,
     required this.appAccountToken,
-    required this.environment,
+    required this.amountMinor,
+    required this.giftCoinAmount,
     required this.status,
-    required this.createdAt,
   });
 
   final String orderNo;
+
+  /// First-party internal recharge-product identifier. It is never passed to
+  /// StoreKit as an App Store product identifier.
+  final String productId;
   final String storeProductId;
   final String appAccountToken;
-  final String environment;
+  final int amountMinor;
+  final int giftCoinAmount;
   final String status;
-  final DateTime createdAt;
-}
 
-enum AppleIapDeliveryState {
-  delivered,
-  alreadyDelivered,
-  pending,
-  rejected,
-}
+  Map<String, Object?> toJson() => <String, Object?>{
+    'orderNo': orderNo,
+    'productId': productId,
+    'storeProductId': storeProductId,
+    'appAccountToken': appAccountToken,
+    'amountMinor': amountMinor,
+    'giftCoinAmount': giftCoinAmount,
+    'status': status,
+  };
 
-extension AppleIapDeliveryStateX on AppleIapDeliveryState {
-  bool get delivered =>
-      this == AppleIapDeliveryState.delivered ||
-      this == AppleIapDeliveryState.alreadyDelivered;
+  factory AppleIapOrderBinding.fromJson(Map<String, Object?> json) {
+    final Object? orderNo = json['orderNo'];
+    final Object? productId = json['productId'];
+    final Object? storeProductId = json['storeProductId'];
+    final Object? appAccountToken = json['appAccountToken'];
+    final Object? amountMinor = json['amountMinor'];
+    final Object? giftCoinAmount = json['giftCoinAmount'];
+    final Object? status = json['status'];
+    final String normalizedToken = appAccountToken is String
+        ? appAccountToken.toLowerCase()
+        : '';
+    if (orderNo is! String ||
+        productId is! String ||
+        storeProductId is! String ||
+        appAccountToken is! String ||
+        amountMinor is! int ||
+        giftCoinAmount is! int ||
+        status is! String ||
+        orderNo.isEmpty ||
+        productId.isEmpty ||
+        storeProductId.isEmpty ||
+        amountMinor <= 0 ||
+        giftCoinAmount <= 0 ||
+        status.isEmpty ||
+        !_uuidPattern.hasMatch(normalizedToken)) {
+      throw const FormatException('Invalid Apple IAP order binding');
+    }
+    return AppleIapOrderBinding(
+      orderNo: orderNo,
+      productId: productId,
+      storeProductId: storeProductId,
+      appAccountToken: normalizedToken,
+      amountMinor: amountMinor,
+      giftCoinAmount: giftCoinAmount,
+      status: status.toUpperCase(),
+    );
+  }
+
+  @override
+  String toString() =>
+      'AppleIapOrderBinding(orderNo: $orderNo, productId: $productId, '
+      'storeProductId: $storeProductId, amountMinor: $amountMinor, '
+      'giftCoinAmount: $giftCoinAmount, status: $status, '
+      'appAccountToken: [REDACTED])';
 }
 
 class AppleIapDeliveryAck {
@@ -162,11 +149,13 @@ class AppleIapDeliveryAck {
 
   final String orderNo;
   final String transactionId;
-  final AppleIapDeliveryState deliveryState;
+  final String deliveryState;
   final int creditedGiftCoins;
   final bool finishAllowed;
 
-  bool get delivered => deliveryState.delivered;
+  bool get delivered =>
+      deliveryState == 'DELIVERED' ||
+      deliveryState == 'ALREADY_DELIVERED';
 }
 
 class AppleIapOrderStatus {
@@ -176,7 +165,6 @@ class AppleIapOrderStatus {
     required this.creditedGiftCoins,
     required this.finishAllowed,
     this.transactionId,
-    this.environment,
   });
 
   final String orderNo;
@@ -184,19 +172,83 @@ class AppleIapOrderStatus {
   final int creditedGiftCoins;
   final bool finishAllowed;
   final String? transactionId;
-  final String? environment;
+
+  bool get delivered => status == 'SUCCEEDED';
 }
 
-class AppleIapRecoveryResult {
-  const AppleIapRecoveryResult({
-    required this.observed,
-    required this.delivered,
-    required this.finished,
-    required this.deferred,
+enum AppleIapFlowState {
+  delivered,
+  confirming,
+  pending,
+  canceled,
+  failed,
+  unavailable,
+}
+
+class AppleIapFlowResult {
+  const AppleIapFlowResult._({
+    required this.state,
+    required this.orderNo,
+    this.transactionId,
+    this.message = '',
   });
 
-  final int observed;
-  final int delivered;
-  final int finished;
-  final int deferred;
+  factory AppleIapFlowResult.delivered({
+    required String orderNo,
+    required String transactionId,
+  }) => AppleIapFlowResult._(
+    state: AppleIapFlowState.delivered,
+    orderNo: orderNo,
+    transactionId: transactionId,
+    message: 'Apple 充值已由服务端确认到账',
+  );
+
+  factory AppleIapFlowResult.confirming({
+    required String orderNo,
+    String? transactionId,
+  }) => AppleIapFlowResult._(
+    state: AppleIapFlowState.confirming,
+    orderNo: orderNo,
+    transactionId: transactionId,
+    message: 'Apple 交易正在等待服务端确认',
+  );
+
+  factory AppleIapFlowResult.pending({required String orderNo}) =>
+      AppleIapFlowResult._(
+        state: AppleIapFlowState.pending,
+        orderNo: orderNo,
+        message: 'Apple 交易待处理',
+      );
+
+  factory AppleIapFlowResult.canceled({required String orderNo}) =>
+      AppleIapFlowResult._(
+        state: AppleIapFlowState.canceled,
+        orderNo: orderNo,
+        message: '已取消 Apple 购买',
+      );
+
+  factory AppleIapFlowResult.failed({
+    required String orderNo,
+    required String message,
+  }) => AppleIapFlowResult._(
+    state: AppleIapFlowState.failed,
+    orderNo: orderNo,
+    message: message,
+  );
+
+  factory AppleIapFlowResult.unavailable({required String orderNo}) =>
+      AppleIapFlowResult._(
+        state: AppleIapFlowState.unavailable,
+        orderNo: orderNo,
+        message: '当前设备无法使用 Apple IAP',
+      );
+
+  final AppleIapFlowState state;
+  final String orderNo;
+  final String? transactionId;
+  final String message;
 }
+
+final RegExp _uuidPattern = RegExp(
+  r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+);
