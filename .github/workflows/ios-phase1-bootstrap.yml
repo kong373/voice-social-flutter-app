@@ -1,0 +1,444 @@
+name: iOS Phase 1 Bootstrap
+
+on:
+  push:
+    branches:
+      - codex/m5-ios-client
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-phase1-bootstrap-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+  REQUIRED_BASE_SHA: "6b6e35fc03c08431b2c2d6b0147daccd8307c5b9"
+  IOS_PLACEHOLDER_BUNDLE_ID: "com.kong373.voiceSocialApp"
+
+jobs:
+  bootstrap-and-verify:
+    name: Generate, test and commit iOS 13 Runner
+    if: github.actor != 'github-actions[bot]'
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact iOS branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: codex/m5-ios-client
+          fetch-depth: 0
+
+      - name: Verify frozen ancestry and repository boundary
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git branch --show-current)" = "codex/m5-ios-client"
+          git merge-base --is-ancestor "$REQUIRED_BASE_SHA" HEAD
+          test "$(git rev-list --count "$REQUIRED_BASE_SHA"..HEAD)" -ge 1
+          if git diff --name-only "$REQUIRED_BASE_SHA" HEAD | grep -E '^(android/|packages/.+/android/)'; then
+            echo 'Phase 1 must not modify Android files.' >&2
+            exit 1
+          fi
+
+      - name: Install locked Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Record toolchain
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p build/ios-phase1-evidence
+          flutter --version | tee build/ios-phase1-evidence/flutter-version.txt
+          xcodebuild -version | tee build/ios-phase1-evidence/xcode-version.txt
+          pod --version | tee build/ios-phase1-evidence/cocoapods-version.txt
+          sw_vers | tee build/ios-phase1-evidence/macos-version.txt
+
+      - name: Resolve locked Dart dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+
+      - name: Write Phase 1 contract test before implementation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cat > test/ios_phase1_runner_contract_test.dart <<'DART'
+          import 'dart:io';
+
+          import 'package:flutter_test/flutter_test.dart';
+
+          void main() {
+            String read(String path) => File(path).readAsStringSync();
+
+            test('iOS Runner host is complete and fixed to iOS 13', () {
+              const required = <String>[
+                'ios/Podfile',
+                'ios/Flutter/AppFrameworkInfo.plist',
+                'ios/Flutter/Debug.xcconfig',
+                'ios/Flutter/Release.xcconfig',
+                'ios/Runner.xcodeproj/project.pbxproj',
+                'ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme',
+                'ios/Runner.xcworkspace/contents.xcworkspacedata',
+                'ios/Runner/AppDelegate.swift',
+                'ios/Runner/SceneDelegate.swift',
+                'ios/Runner/Info.plist',
+                'ios/Runner/Runner.entitlements',
+                'ios/Runner/Base.lproj/Main.storyboard',
+                'ios/Runner/Base.lproj/LaunchScreen.storyboard',
+                'ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json',
+                'ios/RunnerTests/RunnerTests.swift',
+              ];
+              for (final path in required) {
+                expect(File(path).existsSync(), isTrue, reason: path);
+              }
+              final project = read('ios/Runner.xcodeproj/project.pbxproj');
+              final podfile = read('ios/Podfile');
+              expect(project, contains('IPHONEOS_DEPLOYMENT_TARGET = 13.0;'));
+              expect(podfile, contains("platform :ios, '13.0'"));
+              expect(project, contains('com.kong373.voiceSocialApp'));
+              expect(project, isNot(contains('DEVELOPMENT_TEAM =')));
+            });
+
+            test('iOS permission purposes are product-specific', () {
+              final info = read('ios/Runner/Info.plist');
+              expect(info, contains('NSMicrophoneUsageDescription'));
+              expect(info, contains('语音房上麦和交流'));
+              expect(info, contains('NSPhotoLibraryUsageDescription'));
+              expect(info, contains('选择头像、动态图片和举报或反馈凭证'));
+              expect(info, contains('NSCameraUsageDescription'));
+              expect(info, contains('拍摄头像、动态图片和举报或反馈凭证'));
+              expect(info, contains('VoiceSocialNotificationPermissionPurpose'));
+              expect(info, contains('消息、互动和房间状态通知'));
+            });
+
+            test('unregistered iOS placeholder has no fabricated capabilities', () {
+              final project = read('ios/Runner.xcodeproj/project.pbxproj');
+              final entitlements = read('ios/Runner/Runner.entitlements');
+              final info = read('ios/Runner/Info.plist');
+              expect(project, contains('com.kong373.voiceSocialApp'));
+              expect(entitlements, isNot(contains('aps-environment')));
+              expect(
+                entitlements,
+                isNot(contains('com.apple.developer.associated-domains')),
+              );
+              expect(info, isNot(contains('CFBundleURLTypes')));
+              expect(info, isNot(contains('NSAllowsArbitraryLoads')));
+            });
+
+            test('Alipay stays Android-only and iOS has no fake IAP', () {
+              final plugin = read('packages/alipay_app_pay/pubspec.yaml');
+              final appPubspec = read('pubspec.yaml');
+              expect(plugin, contains('android:'));
+              expect(plugin, isNot(contains(RegExp(r'^\s+ios:', multiLine: true))));
+              expect(appPubspec, isNot(contains('in_app_purchase')));
+              expect(appPubspec, isNot(contains('store_kit')));
+              expect(Directory('packages/alipay_app_pay/ios').existsSync(), isFalse);
+            });
+
+            test('iOS host registers plugins without client vendor secrets', () {
+              final appDelegate = read('ios/Runner/AppDelegate.swift');
+              final podfile = read('ios/Podfile');
+              expect(appDelegate, contains('GeneratedPluginRegistrant.register'));
+              expect(podfile, contains('flutter_install_all_ios_pods'));
+              final iosText = Directory('ios')
+                  .listSync(recursive: true)
+                  .whereType<File>()
+                  .where((file) => !file.path.contains('/Pods/'))
+                  .map((file) {
+                    try {
+                      return file.readAsStringSync();
+                    } on FileSystemException {
+                      return '';
+                    }
+                  })
+                  .join('\n');
+              expect(iosText, isNot(contains('OAUTH_CLIENT_SECRET')));
+              expect(iosText, isNot(contains('PRIVATE KEY-----')));
+              expect(iosText, isNot(contains('UserSigPrivateKey')));
+            });
+          }
+          DART
+          dart format test/ios_phase1_runner_contract_test.dart
+
+          set +e
+          flutter test test/ios_phase1_runner_contract_test.dart \
+            --reporter=expanded \
+            > build/ios-phase1-evidence/test-first-red.log 2>&1
+          red_status=$?
+          set -e
+          if [[ "$red_status" -eq 0 ]]; then
+            echo 'The test-first contract unexpectedly passed before ios/ existed.' >&2
+            exit 1
+          fi
+          printf 'test_first_red_status=%s\n' "$red_status" |
+            tee build/ios-phase1-evidence/test-first-red-status.txt
+
+      - name: Generate isolated Flutter 3.44.7 iOS host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          generated_root="$(mktemp -d)"
+          trap 'rm -rf "$generated_root"' EXIT
+          flutter create \
+            --platforms=ios \
+            --org=com.kong373 \
+            --project-name=voice_social_app \
+            --no-pub \
+            "$generated_root/voice_social_app"
+          rm -rf ios
+          cp -R "$generated_root/voice_social_app/ios" ios
+
+      - name: Apply Voice-Social iOS host policy
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import plistlib
+          import re
+
+          root = Path('.')
+
+          root_ignore = root / '.gitignore'
+          ignore = root_ignore.read_text(encoding='utf-8')
+          ignore = re.sub(r'(?m)^ios/\n', '', ignore)
+          root_ignore.write_text(ignore, encoding='utf-8')
+
+          podfile = root / 'ios/Podfile'
+          pod = podfile.read_text(encoding='utf-8')
+          pod = re.sub(
+              r'(?m)^#?\s*platform\s+:ios,\s*[\'\"][^\'\"]+[\'\"]\s*$',
+              "platform :ios, '13.0'",
+              pod,
+              count=1,
+          )
+          if "platform :ios, '13.0'" not in pod:
+              pod = "platform :ios, '13.0'\n\n" + pod
+          marker = '    flutter_additional_ios_build_settings(target)\n'
+          addition = (
+              marker
+              + "    target.build_configurations.each do |config|\n"
+              + "      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'\n"
+              + "    end\n"
+          )
+          if "config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']" not in pod:
+              pod = pod.replace(marker, addition)
+          podfile.write_text(pod, encoding='utf-8')
+
+          project = root / 'ios/Runner.xcodeproj/project.pbxproj'
+          text = project.read_text(encoding='utf-8')
+          text = re.sub(
+              r'PRODUCT_BUNDLE_IDENTIFIER = [^;]+;',
+              'PRODUCT_BUNDLE_IDENTIFIER = com.kong373.voiceSocialApp;',
+              text,
+          )
+          text = re.sub(
+              r'IPHONEOS_DEPLOYMENT_TARGET = [^;]+;',
+              'IPHONEOS_DEPLOYMENT_TARGET = 13.0;',
+              text,
+          )
+          text = re.sub(r'(?m)^\s*DEVELOPMENT_TEAM = .*;\n', '', text)
+          if 'CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;' not in text:
+              text = text.replace(
+                  'INFOPLIST_FILE = Runner/Info.plist;',
+                  'CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;\n'
+                  '\t\t\t\tINFOPLIST_FILE = Runner/Info.plist;',
+              )
+          project.write_text(text, encoding='utf-8')
+
+          info_path = root / 'ios/Runner/Info.plist'
+          with info_path.open('rb') as fh:
+              info = plistlib.load(fh)
+          info['CFBundleDisplayName'] = 'Voice-Social'
+          info['CFBundleName'] = 'Voice-Social'
+          info['NSMicrophoneUsageDescription'] = (
+              'Voice-Social 需要使用麦克风，以便你在语音房上麦和交流。'
+          )
+          info['NSPhotoLibraryUsageDescription'] = (
+              'Voice-Social 需要访问照片，以便你选择头像、动态图片和举报或反馈凭证。'
+          )
+          info['NSCameraUsageDescription'] = (
+              'Voice-Social 需要使用相机，以便你拍摄头像、动态图片和举报或反馈凭证。'
+          )
+          # iOS notification authorization has no Apple-defined usage-description
+          # plist key. Keep an app-owned rationale for the Flutter pre-permission
+          # surface; UNUserNotificationCenter remains the OS authority.
+          info['VoiceSocialNotificationPermissionPurpose'] = (
+              'Voice-Social 会在你允许后发送消息、互动和房间状态通知。'
+          )
+          info['UISupportedInterfaceOrientations'] = ['UIInterfaceOrientationPortrait']
+          info['UISupportedInterfaceOrientations~ipad'] = [
+              'UIInterfaceOrientationPortrait',
+              'UIInterfaceOrientationPortraitUpsideDown',
+          ]
+          for unsupported in (
+              'CFBundleURLTypes',
+              'NSAppTransportSecurity',
+          ):
+              info.pop(unsupported, None)
+          with info_path.open('wb') as fh:
+              plistlib.dump(info, fh, sort_keys=False)
+
+          entitlements = root / 'ios/Runner/Runner.entitlements'
+          entitlements.write_text(
+              '<?xml version="1.0" encoding="UTF-8"?>\n'
+              '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+              '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+              '<plist version="1.0">\n<dict>\n</dict>\n</plist>\n',
+              encoding='utf-8',
+          )
+
+          docs = root / 'docs/ios'
+          docs.mkdir(parents=True, exist_ok=True)
+          (docs / 'phase1-runner.md').write_text(
+              '''# Voice-Social iOS Phase 1 Runner\n\n'
+              '## Implemented in source\n\n'
+              '- Flutter 3.44.7 iOS Runner/UIScene host.\n'
+              '- iOS 13.0 deployment target in Xcode and CocoaPods.\n'
+              '- Automatic GeneratedPluginRegistrant registration for the existing '
+              'first-party permission, Agora RTC, Tencent IM and secure-storage plugins.\n'
+              '- Product-specific microphone, photo-library and camera usage text.\n'
+              '- App-owned notification rationale; iOS has no standard notification '
+              'usage-description Info.plist key, and UNUserNotificationCenter remains '
+              'the permission authority.\n'
+              '- Empty entitlements: APNs and Universal Links are intentionally absent.\n'
+              '- The Android-only Alipay plugin remains unsupported/fail-closed on iOS; '
+              'Apple IAP is not fabricated.\n\n'
+              '## Non-release placeholder\n\n'
+              '`com.kong373.voiceSocialApp` is an unregistered development placeholder '
+              'only. No Apple Team ID or provisioning profile is committed or claimed.\n\n'
+              '## Pending Codex Mac/device acceptance\n\n'
+              '- Confirm the registered Bundle ID and Apple Team in the Apple portal.\n'
+              '- Provision and sign a physical-device build.\n'
+              '- Validate microphone, photos, camera and notification permission flows.\n'
+              '- Validate Agora audio join/mute/reconnect/interruption and Tencent IM '
+              'login/C2C/AVChatRoom lifecycle on physical iPhones.\n'
+              '- Decide APNs scope and configure it separately if approved.\n'
+              '- Provide an approved Associated Domains/AASA contract before enabling '
+              'Universal Links.\n\n'
+              '## Explicit exemptions\n\n'
+              '- Chuanglan delivery receipts: EXEMPT, not completed.\n'
+              '- Alipay asynchronous callback: EXEMPT, not completed.\n'
+              '- Alipay refund: EXEMPT, not completed.\n'''.replace("'''\n              '", '').replace("\n              '", ''),
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Resolve CocoaPods and verify provider boundaries
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+          (cd ios && pod install) 2>&1 | tee build/ios-phase1-evidence/pod-install.log
+          test -f ios/Podfile.lock
+          grep -Eqi 'agora' ios/Podfile.lock
+          grep -Eqi 'tencent|tim' ios/Podfile.lock
+          grep -Eqi 'first_party_native_permissions' ios/Podfile.lock
+          grep -Eqi 'flutter_secure_storage' ios/Podfile.lock
+          if grep -Eqi 'alipay|storekit|in_app_purchase' ios/Podfile.lock; then
+            echo 'iOS host unexpectedly linked payment/IAP code.' >&2
+            exit 1
+          fi
+          if grep -RInE 'aps-environment|com\.apple\.developer\.associated-domains' ios/Runner; then
+            echo 'Unapproved APNs or Universal Links entitlement detected.' >&2
+            exit 1
+          fi
+
+      - name: Run Phase 1 contract test after implementation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter test test/ios_phase1_runner_contract_test.dart \
+            --reporter=expanded 2>&1 |
+            tee build/ios-phase1-evidence/ios-contract-test.log
+
+      - name: Format and analyze
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          dart format --output=none --set-exit-if-changed \
+            test/ios_phase1_runner_contract_test.dart 2>&1 |
+            tee build/ios-phase1-evidence/format.log
+          flutter analyze 2>&1 | tee build/ios-phase1-evidence/analyze.log
+
+      - name: Run complete Flutter tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter test \
+            --concurrency=1 \
+            --timeout=90s \
+            --reporter=expanded 2>&1 |
+            tee build/ios-phase1-evidence/flutter-test.log
+
+      - name: Build iOS Simulator application
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter build ios \
+            --simulator \
+            --debug \
+            --dart-define=BACKEND_MODE=live \
+            --dart-define=APP_ENV=development \
+            --dart-define=ALLOW_INSECURE_HTTP=true \
+            --dart-define=API_BASE_URL=http://127.0.0.1:18080/ \
+            --dart-define=CLIENT_TYPE=iOS \
+            --dart-define=CLIENT_INNER_VERSION=6 \
+            --dart-define=OAUTH_CLIENT_ID=voice-social-mobile-public \
+            --dart-define=ENABLE_AGORA_RTC=false \
+            --dart-define=ENABLE_TENCENT_IM=false \
+            --dart-define=ENABLE_ALIPAY_APP_PAY=false 2>&1 |
+            tee build/ios-phase1-evidence/flutter-build-ios-simulator.log
+          test -d build/ios/iphonesimulator/Runner.app
+
+      - name: Verify source and security scope
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if git diff --name-only "$REQUIRED_BASE_SHA" -- | grep -E '^(android/|packages/.+/android/)'; then
+            echo 'Phase 1 changed Android files.' >&2
+            exit 1
+          fi
+          if grep -RInaE --exclude='Podfile.lock' \
+            'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|OAUTH_CLIENT_SECRET|Client-Secret|UserSigPrivateKey|AGORA_APP_CERTIFICATE' \
+            ios; then
+            echo 'Confidential marker found in iOS source.' >&2
+            exit 1
+          fi
+          test "$(grep -c 'IPHONEOS_DEPLOYMENT_TARGET = 13.0;' ios/Runner.xcodeproj/project.pbxproj)" -ge 3
+          test "$(grep -c 'PRODUCT_BUNDLE_IDENTIFIER = com.kong373.voiceSocialApp' ios/Runner.xcodeproj/project.pbxproj)" -ge 3
+
+      - name: Commit and push verified iOS host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -f .github/workflows/ios-phase1-bootstrap.yml
+          git config user.name 'Voice Social iOS Automation'
+          git config user.email 'ios-automation@users.noreply.github.com'
+          git add .gitignore ios docs/ios/phase1-runner.md \
+            test/ios_phase1_runner_contract_test.dart \
+            .github/workflows/ios-phase1-bootstrap.yml
+          if git diff --cached --name-only | grep -E '^(android/|packages/.+/android/)'; then
+            echo 'Refusing to commit Android paths.' >&2
+            exit 1
+          fi
+          git commit -m 'feat(ios): add iOS 13 Runner and fail-closed vendor host'
+          git push origin HEAD:codex/m5-ios-client
+          git rev-parse HEAD | tee build/ios-phase1-evidence/final-commit-sha.txt
+
+      - name: Upload Phase 1 evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ios-phase1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/ios-phase1-evidence/
+          if-no-files-found: warn
+          retention-days: 14
