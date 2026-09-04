@@ -218,9 +218,23 @@ void main() {
         expect(
           workflow,
           contains(
-            '"\$cocoapods_bin" "_\${COCOAPODS_VERSION}_" '
-            'install --no-repo-update',
+            'cocoapods_wrapper_dir="\${RUNNER_TEMP}/voice-social-cocoapods-bin"',
           ),
+        );
+        expect(workflow, contains('cat > "\$cocoapods_wrapper_dir/pod" <<EOF'));
+        expect(
+          workflow,
+          contains('echo "\$cocoapods_wrapper_dir" >> "\$GITHUB_PATH"'),
+        );
+        expect(
+          workflow,
+          isNot(
+            contains('echo "\$(dirname "\$cocoapods_bin")" >> "\$GITHUB_PATH"'),
+          ),
+        );
+        expect(
+          workflow,
+          contains('"\$cocoapods_wrapper_dir/pod" install --no-repo-update'),
         );
         expect(workflow, isNot(contains('install --deployment')));
         expect(workflow, isNot(contains('pod install --repo-update')));

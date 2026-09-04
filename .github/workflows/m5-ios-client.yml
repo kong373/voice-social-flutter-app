@@ -248,11 +248,22 @@ jobs:
           test -x "$cocoapods_bin"
           test "$("$cocoapods_bin" "_${COCOAPODS_VERSION}_" --version)" = \
             "$COCOAPODS_VERSION"
+          cocoapods_wrapper_dir="${RUNNER_TEMP}/voice-social-cocoapods-bin"
+          test ! -e "$cocoapods_wrapper_dir"
+          install -d -m 700 "$cocoapods_wrapper_dir"
+          cat > "$cocoapods_wrapper_dir/pod" <<EOF
+          #!/bin/bash
+          set -Eeuo pipefail
+          exec "$cocoapods_bin" "_${COCOAPODS_VERSION}_" "\$@"
+          EOF
+          chmod 700 "$cocoapods_wrapper_dir/pod"
+          test "$("$cocoapods_wrapper_dir/pod" --version)" = \
+            "$COCOAPODS_VERSION"
           printf 'CocoaPods %s\n' "$COCOAPODS_VERSION" >> ../ios-toolchain.txt
           expected_lock="${RUNNER_TEMP}/voice-social-Podfile.lock.expected"
           cp Podfile.lock "$expected_lock"
-          echo "$(dirname "$cocoapods_bin")" >> "$GITHUB_PATH"
-          "$cocoapods_bin" "_${COCOAPODS_VERSION}_" install --no-repo-update \
+          echo "$cocoapods_wrapper_dir" >> "$GITHUB_PATH"
+          "$cocoapods_wrapper_dir/pod" install --no-repo-update \
             2>&1 | tee ../ios-pod-install.log
           python3 ../tool/qa/verify_ios_pod_lock.py \
             "$expected_lock" Podfile.lock | tee ../ios-pod-lock-portability.txt
