@@ -1,0 +1,227 @@
+name: M5 iOS client
+
+on:
+  push:
+    branches:
+      - codex/m5-ios-client
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m5-ios-client-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.7"
+  IOS_BASE_SHA: "6b6e35fc03c08431b2c2d6b0147daccd8307c5b9"
+
+jobs:
+  quality:
+    name: iOS source contracts and Flutter quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce iOS-only branch scope
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git cat-file -e "${IOS_BASE_SHA}^{commit}"
+          changed="$(git diff --name-only "${IOS_BASE_SHA}"...HEAD)"
+          printf '%s\n' "$changed" | tee ios-changed-files.txt
+          if printf '%s\n' "$changed" | grep -E \
+            '^(android/|packages/[^/]+/android/|lib/features/.*/android/|tool/prepare_android_)'; then
+            echo 'The iOS branch modified an Android-owned path.' >&2
+            exit 1
+          fi
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Verify locked dependencies
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+
+      - name: Format iOS Dart contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          dart format --output=none --set-exit-if-changed \
+            test/ios_host_contract_test.dart
+
+      - name: Analyze
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter analyze 2>&1 | tee ios-analyze.log
+
+      - name: Run all Flutter tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter test \
+            --coverage \
+            --concurrency=1 \
+            --timeout=60s \
+            --reporter=expanded \
+            2>&1 | tee ios-flutter-test.log
+
+      - name: Verify Apple capability and secret hygiene
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ! grep -RInE \
+            'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|DEVELOPMENT_TEAM[[:space:]]*=' \
+            ios docs/ios
+          ! grep -RInE \
+            '<key>(aps-environment|com\.apple\.developer\.associated-domains|com\.apple\.security\.application-groups)</key>' \
+            ios/Runner
+          ! grep -RInE \
+            '<key>(CFBundleURLTypes|NSAllowsArbitraryLoads)</key>' \
+            ios/Runner/Info.plist
+          grep -Fq 'ALIPAY_IOS=UNSUPPORTED_FAIL_CLOSED' \
+            docs/ios/phase1-ios-host.md
+
+      - name: Upload source evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: m5-ios-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ios-changed-files.txt
+            ios-analyze.log
+            ios-flutter-test.log
+            coverage/
+          if-no-files-found: warn
+          retention-days: 14
+
+  ios-simulator-build:
+    name: CocoaPods and unsigned iOS simulator build
+    needs: quality
+    runs-on: macos-15
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Record non-sensitive toolchain
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          {
+            flutter --version
+            xcodebuild -version
+            pod --version
+            sw_vers
+          } | tee ios-toolchain.txt
+
+      - name: Resolve Flutter packages
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter pub get --enforce-lockfile
+
+      - name: Validate iOS source files
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ruby -c ios/Podfile
+          find ios -type f \( -name '*.plist' -o -name '*.entitlements' \) \
+            -print0 | xargs -0 -n1 plutil -lint
+          xmllint --noout ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme
+          xmllint --noout ios/Runner/Base.lproj/Main.storyboard
+          xmllint --noout ios/Runner/Base.lproj/LaunchScreen.storyboard
+          xmllint --noout ios/Runner.xcworkspace/contents.xcworkspacedata
+          xcodebuild -list -project ios/Runner.xcodeproj | tee ios-xcode-project-list.txt
+
+      - name: Install CocoaPods
+        working-directory: ios
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          pod install --repo-update 2>&1 | tee ../ios-pod-install.log
+
+      - name: Inspect resolved iOS plugin registration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -f ios/Runner/GeneratedPluginRegistrant.m
+          grep -Fq 'FirstPartyNativePermissionsPlugin' \
+            ios/Runner/GeneratedPluginRegistrant.m
+          grep -Eiq 'Agora|RtcEngine' ios/Runner/GeneratedPluginRegistrant.m
+          grep -Eiq 'Tencent|TUIKit|ImSdk|CloudChat' \
+            ios/Runner/GeneratedPluginRegistrant.m
+
+      - name: Build unsigned iOS simulator app
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          flutter build ios \
+            --simulator \
+            --debug \
+            --dart-define=BACKEND_MODE=live \
+            --dart-define=APP_ENV=development \
+            --dart-define=API_BASE_URL=http://127.0.0.1:8765/ \
+            --dart-define=ALLOW_INSECURE_HTTP=true \
+            --dart-define=CLIENT_TYPE=iOS \
+            --dart-define=CLIENT_INNER_VERSION=6 \
+            --dart-define=OAUTH_CLIENT_ID=voice-social-mobile-public \
+            --dart-define=ENABLE_AGORA_RTC=true \
+            --dart-define=ENABLE_TENCENT_IM=true \
+            --dart-define=ENABLE_ALIPAY_APP_PAY=false \
+            2>&1 | tee ios-simulator-build.log
+          test -d build/ios/iphonesimulator/Runner.app
+          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+            build/ios/iphonesimulator/Runner.app/Info.plist)"
+          test "$bundle_id" = 'com.kong373.voiceSocialApp'
+
+      - name: Inspect simulator app boundaries
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          app='build/ios/iphonesimulator/Runner.app'
+          if grep -aRIlE \
+            'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|Client-Secret|OAUTH_CLIENT_SECRET' \
+            "$app"; then
+            echo 'A confidential credential marker was found in the iOS app.' >&2
+            exit 1
+          fi
+          if find "$app" \( -iname '*Alipay*' -o -iname '*AlipaySDK*' \) \
+            -print -quit | grep -q .; then
+            echo 'Android-only Alipay artifacts were bundled into the iOS app.' >&2
+            exit 1
+          fi
+          shasum -a 256 "$app/Runner" | tee ios-runner-binary.sha256
+
+      - name: Upload simulator evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: m5-ios-simulator-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ios-toolchain.txt
+            ios-pod-install.log
+            ios-simulator-build.log
+            ios-runner-binary.sha256
+            ios-xcode-project-list.txt
+          if-no-files-found: warn
+          retention-days: 14

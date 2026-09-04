@@ -11,7 +11,6 @@ coverage/
 
 # Generated platform files (M0 uses tool/bootstrap_local.sh)
 android/
-ios/
 linux/
 macos/
 windows/
@@ -56,5 +55,7 @@ test/failures/
 !test/goldens/linux/
 !test/goldens/linux/**
 *.apk
+*.ipa
+*.xcarchive
 *.mp4
 *.webm

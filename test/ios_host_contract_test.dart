@@ -42,6 +42,7 @@ void main() {
       'ios/Runner/Base.lproj/Main.storyboard',
       'ios/Runner/Base.lproj/LaunchScreen.storyboard',
       'ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json',
+      'ios/Runner/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png',
       'ios/Runner.xcodeproj/project.pbxproj',
       'ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme',
       'ios/Runner.xcworkspace/contents.xcworkspacedata',
