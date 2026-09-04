@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 
@@ -63,6 +65,24 @@ void main() {
         isNot(contains('ios/')),
         reason: 'the committed root iOS host must not be ignored',
       );
+    });
+
+    test('uses the frozen Voice Social brand icon', () {
+      final File master = File(
+        'assets/branding/voice-social-app-icon-1024.png',
+      );
+      final File appIcon = File(
+        'ios/Runner/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png',
+      );
+      expect(master.existsSync(), isTrue);
+      expect(appIcon.existsSync(), isTrue);
+      for (final File icon in <File>[master, appIcon]) {
+        expect(iosPngDimensions(icon), (1024, 1024));
+        expect(
+          sha256.convert(icon.readAsBytesSync()).toString(),
+          '515e50dc2863b8d59c9e757ce5b90ae53fcdefde69cb6683fba0a17ac0ad6bd4',
+        );
+      }
     });
 
     test('pins iOS 13 and keeps signing identifiers as placeholders', () {
@@ -358,4 +378,17 @@ COCOAPODS: 1.16.2
       expect(document, contains('CHUANGLAN_DELIVERY_RECEIPT=EXEMPT'));
     });
   });
+}
+
+(int, int) iosPngDimensions(File file) {
+  final Uint8List bytes = file.readAsBytesSync();
+  if (bytes.length < 24 ||
+      bytes[0] != 0x89 ||
+      bytes[1] != 0x50 ||
+      bytes[2] != 0x4e ||
+      bytes[3] != 0x47) {
+    throw StateError('Not a PNG: ${file.path}');
+  }
+  final ByteData data = ByteData.sublistView(bytes);
+  return (data.getUint32(16), data.getUint32(20));
 }
