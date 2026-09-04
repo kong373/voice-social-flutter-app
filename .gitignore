@@ -9,8 +9,8 @@ coverage/
 .flutter
 .metadata
 
-# Generated platform files (M0 uses tool/bootstrap_local.sh)
-android/
+# Generated platform files (M0 uses tool/bootstrap_local.sh).
+# The Android host is tracked because release builds must be reproducible.
 ios/
 linux/
 macos/
