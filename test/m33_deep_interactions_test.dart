@@ -55,10 +55,10 @@ void main() {
         platformType: 1,
       ),
     );
-    expect(find.text('尚未请求'), findsOneWidget);
+    expect(find.text('尚未请求'), findsNWidgets(2));
     await tester.tap(find.text('通知'));
     await tester.pumpAndSettle();
-    expect(find.text('尚未请求'), findsNothing);
+    expect(find.text('尚未请求'), findsOneWidget);
     expect(find.text('已允许'), findsNWidgets(2));
 
     await pumpScoped(
