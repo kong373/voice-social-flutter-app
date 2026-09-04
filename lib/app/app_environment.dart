@@ -45,6 +45,7 @@ class AppEnvironment {
     this.allowInsecureHttp = false,
     this.enableAgoraRtc = false,
     this.enableAlipayAppPay = false,
+    this.alipayFormalAcceptance = false,
     this.enableTencentIm = false,
     @Deprecated('Mobile clients are public clients and never carry a secret.')
     String oauthClientSecret = '',
@@ -79,6 +80,9 @@ class AppEnvironment {
       allowInsecureHttp: const bool.fromEnvironment('ALLOW_INSECURE_HTTP'),
       enableAgoraRtc: const bool.fromEnvironment('ENABLE_AGORA_RTC'),
       enableAlipayAppPay: const bool.fromEnvironment('ENABLE_ALIPAY_APP_PAY'),
+      alipayFormalAcceptance: const bool.fromEnvironment(
+        'ALIPAY_FORMAL_ACCEPTANCE',
+      ),
       enableTencentIm: const bool.fromEnvironment('ENABLE_TENCENT_IM'),
     );
   }
@@ -96,6 +100,7 @@ class AppEnvironment {
     required bool allowInsecureHttp,
     bool enableAgoraRtc = false,
     bool enableAlipayAppPay = false,
+    bool alipayFormalAcceptance = false,
     bool enableTencentIm = false,
     bool releaseBuild = kReleaseMode,
   }) {
@@ -120,6 +125,17 @@ class AppEnvironment {
         'BACKEND_MODE=live；缺失或非 live 会被拒绝。',
       );
     }
+    if (alipayFormalAcceptance &&
+        (releaseBuild ||
+            normalizedBackendMode != 'live' ||
+            !deploymentEnvironmentConfigured ||
+            !deploymentEnvironment.allowsDevelopmentTools ||
+            !enableAlipayAppPay)) {
+      throw StateError(
+        'ALIPAY_FORMAL_ACCEPTANCE 仅允许 live 的 local/development '
+        'debug Alipay 构建。',
+      );
+    }
 
     final int timeoutSeconds = int.tryParse(timeoutValue) ?? 15;
     return AppEnvironment(
@@ -138,6 +154,7 @@ class AppEnvironment {
       allowInsecureHttp: allowInsecureHttp,
       enableAgoraRtc: enableAgoraRtc,
       enableAlipayAppPay: enableAlipayAppPay,
+      alipayFormalAcceptance: alipayFormalAcceptance,
       enableTencentIm: enableTencentIm,
     );
   }
@@ -179,6 +196,12 @@ class AppEnvironment {
   /// the Flutter client.
   final bool enableAlipayAppPay;
 
+  /// Explicit debug-only acceptance switch. In live local/development builds
+  /// it selects the online wallet for a controlled formal acceptance against
+  /// an explicitly allowed local HTTP backend. It carries no credential and
+  /// is rejected by [fromResolvedValues] for release or non-development use.
+  final bool alipayFormalAcceptance;
+
   /// Whether an enabled live Alipay bridge must select the official sandbox
   /// endpoint. Sandbox mode is intentionally derived from the deployment
   /// environment rather than accepted as an independent credential-like
@@ -187,7 +210,8 @@ class AppEnvironment {
   bool get useAlipaySandbox =>
       isLive &&
       enableAlipayAppPay &&
-      deploymentEnvironment.allowsDevelopmentTools;
+      deploymentEnvironment.allowsDevelopmentTools &&
+      !alipayFormalAcceptance;
 
   /// Explicit opt-in for the live Tencent IM transport.  It is effective only
   /// when [isLive] is true; mock mode always uses the in-memory fake adapter.
@@ -243,6 +267,7 @@ class AppEnvironment {
     'allowInsecureHttp': allowInsecureHttp,
     'enableAgoraRtc': enableAgoraRtc,
     'enableAlipayAppPay': enableAlipayAppPay,
+    'alipayFormalAcceptance': alipayFormalAcceptance,
     'useAlipaySandbox': useAlipaySandbox,
     'enableTencentIm': enableTencentIm,
   };

@@ -15,6 +15,7 @@ void main() {
     expect(defaults.enableAlipayAppPay, isFalse);
     expect(defaults.useAlipaySandbox, isFalse);
     expect(defaults.redactedSummary['enableAlipayAppPay'], isFalse);
+    expect(defaults.redactedSummary['alipayFormalAcceptance'], isFalse);
     expect(defaults.redactedSummary['useAlipaySandbox'], isFalse);
 
     final AppEnvironment enabled = AppEnvironment.fromResolvedValues(
@@ -91,6 +92,95 @@ void main() {
         allowInsecureHttp: false,
         enableAlipayAppPay: true,
         releaseBuild: false,
+      ),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('formal acceptance is an explicit debug-only online-wallet gate', () {
+    final AppEnvironment formalAcceptance = AppEnvironment.fromResolvedValues(
+      backendModeValue: 'live',
+      deploymentValue: 'development',
+      timeoutValue: '15',
+      apiBaseUrl: 'http://10.0.2.2:18080/',
+      clientType: 'Android',
+      clientInnerVersion: '6',
+      oauthClientId: 'public-client',
+      realtimeEndpoint: '',
+      liveProbePath: '/',
+      allowInsecureHttp: true,
+      enableAlipayAppPay: true,
+      alipayFormalAcceptance: true,
+      releaseBuild: false,
+    );
+
+    formalAcceptance.validateLiveConfiguration();
+    expect(formalAcceptance.alipayFormalAcceptance, isTrue);
+    expect(formalAcceptance.useAlipaySandbox, isFalse);
+    expect(formalAcceptance.redactedSummary['alipayFormalAcceptance'], isTrue);
+    expect(
+      formalAcceptance.redactedSummary.toString(),
+      isNot(contains('secret')),
+    );
+  });
+
+  test('formal acceptance fails closed outside its debug development lane', () {
+    AppEnvironment formalValues({
+      required String backendMode,
+      required String deployment,
+      required bool enabled,
+      required bool releaseBuild,
+    }) => AppEnvironment.fromResolvedValues(
+      backendModeValue: backendMode,
+      deploymentValue: deployment,
+      timeoutValue: '15',
+      apiBaseUrl: deployment == 'production'
+          ? 'https://api.example.test/'
+          : 'http://10.0.2.2:18080/',
+      clientType: 'Android',
+      clientInnerVersion: '6',
+      oauthClientId: 'public-client',
+      realtimeEndpoint: '',
+      liveProbePath: '/',
+      allowInsecureHttp: true,
+      enableAlipayAppPay: enabled,
+      alipayFormalAcceptance: true,
+      releaseBuild: releaseBuild,
+    );
+
+    expect(
+      () => formalValues(
+        backendMode: 'mock',
+        deployment: 'development',
+        enabled: true,
+        releaseBuild: false,
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(
+      () => formalValues(
+        backendMode: 'live',
+        deployment: 'production',
+        enabled: true,
+        releaseBuild: false,
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(
+      () => formalValues(
+        backendMode: 'live',
+        deployment: 'development',
+        enabled: false,
+        releaseBuild: false,
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(
+      () => formalValues(
+        backendMode: 'live',
+        deployment: 'development',
+        enabled: true,
+        releaseBuild: true,
       ),
       throwsA(isA<StateError>()),
     );
