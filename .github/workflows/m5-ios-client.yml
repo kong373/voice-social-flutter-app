@@ -238,8 +238,18 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          test "$(pod --version)" = '1.16.2'
-          pod install --deployment 2>&1 | tee ../ios-pod-install.log
+          readonly COCOAPODS_VERSION='1.16.2'
+          if ! gem list --local --installed cocoapods \
+            --version "$COCOAPODS_VERSION" >/dev/null 2>&1; then
+            gem install --user-install cocoapods --version \
+              "$COCOAPODS_VERSION" --no-document
+          fi
+          cocoapods_bin="$(ruby -r rubygems -e 'print Gem.user_dir')/bin/pod"
+          test -x "$cocoapods_bin"
+          test "$("$cocoapods_bin" "_${COCOAPODS_VERSION}_" --version)" = \
+            "$COCOAPODS_VERSION"
+          "$cocoapods_bin" "_${COCOAPODS_VERSION}_" install --deployment \
+            2>&1 | tee ../ios-pod-install.log
 
       - name: Verify locked native dependency graph
         shell: bash

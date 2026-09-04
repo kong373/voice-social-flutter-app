@@ -205,8 +205,22 @@ void main() {
         expect(workflow, contains('canonical_java_home='));
         expect(workflow, contains('canonical_sdk_root='));
         expect(workflow, contains('Generate isolated Android wrapper'));
-        expect(workflow, contains("test \"\$(pod --version)\" = '1.16.2'"));
-        expect(workflow, contains('pod install --deployment'));
+        expect(workflow, contains("readonly COCOAPODS_VERSION='1.16.2'"));
+        expect(
+          workflow,
+          contains(
+            'gem install --user-install cocoapods --version '
+            '\\\n              "\$COCOAPODS_VERSION" --no-document',
+          ),
+        );
+        expect(workflow, contains('Gem.user_dir'));
+        expect(
+          workflow,
+          contains(
+            '"\$cocoapods_bin" "_\${COCOAPODS_VERSION}_" '
+            'install --deployment',
+          ),
+        );
         expect(workflow, isNot(contains('pod install --repo-update')));
         expect(
           workflow,
