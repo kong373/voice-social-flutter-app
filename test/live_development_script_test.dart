@@ -27,23 +27,36 @@ void main() {
       _originalCheckoutRoot!,
     );
 
-    // Every test process gets its own real local clone.  The wrapper derives
-    // ROOT_DIR from its own script path, so changing this process's cwd is
-    // enough to make all build/run output belong to the clone.  The original
-    // checkout is never used as a fixture and is never renamed or cleaned.
+    // Every test process gets its own shallow checkout at the exact test HEAD.
+    // Fetching only that commit avoids asking a partial/promisor source clone
+    // to repack unrelated historical objects that may not exist locally.  The
+    // wrapper derives ROOT_DIR from its own script path, so changing this
+    // process's cwd is enough to keep all build/run output inside the isolated
+    // checkout.  The original checkout is never renamed or cleaned.
     isolatedCheckoutParent = Directory.systemTemp.createTempSync(
       'live-development-script-test-',
     );
     isolatedCheckout = Directory('${isolatedCheckoutParent!.path}/checkout');
-    final ProcessResult cloneResult = Process.runSync('git', <String>[
-      'clone',
-      '--quiet',
-      '--no-local',
-      _originalCheckoutRoot!,
+    isolatedCheckout!.createSync(recursive: true);
+    final ProcessResult initResult = Process.runSync('git', <String>[
+      '-C',
       isolatedCheckout!.path,
+      'init',
+      '--quiet',
     ]);
-    if (cloneResult.exitCode != 0) {
-      throw StateError('unable to create isolated test checkout');
+    final ProcessResult fetchResult = initResult.exitCode == 0
+        ? Process.runSync('git', <String>[
+            '-C',
+            isolatedCheckout!.path,
+            'fetch',
+            '--quiet',
+            '--depth=1',
+            _originalCheckoutRoot!,
+            _originalCheckoutHead!,
+          ])
+        : initResult;
+    if (initResult.exitCode != 0 || fetchResult.exitCode != 0) {
+      throw StateError('unable to fetch isolated test checkout');
     }
     final ProcessResult detachResult = Process.runSync('git', <String>[
       '-C',
@@ -51,7 +64,7 @@ void main() {
       'checkout',
       '--detach',
       '--quiet',
-      _originalCheckoutHead!,
+      'FETCH_HEAD',
     ]);
     if (detachResult.exitCode != 0 ||
         _gitOutput(isolatedCheckout!.path, <String>['rev-parse', 'HEAD']) !=
