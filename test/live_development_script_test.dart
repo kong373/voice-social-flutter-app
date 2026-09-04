@@ -941,7 +941,7 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
     expect(fakeFlutterLog.existsSync(), isFalse);
   });
 
-  test('Android live entry prepares an isolated audio-only host', () {
+  test('Android live entry prepares an isolated audio-only host copy', () {
     final ProcessResult result = _run(<String>[
       'build-apk',
       '--target',
@@ -960,7 +960,16 @@ printf 'ANDROID_SDK_ROOT=%s\\n' "\${ANDROID_SDK_ROOT-<unset>}" >> "${fakeFlutter
       fakeFlutterHostLog.readAsStringSync(),
       contains('LocalScreenCaptureAssistantActivity'),
     );
-    expect(Directory('android').existsSync(), isFalse);
+    expect(Directory('android').existsSync(), isTrue);
+    expect(
+      _gitOutput(isolatedCheckout!.path, <String>[
+        'status',
+        '--porcelain',
+        '--untracked-files=normal',
+      ]),
+      isEmpty,
+      reason: 'the tracked Android host must not be mutated by live builds',
+    );
   });
 
   test('Android live entry refuses a dirty checkout before Flutter', () {

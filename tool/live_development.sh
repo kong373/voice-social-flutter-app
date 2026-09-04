@@ -509,9 +509,9 @@ prepare_android_host() {
   trap cleanup_live_runtime EXIT HUP INT TERM
 
   # Create the platform host in a temporary directory first.  Overlaying the
-  # tracked checkout afterwards preserves this project's pubspec and sources
-  # while ensuring the generated android/ directory never appears in the
-  # checkout (it is intentionally ignored there).
+  # tracked checkout afterwards preserves this project's pubspec, sources and
+  # reviewed Android host while ensuring generated/build output never mutates
+  # the checkout.
   "${CLEAN_ENV[@]}" "$FLUTTER_BIN" create \
     --platforms=android \
     --org=com.kong373 \

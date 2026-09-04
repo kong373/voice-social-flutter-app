@@ -21,6 +21,7 @@ void main() {
     for (final String pinnedAction in <String>[
       'actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4',
       'subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2',
+      'actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0',
       'actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4',
     ]) {
       expect(flutterCi, contains(pinnedAction), reason: pinnedAction);
