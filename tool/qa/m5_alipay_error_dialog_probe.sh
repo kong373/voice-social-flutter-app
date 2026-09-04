@@ -229,8 +229,21 @@ validate_helper_source_attestation() {
     "$SDK_ROOT" != *$'\t'* && "$SDK_ROOT" != *'..'* ]] ||
     fail_configuration 'Android SDK root is unsafe'
   [[ -n "$JAVA_HOME_ARG" && "$JAVA_HOME_VALUE" == /* && -d "$JAVA_HOME_VALUE" &&
-    ! -L "$JAVA_HOME_VALUE" && -x "$JAVA_HOME_VALUE/bin/javac" &&
-    -x "$JAVA_HOME_VALUE/bin/jar" && "$JAVA_HOME_VALUE" != *'..'* ]] ||
+    "$JAVA_HOME_VALUE" != *$'\n'* && "$JAVA_HOME_VALUE" != *$'\r'* &&
+    "$JAVA_HOME_VALUE" != *$'\t'* && "$JAVA_HOME_VALUE" != *'..'* ]] ||
+    fail_configuration 'Java home is unsafe or incomplete'
+  # Hosted tool caches commonly expose JAVA_HOME through a symlink. Resolve
+  # that path once and use only the canonical directory afterwards; rejecting
+  # the symlink itself makes otherwise valid pinned JDKs non-portable, while
+  # continuing to execute through the caller-controlled link would retain a
+  # TOCTOU surface.
+  JAVA_HOME_VALUE="$(cd -P -- "$JAVA_HOME_VALUE" 2>/dev/null && pwd -P)" ||
+    fail_configuration 'Java home is unsafe or incomplete'
+  [[ "$JAVA_HOME_VALUE" == /* && -d "$JAVA_HOME_VALUE" && ! -L "$JAVA_HOME_VALUE" &&
+    "$JAVA_HOME_VALUE" != *$'\n'* && "$JAVA_HOME_VALUE" != *$'\r'* &&
+    "$JAVA_HOME_VALUE" != *$'\t'* && "$JAVA_HOME_VALUE" != *'..'* &&
+    -x "$JAVA_HOME_VALUE/bin/java" && -x "$JAVA_HOME_VALUE/bin/javac" &&
+    -x "$JAVA_HOME_VALUE/bin/jar" ]] ||
     fail_configuration 'Java home is unsafe or incomplete'
   [[ -n "$INVOCATION_ID_ARG" && "$INVOCATION_ID" =~ ^[a-f0-9]{32}$ ]] ||
     fail_configuration '--invocation-id must be exactly 32 lowercase hex chars'

@@ -317,7 +317,12 @@ else:
     };
   }
 
-  List<String> probeArgs(File fake, File log, {int markerTimeout = 1}) {
+  List<String> probeArgs(
+    File fake,
+    File log, {
+    int markerTimeout = 1,
+    String? selectedJavaHome,
+  }) {
     return <String>[
       probe.path,
       '--adb',
@@ -329,7 +334,7 @@ else:
       '--sdk-root',
       sdkRoot,
       '--java-home',
-      javaHome,
+      selectedJavaHome ?? javaHome,
       '--invocation-id',
       invocationId,
       '--dialog-timeout',
@@ -357,6 +362,7 @@ else:
     bool helperFail = false,
     String verifyMode = 'ok',
     String clickMode = 'ok',
+    String? selectedJavaHome,
   }) {
     final File log = File('${root.path}/flutter.log')
       ..writeAsStringSync(logContents);
@@ -367,8 +373,12 @@ else:
       activityFrames: activityFrames,
       markersAfterTap: markersAfterTap,
     );
-    final List<String> args = probeArgs(fake, log, markerTimeout: markerTimeout)
-      ..[4] = selectedSerial;
+    final List<String> args = probeArgs(
+      fake,
+      log,
+      markerTimeout: markerTimeout,
+      selectedJavaHome: selectedJavaHome,
+    )..[4] = selectedSerial;
     return Process.runSync(
       '/bin/bash',
       args,
@@ -567,6 +577,8 @@ else:
 
   test('valid dialog is stable, atomically clicks once, and ends adb', () {
     final Directory root = sandbox('alipay-error-dialog-valid-');
+    final Link javaHomeLink = Link('${root.path}/java-home')
+      ..createSync(javaHome);
     final ProcessResult result = runProbe(
       root,
       uiFrames: <String>[validUi()],
@@ -577,6 +589,7 @@ else:
       ],
       verifyMode: 'carrier',
       clickMode: 'carrier',
+      selectedJavaHome: javaHomeLink.path,
     );
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     expect(result.stdout, contains('ERROR_DIALOG_MATCHED'));
