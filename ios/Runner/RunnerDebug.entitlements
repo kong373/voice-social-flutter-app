@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Local StoreKitTest requires a development install. This file is
+         selected only for Debug + iphonesimulator, never an archive. -->
+    <key>get-task-allow</key>
+    <true/>
+</dict>
+</plist>

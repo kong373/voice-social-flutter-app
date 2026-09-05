@@ -6,6 +6,7 @@ on:
       - main
       - codex/m5-ios-client
       - codex/m5-ios-client-reviewed
+      - codex/m5-ios-phase2
       - codex/m5-unified-release-candidate
   pull_request:
   workflow_dispatch:
@@ -116,7 +117,24 @@ jobs:
           dart format \
             --output=none \
             --set-exit-if-changed \
-            test/ios_host_contract_test.dart
+            lib/app/app_dependencies.dart \
+            lib/app/app_environment.dart \
+            lib/app/app_gate.dart \
+            lib/core/network/backend_route_catalog.dart \
+            lib/features/commerce/application/apple_iap_purchase_coordinator.dart \
+            lib/features/commerce/catalog/data/backend_commerce_catalog_repository.dart \
+            lib/features/commerce/catalog/domain/commerce_catalog_models.dart \
+            lib/features/commerce/data/backend_apple_iap_port.dart \
+            lib/features/commerce/domain/apple_iap_models.dart \
+            lib/features/commerce/infrastructure/apple_iap_storekit2_adapter.dart \
+            lib/features/commerce/presentation/commerce_catalog_pages.dart \
+            test/apple_iap_app_dependencies_test.dart \
+            test/apple_iap_backend_port_test.dart \
+            test/apple_iap_commerce_repository_test.dart \
+            test/apple_iap_purchase_coordinator_test.dart \
+            test/apple_iap_storekit_price_test.dart \
+            test/ios_host_contract_test.dart \
+            test/ios_storekit2_source_contract_test.dart
 
       - name: Analyze
         shell: bash
@@ -316,6 +334,7 @@ jobs:
             --dart-define=ENABLE_AGORA_RTC=true \
             --dart-define=ENABLE_TENCENT_IM=true \
             --dart-define=ENABLE_ALIPAY_APP_PAY=false \
+            --dart-define=ENABLE_APPLE_IAP=true \
             2>&1 | tee ios-simulator-build.log
           test -d build/ios/iphonesimulator/Runner.app
           bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
@@ -330,6 +349,22 @@ jobs:
             ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme \
             ios/Runner.xcworkspace/contents.xcworkspacedata \
             ios/Podfile.lock
+
+      - name: Run local StoreKit 2 native tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -s ios/RunnerTests/VoiceSocial.storekit
+          destination_id="$(xcrun simctl list devices available -j | \
+            python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(d["udid"] for runtime in data["devices"].values() for d in runtime if d.get("isAvailable") and d.get("name", "").startswith("iPhone")))')"
+          test -n "$destination_id"
+          xcodebuild test \
+            -workspace ios/Runner.xcworkspace \
+            -scheme RunnerStoreKitTests \
+            -destination "platform=iOS Simulator,id=$destination_id" \
+            -parallel-testing-enabled NO \
+            -only-testing:RunnerTests \
+            2>&1 | tee ios-storekit-test.log
 
       - name: Inspect simulator app boundaries
         shell: bash
@@ -359,6 +394,7 @@ jobs:
             ios-pod-install.log
             ios-pod-lock-portability.txt
             ios-simulator-build.log
+            ios-storekit-test.log
             ios-runner-binary.sha256
             ios-xcode-project-list.txt
           if-no-files-found: warn

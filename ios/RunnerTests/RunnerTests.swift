@@ -1,4 +1,5 @@
 import Flutter
+@testable import Runner
 import StoreKit
 import StoreKitTest
 import UIKit
@@ -6,8 +7,9 @@ import XCTest
 
 final class RunnerTests: XCTestCase {
   private let productIds = [
-    "com.kong373.voiceSocial.giftcoins.60",
-    "com.kong373.voiceSocial.giftcoins.300",
+    "com.kong373.voiceSocialApp.recharge.60",
+    "com.kong373.voiceSocialApp.recharge.300",
+    "com.kong373.voiceSocialApp.recharge.980",
   ]
 
   func testCommittedPurposeDescriptionsArePresent() throws {
@@ -54,117 +56,138 @@ final class RunnerTests: XCTestCase {
     session.clearTransactions()
 
     try session.buyProduct(
-      productIdentifier: "com.kong373.voiceSocial.giftcoins.60"
+      productIdentifier: "com.kong373.voiceSocialApp.recharge.60"
     )
 
     let transactions = session.allTransactions()
     XCTAssertEqual(transactions.count, 1)
     XCTAssertEqual(
       transactions.first?.productIdentifier,
-      "com.kong373.voiceSocial.giftcoins.60"
+      "com.kong373.voiceSocialApp.recharge.60"
     )
   }
 
   @available(iOS 15.0, *)
-  func testStoreKitTestAskToBuyCanBeDeclined() throws {
+  func testStoreKitTestAskToBuyCanBeDeclined() async throws {
     let session = try makeStoreKitSession()
     session.disableDialogs = true
     session.clearTransactions()
     session.askToBuyEnabled = true
 
-    try session.buyProduct(
-      productIdentifier: "com.kong373.voiceSocial.giftcoins.300"
-    )
+    let products = try await Product.products(for: [productIds[1]])
+    let product = try XCTUnwrap(products.first)
+    let result = try await product.purchase()
+    guard case .pending = result else {
+      XCTFail("Ask to Buy must remain pending until approval")
+      return
+    }
 
     let transaction = try XCTUnwrap(session.allTransactions().first)
+    XCTAssertEqual(transaction.state, .deferred)
     XCTAssertEqual(
       transaction.productIdentifier,
-      "com.kong373.voiceSocial.giftcoins.300"
+      "com.kong373.voiceSocialApp.recharge.300"
     )
     try session.declineAskToBuyTransaction(
       identifier: transaction.identifier
     )
+    XCTAssertFalse(session.allTransactions().contains { $0.state == .purchased })
+  }
+
+  @available(iOS 15.0, *)
+  func testStoreKitPurchaseFlightHoldsGuardUntilLocalPurchaseReturns() async throws {
+    let session = try makeStoreKitSession()
+    session.disableDialogs = true
+    session.clearTransactions()
+    session.askToBuyEnabled = true
+
+    let products = try await Product.products(for: [productIds[0]])
+    let product = try XCTUnwrap(products.first)
+    let flight = await StoreKit2PurchaseFlight()
+    let gate = ReleaseGate()
+    let entered = expectation(description: "first purchase owns the flight")
+
+    let first = Task { @MainActor in
+      try await flight.run(productId: product.id) {
+        entered.fulfill()
+        await gate.wait()
+        return try await product.purchase()
+      }
+    }
+    await fulfillment(of: [entered], timeout: 1)
+
+    do {
+      _ = try await flight.run(productId: product.id) {
+        XCTFail("a repeated product purchase must not call StoreKit")
+        return try await product.purchase()
+      }
+      XCTFail("the repeated product purchase should be rejected")
+    } catch is StoreKit2PurchaseFlightError {
+      // The native uncertainty remains owned by the first operation.
+    }
+
+    do {
+      _ = try await flight.run(productId: productIds[1]) {
+        XCTFail("a different product must also be rejected while a purchase is in flight")
+        return try await product.purchase()
+      }
+      XCTFail("the global native purchase flight should reject another product")
+    } catch is StoreKit2PurchaseFlightError {
+      // StoreKit purchase is globally singleflight on this coordinator.
+    }
+
+    await gate.release()
+    let result = try await first.value
+    guard case .pending = result else {
+      XCTFail("Ask to Buy should keep the local purchase pending")
+      return
+    }
+
+    let retry = try await flight.run(productId: product.id) {
+      try await product.purchase()
+    }
+    guard case .pending = retry else {
+      XCTFail("the flight must be reusable after the first native return")
+      return
+    }
   }
 
   @available(iOS 15.0, *)
   private func makeStoreKitSession() throws -> SKTestSession {
-    let sourceUrl = URL(fileURLWithPath: #filePath)
-      .deletingLastPathComponent()
-      .appendingPathComponent("VoiceSocial.storekit")
-    if FileManager.default.isReadableFile(atPath: sourceUrl.path) {
-      return try SKTestSession(contentsOf: sourceUrl)
+    let configuration = try XCTUnwrap(
+      Bundle(for: RunnerTests.self).url(
+        forResource: "VoiceSocial", withExtension: "storekit"
+      )
+    )
+    let session = try SKTestSession(contentsOf: configuration)
+    session.resetToDefaultState()
+    addTeardownBlock {
+      session.clearTransactions()
+      session.resetToDefaultState()
     }
-
-    // Simulator test processes cannot always read the checkout's absolute
-    // source path. Keep a local-only fallback so StoreKitTest stays hermetic
-    // without App Store credentials or production product data.
-    let temporaryUrl = FileManager.default.temporaryDirectory
-      .appendingPathComponent("VoiceSocial-\(UUID().uuidString).storekit")
-    let configuration = #"""
-{
-  "identifier" : "VOICE-SOCIAL-LOCAL-STOREKIT",
-  "nonRenewingSubscriptions" : [],
-  "products" : [
-    {
-      "displayPrice" : "6.00",
-      "familyShareable" : false,
-      "internalID" : "A6D70961-81A7-47A4-9895-3B26AAFE1001",
-      "localizations" : [
-        {
-          "description" : "仅用于本地 StoreKit 自动化的 60 礼物币消耗型商品。",
-          "displayName" : "60 礼物币",
-          "locale" : "zh_CN"
-        },
-        {
-          "description" : "Local StoreKit consumable for 60 gift coins.",
-          "displayName" : "60 Gift Coins",
-          "locale" : "en_US"
-        }
-      ],
-      "productID" : "com.kong373.voiceSocial.giftcoins.60",
-      "referenceName" : "Voice Social 60 Gift Coins",
-      "type" : "Consumable"
-    },
-    {
-      "displayPrice" : "30.00",
-      "familyShareable" : false,
-      "internalID" : "A6D70961-81A7-47A4-9895-3B26AAFE1002",
-      "localizations" : [
-        {
-          "description" : "仅用于本地 StoreKit 自动化的 300 礼物币消耗型商品。",
-          "displayName" : "300 礼物币",
-          "locale" : "zh_CN"
-        },
-        {
-          "description" : "Local StoreKit consumable for 300 gift coins.",
-          "displayName" : "300 Gift Coins",
-          "locale" : "en_US"
-        }
-      ],
-      "productID" : "com.kong373.voiceSocial.giftcoins.300",
-      "referenceName" : "Voice Social 300 Gift Coins",
-      "type" : "Consumable"
-    }
-  ],
-  "settings" : {
-    "_applicationInternalID" : "0",
-    "_developerTeamID" : "",
-    "_failTransactionsEnabled" : false,
-    "_locale" : "zh_CN",
-    "_storefront" : "CHN",
-    "_storeKitErrors" : []
-  },
-  "subscriptionGroups" : [],
-  "version" : {
-    "major" : 4,
-    "minor" : 0
+    return session
   }
 }
-"""#
-    try Data(configuration.utf8).write(to: temporaryUrl, options: .atomic)
-    addTeardownBlock {
-      try? FileManager.default.removeItem(at: temporaryUrl)
+
+private actor ReleaseGate {
+  private var released = false
+  private var waiters: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    if released {
+      return
     }
-    return try SKTestSession(contentsOf: temporaryUrl)
+    await withCheckedContinuation { continuation in
+      waiters.append(continuation)
+    }
+  }
+
+  func release() {
+    released = true
+    let pending = waiters
+    waiters.removeAll()
+    for waiter in pending {
+      waiter.resume()
+    }
   }
 }

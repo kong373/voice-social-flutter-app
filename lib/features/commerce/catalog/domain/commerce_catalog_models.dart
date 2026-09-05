@@ -54,6 +54,8 @@ class RechargeProduct {
     required this.giftCoins,
     required this.priceCny,
     this.amountMinor,
+    this.storeProductId,
+    this.storeDisplayPrice,
     this.bonusGiftCoins = 0,
     this.label = '',
     this.recommended = false,
@@ -69,6 +71,24 @@ class RechargeProduct {
   /// acceptance path choose a deterministic low-value product without
   /// re-parsing a floating-point amount.
   final int? amountMinor;
+
+  /// App Store product identifier supplied by the first-party iOS catalog.
+  /// It must match the exact StoreKit product before an order is created.
+  final String? storeProductId;
+  final String? storeDisplayPrice;
+
+  RechargeProduct withStoreDisplayPrice(String value) => RechargeProduct(
+    id: id,
+    giftCoins: giftCoins,
+    priceCny: priceCny,
+    amountMinor: amountMinor,
+    storeProductId: storeProductId,
+    storeDisplayPrice: value,
+    bonusGiftCoins: bonusGiftCoins,
+    label: label,
+    recommended: recommended,
+    enabled: enabled,
+  );
 
   final int bonusGiftCoins;
   final String label;
@@ -99,6 +119,10 @@ class RechargeOrder {
     this.nativeResultStatus,
     this.nativeBridgeOutcome,
     this.nativeCancellationEvidence = RechargeNativeCancellationEvidence.none,
+    this.appleStoreProductId,
+    this.appleAppAccountToken,
+    this.appleTransactionId,
+    this.appleFinishAllowed = false,
   });
 
   final String orderNo;
@@ -130,6 +154,10 @@ class RechargeOrder {
   /// status fields or an untrusted bridge provenance marker, and is cleared
   /// when those fields are changed through [copyWith].
   final RechargeNativeCancellationEvidence nativeCancellationEvidence;
+  final String? appleStoreProductId;
+  final String? appleAppAccountToken;
+  final String? appleTransactionId;
+  final bool appleFinishAllowed;
 
   /// Short aliases used by the provider-live acceptance layer. They remain
   /// nullable because orders created without a native invocation have no SDK
@@ -181,6 +209,10 @@ class RechargeOrder {
       nativeCancellationEvidence: trustedCancellation
           ? RechargeNativeCancellationEvidence.trustedUserCanceled6001
           : RechargeNativeCancellationEvidence.none,
+      appleStoreProductId: appleStoreProductId,
+      appleAppAccountToken: appleAppAccountToken,
+      appleTransactionId: appleTransactionId,
+      appleFinishAllowed: appleFinishAllowed,
     );
   }
 
@@ -191,6 +223,10 @@ class RechargeOrder {
     bool? nativeSdkCompleted,
     String? nativeResultStatus,
     String? nativeBridgeOutcome,
+    String? appleStoreProductId,
+    String? appleAppAccountToken,
+    String? appleTransactionId,
+    bool? appleFinishAllowed,
   }) {
     final bool nativeEvidenceFieldsChanged =
         nativeSdkCompleted != null ||
@@ -211,6 +247,10 @@ class RechargeOrder {
       nativeCancellationEvidence: nativeEvidenceFieldsChanged
           ? RechargeNativeCancellationEvidence.none
           : nativeCancellationEvidence,
+      appleStoreProductId: appleStoreProductId ?? this.appleStoreProductId,
+      appleAppAccountToken: appleAppAccountToken ?? this.appleAppAccountToken,
+      appleTransactionId: appleTransactionId ?? this.appleTransactionId,
+      appleFinishAllowed: appleFinishAllowed ?? this.appleFinishAllowed,
     );
   }
 }

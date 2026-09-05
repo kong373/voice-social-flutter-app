@@ -16,9 +16,11 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    let registrar = engineBridge.pluginRegistry.registrar(
-      forPlugin: "AppleIapStoreKit2Plugin"
-    )
+    guard
+      let registrar = engineBridge.pluginRegistry.registrar(
+        forPlugin: "AppleIapStoreKit2Plugin"
+      )
+    else { return }
     AppleIapStoreKit2Plugin.register(with: registrar)
   }
 }
@@ -56,6 +58,10 @@ private final class AppleIapStoreKit2Plugin: NSObject, FlutterPlugin,
     case "availability":
       availability(result: result)
     case "loadProducts":
+      guard #available(iOS 15.0, *) else {
+        result(unavailable("StoreKit 2 requires iOS 15 or later"))
+        return
+      }
       guard let productIds = productIdentifiers(from: call.arguments) else {
         result(invalidRequest("StoreKit product identifiers are invalid"))
         return
@@ -64,6 +70,10 @@ private final class AppleIapStoreKit2Plugin: NSObject, FlutterPlugin,
         try await coordinator.loadProducts(productIds)
       }
     case "purchase":
+      guard #available(iOS 15.0, *) else {
+        result(unavailable("StoreKit 2 requires iOS 15 or later"))
+        return
+      }
       guard
         let arguments = call.arguments as? [String: Any],
         let productId = boundedIdentifier(arguments["productId"]),
@@ -81,6 +91,10 @@ private final class AppleIapStoreKit2Plugin: NSObject, FlutterPlugin,
         )
       }
     case "recoverUnfinished":
+      guard #available(iOS 15.0, *) else {
+        result(unavailable("StoreKit 2 requires iOS 15 or later"))
+        return
+      }
       let synchronizeStore =
         (call.arguments as? [String: Any])?["synchronizeStore"] as? Bool
         ?? false
@@ -90,6 +104,10 @@ private final class AppleIapStoreKit2Plugin: NSObject, FlutterPlugin,
         )
       }
     case "finish":
+      guard #available(iOS 15.0, *) else {
+        result(unavailable("StoreKit 2 requires iOS 15 or later"))
+        return
+      }
       guard
         let arguments = call.arguments as? [String: Any],
         let transactionIdText = boundedIdentifier(arguments["transactionId"]),
@@ -144,21 +162,18 @@ private final class AppleIapStoreKit2Plugin: NSObject, FlutterPlugin,
     ])
   }
 
+  @available(iOS 15.0, *)
   private func withCoordinator(
     result: @escaping FlutterResult,
     operation: @escaping @MainActor (StoreKit2Coordinator) async throws -> Any
   ) {
-    guard #available(iOS 15.0, *) else {
-      result(unavailable("StoreKit 2 requires iOS 15 or later"))
-      return
-    }
     Task { @MainActor [weak self] in
       guard let self else {
-        result(selfUnavailable())
+        result(Self.selfUnavailable())
         return
       }
       do {
-        result(try await operation(coordinator()))
+        result(try await operation(self.coordinator()))
       } catch let error as StoreKit2BridgeError {
         result(error.flutterError)
       } catch {
@@ -221,7 +236,7 @@ private final class AppleIapStoreKit2Plugin: NSObject, FlutterPlugin,
     FlutterError(code: "unsupported_os", message: message, details: nil)
   }
 
-  private func selfUnavailable() -> FlutterError {
+  private static func selfUnavailable() -> FlutterError {
     FlutterError(
       code: "native_unavailable",
       message: "StoreKit bridge is unavailable",
@@ -232,11 +247,43 @@ private final class AppleIapStoreKit2Plugin: NSObject, FlutterPlugin,
 
 @available(iOS 15.0, *)
 @MainActor
+final class StoreKit2PurchaseFlight {
+  private var productIds: Set<String> = []
+
+  func acquire(_ productId: String) -> Bool {
+    guard productIds.isEmpty else { return false }
+    productIds.insert(productId)
+    return true
+  }
+
+  func release(_ productId: String) {
+    productIds.remove(productId)
+  }
+
+  func run<T>(
+    productId: String,
+    operation: @escaping @MainActor () async throws -> T
+  ) async throws -> T {
+    guard acquire(productId) else {
+      throw StoreKit2PurchaseFlightError.purchaseInFlight
+    }
+    defer { release(productId) }
+    return try await operation()
+  }
+}
+
+enum StoreKit2PurchaseFlightError: Error {
+  case purchaseInFlight
+}
+
+@available(iOS 15.0, *)
+@MainActor
 private final class StoreKit2Coordinator {
   private let maximumJwsLength: Int
   private var products: [Product.ID: Product] = [:]
   private var finishableTransactions: [UInt64: Transaction] = [:]
   private var updatesTask: Task<Void, Never>?
+  private let purchaseFlight = StoreKit2PurchaseFlight()
 
   init(maximumJwsLength: Int) {
     self.maximumJwsLength = maximumJwsLength
@@ -273,6 +320,8 @@ private final class StoreKit2Coordinator {
         "displayName": product.displayName,
         "description": product.description,
         "displayPrice": product.displayPrice,
+        "price": NSDecimalNumber(decimal: product.price).stringValue,
+        "currencyCode": product.priceFormatStyle.currencyCode,
         "productType": "consumable",
       ])
     }
@@ -285,6 +334,11 @@ private final class StoreKit2Coordinator {
     productId: String,
     appAccountToken: UUID
   ) async throws -> [String: Any] {
+    guard purchaseFlight.acquire(productId) else {
+      throw StoreKit2BridgeError.purchaseInFlight
+    }
+    defer { purchaseFlight.release(productId) }
+
     let product: Product
     if let cached = products[productId] {
       product = cached
@@ -411,6 +465,7 @@ private final class StoreKit2Coordinator {
 
 private enum StoreKit2BridgeError: Error {
   case productNotFound
+  case purchaseInFlight
   case invalidSignedTransaction
 
   var flutterError: FlutterError {
@@ -419,6 +474,13 @@ private enum StoreKit2BridgeError: Error {
       return FlutterError(
         code: "product_not_found",
         message: "StoreKit product is unavailable",
+        details: nil
+      )
+    case .purchaseInFlight:
+      return FlutterError(
+        code: "purchase_in_flight",
+        message:
+          "Apple purchase outcome is unknown; another native purchase is still in flight",
         details: nil
       )
     case .invalidSignedTransaction:

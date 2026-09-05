@@ -228,7 +228,8 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
                                       alignment: Alignment.centerLeft,
                                       fit: BoxFit.scaleDown,
                                       child: Text(
-                                        '¥${product.priceCny.toStringAsFixed(product.priceCny % 1 == 0 ? 0 : 2)}',
+                                        product.storeDisplayPrice ??
+                                            '¥${product.priceCny.toStringAsFixed(product.priceCny % 1 == 0 ? 0 : 2)}',
                                         style: Theme.of(context)
                                             .textTheme
                                             .titleLarge
@@ -326,7 +327,7 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
       builder: (BuildContext dialogContext) => AlertDialog(
         title: const Text('确认充值信息'),
         content: Text(
-          '充值 ${widget.product.totalGiftCoins} 礼物币，实付 ¥${widget.product.priceCny.toStringAsFixed(2)}，支付方式为 ${channel.label}。',
+          '充值 ${widget.product.totalGiftCoins} 礼物币，实付 ${widget.product.storeDisplayPrice ?? '¥${widget.product.priceCny.toStringAsFixed(2)}'}，支付方式为 ${channel.label}。',
         ),
         actions: <Widget>[
           TextButton(
@@ -344,6 +345,7 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
       return;
     }
     setState(() => _submitting = true);
+    RechargeOrder? createdOrder;
     try {
       final String account =
           AppDependencyScope.of(context).sessionManager.session?.mobile ?? '';
@@ -354,6 +356,7 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
         platform: widget.platform,
         youthModeEnabled: widget.youthModeEnabled,
       );
+      createdOrder = order;
       if (_repository.supportsPaymentChannelInvocation) {
         order = await _repository.invokePayment(order);
       }
@@ -367,6 +370,20 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
       );
     } catch (error) {
       if (mounted) {
+        final RechargeOrder? pendingOrder = createdOrder;
+        if (channel == PaymentChannelType.appleIap && pendingOrder != null) {
+          await Navigator.of(context).pushReplacement<void, void>(
+            MaterialPageRoute<void>(
+              builder: (_) => PaymentResultPage(
+                order: pendingOrder.copyWith(
+                  state: RechargeOrderState.confirming,
+                  message: 'Apple 购买结果尚未确认，请刷新订单，不要重复购买',
+                ),
+              ),
+            ),
+          );
+          return;
+        }
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
@@ -420,7 +437,9 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
                 ),
                 _CommerceKeyValue(
                   label: '实付金额',
-                  value: '¥${widget.product.priceCny.toStringAsFixed(2)}',
+                  value:
+                      widget.product.storeDisplayPrice ??
+                      '¥${widget.product.priceCny.toStringAsFixed(2)}',
                 ),
               ],
             ),
@@ -602,7 +621,9 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
                 _CommerceKeyValue(label: '支付方式', value: _order.channel.label),
                 _CommerceKeyValue(
                   label: '实付金额',
-                  value: '¥${_order.product.priceCny.toStringAsFixed(2)}',
+                  value:
+                      _order.product.storeDisplayPrice ??
+                      '¥${_order.product.priceCny.toStringAsFixed(2)}',
                 ),
               ],
             ),
