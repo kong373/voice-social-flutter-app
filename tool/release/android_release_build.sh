@@ -8,22 +8,29 @@ readonly SCRIPT_DIR
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 readonly PROJECT_ROOT
 readonly VALIDATOR="$SCRIPT_DIR/android_release_validator.sh"
+readonly CONFIG_VALIDATOR="$SCRIPT_DIR/android_release_config_validator.py"
 readonly GRADLEW="$PROJECT_ROOT/android/gradlew"
 readonly GENERATED_REGISTRANT_RELATIVE="android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java"
 readonly GENERATED_REGISTRANT="$PROJECT_ROOT/$GENERATED_REGISTRANT_RELATIVE"
+readonly PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 FLUTTER_BIN="${FLUTTER_BIN:-flutter}"
 OUTPUT_DIR="$PROJECT_ROOT/build/android-release"
+CONFIG_FILE=""
 SELF_TEST=0
 
 usage() {
   cat <<'USAGE'
 Usage:
-  android_release_build.sh [--flutter-bin PATH] [--output-dir PATH]
+  android_release_build.sh --config-file ABS_PUBLIC_JSON \
+    [--flutter-bin PATH] [--output-dir PATH]
   android_release_build.sh --self-test
 
 Builds and validates both the signed release APK and AAB. Android release
-signing material must be supplied through the Gradle environment contract or
+runtime configuration must be supplied as a public JSON file; it is validated
+before Gradle or Flutter starts, then passed through one private canonical
+snapshot to both builds. Android signing material must be supplied through
+the Gradle environment contract or
 the ignored android/key.properties file; this script never prints its values.
 USAGE
 }
@@ -45,6 +52,19 @@ while (($# > 0)); do
       OUTPUT_DIR="$2"
       shift 2
       ;;
+    --config-file)
+      (($# >= 2)) || fail 'missing_config_file'
+      [[ -z "$CONFIG_FILE" ]] || fail 'config_file_supplied_more_than_once'
+      [[ -n "$2" ]] || fail 'missing_config_file'
+      CONFIG_FILE="$2"
+      shift 2
+      ;;
+    --config-file=*)
+      [[ -z "$CONFIG_FILE" ]] || fail 'config_file_supplied_more_than_once'
+      CONFIG_FILE="${1#--config-file=}"
+      [[ -n "$CONFIG_FILE" ]] || fail 'missing_config_file'
+      shift
+      ;;
     --self-test)
       SELF_TEST=1
       shift
@@ -62,7 +82,11 @@ done
 
 self_test() {
   [[ -x "$VALIDATOR" ]] || fail 'validator_not_executable'
+  [[ -f "$CONFIG_VALIDATOR" ]] || fail 'config_validator_missing'
+  [[ -x "$PYTHON_BIN" || -n "$(command -v "$PYTHON_BIN" 2>/dev/null || true)" ]] ||
+    fail 'python_unavailable'
   "$VALIDATOR" --self-test >/dev/null
+  "$PYTHON_BIN" "$CONFIG_VALIDATOR" --self-test >/dev/null
   local gradle_source="$PROJECT_ROOT/android/app/build.gradle.kts"
   [[ -f "$gradle_source" ]] || fail 'android_host_missing'
   grep -Fq 'signingConfig = signingConfigs.getByName("release")' "$gradle_source" ||
@@ -101,6 +125,33 @@ if ((SELF_TEST == 1)); then
   exit 0
 fi
 
+# Runtime configuration is a public input, but it is still a release gate:
+# only the allowlisted AppEnvironment defines may reach Flutter. Keep this
+# before tool checks, generated-source cleanup, Gradle, and either build.
+[[ -n "$CONFIG_FILE" ]] || fail 'config_file_required'
+[[ -f "$CONFIG_VALIDATOR" ]] || fail 'config_validator_missing'
+[[ -x "$PYTHON_BIN" || -n "$(command -v "$PYTHON_BIN" 2>/dev/null || true)" ]] ||
+  fail 'python_unavailable'
+
+# The validator reads the public file once and writes a fresh, canonical 0600
+# snapshot into a private 0700 directory. Every later build reads that same
+# snapshot, so changes to the public path cannot become a build-input TOCTOU.
+CONFIG_SNAPSHOT_DIR="$(mktemp -d)" || fail 'snapshot_directory_unavailable'
+chmod 700 "$CONFIG_SNAPSHOT_DIR" || fail 'snapshot_directory_not_private'
+readonly CONFIG_SNAPSHOT_DIR
+readonly CONFIG_SNAPSHOT="$CONFIG_SNAPSHOT_DIR/config.json"
+cleanup_config_snapshot() {
+  rm -rf -- "$CONFIG_SNAPSHOT_DIR"
+}
+trap cleanup_config_snapshot EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+"$PYTHON_BIN" "$CONFIG_VALIDATOR" \
+  --config-file "$CONFIG_FILE" \
+  --snapshot-file "$CONFIG_SNAPSHOT" >/dev/null
+
 [[ -x "$FLUTTER_BIN" || -n "$(command -v "$FLUTTER_BIN" 2>/dev/null || true)" ]] ||
   fail 'flutter_unavailable'
 [[ -x "$GRADLEW" ]] || fail 'gradle_wrapper_unavailable'
@@ -124,8 +175,10 @@ fi
 )
 
 mkdir -p "$OUTPUT_DIR"
-"$FLUTTER_BIN" build apk --release --no-pub
-"$FLUTTER_BIN" build appbundle --release --no-pub
+"$FLUTTER_BIN" build apk --release --no-pub \
+  --dart-define-from-file="$CONFIG_SNAPSHOT"
+"$FLUTTER_BIN" build appbundle --release --no-pub \
+  --dart-define-from-file="$CONFIG_SNAPSHOT"
 
 readonly BUILT_APK="$PROJECT_ROOT/build/app/outputs/flutter-apk/app-release.apk"
 readonly BUILT_AAB="$PROJECT_ROOT/build/app/outputs/bundle/release/app-release.aab"

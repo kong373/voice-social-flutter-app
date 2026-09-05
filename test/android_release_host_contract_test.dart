@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -19,6 +20,9 @@ void main() {
   );
   final File releaseBuild = File(
     '${root.path}/tool/release/android_release_build.sh',
+  );
+  final File releaseConfigValidator = File(
+    '${root.path}/tool/release/android_release_config_validator.py',
   );
 
   test('Android host files are present and intentionally trackable', () {
@@ -257,6 +261,7 @@ void main() {
     () {
       expect(releaseValidator.existsSync(), isTrue);
       expect(releaseBuild.existsSync(), isTrue);
+      expect(releaseConfigValidator.existsSync(), isTrue);
       expect(
         Process.runSync('bash', <String>[
           releaseValidator.path,
@@ -311,6 +316,211 @@ void main() {
         releaseBuild.readAsStringSync(),
         contains('generated_registrant_is_not_ignored'),
       );
+      expect(releaseBuild.readAsStringSync(), contains('--config-file'));
+      expect(
+        releaseBuild.readAsStringSync(),
+        contains('android_release_config_validator.py'),
+      );
+      expect(
+        releaseBuild.readAsStringSync(),
+        contains(r'--dart-define-from-file="$CONFIG_SNAPSHOT"'),
+      );
+      expect(releaseBuild.readAsStringSync(), contains('mktemp -d'));
+      expect(releaseBuild.readAsStringSync(), contains('chmod 700'));
+      expect(releaseConfigValidator.readAsStringSync(), contains('O_EXCL'));
+      expect(releaseConfigValidator.readAsStringSync(), contains('0o600'));
+      expect(
+        releaseConfigValidator.readAsStringSync(),
+        contains('object_pairs_hook'),
+      );
+    },
+  );
+
+  test('release config rejects before fake Gradle or Flutter can run', () {
+    final _ReleaseBuildFixture fixture = _createReleaseBuildFixture(root);
+    addTearDown(() => fixture.root.deleteSync(recursive: true));
+
+    final ProcessResult missingConfig = _runReleaseBuild(
+      fixture,
+      includeConfig: false,
+    );
+    expect(missingConfig.exitCode, isNot(0));
+    expect(missingConfig.stderr, contains('config_file_required'));
+    expect(_eventLog(fixture), isEmpty);
+
+    final ProcessResult missingFile = _runReleaseBuild(fixture);
+    expect(missingFile.exitCode, isNot(0));
+    expect(missingFile.stderr, contains('config_missing'));
+    expect(_eventLog(fixture), isEmpty);
+
+    final List<({String name, Map<String, Object?> config, String? secret})>
+    invalidConfigs =
+        <({String name, Map<String, Object?> config, String? secret})>[
+          (
+            name: 'invalid environment',
+            config: _validReleaseConfig(appEnv: 'development'),
+            secret: null,
+          ),
+          (
+            name: 'insecure HTTP origin',
+            config: _validReleaseConfig(
+              apiBaseUrl: 'http://public.example.test/',
+            ),
+            secret: null,
+          ),
+          (
+            name: 'userinfo in HTTPS origin',
+            config: _validReleaseConfig(
+              apiBaseUrl: 'https://public:password@public.example.test/',
+            ),
+            secret: null,
+          ),
+          (
+            name: 'query in HTTPS origin',
+            config: _validReleaseConfig(
+              apiBaseUrl: 'https://public.example.test/?probe=1',
+            ),
+            secret: null,
+          ),
+          (
+            name: 'fragment in HTTPS origin',
+            config: _validReleaseConfig(
+              apiBaseUrl: 'https://public.example.test/#fragment',
+            ),
+            secret: null,
+          ),
+          (
+            name: 'authority-prefixed live probe path',
+            config: <String, Object?>{
+              ..._validReleaseConfig(),
+              'LIVE_PROBE_PATH': '//attacker.example/health',
+            },
+            secret: null,
+          ),
+          (
+            name: 'secret field',
+            config: <String, Object?>{
+              ..._validReleaseConfig(),
+              'OAUTH_CLIENT_SECRET': 'do-not-print-this-secret',
+            },
+            secret: 'do-not-print-this-secret',
+          ),
+          (
+            name: 'insecure HTTP flag',
+            config: <String, Object?>{
+              ..._validReleaseConfig(),
+              'ALLOW_INSECURE_HTTP': true,
+            },
+            secret: null,
+          ),
+          (
+            name: 'formal Alipay acceptance flag',
+            config: <String, Object?>{
+              ..._validReleaseConfig(),
+              'ALIPAY_FORMAL_ACCEPTANCE': true,
+            },
+            secret: null,
+          ),
+          (
+            name: 'Apple IAP flag',
+            config: <String, Object?>{
+              ..._validReleaseConfig(),
+              'ENABLE_APPLE_IAP': true,
+            },
+            secret: null,
+          ),
+        ];
+
+    for (final ({String name, Map<String, Object?> config, String? secret})
+        invalid
+        in invalidConfigs) {
+      _writeConfig(fixture.config, jsonEncode(invalid.config));
+      _clearEvents(fixture);
+      final ProcessResult result = _runReleaseBuild(fixture);
+      expect(result.exitCode, isNot(0), reason: invalid.name);
+      expect(_eventLog(fixture), isEmpty, reason: invalid.name);
+      if (invalid.secret != null) {
+        expect(
+          '${result.stdout}\n${result.stderr}',
+          isNot(contains(invalid.secret!)),
+          reason: invalid.name,
+        );
+      }
+    }
+  });
+
+  test('release config rejects duplicate keys and symlink files', () {
+    final _ReleaseBuildFixture fixture = _createReleaseBuildFixture(root);
+    addTearDown(() => fixture.root.deleteSync(recursive: true));
+
+    _writeConfig(
+      fixture.config,
+      '{"APP_ENV":"staging","APP_ENV":"production",'
+      '"BACKEND_MODE":"live","API_BASE_URL":"https://public.example.test/",'
+      '"OAUTH_CLIENT_ID":"voice-social-mobile-public","CLIENT_TYPE":"Android"}',
+    );
+    final ProcessResult duplicate = _runReleaseBuild(fixture);
+    expect(duplicate.exitCode, isNot(0));
+    expect(_eventLog(fixture), isEmpty);
+
+    final File realConfig = File('${fixture.root.path}/real-config.json');
+    _writeConfig(realConfig, jsonEncode(_validReleaseConfig()));
+    final Link configLink = Link(fixture.config.path);
+    if (configLink.existsSync()) {
+      configLink.deleteSync();
+    } else if (fixture.config.existsSync()) {
+      fixture.config.deleteSync();
+    }
+    configLink.createSync(realConfig.path);
+    _clearEvents(fixture);
+    final ProcessResult symlink = _runReleaseBuild(fixture);
+    expect(symlink.exitCode, isNot(0));
+    expect(_eventLog(fixture), isEmpty);
+  });
+
+  test(
+    'one validated snapshot survives public config replacement in both builds',
+    () {
+      final _ReleaseBuildFixture fixture = _createReleaseBuildFixture(root);
+      addTearDown(() => fixture.root.deleteSync(recursive: true));
+      _writeConfig(fixture.config, jsonEncode(_validReleaseConfig()));
+
+      final ProcessResult result = _runReleaseBuild(fixture);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+
+      final List<String> events = _eventLog(fixture).split('\n');
+      final List<String> flutterEvents = events
+          .where((String line) => line.startsWith('flutter '))
+          .toList();
+      expect(flutterEvents, hasLength(2));
+      expect(flutterEvents[0], contains('build apk'));
+      expect(flutterEvents[1], contains('build appbundle'));
+      for (final String event in flutterEvents) {
+        expect(event, contains('--dart-define-from-file='));
+        expect(event, isNot(contains(fixture.config.path)));
+      }
+      final List<String> snapshotEvents = events
+          .where((String line) => line.startsWith('flutter-config-hash '))
+          .toList();
+      expect(snapshotEvents, hasLength(2));
+      expect(
+        snapshotEvents[0],
+        matches(
+          RegExp(r'^flutter-config-hash [0-9a-f]{64} mode=600 parent=700$'),
+        ),
+      );
+      expect(snapshotEvents[0], snapshotEvents[1]);
+      expect(events, contains('gradle-overwrite'));
+      expect(events, contains('apk-overwrite'));
+      final Map<String, Object?> replacedConfig =
+          jsonDecode(fixture.config.readAsStringSync()) as Map<String, Object?>;
+      expect(replacedConfig['APP_ENV'], 'production');
+      expect(replacedConfig['BACKEND_MODE'], 'offline');
+      expect(events.indexWhere((String line) => line.startsWith('gradle ')), 0);
+      expect(
+        events.indexWhere((String line) => line.startsWith('validator ')),
+        greaterThan(0),
+      );
     },
   );
 
@@ -337,6 +547,190 @@ void main() {
       );
     },
   );
+}
+
+class _ReleaseBuildFixture {
+  _ReleaseBuildFixture({
+    required this.root,
+    required this.build,
+    required this.config,
+    required this.events,
+    required this.flutter,
+  });
+
+  final Directory root;
+  final File build;
+  final File config;
+  final File events;
+  final File flutter;
+}
+
+_ReleaseBuildFixture _createReleaseBuildFixture(Directory sourceRoot) {
+  final Directory sandbox = Directory.systemTemp.createTempSync(
+    'android-release-contract-',
+  );
+  final Directory releaseDirectory = Directory('${sandbox.path}/tool/release')
+    ..createSync(recursive: true);
+  Directory('${sandbox.path}/android').createSync(recursive: true);
+
+  final File build = File('${releaseDirectory.path}/android_release_build.sh');
+  File(
+    '${sourceRoot.path}/tool/release/android_release_build.sh',
+  ).copySync(build.path);
+  File(
+    '${sourceRoot.path}/tool/release/android_release_config_validator.py',
+  ).copySync('${releaseDirectory.path}/android_release_config_validator.py');
+
+  final File events = File('${sandbox.path}/events.log');
+  final File validator = File(
+    '${releaseDirectory.path}/android_release_validator.sh',
+  );
+  validator.writeAsStringSync(r'''#!/usr/bin/env bash
+set -euo pipefail
+printf 'validator %s\n' "$*" >> "${EVENTS:?}"
+''');
+  _makeExecutable(validator);
+
+  final File gradle = File('${sandbox.path}/android/gradlew');
+  gradle.writeAsStringSync(r'''#!/usr/bin/env bash
+set -euo pipefail
+printf 'gradle %s\n' "$*" >> "${EVENTS:?}"
+printf '{"APP_ENV":"development","BACKEND_MODE":"debug"}\n' > "${ORIGINAL_CONFIG:?}"
+printf 'gradle-overwrite\n' >> "${EVENTS:?}"
+''');
+  _makeExecutable(gradle);
+
+  final File flutter = File('${sandbox.path}/fake-flutter');
+  flutter.writeAsStringSync(r'''#!/usr/bin/env bash
+set -euo pipefail
+printf 'flutter %s\n' "$*" >> "${EVENTS:?}"
+config_file=''
+for arg in "$@"; do
+  case "$arg" in
+    --dart-define-from-file=*) config_file="${arg#*=}" ;;
+  esac
+done
+[[ -n "$config_file" ]]
+config_facts="$(python3 - "$config_file" <<'PY'
+import hashlib
+import json
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+with open(path, 'rb') as snapshot_file:
+    raw = snapshot_file.read()
+config = json.loads(raw)
+if (
+    config.get('APP_ENV') != 'staging'
+    or config.get('BACKEND_MODE') != 'live'
+    or 'OAUTH_CLIENT_SECRET' in config
+    or stat.S_IMODE(os.stat(path).st_mode) != 0o600
+    or stat.S_IMODE(os.stat(os.path.dirname(path)).st_mode) != 0o700
+):
+    raise SystemExit('unsafe_snapshot')
+print(f"{hashlib.sha256(raw).hexdigest()} mode=600 parent=700")
+PY
+)"
+printf 'flutter-config-hash %s\n' "$config_facts" >> "${EVENTS:?}"
+case "${2:-}" in
+  apk)
+    printf '{"APP_ENV":"production","BACKEND_MODE":"offline"}\n' > "${ORIGINAL_CONFIG:?}"
+    printf 'apk-overwrite\n' >> "${EVENTS:?}"
+    mkdir -p build/app/outputs/flutter-apk
+    printf 'fake apk\n' > build/app/outputs/flutter-apk/app-release.apk
+    ;;
+  appbundle)
+    mkdir -p build/app/outputs/bundle/release
+    printf 'fake aab\n' > build/app/outputs/bundle/release/app-release.aab
+    ;;
+  *)
+    exit 2
+    ;;
+esac
+''');
+  _makeExecutable(flutter);
+
+  final File config = File('${sandbox.path}/config.json');
+  return _ReleaseBuildFixture(
+    root: sandbox,
+    build: build,
+    config: config,
+    events: events,
+    flutter: flutter,
+  );
+}
+
+Map<String, Object?> _validReleaseConfig({
+  String appEnv = 'staging',
+  String apiBaseUrl = 'https://public.example.test/',
+}) {
+  return <String, Object?>{
+    'APP_ENV': appEnv,
+    'BACKEND_MODE': 'live',
+    'API_BASE_URL': apiBaseUrl,
+    'OAUTH_CLIENT_ID': 'voice-social-mobile-public',
+    'CLIENT_TYPE': 'Android',
+    'CLIENT_INNER_VERSION': '1',
+    'API_TIMEOUT_SECONDS': 15,
+    'LIVE_PROBE_PATH': '/',
+    'ALLOW_INSECURE_HTTP': false,
+    'ENABLE_AGORA_RTC': false,
+    'ENABLE_ALIPAY_APP_PAY': false,
+    'ALIPAY_FORMAL_ACCEPTANCE': false,
+    'ENABLE_APPLE_IAP': false,
+    'ENABLE_TENCENT_IM': false,
+  };
+}
+
+void _writeConfig(File config, String contents) {
+  config.parent.createSync(recursive: true);
+  config.writeAsStringSync(contents);
+}
+
+void _clearEvents(_ReleaseBuildFixture fixture) {
+  if (fixture.events.existsSync()) {
+    fixture.events.writeAsStringSync('');
+  }
+}
+
+String _eventLog(_ReleaseBuildFixture fixture) {
+  return fixture.events.existsSync() ? fixture.events.readAsStringSync() : '';
+}
+
+ProcessResult _runReleaseBuild(
+  _ReleaseBuildFixture fixture, {
+  bool includeConfig = true,
+}) {
+  final Map<String, String> environment = <String, String>{
+    ...Platform.environment,
+    'EVENTS': fixture.events.path,
+    'ORIGINAL_CONFIG': fixture.config.path,
+  };
+  return Process.runSync(
+    'bash',
+    <String>[
+      fixture.build.path,
+      if (includeConfig) ...<String>['--config-file', fixture.config.path],
+      '--flutter-bin',
+      fixture.flutter.path,
+    ],
+    workingDirectory: fixture.root.path,
+    environment: environment,
+  );
+}
+
+void _makeExecutable(File file) {
+  final ProcessResult result = Process.runSync('chmod', <String>[
+    '700',
+    file.path,
+  ]);
+  if (result.exitCode != 0) {
+    throw StateError(
+      'Unable to make contract fixture executable: ${file.path}',
+    );
+  }
 }
 
 (int, int) pngDimensions(File file) {
