@@ -33,6 +33,15 @@ abstract interface class AppleIapStoreKit2Adapter {
   Future<bool> finish(String transactionId);
 }
 
+/// Optional recovery capability. It never starts or retries a native
+/// purchase; existing adapter fakes do not need to implement it.
+abstract interface class AppleIapPendingPurchaseRecovery {
+  Future<AppleIapPurchaseResult?> readRetainedPurchaseOutcome({
+    required String productId,
+    required String appAccountToken,
+  });
+}
+
 class DisabledAppleIapStoreKit2Adapter implements AppleIapStoreKit2Adapter {
   const DisabledAppleIapStoreKit2Adapter();
 
@@ -50,9 +59,8 @@ class DisabledAppleIapStoreKit2Adapter implements AppleIapStoreKit2Adapter {
       );
 
   @override
-  Future<List<AppleStoreProduct>> loadProducts(
-    List<String> productIds,
-  ) async => const <AppleStoreProduct>[];
+  Future<List<AppleStoreProduct>> loadProducts(List<String> productIds) async =>
+      const <AppleStoreProduct>[];
 
   @override
   Future<AppleIapPurchaseResult> purchase({
@@ -73,7 +81,7 @@ class DisabledAppleIapStoreKit2Adapter implements AppleIapStoreKit2Adapter {
 }
 
 class MethodChannelAppleIapStoreKit2Adapter
-    implements AppleIapStoreKit2Adapter {
+    implements AppleIapStoreKit2Adapter, AppleIapPendingPurchaseRecovery {
   MethodChannelAppleIapStoreKit2Adapter({
     MethodChannel? methodChannel,
     EventChannel? eventChannel,
@@ -112,7 +120,16 @@ class MethodChannelAppleIapStoreKit2Adapter
   final Stream<Object?>? _transactionEventStream;
   final bool Function() _isIos;
   final Duration _nativeTimeout;
-  Stream<AppleIapTransaction>? _updates;
+  final Map<(String, String), _AppleIapPurchaseFlight> _purchaseFlights =
+      <(String, String), _AppleIapPurchaseFlight>{};
+  final Map<(String, String), AppleIapPurchaseResult> _retainedPurchaseResults =
+      <(String, String), AppleIapPurchaseResult>{};
+  final Map<(String, String), _AppleIapPurchaseFailure>
+  _retainedPurchaseFailures = <(String, String), _AppleIapPurchaseFailure>{};
+  StreamController<AppleIapTransaction>? _transactionUpdatesController;
+  StreamSubscription<Object?>? _transactionSourceSubscription;
+  bool _transactionSourceIsBroadcast = false;
+  final List<AppleIapTransaction> _lateTransactions = <AppleIapTransaction>[];
 
   @override
   bool get isPlatformSupported => _isIos();
@@ -122,12 +139,110 @@ class MethodChannelAppleIapStoreKit2Adapter
     if (!isPlatformSupported) {
       return const Stream<AppleIapTransaction>.empty();
     }
-    return _updates ??= (_transactionEventStream ??
-            _eventChannel.receiveBroadcastStream())
-        .map<AppleIapTransaction>(
-          (Object? raw) => _parseTransaction(raw, expectedSource: null),
-        )
-        .asBroadcastStream();
+    return (_transactionUpdatesController ??=
+            StreamController<AppleIapTransaction>.broadcast(
+              onListen: _startTransactionUpdates,
+              onCancel: _stopTransactionUpdates,
+            ))
+        .stream;
+  }
+
+  void _startTransactionUpdates() {
+    if (_transactionSourceSubscription != null) {
+      _flushLateTransactions();
+      return;
+    }
+    final Stream<Object?> source =
+        _transactionEventStream ?? _eventChannel.receiveBroadcastStream();
+    _transactionSourceIsBroadcast = source.isBroadcast;
+    _transactionSourceSubscription = source.listen(
+      (Object? raw) {
+        try {
+          _emitTransaction(_parseTransaction(raw, expectedSource: null));
+        } catch (error, stackTrace) {
+          _transactionUpdatesController?.addError(error, stackTrace);
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        _transactionUpdatesController?.addError(error, stackTrace);
+      },
+      onDone: () {
+        _transactionSourceSubscription = null;
+      },
+    );
+    _flushLateTransactions();
+  }
+
+  Future<void> _stopTransactionUpdates() async {
+    // A test/injected single-subscription stream cannot be listened to again
+    // after cancellation. Keep that one upstream subscription alive while the
+    // adapter's broadcast listeners come and go; EventChannel's real stream is
+    // broadcast and is cancelled normally.
+    if (!_transactionSourceIsBroadcast) {
+      return;
+    }
+    final StreamSubscription<Object?>? subscription =
+        _transactionSourceSubscription;
+    _transactionSourceSubscription = null;
+    await subscription?.cancel();
+  }
+
+  void _flushLateTransactions() {
+    final StreamController<AppleIapTransaction>? controller =
+        _transactionUpdatesController;
+    if (controller == null ||
+        !controller.hasListener ||
+        _lateTransactions.isEmpty) {
+      return;
+    }
+    final List<AppleIapTransaction> pending = List<AppleIapTransaction>.from(
+      _lateTransactions,
+    );
+    _lateTransactions.clear();
+    for (final AppleIapTransaction transaction in pending) {
+      controller.add(transaction);
+    }
+  }
+
+  void _emitTransaction(AppleIapTransaction transaction) {
+    final StreamController<AppleIapTransaction>? controller =
+        _transactionUpdatesController;
+    if (controller == null || !controller.hasListener) {
+      _lateTransactions.add(transaction);
+      return;
+    }
+    controller.add(transaction);
+  }
+
+  @override
+  Future<AppleIapPurchaseResult?> readRetainedPurchaseOutcome({
+    required String productId,
+    required String appAccountToken,
+  }) async {
+    if (!isPlatformSupported) {
+      return null;
+    }
+    final (String, String) key = (
+      _identifier(productId, 'productId'),
+      _canonicalUuid(appAccountToken, 'appAccountToken'),
+    );
+    if (_purchaseFlights.containsKey(key)) {
+      return const AppleIapPurchaseResult(
+        outcome: AppleIapPurchaseOutcome.pending,
+        reason: 'native_purchase_in_flight',
+      );
+    }
+    final AppleIapPurchaseResult? result = _retainedPurchaseResults[key];
+    if (result != null) {
+      return result;
+    }
+    if (_retainedPurchaseFailures.containsKey(key)) {
+      return const AppleIapPurchaseResult(
+        outcome: AppleIapPurchaseOutcome.pending,
+        reason: 'native_purchase_unknown',
+      );
+    }
+    return null;
   }
 
   @override
@@ -137,15 +252,17 @@ class MethodChannelAppleIapStoreKit2Adapter
         state: AppleIapAvailability.unsupportedPlatform,
       );
     }
-    final Object? raw = await _invoke('availability', const <String, Object?>{});
+    final Object? raw = await _invoke(
+      'availability',
+      const <String, Object?>{},
+    );
     final Map<String, Object?> data = _requireMap(raw, 'StoreKit availability');
-    final String minimumOsVersion = _optionalString(
-          data['minimumOsVersion'],
-        ) ??
-        '15.0';
-    final AppleIapAvailability state = switch (
-      _requiredString(data['state'], 'state').toLowerCase()
-    ) {
+    final String minimumOsVersion =
+        _optionalString(data['minimumOsVersion']) ?? '15.0';
+    final AppleIapAvailability state = switch (_requiredString(
+      data['state'],
+      'state',
+    ).toLowerCase()) {
       'available' => AppleIapAvailability.available,
       'payments_disabled' => AppleIapAvailability.paymentsDisabled,
       'unsupported_os' => AppleIapAvailability.unsupportedOs,
@@ -159,9 +276,7 @@ class MethodChannelAppleIapStoreKit2Adapter
   }
 
   @override
-  Future<List<AppleStoreProduct>> loadProducts(
-    List<String> productIds,
-  ) async {
+  Future<List<AppleStoreProduct>> loadProducts(List<String> productIds) async {
     if (!isPlatformSupported) {
       return const <AppleStoreProduct>[];
     }
@@ -186,6 +301,8 @@ class MethodChannelAppleIapStoreKit2Adapter
         displayName: _requiredString(map['displayName'], 'displayName'),
         description: _requiredString(map['description'], 'description'),
         displayPrice: _requiredString(map['displayPrice'], 'displayPrice'),
+        priceMilliunits: _parsePriceMilliunits(map['price']),
+        currencyCode: _parseCurrency(map['currencyCode']),
         productType: _requiredString(map['productType'], 'productType'),
       );
       if (!product.isConsumable) {
@@ -206,6 +323,37 @@ class MethodChannelAppleIapStoreKit2Adapter
     return products;
   }
 
+  static int _parsePriceMilliunits(Object? raw) {
+    if (raw is! String ||
+        !RegExp(r'^(0|[1-9][0-9]{0,8})(\.[0-9]{1,3})?$').hasMatch(raw)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'Apple 商品价格格式无效',
+      );
+    }
+    final List<String> parts = raw.split('.');
+    final int value =
+        int.parse(parts.first) * 1000 +
+        int.parse(parts.length == 1 ? '000' : parts[1].padRight(3, '0'));
+    if (value <= 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'Apple 商品价格必须大于零',
+      );
+    }
+    return value;
+  }
+
+  static String _parseCurrency(Object? raw) {
+    if (raw is! String || !RegExp(r'^[A-Z]{3}$').hasMatch(raw)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'Apple 商品币种无效',
+      );
+    }
+    return raw;
+  }
+
   @override
   Future<AppleIapPurchaseResult> purchase({
     required String productId,
@@ -222,10 +370,63 @@ class MethodChannelAppleIapStoreKit2Adapter
       appAccountToken,
       'appAccountToken',
     );
+    final (String, String) key = (normalizedProductId, normalizedToken);
+    final AppleIapPurchaseResult? retainedResult =
+        _retainedPurchaseResults[key];
+    if (retainedResult != null) {
+      return retainedResult;
+    }
+    final _AppleIapPurchaseFailure? retainedFailure =
+        _retainedPurchaseFailures[key];
+    if (retainedFailure != null) {
+      Error.throwWithStackTrace(
+        retainedFailure.error,
+        retainedFailure.stackTrace,
+      );
+    }
+    if (_purchaseFlights.containsKey(key)) {
+      return const AppleIapPurchaseResult(
+        outcome: AppleIapPurchaseOutcome.pending,
+        reason: 'native_purchase_in_flight',
+      );
+    }
+
+    final _AppleIapPurchaseFlight flight = _AppleIapPurchaseFlight(key);
+    late final Future<AppleIapPurchaseResult> operation;
+    operation =
+        _purchaseNative(
+          productId: normalizedProductId,
+          appAccountToken: normalizedToken,
+        ).then(
+          (AppleIapPurchaseResult result) {
+            _completePurchase(flight, result);
+            return result;
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            _failPurchase(flight, error, stackTrace);
+            Error.throwWithStackTrace(error, stackTrace);
+          },
+        );
+    flight.operation = operation;
+    _purchaseFlights[key] = flight;
+
+    return operation.timeout(
+      _nativeTimeout,
+      onTimeout: () {
+        flight.callerTimedOut = true;
+        throw _purchaseOutcomeUnknownTimeout();
+      },
+    );
+  }
+
+  Future<AppleIapPurchaseResult> _purchaseNative({
+    required String productId,
+    required String appAccountToken,
+  }) async {
     final Object? raw = await _invoke('purchase', <String, Object?>{
-      'productId': normalizedProductId,
-      'appAccountToken': normalizedToken,
-    });
+      'productId': productId,
+      'appAccountToken': appAccountToken,
+    }, waitForNativeCompletion: true);
     final Map<String, Object?> data = _requireMap(raw, 'StoreKit purchase');
     final String outcome = _requiredString(
       data['outcome'],
@@ -256,6 +457,35 @@ class MethodChannelAppleIapStoreKit2Adapter
         message: 'StoreKit 返回了未知购买状态',
       ),
     };
+  }
+
+  void _completePurchase(
+    _AppleIapPurchaseFlight flight,
+    AppleIapPurchaseResult result,
+  ) {
+    _retainedPurchaseResults[flight.key] = result;
+    if (flight.callerTimedOut &&
+        result.outcome == AppleIapPurchaseOutcome.transaction &&
+        result.transaction != null) {
+      _emitTransaction(result.transaction!);
+    }
+    if (identical(_purchaseFlights[flight.key], flight)) {
+      _purchaseFlights.remove(flight.key);
+    }
+  }
+
+  void _failPurchase(
+    _AppleIapPurchaseFlight flight,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    _retainedPurchaseFailures[flight.key] = _AppleIapPurchaseFailure(
+      error,
+      stackTrace,
+    );
+    if (identical(_purchaseFlights[flight.key], flight)) {
+      _purchaseFlights.remove(flight.key);
+    }
   }
 
   @override
@@ -318,11 +548,15 @@ class MethodChannelAppleIapStoreKit2Adapter
     String method,
     Map<String, Object?> arguments, {
     Duration? timeout,
+    bool waitForNativeCompletion = false,
   }) async {
     try {
       final Future<Object?> request = _invoker != null
           ? _invoker(method, arguments)
           : _methodChannel.invokeMethod<Object?>(method, arguments);
+      if (waitForNativeCompletion) {
+        return await request;
+      }
       return await request.timeout(timeout ?? _nativeTimeout);
     } on TimeoutException catch (error) {
       throw ApiException(
@@ -338,20 +572,33 @@ class MethodChannelAppleIapStoreKit2Adapter
       );
     } on PlatformException catch (error) {
       throw ApiException(
-        kind: error.code == 'unsupported_os'
-            ? ApiFailureKind.configuration
-            : ApiFailureKind.business,
+        kind: switch (error.code) {
+          'unsupported_os' => ApiFailureKind.configuration,
+          'purchase_in_flight' => ApiFailureKind.timeout,
+          _ => ApiFailureKind.business,
+        },
         message: switch (error.code) {
           'unsupported_os' => '当前 iOS 版本不支持 StoreKit 2 充值',
           'payments_disabled' => '系统已禁止 App 内购买',
           'product_not_found' => 'Apple 充值商品暂不可用',
           'invalid_request' => 'Apple 充值请求无效',
+          'purchase_in_flight' =>
+            'Apple purchase outcome is unknown; native purchase remains in flight',
           _ => 'Apple IAP 暂不可用，交易不会被客户端认定为成功',
         },
         cause: error,
       );
     }
   }
+
+  static ApiException _purchaseOutcomeUnknownTimeout() => ApiException(
+    kind: ApiFailureKind.timeout,
+    message:
+        'Apple purchase outcome is unknown; native purchase remains in flight',
+    cause: TimeoutException(
+      'Apple purchase outcome is unknown; native purchase remains in flight',
+    ),
+  );
 
   static AppleIapTransaction _parseTransaction(
     Object? raw, {
@@ -378,9 +625,8 @@ class MethodChannelAppleIapStoreKit2Adapter
       data['verification'],
       'verification',
     );
-    final AppleIapVerification verification = switch (
-      verificationName.toLowerCase()
-    ) {
+    final AppleIapVerification verification = switch (verificationName
+        .toLowerCase()) {
       'verified' => AppleIapVerification.verified,
       'unverified' => AppleIapVerification.unverified,
       _ => throw const ApiException(
@@ -410,9 +656,7 @@ class MethodChannelAppleIapStoreKit2Adapter
     }
     return AppleIapTransaction(
       transactionId: _transactionId(data['transactionId']),
-      originalTransactionId: _transactionId(
-        data['originalTransactionId'],
-      ),
+      originalTransactionId: _transactionId(data['originalTransactionId']),
       productId: _identifier(data['productId'], 'productId'),
       appAccountToken: switch (_optionalString(data['appAccountToken'])) {
         final String value => _canonicalUuid(value, 'appAccountToken'),
@@ -516,4 +760,19 @@ class MethodChannelAppleIapStoreKit2Adapter
 
   static bool _defaultIsIos() =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS && Platform.isIOS;
+}
+
+final class _AppleIapPurchaseFlight {
+  _AppleIapPurchaseFlight(this.key);
+
+  final (String, String) key;
+  late final Future<AppleIapPurchaseResult> operation;
+  bool callerTimedOut = false;
+}
+
+final class _AppleIapPurchaseFailure {
+  _AppleIapPurchaseFailure(this.error, this.stackTrace);
+
+  final Object error;
+  final StackTrace stackTrace;
 }

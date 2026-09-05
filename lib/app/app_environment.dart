@@ -46,6 +46,7 @@ class AppEnvironment {
     this.enableAgoraRtc = false,
     this.enableAlipayAppPay = false,
     this.alipayFormalAcceptance = false,
+    this.enableAppleIap = false,
     this.enableTencentIm = false,
     @Deprecated('Mobile clients are public clients and never carry a secret.')
     String oauthClientSecret = '',
@@ -83,6 +84,7 @@ class AppEnvironment {
       alipayFormalAcceptance: const bool.fromEnvironment(
         'ALIPAY_FORMAL_ACCEPTANCE',
       ),
+      enableAppleIap: const bool.fromEnvironment('ENABLE_APPLE_IAP'),
       enableTencentIm: const bool.fromEnvironment('ENABLE_TENCENT_IM'),
     );
   }
@@ -101,6 +103,7 @@ class AppEnvironment {
     bool enableAgoraRtc = false,
     bool enableAlipayAppPay = false,
     bool alipayFormalAcceptance = false,
+    bool enableAppleIap = false,
     bool enableTencentIm = false,
     bool releaseBuild = kReleaseMode,
   }) {
@@ -155,6 +158,7 @@ class AppEnvironment {
       enableAgoraRtc: enableAgoraRtc,
       enableAlipayAppPay: enableAlipayAppPay,
       alipayFormalAcceptance: alipayFormalAcceptance,
+      enableAppleIap: enableAppleIap,
       enableTencentIm: enableTencentIm,
     );
   }
@@ -201,6 +205,11 @@ class AppEnvironment {
   /// an explicitly allowed local HTTP backend. It carries no credential and
   /// is rejected by [fromResolvedValues] for release or non-development use.
   final bool alipayFormalAcceptance;
+
+  /// Explicit opt-in for the iOS StoreKit 2 purchase bridge. The client still
+  /// requires an authenticated backend READY catalog and exact App Store
+  /// products before it can create an order or present a purchase sheet.
+  final bool enableAppleIap;
 
   /// Whether an enabled live Alipay bridge must select the official sandbox
   /// endpoint. Sandbox mode is intentionally derived from the deployment
@@ -269,6 +278,7 @@ class AppEnvironment {
     'enableAlipayAppPay': enableAlipayAppPay,
     'alipayFormalAcceptance': alipayFormalAcceptance,
     'useAlipaySandbox': useAlipaySandbox,
+    'enableAppleIap': enableAppleIap,
     'enableTencentIm': enableTencentIm,
   };
 

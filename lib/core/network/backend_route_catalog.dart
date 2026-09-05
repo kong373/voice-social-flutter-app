@@ -170,6 +170,8 @@ class BackendRouteCatalog {
     this.createWechatRechargeOrder = '/app-economy-api/pay/v1/wechat/order',
     this.createAlipayRechargeOrder = '/app-economy-api/pay/ali/order',
     this.createAppleRechargeOrder = '/app-economy-api/pay/apple/order',
+    this.deliverAppleTransaction = '/app-economy-api/pay/apple/transaction',
+    this.appleRechargeOrderStatus = '/app-economy-api/pay/apple/order/status',
     this.cancelAlipayRechargeOrder = '/app-economy-api/pay/ali/order/cancel',
     this.reconcileAlipayRechargeOrder =
         '/app-economy-api/pay/ali/order/reconcile',
@@ -367,6 +369,8 @@ class BackendRouteCatalog {
   final String createWechatRechargeOrder;
   final String createAlipayRechargeOrder;
   final String createAppleRechargeOrder;
+  final String deliverAppleTransaction;
+  final String appleRechargeOrderStatus;
   final String cancelAlipayRechargeOrder;
   final String reconcileAlipayRechargeOrder;
   final String alipayRechargeOrderStatus;

@@ -26,7 +26,7 @@ class AppGate extends StatefulWidget {
   State<AppGate> createState() => _AppGateState();
 }
 
-class _AppGateState extends State<AppGate> {
+class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
   late final AuthController _controller;
   late final LiveBackendReadinessService _liveReadinessService;
   Future<void>? _livePreflight;
@@ -34,10 +34,15 @@ class _AppGateState extends State<AppGate> {
   String? _livePreflightError;
   bool _versionDeferred = false;
   AuthSession? _preflightSession;
+  AuthSession? _appleIapRecoverySession;
+  bool _appleRecoveryInFlight = false;
+  int _appleRecoveryAttempts = 0;
+  Timer? _appleRecoveryRetry;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _controller = widget.dependencies.authController
       ..addListener(_handleAuthChanged);
     _liveReadinessService = LiveBackendReadinessService(
@@ -50,8 +55,59 @@ class _AppGateState extends State<AppGate> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _appleRecoveryRetry?.cancel();
     _controller.removeListener(_handleAuthChanged);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _appleIapRecoverySession = null;
+      _appleRecoveryAttempts = 0;
+      _appleRecoveryRetry?.cancel();
+      unawaited(_attemptAppleRecovery());
+    }
+  }
+
+  Future<void> _attemptAppleRecovery() async {
+    final AuthSession? session = _controller.session;
+    if (!mounted ||
+        _controller.stage != AuthFlowStage.signedIn ||
+        session == null ||
+        _appleRecoveryInFlight ||
+        identical(_appleIapRecoverySession, session)) {
+      return;
+    }
+    _appleRecoveryInFlight = true;
+    final bool recovered = await widget.dependencies
+        .recoverAppleIapAfterAuthentication();
+    _appleRecoveryInFlight = false;
+    if (!mounted) {
+      return;
+    }
+    if (!identical(_controller.session, session)) {
+      _appleRecoveryAttempts = 0;
+      unawaited(_attemptAppleRecovery());
+      return;
+    }
+    if (recovered) {
+      _appleIapRecoverySession = session;
+      _appleRecoveryAttempts = 0;
+      return;
+    }
+    const delays = <Duration>[
+      Duration(seconds: 2),
+      Duration(seconds: 5),
+      Duration(seconds: 15),
+    ];
+    if (_appleRecoveryAttempts < delays.length) {
+      _appleRecoveryRetry?.cancel();
+      _appleRecoveryRetry = Timer(delays[_appleRecoveryAttempts++], () {
+        unawaited(_attemptAppleRecovery());
+      });
+    }
   }
 
   void _handleAuthChanged() {
@@ -68,8 +124,15 @@ class _AppGateState extends State<AppGate> {
       setState(() {});
     }
     if (_controller.stage == AuthFlowStage.signedIn) {
+      final AuthSession? session = _controller.session;
+      if (session != null && !identical(_appleIapRecoverySession, session)) {
+        unawaited(_attemptAppleRecovery());
+      }
       _startLivePreflightIfNeeded();
     } else {
+      _appleIapRecoverySession = null;
+      _appleRecoveryAttempts = 0;
+      _appleRecoveryRetry?.cancel();
       _resetLivePreflight();
     }
   }

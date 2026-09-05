@@ -4,10 +4,12 @@ import 'package:crypto/crypto.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
+import 'package:voice_social_app/features/commerce/application/apple_iap_purchase_coordinator.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/decoration_purchase_request_id.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/alipay_request_id.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_repository.dart';
+import 'package:voice_social_app/features/commerce/domain/apple_iap_models.dart';
 import 'package:voice_social_app/features/commerce/infrastructure/alipay_app_pay_adapter.dart';
 
 class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
@@ -16,7 +18,9 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     required BackendRouteCatalog routes,
     String Function()? decorationPurchaseRequestIdGenerator,
     String Function()? alipayCreateRequestIdGenerator,
+    String Function()? appleCreateRequestIdGenerator,
     AlipayAppPayAdapter? alipayAppPayAdapter,
+    AppleIapPurchaseCoordinator? appleIapCoordinator,
   }) : _apiClient = apiClient,
        _routes = routes,
        _decorationPurchaseRequestIdGenerator =
@@ -24,14 +28,20 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
            newDecorationPurchaseRequestId,
        _alipayCreateRequestIdGenerator =
            alipayCreateRequestIdGenerator ?? newAlipayCreateRequestId,
+       _appleCreateRequestIdGenerator =
+           appleCreateRequestIdGenerator ??
+           (() => newAlipayCreateRequestId('flutter-apple-create')),
        _alipayAppPayAdapter =
-           alipayAppPayAdapter ?? const DisabledAlipayAppPayAdapter();
+           alipayAppPayAdapter ?? const DisabledAlipayAppPayAdapter(),
+       _appleIapCoordinator = appleIapCoordinator;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
   final String Function() _decorationPurchaseRequestIdGenerator;
   final String Function() _alipayCreateRequestIdGenerator;
+  final String Function() _appleCreateRequestIdGenerator;
   final AlipayAppPayAdapter _alipayAppPayAdapter;
+  final AppleIapPurchaseCoordinator? _appleIapCoordinator;
   final Map<String, Future<DecorationItem>> _pendingDecorationPurchases =
       <String, Future<DecorationItem>>{};
   final Map<String, Future<DecorationItem>> _pendingDecorationEquips =
@@ -43,21 +53,28 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   final Map<String, Future<RechargeOrder>> _pendingAlipayOrderCreations =
       <String, Future<RechargeOrder>>{};
   final Map<String, String> _alipayCreateRequestIds = <String, String>{};
+  final Map<String, Future<RechargeOrder>> _pendingAppleOrderCreations =
+      <String, Future<RechargeOrder>>{};
+  final Map<String, String> _appleCreateRequestIds = <String, String>{};
   // The native bridge is only one half of the payment boundary.  Keep the
   // server's catalog readiness separately so a local SDK cannot enable order
   // creation while the authenticated backend port is fail-closed.
-  bool _serverOrderCreationReady = false;
+  ClientStorePlatform? _readyPlatform;
 
   @override
   bool get supportsRechargeCatalog => true;
 
   @override
-  bool get supportsPaymentChannelInvocation =>
-      _serverOrderCreationReady && _alipayAppPayAdapter.isAvailable;
+  bool get supportsPaymentChannelInvocation => switch (_readyPlatform) {
+    ClientStorePlatform.android => _alipayAppPayAdapter.isAvailable,
+    ClientStorePlatform.ios =>
+      _appleIapCoordinator?.isPlatformSupported ?? false,
+    null => false,
+  };
 
   @override
   List<PaymentChannelType> availableChannels(ClientStorePlatform platform) =>
-      !supportsPaymentChannelInvocation
+      !supportsPaymentChannelInvocation || _readyPlatform != platform
       ? const <PaymentChannelType>[]
       : platform == ClientStorePlatform.ios
       ? const <PaymentChannelType>[PaymentChannelType.appleIap]
@@ -71,7 +88,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   }) async {
     // A refresh that is in flight must not leave an earlier READY result
     // usable if the server later reports a blocked or malformed contract.
-    _serverOrderCreationReady = false;
+    _readyPlatform = null;
     final String expectedPlatform = platform == ClientStorePlatform.android
         ? 'ANDROID'
         : 'IOS';
@@ -95,16 +112,60 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     // is intentionally not folded into this protocol check; it is intersected
     // by supportsPaymentChannelInvocation after the response is accepted.
     if (_string(envelope['platform']).toUpperCase() != expectedPlatform ||
-        !validOrderCreationStatus ||
-        (expectedPlatform != 'ANDROID' && orderCreationStatus == 'READY')) {
+        !validOrderCreationStatus) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '充值商品目录平台或支付可用状态与请求不一致',
       );
     }
-    _serverOrderCreationReady =
-        expectedPlatform == 'ANDROID' && orderCreationStatus == 'READY';
-    return items.map(_rechargeProductFromMap).toList(growable: false);
+    final List<RechargeProduct> products = items
+        .map(
+          (Map<String, Object?> item) =>
+              _rechargeProductFromMap(item, platform: platform),
+        )
+        .toList(growable: false);
+    if (orderCreationStatus == 'READY') {
+      if (platform == ClientStorePlatform.android) {
+        _readyPlatform = ClientStorePlatform.android;
+      } else {
+        final AppleIapPurchaseCoordinator? coordinator = _appleIapCoordinator;
+        if (coordinator != null && coordinator.isPlatformSupported) {
+          try {
+            await coordinator.recoverUnfinished();
+          } catch (_) {
+            // StoreKit retains the transaction; catalog browsing is still
+            // allowed and the coordinator keeps uncertain purchases fenced.
+          }
+          final List<AppleStoreProduct> storeProducts = await coordinator
+              .validateProducts(
+                products
+                    .map((RechargeProduct item) => item.storeProductId!)
+                    .toList(growable: false),
+              );
+          if (storeProducts.length == products.length) {
+            final Map<String, AppleStoreProduct> storeById =
+                <String, AppleStoreProduct>{
+                  for (final AppleStoreProduct item in storeProducts)
+                    item.id: item,
+                };
+            final List<RechargeProduct> validated = products
+                .map((RechargeProduct item) {
+                  final AppleStoreProduct store =
+                      storeById[item.storeProductId]!;
+                  AppleIapPurchaseCoordinator.requireCatalogPrice(
+                    store,
+                    item.amountMinor!,
+                  );
+                  return item.withStoreDisplayPrice(store.displayPrice);
+                })
+                .toList(growable: false);
+            _readyPlatform = ClientStorePlatform.ios;
+            return validated;
+          }
+        }
+      }
+    }
+    return products;
   }
 
   @override
@@ -133,15 +194,22 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     required ClientStorePlatform platform,
     required bool youthModeEnabled,
   }) async {
-    if (platform != ClientStorePlatform.android ||
-        channel != PaymentChannelType.alipay ||
+    final bool androidAlipay =
+        platform == ClientStorePlatform.android &&
+        channel == PaymentChannelType.alipay;
+    final bool iosApple =
+        platform == ClientStorePlatform.ios &&
+        channel == PaymentChannelType.appleIap;
+    if ((!androidAlipay && !iosApple) ||
+        _readyPlatform != platform ||
         !supportsPaymentChannelInvocation) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
-        message: '支付宝支付尚未配置或当前平台不可用',
+        message: '当前支付渠道尚未配置或平台不可用',
       );
     }
-    if (!_isValidAlipayProduct(product)) {
+    if (!_isValidRechargeProduct(product) ||
+        (iosApple && !_isValidAppleProduct(product))) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
         message: '充值商品无效，请刷新商品目录后重试',
@@ -158,6 +226,9 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         kind: ApiFailureKind.forbidden,
         message: '青少年模式已开启，暂不能创建新的充值订单',
       );
+    }
+    if (iosApple) {
+      return _createAppleOrderSingleFlight(account: account, product: product);
     }
     final String intentKey = _alipayCreateIntentKey(
       account: account,
@@ -191,6 +262,84 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     });
     _pendingAlipayOrderCreations[intentKey] = retainedOperation;
     return retainedOperation;
+  }
+
+  Future<RechargeOrder> _createAppleOrderSingleFlight({
+    required String account,
+    required RechargeProduct product,
+  }) {
+    final String intentKey = _appleCreateIntentKey(
+      account: account,
+      productId: product.id,
+    );
+    final Future<RechargeOrder>? pending =
+        _pendingAppleOrderCreations[intentKey];
+    if (pending != null) {
+      return pending;
+    }
+    final String requestId = _appleCreateRequestIds.putIfAbsent(
+      intentKey,
+      _appleCreateRequestIdGenerator,
+    );
+    late final Future<RechargeOrder> operation;
+    operation =
+        _createAppleRechargeOrder(
+          intentKey: intentKey,
+          requestId: requestId,
+          account: account,
+          product: product,
+        ).whenComplete(() {
+          if (identical(_pendingAppleOrderCreations[intentKey], operation)) {
+            _pendingAppleOrderCreations.remove(intentKey);
+          }
+        });
+    _pendingAppleOrderCreations[intentKey] = operation;
+    return operation;
+  }
+
+  Future<RechargeOrder> _createAppleRechargeOrder({
+    required String intentKey,
+    required String requestId,
+    required String account,
+    required RechargeProduct product,
+  }) async {
+    final AppleIapPurchaseCoordinator coordinator = _appleIapCoordinator!;
+    try {
+      final AppleIapOrderBinding binding = await coordinator.createOrder(
+        productId: product.id,
+        requestId: requestId,
+      );
+      if (binding.productId != product.id ||
+          binding.storeProductId != product.storeProductId ||
+          binding.amountMinor != product.amountMinor ||
+          binding.giftCoinAmount != product.totalGiftCoins ||
+          binding.status != 'CONFIRMING') {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: 'Apple 下单响应与服务端商品目录不一致',
+        );
+      }
+      if (_appleCreateRequestIds[intentKey] == requestId) {
+        _appleCreateRequestIds.remove(intentKey);
+      }
+      return RechargeOrder(
+        orderNo: binding.orderNo,
+        account: account,
+        product: product,
+        channel: PaymentChannelType.appleIap,
+        state: RechargeOrderState.created,
+        createdAt: binding.createdAt ?? DateTime.now(),
+        message: '订单已创建，等待 Apple 确认购买',
+        appleStoreProductId: binding.storeProductId,
+        appleAppAccountToken: binding.appAccountToken,
+      );
+    } catch (error) {
+      if (!_shouldRetainAlipayCreateRequestId(error) &&
+          _appleCreateRequestIds[intentKey] == requestId) {
+        _appleCreateRequestIds.remove(intentKey);
+      }
+      rethrow;
+    }
   }
 
   Future<RechargeOrder> _createAlipayRechargeOrder({
@@ -235,6 +384,9 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
 
   @override
   Future<RechargeOrder> invokePayment(RechargeOrder order) async {
+    if (order.channel == PaymentChannelType.appleIap) {
+      return _invokeApplePayment(order);
+    }
     if (order.channel != PaymentChannelType.alipay ||
         !supportsPaymentChannelInvocation) {
       throw const ApiException(
@@ -303,8 +455,63 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     }
   }
 
+  Future<RechargeOrder> _invokeApplePayment(RechargeOrder order) async {
+    final AppleIapPurchaseCoordinator? coordinator = _appleIapCoordinator;
+    final String? storeProductId = order.appleStoreProductId;
+    final String? appAccountToken = order.appleAppAccountToken;
+    if (_readyPlatform != ClientStorePlatform.ios ||
+        coordinator == null ||
+        !supportsPaymentChannelInvocation ||
+        storeProductId == null ||
+        appAccountToken == null ||
+        order.product.amountMinor == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: 'Apple IAP 尚未配置或订单绑定无效',
+      );
+    }
+    final AppleIapPurchaseFlow result = await coordinator.purchase(
+      AppleIapOrderBinding(
+        orderNo: order.orderNo,
+        productId: order.product.id,
+        storeProductId: storeProductId,
+        appAccountToken: appAccountToken,
+        amountMinor: order.product.amountMinor!,
+        giftCoinAmount: order.product.totalGiftCoins,
+        environment: '',
+        status: 'CONFIRMING',
+        createdAt: order.createdAt,
+      ),
+    );
+    final AppleIapDeliveryAck? ack = result.deliveryAck;
+    return order.copyWith(
+      state: switch (result.state) {
+        AppleIapPurchaseFlowState.delivered => RechargeOrderState.succeeded,
+        AppleIapPurchaseFlowState.pending ||
+        AppleIapPurchaseFlowState.awaitingBackend =>
+          RechargeOrderState.confirming,
+        AppleIapPurchaseFlowState.userCancelled => RechargeOrderState.canceled,
+        AppleIapPurchaseFlowState.failed => RechargeOrderState.failed,
+        AppleIapPurchaseFlowState.unavailable => RechargeOrderState.unavailable,
+      },
+      message: switch (result.state) {
+        AppleIapPurchaseFlowState.delivered => '服务端已确认 Apple 充值到账',
+        AppleIapPurchaseFlowState.pending => 'Apple 购买待批准，交易尚未到账',
+        AppleIapPurchaseFlowState.awaitingBackend => 'Apple 交易等待服务端确认',
+        AppleIapPurchaseFlowState.userCancelled => '已取消 Apple 购买',
+        AppleIapPurchaseFlowState.failed => 'Apple 购买失败，未确认到账',
+        AppleIapPurchaseFlowState.unavailable => 'Apple IAP 当前不可用',
+      },
+      appleTransactionId: ack?.transactionId,
+      appleFinishAllowed: ack?.finishAllowed,
+    );
+  }
+
   @override
   Future<RechargeOrder> queryRechargeOrder(RechargeOrder order) async {
+    if (order.channel == PaymentChannelType.appleIap) {
+      return _queryAppleRechargeOrder(order);
+    }
     if (order.channel == PaymentChannelType.alipay &&
         !_isTerminalAlipayOrderState(order.state)) {
       if (_hasTrustedNativeCancellationEvidence(order)) {
@@ -330,6 +537,55 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       }
     }
     return _queryRechargeOrderStatus(order);
+  }
+
+  Future<RechargeOrder> _queryAppleRechargeOrder(RechargeOrder order) async {
+    final AppleIapPurchaseCoordinator? coordinator = _appleIapCoordinator;
+    if (coordinator == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: 'Apple IAP 服务端状态查询不可用',
+      );
+    }
+    try {
+      await coordinator.recoverUnfinished();
+    } catch (_) {
+      // A read may show authoritative delivery even while native finish is
+      // deferred. It must never finish or invent a credit by itself.
+    }
+    final AppleIapOrderStatus status = await coordinator.readOrderStatus(
+      order.orderNo,
+    );
+    if (status.status == 'SUCCEEDED' &&
+        status.creditedGiftCoins != order.product.totalGiftCoins) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'Apple 到账数量与订单快照不一致',
+      );
+    }
+    final RechargeOrderState state = switch (status.status) {
+      'CREATED' => RechargeOrderState.created,
+      'CONFIRMING' => RechargeOrderState.confirming,
+      'SUCCEEDED' => RechargeOrderState.succeeded,
+      'FAILED' => RechargeOrderState.failed,
+      'CANCELLED' => RechargeOrderState.canceled,
+      _ => throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'Apple 订单状态包含未知值',
+      ),
+    };
+    return order.copyWith(
+      state: state,
+      message: state == RechargeOrderState.succeeded
+          ? '服务端已确认 Apple 充值到账'
+          : state == RechargeOrderState.failed
+          ? '服务端确认 Apple 订单失败'
+          : state == RechargeOrderState.canceled
+          ? 'Apple 订单已取消'
+          : 'Apple 订单仍在服务端确认中',
+      appleTransactionId: status.transactionId,
+      appleFinishAllowed: status.finishAllowed,
+    );
   }
 
   /// Reads the first-party order projection without invoking a provider or a
@@ -470,6 +726,21 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       productId.length.toString(),
       productId,
       platform.name,
+    ].join(':');
+    return sha256.convert(utf8.encode(canonical)).toString();
+  }
+
+  static String _appleCreateIntentKey({
+    required String account,
+    required String productId,
+  }) {
+    final String canonical = <String>[
+      'voice-social:apple-create',
+      account.length.toString(),
+      account,
+      productId.length.toString(),
+      productId,
+      ClientStorePlatform.ios.name,
     ].join(':');
     return sha256.convert(utf8.encode(canonical)).toString();
   }
@@ -800,13 +1071,19 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     return future;
   }
 
-  static RechargeProduct _rechargeProductFromMap(Map<String, Object?> item) {
+  static RechargeProduct _rechargeProductFromMap(
+    Map<String, Object?> item, {
+    required ClientStorePlatform platform,
+  }) {
     final String id = _string(item['productId']);
     final String title = _string(item['title']);
     final int? amountMinor = _asInt(item['amountMinor']);
     final double? amount = _asDouble(item['amount']);
     final int? giftCoins = _asInt(item['giftCoinAmount']);
     final int? bonusGiftCoins = _asInt(item['bonusGiftCoin']);
+    final String? storeProductId = _strictOptionalString(
+      item['storeProductId'],
+    );
     if (!_isUuid(id) ||
         title.isEmpty ||
         amountMinor == null ||
@@ -816,7 +1093,9 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         giftCoins == null ||
         giftCoins <= 0 ||
         bonusGiftCoins == null ||
-        bonusGiftCoins < 0) {
+        bonusGiftCoins < 0 ||
+        (platform == ClientStorePlatform.ios &&
+            !_isValidStoreProductId(storeProductId))) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '充值商品目录包含无效的金额或商品数据',
@@ -827,13 +1106,14 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       giftCoins: giftCoins,
       priceCny: amount,
       amountMinor: amountMinor,
+      storeProductId: storeProductId,
       bonusGiftCoins: bonusGiftCoins,
       label: title,
       enabled: true,
     );
   }
 
-  static bool _isValidAlipayProduct(RechargeProduct product) {
+  static bool _isValidRechargeProduct(RechargeProduct product) {
     if (!product.enabled ||
         product.id.isEmpty ||
         product.id.trim() != product.id ||
@@ -850,6 +1130,16 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     final double amountMinor = product.priceCny * 100;
     return amountMinor.isFinite && amountMinor > 0 && amountMinor.round() > 0;
   }
+
+  static bool _isValidAppleProduct(RechargeProduct product) =>
+      product.amountMinor != null &&
+      product.amountMinor! > 0 &&
+      _isValidStoreProductId(product.storeProductId);
+
+  static bool _isValidStoreProductId(String? value) =>
+      value != null &&
+      value.length <= 255 &&
+      RegExp(r'^[A-Za-z0-9._-]+$').hasMatch(value);
 
   static RechargeOrder _alipayRechargeOrderFromResponse(
     Object? value, {

@@ -209,6 +209,12 @@ class ApiClient {
           queryParameters: query == null || query.isEmpty ? null : query,
         );
     final String stableRequestId = requestId ?? _newRequestId();
+    // Session-bound provider/financial requests may not adopt a different
+    // principal while the asynchronous connection is being established.
+    final String? boundAuthorization =
+        authenticated && !allowUnauthorizedRecovery
+        ? _authorizationProvider()
+        : null;
     try {
       final HttpClientRequest request = await _httpClient
           .openUrl(method, uri)
@@ -226,7 +232,9 @@ class ApiClient {
 
       if (authenticated) {
         requestRecoveryGeneration = _unauthorizedRecoveryGeneration;
-        final String? authorization = _authorizationProvider();
+        final String? authorization = allowUnauthorizedRecovery
+            ? _authorizationProvider()
+            : boundAuthorization;
         if (authorization == null || authorization.isEmpty) {
           throw const ApiException(
             kind: ApiFailureKind.unauthorized,

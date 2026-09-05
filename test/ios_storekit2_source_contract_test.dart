@@ -16,8 +16,9 @@ void main() {
     expect(swift, contains('verification.jwsRepresentation'));
     expect(swift, contains('StoreKit 2 requires iOS 15 or later'));
 
-    final String beforeFinish =
-        swift.split('func finish(transactionId: UInt64)')[0];
+    final String beforeFinish = swift.split(
+      'func finish(transactionId: UInt64)',
+    )[0];
     expect(
       beforeFinish,
       isNot(contains('.finish()')),
@@ -33,13 +34,25 @@ void main() {
         jsonDecode(config.readAsStringSync()) as Map<String, Object?>;
     final List<Object?> products = json['products']! as List<Object?>;
 
-    expect(products, isNotEmpty);
+    expect(
+      products
+          .map(
+            (Object? raw) =>
+                (raw! as Map<String, Object?>)['productID']! as String,
+          )
+          .toSet(),
+      <String>{
+        'com.kong373.voiceSocialApp.recharge.60',
+        'com.kong373.voiceSocialApp.recharge.300',
+        'com.kong373.voiceSocialApp.recharge.980',
+      },
+    );
     for (final Object? raw in products) {
       final Map<String, Object?> item = raw! as Map<String, Object?>;
       expect(item['type'], 'Consumable');
       expect(
         item['productID']! as String,
-        startsWith('com.kong373.voiceSocial.giftcoins.'),
+        startsWith('com.kong373.voiceSocialApp.recharge.'),
       );
     }
     expect(json['subscriptionGroups'], isEmpty);
@@ -54,6 +67,31 @@ void main() {
     expect(tests, contains('askToBuyEnabled = true'));
     expect(tests, contains('declineAskToBuyTransaction'));
     expect(tests, contains('clearTransactions()'));
+    expect(tests, contains('Bundle(for: RunnerTests.self)'));
+    expect(tests, isNot(contains('let configuration = #')));
+    expect(tests, contains('guard case .pending = result'));
+  });
+
+  test('StoreKit development entitlement is Debug simulator only', () {
+    final String project = read('ios/Runner.xcodeproj/project.pbxproj');
+    final String debug = project
+        .split('97C147061CF9000F007C117D /* Debug */ = {')[1]
+        .split('name = Debug;')[0];
+    expect(debug, contains('CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]'));
+    expect(debug, contains('Runner/RunnerDebug.entitlements'));
+    expect(
+      'Runner/RunnerDebug.entitlements'.allMatches(project).length,
+      1,
+      reason: 'Release and Profile must never select the debug entitlement',
+    );
+    expect(
+      read('ios/Runner/RunnerDebug.entitlements'),
+      contains('get-task-allow'),
+    );
+    expect(
+      read('ios/Runner/Runner.entitlements'),
+      isNot(contains('get-task-allow')),
+    );
   });
 
   test('Dart coordinator gates finish on authoritative backend ACK', () {
@@ -66,10 +104,7 @@ void main() {
       'lib/features/commerce/domain/apple_iap_models.dart',
     );
     expect(models, contains('AppleIapDeliveryState.alreadyDelivered'));
-    expect(
-      coordinator,
-      contains('if (ack.delivered && ack.finishAllowed)'),
-    );
+    expect(coordinator, contains('if (ack.delivered && ack.finishAllowed)'));
     expect(
       coordinator,
       contains('await _storeKit.finish(transaction.transactionId)'),
@@ -91,6 +126,12 @@ void main() {
     expect(workflow, contains('ios_storekit2_source_contract_test.dart'));
     expect(workflow, contains('xcodebuild test'));
     expect(workflow, contains('VoiceSocial.storekit'));
+    expect(workflow, contains('-scheme RunnerStoreKitTests'));
+    expect(workflow, contains('-parallel-testing-enabled NO'));
+    expect(
+      read('ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme'),
+      isNot(contains('StoreKitConfigurationFileReference')),
+    );
   });
 
   test('Apple IAP does not weaken explicit phase exemptions', () {
@@ -100,14 +141,8 @@ void main() {
       document,
       contains('CHUANGLAN_DELIVERY_RECEIPT=EXEMPT_NOT_COMPLETED'),
     );
-    expect(
-      document,
-      contains('ALIPAY_ASYNC_CALLBACK=EXEMPT_NOT_COMPLETED'),
-    );
-    expect(
-      document,
-      contains('ALIPAY_REFUND=EXEMPT_NOT_COMPLETED'),
-    );
+    expect(document, contains('ALIPAY_ASYNC_CALLBACK=EXEMPT_NOT_COMPLETED'));
+    expect(document, contains('ALIPAY_REFUND=EXEMPT_NOT_COMPLETED'));
     expect(
       document,
       contains('APPLE_IAP_TRANSACTION_UPDATES=IMPLEMENTED_IN_SOURCE'),

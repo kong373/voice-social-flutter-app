@@ -26,7 +26,10 @@ import 'package:voice_social_app/features/im/infrastructure/tencent_im_session_a
 import 'package:voice_social_app/features/commerce/catalog/data/backend_commerce_catalog_repository.dart';
 import 'package:voice_social_app/features/commerce/catalog/data/mock_commerce_catalog_repository.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_repository.dart';
+import 'package:voice_social_app/features/commerce/application/apple_iap_purchase_coordinator.dart';
+import 'package:voice_social_app/features/commerce/data/backend_apple_iap_port.dart';
 import 'package:voice_social_app/features/commerce/infrastructure/alipay_app_pay_adapter.dart';
+import 'package:voice_social_app/features/commerce/infrastructure/apple_iap_storekit2_adapter.dart';
 import 'package:voice_social_app/features/commerce/data/backend_commerce_repository.dart';
 import 'package:voice_social_app/features/commerce/data/mock_commerce_repository.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
@@ -85,6 +88,8 @@ class AppDependencies {
     required this.commerceRepository,
     required this.commerceCatalogRepository,
     required this.alipayAppPayAdapter,
+    required this.appleIapStoreKit2Adapter,
+    required this.appleIapPurchaseCoordinator,
     required this.messageRepository,
     required this.roomRepository,
     required this.roomOperationsRepository,
@@ -128,6 +133,7 @@ class AppDependencies {
     ImSessionCoordinator? imSessionCoordinator,
     ImAuthoritativeRefreshBus? imAuthoritativeRefreshBus,
     TencentImAvChatRoomCoordinator? tencentImAvChatRoomCoordinator,
+    AppleIapStoreKit2Adapter? appleIapStoreKit2Adapter,
     Duration? alipayNativeTimeout,
   }) {
     return _build(
@@ -144,6 +150,7 @@ class AppDependencies {
       imSessionCoordinatorOverride: imSessionCoordinator,
       imAuthoritativeRefreshBusOverride: imAuthoritativeRefreshBus,
       tencentImAvChatRoomCoordinatorOverride: tencentImAvChatRoomCoordinator,
+      appleIapStoreKit2AdapterOverride: appleIapStoreKit2Adapter,
       alipayNativeTimeout: alipayNativeTimeout,
     );
   }
@@ -162,6 +169,7 @@ class AppDependencies {
     ImSessionCoordinator? imSessionCoordinatorOverride,
     ImAuthoritativeRefreshBus? imAuthoritativeRefreshBusOverride,
     TencentImAvChatRoomCoordinator? tencentImAvChatRoomCoordinatorOverride,
+    AppleIapStoreKit2Adapter? appleIapStoreKit2AdapterOverride,
     Duration? alipayNativeTimeout,
   }) {
     final DateTime Function() currentTime = () => mockNow ?? DateTime.now();
@@ -281,6 +289,26 @@ class AppDependencies {
             nativeTimeout: alipayNativeTimeout ?? const Duration(minutes: 2),
           )
         : const DisabledAlipayAppPayAdapter();
+    final bool appleIapEnabled =
+        environment.isLive &&
+        environment.enableAppleIap &&
+        environment.clientType.trim().toLowerCase() == 'ios';
+    final AppleIapStoreKit2Adapter appleIapStoreKit2Adapter = appleIapEnabled
+        ? appleIapStoreKit2AdapterOverride ??
+              MethodChannelAppleIapStoreKit2Adapter()
+        : const DisabledAppleIapStoreKit2Adapter();
+    final AppleIapPurchaseCoordinator? appleIapPurchaseCoordinator =
+        appleIapEnabled
+        ? AppleIapPurchaseCoordinator(
+            purchaseStore: store,
+            storeKit: appleIapStoreKit2Adapter,
+            backend: BackendAppleIapPort(apiClient: apiClient, routes: routes),
+            authenticatedSession: () => sessionManager.session,
+            authenticatedAccount: () =>
+                sessionManager.session?.userId.toString(),
+          )
+        : null;
+    appleIapPurchaseCoordinator?.startListening();
     final DiscoveryRepository discoveryRepository =
         discoveryRepositoryOverride ??
         (environment.isLive
@@ -321,6 +349,7 @@ class AppDependencies {
         apiClient: apiClient,
         routes: routes,
         alipayAppPayAdapter: alipayAppPayAdapter,
+        appleIapCoordinator: appleIapPurchaseCoordinator,
       );
     } else {
       final MockCommerceRepository mockCommerceRepository =
@@ -428,6 +457,8 @@ class AppDependencies {
       commerceRepository: commerceRepository,
       commerceCatalogRepository: commerceCatalogRepository,
       alipayAppPayAdapter: alipayAppPayAdapter,
+      appleIapStoreKit2Adapter: appleIapStoreKit2Adapter,
+      appleIapPurchaseCoordinator: appleIapPurchaseCoordinator,
       messageRepository: messageRepository,
       roomRepository: roomRepository,
       roomOperationsRepository: roomOperationsRepository,
@@ -458,6 +489,8 @@ class AppDependencies {
   final CommerceRepository commerceRepository;
   final CommerceCatalogRepository commerceCatalogRepository;
   final AlipayAppPayAdapter alipayAppPayAdapter;
+  final AppleIapStoreKit2Adapter appleIapStoreKit2Adapter;
+  final AppleIapPurchaseCoordinator? appleIapPurchaseCoordinator;
   final MessageRepository messageRepository;
   final RoomRepository roomRepository;
   final RoomOperationsRepository roomOperationsRepository;
@@ -468,6 +501,28 @@ class AppDependencies {
   final RoomAudioService roomAudioService;
   final ExternalUrlOpener externalUrlOpener;
 
+  /// Replays StoreKit's durable unfinished queue only after first-party
+  /// authentication is active. Failures remain recoverable and must not block
+  /// the signed-in app shell.
+  Future<bool> recoverAppleIapAfterAuthentication() async {
+    final AppleIapPurchaseCoordinator? coordinator =
+        appleIapPurchaseCoordinator;
+    if (coordinator == null) {
+      return true;
+    }
+    if (sessionManager.session == null) {
+      return false;
+    }
+    try {
+      final result = await coordinator.recoverUnfinished();
+      return result.deferred == 0;
+    } catch (_) {
+      // StoreKit retains unfinished transactions. A later sign-in/catalog
+      // refresh can retry without falsely finishing or crediting the client.
+      return false;
+    }
+  }
+
   /// Releases process-scoped controllers when the app/test tree is torn down.
   /// In particular, the IM coordinator owns a renewal Timer; leaving it
   /// alive after a widget test would make Flutter report a pending timer even
@@ -476,6 +531,11 @@ class AppDependencies {
     authController.dispose();
     imSessionCoordinator.dispose();
     unawaited(tencentImAvChatRoomCoordinator.dispose());
+    final AppleIapPurchaseCoordinator? appleCoordinator =
+        appleIapPurchaseCoordinator;
+    if (appleCoordinator != null) {
+      unawaited(appleCoordinator.dispose());
+    }
     final ImSessionAdapter adapter = imSessionAdapter;
     if (adapter is TencentImSessionAdapter) {
       unawaited(adapter.dispose());

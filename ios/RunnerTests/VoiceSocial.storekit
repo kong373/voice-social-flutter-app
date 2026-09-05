@@ -20,7 +20,7 @@
           "locale" : "en_US"
         }
       ],
-      "productID" : "com.kong373.voiceSocial.giftcoins.60",
+      "productID" : "com.kong373.voiceSocialApp.recharge.60",
       "referenceName" : "Voice Social 60 Gift Coins",
       "type" : "Consumable"
     },
@@ -40,8 +40,28 @@
           "locale" : "en_US"
         }
       ],
-      "productID" : "com.kong373.voiceSocial.giftcoins.300",
+      "productID" : "com.kong373.voiceSocialApp.recharge.300",
       "referenceName" : "Voice Social 300 Gift Coins",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "98.00",
+      "familyShareable" : false,
+      "internalID" : "A6D70961-81A7-47A4-9895-3B26AAFE1003",
+      "localizations" : [
+        {
+          "description" : "仅用于本地 StoreKit 自动化的 980 礼物币消耗型商品。",
+          "displayName" : "980 礼物币",
+          "locale" : "zh_CN"
+        },
+        {
+          "description" : "Local StoreKit consumable for 980 gift coins.",
+          "displayName" : "980 Gift Coins",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.kong373.voiceSocialApp.recharge.980",
+      "referenceName" : "Voice Social 980 Gift Coins",
       "type" : "Consumable"
     }
   ],

@@ -24,6 +24,8 @@ class AppleStoreProduct {
     required this.displayName,
     required this.description,
     required this.displayPrice,
+    required this.priceMilliunits,
+    required this.currencyCode,
     required this.productType,
   });
 
@@ -31,6 +33,8 @@ class AppleStoreProduct {
   final String displayName;
   final String description;
   final String displayPrice;
+  final int priceMilliunits;
+  final String currencyCode;
   final String productType;
 
   bool get isConsumable => productType.toLowerCase() == 'consumable';
@@ -123,27 +127,28 @@ class AppleIapCatalog {
 class AppleIapOrderBinding {
   const AppleIapOrderBinding({
     required this.orderNo,
+    required this.productId,
     required this.storeProductId,
     required this.appAccountToken,
+    required this.amountMinor,
+    required this.giftCoinAmount,
     required this.environment,
     required this.status,
     required this.createdAt,
   });
 
   final String orderNo;
+  final String productId;
   final String storeProductId;
   final String appAccountToken;
+  final int amountMinor;
+  final int giftCoinAmount;
   final String environment;
   final String status;
-  final DateTime createdAt;
+  final DateTime? createdAt;
 }
 
-enum AppleIapDeliveryState {
-  delivered,
-  alreadyDelivered,
-  pending,
-  rejected,
-}
+enum AppleIapDeliveryState { delivered, alreadyDelivered, pending, rejected }
 
 extension AppleIapDeliveryStateX on AppleIapDeliveryState {
   bool get delivered =>
@@ -199,4 +204,28 @@ class AppleIapRecoveryResult {
   final int delivered;
   final int finished;
   final int deferred;
+}
+
+enum AppleIapPurchaseFlowState {
+  delivered,
+  awaitingBackend,
+  pending,
+  userCancelled,
+  failed,
+  unavailable,
+}
+
+/// Presentation-safe result of one StoreKit purchase attempt. The state is
+/// never upgraded to [AppleIapPurchaseFlowState.delivered] by a native result
+/// alone: only a first-party backend ACK can do that.
+class AppleIapPurchaseFlow {
+  const AppleIapPurchaseFlow({
+    required this.state,
+    this.deliveryAck,
+    this.reason = '',
+  });
+
+  final AppleIapPurchaseFlowState state;
+  final AppleIapDeliveryAck? deliveryAck;
+  final String reason;
 }
