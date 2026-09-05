@@ -1,11 +1,36 @@
 # M4 authoritative live AVD acceptance
 
 This document defines the acceptance contract for the Flutter client against
-the first-party development backend at the fixed Android-emulator origin
-`http://10.0.2.2:18080/`. It is a runner specification, not a record of a
+the first-party development backend at the selected Android-emulator origin
+`http://10.0.2.2:${QA_M4_BACKEND_PORT}/`. It is a runner specification, not a record of a
 successful run. The runner does not start a contract server or any formal SMS,
 RTC, IM, payment, push, or object-storage vendor. Contract-server targets and
 port `8765` are rejected before an emulator is launched.
+
+## Backend target contract
+
+`QA_M4_BACKEND_PORT` is a public target selector, not a credential. When it is
+unset, the runner, helper, aggregate gate, and Dart test independently select
+`18080`. When it is set, its complete value must be exactly `18080` or
+`28080`; an empty value, whitespace, leading zero, URL, or any other port is a
+fail-closed configuration error before ADB, Flutter, artifact directories, or
+the evidence listener are touched. The only accepted client origin is derived
+internally as `http://10.0.2.2:${QA_M4_BACKEND_PORT}/`; `QA_API_BASE_URL` and
+other API URL overrides are rejected. Dart must receive the exact same
+`API_BASE_URL` and `QA_M4_BACKEND_PORT` values.
+
+The helper inspects the same source-digest-attested backend container before
+binding its listener. Its Docker metadata must contain exactly one mapping of
+`127.0.0.1:<selected-port>` to `18080/tcp`; a non-loopback host, missing or
+wrong mapping, or multiple mapping fails closed. Evidence start/binding,
+per-AVD environment/result/summary, logs, and the aggregate verdict carry the
+selected backend port. The Dart app and its log marker prove only the selected
+runtime target; they do not claim Docker mapping proof. The DB helper is the
+sole mapping authority, and its `backend_port_mapping_matches=true` invariant
+must be present in the same `COLLECTED` response that the aggregate gate checks
+alongside the result file. A result may say
+`backend_port_mapping_matches=true` only after that helper response is
+`COLLECTED`; otherwise it must say `NOT_PROVEN`.
 
 ## Current status
 
@@ -246,6 +271,7 @@ export QA_AVD_A_NAME="voice_social_m4_avd_a_api36"
 export QA_AVD_B_NAME="voice_social_m4_avd_b_api35"
 export QA_RUN_ID="m4-$(date +%Y%m%d%H%M%S)"
 export QA_ARTIFACT_ROOT="$PWD/artifacts/qa/m4-authoritative-live-avd/$QA_RUN_ID"
+export QA_M4_BACKEND_PORT="28080"   # omit for the default 18080 target
 export QA_FLUTTER_SHA="$(git rev-parse HEAD)"
 export QA_BACKEND_REPO="/secure/path/to/authoritative-backend"
 export QA_BACKEND_SHA="$(git -C "$QA_BACKEND_REPO" rev-parse HEAD)"
@@ -301,35 +327,38 @@ wait "$M4_DB_EVIDENCE_PID" 2>/dev/null || true
 rm -f "$M4_DB_EVIDENCE_LOG"
 ```
 
-`QA_FLUTTER_SHA` and `QA_BACKEND_SHA` are mandatory and are compared with the
+`QA_M4_BACKEND_PORT` is optional as described above. `QA_FLUTTER_SHA` and `QA_BACKEND_SHA` are mandatory and are compared with the
 checked-out commits before the run. The helper independently checks that
 `QA_BACKEND_REPO` is clean and at `QA_BACKEND_SHA`, runs the tracked
 `scripts/compute-backend-source-digest.sh`, and compares that digest in
 constant time with `/app/backend-source.sha256` from the named backend
 container. An OCI revision label can only corroborate this check; it can never
 replace the checkout and file digest. The API base URL is not an input: it is
-the fixed `10.0.2.2:18080` value in both the runner and test. The runner
+the selected `10.0.2.2:<backend-port>` value derived identically by the runner
+and test. The runner
 requires Flutter, Android `adb`/emulator tooling, Python 3, `curl`, and the
 standard file/scan utilities; its timeout is implemented through Python.
 
 The Flutter checkout must be clean before any artifact or build output is
 created. `QA_ARTIFACT_ROOT` must be a new absolute path whose existing parent
 chain contains no symlink; scan reports are written to exclusive temporary
-files and atomically published. Because this repository intentionally generates and ignores
-`android/`, the runner also creates a fresh Android host with the selected
-Flutter SDK and compares every APK-affecting Gradle, manifest, wrapper, Kotlin,
-and resource input. Only tool caches, IDE metadata, machine-local properties,
-and the generated plugin registrant are excluded. Local properties are then
-replaced from the fresh template and the registrant is removed so Flutter must
-regenerate it. Any missing, changed, additional, non-regular, or symlinked host
-input fails closed. The resulting `android_host_source_sha256` is recorded in
-both AVD results and must match across the aggregate verdict. The selected SDK
-must report Flutter `3.44.7`, Dart `3.12.2`, and framework revision
+files and atomically published. The frozen `HEAD` tracked `android/` inventory
+and each blob's bytes are the Android host authority. Before any build, the
+runner compares the current host against that inventory and byte hash; missing,
+changed, additional APK-affecting, non-regular, or symlinked inputs fail closed.
+Only the existing explicit cache directories (`.gradle`, `.kotlin`, `build`,
+`.cxx`), machine-local `local.properties`, and the generated
+`GeneratedPluginRegistrant.java` are excluded. `local.properties` is written
+atomically with mode `0600` from the selected SDK paths, and the registrant is
+removed for Flutter to regenerate; no Flutter template is used to overwrite the
+tracked host. The resulting `android_host_source_sha256` is recorded in both
+AVD results and must match across the aggregate verdict. The selected SDK must
+report Flutter `3.44.7`, Dart `3.12.2`, and framework revision
 `84fc5cbb223bc12f83d65b647ff8a56caf779ffd`; the runner uses that one resolved
-binary for template generation, cleanup, dependency resolution, and both AVD
-drives. It runs `flutter clean` and `flutter pub get --enforce-lockfile` before
-the first drive, so ignored package/plugin metadata cannot be reused as an
-unbound build input.
+binary for SDK attestation, cleanup, dependency resolution, and both AVD drives.
+It runs `flutter clean` and `flutter pub get --enforce-lockfile` before the first
+drive, so ignored package/plugin metadata cannot be reused as an unbound build
+input.
 
 The AVDs use one dedicated QA phone, so the runner treats the development SMS
 challenge limit as an explicit 60-second cooldown. It records the AVD-A
@@ -372,7 +401,8 @@ The accepted shape is exactly:
     "formal_vendor_adapters_blocked": true,
     "provider_invocation_rows_zero": true,
     "first_party_writes_observed_since_start": true,
-    "expected_backend_sha_matches": true
+    "expected_backend_sha_matches": true,
+    "backend_port_mapping_matches": true
   },
   "providerCalls": 0,
   "secrets": false,
@@ -382,6 +412,7 @@ The accepted shape is exactly:
     "startNonce": "opaque-per-AVD-start-nonce",
     "fixtureId": "m4-fresh-YYYYMMDD",
     "fixtureAccountState": "created_during_run",
+    "backendPort": 18080,
     "mutationKeys": [
       "auth_sessions",
       "room_activity",
@@ -416,7 +447,8 @@ positive total, and a positive `social_user_reports` delta for the required
 current-run room-report mutation. They also require exactly the three fixed
 fixture-scoped counters above, each positive for the same account (so global
 unrelated writes cannot satisfy the gate), the fixed invariant set including
-`expected_backend_sha_matches`, the exact binding fields and mutation-key list,
+`expected_backend_sha_matches`, `backend_port_mapping_matches`, the exact
+binding fields (including `backendPort`) and mutation-key list,
 `status=OK`,
 `providerCalls=0`, and `secrets=false`. A missing URL/token pair, failed
 endpoint, invalid response, or `NOT_CONFIGURED` file is a failed AVD, never a
@@ -468,21 +500,25 @@ a substitute for the operator DB response.
 
 Each `result.txt` must report `result=PASS`, `acceptance_status=PASS`, matching
 `run_id`, fresh `fixture_id`/`fixture_status`, a per-AVD `db_start_nonce`, tested
-Flutter SHA, backend SHA, exact Flutter/Dart version and framework revision,
+selected `backend_port` with `backend_port_mapping_matches=true` only when
+`db_evidence=COLLECTED` (otherwise `NOT_PROVEN`), Flutter SHA, backend SHA, exact
+Flutter/Dart version and framework revision,
 matching `android_host_source_sha256`,
 `provider_calls_made=false`,
 `db_evidence=COLLECTED`, passing secret/APK scans, zero hard findings and
 crash/ANR findings, at least four non-empty screenshots, at least ten unique
 route markers, and at least five authority-invariant markers. Its log must
 contain exactly one `M4_ACCEPTANCE::PASS`, exactly one
-`M4_PROVIDER_CALLS::0`, no nonzero provider marker, no failed acceptance
-marker, and no invalid route status. Flutter error and crash/ANR files must be
-present and empty.
+`M4_PROVIDER_CALLS::0`, one selected `M4_BACKEND_PORT::<port>` marker, no
+nonzero provider marker, no failed acceptance marker, and no invalid route
+status. The aggregate does not treat an app authority marker as Docker proof;
+it independently validates the helper's current-run mapping invariant. Flutter
+error and crash/ANR files must be present and empty.
 
 `tool/qa/aggregate_m4_authoritative_live_avd.sh` is the only command allowed
 to emit `ANDROID_EMULATOR_PASS`. It requires both AVD result files to pass,
 the same `QA_RUN_ID`, matching fresh fixture attestation, exact matching
-Flutter and backend SHAs, valid route and authority evidence, current-run
+`QA_M4_BACKEND_PORT`, Flutter and backend SHAs, valid route and authority evidence, current-run
 run/AVD/nonce-bound DB evidence for both AVDs, zero provider calls, clean
 hard-error/crash/secret scans, matching Android-host source attestation, and
 the exact AVD matrix evidence.

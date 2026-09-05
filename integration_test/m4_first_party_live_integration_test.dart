@@ -41,7 +41,17 @@ const String _runtimeConfigPortValue = String.fromEnvironment(
 );
 final int _runtimeConfigPort = int.tryParse(_runtimeConfigPortValue) ?? 0;
 
-const String _authoritativeApiBaseUrl = 'http://10.0.2.2:18080/';
+const String _backendPortValue = String.fromEnvironment(
+  'QA_M4_BACKEND_PORT',
+  defaultValue: '18080',
+);
+final int _backendPort = int.tryParse(_backendPortValue) ?? -1;
+const Set<String> _allowedBackendPortValues = <String>{'18080', '28080'};
+const String _definedApiBaseUrl = String.fromEnvironment(
+  'API_BASE_URL',
+  defaultValue: '',
+);
+const String _authoritativeApiBaseUrl = 'http://10.0.2.2:${_backendPortValue}/';
 const String _runtimeConfigPath = '/m4/config';
 const String _runtimeRelayTokenPath =
     '/data/user/0/com.kong373.voice_social_app/cache/m4-runtime-relay-token';
@@ -55,6 +65,15 @@ final RegExp _fixtureIdPattern = RegExp(r'^m4-fresh-[A-Za-z0-9_.:-]{1,64}$');
 final RegExp _canonicalRoomUuidPattern = RegExp(
   r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
 );
+
+void _validateBackendTarget() {
+  if (!_allowedBackendPortValues.contains(_backendPortValue)) {
+    throw TestFailure('QA_M4_BACKEND_PORT must be exactly 18080 or 28080.');
+  }
+  if (_definedApiBaseUrl != _authoritativeApiBaseUrl) {
+    throw TestFailure('API_BASE_URL must match the selected backend target.');
+  }
+}
 
 // These are non-secret immutable candidate identities supplied by the
 // acceptance runner.  A live test must not be able to claim PASS when it is
@@ -92,16 +111,19 @@ void main() {
   testWidgets(
     'M4 first-party live authoritative backend flow',
     (WidgetTester tester) async {
+      _validateBackendTarget();
       final _M4Evidence evidence = _M4Evidence(avd: qaAvdId, binding: binding);
       final String fixtureNickname = _fixtureNickname();
       expect(fixtureNickname, matches(RegExp(r'^m4-[0-9a-f]{13}$')));
       final _RuntimeConfig config = await _fetchRuntimeConfig();
       final AppEnvironment environment = _liveEnvironment(config.oauthClientId);
       environment.validateLiveConfiguration();
-      expect(_authoritativeApiBaseUrl, 'http://10.0.2.2:18080/');
+      expect(_authoritativeApiBaseUrl, 'http://10.0.2.2:$_backendPortValue/');
       expect(_authoritativeApiBaseUrl, isNot(contains(':8765')));
       expect(_authoritativeApiBaseUrl, isNot(contains('contract-server')));
-      evidence.invariant('authoritative_backend_target_10_0_2_2_18080');
+      evidence.invariant(
+        'authoritative_backend_target_10_0_2_2_$_backendPortValue',
+      );
 
       AppDependencies dependencies = AppDependencies.forTestEnvironment(
         environment: environment,
@@ -3270,8 +3292,8 @@ class _M4Evidence {
   };
   final Set<String> _preexistingCapabilities = <String>{};
 
-  static const Set<String> _requiredInvariants = <String>{
-    'authoritative_backend_target_10_0_2_2_18080',
+  static Set<String> get _requiredInvariants => <String>{
+    'authoritative_backend_target_10_0_2_2_$_backendPortValue',
     'development_otp_consumed_in_memory_only',
     'vendor_readiness_observed_without_client_provider',
     'vendor_runtime_adapters_are_fail_closed',
@@ -3444,6 +3466,7 @@ class _M4Evidence {
       'missingRequiredInvariants': missingInvariants.toList()..sort(),
       'tested_git_sha': _expectedTestedFlutterSha,
       'backend_sha': _expectedTestedBackendSha,
+      'backendPort': _backendPort,
       'providerCalls': 0,
       'providerCallEvidence': 'none',
       'secretsInClient': false,
@@ -3453,6 +3476,7 @@ class _M4Evidence {
     binding.reportData ??= <String, dynamic>{};
     binding.reportData!['m4Acceptance'] = result;
     debugPrint('M4_PROVIDER_CALLS::0');
+    debugPrint('M4_BACKEND_PORT::$_backendPort');
     debugPrint('M4_AUTHORITY_EVIDENCE::${uniqueInvariants.length}');
     debugPrint('M4_ROUTE_MARKERS::${uniqueRoutes.length}');
     debugPrint('M4_SECRETS_IN_CLIENT::0');

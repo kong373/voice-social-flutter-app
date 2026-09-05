@@ -68,6 +68,10 @@ BACKEND_REPO_ENV_NAMES = (
 
 LOOPBACK_HOST = "127.0.0.1"
 DEFAULT_PORT = 0
+BACKEND_PORT_ENV_NAME = "QA_M4_BACKEND_PORT"
+DEFAULT_BACKEND_PORT = 18080
+BACKEND_CONTAINER_PORT = 18080
+ALLOWED_BACKEND_PORTS = frozenset({18080, 28080})
 ALLOWED_PATHS = frozenset({"/", "/m4/db-evidence", "/m4/db-evidence/"})
 RESPONSE_KEYS = frozenset(
     {
@@ -116,6 +120,7 @@ REQUIRED_INVARIANT_KEYS = frozenset(
         "formal_vendor_adapters_blocked",
         "provider_invocation_rows_zero",
         "first_party_writes_observed_since_start",
+        "backend_port_mapping_matches",
     }
 )
 
@@ -135,6 +140,42 @@ def _first_value(environment: Mapping[str, str], names: Sequence[str]) -> str:
     if any(value != values[0] for value in values[1:]):
         raise ConfigurationError("conflicting configuration")
     return values[0]
+
+
+def _read_backend_port(environment: Mapping[str, str]) -> int:
+    """Read the public backend port with an exact unset/default contract."""
+
+    if BACKEND_PORT_ENV_NAME not in environment:
+        return DEFAULT_BACKEND_PORT
+    raw = environment[BACKEND_PORT_ENV_NAME]
+    if raw not in {str(port) for port in ALLOWED_BACKEND_PORTS}:
+        raise ConfigurationError("invalid M4 backend port")
+    return int(raw)
+
+
+def _parse_backend_port_mapping(output: str, expected_port: int) -> bool:
+    """Require one loopback host mapping for the fixed backend container port."""
+
+    if expected_port not in ALLOWED_BACKEND_PORTS:
+        raise EvidenceError("invalid backend port")
+    try:
+        ports = json.loads(output)
+    except (TypeError, ValueError) as error:
+        raise EvidenceError("invalid backend port mapping") from error
+    container_port = f"{BACKEND_CONTAINER_PORT}/tcp"
+    if not isinstance(ports, dict) or set(ports) != {container_port}:
+        raise EvidenceError("backend port mapping is not fixed")
+    bindings = ports.get(container_port)
+    if not isinstance(bindings, list) or len(bindings) != 1:
+        raise EvidenceError("backend port mapping is not unique")
+    binding = bindings[0]
+    if not isinstance(binding, dict):
+        raise EvidenceError("backend port mapping is invalid")
+    if binding.get("HostIp") != LOOPBACK_HOST:
+        raise EvidenceError("backend port mapping is not loopback")
+    if binding.get("HostPort") != str(expected_port):
+        raise EvidenceError("backend port mapping has the wrong host port")
+    return True
 
 
 def _constant_time_equal(left: str, right: str) -> bool:
@@ -287,12 +328,14 @@ class Config:
     backend_repo: str
     expected_backend_sha: str
     expected_backend_digest: str
+    backend_port: int = DEFAULT_BACKEND_PORT
 
 
 def read_config(environment: Mapping[str, str] | None = None) -> Config:
     """Read and validate only the supported runtime environment variables."""
 
     env = os.environ if environment is None else environment
+    backend_port = _read_backend_port(env)
     token = _first_value(env, TOKEN_ENV_NAMES)
     if len(token) < 32 or len(token) > 512 or not token.isascii() or any(
         character.isspace() or ord(character) < 0x20 for character in token
@@ -341,7 +384,7 @@ def read_config(environment: Mapping[str, str] | None = None) -> Config:
     if docker_socket:
         docker_env["DOCKER_HOST"] = docker_socket
 
-    return Config(
+    config = Config(
         host=LOOPBACK_HOST,
         port=port,
         token=token,
@@ -352,7 +395,10 @@ def read_config(environment: Mapping[str, str] | None = None) -> Config:
         backend_repo=backend_repo,
         expected_backend_sha=expected_sha.lower(),
         expected_backend_digest=expected_digest,
+        backend_port=backend_port,
     )
+    DockerRunner(config).validate_backend_port_mapping()
+    return config
 
 
 class DockerRunner:
@@ -383,6 +429,18 @@ class DockerRunner:
             # Docker diagnostics can include environment details or mounted paths.
             raise EvidenceError("docker operation failed")
         return completed.stdout
+
+    def validate_backend_port_mapping(self) -> bool:
+        output = self._run(
+            (
+                "inspect",
+                "--format",
+                "{{json .NetworkSettings.Ports}}",
+                self._config.backend_container,
+            ),
+            timeout=8.0,
+        )
+        return _parse_backend_port_mapping(output, self._config.backend_port)
 
     def exec_shell(self, container: str, script: str, timeout: float = 20.0) -> str:
         if not CONTAINER_NAME_RE.fullmatch(container):
@@ -759,6 +817,7 @@ class EvidenceSnapshot:
     database_invariants: Mapping[str, bool]
     provider_evidence: int
     backend_sha_ok: bool
+    backend_port_mapping_matches: bool
 
 
 def _counter_delta(
@@ -803,6 +862,10 @@ def _backend_sha_matches(
     runner: DockerRunner,
     config: Config,
 ) -> bool:
+    # The container name is an operator input and may be replaced between
+    # evidence phases. Re-inspect immediately before reading the source
+    # attestation so a later container cannot inherit an earlier proof.
+    runner.validate_backend_port_mapping()
     actual_digest = runner.read_backend_source_digest(config.backend_container)
     if not _constant_time_equal(actual_digest, config.expected_backend_digest):
         return False
@@ -853,7 +916,13 @@ def _validate_payload(payload: Mapping[str, object]) -> None:
         raise EvidenceError("provider calls are not zero")
     binding = payload.get("evidenceBinding")
     if not isinstance(binding, dict) or set(binding) != {
-        "runId", "avd", "startNonce", "fixtureId", "fixtureAccountState", "mutationKeys"
+        "runId",
+        "avd",
+        "startNonce",
+        "fixtureId",
+        "fixtureAccountState",
+        "backendPort",
+        "mutationKeys",
     }:
         raise EvidenceError("evidence binding is missing")
     if (
@@ -869,6 +938,8 @@ def _validate_payload(payload: Mapping[str, object]) -> None:
             "created_during_run",
             "preexisting_fixture",
         }
+        or type(binding["backendPort"]) is not int
+        or binding["backendPort"] not in ALLOWED_BACKEND_PORTS
         or binding["mutationKeys"] != list(WRITE_COUNTER_KEYS)
     ):
         raise EvidenceError("evidence binding is invalid")
@@ -902,6 +973,7 @@ class EvidenceCollector:
         fixture_nickname = "m4-no-fixture"
         if fixture_id is not None:
             fixture_nickname = _fixture_nickname(fixture_id)
+        backend_port_mapping_matches = self._docker.validate_backend_port_mapping()
         backend_output = self._docker.exec_shell(
             self._config.backend_container,
             BACKEND_EVIDENCE_SCRIPT,
@@ -958,6 +1030,7 @@ class EvidenceCollector:
             database_invariants=database_invariants,
             provider_evidence=provider_evidence,
             backend_sha_ok=backend_sha_ok,
+            backend_port_mapping_matches=backend_port_mapping_matches,
         )
 
     def capture_baseline(self) -> None:
@@ -994,6 +1067,7 @@ class EvidenceCollector:
                 "runId": run_id,
                 "avd": avd,
                 "fixtureId": fixture_id,
+                "backendPort": self._config.backend_port,
                 "fixtureAccountState": (
                     "absent_at_start" if avd == "AVD-A" else "present_at_start"
                 ),
@@ -1047,6 +1121,7 @@ class EvidenceCollector:
                     "provider_invocation_rows_zero": current.provider_evidence == 0,
                     "first_party_writes_observed_since_start": write_total > 0,
                     "expected_backend_sha_matches": current.backend_sha_ok,
+                    "backend_port_mapping_matches": current.backend_port_mapping_matches,
                 }
             )
             payload: Mapping[str, object] = {
@@ -1061,6 +1136,7 @@ class EvidenceCollector:
                     "avd": avd,
                     "startNonce": start_nonce,
                     "fixtureId": fixture_id,
+                    "backendPort": self._config.backend_port,
                     "fixtureAccountState": (
                         "created_during_run"
                         if avd == "AVD-A"
@@ -1209,6 +1285,38 @@ def _self_test() -> int:
         raise AssertionError("wrong bearer token accepted")
     if _valid_bearer_header(["Bearer " + token, "Bearer " + token], token):
         raise AssertionError("duplicate bearer token accepted")
+    if _read_backend_port({}) != DEFAULT_BACKEND_PORT:
+        raise AssertionError("unset backend port did not use the default")
+    if _read_backend_port({BACKEND_PORT_ENV_NAME: "28080"}) != 28080:
+        raise AssertionError("explicit backend port was not accepted")
+    for invalid_port in ("", " ", "028080", "18081", "0", "http://10.0.2.2:28080/"):
+        try:
+            _read_backend_port({BACKEND_PORT_ENV_NAME: invalid_port})
+        except ConfigurationError:
+            pass
+        else:
+            raise AssertionError("invalid backend port was accepted")
+    if not _parse_backend_port_mapping(
+        json.dumps({"18080/tcp": [{"HostIp": LOOPBACK_HOST, "HostPort": "28080"}]}),
+        28080,
+    ):
+        raise AssertionError("valid backend port mapping was rejected")
+    for invalid_mapping in (
+        {"18080/tcp": [{"HostIp": "0.0.0.0", "HostPort": "28080"}]},
+        {"18080/tcp": [{"HostIp": LOOPBACK_HOST, "HostPort": "18080"}]},
+        {"18080/tcp": [
+            {"HostIp": LOOPBACK_HOST, "HostPort": "28080"},
+            {"HostIp": LOOPBACK_HOST, "HostPort": "28081"},
+        ]},
+        {"8080/tcp": [{"HostIp": LOOPBACK_HOST, "HostPort": "28080"}]},
+        {},
+    ):
+        try:
+            _parse_backend_port_mapping(json.dumps(invalid_mapping), 28080)
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("invalid backend port mapping was accepted")
     try:
         read_config(
             {
@@ -1263,9 +1371,22 @@ def _self_test() -> int:
     )
 
     class FakeAttestationRunner:
-        def __init__(self, digest: str, labels: Mapping[str, str]):
+        def __init__(
+            self,
+            digest: str,
+            labels: Mapping[str, str],
+            mapping_results: Sequence[bool] = (True,),
+        ):
             self.digest = digest
             self.labels = labels
+            self.mapping_results = list(mapping_results)
+
+        def validate_backend_port_mapping(self) -> bool:
+            if not self.mapping_results:
+                raise EvidenceError("backend mapping was not revalidated")
+            if not self.mapping_results.pop(0):
+                raise EvidenceError("backend mapping changed")
+            return True
 
         def read_backend_source_digest(self, _container: str) -> str:
             return self.digest
@@ -1373,6 +1494,7 @@ def _self_test() -> int:
             "provider_invocation_rows_zero": True,
             "first_party_writes_observed_since_start": True,
             "expected_backend_sha_matches": True,
+            "backend_port_mapping_matches": True,
         },
         "providerCalls": 0,
         "secrets": False,
@@ -1382,6 +1504,7 @@ def _self_test() -> int:
             "startNonce": "N" * 32,
             "fixtureId": "m4-fresh-self-test",
             "fixtureAccountState": "created_during_run",
+            "backendPort": 18080,
             "mutationKeys": list(WRITE_COUNTER_KEYS),
         },
     }
@@ -1416,6 +1539,7 @@ def _self_test() -> int:
         }},
         provider_evidence=0,
         backend_sha_ok=True,
+        backend_port_mapping_matches=True,
     )
     next_snapshot = dataclasses.replace(
         base_snapshot,
@@ -1425,6 +1549,54 @@ def _self_test() -> int:
             "social_user_reports": 11,
         },
     )
+
+    class MappingPhaseCollector(EvidenceCollector):
+        def __init__(self, mappings: Sequence[str]) -> None:
+            super().__init__(attestation_config)
+            self._mappings = list(mappings)
+            self._snapshots = [
+                dataclasses.replace(base_snapshot, fixture_account_count=0),
+                dataclasses.replace(
+                    next_snapshot,
+                    fixture_account_count=1,
+                    scoped_counters={key: 11 for key in SCOPED_COUNTER_KEYS},
+                ),
+            ]
+
+        def _capture_snapshot(self, _fixture_id: str | None = None) -> EvidenceSnapshot:
+            if not self._mappings:
+                raise EvidenceError("mapping fixture exhausted")
+            _parse_backend_port_mapping(
+                self._mappings.pop(0), self._config.backend_port
+            )
+            return self._snapshots.pop(0)
+
+    valid_mapping = json.dumps(
+        {"18080/tcp": [{"HostIp": LOOPBACK_HOST, "HostPort": "18080"}]}
+    )
+    for invalid_mapping in (
+        json.dumps(
+            {"18080/tcp": [{"HostIp": LOOPBACK_HOST, "HostPort": "28080"}]}
+        ),
+        json.dumps(
+            {"18080/tcp": [{"HostIp": "0.0.0.0", "HostPort": "18080"}]}
+        ),
+    ):
+        mapping_collector = MappingPhaseCollector([valid_mapping, invalid_mapping])
+        started = mapping_collector.start(
+            "m4-mapping-test", "AVD-A", "m4-fresh-mapping-test"
+        )
+        try:
+            mapping_collector.collect(
+                "m4-mapping-test",
+                "AVD-A",
+                started["startNonce"],
+                "m4-fresh-mapping-test",
+            )
+        except EvidenceError:
+            pass
+        else:
+            raise AssertionError("changed backend mapping was accepted at collect")
 
     class FakeCollector(EvidenceCollector):
         def __init__(self) -> None:

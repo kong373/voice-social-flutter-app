@@ -36,6 +36,83 @@ void main() {
     return runnerSource.substring(start, end);
   }
 
+  ProcessResult runBackendPortParser({
+    required String source,
+    required String? value,
+  }) {
+    final int start = source.indexOf('parse_backend_port() {');
+    final int end = source.indexOf('\nreadonly BACKEND_PORT', start);
+    if (start < 0 || end <= start) {
+      throw StateError('backend port parser not found');
+    }
+    final String block = source.substring(start, end);
+    final Map<String, String> environment = <String, String>{
+      ...Platform.environment,
+    };
+    environment.remove('QA_M4_BACKEND_PORT');
+    if (value != null) {
+      environment['QA_M4_BACKEND_PORT'] = value;
+    }
+    return Process.runSync('/bin/bash', <String>[
+      '-c',
+      '$block\nparse_backend_port',
+    ], environment: environment);
+  }
+
+  ProcessResult runRunnerWithBackendPort({
+    required String value,
+    required Directory fixture,
+  }) {
+    final Directory fakeBin = Directory('${fixture.path}/bin')
+      ..createSync(recursive: true);
+    final File sentinel = File('${fixture.path}/side-effect.sentinel');
+    final String fakeCommand =
+        '#!/bin/sh\nprintf invoked >>"\$M4_SIDE_EFFECT"\nexit 1\n';
+    for (final String command in <String>[
+      'adb',
+      'flutter',
+      'git',
+      'python3',
+      'curl',
+      'find',
+      'sort',
+      'awk',
+      'grep',
+      'unzip',
+      'date',
+      'sleep',
+      'rm',
+      'mktemp',
+    ]) {
+      final File executable = File('${fakeBin.path}/$command')
+        ..writeAsStringSync(fakeCommand);
+      expect(
+        Process.runSync('chmod', <String>['700', executable.path]).exitCode,
+        0,
+      );
+    }
+    final Map<String, String> environment = <String, String>{
+      ...Platform.environment,
+      'PATH': '${fakeBin.path}:${Platform.environment['PATH'] ?? ''}',
+      'M4_SIDE_EFFECT': sentinel.path,
+      'QA_M4_BACKEND_PORT': value,
+      'QA_ARTIFACT_ROOT': '${fixture.path}/artifact',
+      'QA_FLUTTER_SHA': '1' * 40,
+      'QA_BACKEND_SHA': '2' * 40,
+      'QA_BACKEND_REPO': fixture.path,
+      'QA_LIVE_PHONE': '13800138000',
+      'QA_OAUTH_CLIENT_ID': 'oauth-contract-test',
+      'QA_M4_FIXTURE_ID': 'm4-fresh-test-fixture',
+      'QA_M4_FIXTURE_STATUS': 'fresh_dedicated',
+      'QA_DB_EVIDENCE_URL': 'http://127.0.0.1:28081/m4/db-evidence',
+      'QA_DB_EVIDENCE_TOKEN': 'db-contract-test-token',
+      'QA_RUN_ID': 'm4-test-run',
+    };
+    return Process.runSync('/bin/bash', <String>[
+      'tool/qa/run_m4_authoritative_live_avd.sh',
+    ], environment: environment);
+  }
+
   ProcessResult runCheckoutGate(Directory repository) {
     final String script =
         '''
@@ -103,6 +180,7 @@ printf 'android_host_source_sha256=%s\n' "\$ANDROID_HOST_SOURCE_SHA256"
         ...Platform.environment,
         'PATH': '${fakeBin.path}:${Platform.environment['PATH'] ?? ''}',
         'M4_TEST_REPOSITORY': repository.path,
+        'ANDROID_SDK_ROOT': '${fakeBin.parent.path}/android-sdk',
       },
     );
   }
@@ -198,6 +276,10 @@ exit "\$status"
     bool staleDbBinding = false,
     bool extraMutationKey = false,
     bool missingMutationKey = false,
+    int backendPort = 18080,
+    int? avdBBackendPort,
+    int? dbBackendPort,
+    bool dbBackendMappingMatches = true,
     String flutterVersion = '3.44.7',
     String fixtureId = 'm4-fresh-test-fixture',
     String fixtureStatus = 'fresh_dedicated',
@@ -213,7 +295,8 @@ exit "\$status"
         'capability,method,route,status,state\nrequired,GET,/health,200,success\n',
       );
       File('${dir.path}/authority-invariants.txt').writeAsStringSync(
-        'session_owner_matches_account\nroom_exit_compensates_enter\n',
+        'session_owner_matches_account\n'
+        'room_exit_compensates_enter\n',
       );
       File(
         '${dir.path}/db-write-counters.txt',
@@ -232,6 +315,15 @@ exit "\$status"
           ? avdBAndroidHostSha
           : androidHostSha;
       final bool pass = avd != 'AVD-B' || avdBPass;
+      final int selectedBackendPort = avd == 'AVD-B' && avdBBackendPort != null
+          ? avdBBackendPort
+          : backendPort;
+      final int evidenceBackendPort = dbBackendPort ?? selectedBackendPort;
+      File('${dir.path}/environment.txt').writeAsStringSync(
+        'backend_mode=live\n'
+        'backend_port=$selectedBackendPort\n'
+        'backend_base_url=http://10.0.2.2:$selectedBackendPort/\n',
+      );
       final String routeStatus = avd == 'AVD-B' && invalidAvdBRouteStatus
           ? '500'
           : '200';
@@ -285,6 +377,8 @@ exit "\$status"
           'fixture_id=$fixtureId',
           'fixture_status=$fixtureStatus',
           'db_start_nonce=$dbStartNonce',
+          'backend_port=$selectedBackendPort',
+          'backend_port_mapping_matches=${dbEvidence ? 'true' : 'NOT_PROVEN'}',
           'tested_git_sha=$testedSha',
           'flutter_sha=$testedSha',
           'backend_sha=$backendSha',
@@ -293,7 +387,7 @@ exit "\$status"
           'dart_version=3.12.2',
           'flutter_revision=84fc5cbb223bc12f83d65b647ff8a56caf779ffd',
           'http_route_marker_count=12',
-          'authority_invariant_count=6',
+          'authority_invariant_count=5',
           'screenshot_count=4',
           'hard_finding_count=0',
           'crash_anr_count=0',
@@ -309,6 +403,7 @@ exit "\$status"
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_ROUTE_STATUS::required::GET::/health::$routeStatus::success',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_AUTHORITY_INVARIANT::session_owner_matches_account',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_AUTHORITY_INVARIANT::room_exit_compensates_enter',
+          '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_BACKEND_PORT::$selectedBackendPort',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_PROVIDER_CALLS::${providerCall ? '1' : '0'}',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_ACCEPTANCE::${pass ? 'PASS' : 'FAIL'}',
           '',
@@ -333,6 +428,7 @@ exit "\$status"
               'provider_invocation_rows_zero': true,
               'first_party_writes_observed_since_start': !zeroWriteDelta,
               'expected_backend_sha_matches': true,
+              'backend_port_mapping_matches': dbBackendMappingMatches,
             },
             'providerCalls': 0,
             'secrets': false,
@@ -344,6 +440,7 @@ exit "\$status"
               'fixtureAccountState': avd == 'AVD-A'
                   ? 'created_during_run'
                   : 'preexisting_fixture',
+              'backendPort': evidenceBackendPort,
               'mutationKeys': mutationKeys,
             },
           }),
@@ -353,10 +450,12 @@ exit "\$status"
     return root;
   }
 
-  ProcessResult runAggregate(Directory root) => Process.runSync(
-    '/bin/bash',
-    <String>[aggregateScript.path],
-    environment: <String, String>{
+  ProcessResult runAggregate(
+    Directory root, {
+    String? backendPort,
+    Map<String, String> environmentOverrides = const <String, String>{},
+  }) {
+    final Map<String, String> environment = <String, String>{
       ...Platform.environment,
       'QA_ARTIFACT_ROOT': root.path,
       'QA_FLUTTER_SHA': flutterSha,
@@ -364,8 +463,16 @@ exit "\$status"
       'QA_RUN_ID': 'm4-test-run',
       'QA_M4_FIXTURE_ID': 'm4-fresh-test-fixture',
       'QA_M4_FIXTURE_STATUS': 'fresh_dedicated',
-    },
-  );
+    };
+    environment.remove('QA_M4_BACKEND_PORT');
+    if (backendPort != null) {
+      environment['QA_M4_BACKEND_PORT'] = backendPort;
+    }
+    environment.addAll(environmentOverrides);
+    return Process.runSync('/bin/bash', <String>[
+      aggregateScript.path,
+    ], environment: environment);
+  }
 
   test('live integration cannot emit an unconditional PASS', () {
     expect(integrationSource, contains('M4_EXPECTED_FLUTTER_SHA'));
@@ -472,7 +579,7 @@ wait_android_host_endpoint emulator-5556 18080
     );
     expect(
       runnerSource,
-      contains('wait_android_host_endpoint "\$serial" 18080'),
+      contains('wait_android_host_endpoint "\$serial" "\$BACKEND_PORT"'),
     );
     expect(
       runnerSource,
@@ -565,15 +672,21 @@ wait_android_host_endpoint emulator-5556 18080
     expect(Directory('${outside.path}/evidence').existsSync(), isFalse);
   });
 
-  test('ignored Android host inputs are bound to the selected Flutter SDK', () {
+  test('tracked Android host inputs are bound to the frozen checkout', () {
     expect(runnerSource, contains('attest_android_host_source()'));
-    expect(runnerSource, contains('--platforms=android'));
-    expect(runnerSource, contains('Android host does not match'));
+    expect(runnerSource, contains('git ls-tree'));
+    expect(runnerSource, contains('HEAD'));
+    expect(runnerSource, contains('tracked Android host does not match'));
+    expect(runnerSource, isNot(contains('"create"')));
     expect(runnerSource, contains('GeneratedPluginRegistrant.java'));
+    expect(runnerSource, contains('excluded_cache_roots'));
+    expect(runnerSource, contains('def is_cache_path'));
+    expect(runnerSource, contains('Path("app/build")'));
+    expect(runnerSource, contains('Path("app/.cxx")'));
+    expect(runnerSource, isNot(contains('name in excluded_directories')));
     expect(runnerSource, contains('android_host_source_sha256'));
     expect(runnerSource, contains("EXPECTED_FLUTTER_VERSION='3.44.7'"));
     expect(runnerSource, contains("EXPECTED_DART_VERSION='3.12.2'"));
-    expect(runnerSource, contains('--android-language=kotlin'));
     expect(runnerSource, contains('"\$FLUTTER_BIN" clean'));
     expect(runnerSource, contains('pub get --enforce-lockfile'));
     expect(runnerSource, contains('"\$FLUTTER_BIN" drive'));
@@ -591,7 +704,38 @@ wait_android_host_endpoint emulator-5556 18080
       ..createSync(recursive: true);
     final Directory android = Directory('${repository.path}/android/app')
       ..createSync(recursive: true);
+    File('${repository.path}/android/.gitignore').writeAsStringSync(
+      '.gradle/\n'
+      'local.properties\n'
+      'app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java\n'
+      'app/src/main/kotlin/**/IgnoredExtra.kt\n'
+      'app/src/main/kotlin/build/Evil.kt\n'
+      'assets/build/hidden.bin\n',
+    );
     File('${android.path}/build.gradle.kts').writeAsStringSync('baseline\n');
+    File(
+      '${repository.path}/android/build.gradle.kts',
+    ).writeAsStringSync('root-baseline\n');
+    final Directory mainSource = Directory(
+      '${repository.path}/android/app/src/main/kotlin/com/example',
+    )..createSync(recursive: true);
+    File(
+      '${mainSource.path}/MainActivity.kt',
+    ).writeAsStringSync('package com.example\nclass MainActivity\n');
+    void gitOk(List<String> arguments) {
+      final ProcessResult result = Process.runSync('git', <String>[
+        '-C',
+        repository.path,
+        ...arguments,
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    }
+
+    gitOk(<String>['init', '--quiet']);
+    gitOk(<String>['config', 'user.email', 'm4-android@example.invalid']);
+    gitOk(<String>['config', 'user.name', 'M4 Android Contract']);
+    gitOk(<String>['add', 'android']);
+    gitOk(<String>['commit', '--quiet', '-m', 'tracked android host']);
     File(
       '${repository.path}/android/local.properties',
     ).writeAsStringSync('stale=true\n');
@@ -610,6 +754,7 @@ wait_android_host_endpoint emulator-5556 18080
 
     final Directory fakeBin = Directory('${fixture.path}/bin')
       ..createSync(recursive: true);
+    Directory('${fixture.path}/android-sdk').createSync(recursive: true);
     final File fakeFlutter = File('${fakeBin.path}/flutter')
       ..writeAsStringSync(r'''#!/usr/bin/env bash
 set -euo pipefail
@@ -670,7 +815,17 @@ printf 'sdk.dir=/development/android\nflutter.sdk=/development/flutter\n' >"$tar
     expect(registrant.existsSync(), isFalse);
     expect(
       File('${repository.path}/android/local.properties').readAsStringSync(),
-      contains('flutter.sdk=/development/flutter'),
+      contains('flutter.sdk=${fixture.resolveSymbolicLinksSync()}'),
+    );
+    expect(
+      Process.runSync('git', <String>[
+        '-C',
+        repository.path,
+        'status',
+        '--porcelain=v1',
+        '--untracked-files=all',
+      ]).stdout,
+      isEmpty,
     );
 
     File('${android.path}/build.gradle.kts').writeAsStringSync('tampered\n');
@@ -681,12 +836,59 @@ printf 'sdk.dir=/development/android\nflutter.sdk=/development/flutter\n' >"$tar
     expect(tampered.exitCode, isNot(0));
 
     File('${android.path}/build.gradle.kts').writeAsStringSync('baseline\n');
-    File('${android.path}/unexpected.gradle.kts').writeAsStringSync('extra\n');
+    final File ignoredExtra = File('${mainSource.path}/IgnoredExtra.kt')
+      ..writeAsStringSync('package com.example\nclass IgnoredExtra\n');
     final ProcessResult extraInput = runAndroidHostGate(
       repository: repository,
       fakeBin: fakeBin,
     );
     expect(extraInput.exitCode, isNot(0));
+    ignoredExtra.deleteSync();
+
+    Directory(
+      '${repository.path}/android/app/src/main/kotlin/build',
+    ).createSync(recursive: true);
+    final File nestedBuildSource = File(
+      '${repository.path}/android/app/src/main/kotlin/build/Evil.kt',
+    )..writeAsStringSync('package com.example\nclass Evil\n');
+    final File nestedAsset = File(
+      '${repository.path}/android/assets/build/hidden.bin',
+    )..createSync(recursive: true);
+    nestedAsset.writeAsStringSync('apk input\n');
+    final ProcessResult nestedCacheNames = runAndroidHostGate(
+      repository: repository,
+      fakeBin: fakeBin,
+    );
+    expect(nestedCacheNames.exitCode, isNot(0));
+    nestedBuildSource.deleteSync();
+    nestedAsset.deleteSync();
+
+    final Link nestedSymlink = Link(
+      '${repository.path}/android/assets/build/symlink.bin',
+    )..createSync('${repository.path}/android/build.gradle.kts');
+    final ProcessResult nestedSymlinkInput = runAndroidHostGate(
+      repository: repository,
+      fakeBin: fakeBin,
+    );
+    expect(nestedSymlinkInput.exitCode, isNot(0));
+    nestedSymlink.deleteSync();
+
+    File('${android.path}/build.gradle.kts').deleteSync();
+    final ProcessResult missingInput = runAndroidHostGate(
+      repository: repository,
+      fakeBin: fakeBin,
+    );
+    expect(missingInput.exitCode, isNot(0));
+    File('${android.path}/build.gradle.kts').writeAsStringSync('baseline\n');
+
+    final Link symlinkedInput = Link('${android.path}/symlink.gradle.kts')
+      ..createSync('${android.path}/build.gradle.kts');
+    final ProcessResult symlinkInput = runAndroidHostGate(
+      repository: repository,
+      fakeBin: fakeBin,
+    );
+    expect(symlinkInput.exitCode, isNot(0));
+    symlinkedInput.deleteSync();
   });
 
   test(
@@ -946,6 +1148,196 @@ printf 'sdk.dir=/development/android\nflutter.sdk=/development/flutter\n' >"$tar
     },
   );
 
+  test('backend port allowlist is exact and defaults only when unset', () {
+    for (final String source in <String>[
+      runnerSource,
+      aggregateScript.readAsStringSync(),
+    ]) {
+      expect(
+        runBackendPortParser(source: source, value: null).stdout,
+        '18080\n',
+      );
+      expect(
+        runBackendPortParser(source: source, value: '18080').stdout,
+        '18080\n',
+      );
+      expect(
+        runBackendPortParser(source: source, value: '28080').stdout,
+        '28080\n',
+      );
+      for (final String invalid in <String>[
+        '',
+        ' ',
+        ' 28080',
+        '028080',
+        '18081',
+        '0',
+        'http://10.0.2.2:28080/',
+      ]) {
+        expect(
+          runBackendPortParser(source: source, value: invalid).exitCode,
+          isNot(0),
+          reason: 'invalid backend port should fail closed: "$invalid"',
+        );
+      }
+    }
+    expect(
+      runnerSource.indexOf('readonly BACKEND_PORT'),
+      lessThan(runnerSource.indexOf('attest_flutter_sdk() {')),
+    );
+    expect(
+      runnerSource.indexOf('readonly BACKEND_PORT'),
+      lessThan(runnerSource.indexOf('create_safe_artifact_root() {')),
+    );
+    expect(runnerSource, contains('QA_API_BASE_URL is not allowed'));
+    expect(runnerSource, contains("backend_mapping_status='NOT_PROVEN'"));
+    expect(runnerSource, contains("== 'COLLECTED'"));
+    expect(
+      aggregateScript.readAsStringSync(),
+      isNot(contains('mapping_invariant_count')),
+    );
+    expect(
+      aggregateScript.readAsStringSync(),
+      isNot(contains('backend_port_invariant_missing')),
+    );
+    expect(aggregateScript.readAsStringSync(), contains('QA_M4_BACKEND_PORT'));
+  });
+
+  test(
+    'invalid backend ports fail in real top-level initialization before side effects',
+    () {
+      for (final String invalid in <String>['', ' ', '028080', '18081']) {
+        final Directory runnerFixture = Directory.systemTemp.createTempSync(
+          'm4-runner-port-init-',
+        );
+        addTearDown(() => runnerFixture.deleteSync(recursive: true));
+        final ProcessResult runner = runRunnerWithBackendPort(
+          value: invalid,
+          fixture: runnerFixture,
+        );
+        expect(
+          runner.exitCode,
+          64,
+          reason: '${runner.stdout}\n${runner.stderr}',
+        );
+        expect(
+          File('${runnerFixture.path}/side-effect.sentinel').existsSync(),
+          isFalse,
+          reason: 'runner reached a command for invalid port "$invalid"',
+        );
+
+        final Directory aggregateRoot = makeEvidence();
+        final Directory fakeBin = Directory('${aggregateRoot.path}/fake-bin')
+          ..createSync();
+        final File sentinel = File('${aggregateRoot.path}/aggregate.sentinel');
+        final File fakePython = File('${fakeBin.path}/python3')
+          ..writeAsStringSync(
+            '#!/bin/sh\nprintf invoked >>"\$M4_SIDE_EFFECT"\nexit 1\n',
+          );
+        expect(
+          Process.runSync('chmod', <String>['700', fakePython.path]).exitCode,
+          0,
+        );
+        final ProcessResult aggregate = runAggregate(
+          aggregateRoot,
+          backendPort: invalid,
+          environmentOverrides: <String, String>{
+            'PATH': '${fakeBin.path}:${Platform.environment['PATH'] ?? ''}',
+            'M4_SIDE_EFFECT': sentinel.path,
+          },
+        );
+        expect(
+          aggregate.exitCode,
+          64,
+          reason: '${aggregate.stdout}\n${aggregate.stderr}',
+        );
+        expect(
+          sentinel.existsSync(),
+          isFalse,
+          reason: 'aggregate reached a command for invalid port "$invalid"',
+        );
+      }
+    },
+  );
+
+  test(
+    'DB helper validates the same backend port and strict Docker mapping',
+    () {
+      final ProcessResult result = Process.runSync('python3', <String>[
+        '-c',
+        r'''
+import importlib.util
+import json
+import sys
+
+spec = importlib.util.spec_from_file_location("m4_helper", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+
+assert module._read_backend_port({}) == 18080
+assert module._read_backend_port({"QA_M4_BACKEND_PORT": "18080"}) == 18080
+assert module._read_backend_port({"QA_M4_BACKEND_PORT": "28080"}) == 28080
+for raw in ["", " ", "028080", "18081", "0", "http://10.0.2.2:28080/"]:
+    try:
+        module._read_backend_port({"QA_M4_BACKEND_PORT": raw})
+    except Exception:
+        pass
+    else:
+        raise AssertionError(raw)
+
+valid = {"18080/tcp": [{"HostIp": "127.0.0.1", "HostPort": "28080"}]}
+assert module._parse_backend_port_mapping(json.dumps(valid), 28080) is True
+for invalid in [
+    {"18080/tcp": [{"HostIp": "0.0.0.0", "HostPort": "28080"}]},
+    {"18080/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18080"}]},
+    {"18080/tcp": [
+        {"HostIp": "127.0.0.1", "HostPort": "28080"},
+        {"HostIp": "127.0.0.1", "HostPort": "28081"},
+    ]},
+    {"8080/tcp": [{"HostIp": "127.0.0.1", "HostPort": "28080"}]},
+    {},
+]:
+    try:
+        module._parse_backend_port_mapping(json.dumps(invalid), 28080)
+    except Exception:
+        pass
+    else:
+        raise AssertionError(invalid)
+''',
+        dbEvidenceHelper.path,
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(
+        dbEvidenceHelper.readAsStringSync(),
+        contains('backend_port_mapping_matches'),
+      );
+    },
+  );
+
+  test(
+    'Dart target independently derives and enforces the selected backend URL',
+    () {
+      expect(integrationSource, contains('QA_M4_BACKEND_PORT'));
+      expect(integrationSource, contains("defaultValue: '18080'"));
+      expect(
+        integrationSource,
+        contains('http://10.0.2.2:\$_backendPortValue/'),
+      );
+      expect(integrationSource, contains('_validateBackendTarget()'));
+      expect(integrationSource, contains("'backendPort': _backendPort"));
+      expect(
+        integrationSource,
+        isNot(contains('backend_port_mapping_matches')),
+      );
+      expect(
+        integrationSource,
+        isNot(contains("'backendPortMappingMatches': true")),
+      );
+      expect(integrationSource, isNot(contains("'http://10.0.2.2:18080/'")));
+    },
+  );
+
   test('loopback DB evidence requests bypass host proxy configuration', () {
     expect(
       RegExp(
@@ -1039,6 +1431,7 @@ printf 'sdk.dir=/development/android\nflutter.sdk=/development/flutter\n' >"$tar
           'provider_invocation_rows_zero': true,
           'first_party_writes_observed_since_start': true,
           'expected_backend_sha_matches': true,
+          'backend_port_mapping_matches': true,
         },
         'providerCalls': 0,
         'secrets': false,
@@ -1048,6 +1441,7 @@ printf 'sdk.dir=/development/android\nflutter.sdk=/development/flutter\n' >"$tar
           'startNonce': nonce,
           'fixtureId': fixtureId,
           'fixtureAccountState': 'created_during_run',
+          'backendPort': 18080,
           'mutationKeys': <String>[
             'auth_sessions',
             'room_activity',
@@ -1080,6 +1474,7 @@ set -Eeuo pipefail
 IFS=\$'\\n\\t'
 DB_URL="\$M4_TEST_DB_URL"
 DB_TOKEN="\$M4_TEST_DB_TOKEN"
+BACKEND_PORT='18080'
 RUN_ID="\$M4_TEST_RUN_ID"
 FIXTURE_ID="\$M4_TEST_FIXTURE_ID"
 LIVE_PHONE='18800000000'
@@ -1336,16 +1731,87 @@ printf '%s\n' 'safe prefix; $(touch should-not-run)' | contains_literal_stream "
     expect(verdict['android_host_source_sha256'], androidHostSha);
     expect(verdict['flutter_version'], '3.44.7');
     expect(verdict['dart_version'], '3.12.2');
+    expect(verdict['backend_port'], 18080);
     expect(verdict['avd'], <String, String>{'AVD-A': 'PASS', 'AVD-B': 'PASS'});
+    expect(
+      File('${root.path}/AVD-A/result.txt').readAsStringSync(),
+      contains('backend_port_mapping_matches=true'),
+    );
   });
+
+  test(
+    'aggregate passes complete evidence for the explicitly selected 28080',
+    () {
+      final Directory root = makeEvidence(backendPort: 28080);
+      final ProcessResult result = runAggregate(root, backendPort: '28080');
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      final Map<String, Object?> verdict =
+          jsonDecode(
+                File('${root.path}/aggregate-verdict.json').readAsStringSync(),
+              )
+              as Map<String, Object?>;
+      expect(verdict['backend_port'], 28080);
+    },
+  );
+
+  test('aggregate rejects an A/B port mismatch', () {
+    final Directory root = makeEvidence(
+      backendPort: 28080,
+      avdBBackendPort: 18080,
+    );
+    final ProcessResult result = runAggregate(root, backendPort: '28080');
+    expect(result.exitCode, isNot(0));
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('AVD-B=FAIL'),
+    );
+  });
+
+  test('aggregate rejects a DB evidence port mismatch', () {
+    final Directory root = makeEvidence(
+      backendPort: 28080,
+      dbBackendPort: 18080,
+    );
+    final ProcessResult result = runAggregate(root, backendPort: '28080');
+    expect(result.exitCode, isNot(0));
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('AVD-A=FAIL'),
+    );
+  });
+
+  test(
+    'aggregate rejects invalid explicit backend ports before evidence use',
+    () {
+      final Directory root = makeEvidence();
+      for (final String invalid in <String>['', ' ', '028080', '18081', '0']) {
+        final ProcessResult result = runAggregate(root, backendPort: invalid);
+        expect(result.exitCode, isNot(0), reason: 'invalid port: "$invalid"');
+      }
+    },
+  );
 
   test('aggregate rejects missing database evidence', () {
     final Directory root = makeEvidence(dbEvidence: false);
     final ProcessResult result = runAggregate(root);
     expect(result.exitCode, isNot(0));
     expect(
+      File('${root.path}/AVD-A/result.txt').readAsStringSync(),
+      contains('backend_port_mapping_matches=NOT_PROVEN'),
+    );
+    expect(
       File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
       contains('conclusion=ANDROID_EMULATOR_FAIL'),
+    );
+  });
+
+  test('aggregate takes mapping proof from DB helper evidence', () {
+    final Directory root = makeEvidence(dbBackendMappingMatches: false);
+    final ProcessResult result = runAggregate(root);
+    expect(result.exitCode, isNot(0));
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('AVD-A=FAIL'),
     );
   });
 

@@ -18,6 +18,24 @@ required() {
   printf '%s' "$value"
 }
 
+parse_backend_port() {
+  if [[ "${QA_M4_BACKEND_PORT+x}" != x ]]; then
+    printf '18080\n'
+    return 0
+  fi
+  case "$QA_M4_BACKEND_PORT" in
+    18080|28080) printf '%s\n' "$QA_M4_BACKEND_PORT" ;;
+    *) printf 'QA_M4_BACKEND_PORT must be exactly 18080 or 28080\n' >&2; return 64 ;;
+  esac
+}
+
+BACKEND_PORT="$(parse_backend_port)" || {
+  backend_port_status=$?
+  exit "$backend_port_status"
+}
+readonly BACKEND_PORT
+EXPECTED_BACKEND_PORT="$BACKEND_PORT"
+readonly EXPECTED_BACKEND_PORT
 readonly ARTIFACT_ROOT="$(required QA_ARTIFACT_ROOT)"
 readonly EXPECTED_FLUTTER_SHA="$(required QA_FLUTTER_SHA)"
 readonly EXPECTED_BACKEND_SHA="$(required QA_BACKEND_SHA)"
@@ -74,11 +92,12 @@ validate_db_evidence() {
   local avd="$2"
   local expected_nonce="$3"
   [[ -s "$file" ]] || return 1
-  python3 - "$file" "$avd" "$expected_nonce" "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" <<'PY'
+  python3 - "$file" "$avd" "$expected_nonce" "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" "$EXPECTED_BACKEND_PORT" <<'PY'
 import json
 import sys
 
-path, expected_avd, expected_nonce, expected_run_id, expected_fixture_id = sys.argv[1:]
+path, expected_avd, expected_nonce, expected_run_id, expected_fixture_id, expected_backend_port = sys.argv[1:]
+expected_backend_port = int(expected_backend_port)
 with open(path, encoding="utf-8") as stream:
     payload = json.load(stream)
 if not isinstance(payload, dict):
@@ -109,6 +128,7 @@ required_invariant_keys = {
     "provider_invocation_rows_zero",
     "first_party_writes_observed_since_start",
     "expected_backend_sha_matches",
+    "backend_port_mapping_matches",
 }
 if set(payload) != {
     "status",
@@ -151,7 +171,7 @@ if payload.get("secrets") is not False:
     raise SystemExit(1)
 binding = payload.get("evidenceBinding")
 if not isinstance(binding, dict) or set(binding) != {
-    "runId", "avd", "startNonce", "fixtureId", "fixtureAccountState", "mutationKeys"
+    "runId", "avd", "startNonce", "fixtureId", "fixtureAccountState", "backendPort", "mutationKeys"
 }:
     raise SystemExit(1)
 if binding["runId"] != expected_run_id or binding["avd"] != expected_avd:
@@ -159,6 +179,8 @@ if binding["runId"] != expected_run_id or binding["avd"] != expected_avd:
 if binding["startNonce"] != expected_nonce:
     raise SystemExit(1)
 if binding["fixtureId"] != expected_fixture_id:
+    raise SystemExit(1)
+if type(binding["backendPort"]) is not int or binding["backendPort"] != expected_backend_port:
     raise SystemExit(1)
 expected_fixture_state = (
     "created_during_run" if expected_avd == "AVD-A" else "preexisting_fixture"
@@ -182,13 +204,17 @@ validate_log_evidence() {
   local log="$dir/logs/flutter-drive.log"
   [[ -s "$log" ]] || return 1
   local acceptance_count provider_count provider_nonzero bad_status
+  local backend_port_count backend_port_expected_count
   acceptance_count="$(grep -Ec '(^|[[:space:]])M4_ACCEPTANCE::PASS($|[[:space:]])' "$log" || true)"
   provider_count="$(grep -Ec '(^|[[:space:]])M4_PROVIDER_CALLS::0($|[[:space:]])' "$log" || true)"
   provider_nonzero="$(awk '/M4_PROVIDER_CALLS::/ && $0 !~ /M4_PROVIDER_CALLS::0([[:space:]]|$)/ {count += 1} END {print count + 0}' "$log")"
   bad_status="$(awk -F '::' '/M4_ROUTE_STATUS::/ {if ($5 !~ /^[2-4][0-9][0-9]$/) count += 1} END {print count + 0}' "$log")"
+  backend_port_count="$(grep -Ec '(^|[[:space:]])M4_BACKEND_PORT::[0-9]+($|[[:space:]])' "$log" || true)"
+  backend_port_expected_count="$(grep -Ec "(^|[[:space:]])M4_BACKEND_PORT::${EXPECTED_BACKEND_PORT}($|[[:space:]])" "$log" || true)"
   [[ "$acceptance_count" -eq 1 ]] || return 1
   [[ "$provider_count" -eq 1 && "$provider_nonzero" -eq 0 ]] || return 1
   [[ "$bad_status" -eq 0 ]] || return 1
+  [[ "$backend_port_count" -eq 1 && "$backend_port_expected_count" -eq 1 ]] || return 1
   [[ "$(grep -Ec '(^|[[:space:]])M4_ACCEPTANCE::FAIL($|[[:space:]])' "$log" || true)" -eq 0 ]] || return 1
   return 0
 }
@@ -204,6 +230,8 @@ validate_avd() {
   [[ "$(field "$result" run_id)" == "$EXPECTED_RUN_ID" ]] || add_reason "$avd:run_id_mismatch"
   [[ "$(field "$result" fixture_id)" == "$EXPECTED_FIXTURE_ID" ]] || add_reason "$avd:fixture_id_mismatch"
   [[ "$(field "$result" fixture_status)" == "$EXPECTED_FIXTURE_STATUS" ]] || add_reason "$avd:fixture_status_mismatch"
+  [[ "$(field "$result" backend_port)" == "$EXPECTED_BACKEND_PORT" ]] || add_reason "$avd:backend_port_mismatch"
+  [[ "$(field "$result" backend_port_mapping_matches)" == true ]] || add_reason "$avd:backend_port_mapping_not_verified"
   [[ "$(field "$result" db_start_nonce)" =~ ^[A-Za-z0-9_.~=-]{16,255}$ ]] || add_reason "$avd:db_start_nonce_missing"
   [[ "$(field "$result" tested_git_sha)" == "$EXPECTED_FLUTTER_SHA" ]] || add_reason "$avd:tested_git_sha_mismatch"
   [[ "$(field "$result" flutter_sha)" == "$EXPECTED_FLUTTER_SHA" ]] || add_reason "$avd:flutter_sha_mismatch"
@@ -230,6 +258,9 @@ validate_avd() {
   [[ "$(field "$result" authority_invariant_count)" =~ ^[0-9]+$ && "$(field "$result" authority_invariant_count)" -ge 5 ]] || add_reason "$avd:authority_evidence_missing"
   [[ -s "$dir/http-route-coverage.csv" ]] || add_reason "$avd:route_csv_missing"
   [[ -s "$dir/authority-invariants.txt" ]] || add_reason "$avd:authority_invariants_missing"
+  if [[ ! -f "$dir/environment.txt" ]] || [[ "$(field "$dir/environment.txt" backend_port)" != "$EXPECTED_BACKEND_PORT" ]]; then
+    add_reason "$avd:environment_backend_port_mismatch"
+  fi
   [[ -s "$dir/db-write-counters.txt" ]] || add_reason "$avd:db_write_counters_missing"
   [[ -f "$dir/logs/flutter-errors.txt" && ! -s "$dir/logs/flutter-errors.txt" ]] || add_reason "$avd:flutter_error_log_not_clean"
   [[ -f "$dir/logs/crash-anr.txt" && ! -s "$dir/logs/crash-anr.txt" ]] || add_reason "$avd:crash_anr_log_not_clean"
@@ -246,11 +277,11 @@ if ((${#reasons[@]} > 0)) || ((${#avd_results[@]} != 2)); then
   conclusion='ANDROID_EMULATOR_FAIL'
 fi
 
-python3 - "$AGGREGATE_JSON" "$conclusion" "$EXPECTED_FLUTTER_SHA" "$EXPECTED_BACKEND_SHA" "$android_host_source_sha256" "$EXPECTED_FLUTTER_VERSION" "$EXPECTED_DART_VERSION" "$EXPECTED_FLUTTER_REVISION" "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" "$EXPECTED_FIXTURE_STATUS" "${reasons[*]-}" <<'PY'
+python3 - "$AGGREGATE_JSON" "$conclusion" "$EXPECTED_FLUTTER_SHA" "$EXPECTED_BACKEND_SHA" "$android_host_source_sha256" "$EXPECTED_FLUTTER_VERSION" "$EXPECTED_DART_VERSION" "$EXPECTED_FLUTTER_REVISION" "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" "$EXPECTED_FIXTURE_STATUS" "$EXPECTED_BACKEND_PORT" "${reasons[*]-}" <<'PY'
 import json
 import sys
 
-path, conclusion, flutter_sha, backend_sha, android_host_source_sha256, flutter_version, dart_version, flutter_revision, run_id, fixture_id, fixture_status, raw_reasons = sys.argv[1:]
+path, conclusion, flutter_sha, backend_sha, android_host_source_sha256, flutter_version, dart_version, flutter_revision, run_id, fixture_id, fixture_status, backend_port, raw_reasons = sys.argv[1:]
 reasons = [item for item in raw_reasons.splitlines() if item]
 payload = {
     "conclusion": conclusion,
@@ -263,6 +294,7 @@ payload = {
     "run_id": run_id,
     "fixture_id": fixture_id,
     "fixture_status": fixture_status,
+    "backend_port": int(backend_port),
     "avd": {
         "AVD-A": "PASS" if not any(item.startswith("AVD-A:") for item in reasons) else "FAIL",
         "AVD-B": "PASS" if not any(item.startswith("AVD-B:") for item in reasons) else "FAIL",
@@ -280,6 +312,7 @@ PY
   printf 'M4 authoritative live AVD aggregate\n'
   printf 'conclusion=%s\n' "$conclusion"
   printf 'run_id=%s\nfixture_id=%s\nfixture_status=%s\n' "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" "$EXPECTED_FIXTURE_STATUS"
+  printf 'backend_port=%s\n' "$EXPECTED_BACKEND_PORT"
   printf 'tested_git_sha=%s\nbackend_sha=%s\n' "$EXPECTED_FLUTTER_SHA" "$EXPECTED_BACKEND_SHA"
   printf 'android_host_source_sha256=%s\n' "$android_host_source_sha256"
   printf 'flutter_version=%s\ndart_version=%s\nflutter_revision=%s\n' \

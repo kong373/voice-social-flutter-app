@@ -18,6 +18,24 @@ required() {
   printf '%s' "$value"
 }
 
+parse_backend_port() {
+  if [[ "${QA_M4_BACKEND_PORT+x}" != x ]]; then
+    printf '18080\n'
+    return 0
+  fi
+  case "$QA_M4_BACKEND_PORT" in
+    18080|28080) printf '%s\n' "$QA_M4_BACKEND_PORT" ;;
+    *) printf 'QA_M4_BACKEND_PORT must be exactly 18080 or 28080\n' >&2; return 64 ;;
+  esac
+}
+
+BACKEND_PORT="$(parse_backend_port)" || {
+  backend_port_status=$?
+  exit "$backend_port_status"
+}
+readonly BACKEND_PORT
+BACKEND_BASE_URL="http://10.0.2.2:${BACKEND_PORT}/"
+readonly BACKEND_BASE_URL
 readonly ARTIFACT_ROOT="$(required QA_ARTIFACT_ROOT)"
 readonly FLUTTER_SHA_EXPECTED="$(required QA_FLUTTER_SHA)"
 readonly BACKEND_SHA_EXPECTED="$(required QA_BACKEND_SHA)"
@@ -28,7 +46,6 @@ readonly FIXTURE_ID="$(required QA_M4_FIXTURE_ID)"
 readonly FIXTURE_STATUS="$(required QA_M4_FIXTURE_STATUS)"
 readonly DB_URL="$(required QA_DB_EVIDENCE_URL)"
 readonly DB_TOKEN="$(required QA_DB_EVIDENCE_TOKEN)"
-readonly BACKEND_BASE_URL='http://10.0.2.2:18080/'
 readonly RUN_ID="$(required QA_RUN_ID)"
 readonly AVD_A_SERIAL="$(printenv QA_AVD_A_SERIAL || true)"
 readonly AVD_B_SERIAL="$(printenv QA_AVD_B_SERIAL || true)"
@@ -166,27 +183,29 @@ except (KeyError, TypeError, ValueError):
 
 attest_android_host_source() {
   local digest
-  # android/ is intentionally generated and ignored by Git in this repository,
-  # but its Gradle, manifest, wrapper, Kotlin, and resource files still affect
-  # the APK. Re-create the exact Flutter template with the selected SDK, compare
-  # every build input, then replace machine-local properties and remove the
-  # generated plugin registrant so the ensuing Flutter build regenerates it.
-  # Caches and IDE metadata are excluded; extra source/config files fail closed.
   if ! digest="$(python3 - "$PROJECT_ROOT" "$FLUTTER_BIN" <<'PY'
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
 
 project_root = Path(sys.argv[1]).resolve()
-flutter = str(Path(sys.argv[2]).resolve())
+flutter = Path(sys.argv[2]).resolve()
 current = project_root / "android"
 if not current.is_dir() or current.is_symlink():
     raise SystemExit(1)
 
-excluded_directories = {".gradle", ".kotlin", "build", ".cxx"}
+excluded_cache_roots = {
+    Path(".gradle"),
+    Path(".kotlin"),
+    Path("build"),
+    Path(".cxx"),
+    Path("app/build"),
+    Path("app/.cxx"),
+}
 excluded_files = {
     Path("local.properties"),
     Path("app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java"),
@@ -196,22 +215,30 @@ generated_registrant = Path(
 )
 
 
+def is_cache_path(relative: Path) -> bool:
+    return any(
+        relative == cache_root or cache_root in relative.parents
+        for cache_root in excluded_cache_roots
+    )
+
+
 def source_files(root: Path):
     result = {}
     for directory, directory_names, file_names in os.walk(root, followlinks=False):
         base = Path(directory)
         for name in list(directory_names):
             candidate = base / name
+            relative = candidate.relative_to(root)
             if candidate.is_symlink():
                 raise RuntimeError("symlinked Android host directory")
-            if name in excluded_directories:
+            if is_cache_path(relative):
                 directory_names.remove(name)
         for name in file_names:
             candidate = base / name
             relative = candidate.relative_to(root)
             if candidate.is_symlink():
                 raise RuntimeError("symlinked Android host file")
-            if relative in excluded_files or name.endswith(".iml"):
+            if relative in excluded_files or is_cache_path(relative):
                 continue
             if not candidate.is_file():
                 raise RuntimeError("non-regular Android host input")
@@ -219,60 +246,109 @@ def source_files(root: Path):
     return result
 
 
-try:
-    with tempfile.TemporaryDirectory(prefix="m4-android-template-") as temporary:
-        generated_root = Path(temporary) / "generated"
-        subprocess.run(
-            [
-                flutter,
-                "create",
-                "--platforms=android",
-                "--android-language=kotlin",
-                "--org=com.kong373",
-                "--project-name=voice_social_app",
-                "--no-pub",
-                str(generated_root),
-            ],
+def tracked_head_files():
+    git = shutil.which("git")
+    if not git:
+        raise RuntimeError("git is unavailable")
+    # git ls-tree is the frozen Android host inventory authority.
+    tree = subprocess.run(
+        [git, "-C", str(project_root), "ls-tree", "-r", "-z", "HEAD", "--", "android"],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        timeout=10,
+    ).stdout
+    result = {}
+    for record in tree.split(b"\0"):
+        if not record:
+            continue
+        metadata, raw_path = record.split(b"\t", 1)
+        mode, object_type, _object_id = metadata.split(b" ", 2)
+        if mode not in {b"100644", b"100755"} or object_type != b"blob":
+            raise RuntimeError("tracked Android host contains unsupported entry")
+        path_text = raw_path.decode("utf-8")
+        if not path_text.startswith("android/"):
+            raise RuntimeError("tracked Android host path escaped android")
+        relative = Path(path_text.removeprefix("android/"))
+        if relative.is_absolute() or ".." in relative.parts:
+            raise RuntimeError("tracked Android host path escaped android")
+        if relative in excluded_files or is_cache_path(relative):
+            continue
+        content = subprocess.run(
+            [git, "-C", str(project_root), "show", f"HEAD:{path_text}"],
             check=True,
-            stdout=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-        )
-        expected = generated_root / "android"
-        expected_sources = source_files(expected)
-        if source_files(current) != expected_sources:
-            raise RuntimeError("Android host does not match the selected Flutter template")
+            timeout=10,
+        ).stdout
+        result[relative.as_posix()] = hashlib.sha256(content).digest()
+    if not result:
+        raise RuntimeError("frozen checkout has no tracked Android host")
+    return result
 
-        expected_local_properties = expected / "local.properties"
-        if not expected_local_properties.is_file():
-            raise RuntimeError("generated Android local properties missing")
-        local_properties = current / "local.properties"
-        if local_properties.is_symlink():
-            raise RuntimeError("symlinked Android local properties")
-        with tempfile.NamedTemporaryFile(dir=current, prefix=".m4-local-", delete=False) as output:
+
+def write_local_properties():
+    flutter_sdk = flutter.parent.parent
+    if not flutter_sdk.is_dir() or flutter_sdk.is_symlink():
+        raise RuntimeError("Flutter SDK path is invalid")
+    android_sdk_raw = os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME")
+    if not android_sdk_raw or not os.path.isabs(android_sdk_raw):
+        raise RuntimeError("Android SDK path is invalid")
+    if any(character in android_sdk_raw for character in "\r\n"):
+        raise RuntimeError("Android SDK path is invalid")
+    android_sdk = Path(android_sdk_raw).resolve()
+    if not android_sdk.is_dir() or android_sdk.is_symlink():
+        raise RuntimeError("Android SDK path is invalid")
+
+    local_properties = current / "local.properties"
+    if os.path.lexists(local_properties) and (
+        local_properties.is_symlink() or not local_properties.is_file()
+    ):
+        raise RuntimeError("invalid Android local properties")
+    temporary_properties = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=current, prefix=".m4-local-", delete=False, mode="w", encoding="utf-8"
+        ) as output:
             temporary_properties = Path(output.name)
-            output.write(expected_local_properties.read_bytes())
+            output.write(f"sdk.dir={android_sdk}\nflutter.sdk={flutter_sdk}\n")
         os.chmod(temporary_properties, 0o600)
         os.replace(temporary_properties, local_properties)
+        temporary_properties = None
+    finally:
+        if temporary_properties is not None:
+            try:
+                temporary_properties.unlink()
+            except FileNotFoundError:
+                pass
 
-        registrant = current / generated_registrant
-        if registrant.exists():
-            if registrant.is_symlink() or not registrant.is_file():
-                raise RuntimeError("invalid generated plugin registrant")
-            registrant.unlink()
 
-        digest_builder = hashlib.sha256()
-        for relative in sorted(expected_sources):
-            digest_builder.update(relative.encode("utf-8"))
-            digest_builder.update(b"\0")
-            digest_builder.update(expected_sources[relative])
-        digest_builder.update(b"local.properties\0")
-        digest_builder.update(hashlib.sha256(expected_local_properties.read_bytes()).digest())
-        print(digest_builder.hexdigest())
-except (OSError, RuntimeError, subprocess.SubprocessError):
+try:
+    expected_sources = tracked_head_files()
+    if source_files(current) != expected_sources:
+        raise RuntimeError("tracked Android host does not match frozen HEAD")
+    write_local_properties()
+
+    registrant = current / generated_registrant
+    if os.path.lexists(registrant):
+        if registrant.is_symlink() or not registrant.is_file():
+            raise RuntimeError("invalid generated plugin registrant")
+        registrant.unlink()
+
+    digest_builder = hashlib.sha256()
+    for relative in sorted(expected_sources):
+        digest_builder.update(relative.encode("utf-8"))
+        digest_builder.update(b"\0")
+        digest_builder.update(expected_sources[relative])
+    local_properties = current / "local.properties"
+    digest_builder.update(b"local.properties\0")
+    digest_builder.update(hashlib.sha256(local_properties.read_bytes()).digest())
+    print(digest_builder.hexdigest())
+except (OSError, RuntimeError, subprocess.SubprocessError, UnicodeError, ValueError):
     raise SystemExit(1)
 PY
   )"; then
-    fail 'ignored Android host source attestation failed'
+    fail 'tracked Android host source attestation failed'
   fi
   [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || fail 'Android host source digest is invalid'
   ANDROID_HOST_SOURCE_SHA256="$digest"
@@ -315,7 +391,8 @@ cleanup() {
     printf 'flutter_version=%s\ndart_version=%s\nflutter_revision=%s\n' \
       "${FLUTTER_FRAMEWORK_VERSION:-unknown}" "${FLUTTER_DART_VERSION:-unknown}" \
       "${FLUTTER_FRAMEWORK_REVISION:-unknown}"
-    printf 'backend_mode=live\nbackend_base_url=%s\n' "$BACKEND_BASE_URL"
+    printf 'backend_mode=live\nbackend_port=%s\nbackend_base_url=%s\n' \
+      "$BACKEND_PORT" "$BACKEND_BASE_URL"
     printf 'provider_calls_made=false\n'
     printf 'formal_sms_vendor_started=false\nformal_rtc_vendor_started=false\n'
     printf 'formal_im_vendor_started=false\nformal_payment_vendor_started=false\n'
@@ -454,7 +531,7 @@ trap cleanup EXIT
 
 [[ -z "$(printenv DEVELOPMENT_OUTBOX_KEY || true)" ]] || fail 'DEVELOPMENT_OUTBOX_KEY is forbidden'
 [[ -z "$(printenv QA_DEVELOPMENT_OUTBOX_KEY || true)" ]] || fail 'QA_DEVELOPMENT_OUTBOX_KEY is forbidden'
-[[ -z "$(printenv QA_API_BASE_URL || true)" ]] || fail 'QA_API_BASE_URL override is forbidden'
+[[ -z "$(printenv QA_API_BASE_URL || true)" ]] || fail 'QA_API_BASE_URL is not allowed'
 [[ -z "$(printenv CONTRACT_SERVER_PORT || true)" &&
   -z "$(printenv QA_CONTRACT_SERVER_PORT || true)" ]] || fail 'contract-server variables are forbidden'
 [[ "$BACKEND_BASE_URL" != *':8765'* && "$BACKEND_BASE_URL" != *'contract-server'* ]] || fail 'backend target is not authoritative'
@@ -539,7 +616,8 @@ db_evidence_start() {
   nonce=''
   set +e
   nonce="$(QA_M4_DB_TOKEN="$DB_TOKEN" QA_M4_DB_URL="$DB_URL" \
-    QA_M4_RUN_ID="$RUN_ID" QA_M4_AVD="$avd" QA_M4_FIXTURE_ID="$FIXTURE_ID" python3 -u - <<'PY'
+    QA_M4_RUN_ID="$RUN_ID" QA_M4_AVD="$avd" QA_M4_FIXTURE_ID="$FIXTURE_ID" \
+    QA_M4_EXPECTED_BACKEND_PORT="$BACKEND_PORT" python3 -u - <<'PY'
 import json
 import os
 import urllib.error
@@ -570,6 +648,8 @@ try:
         or payload.get("fixtureId") != os.environ["QA_M4_FIXTURE_ID"]
         or payload.get("fixtureAccountState")
         != ("absent_at_start" if os.environ["QA_M4_AVD"] == "AVD-A" else "present_at_start")
+        or payload.get("backendPort")
+        != int(os.environ["QA_M4_EXPECTED_BACKEND_PORT"])
         or not isinstance(payload.get("startNonce"), str)
     ):
         raise RuntimeError("db evidence start contract invalid")
@@ -883,7 +963,8 @@ write_environment() {
     printf 'avd=%s\napi_level=%s\nprofile=%s\nserial=%s\n' "$avd" "$api" "$profile" "$serial"
     printf 'run_id=%s\nfixture_id=%s\nfixture_status=%s\n' "$RUN_ID" "$FIXTURE_ID" "$FIXTURE_STATUS"
     printf 'expected_viewport=%sx%s\nexpected_dpr=%s\n' "$width" "$height" "$dpr"
-    printf 'backend_mode=live\nbackend_base_url=%s\n' "$BACKEND_BASE_URL"
+    printf 'backend_mode=live\nbackend_port=%s\nbackend_base_url=%s\n' \
+      "$BACKEND_PORT" "$BACKEND_BASE_URL"
     printf 'flutter_sha=%s\nbackend_sha=%s\n' "$FLUTTER_SHA_ACTUAL" "$BACKEND_SHA_ACTUAL"
     printf 'android_host_source_sha256=%s\n' "$ANDROID_HOST_SOURCE_SHA256"
     printf 'flutter_version=%s\ndart_version=%s\nflutter_revision=%s\n' \
@@ -976,13 +1057,14 @@ PY
     QA_M4_SECRET_DB_TOKEN="$DB_TOKEN" \
     QA_M4_SECRET_RELAY_A="$RELAY_TOKEN_A" \
     QA_M4_SECRET_RELAY_B="$RELAY_TOKEN_B" \
-    python3 - "$raw" "$avd" "$nonce" "$RUN_ID" "$FIXTURE_ID" \
+    python3 - "$raw" "$avd" "$nonce" "$RUN_ID" "$FIXTURE_ID" "$BACKEND_PORT" \
     2>"$dir/db-evidence-validation.stderr" <<'PY'
 import json
 import os
 import sys
 
-path, expected_avd, expected_nonce, expected_run_id, expected_fixture_id = sys.argv[1:]
+path, expected_avd, expected_nonce, expected_run_id, expected_fixture_id, expected_backend_port = sys.argv[1:]
+expected_backend_port = int(expected_backend_port)
 with open(path, encoding="utf-8") as stream:
     payload = json.load(stream)
 if not isinstance(payload, dict):
@@ -1013,6 +1095,7 @@ required_invariant_keys = {
     "provider_invocation_rows_zero",
     "first_party_writes_observed_since_start",
     "expected_backend_sha_matches",
+    "backend_port_mapping_matches",
 }
 if set(payload) != {
     "status",
@@ -1052,7 +1135,7 @@ if payload.get("secrets") is not False:
     raise SystemExit(1)
 binding = payload.get("evidenceBinding")
 if not isinstance(binding, dict) or set(binding) != {
-    "runId", "avd", "startNonce", "fixtureId", "fixtureAccountState", "mutationKeys"
+    "runId", "avd", "startNonce", "fixtureId", "fixtureAccountState", "backendPort", "mutationKeys"
 }:
     raise SystemExit(1)
 if binding["runId"] != expected_run_id or binding["avd"] != expected_avd:
@@ -1060,6 +1143,8 @@ if binding["runId"] != expected_run_id or binding["avd"] != expected_avd:
 if binding["startNonce"] != expected_nonce:
     raise SystemExit(1)
 if binding["fixtureId"] != expected_fixture_id:
+    raise SystemExit(1)
+if type(binding["backendPort"]) is not int or binding["backendPort"] != expected_backend_port:
     raise SystemExit(1)
 expected_fixture_state = (
     "created_during_run" if expected_avd == "AVD-A" else "preexisting_fixture"
@@ -1389,16 +1474,23 @@ run_one() {
   local serial viewport
   serial="$(select_device "$avd" "$api" "$serial_override" "$avd_name" "$dir")"
   viewport="$(configure_viewport "$serial" "$physical" "$density" || true)"
-  [[ -n "$viewport" ]] || { printf 'result=FAIL\nreason=viewport_override_rejected\n' >"$dir/result.txt"; OVERALL_RESULT='FAIL'; return 1; }
+  [[ -n "$viewport" ]] || {
+    printf 'result=FAIL\nreason=viewport_override_rejected\nbackend_port=%s\nbackend_port_mapping_matches=NOT_PROVEN\n' \
+      "$BACKEND_PORT" >"$dir/result.txt"
+    OVERALL_RESULT='FAIL'
+    return 1
+  }
   write_environment "$dir" "$avd" "$api" "$profile" "$width" "$height" "$dpr" "$serial" "$viewport"
 
   if ! wait_android_host_endpoint "$serial" "$RELAY_PORT"; then
-    printf 'result=FAIL\nreason=runtime_relay_network_unreachable\n' >"$dir/result.txt"
+    printf 'result=FAIL\nreason=runtime_relay_network_unreachable\nbackend_port=%s\nbackend_port_mapping_matches=NOT_PROVEN\n' \
+      "$BACKEND_PORT" >"$dir/result.txt"
     OVERALL_RESULT='FAIL'
     return 1
   fi
-  if ! wait_android_host_endpoint "$serial" 18080; then
-    printf 'result=FAIL\nreason=backend_network_unreachable\n' >"$dir/result.txt"
+  if ! wait_android_host_endpoint "$serial" "$BACKEND_PORT"; then
+    printf 'result=FAIL\nreason=backend_network_unreachable\nbackend_port=%s\nbackend_port_mapping_matches=NOT_PROVEN\n' \
+      "$BACKEND_PORT" >"$dir/result.txt"
     OVERALL_RESULT='FAIL'
     return 1
   fi
@@ -1407,7 +1499,8 @@ run_one() {
     wait_for_sms_cooldown
   fi
   db_evidence_start "$dir" "$avd" || {
-    printf 'result=FAIL\nreason=db_evidence_start_failed\n' >"$dir/result.txt"
+    printf 'result=FAIL\nreason=db_evidence_start_failed\nbackend_port=%s\nbackend_port_mapping_matches=NOT_PROVEN\n' \
+      "$BACKEND_PORT" >"$dir/result.txt"
     OVERALL_RESULT='FAIL'
     return 1
   }
@@ -1433,6 +1526,7 @@ run_one() {
       --dart-define=BACKEND_MODE=live --dart-define=APP_ENV=development \
       --dart-define=ALLOW_INSECURE_HTTP=true --dart-define=API_BASE_URL="$BACKEND_BASE_URL" \
       --dart-define=API_TIMEOUT_SECONDS=15 \
+      --dart-define=QA_M4_BACKEND_PORT="$BACKEND_PORT" \
       --dart-define=M4_RUNTIME_CONFIG_PORT="$RELAY_PORT" \
       --dart-define=QA_M4_FIXTURE_ID="$FIXTURE_ID" \
       --dart-define=M4_EXPECTED_FLUTTER_SHA="$FLUTTER_SHA_EXPECTED" \
@@ -1492,10 +1586,12 @@ run_one() {
   elif [[ "$db_status" != 'COLLECTED' ]]; then result='FAIL'; reason='db_write_evidence_missing_or_failed'
   elif [[ "$secret_status" != PASS || "$apk_status" != PASS ]]; then result='FAIL'; reason='secret_scan_failed'
   fi
+  local backend_mapping_status='NOT_PROVEN'
+  [[ "$db_status" == 'COLLECTED' ]] && backend_mapping_status='true'
   {
     printf 'result=%s\nreason=%s\navd=%s\napi_level=%s\nprofile=%s\nserial=%s\n' "$result" "$reason" "$avd" "$api" "$profile" "$serial"
-    printf 'run_id=%s\nfixture_id=%s\nfixture_status=%s\ndb_start_nonce=%s\ntested_git_sha=%s\nflutter_sha=%s\nbackend_sha=%s\nhttp_route_marker_count=%s\nauthority_invariant_count=%s\n' \
-      "$RUN_ID" "$FIXTURE_ID" "$FIXTURE_STATUS" "$DB_START_NONCE" "$FLUTTER_SHA_ACTUAL" "$FLUTTER_SHA_ACTUAL" "$BACKEND_SHA_ACTUAL" "$marker_count" "$invariant_count"
+    printf 'run_id=%s\nfixture_id=%s\nfixture_status=%s\ndb_start_nonce=%s\nbackend_port=%s\nbackend_port_mapping_matches=%s\ntested_git_sha=%s\nflutter_sha=%s\nbackend_sha=%s\nhttp_route_marker_count=%s\nauthority_invariant_count=%s\n' \
+      "$RUN_ID" "$FIXTURE_ID" "$FIXTURE_STATUS" "$DB_START_NONCE" "$BACKEND_PORT" "$backend_mapping_status" "$FLUTTER_SHA_ACTUAL" "$FLUTTER_SHA_ACTUAL" "$BACKEND_SHA_ACTUAL" "$marker_count" "$invariant_count"
     printf 'android_host_source_sha256=%s\n' "$ANDROID_HOST_SOURCE_SHA256"
     printf 'flutter_version=%s\ndart_version=%s\nflutter_revision=%s\n' \
       "$FLUTTER_FRAMEWORK_VERSION" "$FLUTTER_DART_VERSION" "$FLUTTER_FRAMEWORK_REVISION"
