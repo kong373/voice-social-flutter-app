@@ -229,6 +229,16 @@ jobs:
             sw_vers
           } | tee ios-toolchain.txt
 
+      - name: Verify complete iOS release validator contract on macOS
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(uname -s)" = 'Darwin'
+          tool/release/ios_release_validator.sh --self-test \
+            | tee ios-release-validator-self-test.log
+          test "$(cat ios-release-validator-self-test.log)" = \
+            'ios-release-validator=self-test-PASS'
+
       - name: Resolve Flutter packages
         shell: bash
         run: |
@@ -391,6 +401,7 @@ jobs:
           name: m5-ios-simulator-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ios-toolchain.txt
+            ios-release-validator-self-test.log
             ios-pod-install.log
             ios-pod-lock-portability.txt
             ios-simulator-build.log

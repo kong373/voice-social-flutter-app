@@ -84,6 +84,14 @@ fail-closed result.
 
 ## Offline tooling self-test
 
+The complete self-test requires macOS: its synthetic signing tools still use
+Apple's real `plutil` and `PlistBuddy` for plist validation. The macOS CI job
+runs this full positive and negative contract before any iOS build; failure
+stops the job. Linux Flutter tests instead execute the script and require its
+exact missing-Apple-tool failure, empty stdout, and redacted stderr. They are
+not skipped, but their passing result is only a fail-closed portability check,
+not a successful native self-test or signed-artifact validation.
+
 ```bash
 tool/release/ios_release_validator.sh --self-test
 ```

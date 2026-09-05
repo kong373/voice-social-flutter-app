@@ -9,33 +9,64 @@ void main() {
   );
   final File releaseDocument = File('${root.path}/docs/release/ios-release.md');
 
-  test('iOS release validator self-test is deterministic and redacted', () {
-    expect(validator.existsSync(), isTrue);
+  test(
+    Platform.isMacOS
+        ? 'macOS iOS release validator self-test is deterministic and redacted'
+        : 'non-macOS iOS release validator refuses missing Apple tools',
+    () {
+      expect(validator.existsSync(), isTrue);
 
-    final ProcessResult result = Process.runSync(
-      'bash',
-      <String>[validator.path, '--self-test'],
-      workingDirectory: root.path,
-      environment: <String, String>{
-        ...Platform.environment,
-        'IOS_RELEASE_TEST_SENTINEL': 'do-not-print-this-sentinel',
-      },
-    );
+      final ProcessResult result = Process.runSync(
+        'bash',
+        <String>[validator.path, '--self-test'],
+        workingDirectory: root.path,
+        environment: <String, String>{
+          ...Platform.environment,
+          'IOS_RELEASE_TEST_SENTINEL': 'do-not-print-this-sentinel',
+        },
+      );
 
-    expect(result.exitCode, 0, reason: result.stderr.toString());
-    expect(
-      result.stdout.toString().trim(),
-      'ios-release-validator=self-test-PASS',
+      if (Platform.isMacOS) {
+        expect(result.exitCode, 0, reason: result.stderr.toString());
+        expect(
+          result.stdout.toString().trim(),
+          'ios-release-validator=self-test-PASS',
+        );
+        expect(result.stderr.toString(), isEmpty);
+      } else {
+        expect(result.exitCode, isNonZero);
+        expect(result.stdout.toString(), isEmpty);
+        expect(
+          result.stderr.toString().trim(),
+          'ios-release-validation=FAIL reason=self_test_tool_unavailable',
+        );
+      }
+      expect(
+        result.stdout.toString(),
+        isNot(contains('ios-release-validation=PASS')),
+      );
+      expect(
+        result.stdout.toString(),
+        isNot(contains('do-not-print-this-sentinel')),
+      );
+    },
+  );
+
+  test('macOS CI requires the full validator self-test before building', () {
+    final String workflow = File(
+      '${root.path}/.github/workflows/m5-ios-client.yml',
+    ).readAsStringSync();
+    final String macJob = workflow.substring(
+      workflow.indexOf('  ios-simulator-build:'),
     );
-    expect(result.stderr.toString(), isEmpty);
+    const String selfTest = 'tool/release/ios_release_validator.sh --self-test';
+    expect(macJob, contains('runs-on: macos-15'));
+    expect(macJob, contains(selfTest));
     expect(
-      result.stdout.toString(),
-      isNot(contains('ios-release-validation=PASS')),
+      macJob.indexOf(selfTest),
+      lessThan(macJob.indexOf('flutter build ios')),
     );
-    expect(
-      result.stdout.toString(),
-      isNot(contains('do-not-print-this-sentinel')),
-    );
+    expect(macJob, isNot(contains('continue-on-error: true')));
   });
 
   test('self-test cannot be mistaken for candidate validation', () {
