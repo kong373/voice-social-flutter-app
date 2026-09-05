@@ -603,7 +603,7 @@ is_development_outbox_name() {
 }
 
 known_outbox_count=0
-for table in provider_delivery_outbox development_outbox development_sms_outbox sms_outbox sms_challenge_outbox; do
+for table in provider_delivery_outbox tencent_im_room_group_outbox development_outbox development_sms_outbox sms_outbox sms_challenge_outbox; do
   if [ "\$(table_exists "\$table")" = 1 ]; then
     known_outbox_count=\$((known_outbox_count + 1))
     rows="\$(table_count "\$table")"
@@ -624,6 +624,17 @@ for table in provider_delivery_outbox development_outbox development_sms_outbox 
       case "\$attempts" in *[!0-9]*|"") exit 30 ;; *) outbox_bad_attempts=\$((outbox_bad_attempts + attempts)) ;;
       esac
     fi
+  fi
+done
+# V28 RTC management does not enqueue while disabled. V44 Apple recovery
+# requires an Apple verification, outside this first-party-only lane. Recognize
+# their schema but require both queues to be empty, regardless of row status.
+for table in agora_rtc_management_outbox apple_iap_recovery_outbox; do
+  if [ "\$(table_exists "\$table")" = 1 ]; then
+    known_outbox_count=\$((known_outbox_count + 1))
+    rows="\$(table_count "\$table")"
+    outbox_rows=\$((outbox_rows + rows))
+    [ "\$rows" = 0 ] || outbox_unknown=1
   fi
 done
 [ "\$outbox_table_count" -ge "\$known_outbox_count" ] || exit 31
@@ -702,8 +713,10 @@ if dev_or_empty; then printf 'I|development_outbox_mode|1\n'; else printf 'I|dev
 all_disabled=1
 if ! flag_disabled VENDOR_SMS_ADAPTER_ENABLED APP_VENDOR_SMS_ADAPTER_ENABLED; then all_disabled=0; fi
 if ! flag_disabled VENDOR_RTC_ADAPTER_ENABLED APP_VENDOR_RTC_ADAPTER_ENABLED; then all_disabled=0; fi
+if ! flag_disabled VENDOR_RTC_MANAGEMENT_ENABLED; then all_disabled=0; fi
 if ! flag_disabled VENDOR_IM_ADAPTER_ENABLED APP_VENDOR_IM_ADAPTER_ENABLED; then all_disabled=0; fi
 if ! flag_disabled VENDOR_PAYMENT_ADAPTER_ENABLED APP_VENDOR_PAYMENT_ADAPTER_ENABLED; then all_disabled=0; fi
+if ! flag_disabled APPLE_IAP_ENABLED APPLE_IAP_SERVER_API_ENABLED APPLE_IAP_RECOVERY_WORKER_ENABLED; then all_disabled=0; fi
 if ! flag_disabled VENDOR_PUSH_ADAPTER_ENABLED APP_VENDOR_PUSH_ADAPTER_ENABLED; then all_disabled=0; fi
 if ! flag_disabled VENDOR_OBJECT_STORAGE_ADAPTER_ENABLED APP_VENDOR_OBJECT_STORAGE_ADAPTER_ENABLED; then all_disabled=0; fi
 printf 'I|formal_vendor_adapters_disabled|%s\n' "$all_disabled"
@@ -1272,7 +1285,69 @@ class EvidenceServer(http.server.ThreadingHTTPServer):
         self.token = token
 
 
+def _self_test_outbox_schema() -> None:
+    # Exercise the actual aggregate shell block with a fake read-only database.
+    # No Docker, application account, or provider is used in these fixtures.
+    block = MYSQL_EVIDENCE_SCRIPT.split("outbox_rows=0", 1)[1].split(
+        "delivery_status_bad=0", 1
+    )[0]
+    known = (
+        "provider_delivery_outbox",
+        "agora_rtc_management_outbox",
+        "tencent_im_room_group_outbox",
+        "apple_iap_recovery_outbox",
+    )
+    cases = [
+        ({name: (0, 0, 0) for name in known}, (0, 0, 0, 0, 1)),
+        ({"tencent_im_room_group_outbox": (2, 0, 0)}, (2, 0, 0, 0, 1)),
+        ({"tencent_im_room_group_outbox": (1, 1, 0)}, (1, 1, 0, 0, 1)),
+        ({"tencent_im_room_group_outbox": (1, 0, 1)}, (1, 0, 1, 0, 1)),
+        ({"agora_rtc_management_outbox": (1, 0, 0)}, (1, 0, 0, 1, 1)),
+        ({"apple_iap_recovery_outbox": (1, 0, 0)}, (1, 0, 0, 1, 1)),
+        ({"future_vendor_outbox": (0, 0, 0)}, (0, 0, 0, 1, 1)),
+    ]
+    for tables, expected in cases:
+        names = "|".join(tables)
+        counts = " ".join(f"{name}) echo {values[0]} ;;" for name, values in tables.items())
+        queries = " ".join(
+            f'*"FROM {name} WHERE status"*) echo {values[1]} ;; '
+            f'*"FROM {name} WHERE COALESCE(attempt_count"*) echo {values[2]} ;;'
+            for name, values in tables.items()
+        )
+        prelude = (
+            "set -eu\n"
+            f'table_exists() {{ case "$1" in {names}) echo 1 ;; *) echo 0 ;; esac; }}\n'
+            'column_exists() { return 0; }\n'
+            f'table_count() {{ case "$1" in {counts} *) exit 91 ;; esac; }}\n'
+            f'mysql_query() {{ case "$1" in *information_schema.tables*) echo {len(tables)} ;; '
+            f'{queries} *) exit 92 ;; esac; }}\n'
+        )
+        result = subprocess.run(
+            ["/bin/sh", "-c", prelude + "outbox_rows=0" + block],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        marker = "O|" + "|".join(str(value) for value in expected)
+        if result.returncode != 0 or result.stdout.strip() != marker:
+            raise AssertionError("outbox schema aggregate regression: " + ",".join(tables))
+
+
 def _self_test() -> int:
+    _self_test_outbox_schema()
+    for enabled_flag in (None, "VENDOR_RTC_MANAGEMENT_ENABLED", "APPLE_IAP_ENABLED",
+                         "APPLE_IAP_SERVER_API_ENABLED", "APPLE_IAP_RECOVERY_WORKER_ENABLED"):
+        environment = {"PATH": "/usr/bin:/bin", "APP_ENV": "development",
+                       "SPRING_PROFILES_ACTIVE": "development",
+                       "SMS_DELIVERY_MODE": "development_outbox"}
+        if enabled_flag is not None:
+            environment[enabled_flag] = "true"
+        boundary = subprocess.run(["/bin/sh", "-c", BACKEND_EVIDENCE_SCRIPT],
+                                  env=environment, capture_output=True, text=True,
+                                  timeout=5, check=False)
+        expected_disabled = 1 if enabled_flag is None else 0
+        if boundary.returncode != 0 or (
+            f"I|formal_vendor_adapters_disabled|{expected_disabled}\n" not in boundary.stdout
+        ):
+            raise AssertionError("additional provider worker boundary regression")
     token = "A9" * 32
     scoped_sql_closure = "WHERE u.nickname = '$fixture_nickname')"
     if MYSQL_EVIDENCE_SCRIPT.count(scoped_sql_closure) != 1:
