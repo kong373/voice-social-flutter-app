@@ -55,7 +55,17 @@ authentication token, provider credential, or raw SDK error is persisted.
 - A complete, matching backend delivery ACK confirms financial delivery even
   if native `finish` is delayed. The result stays delivered with
   `native_finish_deferred`; unfinished recovery retries cleanup. No successful
-  native finish is claimed until observed.
+  native finish is claimed until observed. The per-account recovery journal
+  keeps each delivered-but-unfinished order snapshot when a new independent
+  purchase starts. Its v2 collection reads the legacy v1 record, retains
+  unfinished deliveries, and prunes only explicit cancellation or observed
+  native-finished records on a later start. A bounded 128 outstanding-record
+  cap fails closed pending cleanup; it never evicts an unfinished purchase.
+  No JWS or credential is stored. Without a matching original order snapshot,
+  a recovered JWS can still reach the backend but cannot pass the client finish
+  gate. Restored/fallback bindings must match account, order, product, token,
+  transaction and exact credited coin amount. Order-number write/read syntax
+  is identical to the backend response parser, including dots and hyphens.
 - Logout/disposal or a changed authentication session invalidates the current
   in-flight handler before it can start payment or finish a late ACK. Apple
   financial POSTs do not retry automatically under a different login.
