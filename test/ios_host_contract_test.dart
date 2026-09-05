@@ -274,6 +274,45 @@ void main() {
       },
     );
 
+    test('keeps the resolved Pod lock paired through native tests', () {
+      final String workflow = File(
+        '.github/workflows/m5-ios-client.yml',
+      ).readAsStringSync();
+      final int nativeTests = workflow.indexOf(
+        '- name: Run local StoreKit 2 native tests',
+      );
+      final int restoreLock = workflow.indexOf(
+        'cp "\${RUNNER_TEMP}/voice-social-Podfile.lock.expected"',
+      );
+      expect(nativeTests, greaterThanOrEqualTo(0));
+      expect(
+        restoreLock,
+        greaterThan(nativeTests),
+        reason:
+            'restoring the tracked lock before xcodebuild breaks its '
+            'pair with the resolved Pods/Manifest.lock',
+      );
+      final String nativeStep = workflow.substring(
+        nativeTests,
+        workflow.indexOf('\n      - name:', nativeTests + 1),
+      );
+      expect(nativeStep, contains('verify_ios_pod_lock.py'));
+      expect(
+        nativeStep,
+        contains('cmp -s ios/Podfile.lock ios/Pods/Manifest.lock'),
+      );
+      final String restoreStep = workflow.substring(
+        workflow.lastIndexOf('\n      - name:', restoreLock),
+        workflow.indexOf('\n      - name:', restoreLock),
+      );
+      expect(restoreStep, contains('if: always()'));
+      expect(restoreStep, contains('git diff --exit-code --'));
+      expect(
+        workflow,
+        isNot(contains('cp ios/Podfile.lock ios/Pods/Manifest.lock')),
+      );
+    });
+
     test('allows only local path-pod checksum portability drift', () {
       final Directory sandbox = Directory.systemTemp.createTempSync(
         'ios-pod-lock-contract-',

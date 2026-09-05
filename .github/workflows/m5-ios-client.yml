@@ -350,21 +350,21 @@ jobs:
           bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
             build/ios/iphonesimulator/Runner.app/Info.plist)"
           test "$bundle_id" = 'com.kong373.voiceSocialApp'
-          cp "${RUNNER_TEMP}/voice-social-Podfile.lock.expected" \
-            ios/Podfile.lock
           git diff --exit-code -- \
             pubspec.yaml \
             ios/Flutter/AppFrameworkInfo.plist \
             ios/Runner.xcodeproj/project.pbxproj \
             ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme \
-            ios/Runner.xcworkspace/contents.xcworkspacedata \
-            ios/Podfile.lock
+            ios/Runner.xcworkspace/contents.xcworkspacedata
 
       - name: Run local StoreKit 2 native tests
         shell: bash
         run: |
           set -Eeuo pipefail
           test -s ios/RunnerTests/VoiceSocial.storekit
+          python3 tool/qa/verify_ios_pod_lock.py \
+            "${RUNNER_TEMP}/voice-social-Podfile.lock.expected" ios/Podfile.lock
+          cmp -s ios/Podfile.lock ios/Pods/Manifest.lock
           destination_id="$(xcrun simctl list devices available -j | \
             python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(d["udid"] for runtime in data["devices"].values() for d in runtime if d.get("isAvailable") and d.get("name", "").startswith("iPhone")))')"
           test -n "$destination_id"
@@ -375,6 +375,22 @@ jobs:
             -parallel-testing-enabled NO \
             -only-testing:RunnerTests \
             2>&1 | tee ios-storekit-test.log
+
+      - name: Restore tracked Pod lock after native checks
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -s "${RUNNER_TEMP}/voice-social-Podfile.lock.expected"
+          cp "${RUNNER_TEMP}/voice-social-Podfile.lock.expected" \
+            ios/Podfile.lock
+          git diff --exit-code -- \
+            pubspec.yaml \
+            ios/Flutter/AppFrameworkInfo.plist \
+            ios/Runner.xcodeproj/project.pbxproj \
+            ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme \
+            ios/Runner.xcworkspace/contents.xcworkspacedata \
+            ios/Podfile.lock
 
       - name: Inspect simulator app boundaries
         shell: bash
