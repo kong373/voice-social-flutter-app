@@ -28,6 +28,7 @@ SHASUM_BIN="${IOS_SHASUM_BIN:-}"
 
 ARCHIVE_SIGNING_IDENTITY=""
 ARCHIVE_APP_SHA256=""
+ARCHIVE_APP_CONTENT_SHA256=""
 ARCHIVE_EXECUTABLE_SHA256=""
 ARCHIVE_EXECUTABLE_CONTENT_SHA256=""
 ARCHIVE_INFO_SHA256=""
@@ -39,11 +40,13 @@ ARCHIVE_EXECUTABLE_NAME=""
 IPA_APP_NAME=""
 IPA_FILE_SHA256=""
 IPA_APP_SHA256=""
+IPA_APP_CONTENT_SHA256=""
 IPA_EXECUTABLE_SHA256=""
 IPA_EXECUTABLE_CONTENT_SHA256=""
 
 CURRENT_TEAM_IDENTIFIER=""
 CURRENT_APP_SHA256=""
+CURRENT_APP_CONTENT_SHA256=""
 CURRENT_EXECUTABLE_SHA256=""
 CURRENT_EXECUTABLE_CONTENT_SHA256=""
 CURRENT_EXECUTABLE_NAME=""
@@ -428,11 +431,13 @@ sha256_file() {
 
 sha256_app_bundle() {
   local app="$1"
+  local normalize_signatures="${2:-false}"
   local files=""
   local sorted_files=""
   local manifest=""
   local relative=""
   local digest=""
+  local file_kind=""
 
   files="$(mktemp "$TMP_ROOT/app-files.XXXXXX" 2>/dev/null)" ||
     fail temporary_file_unavailable
@@ -449,7 +454,21 @@ sha256_app_bundle() {
   while IFS= read -r relative; do
     [[ -n "$relative" ]] || continue
     relative="${relative#./}"
-    digest="$(sha256_file "$app/$relative")" || fail app_file_hash_failed
+    if [[ "$normalize_signatures" == true ]]; then
+      case "/$relative" in
+        */_CodeSignature/*|*/embedded.mobileprovision) continue ;;
+      esac
+      file_kind="$("$FILE_BIN" -b "$app/$relative" 2>/dev/null)" ||
+        fail app_file_inspection_failed
+      if [[ "$file_kind" == *Mach-O* ]]; then
+        digest="$(sha256_executable_content "$app/$relative")" ||
+          fail app_file_hash_failed
+      else
+        digest="$(sha256_file "$app/$relative")" || fail app_file_hash_failed
+      fi
+    else
+      digest="$(sha256_file "$app/$relative")" || fail app_file_hash_failed
+    fi
     printf '%s  %s\n' "$digest" "$relative" >>"$manifest"
   done <"$sorted_files"
   sha256_file "$manifest" || fail app_bundle_hash_failed
@@ -779,6 +798,7 @@ validate_app() {
     fail executable_sha256_failed
   CURRENT_EXECUTABLE_CONTENT_SHA256="$(sha256_executable_content "$executable")"
   CURRENT_APP_SHA256="$(sha256_app_bundle "$app")"
+  CURRENT_APP_CONTENT_SHA256="$(sha256_app_bundle "$app" true)"
 }
 
 validate_ipa_structure() {
@@ -904,12 +924,15 @@ validate_ipa() {
   [[ "$CURRENT_EXECUTABLE_CONTENT_SHA256" == \
     "$ARCHIVE_EXECUTABLE_CONTENT_SHA256" ]] ||
     fail ipa_executable_content_hash_mismatch
+  [[ "$CURRENT_APP_CONTENT_SHA256" == "$ARCHIVE_APP_CONTENT_SHA256" ]] ||
+    fail ipa_bundle_content_hash_mismatch
   ipa_digest_after_validation="$(sha256_file "$ipa")" || fail ipa_sha256_failed
   [[ "$ipa_digest_after_validation" == "$ipa_digest_before" ]] ||
     fail ipa_changed_during_validation
   ipa_file_sha256="$ipa_digest_after_validation"
   IPA_FILE_SHA256="$ipa_file_sha256"
   IPA_APP_SHA256="$CURRENT_APP_SHA256"
+  IPA_APP_CONTENT_SHA256="$CURRENT_APP_CONTENT_SHA256"
   IPA_EXECUTABLE_SHA256="$CURRENT_EXECUTABLE_SHA256"
   IPA_EXECUTABLE_CONTENT_SHA256="$CURRENT_EXECUTABLE_CONTENT_SHA256"
 }
@@ -1225,6 +1248,9 @@ self_test() {
     "$SELF_TEST_VERSION" "$SELF_TEST_BUILD" "$SELF_TEST_EXECUTABLE"
   printf 'temporary executable fixture\n' >"$app/$SELF_TEST_EXECUTABLE"
   chmod 700 "$app/$SELF_TEST_EXECUTABLE"
+  mkdir -p "$app/Frameworks/App.framework/flutter_assets"
+  printf 'temporary Flutter code fixture\n' >"$app/Frameworks/App.framework/App"
+  printf 'temporary Flutter asset fixture\n' >"$app/Frameworks/App.framework/flutter_assets/AssetManifest.bin"
   cat >"$app/PrivacyInfo.xcprivacy" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1249,6 +1275,21 @@ PLIST
   self_test_run_case invalid "$profile_valid" fail codesign_invalid
   self_test_run_case adhoc "$profile_valid" fail ad_hoc_signing_not_allowed
   self_test_run_case debug "$profile_valid" fail debug_signing_not_allowed
+
+  local changed_payload="$fixture_root/changed-payload"
+  local changed_ipa="$fixture_root/changed-code.ipa"
+  mkdir -p "$changed_payload"
+  cp -R -- "$payload_root/Payload" "$changed_payload/Payload"
+  printf 'different Flutter code fixture\n' >"$changed_payload/Payload/VoiceSocial.app/Frameworks/App.framework/App"
+  (cd "$changed_payload" && "$zip_bin" -q -r "$changed_ipa" Payload) >/dev/null 2>&1 ||
+    fail self_test_changed_code_fixture_failed
+  self_test_run_case valid "$profile_valid" fail ipa_bundle_content_hash_mismatch "$changed_ipa"
+  cp -- "$app/Frameworks/App.framework/App" "$changed_payload/Payload/VoiceSocial.app/Frameworks/App.framework/App"
+  printf 'different Flutter asset fixture\n' >"$changed_payload/Payload/VoiceSocial.app/Frameworks/App.framework/flutter_assets/AssetManifest.bin"
+  changed_ipa="$fixture_root/changed-assets.ipa"
+  (cd "$changed_payload" && "$zip_bin" -q -r "$changed_ipa" Payload) >/dev/null 2>&1 ||
+    fail self_test_changed_asset_fixture_failed
+  self_test_run_case valid "$profile_valid" fail ipa_bundle_content_hash_mismatch "$changed_ipa"
 
   write_self_test_profile "$profile_task_allow" '2037-01-01T00:00:00Z' true \
     "$SELF_TEST_TEAM.$SELF_TEST_BUNDLE" "$SELF_TEST_TEAM"
@@ -1327,6 +1368,7 @@ validate_archive_info
 find_archive_app
 validate_app "$ARCHIVE_APP_PATH"
 ARCHIVE_APP_SHA256="$CURRENT_APP_SHA256"
+ARCHIVE_APP_CONTENT_SHA256="$CURRENT_APP_CONTENT_SHA256"
 ARCHIVE_EXECUTABLE_SHA256="$CURRENT_EXECUTABLE_SHA256"
 ARCHIVE_EXECUTABLE_CONTENT_SHA256="$CURRENT_EXECUTABLE_CONTENT_SHA256"
 ARCHIVE_EXECUTABLE_NAME="$CURRENT_EXECUTABLE_NAME"
@@ -1338,12 +1380,14 @@ fi
 printf 'ios-release-validation=PASS\n'
 printf 'archive_info_sha256=%s\n' "$ARCHIVE_INFO_SHA256"
 printf 'archive_app_sha256=%s\n' "$ARCHIVE_APP_SHA256"
+printf 'archive_app_content_sha256=%s\n' "$ARCHIVE_APP_CONTENT_SHA256"
 printf 'archive_executable_sha256=%s\n' "$ARCHIVE_EXECUTABLE_SHA256"
 printf 'archive_executable_content_sha256=%s\n' \
   "$ARCHIVE_EXECUTABLE_CONTENT_SHA256"
 if [[ -n "$IPA_PATH" ]]; then
   printf 'ipa_sha256=%s\n' "$IPA_FILE_SHA256"
   printf 'ipa_app_sha256=%s\n' "$IPA_APP_SHA256"
+  printf 'ipa_app_content_sha256=%s\n' "$IPA_APP_CONTENT_SHA256"
   printf 'ipa_executable_sha256=%s\n' "$IPA_EXECUTABLE_SHA256"
   printf 'ipa_executable_content_sha256=%s\n' \
     "$IPA_EXECUTABLE_CONTENT_SHA256"

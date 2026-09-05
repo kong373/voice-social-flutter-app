@@ -140,6 +140,11 @@ void main() {
     expect(source, contains('--remove-signature'));
     expect(source, contains('ipa_executable_content_hash_mismatch'));
     expect(source, contains('ipa_executable_name_mismatch'));
+    expect(source, contains('ipa_bundle_content_hash_mismatch'));
+    expect(source, contains('archive_app_content_sha256'));
+    expect(source, contains('ipa_app_content_sha256'));
+    expect(source, contains('different Flutter code fixture'));
+    expect(source, contains('different Flutter asset fixture'));
     expect(source, isNot(contains('ipa_app_hash_mismatch')));
     expect(source, isNot(contains('ipa_executable_hash_mismatch')));
     expect(source, isNot(contains('ipa_signing_mismatch')));

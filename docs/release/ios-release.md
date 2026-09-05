@@ -43,7 +43,13 @@ contains SHA-256 values for the archive `Info.plist`, a deterministic app
 bundle manifest, the main executable, and—when an IPA is supplied—the IPA
 file, IPA app bundle, and IPA executable. Bundle ID, version, build, signing
 identity class, team, app name, executable name, and normalized executable
-content are compared between the archive app and the IPA app. Normalization
+content are compared between the archive app and the IPA app. The entire
+bundle also has a required normalized content digest: every Framework
+(including Flutter's `App.framework`), plugin, and resource must match, not
+just the main executable. Only `_CodeSignature` files and embedded profiles
+are omitted; each Mach-O file has its signature removed on a temporary copy.
+Other export-time content changes fail closed and require investigation.
+Normalization
 removes only the code signature from a temporary copy; the archive and IPA are
 never modified. Raw app/executable SHA-256 values are evidence outputs, not
 an unnecessary byte-for-byte equality gate, so normal export-time re-signing
