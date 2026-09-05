@@ -92,6 +92,12 @@ exact missing-Apple-tool failure, empty stdout, and redacted stderr. They are
 not skipped, but their passing result is only a fail-closed portability check,
 not a successful native self-test or signed-artifact validation.
 
+The self-test uses the same ordinary PATH discovery as candidate validation
+for system utilities, so package-manager symlinks are not misclassified as
+operator-supplied tool-path overrides. Explicit path overrides retain their
+stricter non-symlink rule. A macOS regression also runs the complete self-test
+with a symlinked `shasum` at the front of PATH.
+
 ```bash
 tool/release/ios_release_validator.sh --self-test
 ```

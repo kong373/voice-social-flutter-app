@@ -1232,11 +1232,14 @@ self_test() {
   [[ -n "$plutil_bin" && -x "$plistbuddy_bin" && -n "$shasum_bin" &&
     -n "$unzip_bin" && -n "$zipinfo_bin" && -n "$zip_bin" ]] ||
     fail self_test_tool_unavailable
-  SELF_TEST_PLUTIL="$plutil_bin"
+  # Exercise ordinary PATH tool discovery, including package-manager links.
+  # Do not turn command -v results into explicit path overrides: those have
+  # a deliberately stricter non-symlink rule in real-candidate validation.
+  SELF_TEST_PLUTIL='plutil'
   SELF_TEST_PLISTBUDDY="$plistbuddy_bin"
-  SELF_TEST_SHASUM="$shasum_bin"
-  SELF_TEST_UNZIP="$unzip_bin"
-  SELF_TEST_ZIPINFO="$zipinfo_bin"
+  SELF_TEST_SHASUM='shasum'
+  SELF_TEST_UNZIP='unzip'
+  SELF_TEST_ZIPINFO='zipinfo'
   SELF_TEST_CODESIGN="$fixture_bin/codesign"
   SELF_TEST_SECURITY="$fixture_bin/security"
   SELF_TEST_FILE="$fixture_bin/file"

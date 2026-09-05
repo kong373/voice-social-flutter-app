@@ -33,6 +33,33 @@ void main() {
           'ios-release-validator=self-test-PASS',
         );
         expect(result.stderr.toString(), isEmpty);
+        final Directory toolPath = Directory.systemTemp.createTempSync(
+          'ios-release-path-tools-',
+        );
+        try {
+          Link('${toolPath.path}/shasum').createSync('/usr/bin/shasum');
+          final ProcessResult linkedToolResult = Process.runSync(
+            'bash',
+            <String>[validator.path, '--self-test'],
+            workingDirectory: root.path,
+            environment: <String, String>{
+              ...Platform.environment,
+              'PATH': '${toolPath.path}:${Platform.environment['PATH']}',
+            },
+          );
+          expect(
+            linkedToolResult.exitCode,
+            0,
+            reason: linkedToolResult.stderr.toString(),
+          );
+          expect(
+            linkedToolResult.stdout.toString().trim(),
+            'ios-release-validator=self-test-PASS',
+          );
+          expect(linkedToolResult.stderr.toString(), isEmpty);
+        } finally {
+          toolPath.deleteSync(recursive: true);
+        }
       } else {
         expect(result.exitCode, isNonZero);
         expect(result.stdout.toString(), isEmpty);
