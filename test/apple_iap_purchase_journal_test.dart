@@ -6,6 +6,19 @@ import 'package:voice_social_app/features/commerce/data/apple_iap_purchase_journ
 import 'package:voice_social_app/features/commerce/domain/apple_iap_models.dart';
 
 void main() {
+  test('backend-accepted dotted and hyphenated order numbers round trip', () {
+    for (final orderNo in <String>['vs.apple.1', 'vs-apple-1']) {
+      final entry = AppleIapJournalEntry(
+        binding: _binding(orderNo),
+        state: 'ATTEMPTED',
+      );
+      expect(
+        AppleIapJournalEntry.decode(entry.encode()).binding.orderNo,
+        orderNo,
+      );
+    }
+  });
+
   test(
     'journal persists only bounded recovery metadata under a hashed key',
     () async {
@@ -15,7 +28,10 @@ void main() {
       expect(store.lastKey, startsWith('apple_iap.attempt.v1.'));
       expect(store.lastKey, isNot(contains('private-account-label')));
       final data = jsonDecode(store.lastValue!) as Map<String, dynamic>;
-      expect(data.keys.toSet(), <String>{
+      expect(data.keys.toSet(), <String>{'schema', 'entries'});
+      expect(data['schema'], 2);
+      final entry = (data['entries'] as List).single as Map<String, dynamic>;
+      expect(entry.keys.toSet(), <String>{
         'schema',
         'state',
         'orderNo',
@@ -81,7 +97,49 @@ void main() {
     expect((await journal.read('a'))!.state, 'DELIVERED');
     await journal.start('a', _binding('order_two'));
     expect((await journal.read('a'))!.binding.orderNo, 'order_two');
+    expect(
+      (await journal.readAll('a')).map((entry) => entry.binding.orderNo),
+      <String>['order_one', 'order_two'],
+    );
+    await journal.markTerminal(
+      'a',
+      'order_one',
+      'FINISHED',
+      stillCurrent: () => true,
+    );
+    await journal.markTerminal(
+      'a',
+      'order_two',
+      'CANCELLED_CONFIRMED',
+      stillCurrent: () => true,
+    );
+    await journal.start('a', _binding('order_three'));
+    expect(
+      (await journal.readAll('a')).map((entry) => entry.binding.orderNo),
+      <String>['order_three'],
+    );
   });
+
+  test(
+    'legacy one-entry records migrate without losing the original binding',
+    () async {
+      final store = _RecordingStore();
+      final journal = AppleIapPurchaseJournal(store);
+      await journal.start('a', _binding('order_one'));
+      await store.write(
+        store.lastKey!,
+        AppleIapJournalEntry(
+          binding: _binding('order_one'),
+          state: 'DELIVERED',
+        ).encode(),
+      );
+      await journal.start('a', _binding('order_two'));
+      expect(
+        (await journal.readAll('a')).map((entry) => entry.binding.orderNo),
+        <String>['order_one', 'order_two'],
+      );
+    },
+  );
 
   test('invalid or expanded records fail closed', () {
     final valid =
@@ -105,6 +163,13 @@ void main() {
         throwsStateError,
       );
     }
+    expect(
+      () => AppleIapJournalEntry(
+        binding: _binding('invalid:order'),
+        state: 'ATTEMPTED',
+      ).encode(),
+      throwsStateError,
+    );
   });
 }
 

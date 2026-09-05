@@ -469,10 +469,21 @@ class AppleIapPurchaseCoordinator {
     _requireSession(expectedSession);
     final AppleIapOrderBinding? localBinding =
         expectedBinding ?? _boundOrders[ack.orderNo]?.$2;
+    if (localBinding == null) {
+      // The backend may resolve/credit a recovered JWS, but a missing local
+      // snapshot is not proof that our order/price/coin finish gate passed.
+      return AppleIapPurchaseFlow(
+        state: AppleIapPurchaseFlowState.awaitingBackend,
+        deliveryAck: ack,
+        reason: 'recovery_binding_missing',
+      );
+    }
     if (ack.transactionId != transaction.transactionId ||
-        (expectedBinding != null && ack.orderNo != expectedBinding.orderNo) ||
-        (localBinding != null &&
-            ack.delivered &&
+        ack.orderNo != localBinding.orderNo ||
+        _orderOwners[localBinding.orderNo] != _authenticatedAccount() ||
+        localBinding.storeProductId != transaction.productId ||
+        localBinding.appAccountToken != transaction.appAccountToken ||
+        (ack.delivered &&
             ack.creditedGiftCoins != localBinding.giftCoinAmount) ||
         (ack.finishAllowed && !ack.delivered)) {
       throw const ApiException(
@@ -490,6 +501,20 @@ class AppleIapPurchaseCoordinator {
       }
       _requireSession(expectedSession);
       if (finished) {
+        try {
+          await _journal.markTerminal(
+            _authenticatedAccount()!,
+            ack.orderNo,
+            'FINISHED',
+            stillCurrent: () =>
+                !_disposed &&
+                identical(_authenticatedSession(), expectedSession),
+          );
+        } catch (_) {
+          // Retain DELIVERED on disk if cleanup bookkeeping fails; never
+          // downgrade financial delivery or invoke another native purchase.
+        }
+        _requireSession(expectedSession);
         _unresolvedOrders.remove(ack.orderNo);
         return AppleIapPurchaseFlow(
           state: AppleIapPurchaseFlowState.delivered,
@@ -533,9 +558,9 @@ class AppleIapPurchaseCoordinator {
   }
 
   Future<void> _loadJournal(String account, Object session) async {
-    final AppleIapJournalEntry? entry = await _journal.read(account);
+    final List<AppleIapJournalEntry> entries = await _journal.readAll(account);
     _requireSession(session);
-    if (entry != null) {
+    for (final entry in entries) {
       final AppleIapOrderBinding binding = entry.binding;
       _orderOwners[binding.orderNo] = account;
       _boundOrders[binding.orderNo] = (session, binding);

@@ -11,6 +11,125 @@ import 'package:voice_social_app/features/commerce/infrastructure/apple_iap_stor
 final Object _testSession = Object();
 
 void main() {
+  for (final scenario in <String>['correct', 'coins', 'product', 'token']) {
+    test(
+      'old deferred finish survives new purchase and restart: $scenario',
+      () async {
+        final store = MemoryKeyValueStore();
+        final first = AppleIapPurchaseCoordinator(
+          storeKit: _FakeStoreKit(
+            purchaseResult: AppleIapPurchaseResult(
+              outcome: AppleIapPurchaseOutcome.transaction,
+              transaction: _transaction(),
+            ),
+            finishResults: <bool>[false],
+          ),
+          backend: _FakeBackend(),
+          authenticatedSession: () => _testSession,
+          authenticatedAccount: () => 'test-account',
+          purchaseStore: store,
+        );
+        expect((await _purchase(first)).reason, 'native_finish_deferred');
+        await first.dispose();
+        final nextBinding = AppleIapOrderBinding(
+          orderNo: 'vs.apple.order.2',
+          productId: _binding.productId,
+          storeProductId: _binding.storeProductId,
+          appAccountToken: '22222222-2222-4222-8222-222222222222',
+          amountMinor: 600,
+          giftCoinAmount: 60,
+          environment: 'Sandbox',
+          status: 'CONFIRMING',
+          createdAt: null,
+        );
+        final next = AppleIapPurchaseCoordinator(
+          storeKit: _FakeStoreKit(
+            purchaseResult: const AppleIapPurchaseResult(
+              outcome: AppleIapPurchaseOutcome.pending,
+            ),
+          ),
+          backend: _FakeBackend(orderBinding: nextBinding),
+          authenticatedSession: () => _testSession,
+          authenticatedAccount: () => 'test-account',
+          purchaseStore: store,
+        );
+        final order = await next.createOrder(
+          productId: nextBinding.productId,
+          requestId: 'independent-next-order',
+        );
+        expect(
+          (await next.purchase(order)).state,
+          AppleIapPurchaseFlowState.pending,
+        );
+        await next.dispose();
+        final native = _FakeStoreKit(
+          recovered: <AppleIapTransaction>[
+            _transaction(
+              productId: scenario == 'product'
+                  ? 'com.kong373.voiceSocialApp.recharge.300'
+                  : _binding.storeProductId,
+              appAccountToken: scenario == 'token'
+                  ? '33333333-3333-4333-8333-333333333333'
+                  : _binding.appAccountToken,
+            ),
+          ],
+        );
+        final recovered = AppleIapPurchaseCoordinator(
+          storeKit: native,
+          backend: _FakeBackend(
+            deliveryAck: AppleIapDeliveryAck(
+              orderNo: _binding.orderNo,
+              transactionId: '100000000000001',
+              deliveryState: AppleIapDeliveryState.delivered,
+              creditedGiftCoins: scenario == 'coins' ? 1 : 60,
+              finishAllowed: true,
+            ),
+          ),
+          authenticatedSession: () => _testSession,
+          authenticatedAccount: () => 'test-account',
+          purchaseStore: store,
+        );
+        final result = await recovered.recoverUnfinished();
+        expect(result.finished, scenario == 'correct' ? 1 : 0);
+        expect(native.finished.length, scenario == 'correct' ? 1 : 0);
+        expect(native.purchaseCalls, 0);
+        expect(
+          (await AppleIapPurchaseJournal(
+            store,
+          ).readAll('test-account')).map((entry) => entry.binding.orderNo),
+          containsAll(<String>[_binding.orderNo, nextBinding.orderNo]),
+        );
+        await recovered.dispose();
+      },
+    );
+  }
+
+  test('recovery without an order snapshot cannot finish an ACK', () async {
+    final storeKit = _FakeStoreKit(
+      recovered: <AppleIapTransaction>[_transaction()],
+    );
+    final coordinator = AppleIapPurchaseCoordinator(
+      storeKit: storeKit,
+      backend: _FakeBackend(
+        deliveryAck: const AppleIapDeliveryAck(
+          orderNo: 'vs_apple_order_1',
+          transactionId: '100000000000001',
+          deliveryState: AppleIapDeliveryState.delivered,
+          creditedGiftCoins: 1,
+          finishAllowed: true,
+        ),
+      ),
+      authenticatedSession: () => 'test-session',
+      authenticatedAccount: () => 'test-account',
+      purchaseStore: MemoryKeyValueStore(),
+    );
+    final result = await coordinator.recoverUnfinished();
+    expect(result.finished, 0);
+    expect(result.deferred, 1);
+    expect(storeKit.finished, isEmpty);
+    await coordinator.dispose();
+  });
+
   group('AppleIapPurchaseCoordinator', () {
     test(
       'loaded journal still fences account switch or disposal before create POST',
@@ -249,6 +368,10 @@ void main() {
           storeKit: storeKit,
           backend: backend,
         );
+        await coordinator.createOrder(
+          productId: _binding.productId,
+          requestId: 'recovery-snapshot',
+        );
         final first = coordinator.recoverUnfinished();
         await backend.firstDelivery;
         final second = coordinator.recoverUnfinished();
@@ -332,6 +455,10 @@ void main() {
           authenticatedSession: () => _testSession,
           storeKit: storeKit,
           backend: backend,
+        );
+        await coordinator.createOrder(
+          productId: _binding.productId,
+          requestId: 'recovery-snapshot',
         );
         final first = await coordinator.recoverUnfinished();
         expect(first.deferred, 1);
@@ -592,6 +719,10 @@ void main() {
               backend: backend,
             );
 
+        await coordinator.createOrder(
+          productId: _binding.productId,
+          requestId: 'recovery-snapshot',
+        );
         final AppleIapRecoveryResult result = await coordinator
             .recoverUnfinished();
 
@@ -600,7 +731,7 @@ void main() {
         expect(result.finished, 1);
         expect(result.deferred, 0);
         expect(backend.deliveries, hasLength(1));
-        expect(backend.deliveries.single.orderNo, isNull);
+        expect(backend.deliveries.single.orderNo, _binding.orderNo);
         expect(storeKit.finished, <String>['100000000000001']);
         await coordinator.dispose();
       },
@@ -621,13 +752,17 @@ void main() {
               storeKit: storeKit,
               backend: backend,
             );
+        await coordinator.createOrder(
+          productId: _binding.productId,
+          requestId: 'recovery-snapshot',
+        );
         coordinator.startListening();
 
         updates.add(_transaction(source: AppleIapTransactionSource.updates));
         await backend.firstDelivery.timeout(const Duration(seconds: 1));
         await storeKit.firstFinish.timeout(const Duration(seconds: 1));
 
-        expect(backend.deliveries.single.orderNo, isNull);
+        expect(backend.deliveries.single.orderNo, _binding.orderNo);
         expect(storeKit.finished, <String>['100000000000001']);
         await updates.close();
         await coordinator.dispose();
@@ -785,6 +920,7 @@ class _DeliveryCall {
 
 class _FakeBackend implements AppleIapBackendPort {
   _FakeBackend({
+    this.orderBinding = _binding,
     this.deliveryAck = const AppleIapDeliveryAck(
       orderNo: 'vs_apple_order_1',
       transactionId: '100000000000001',
@@ -797,6 +933,7 @@ class _FakeBackend implements AppleIapBackendPort {
   });
 
   final AppleIapDeliveryAck deliveryAck;
+  final AppleIapOrderBinding orderBinding;
   final Object? deliveryError;
   final Future<AppleIapDeliveryAck>? pendingAck;
   final List<_DeliveryCall> deliveries = <_DeliveryCall>[];
@@ -811,7 +948,7 @@ class _FakeBackend implements AppleIapBackendPort {
     required String requestId,
   }) async {
     createCalls += 1;
-    return _binding;
+    return orderBinding;
   }
 
   @override

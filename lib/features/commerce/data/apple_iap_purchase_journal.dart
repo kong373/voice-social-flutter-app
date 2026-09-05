@@ -16,31 +16,67 @@ class AppleIapPurchaseJournal {
       'apple_iap.attempt.v1.${sha256.convert(utf8.encode(account))}';
 
   Future<AppleIapJournalEntry?> read(String account) async {
+    final entries = await readAll(account);
+    return entries.isEmpty ? null : entries.last;
+  }
+
+  Future<List<AppleIapJournalEntry>> readAll(String account) async {
     final String? raw = await _store.read(_key(account));
     if (raw == null || raw.isEmpty) {
-      return null;
+      return <AppleIapJournalEntry>[];
     }
-    if (raw.length > 8192) {
+    if (raw.length > 262144) {
       throw StateError('Apple purchase recovery record is invalid');
     }
-    return AppleIapJournalEntry.decode(raw);
+    final Object? decoded = jsonDecode(raw);
+    if (decoded is Map<String, dynamic> && decoded['schema'] == 1) {
+      return <AppleIapJournalEntry>[AppleIapJournalEntry.decode(raw)];
+    }
+    if (decoded is! Map<String, dynamic> ||
+        decoded.length != 2 ||
+        decoded['schema'] != 2 ||
+        decoded['entries'] is! List<Object?>) {
+      throw StateError('Apple purchase recovery record is invalid');
+    }
+    final rawEntries = decoded['entries'] as List<Object?>;
+    if (rawEntries.isEmpty || rawEntries.length > 128) {
+      throw StateError('Apple purchase recovery record is invalid');
+    }
+    final entries = rawEntries
+        .map((entry) => AppleIapJournalEntry.decode(jsonEncode(entry)))
+        .toList();
+    if (entries.map((entry) => entry.binding.orderNo).toSet().length !=
+        entries.length) {
+      throw StateError('Apple purchase recovery record is invalid');
+    }
+    return entries;
   }
 
   Future<void> start(String account, AppleIapOrderBinding binding) =>
       _serialize(() async {
-        final AppleIapJournalEntry? previous = await read(account);
-        if (previous?.state == 'ATTEMPTED' &&
-            previous!.binding.orderNo != binding.orderNo) {
+        final entries = await readAll(account);
+        if (entries.any(
+          (entry) =>
+              entry.state == 'ATTEMPTED' &&
+              entry.binding.orderNo != binding.orderNo,
+        )) {
           throw StateError('An earlier Apple purchase still requires recovery');
         }
-        if (previous?.binding.orderNo == binding.orderNo) {
+        if (entries.any((entry) => entry.binding.orderNo == binding.orderNo)) {
           // A persisted attempt is never rewritten as a fresh attempt.
           return;
         }
-        await _store.write(
-          _key(account),
-          AppleIapJournalEntry(binding: binding, state: 'ATTEMPTED').encode(),
+        // Delivery is not native cleanup. Keep every un-finished delivery
+        // snapshot when a new independent purchase starts.
+        entries.removeWhere(
+          (entry) =>
+              entry.state == 'FINISHED' || entry.state == 'CANCELLED_CONFIRMED',
         );
+        if (entries.length >= 128) {
+          throw StateError('Apple purchase recovery cleanup is required');
+        }
+        entries.add(AppleIapJournalEntry(binding: binding, state: 'ATTEMPTED'));
+        await _write(account, entries);
       });
 
   Future<void> markTerminal(
@@ -49,24 +85,44 @@ class AppleIapPurchaseJournal {
     String state, {
     required bool Function() stillCurrent,
   }) => _serialize(() async {
-    if (!const <String>{'CANCELLED_CONFIRMED', 'DELIVERED'}.contains(state)) {
+    if (!const <String>{
+      'CANCELLED_CONFIRMED',
+      'DELIVERED',
+      'FINISHED',
+    }.contains(state)) {
       throw ArgumentError('Invalid Apple recovery terminal category');
     }
-    final AppleIapJournalEntry? previous = await read(account);
-    if (!stillCurrent() ||
-        previous == null ||
-        previous.binding.orderNo != orderNo) {
-      return;
-    }
-    // A late cancel cannot overwrite an already confirmed delivery.
-    if (previous.state == 'DELIVERED') {
-      return;
-    }
-    await _store.write(
-      _key(account),
-      AppleIapJournalEntry(binding: previous.binding, state: state).encode(),
+    final entries = await readAll(account);
+    final index = entries.indexWhere(
+      (entry) => entry.binding.orderNo == orderNo,
     );
+    if (!stillCurrent() || index < 0) {
+      return;
+    }
+    final previous = entries[index];
+    // A late cancel cannot overwrite an already confirmed delivery.
+    if (previous.state == 'FINISHED' ||
+        (previous.state == 'DELIVERED' && state != 'FINISHED') ||
+        (state == 'FINISHED' && previous.state != 'DELIVERED')) {
+      return;
+    }
+    entries[index] = AppleIapJournalEntry(
+      binding: previous.binding,
+      state: state,
+    );
+    await _write(account, entries);
   });
+
+  Future<void> _write(String account, List<AppleIapJournalEntry> entries) =>
+      _store.write(
+        _key(account),
+        jsonEncode(<String, Object?>{
+          'schema': 2,
+          'entries': entries
+              .map((entry) => jsonDecode(entry.encode()))
+              .toList(),
+        }),
+      );
 
   Future<void> _serialize(Future<void> Function() operation) {
     final Future<void> next = _writes.then((_) => operation());
@@ -81,16 +137,21 @@ class AppleIapJournalEntry {
   final AppleIapOrderBinding binding;
   final String state;
 
-  String encode() => jsonEncode(<String, Object?>{
-    'schema': 1,
-    'state': state,
-    'orderNo': binding.orderNo,
-    'productId': binding.productId,
-    'storeProductId': binding.storeProductId,
-    'appAccountToken': binding.appAccountToken,
-    'amountMinor': binding.amountMinor,
-    'giftCoinAmount': binding.giftCoinAmount,
-  });
+  String encode() {
+    final raw = jsonEncode(<String, Object?>{
+      'schema': 1,
+      'state': state,
+      'orderNo': binding.orderNo,
+      'productId': binding.productId,
+      'storeProductId': binding.storeProductId,
+      'appAccountToken': binding.appAccountToken,
+      'amountMinor': binding.amountMinor,
+      'giftCoinAmount': binding.giftCoinAmount,
+    });
+    // Write/read must have identical contracts, including order number syntax.
+    decode(raw);
+    return raw;
+  }
 
   static AppleIapJournalEntry decode(String raw) {
     final Object? decoded = jsonDecode(raw);
@@ -112,6 +173,7 @@ class AppleIapJournalEntry {
           'ATTEMPTED',
           'CANCELLED_CONFIRMED',
           'DELIVERED',
+          'FINISHED',
         }.contains(decoded['state'])) {
       throw StateError('Apple purchase recovery record is invalid');
     }
@@ -137,7 +199,7 @@ class AppleIapJournalEntry {
     return AppleIapJournalEntry(
       state: decoded['state']! as String,
       binding: AppleIapOrderBinding(
-        orderNo: value('orderNo', RegExp(r'^[A-Za-z0-9_:-]{1,80}$')),
+        orderNo: value('orderNo', RegExp(r'^[A-Za-z0-9._-]{1,80}$')),
         productId: value('productId', uuid),
         storeProductId: value(
           'storeProductId',
