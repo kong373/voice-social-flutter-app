@@ -12,6 +12,58 @@ import 'package:voice_social_app/features/shell/main_shell.dart';
 import 'support/golden_font_gate.dart';
 
 void main() {
+  for (final double keyboardHeight in <double>[260, 300]) {
+    testWidgets(
+      'SE room keeps public screen usable with $keyboardHeight keyboard',
+      (WidgetTester tester) async {
+        await loadGoldenFonts();
+        tester.view.physicalSize = const Size(750, 1334);
+        tester.view.devicePixelRatio = 2;
+        tester.view.padding = const FakeViewPadding(top: 40);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPadding);
+        addTearDown(tester.view.resetViewInsets);
+        final AppDependencies dependencies = AppDependencies.mock();
+        await tester.pumpWidget(
+          AppDependencyScope(
+            dependencies: dependencies,
+            child: MaterialApp(
+              theme: AppTheme.social(fontFamily: kGoldenFontFamily),
+              home: MainShell(
+                dependencies: dependencies,
+                onSignOut: () async {},
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('live-room-880217')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const Key('video-room-composer')));
+        tester.view.viewInsets = FakeViewPadding(bottom: keyboardHeight * 2);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final Finder publicScreen = find.byKey(
+          const Key('video-room-public-screen'),
+        );
+        expect(tester.getSize(publicScreen).height, greaterThanOrEqualTo(90));
+        expect(find.byTooltip('发送').hitTestable(), findsOneWidget);
+        await tester.drag(
+          find.byKey(const Key('video-room-seat-grid')),
+          const Offset(0, -240),
+        );
+        await tester.pumpAndSettle();
+        // The fixture's eighth seat is occupied by 暖光.
+        expect(find.text('暖光').hitTestable(), findsOneWidget);
+        tester.view.resetViewInsets();
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   test('video runtime uses separate light lobby and immersive room themes', () {
     expect(AppTheme.social().brightness, Brightness.light);
     expect(AppTheme.room().brightness, Brightness.dark);

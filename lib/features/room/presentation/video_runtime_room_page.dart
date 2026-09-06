@@ -261,27 +261,40 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                 _header(),
                 _announcement(),
                 Expanded(
-                  child: Column(
-                    children: <Widget>[
-                      SizedBox(
-                        height: composing ? 176 : 218,
-                        child: GridView.builder(
-                          padding: const EdgeInsets.fromLTRB(12, 7, 12, 0),
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 4,
-                                mainAxisSpacing: 5,
-                                crossAxisSpacing: 6,
-                                childAspectRatio: 0.88,
-                              ),
-                          itemCount: _controller.seats.length,
-                          itemBuilder: (BuildContext context, int index) =>
-                              _VideoMicSeat(seat: _controller.seats[index]),
-                        ),
-                      ),
-                      Expanded(child: _publicScreen()),
-                    ],
+                  child: LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints constraints) {
+                      // Keep messages and sending usable on short screens when
+                      // the keyboard is visible. All eight seats remain
+                      // reachable by scrolling instead of squeezing the feed.
+                      final double preferredSeatHeight = composing ? 176 : 218;
+                      final double seatHeight = (constraints.maxHeight - 96)
+                          .clamp(0.0, preferredSeatHeight);
+                      return Column(
+                        children: <Widget>[
+                          SizedBox(
+                            height: seatHeight,
+                            child: GridView.builder(
+                              key: const Key('video-room-seat-grid'),
+                              padding: const EdgeInsets.fromLTRB(12, 7, 12, 0),
+                              physics: composing || seatHeight < 218
+                                  ? const ClampingScrollPhysics()
+                                  : const NeverScrollableScrollPhysics(),
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 4,
+                                    mainAxisSpacing: 5,
+                                    crossAxisSpacing: 6,
+                                    childAspectRatio: 0.88,
+                                  ),
+                              itemCount: _controller.seats.length,
+                              itemBuilder: (BuildContext context, int index) =>
+                                  _VideoMicSeat(seat: _controller.seats[index]),
+                            ),
+                          ),
+                          Expanded(child: _publicScreen()),
+                        ],
+                      );
+                    },
                   ),
                 ),
                 if (composing) ...<Widget>[
