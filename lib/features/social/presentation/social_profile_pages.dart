@@ -72,12 +72,30 @@ class _PersonalCenterPageState extends State<PersonalCenterPage> {
 
   @override
   Widget build(BuildContext context) {
+    final Widget? backButton = (ModalRoute.of(context)?.canPop ?? false)
+        ? _OxygenTopButton(
+            icon: Icons.arrow_back_rounded,
+            tooltip: '返回',
+            onTap: () => Navigator.of(context).maybePop(),
+          )
+        : null;
     if (_profile == null) {
-      return SocialSkySurface(
-        child: SafeArea(
-          child: _error == null
-              ? const Center(child: CircularProgressIndicator())
-              : _ErrorState(message: _error!, onRetry: _load),
+      return SocialPageScaffold(
+        body: SafeArea(
+          child: Column(
+            children: <Widget>[
+              if (backButton != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                  child: Row(children: <Widget>[backButton]),
+                ),
+              Expanded(
+                child: _error == null
+                    ? const Center(child: CircularProgressIndicator())
+                    : _ErrorState(message: _error!, onRetry: _load),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -90,8 +108,8 @@ class _PersonalCenterPageState extends State<PersonalCenterPage> {
         scope.dependencies.environment.clientType.toLowerCase().contains('ios')
         ? 2
         : 1;
-    return SocialSkySurface(
-      child: SafeArea(
+    return SocialPageScaffold(
+      body: SafeArea(
         bottom: false,
         child: RefreshIndicator(
           onRefresh: _load,
@@ -101,6 +119,7 @@ class _PersonalCenterPageState extends State<PersonalCenterPage> {
             children: <Widget>[
               Row(
                 children: <Widget>[
+                  if (backButton != null) backButton,
                   const Spacer(),
                   _OxygenTopButton(
                     icon: Icons.settings_outlined,
