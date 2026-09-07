@@ -313,6 +313,11 @@ class _CpRelationPageState extends State<CpRelationPage> {
 
   Widget _relationCard(CpRelation relation) {
     final DateTime now = AppDependencyScope.of(context).currentTime();
+    // A date-only value has no time zone and keeps its calendar-year context.
+    final String boundAtLabel =
+        RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(relation.boundAt)
+        ? relation.boundAt
+        : formatMessageTimeText(relation.boundAt, now);
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
       child: _CommunitySection(
@@ -378,9 +383,7 @@ class _CpRelationPageState extends State<CpRelationPage> {
                     ),
                   ),
                   Text(
-                    relation.boundAt.isEmpty
-                        ? '建立时间未知'
-                        : '建立于 ${formatMessageTimeText(relation.boundAt, now)}',
+                    relation.boundAt.isEmpty ? '建立时间未知' : '建立于 $boundAtLabel',
                     style: const TextStyle(
                       color: _CommunityPalette.muted,
                       fontSize: 10,

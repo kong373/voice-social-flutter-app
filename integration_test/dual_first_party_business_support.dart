@@ -41,8 +41,9 @@ import 'package:voice_social_app/features/account/domain/auth_models.dart';
 ///   wallet mutation. Relay verifies these before serving either config.
 /// - Business writes happen ONLY inside production page callbacks. Report
 ///   manual_room_reentry for public history (snapshot reconnect only updates
-///   seats/members), and manual_page_reopen for private history; RTC/IM are
-///   disabled and never PASS. Host accepts only TWO successful drive results.
+///   seats/members), and automatic_http_sync_no_navigation for private history.
+///   Manual public recovery is a release limitation; disabled RTC/IM never PASS.
+///   Host accepts only TWO successful drive results.
 const dualBackend = 'http://10.0.2.2:28080/';
 
 Future<String> readDualRuntimeRole({Future<String> Function()? read}) async {

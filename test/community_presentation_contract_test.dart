@@ -241,6 +241,14 @@ void _cpTimeDisplayTests() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('CP date-only relationship preserves the full calendar date', (
+    WidgetTester tester,
+  ) async {
+    await showCp(tester, '2026-06-30', DateTime(2026, 9, 7));
+    expect(find.text('建立于 2026-06-30'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final String raw in <String>[
     '2026-09-07T07:53:45.123456Z',
     '2026-09-06T18:03:45.123Z', // Next calendar day in Asia/Shanghai.
