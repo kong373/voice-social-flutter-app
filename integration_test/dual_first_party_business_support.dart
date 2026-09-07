@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -187,6 +188,7 @@ class DualRelay {
         !{'/dual/config', '/dual/barrier'}.contains(path)) {
       throw StateError('Invalid private relay target.');
     }
+    String stage = 'CREDENTIAL';
     try {
       _bearer ??= (await File(
         '/data/user/0/com.kong373.voice_social_app/cache/dual-runtime-relay-token',
@@ -194,6 +196,7 @@ class DualRelay {
       if (_bearer!.length < 32 || _bearer!.contains(RegExp(r'\s'))) {
         throw StateError('invalid');
       }
+      stage = 'CONNECT';
       final req = await _client.openUrl(
         body == null ? 'GET' : 'POST',
         Uri(scheme: 'http', host: '10.0.2.2', port: port, path: path),
@@ -204,15 +207,29 @@ class DualRelay {
         req.headers.contentType = ContentType.json;
         req.write(jsonEncode(body));
       }
+      stage = 'RESPONSE';
       final response = await req.close().timeout(const Duration(seconds: 10));
       if (response.statusCode != 200) throw StateError('rejected');
+      stage = 'BODY';
       final data = await response
           .transform(utf8.decoder)
           .join()
           .timeout(const Duration(seconds: 10));
+      stage = 'DECODE';
       return jsonDecode(data) as Map<String, dynamic>;
-    } catch (_) {
-      throw StateError('Private relay request failed (details redacted).');
+    } catch (error) {
+      // Fixed categories only. Exception text may contain an authenticated
+      // endpoint or device-private payload and must never reach artifacts.
+      final category = error is TimeoutException
+          ? 'TIMEOUT'
+          : error is SocketException
+          ? 'SOCKET'
+          : error is HttpException
+          ? 'HTTP'
+          : error is FormatException
+          ? 'FORMAT'
+          : 'REJECTED';
+      throw StateError('Private relay failed: $stage/$category (redacted).');
     }
   }
 
