@@ -1762,6 +1762,7 @@ void main() {
   );
 
   test('concurrent report submits coalesce by normalized intent', () async {
+    final Completer<void> received = Completer<void>();
     final Completer<void> release = Completer<void>();
     int reportCalls = 0;
     final HttpServer server = await _startServer((
@@ -1770,6 +1771,7 @@ void main() {
     ) async {
       expect(request.uri.path, '/app-api/util/tipOffUserOrRoom');
       reportCalls += 1;
+      if (!received.isCompleted) received.complete();
       await release.future;
       return _reply(
         request,
@@ -1800,13 +1802,14 @@ void main() {
       description: '同一条举报',
       alsoBlock: false,
     );
-    await Future<void>.delayed(const Duration(milliseconds: 10));
+    await received.future.timeout(const Duration(seconds: 5));
     expect(reportCalls, 1);
     release.complete();
     expect(await Future.wait(<Future<String>>[first, second]), <String>[
       'report-1',
       'report-1',
     ]);
+    expect(reportCalls, 1);
   });
 
   test('report fails closed when the backend omits reportId', () async {
