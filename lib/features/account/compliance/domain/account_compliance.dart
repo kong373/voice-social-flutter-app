@@ -129,8 +129,8 @@ class CancellationEligibility {
   final String mobile;
   final bool requiresSmsCode;
 
-  /// The server-owned deletion request state, for example `NONE` or
-  /// `COOLING_OFF`.
+  /// The server-owned deletion eligibility state: `NONE`, `COOLING_OFF`, or
+  /// `BLOCKED`. A blocked account has no available submit or revoke action.
   final String status;
 
   /// Whether the server currently permits cancelling the deletion request.

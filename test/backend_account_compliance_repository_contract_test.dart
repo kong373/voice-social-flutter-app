@@ -761,6 +761,99 @@ void main() {
     },
   );
 
+  test(
+    'blocked deletion eligibility is read-only and exposes no action',
+    () async {
+      final List<RequestRecord> requests = <RequestRecord>[];
+      final HttpServer server = await startServer((
+        RequestRecord request,
+      ) async {
+        requests.add(request);
+        expect(request.method, 'GET');
+        expect(request.path, '/app-api/user/queryUserLogout');
+        return reply(
+          request,
+          data: <String, Object?>{
+            'eligible': false,
+            'canLogout': false,
+            'status': 'BLOCKED',
+            'requiresConfirmation': true,
+            'immediateDeletion': false,
+            'latestRequest': <String, Object?>{},
+            'message': 'server diagnostic must not be displayed',
+          },
+        );
+      });
+      addTearDown(() => server.close(force: true));
+      final repository = BackendAccountComplianceRepository(
+        apiClient: client(server),
+      );
+      final eligibility = await repository.queryCancellationEligibility();
+      expect(eligibility.status, 'BLOCKED');
+      expect(eligibility.allowed, isFalse);
+      expect(eligibility.canCancel, isFalse);
+      expect(eligibility.coolingEndsAt, isEmpty);
+      expect(eligibility.requiresSmsCode, isFalse);
+      expect(eligibility.message, '当前暂不满足注销条件');
+      expect(requests, hasLength(1));
+    },
+  );
+
+  test(
+    'blocked deletion rejects contradictory eligibility and cooling state',
+    () async {
+      for (final change in <Map<String, Object?>>[
+        <String, Object?>{'eligible': true},
+        <String, Object?>{'canLogout': true},
+        <String, Object?>{'eligible': true, 'canLogout': true},
+        <String, Object?>{'status': 'NONE'},
+        <String, Object?>{'status': 'UNRECOGNIZED'},
+        <String, Object?>{'requiresConfirmation': false},
+        <String, Object?>{'immediateDeletion': true},
+        <String, Object?>{
+          'latestRequest': <String, Object?>{
+            'status': 'COOLING_OFF',
+            'coolingEndsAt': '2026-09-15T00:00:00Z',
+          },
+        },
+      ]) {
+        final HttpServer server = await startServer((
+          RequestRecord request,
+        ) async {
+          return reply(
+            request,
+            data: <String, Object?>{
+              'eligible': false,
+              'canLogout': false,
+              'status': 'BLOCKED',
+              'requiresConfirmation': true,
+              'immediateDeletion': false,
+              'latestRequest': <String, Object?>{},
+              ...change,
+            },
+          );
+        });
+        try {
+          final repository = BackendAccountComplianceRepository(
+            apiClient: client(server),
+          );
+          await expectLater(
+            repository.queryCancellationEligibility(),
+            throwsA(
+              isA<ApiException>().having(
+                (error) => error.kind,
+                'kind',
+                ApiFailureKind.protocol,
+              ),
+            ),
+          );
+        } finally {
+          await server.close(force: true);
+        }
+      }
+    },
+  );
+
   test('cancellation errors preserve recoverable HTTP statuses', () async {
     for (final int status in <int>[403, 409, 422, 500]) {
       final HttpServer server = await startServer((

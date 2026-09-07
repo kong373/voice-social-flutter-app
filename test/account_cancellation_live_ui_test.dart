@@ -67,6 +67,35 @@ void main() {
     expect(find.text('注销冷静期中'), findsOneWidget);
   });
 
+  testWidgets('blocked cancellation shows no submit, revoke or SMS action', (
+    WidgetTester tester,
+  ) async {
+    final AppDependencies dependencies = AppDependencies.forTestEnvironment(
+      environment: AppEnvironment.mock(),
+      accountComplianceRepository: _BlockedRepository(),
+    );
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: dependencies,
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: const AccountCancellationPage(
+            account: 'user-1',
+            currentVersion: 1,
+            platformType: 1,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('暂不能申请注销'), findsOneWidget);
+    expect(find.text('当前暂不满足注销条件'), findsOneWidget);
+    expect(find.text('申请注销'), findsNothing);
+    expect(find.text('撤销注销'), findsNothing);
+    expect(find.text('短信验证码'), findsNothing);
+    expect(find.text('注销冷静期中'), findsNothing);
+  });
+
   testWidgets('revoke action does not double-submit and recovers HTTP errors', (
     WidgetTester tester,
   ) async {
@@ -132,6 +161,20 @@ class _CoolingOffRepository extends MockAccountComplianceRepository {
       mobile: '',
       requiresSmsCode: false,
       coolingEndsAt: '2026-08-29T08:00:00Z',
+    );
+  }
+}
+
+class _BlockedRepository extends MockAccountComplianceRepository {
+  @override
+  Future<CancellationEligibility> queryCancellationEligibility() async {
+    return const CancellationEligibility(
+      allowed: false,
+      status: 'BLOCKED',
+      canCancel: false,
+      message: '当前暂不满足注销条件',
+      mobile: '',
+      requiresSmsCode: false,
     );
   }
 }

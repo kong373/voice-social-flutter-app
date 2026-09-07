@@ -1071,7 +1071,7 @@ class BackendAccountComplianceRepository
       'status',
       '账户注销资格',
     ).toUpperCase();
-    if (status != 'NONE' && status != 'COOLING_OFF') {
+    if (status != 'NONE' && status != 'COOLING_OFF' && status != 'BLOCKED') {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '账户注销资格响应包含未知状态',
