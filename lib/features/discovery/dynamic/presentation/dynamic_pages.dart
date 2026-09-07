@@ -9,6 +9,7 @@ import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_reque
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_deep_link_page.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
+import 'package:voice_social_app/shared/time_format.dart';
 
 class DiscoveryFeedPage extends StatefulWidget {
   const DiscoveryFeedPage({this.repository, super.key});
@@ -1328,6 +1329,7 @@ class DynamicPostCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final DateTime now = _currentPresentationTime(context);
     return SocialCard(
       padding: EdgeInsets.zero,
       radius: 22,
@@ -1351,7 +1353,7 @@ class DynamicPostCard extends StatelessWidget {
                       ),
                       Text(
                         <String>[
-                          post.createdAt,
+                          formatMessageTimeText(post.createdAt, now),
                           if (post.location.isNotEmpty) post.location,
                         ].join(' · '),
                         style: Theme.of(context).textTheme.bodySmall,
@@ -1461,6 +1463,7 @@ class _CommentTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final DateTime now = _currentPresentationTime(context);
     return Material(
       color: Colors.transparent,
       child: ListTile(
@@ -1471,7 +1474,7 @@ class _CommentTile extends StatelessWidget {
           children: <Widget>[
             Expanded(child: Text(comment.author.nickname)),
             Text(
-              comment.createdAt,
+              formatMessageTimeText(comment.createdAt, now),
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
@@ -1486,6 +1489,13 @@ class _CommentTile extends StatelessWidget {
     );
   }
 }
+
+DateTime _currentPresentationTime(BuildContext context) =>
+    context
+        .getInheritedWidgetOfExactType<AppDependencyScope>()
+        ?.dependencies
+        .currentTime() ??
+    DateTime.now();
 
 class _CommentEmpty extends StatelessWidget {
   const _CommentEmpty();

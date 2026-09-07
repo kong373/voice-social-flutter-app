@@ -577,9 +577,5 @@ class _UnreadBadge extends StatelessWidget {
 String _messageFor(Object error) =>
     error is ApiException ? error.message : '操作失败，请稍后重试';
 
-String _formatMessageTime(DateTime value, DateTime now) {
-  if (now.difference(value).inDays == 0) {
-    return '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
-  }
-  return '${value.month}月${value.day}日';
-}
+String _formatMessageTime(DateTime value, DateTime now) =>
+    formatMessageTime(value, now);
