@@ -225,7 +225,7 @@ void main() {
         'manual_room_reentry',
         '确认离开',
         'controller.dispose()',
-        'manual_page_reopen',
+        'automatic_http_sync_no_navigation',
         'DISABLED_NOT_TESTED',
       ]) {
         expect(source, contains(required), reason: required);

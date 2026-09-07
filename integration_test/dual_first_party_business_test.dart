@@ -342,15 +342,14 @@ void main() {
         'private UI send',
       );
       await _barrier(tester, relay, config, 'private-sent');
-      // Explicit UI back/reopen reloads authoritative history; no IM claim.
-      await tester.pageBack();
-      await tester.pump(const Duration(milliseconds: 300));
-      await _tap(tester, find.text('私聊'));
+      // Both users remain on this exact route. Navigation/manual refresh
+      // cannot substitute for automatic first-party receive recovery.
       final peerPrivate = config.message(config.peerRole, 'private');
       await _until(
         tester,
         () => find.text(peerPrivate).evaluate().isNotEmpty,
-        'private history reopen',
+        'private automatic receive without navigation',
+        timeout: const Duration(seconds: 5),
       );
       final conversation =
           (await dependencies.messageRepository.fetchConversations())
@@ -393,7 +392,8 @@ void main() {
         'firstPartyUi': 'PASS',
         'publicReceive': 'manual_room_reentry',
         'publicVisibleBeforeReentry': visibleBeforeReentry,
-        'privateReceive': 'manual_page_reopen',
+        'privateReceive': 'automatic_http_sync_no_navigation',
+        'releaseAcceptance': 'PARTIAL_FIRST_PARTY_ONLY',
         'rtcAudio': 'DISABLED_NOT_TESTED',
         'imRealtime': 'DISABLED_NOT_TESTED',
       };
@@ -407,9 +407,10 @@ void main() {
 Future<void> _until(
   WidgetTester tester,
   bool Function() condition,
-  String stage,
-) async {
-  final deadline = DateTime.now().add(const Duration(seconds: 30));
+  String stage, {
+  Duration timeout = const Duration(seconds: 30),
+}) async {
+  final deadline = DateTime.now().add(timeout);
   while (!condition()) {
     if (DateTime.now().isAfter(deadline))
       throw TestFailure('Timed out: $stage');
