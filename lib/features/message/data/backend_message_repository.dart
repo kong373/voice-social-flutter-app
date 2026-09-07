@@ -9,7 +9,8 @@ import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/domain/message_request_id.dart';
 import 'package:voice_social_app/features/message/domain/message_repository.dart';
 
-class BackendMessageRepository implements MessageRepository {
+class BackendMessageRepository
+    implements MessageRepository, VisiblePrivateMessageRepository {
   BackendMessageRepository({
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
@@ -120,7 +121,35 @@ class BackendMessageRepository implements MessageRepository {
   @override
   Future<List<ChatMessage>> fetchPrivateMessages(
     ConversationSummary conversation,
-  ) async {
+  ) async => (await _fetchPrivateMessages(
+    conversation,
+    isCurrent: () => true,
+  )).messages;
+
+  @override
+  Future<PrivateMessageSyncBatch> fetchVisiblePrivateMessages(
+    ConversationSummary conversation, {
+    required bool Function() isCurrent,
+    Set<String> knownMessageIds = const <String>{},
+    String? resumeCursor,
+  }) => _fetchPrivateMessages(
+    conversation,
+    isCurrent: isCurrent,
+    knownMessageIds: knownMessageIds,
+    resumeCursor: resumeCursor,
+    allowBoundedWindow: true,
+  );
+
+  Future<PrivateMessageSyncBatch> _fetchPrivateMessages(
+    ConversationSummary conversation, {
+    required bool Function() isCurrent,
+    Set<String> knownMessageIds = const <String>{},
+    String? resumeCursor,
+    bool allowBoundedWindow = false,
+  }) async {
+    final int accountId = _currentUserIdProvider();
+    bool active() => isCurrent() && _currentUserIdProvider() == accountId;
+    if (!active()) return const PrivateMessageSyncBatch([]);
     if (!conversation.available || conversation.targetUserId <= 0) {
       throw ApiException(
         kind: ApiFailureKind.conflict,
@@ -132,7 +161,7 @@ class BackendMessageRepository implements MessageRepository {
     final List<ChatMessage> messages = <ChatMessage>[];
     final Set<String> seenCursors = <String>{};
     String? authoritativeConversationId;
-    String? cursor;
+    String? cursor = resumeCursor;
     var hasMore = true;
     var fetchedPages = 0;
     while (hasMore && fetchedPages < _maximumBackendPages) {
@@ -146,6 +175,7 @@ class BackendMessageRepository implements MessageRepository {
         _routes.privateChatHistory,
         query: query,
       );
+      if (!active()) return const PrivateMessageSyncBatch([]);
       final Map<String, Object?> data = _asMap(response.data);
       final List<Map<String, Object?>> items = _extractList(response.data);
       hasMore = _requiredBool(data['hasMore'], field: 'hasMore');
@@ -237,12 +267,19 @@ class BackendMessageRepository implements MessageRepository {
             )
             .where((ChatMessage item) => item.id.isNotEmpty),
       );
+      // queryChat is newest-first (id DESC). Once the page overlaps the
+      // visible snapshot, all unseen newer messages have been collected.
+      // Keep the entire overlap page so delivery/read projections can update.
+      if (knownMessageIds.isNotEmpty &&
+          messages.any((item) => knownMessageIds.contains(item.id))) {
+        hasMore = false;
+      }
       if (hasMore) {
         seenCursors.add(nextCursor);
         cursor = nextCursor;
       }
     }
-    if (hasMore) {
+    if (hasMore && !allowBoundedWindow) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '私聊历史超过客户端安全分页上限',
@@ -252,12 +289,19 @@ class BackendMessageRepository implements MessageRepository {
       (ChatMessage left, ChatMessage right) =>
           left.createdAt.compareTo(right.createdAt),
     );
+    if (hasMore) {
+      // Publish the newest bounded batch without marking unseen older rows
+      // read. The visible page owns and accepts the continuation cursor.
+      return PrivateMessageSyncBatch(messages, nextCursor: cursor);
+    }
     // Entering a conversation is the first-party read boundary.  Provider
     // delivery remains represented by the response-level status mapping; this
     // HTTP read never treats a provider callback as message content.
+    if (!active()) return const PrivateMessageSyncBatch([]);
     await _runStableMessageWrite<void>(
       intent: 'private-read:${conversation.targetUserId}',
       action: (Map<String, String> headers) async {
+        if (!active()) return;
         final ApiResponse readResponse = await _apiClient.post(
           _routes.markPrivateMessageRead,
           headers: headers,
@@ -296,7 +340,7 @@ class BackendMessageRepository implements MessageRepository {
         }
       },
     );
-    return messages;
+    return PrivateMessageSyncBatch(messages);
   }
 
   @override

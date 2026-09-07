@@ -624,6 +624,132 @@ void main() {
     );
   });
 
+  test('visible chat sync stops at the first known-message page', () async {
+    var pages = 0;
+    final harness = await _Harness.start((request) {
+      if (request.method == 'POST') {
+        return _Response.ok({
+          'targetUserId': 99,
+          'markedRead': 0,
+          'unreadCount': 0,
+        });
+      }
+      pages++;
+      return _Response.ok(
+        _historyPage(page: pages, hasMore: true, nextCursor: '$pages'),
+      );
+    });
+    addTearDown(harness.close);
+    final messages = await harness.repository.fetchVisiblePrivateMessages(
+      _conversation(),
+      isCurrent: () => true,
+      knownMessageIds: {'history-3'},
+    );
+    expect(pages, 3);
+    expect(
+      messages.messages.map((item) => item.id),
+      containsAll(['history-1', 'history-2', 'history-3']),
+    );
+    expect(harness.requests.last.method, 'POST');
+    // Subsequent compensation need not walk the old history again.
+    pages = 0;
+    await harness.repository.fetchVisiblePrivateMessages(
+      _conversation(),
+      isCurrent: () => true,
+      knownMessageIds: messages.messages.map((item) => item.id).toSet(),
+    );
+    expect(pages, 1);
+  });
+
+  test(
+    'visible chat continues past the page cap before marking the chat read',
+    () async {
+      var pages = 0;
+      final harness = await _Harness.start((request) {
+        if (request.method == 'POST') {
+          return _Response.ok({
+            'targetUserId': 99,
+            'markedRead': 0,
+            'unreadCount': 0,
+          });
+        }
+        pages++;
+        return _Response.ok(
+          _historyPage(page: pages, hasMore: true, nextCursor: '$pages'),
+        );
+      });
+      addTearDown(harness.close);
+      final messages = await harness.repository.fetchVisiblePrivateMessages(
+        _conversation(),
+        isCurrent: () => true,
+        knownMessageIds: {'history-101'},
+      );
+      expect(pages, 100);
+      expect(messages.messages, hasLength(100));
+      expect(messages.messages.map((item) => item.id), contains('history-1'));
+      expect(messages.nextCursor, '100');
+      expect(harness.requests.where((item) => item.method == 'POST'), isEmpty);
+      final completed = await harness.repository.fetchVisiblePrivateMessages(
+        _conversation(),
+        isCurrent: () => true,
+        knownMessageIds: {'history-101'},
+        resumeCursor: messages.nextCursor,
+      );
+      expect(pages, 101);
+      expect(completed.messages.single.id, 'history-101');
+      expect(completed.nextCursor, isNull);
+      expect(harness.requests.last.method, 'POST');
+      expect(
+        harness.requests.where((item) => item.method == 'POST'),
+        hasLength(1),
+      );
+    },
+  );
+
+  test('hidden private chat does not start a history request', () async {
+    final harness = await _Harness.start((_) => _Response.ok({}));
+    addTearDown(harness.close);
+    expect(
+      (await harness.repository.fetchVisiblePrivateMessages(
+        _conversation(),
+        isCurrent: () => false,
+      )).messages,
+      isEmpty,
+    );
+    expect(harness.requests, isEmpty);
+  });
+
+  for (final invalidateAccount in [false, true]) {
+    test(
+      'in-flight private history stops before paging/read when ${invalidateAccount ? 'account changes' : 'chat is hidden'}',
+      () async {
+        var visible = true;
+        var userId = 10001;
+        final harness = await _Harness.start((request) {
+          expect(request.path, '/app-api/user/imMessage/queryChat');
+          if (invalidateAccount) {
+            userId = 10002;
+          } else {
+            visible = false;
+          }
+          return _Response.ok(
+            _historyPage(page: 1, hasMore: true, nextCursor: '10'),
+          );
+        }, currentUserIdProvider: () => userId);
+        addTearDown(harness.close);
+        expect(
+          (await harness.repository.fetchVisiblePrivateMessages(
+            _conversation(),
+            isCurrent: () => visible,
+          )).messages,
+          isEmpty,
+        );
+        expect(harness.requests, hasLength(1));
+        expect(harness.requests.single.method, 'GET');
+      },
+    );
+  }
+
   test(
     'private history uses targetUserId/cursor and marks read with POST',
     () async {
@@ -2639,6 +2765,7 @@ class _Harness {
     this.requests, {
     UnauthorizedRecovery? unauthorizedRecovery,
     NativePermissionAdapter? nativePermissionAdapter,
+    int Function()? currentUserIdProvider,
   }) : repository = BackendMessageRepository(
          apiClient: ApiClient(
            baseUri: Uri.parse(
@@ -2650,7 +2777,7 @@ class _Harness {
            unauthorizedRecovery: unauthorizedRecovery,
          ),
          routes: const BackendRouteCatalog(),
-         currentUserIdProvider: () => 10001,
+         currentUserIdProvider: currentUserIdProvider ?? () => 10001,
          nativePermissionAdapter: nativePermissionAdapter,
        );
 
@@ -2662,6 +2789,7 @@ class _Harness {
     FutureOr<_Response> Function(RequestRecord) handler, {
     UnauthorizedRecovery? unauthorizedRecovery,
     NativePermissionAdapter? nativePermissionAdapter,
+    int Function()? currentUserIdProvider,
     FutureOr<_Response> Function(RequestRecord)? notificationSyncHandler,
   }) async {
     final HttpServer server = await HttpServer.bind(
@@ -2674,6 +2802,7 @@ class _Harness {
       requests,
       unauthorizedRecovery: unauthorizedRecovery,
       nativePermissionAdapter: nativePermissionAdapter,
+      currentUserIdProvider: currentUserIdProvider,
     );
     server.listen((HttpRequest request) async {
       final String rawBody = await utf8.decoder.bind(request).join();

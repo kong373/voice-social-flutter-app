@@ -1,8 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/core/storage/key_value_store.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/account/domain/auth_refresh_recovery.dart';
 
-class AuthSessionManager {
+class AuthSessionManager extends ChangeNotifier {
   AuthSessionManager(this._store);
 
   static const String _sessionKey = 'auth.session.v2';
@@ -25,13 +26,21 @@ class AuthSessionManager {
 
   AuthSession? get session => _session;
 
+  void _publishSession(AuthSession? value) {
+    final bool identityChanged = _session?.userId != value?.userId;
+    _session = value;
+    // Refreshing a token for the same identity keeps the visible chat alive.
+    // Logout/account switches permanently invalidate its pending read lease.
+    if (identityChanged) notifyListeners();
+  }
+
   String? get authorizationHeader => _session?.authorizationHeader;
 
   Future<AuthSession?> restore() async {
     String? encoded = await _store.read(_sessionKey);
     encoded ??= await _store.read(_legacySessionKey);
     if (encoded == null || encoded.isEmpty) {
-      _session = null;
+      _publishSession(null);
       await _clearPendingRefreshIfPresent();
       return null;
     }
@@ -41,7 +50,7 @@ class AuthSessionManager {
       await clear();
       return null;
     }
-    _session = restored;
+    _publishSession(restored);
     if (await _store.read(_sessionKey) == null) {
       await _store.write(_sessionKey, restored.encode());
       try {
@@ -63,7 +72,7 @@ class AuthSessionManager {
     // process dies between these two writes, the old pending record cannot be
     // reused against the new refresh-token fingerprint on the next launch.
     await clearPendingRefresh();
-    _session = session;
+    _publishSession(session);
     try {
       await _store.delete(_legacySessionKey);
     } catch (_) {
@@ -89,7 +98,7 @@ class AuthSessionManager {
     await erase(_sessionKey);
     await erase(_legacySessionKey);
     await erase(pendingRefreshStorageKey);
-    _session = null;
+    _publishSession(null);
     if (firstError != null) {
       Error.throwWithStackTrace(firstError!, firstStack ?? StackTrace.current);
     }

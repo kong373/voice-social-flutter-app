@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';

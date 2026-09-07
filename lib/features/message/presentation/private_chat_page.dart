@@ -9,7 +9,8 @@ class PrivateChatPage extends StatefulWidget {
   State<PrivateChatPage> createState() => _PrivateChatPageState();
 }
 
-class _PrivateChatPageState extends State<PrivateChatPage> {
+class _PrivateChatPageState extends State<PrivateChatPage>
+    with WidgetsBindingObserver {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = <ChatMessage>[];
@@ -23,49 +24,137 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   ImAuthoritativeRefreshBus? _refreshBus;
   ImAuthoritativeRefreshSubscription? _refreshSubscription;
   Future<void>? _refreshFlight;
+  Timer? _syncTimer;
+  AppDependencies? _dependencies;
+  ModalRoute<void>? _route;
+  int? _accountId;
+  bool _loadStarted = false;
+  bool _foreground = true;
+  bool _visible = false;
+  bool _accountChanged = false;
+  final Set<String> _historyMessageIds = <String>{};
+  Set<String>? _catchupBoundary;
+  String? _catchupCursor;
 
-  MessageRepository get _repository =>
-      AppDependencyScope.of(context).messageRepository;
+  MessageRepository get _repository => _dependencies!.messageRepository;
+
+  bool get _active => mounted && _foreground && (_route?.isCurrent ?? true);
+
+  bool get _canAutoSync =>
+      _active &&
+      !_accountChanged &&
+      _dependencies!.environment.isLive &&
+      _conversation.available &&
+      _repository.supportsPrivateHistory;
 
   @override
   void initState() {
     super.initState();
     _conversation = widget.conversation;
+    _foreground =
+        WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final ImAuthoritativeRefreshBus refreshBus = AppDependencyScope.of(
-      context,
-    ).imAuthoritativeRefreshBus;
+    final AppDependencies nextDependencies = AppDependencyScope.of(context);
+    if (!identical(_dependencies, nextDependencies)) {
+      _dependencies?.sessionManager.removeListener(_onAccountChanged);
+      _dependencies = nextDependencies;
+      _dependencies!.sessionManager.addListener(_onAccountChanged);
+    }
+    _route = ModalRoute.of<void>(context);
+    final bool wasVisible = _visible;
+    _visible = _active;
+    final ImAuthoritativeRefreshBus refreshBus =
+        _dependencies!.imAuthoritativeRefreshBus;
     if (!identical(_refreshBus, refreshBus)) {
       _refreshSubscription?.cancel();
       _refreshBus = refreshBus;
       _refreshSubscription = refreshBus.subscribe(_onAuthoritativeRefresh);
     }
-    if (_loading && _messages.isEmpty) {
+    if (!_loadStarted) {
+      _loadStarted = true;
+      _accountId = _dependencies!.sessionManager.session?.userId ?? 0;
       _load();
+    } else if (!wasVisible && _visible) {
+      _load(showLoading: false);
+    } else if (!_visible) {
+      _syncTimer?.cancel();
     }
   }
 
-  Future<void> _onAuthoritativeRefresh(ImAuthoritativeRefreshRequest request) {
-    final Future<void>? active = _refreshFlight;
-    if (active != null) {
-      return active;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    _visible = _active;
+    _syncTimer?.cancel();
+    if (_visible && _loadStarted) {
+      _load(showLoading: false);
     }
-    final Future<void> operation = _load(showLoading: false);
+  }
+
+  bool _checkAccount() {
+    if (!mounted || _accountChanged) return false;
+    if (!_dependencies!.environment.isLive ||
+        (_dependencies!.sessionManager.session?.userId ?? 0) == _accountId) {
+      return true;
+    }
+    _syncTimer?.cancel();
+    _loadRequestId += 1;
+    setState(() {
+      _accountChanged = true;
+      _messages.clear();
+      _historyMessageIds.clear();
+      _catchupBoundary = null;
+      _catchupCursor = null;
+      _controller.clear();
+      _pendingSendRequestId = null;
+      _pendingSendContent = null;
+      _loading = false;
+      _error = '登录状态已改变，请重新进入会话。';
+    });
+    return false;
+  }
+
+  void _onAccountChanged() {
+    if (_loadStarted) _checkAccount();
+  }
+
+  void _scheduleSync() {
+    _syncTimer?.cancel();
+    if (!_canAutoSync) return;
+    // IM hints remain the fast path. HTTP also repairs missed hints and works
+    // when realtime delivery is unavailable; it is not an IM delivery receipt.
+    _syncTimer = Timer(const Duration(seconds: 3), () {
+      if (_checkAccount() && _canAutoSync) _load(showLoading: false);
+    });
+  }
+
+  Future<void> _onAuthoritativeRefresh(ImAuthoritativeRefreshRequest request) =>
+      _load(showLoading: false);
+
+  Future<void> _load({bool showLoading = true}) {
+    if (!_checkAccount() || !_active) return Future<void>.value();
+    final Future<void>? active = _refreshFlight;
+    if (active != null) return active;
+    _syncTimer?.cancel();
+    final Future<void> operation = _performLoad(showLoading: showLoading);
     _refreshFlight = operation;
+    void completed() {
+      if (identical(_refreshFlight, operation)) {
+        _refreshFlight = null;
+        if (mounted) _scheduleSync();
+      }
+    }
+
     operation.then<void>(
-      (_) {
-        if (identical(_refreshFlight, operation)) {
-          _refreshFlight = null;
-        }
-      },
+      (_) => completed(),
       onError: (Object _, StackTrace __) {
-        if (identical(_refreshFlight, operation)) {
-          _refreshFlight = null;
-        }
+        completed();
       },
     );
     return operation;
@@ -74,6 +163,9 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   @override
   void dispose() {
     _loadRequestId += 1;
+    WidgetsBinding.instance.removeObserver(this);
+    _dependencies?.sessionManager.removeListener(_onAccountChanged);
+    _syncTimer?.cancel();
     _refreshSubscription?.cancel();
     _refreshSubscription = null;
     _controller.dispose();
@@ -81,15 +173,12 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
     super.dispose();
   }
 
-  Future<void> _load({bool showLoading = true}) async {
+  Future<void> _performLoad({required bool showLoading}) async {
     if (!mounted) {
       return;
     }
     final int requestId = ++_loadRequestId;
     final MessageRepository repository = _repository;
-    final AppDependencies dependencies = AppDependencyScope.of(context);
-    final int authUserIdAtStart =
-        dependencies.sessionManager.session?.userId ?? 0;
     if (showLoading || _error != null) {
       setState(() {
         _loading = showLoading;
@@ -97,16 +186,31 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       });
     }
     try {
-      final List<ChatMessage> value = await repository.fetchPrivateMessages(
-        _conversation,
-      );
-      final int authUserIdAfterFetch =
-          dependencies.sessionManager.session?.userId ?? 0;
-      if (!mounted ||
-          requestId != _loadRequestId ||
-          authUserIdAfterFetch != authUserIdAtStart) {
+      final Set<String> historyBoundary =
+          _catchupBoundary ?? Set<String>.of(_historyMessageIds);
+      final PrivateMessageSyncBatch batch =
+          repository is VisiblePrivateMessageRepository
+          ? await repository.fetchVisiblePrivateMessages(
+              _conversation,
+              knownMessageIds: historyBoundary,
+              resumeCursor: _catchupCursor,
+              isCurrent: () =>
+                  _active &&
+                  requestId == _loadRequestId &&
+                  !_accountChanged &&
+                  (_dependencies!.sessionManager.session?.userId ?? 0) ==
+                      _accountId,
+            )
+          : PrivateMessageSyncBatch(
+              await repository.fetchPrivateMessages(_conversation),
+            );
+      if (!_checkAccount() || requestId != _loadRequestId || !_active) {
         return;
       }
+      final List<ChatMessage> value = batch.messages;
+      _historyMessageIds.addAll(value.map((item) => item.id));
+      _catchupCursor = batch.nextCursor;
+      _catchupBoundary = batch.nextCursor == null ? null : historyBoundary;
       if (_conversation.isDraft) {
         final ChatMessage? identifiedMessage = value
             .where(
@@ -129,15 +233,20 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
         }
       }
       final List<ChatMessage> mergedMessages = _mergeMessages(value);
+      final bool hasNewMessages = mergedMessages.length > _messages.length;
+      final bool followLatest =
+          _messages.isEmpty ||
+          !_scrollController.hasClients ||
+          _scrollController.position.extentAfter < 80;
       setState(() {
         _messages
           ..clear()
           ..addAll(mergedMessages);
         _loading = false;
       });
-      _scrollToEnd();
+      if (hasNewMessages && followLatest) _scrollToEnd();
     } catch (error) {
-      if (!mounted || requestId != _loadRequestId) {
+      if (!_checkAccount() || requestId != _loadRequestId || !_active) {
         return;
       }
       setState(() {
@@ -155,7 +264,10 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   }
 
   Future<void> _send() async {
-    if (_sending || !_repository.supportsPrivateSend) {
+    if (!_checkAccount() ||
+        !_active ||
+        _sending ||
+        !_repository.supportsPrivateSend) {
       return;
     }
     final String text = _controller.text.trim();
@@ -174,7 +286,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
         content: text,
         requestId: requestId,
       );
-      if (!mounted) {
+      if (!_checkAccount()) {
         return;
       }
       if (_conversation.isDraft && message.conversationId != null) {
@@ -201,7 +313,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
       _pendingSendContent = null;
       _scrollToEnd();
     } catch (error) {
-      if (mounted) {
+      if (mounted && _checkAccount()) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
@@ -264,7 +376,10 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   @override
   Widget build(BuildContext context) {
     final bool canSend =
-        _repository.supportsPrivateSend && _conversation.available && !_sending;
+        !_accountChanged &&
+        _repository.supportsPrivateSend &&
+        _conversation.available &&
+        !_sending;
     return SocialPageScaffold(
       appBar: AppBar(
         centerTitle: false,
