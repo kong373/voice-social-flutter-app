@@ -75,6 +75,27 @@ void main() {
   });
 
   testWidgets(
+    'HTTP fallback shows a delayed peer response within five seconds',
+    (tester) async {
+      final repository = _History();
+      await showChat(tester, repository);
+      repository.responseDelay = const Duration(milliseconds: 2800);
+      repository.messages.add(_message('delayed-peer'));
+      // Include the scheduling wait, response latency and widget updates in
+      // the same user-visible deadline; no navigation or manual refresh.
+      for (var tick = 0; tick < 50; tick++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      final visibleByDeadline = find.text('delayed-peer').evaluate().isNotEmpty;
+      repository.responseDelay = Duration.zero;
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(visibleByDeadline, isTrue);
+      expect(find.text('delayed-peer'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'a send receipt never advances the synchronized history boundary',
     (tester) async {
       final repository = _VisibleHistory()
@@ -101,14 +122,18 @@ void main() {
       repository.nextCursor = '3';
       await tester.pump(const Duration(seconds: 3));
       await tester.pumpAndSettle();
+      final continuationIndex = repository.boundaries.length;
       repository.messages
         ..clear()
         ..add(_message('history-2'));
       repository.nextCursor = null;
       await tester.pump(const Duration(seconds: 3));
       await tester.pumpAndSettle();
-      expect(repository.boundaries.last, {'history-1'});
-      expect(repository.cursors.last, '3');
+      // Assert the actual continuation request, not a later foreground poll
+      // that may run after this batch has legitimately completed.
+      expect(repository.boundaries.length, greaterThan(continuationIndex));
+      expect(repository.boundaries[continuationIndex], {'history-1'});
+      expect(repository.cursors[continuationIndex], '3');
       expect(find.text('history-2'), findsOneWidget);
       expect(find.text('history-10002'), findsOneWidget);
     },
@@ -262,6 +287,7 @@ ChatMessage _message(String id) => ChatMessage(
 class _History extends MockMessageRepository {
   int calls = 0;
   bool failNext = false;
+  Duration responseDelay = Duration.zero;
   Completer<List<ChatMessage>>? pending;
   final messages = <ChatMessage>[];
   @override
@@ -275,6 +301,9 @@ class _History extends MockMessageRepository {
     if (failNext) {
       failNext = false;
       throw StateError('offline');
+    }
+    if (responseDelay > Duration.zero) {
+      await Future<void>.delayed(responseDelay);
     }
     return List.of(messages);
   }

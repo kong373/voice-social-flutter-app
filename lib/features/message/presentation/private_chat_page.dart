@@ -129,7 +129,9 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     if (!_canAutoSync) return;
     // IM hints remain the fast path. HTTP also repairs missed hints and works
     // when realtime delivery is unavailable; it is not an IM delivery receipt.
-    _syncTimer = Timer(const Duration(seconds: 3), () {
+    // Leave time for the authoritative response and rendering within the
+    // five-second foreground fallback budget. Requests still run single-flight.
+    _syncTimer = Timer(const Duration(seconds: 2), () {
       if (_checkAccount() && _canAutoSync) _load(showLoading: false);
     });
   }
