@@ -108,6 +108,79 @@ void main() {
   }
 
   testWidgets(
+    'slow successful newest polling does not starve read acknowledgement',
+    (tester) async {
+      final api = _CursorApi()..latest = 2;
+      await showChat(
+        tester,
+        BackendMessageRepository(
+          apiClient: api,
+          routes: const BackendRouteCatalog(),
+          currentUserIdProvider: () => 1,
+        ),
+      );
+      final initialMarks = api.marks;
+      expect(initialMarks, greaterThan(0));
+      api
+        ..headDelay = const Duration(milliseconds: 2800)
+        ..latest = 3;
+      api.incomingIds.add(3);
+      for (var tick = 0; tick < 160; tick++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(renderedMessages(tester).last.id, 'row-3');
+      expect(renderedMessages(tester).last.isMine, isFalse);
+      expect(api.marks, greaterThan(initialMarks));
+      expect(api.maximumFlights, 1);
+      // This is a progress/fairness assertion under slow network responses,
+      // not a claim that the five-second delivery gate passed in this case.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 3));
+      expect(api.flights, 0);
+    },
+  );
+
+  testWidgets('slow successful newest polling does not starve a history gap', (
+    tester,
+  ) async {
+    final api = _CursorApi()..latest = 201;
+    await showChat(
+      tester,
+      BackendMessageRepository(
+        apiClient: api,
+        routes: const BackendRouteCatalog(),
+        currentUserIdProvider: () => 1,
+      ),
+    );
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(renderedMessages(tester).length, 201);
+    final initialOldPages = api.cursors
+        .where((cursor) => cursor != null)
+        .length;
+    final initialMarks = api.marks;
+    api
+      ..headDelay = const Duration(milliseconds: 2800)
+      ..latest = 451;
+    for (var tick = 0; tick < 160; tick++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(
+      renderedMessages(tester).map((message) => message.id),
+      List.generate(451, (index) => 'row-${index + 1}'),
+    );
+    expect(
+      api.cursors.where((cursor) => cursor != null).length,
+      greaterThan(initialOldPages),
+    );
+    expect(api.marks, greaterThan(initialMarks));
+    expect(api.maximumFlights, 1);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 3));
+    expect(api.flights, 0);
+  });
+
+  testWidgets(
     'cursor scan updates oldest receipt without loss or duplicate rows',
     (tester) async {
       final api = _CursorApi()..latest = 201;
@@ -611,7 +684,9 @@ class _CursorApi extends ApiClient {
   int flights = 0;
   int maximumFlights = 0;
   int marks = 0;
+  Duration headDelay = Duration.zero;
   Duration oldDelay = Duration.zero;
+  final incomingIds = <int>{30002};
   Completer<void>? oldGate;
   bool oldestRead = false;
   bool poisonOld = false;
@@ -636,8 +711,8 @@ class _CursorApi extends ApiClient {
       final id = top - index;
       return <String, Object?>{
         'messageId': 'row-$id',
-        'senderUserId': id == 30002 ? 2 : 1,
-        'direction': id == 30002 ? 'INCOMING' : 'OUTGOING',
+        'senderUserId': incomingIds.contains(id) ? 2 : 1,
+        'direction': incomingIds.contains(id) ? 'INCOMING' : 'OUTGOING',
         'content': poisonOld && cursor != null ? 'late-old-$id' : 'row-$id',
         'deliveryStatus': 'VENDOR_BLOCKED',
         'read': id == 1 && oldestRead,
@@ -647,6 +722,9 @@ class _CursorApi extends ApiClient {
         ).add(Duration(seconds: id)).toIso8601String(),
       };
     });
+    if (cursor == null && headDelay != Duration.zero) {
+      await Future<void>.delayed(headDelay);
+    }
     if (cursor != null) {
       if (oldGate != null) await oldGate!.future;
       if (oldDelay != Duration.zero) await Future<void>.delayed(oldDelay);

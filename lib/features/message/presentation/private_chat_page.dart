@@ -340,11 +340,11 @@ class _PrivateChatPageState extends State<PrivateChatPage>
         _readScanCursors.clear();
       }
     }
-    // Never start another old page when the next newest poll is already due.
-    // One head + at most one old page per turn, all requests serialized.
-    if ((_catchupCursor != null || _readScanCursor != null) &&
-        !_refreshAgain &&
-        current()) {
+    // Guarantee bounded progress even when each head takes longer than the
+    // polling interval. A due head must not indefinitely starve gap/receipt
+    // work. One head + at most one old page per turn, all requests serialized;
+    // the queued next turn still starts at the head before any old page.
+    if ((_catchupCursor != null || _readScanCursor != null) && current()) {
       final isGap = _catchupCursor != null;
       final cursor = _catchupCursor ?? _readScanCursor!;
       final seen = isGap ? _gapCursors : _readScanCursors;
@@ -379,10 +379,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     }
     // A one-page newest response is not proof that older incoming rows have
     // been loaded. Only acknowledge after completing history, while visible.
-    if (_historyComplete &&
-        _catchupCursor == null &&
-        current() &&
-        !_refreshAgain) {
+    if (_historyComplete && _catchupCursor == null && current()) {
       await repository.markVisiblePrivateMessagesRead(
         _conversation,
         isCurrent: current,
