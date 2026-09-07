@@ -22,6 +22,17 @@ abstract interface class RoomAuthorityRepository {
   });
 }
 
+/// Optional authenticated POST capability. Ordinary mocks do not renew leases.
+abstract interface class RoomLeaseRepository {
+  Future<RoomSessionLease> renewRoomLease({
+    required String roomId,
+    required String sessionId,
+    required int sequence,
+    required String requestId,
+    required int currentUserId,
+  });
+}
+
 abstract interface class RoomRepository {
   Future<RoomSnapshot> enterRoom({
     required String roomId,

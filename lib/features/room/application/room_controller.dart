@@ -51,6 +51,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     int? Function()? activeUserId,
     int Function()? identityGeneration,
     WidgetsBinding? lifecycleBinding,
+    Duration Function()? leaseElapsed,
     Duration tencentImReadinessPollInterval =
         _defaultTencentImReadinessPollInterval,
     Duration tencentImReadinessPollWindow =
@@ -74,6 +75,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
        _identityGenerationSource = identityGeneration,
        _boundIdentityGeneration = identityGeneration?.call(),
        _lifecycleBinding = lifecycleBinding,
+       _leaseElapsedSource = leaseElapsed,
        _tencentImReadinessPollInterval = _positiveDuration(
          tencentImReadinessPollInterval,
          'tencentImReadinessPollInterval',
@@ -117,6 +119,18 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   final int? _boundIdentityGeneration;
   bool _identityInvalidated = false;
   final WidgetsBinding? _lifecycleBinding;
+  final Duration Function()? _leaseElapsedSource;
+  final Stopwatch _leaseClock = Stopwatch()..start();
+  Duration get _leaseElapsed =>
+      _leaseElapsedSource?.call() ?? _leaseClock.elapsed;
+  RoomSessionLease? _lease;
+  Duration? _leaseDeadline;
+  Timer? _heartbeatTimer;
+  Timer? _leaseExpiryTimer;
+  Object? _leaseFlight;
+  String? _leaseRequestId;
+  bool get _leaseUnexpired =>
+      _leaseDeadline == null || _leaseElapsed < _leaseDeadline!;
   Timer? _authorityTimer;
   Future<void>? _authorityFlight;
   bool _authorityPending = false;
@@ -135,9 +149,17 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   RoomSnapshot? _roomSnapshot;
   RoomSnapshot? get _snapshot => _roomSnapshot;
   set _snapshot(RoomSnapshot? value) {
+    if (value != null &&
+        _lease != null &&
+        (value.roomId != roomId || value.sessionId != _lease!.sessionId)) {
+      _endAuthoritySession('房间会话已变化，请重新进入房间');
+      return;
+    }
     // Every local mutation/explicit reconnect invalidates older GET results.
     _authorityGeneration += 1;
-    _roomSnapshot = value;
+    _roomSnapshot = value == null || _lease == null
+        ? value
+        : value.copyWith(roomLease: _lease);
   }
 
   final List<RoomMessage> _messages = <RoomMessage>[];
@@ -237,7 +259,11 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
 
   bool allows(RoomCapability capability) {
     final RoomSnapshot? snapshot = _snapshot;
-    if (snapshot == null ||
+    if (_disposed ||
+        snapshot == null ||
+        !_sameIdentity ||
+        !_leaseUnexpired ||
+        (_lease != null && _status != RoomSessionStatus.joined) ||
         (_repository is RoomAuthorityRepository &&
             (!_authorityKnown || _status != RoomSessionStatus.joined))) {
       return false;
@@ -272,6 +298,9 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     _invalidateTencentImReadinessPoll();
+    _stopRoomLease();
+    _lease = null;
+    _leaseDeadline = null;
     _stopAuthoritySync();
     _authorityKnown = false;
     _authorityVersion = -1;
@@ -290,6 +319,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     _notify();
 
     RoomSnapshot? enteredSnapshot;
+    final Duration enterStarted = _leaseElapsed;
     Object? transportLease;
     try {
       // Tencent permits one AVChatRoom per user. Fence and bounded-quit any
@@ -365,6 +395,8 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
             ),
         ]);
       _status = RoomSessionStatus.joined;
+      _startRoomLease(snapshot, enterStarted);
+      if (!_isJoinedEpoch(sessionEpoch)) return;
       await _bindTencentImRoom(snapshot, sessionEpoch: sessionEpoch);
       if (!_isCurrent(sessionEpoch) || _joinCancelled) {
         await _abandonEnteredRoom(snapshot, sessionEpoch: sessionEpoch);
@@ -612,18 +644,158 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   void setForeground(bool foreground) {
     if (_disposed || _foreground == foreground) return;
     _foreground = foreground;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    if (foreground && _lease != null) {
+      if (!_leaseUnexpired) {
+        _endAuthoritySession('房间会话已到期，请重新进入房间');
+        return;
+      }
+      unawaited(_renewRoomLease());
+    }
     _stopAuthoritySync();
     if (_canSyncAuthority) unawaited(refreshRoomAuthority());
   }
 
   void _onSessionChanged() {
-    if (_disposed || _activeUserId == null || _activeUserId() == _currentUserId)
-      return;
+    if (_disposed || _sameIdentity) return;
     _identityInvalidated = true;
     _endAuthoritySession('登录状态已变化，请重新进入房间');
     _snapshot = null;
     _messages.clear();
     _notify();
+  }
+
+  void _stopRoomLease() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    _leaseExpiryTimer?.cancel();
+    _leaseExpiryTimer = null;
+    _leaseFlight = null;
+    _leaseRequestId = null;
+  }
+
+  void _startRoomLease(RoomSnapshot snapshot, Duration started) {
+    final RoomSessionLease? lease = snapshot.roomLease;
+    if (lease == null) return;
+    _lease = lease;
+    if (!lease.isValid || lease.sessionId != snapshot.sessionId) {
+      _endAuthoritySession('房间租约响应无效，请重新进入房间');
+      return;
+    }
+    _setLeaseDeadline(lease, started);
+    _scheduleHeartbeat();
+  }
+
+  void _setLeaseDeadline(
+    RoomSessionLease lease,
+    Duration started, {
+    RoomSessionLease? previous,
+  }) {
+    // Charge the entire HTTP round trip against server remaining time. This
+    // is conservative and cannot gain lifetime from network delay or wall time.
+    Duration deadline = started + lease.remaining;
+    if (previous != null && _leaseDeadline != null) {
+      // A replay returns the original server timestamps. Map its absolute
+      // expiry through the preceding server/monotonic anchor as well, so a
+      // delayed retry never grants the original remaining time again.
+      final Duration anchored =
+          _leaseDeadline! + lease.expiresAt.difference(previous.expiresAt);
+      if (anchored < deadline) deadline = anchored;
+    }
+    _leaseDeadline = deadline;
+    _leaseExpiryTimer?.cancel();
+    final Duration remaining = _leaseDeadline! - _leaseElapsed;
+    if (remaining <= Duration.zero) {
+      _endAuthoritySession('房间会话已到期，请重新进入房间');
+      return;
+    }
+    _leaseExpiryTimer = Timer(remaining, () {
+      _endAuthoritySession('房间会话已到期，请重新进入房间');
+    });
+  }
+
+  void _scheduleHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+    if (_lease == null ||
+        !_foreground ||
+        !_isJoinedEpoch(_sessionEpoch) ||
+        _repository is! RoomLeaseRepository)
+      return;
+    _heartbeatTimer = Timer(const Duration(seconds: 20), () {
+      _heartbeatTimer = null;
+      unawaited(_renewRoomLease());
+    });
+  }
+
+  Future<void> _renewRoomLease() async {
+    if (!_sameIdentity) {
+      _onSessionChanged();
+      return;
+    }
+    final RoomSessionLease? lease = _lease;
+    if (lease == null ||
+        !_foreground ||
+        _disposed ||
+        _status != RoomSessionStatus.joined)
+      return;
+    if (!_leaseUnexpired) {
+      _endAuthoritySession('房间会话已到期，请重新进入房间');
+      return;
+    }
+    if (_leaseFlight != null || _repository is! RoomLeaseRepository) return;
+    if (lease.sequence >= 9007199254740991) {
+      _endAuthoritySession('房间租约序号已耗尽，请重新进入房间');
+      return;
+    }
+    final int epoch = _sessionEpoch;
+    final Object flight = Object();
+    _leaseFlight = flight;
+    final Duration started = _leaseElapsed;
+    bool current() =>
+        identical(_leaseFlight, flight) &&
+        _isJoinedEpoch(epoch) &&
+        _lease?.sessionId == lease.sessionId;
+    try {
+      final String requestId = _leaseRequestId ??= _newRequestId('room-lease');
+      final RoomSessionLease renewed =
+          await (_repository as RoomLeaseRepository).renewRoomLease(
+            roomId: roomId,
+            sessionId: lease.sessionId,
+            sequence: lease.sequence + 1,
+            requestId: requestId,
+            currentUserId: _currentUserId,
+          );
+      if (!current()) return;
+      if (!renewed.isValid ||
+          renewed.sessionId != lease.sessionId ||
+          renewed.sequence != lease.sequence + 1 ||
+          renewed.serverTime.isBefore(lease.serverTime) ||
+          renewed.expiresAt.isBefore(lease.expiresAt))
+        return;
+      _lease = renewed;
+      _leaseRequestId = null;
+      _roomSnapshot = _snapshot?.copyWith(roomLease: renewed);
+      _setLeaseDeadline(renewed, started, previous: lease);
+      _notify();
+    } catch (error) {
+      if (!current()) return;
+      if (error is ApiException &&
+          (error.code == 40936 ||
+              error.code == 40937 ||
+              error.code == 40101 ||
+              error.kind == ApiFailureKind.unauthorized)) {
+        _endAuthoritySession('房间会话已失效，请重新进入房间');
+      }
+      // Ambiguous failures retain both identifiers. Even sequence conflicts
+      // cannot be used to guess a new sequence or extend the local deadline.
+    } finally {
+      if (identical(_leaseFlight, flight)) {
+        _leaseFlight = null;
+        _scheduleHeartbeat();
+      }
+    }
   }
 
   bool get _canSyncAuthority =>
@@ -730,6 +902,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       // A GET projection never grants a new RTC token, reconnects a provider,
       // or turns on the microphone. Preserve the established transport.
       final RoomSnapshot next = projection.snapshot.copyWith(
+        roomLease: _lease ?? previous.roomLease,
         rtc: previous.rtc,
         transportMode: previous.transportMode,
         giftBalance: projection.snapshot.giftBalance ?? previous.giftBalance,
@@ -833,6 +1006,11 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     final Object? transportLease = _transportLeaseId;
     final TencentImAvChatRoomSession? imSession = _tencentImSession;
     _invalidateSession();
+    // Publication teardown must not wait behind realtime subscription cancel
+    // or disconnect. The transport ownership check also fences newer rooms.
+    if (_ownsRtcTransport(transportLease)) {
+      unawaited(_disposeOwnedRtcTransport(transportLease!));
+    }
     _status = RoomSessionStatus.left;
     _authorityKnown = false;
     _errorMessage = message;
@@ -1106,7 +1284,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<bool> cancelMicRequest(String requestId) async {
-    if (_micRequestPending || _status != RoomSessionStatus.joined) {
+    if (_micRequestPending || !_isJoinedEpoch(_sessionEpoch)) {
       return false;
     }
     final RoomOperationsRepository? operations = _roomOperationsRepository;
@@ -1145,7 +1323,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     required String requestId,
     required bool accepted,
   }) async {
-    if (_micRequestPending || _status != RoomSessionStatus.joined) {
+    if (_micRequestPending || !_isJoinedEpoch(_sessionEpoch)) {
       return false;
     }
     final RoomOperationsRepository? operations = _roomOperationsRepository;
@@ -1644,10 +1822,13 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   }) => fetchGiftReceipt(transferId: transferId, requestId: requestId);
 
   Future<void> reconnect() async {
-    if (_status != RoomSessionStatus.joined) {
+    if (!_sameIdentity ||
+        !_leaseUnexpired ||
+        _status != RoomSessionStatus.joined) {
       return;
     }
     final int sessionEpoch = _sessionEpoch;
+    final Duration reconnectStarted = _leaseElapsed;
     _stopAuthoritySync();
     _status = RoomSessionStatus.reconnecting;
     _errorMessage = null;
@@ -1658,6 +1839,11 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         currentUserId: _currentUserId,
       );
       if (!_isCurrent(sessionEpoch)) {
+        return;
+      }
+      if (_lease != null &&
+          (snapshot.sessionId != _lease!.sessionId || !_leaseUnexpired)) {
+        _endAuthoritySession('房间会话已变化，请重新进入房间');
         return;
       }
       if (!snapshot.isSnapshotOnly) {
@@ -1715,6 +1901,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         );
       }
       _status = RoomSessionStatus.joined;
+      if (_lease == null) _startRoomLease(snapshot, reconnectStarted);
     } catch (error) {
       if (!_isCurrent(sessionEpoch)) {
         return;
@@ -1727,11 +1914,21 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (_isCurrent(sessionEpoch)) {
       _notify();
+      _scheduleHeartbeat();
       unawaited(refreshRoomAuthority());
     }
   }
 
   Future<bool> leaveRoom() async {
+    if (_disposed) return false;
+    if (!_sameIdentity) {
+      _onSessionChanged();
+      return false;
+    }
+    if (!_leaseUnexpired) {
+      _endAuthoritySession('房间会话已到期，请重新进入房间');
+      return false;
+    }
     if (_status == RoomSessionStatus.leaving ||
         _status == RoomSessionStatus.left) {
       return false;
@@ -1794,6 +1991,10 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         return false;
       }
       _errorMessage = _messageFor(error, fallback: '离开房间失败，请重试');
+      if (_lease != null) {
+        _endAuthoritySession('离房结果未确认，当前本地会话已结束');
+        return false;
+      }
       _status = previousStatus;
       _notify();
       unawaited(refreshRoomAuthority());
@@ -2053,6 +2254,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   int _invalidateSession() {
+    _stopRoomLease();
     _sessionEpoch += 1;
     _stopAuthoritySync();
     _authorityMutationCount = 0;
@@ -2083,7 +2285,9 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       !_disposed && _sameIdentity && sessionEpoch == _sessionEpoch;
 
   bool _isJoinedEpoch(int sessionEpoch) =>
-      _isCurrent(sessionEpoch) && _status == RoomSessionStatus.joined;
+      _isCurrent(sessionEpoch) &&
+      _leaseUnexpired &&
+      _status == RoomSessionStatus.joined;
 
   Object _claimTransportLease() {
     final Object lease = Object();
@@ -2138,6 +2342,11 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     bool forceReconnect = true,
   }) async {
     if (_disposed) {
+      return;
+    }
+    if (_lease != null &&
+        (snapshot.sessionId != _lease!.sessionId || !_leaseUnexpired)) {
+      _endAuthoritySession('房间会话已变化，请重新进入房间');
       return;
     }
     if (snapshot.isSnapshotOnly) {
@@ -2240,7 +2449,10 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   bool _snapshotAllowsRtcPublication(RoomSnapshot snapshot) {
-    if (snapshot.isSnapshotOnly || _mutedInRoom) {
+    if (!_sameIdentity ||
+        !_leaseUnexpired ||
+        snapshot.isSnapshotOnly ||
+        _mutedInRoom) {
       return false;
     }
     final MicSeat? ownSeat = _seatInSnapshot(snapshot);
@@ -2261,7 +2473,11 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   /// authority changes invalidate the captured generation before publication.
   bool _snapshotAllowsRtcTogglePublication() {
     final RoomSnapshot? snapshot = _snapshot;
-    if (snapshot == null || snapshot.isSnapshotOnly || _mutedInRoom) {
+    if (!_sameIdentity ||
+        !_leaseUnexpired ||
+        snapshot == null ||
+        snapshot.isSnapshotOnly ||
+        _mutedInRoom) {
       return false;
     }
     final MicSeat? ownSeat = _ownSeat();
@@ -2649,6 +2865,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     _sessionEpoch += 1;
+    _stopRoomLease();
     _stopAuthoritySync();
     _sessionChanges?.removeListener(_onSessionChanged);
     _lifecycleBinding?.removeObserver(this);

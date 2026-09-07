@@ -242,6 +242,39 @@ class RoomAuthorityProjection {
   final int version;
 }
 
+/// First-party membership lease. Provider connectivity is not lease evidence.
+class RoomSessionLease {
+  const RoomSessionLease({
+    required this.sessionId,
+    required this.sequence,
+    required this.serverTime,
+    required this.expiresAt,
+    required this.heartbeatIntervalSeconds,
+    required this.leaseDurationSeconds,
+  });
+
+  final String sessionId;
+  final int sequence;
+  final DateTime serverTime;
+  final DateTime expiresAt;
+  final int heartbeatIntervalSeconds;
+  final int leaseDurationSeconds;
+
+  Duration get remaining => expiresAt.difference(serverTime);
+  bool get isValid =>
+      RegExp(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+      ).hasMatch(sessionId) &&
+      sequence >= 0 &&
+      sequence <= 9007199254740991 &&
+      serverTime.isUtc &&
+      expiresAt.isUtc &&
+      heartbeatIntervalSeconds == 20 &&
+      leaseDurationSeconds == 90 &&
+      remaining >= Duration.zero &&
+      remaining <= const Duration(seconds: 90);
+}
+
 class RoomSnapshot {
   const RoomSnapshot({
     required this.roomId,
@@ -263,6 +296,7 @@ class RoomSnapshot {
     this.coverUrl,
     this.backgroundUrl,
     this.sessionId,
+    this.roomLease,
   });
 
   final String roomId;
@@ -290,6 +324,7 @@ class RoomSnapshot {
 
   /// First-party membership identifier, never an RTC or authentication token.
   final String? sessionId;
+  final RoomSessionLease? roomLease;
 
   bool get isSnapshotOnly => transportMode == RoomTransportMode.snapshotOnly;
 
@@ -308,10 +343,12 @@ class RoomSnapshot {
     String? accessMode,
     int? onlineCount,
     String? sessionId,
+    RoomSessionLease? roomLease,
   }) {
     return RoomSnapshot(
       roomId: roomId,
       sessionId: sessionId ?? this.sessionId,
+      roomLease: roomLease ?? this.roomLease,
       roomCode: roomCode,
       title: title ?? this.title,
       topic: topic ?? this.topic,
