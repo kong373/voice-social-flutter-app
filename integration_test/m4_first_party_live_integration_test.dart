@@ -29,6 +29,7 @@ import 'package:voice_social_app/features/shell/live_read_only_repository.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 
 import 'm2_4_test_support.dart';
+import 'm4_commerce_ui_support.dart';
 
 /// The relay is started by run_m4_authoritative_live_avd.sh. It is deliberately
 /// not a backend substitute: it only returns operator-provided development
@@ -2635,6 +2636,7 @@ Future<void> _runCommerceFlow(
       description: 'commerce wallet page',
     );
     evidence.invariant('commerce_wallet_page_reachable');
+    await waitForCommerceGiftEntry(tester);
     await captureQaScreenshot(
       tester,
       evidence.binding,
@@ -2666,32 +2668,21 @@ Future<void> _runCommerceFlow(
       );
     }
 
-    final Finder giftCatalog = find.text('礼物').last;
-    if (giftCatalog.evaluate().isNotEmpty) {
-      await tester.ensureVisible(giftCatalog);
-      await tester.tap(giftCatalog.hitTestable());
-      await _waitFor(
-        tester,
-        () =>
-            find.text('礼物图鉴').evaluate().isNotEmpty ||
-            find.textContaining('失败').evaluate().isNotEmpty,
-        description: 'gift catalog or explicit blocked state',
-      );
-      evidence.invariant('gift_catalog_page_reachable_without_send');
-      await captureQaScreenshot(
-        tester,
-        evidence.binding,
-        'm4-${qaAvdId.toLowerCase()}-13-gift-catalog',
-      );
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-    } else {
-      evidence.local(
-        'commerce.gift.ui',
-        '/commerce/gifts',
-        'ui_entry_unavailable',
-      );
-    }
+    final Finder giftCatalog = await waitForCommerceGiftEntry(tester);
+    await tester.tap(giftCatalog);
+    await _waitFor(
+      tester,
+      () => find.text('礼物图鉴').hitTestable().evaluate().isNotEmpty,
+      description: 'visible gift catalog page',
+    );
+    evidence.invariant('gift_catalog_page_reachable_without_send');
+    await captureQaScreenshot(
+      tester,
+      evidence.binding,
+      'm4-${qaAvdId.toLowerCase()}-13-gift-catalog',
+    );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
 
     final Finder orders = find.text('充值订单');
     if (orders.evaluate().isNotEmpty) {
