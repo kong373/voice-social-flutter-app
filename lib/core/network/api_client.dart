@@ -45,7 +45,12 @@ class ApiClient {
        _authorizationProvider = authorizationProvider,
        _requestHeadersProvider = requestHeadersProvider,
        _unauthorizedRecovery = unauthorizedRecovery,
-       _httpClient = httpClient ?? HttpClient();
+       // The backend advertises a five-second keep-alive window. Retire owned
+       // idle sockets earlier to avoid racing its close on the next request.
+       // Explicit caller-owned transports keep their own connection policy.
+       _httpClient =
+           httpClient ??
+           (HttpClient()..idleTimeout = const Duration(seconds: 2));
 
   final Uri _baseUri;
   final String clientType;
