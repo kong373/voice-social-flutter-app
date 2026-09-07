@@ -397,15 +397,36 @@ void main() {
         final peerPrivate = config.message(config.peerRole, 'private-$index');
         ownPrivateTexts.add(privateText);
         peerPrivateTexts.add(peerPrivate);
-        await tester.enterText(
-          find.byType(TextField).hitTestable(),
-          privateText,
-        );
-        await _barrier(tester, relay, config, 'private-ready-$index');
-        await _tap(tester, find.byTooltip('发送消息'));
+        final composer = find.byType(TextField).hitTestable();
+        final sendButton = find.byTooltip('发送消息').hitTestable();
         await _until(
           tester,
-          () => find.text(privateText).evaluate().isNotEmpty,
+          () =>
+              composer.evaluate().length == 1 &&
+              tester.widget<TextField>(composer).enabled != false &&
+              tester.widget<TextField>(composer).controller!.text.isEmpty &&
+              sendButton.evaluate().length == 1 &&
+              tester.widget<IconButton>(sendButton).onPressed != null,
+          'private composer ready $index',
+        );
+        await tester.enterText(composer, privateText);
+        await _barrier(tester, relay, config, 'private-ready-$index');
+        expect(
+          tester.widget<TextField>(composer).controller!.text,
+          privateText,
+        );
+        expect(tester.widget<IconButton>(sendButton).onPressed, isNotNull);
+        await _tap(tester, sendButton);
+        await _until(
+          tester,
+          () =>
+              find
+                  .text(privateText, findRichText: false)
+                  .hitTestable()
+                  .evaluate()
+                  .any((element) => element.widget is Text) &&
+              tester.widget<TextField>(composer).controller!.text.isEmpty &&
+              tester.widget<IconButton>(sendButton).onPressed != null,
           'private UI send $index',
         );
         await _until(
