@@ -22,7 +22,7 @@ import 'dual_first_party_business_support.dart';
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
-    'dual first-party UI business with manual recovery',
+    'dual first-party UI business with automatic sync and separate recovery',
     (tester) async {
       validateDualEnvironment(AppEnvironment.fromDefines());
       if (const String.fromEnvironment('OAUTH_CLIENT_ID') != '') {
@@ -62,6 +62,11 @@ void main() {
         realtimeGateway: dependencies.realtimeGateway,
         tencentImAvChatRoomCoordinator:
             dependencies.tencentImAvChatRoomCoordinator,
+        sessionChanges: dependencies.sessionManager,
+        identityGeneration: () =>
+            dependencies.sessionManager.identityGeneration,
+        activeUserId: () => dependencies.sessionManager.session?.userId,
+        lifecycleBinding: binding,
         allowSyntheticPublicMessages: false,
         requestIdGenerator: (prefix) {
           if (prefix == 'room-gift') {
@@ -118,7 +123,14 @@ void main() {
       await _tap(tester, find.text(role == 'A' ? '1 号麦' : '2 号麦'));
       await _until(tester, () => controller.isOnMic, 'self mic entry');
       await _barrier(tester, relay, config, 'seated');
-      await _refreshRoom(tester, controller);
+      await _until(
+        tester,
+        () => controller.seats.any(
+          (seat) => seat.userId == config.peerUserId && seat.isOccupied,
+        ),
+        'automatic peer mic entry',
+        timeout: const Duration(seconds: 5),
+      );
       final seated = await dependencies.roomOperationsRepository
           .fetchOnlineMembers(roomId: config.roomId, page: 1);
       expect(
@@ -148,11 +160,17 @@ void main() {
       );
       await _barrier(tester, relay, config, 'public-sent');
       final peerPublic = config.message(config.peerRole, 'public');
-      // Visibility before explicit reentry is an observation, not realtime proof.
-      final visibleBeforeReentry = find
-          .textContaining(peerPublic)
-          .evaluate()
-          .isNotEmpty;
+      // Both users have committed a message and stay in the same room. This
+      // gate proves automatic first-party recovery, not vendor IM delivery.
+      final publicReceiveWatch = Stopwatch()..start();
+      await _until(
+        tester,
+        () => find.textContaining(peerPublic).evaluate().isNotEmpty,
+        'automatic peer public receive',
+        timeout: const Duration(seconds: 5),
+      );
+      publicReceiveWatch.stop();
+      final visibleBeforeReentry = true;
       await _tap(tester, find.text('更多'));
       await _tap(tester, find.text('工具'));
       await _tap(tester, find.text('主动下麦'));
@@ -162,6 +180,14 @@ void main() {
         'pre-reentry self mic leave',
       );
       await _barrier(tester, relay, config, 'reentry-off-mic');
+      await _until(
+        tester,
+        () => !controller.seats.any(
+          (seat) => seat.userId == config.peerUserId && seat.isOccupied,
+        ),
+        'automatic peer mic leave',
+        timeout: const Duration(seconds: 5),
+      );
       await _tap(tester, find.text('更多'));
       await _tap(tester, find.text('工具'));
       await _tap(tester, find.text('离开房间'));
@@ -210,8 +236,14 @@ void main() {
       await _tap(tester, find.text(role == 'A' ? '1 号麦' : '2 号麦'));
       await _until(tester, () => controller.isOnMic, 'gift self mic reentry');
       await _barrier(tester, relay, config, 'gift-seated');
-      // Snapshot refresh is only a seat refresh, never a public-history claim.
-      await _refreshRoom(tester, controller);
+      await _until(
+        tester,
+        () => controller.seats.any(
+          (seat) => seat.userId == config.peerUserId && seat.isOccupied,
+        ),
+        'automatic peer gift seat',
+        timeout: const Duration(seconds: 5),
+      );
 
       final star =
           (await dependencies.commerceCatalogRepository.fetchGiftCatalog())
@@ -390,7 +422,10 @@ void main() {
         'flutterSha': config.flutterSha,
         'backendSha': config.backendSha,
         'firstPartyUi': 'PASS',
-        'publicReceive': 'manual_room_reentry',
+        'publicReceive': 'automatic_first_party_within_5s_after_both_sends',
+        'publicReceiveObservedAfterBarrierMs':
+            publicReceiveWatch.elapsedMilliseconds,
+        'roomReentry': 'separate_persistence_recovery',
         'publicVisibleBeforeReentry': visibleBeforeReentry,
         'privateReceive': 'automatic_http_sync_no_navigation',
         'releaseAcceptance': 'PARTIAL_FIRST_PARTY_ONLY',
@@ -433,25 +468,6 @@ Future<void> _tap(WidgetTester tester, Finder finder) async {
     'one unobscured UI control',
   );
   await tester.tap(finder.hitTestable());
-  await tester.pump(const Duration(milliseconds: 300));
-}
-
-Future<void> _refreshRoom(
-  WidgetTester tester,
-  RoomController controller,
-) async {
-  await _tap(tester, find.text('更多'));
-  await _tap(tester, find.text('工具'));
-  await _tap(tester, find.text('重新连接'));
-  await _tap(tester, find.text('刷新房间快照'));
-  await _until(
-    tester,
-    () =>
-        find.text('房间快照已刷新。实时能力尚未接入。').evaluate().isNotEmpty &&
-        controller.status == RoomSessionStatus.joined,
-    'manual snapshot recovery',
-  );
-  await tester.pageBack();
   await tester.pump(const Duration(milliseconds: 300));
 }
 

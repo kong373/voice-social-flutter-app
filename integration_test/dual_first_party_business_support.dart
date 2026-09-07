@@ -39,10 +39,10 @@ import 'package:voice_social_app/features/account/domain/auth_models.dart';
 ///   in its catalog category, enough gift coins, no following/block relation,
 ///   one visible unliked post per peer. No third participant or concurrent
 ///   wallet mutation. Relay verifies these before serving either config.
-/// - Business writes happen ONLY inside production page callbacks. Report
-///   manual_room_reentry for public history (snapshot reconnect only updates
-///   seats/members), and automatic_http_sync_no_navigation for private history.
-///   Manual public recovery is a release limitation; disabled RTC/IM never PASS.
+/// - Business writes happen ONLY inside production page callbacks. Public
+///   history and seats must automatically converge before any room reentry;
+///   manual_room_reentry is a separate persistence/recovery scenario. Private
+///   history requires automatic_http_sync_no_navigation. Disabled RTC/IM never PASS.
 ///   Host accepts only TWO successful drive results.
 const dualBackend = 'http://10.0.2.2:28080/';
 
