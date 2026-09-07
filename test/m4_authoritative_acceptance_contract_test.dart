@@ -284,6 +284,7 @@ exit "\$status"
     String fixtureId = 'm4-fresh-test-fixture',
     String fixtureStatus = 'fresh_dedicated',
     String refundScope = 'strict',
+    bool refundPreexisting = false,
   }) {
     final String scopedSuccess = refundScope == 'deferred'
         ? 'PASS_WITH_EXEMPTIONS'
@@ -423,6 +424,10 @@ exit "\$status"
             'M4_ROUTE_STATUS::commerce.refund.records::GET::/refund/history::200::success',
             'M4_AUTHORITY_INVARIANT::refund_deferred_authoritative_denial_confirmed',
             'M4_AUTHORITY_INVARIANT::refund_records_page_reachable_without_submission',
+          ] else ...<String>[
+            'M4_ROUTE_STATUS::commerce.refund.submit::${refundPreexisting ? 'GET::/refund/result::200::already_authoritative' : 'POST::/refund/application::201::success'}',
+            'M4_ROUTE_STATUS::commerce.refund.result::GET::/refund/result::200::success',
+            'M4_AUTHORITY_INVARIANT::refund_submit_result_recovered_without_provider',
           ],
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_ROUTE_STATUS::required::GET::/health::$routeStatus::success',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_AUTHORITY_INVARIANT::session_owner_matches_account',
@@ -1845,20 +1850,151 @@ printf '%s\n' 'safe prefix; $(touch should-not-run)' | contains_literal_stream "
     );
   });
 
-  ProcessResult validateRunnerRefundProfile(Directory root) => Process.runSync(
+  ProcessResult validateRunnerRefundProfile(
+    Directory root, {
+    String scope = 'deferred',
+    String avd = 'AVD-B',
+  }) => Process.runSync(
     '/bin/bash',
     <String>[
       '-c',
       '${runnerBlock('parse_refund_scope() {', 'parse_backend_port() {')}\nvalidate_refund_profile "\$1"',
       'm4-profile-contract',
-      '${root.path}/AVD-B/logs/flutter-drive.log',
+      '${root.path}/$avd/logs/flutter-drive.log',
     ],
     environment: <String, String>{
       'PATH': '/usr/bin:/bin',
-      'QA_M4_REFUND_SCOPE': 'deferred',
+      'QA_M4_REFUND_SCOPE': scope,
     },
     includeParentEnvironment: false,
   );
+
+  for (final bool preexisting in <bool>[false, true]) {
+    test(
+      'strict accepts refund preexisting=$preexisting without requiring retry',
+      () {
+        final Directory root = makeEvidence(refundPreexisting: preexisting);
+        expect(runAggregate(root).exitCode, 0);
+        for (final String avd in <String>['AVD-A', 'AVD-B']) {
+          expect(
+            validateRunnerRefundProfile(
+              root,
+              scope: 'strict',
+              avd: avd,
+            ).exitCode,
+            0,
+          );
+        }
+      },
+    );
+  }
+
+  test('complete deferred evidence relabeled strict cannot pass', () {
+    final Directory root = makeEvidence(refundScope: 'deferred');
+    expect(
+      runAggregate(
+        root,
+        environmentOverrides: <String, String>{
+          'QA_M4_REFUND_SCOPE': 'deferred',
+        },
+      ).exitCode,
+      0,
+    );
+    for (final String avd in <String>['AVD-A', 'AVD-B']) {
+      for (final String path in <String>[
+        'result.txt',
+        'environment.txt',
+        'logs/flutter-drive.log',
+      ]) {
+        final File file = File('${root.path}/$avd/$path');
+        file.writeAsStringSync(
+          file
+              .readAsStringSync()
+              .replaceAll('refund_scope=deferred', 'refund_scope=strict')
+              .replaceAll(
+                'M4_REFUND_SCOPE::deferred',
+                'M4_REFUND_SCOPE::strict',
+              )
+              .replaceAll('PASS_WITH_EXEMPTIONS', 'PASS')
+              .replaceAll(
+                RegExp(r'^M4_EXEMPT_NOT_COMPLETED::[^\n]*\n', multiLine: true),
+                '',
+              ),
+        );
+      }
+      File('${root.path}/$avd/exempt-not-completed.txt').writeAsStringSync('');
+      expect(
+        validateRunnerRefundProfile(root, scope: 'strict', avd: avd).exitCode,
+        isNot(0),
+      );
+    }
+    expect(runAggregate(root).exitCode, isNot(0));
+    expect(
+      File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+      contains('conclusion=ANDROID_EMULATOR_FAIL'),
+    );
+  });
+
+  for (final String corruption in <String>[
+    'submit_missing',
+    'result_missing',
+    'invariant_missing',
+    'submit_get_success',
+    'submit_post_preexisting',
+    'submit_local',
+    'submit_non_2xx',
+    'result_post',
+    'result_preexisting',
+    'result_non_2xx',
+    'conflicting_submit',
+  ]) {
+    test('strict rejects refund $corruption in runner and aggregate', () {
+      final Directory root = makeEvidence();
+      final File log = File('${root.path}/AVD-B/logs/flutter-drive.log');
+      const String submit =
+          'M4_ROUTE_STATUS::commerce.refund.submit::POST::/refund/application::201::success';
+      const String result =
+          'M4_ROUTE_STATUS::commerce.refund.result::GET::/refund/result::200::success';
+      final (String, String) change = switch (corruption) {
+        'submit_missing' => (submit, ''),
+        'result_missing' => (result, ''),
+        'invariant_missing' => (
+          'M4_AUTHORITY_INVARIANT::refund_submit_result_recovered_without_provider',
+          '',
+        ),
+        'submit_get_success' => (
+          submit,
+          submit.replaceAll('::POST::', '::GET::'),
+        ),
+        'submit_post_preexisting' => (
+          submit,
+          submit.replaceAll('::success', '::already_authoritative'),
+        ),
+        'submit_local' => (submit, submit.replaceAll('::POST::', '::LOCAL::')),
+        'submit_non_2xx' => (submit, submit.replaceAll('::201::', '::403::')),
+        'result_post' => (result, result.replaceAll('::GET::', '::POST::')),
+        'result_preexisting' => (
+          result,
+          result.replaceAll('::success', '::already_authoritative'),
+        ),
+        'result_non_2xx' => (result, result.replaceAll('::200::', '::403::')),
+        'conflicting_submit' => (
+          submit,
+          '$submit\n${submit.replaceAll('::POST::', '::LOCAL::')}',
+        ),
+        _ => throw StateError(corruption),
+      };
+      expect(log.readAsStringSync(), contains(change.$1));
+      log.writeAsStringSync(
+        log.readAsStringSync().replaceAll(change.$1, change.$2),
+      );
+      expect(
+        validateRunnerRefundProfile(root, scope: 'strict').exitCode,
+        isNot(0),
+      );
+      expect(runAggregate(root).exitCode, isNot(0));
+    });
+  }
 
   test('deferred aggregate is scoped and never release ready', () {
     final Directory root = makeEvidence(refundScope: 'deferred');

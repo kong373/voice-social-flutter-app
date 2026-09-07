@@ -53,6 +53,23 @@ if sorted(markers("M4_EXEMPT_NOT_COMPLETED")) != expected:
     raise SystemExit(1)
 if markers("M4_RELEASE_READINESS") != ["NOT_RELEASE_READY"]:
     raise SystemExit(1)
+if scope == "strict":
+    routes = markers("M4_ROUTE_STATUS")
+    for capability, outcomes in {
+        "commerce.refund.submit": [("POST", "success"), ("GET", "already_authoritative")],
+        "commerce.refund.result": [("GET", "success")],
+    }.items():
+        observed = [route for route in routes if route.split("::")[0] == capability]
+        if not observed or any(
+            not any(re.fullmatch(
+                re.escape(capability) + "::" + method + r"::[^:]+::2[0-9]{2}::" + state,
+                route,
+            ) for method, state in outcomes)
+            for route in observed
+        ):
+            raise SystemExit(1)
+    if "refund_submit_result_recovered_without_provider" not in markers("M4_AUTHORITY_INVARIANT"):
+        raise SystemExit(1)
 if scope == "deferred":
     if any(route.split("::")[0] in expected for route in markers("M4_ROUTE_STATUS")):
         raise SystemExit(1)

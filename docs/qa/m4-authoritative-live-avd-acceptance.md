@@ -5,6 +5,12 @@
 The default is `QA_M4_REFUND_SCOPE=strict`. Without an explicit flag, the
 original required-mutation semantics remain: refund submit/result must complete;
 an authoritative denial or a local/UI outcome does not satisfy them.
+Both scripts independently require strict refund route evidence: submit must
+be POST 2xx `success` or GET 2xx `already_authoritative`; result must be GET
+2xx `success`, with `refund_submit_result_recovered_without_provider`.
+Missing or contradictory method/state evidence fails even when all profile
+metadata has been relabeled strict. Existing A/B application recovery remains
+valid; a new write on each AVD and an untriggered retry are not required.
 Only `strict` and `deferred` are accepted. Empty or unknown values fail before
 the runner performs setup or starts any process.
 
