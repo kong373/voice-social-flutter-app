@@ -263,7 +263,10 @@ void main() {
 
       final star =
           (await dependencies.commerceCatalogRepository.fetchGiftCatalog())
-              .singleWhere((g) => g.enabled && g.name == 'Star');
+              .singleWhere(
+                (g) =>
+                    g.enabled && g.id == '00000000-0000-0000-0000-000000002001',
+              );
       // Serialize the two gift transfers while both devices remain in the room,
       // so each sender's exact wallet delta cannot race the reciprocal transfer.
       for (final sender in ['A', 'B']) {
@@ -285,7 +288,7 @@ void main() {
           expect(sheet.targets.length, 1);
           expect(sheet.targets.single.userId == config.peerUserId, isTrue);
           await _tap(tester, find.text(star.category.label));
-          await _tap(tester, find.text('Star'));
+          await _tap(tester, find.text(star.name));
           await _tap(tester, find.textContaining(RegExp(r'^赠送(?: ·)? \d+$')));
           await _until(
             tester,
