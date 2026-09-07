@@ -14,6 +14,52 @@ import 'package:voice_social_app/features/discovery/domain/discovery_repository.
 import 'package:voice_social_app/features/shell/video_runtime_pages.dart';
 
 void main() {
+  for (final bool loaded in <bool>[false, true]) {
+    testWidgets(
+      'same identity notification preserves ${loaded ? 'rooms' : 'pending read'}',
+      (tester) async {
+        final repository = _DelayedHomeRepository();
+        final dependencies = AppDependencies.forTestEnvironment(
+          environment: AppEnvironment.mock(),
+          discoveryRepository: repository,
+        );
+        AuthSession session(String token) => AuthSession(
+          accessToken: token,
+          tokenType: 'Bearer',
+          expiresAt: DateTime(2099),
+          userId: 42,
+          mobile: '',
+          roles: '',
+        );
+        await dependencies.sessionManager.save(session('test-before'));
+        await _pumpHome(tester, repository, dependenciesOverride: dependencies);
+        if (loaded) {
+          repository.requests.single.complete(<DiscoveryRoom>[_oldRoom]);
+          await tester.pumpAndSettle();
+        }
+        final generation = dependencies.sessionManager.identityGeneration;
+        await dependencies.sessionManager.save(session('test-rotated'));
+        expect(dependencies.sessionManager.identityGeneration, generation);
+        // This frozen manager does not notify on token save. Explicitly exercise
+        // a same-identity notification without changing its production contract.
+        // ignore: invalid_use_of_protected_member
+        dependencies.sessionManager.notifyListeners();
+        await tester.pump();
+        expect(repository.requests, hasLength(1));
+        if (!loaded) {
+          repository.requests.single.complete(<DiscoveryRoom>[_oldRoom]);
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('旧响应房间'), findsWidgets);
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        // ignore: invalid_use_of_protected_member
+        dependencies.sessionManager.notifyListeners();
+        expect(repository.requests, hasLength(1));
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
   testWidgets(
     'identity change while covered waits for return and clears old rooms',
     (tester) async {
@@ -166,21 +212,38 @@ void main() {
     );
   }
 
-  testWidgets('dependency replacement rejects old repository response', (
-    tester,
-  ) async {
-    final oldRepository = _DelayedHomeRepository();
-    await _pumpHome(tester, oldRepository);
-    final newRepository = _DelayedHomeRepository();
-    await _pumpHome(tester, newRepository);
-    expect(newRepository.requests, hasLength(1));
-    newRepository.requests.single.complete(<DiscoveryRoom>[_newRoom]);
-    oldRepository.requests.single.complete(<DiscoveryRoom>[_oldRoom]);
-    await tester.pumpAndSettle();
-    expect(find.text('新响应房间'), findsWidgets);
-    expect(find.text('旧响应房间'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
+  for (final bool replaceDependencies in <bool>[false, true]) {
+    testWidgets(
+      '${replaceDependencies ? 'dependency' : 'repository'} replacement with same generation rejects old response',
+      (tester) async {
+        final oldRepository = _DelayedHomeRepository();
+        await _pumpHome(tester, oldRepository);
+        final oldDependencies = tester
+            .widget<VideoRuntimeHomePage>(find.byType(VideoRuntimeHomePage))
+            .dependencies;
+        final newRepository = _DelayedHomeRepository();
+        await _pumpHome(
+          tester,
+          newRepository,
+          dependenciesOverride: replaceDependencies ? null : oldDependencies,
+        );
+        final newDependencies = tester
+            .widget<VideoRuntimeHomePage>(find.byType(VideoRuntimeHomePage))
+            .dependencies;
+        expect(
+          newDependencies.sessionManager.identityGeneration,
+          oldDependencies.sessionManager.identityGeneration,
+        );
+        expect(newRepository.requests, hasLength(1));
+        newRepository.requests.single.complete(<DiscoveryRoom>[_newRoom]);
+        oldRepository.requests.single.complete(<DiscoveryRoom>[_oldRoom]);
+        await tester.pumpAndSettle();
+        expect(find.text('新响应房间'), findsWidgets);
+        expect(find.text('旧响应房间'), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
   testWidgets('home ignores an older success after refresh succeeds', (
     WidgetTester tester,
   ) async {
@@ -266,14 +329,17 @@ void main() {
 
 Future<void> _pumpHome(
   WidgetTester tester,
-  DiscoveryRepository repository,
-) async {
+  DiscoveryRepository repository, {
+  AppDependencies? dependenciesOverride,
+}) async {
   await tester.binding.setSurfaceSize(const Size(390, 844));
   addTearDown(() => tester.binding.setSurfaceSize(null));
-  final AppDependencies dependencies = AppDependencies.forTestEnvironment(
-    environment: AppEnvironment.mock(),
-    discoveryRepository: repository,
-  );
+  final AppDependencies dependencies =
+      dependenciesOverride ??
+      AppDependencies.forTestEnvironment(
+        environment: AppEnvironment.mock(),
+        discoveryRepository: repository,
+      );
   await tester.pumpWidget(
     AppDependencyScope(
       dependencies: dependencies,

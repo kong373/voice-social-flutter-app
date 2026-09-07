@@ -56,6 +56,7 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
   int _category = 0;
   int _roomOffset = 0;
   int _loadGeneration = 0;
+  late int _identityGeneration;
   bool? _routeWasCurrent;
 
   List<DiscoveryRoom> get _visibleRooms {
@@ -87,6 +88,7 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
   @override
   void initState() {
     super.initState();
+    _identityGeneration = widget.dependencies.sessionManager.identityGeneration;
     widget.dependencies.sessionManager.addListener(_onIdentityChanged);
     Future<void>.microtask(_load);
   }
@@ -107,11 +109,21 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
         oldWidget.repository != widget.repository) {
       oldWidget.dependencies.sessionManager.removeListener(_onIdentityChanged);
       widget.dependencies.sessionManager.addListener(_onIdentityChanged);
-      _onIdentityChanged();
+      _identityGeneration =
+          widget.dependencies.sessionManager.identityGeneration;
+      _invalidateRooms();
     }
   }
 
   void _onIdentityChanged() {
+    final int generation =
+        widget.dependencies.sessionManager.identityGeneration;
+    if (generation == _identityGeneration) return;
+    _identityGeneration = generation;
+    _invalidateRooms();
+  }
+
+  void _invalidateRooms() {
     ++_loadGeneration;
     setState(() {
       _rooms = const <DiscoveryRoom>[];
