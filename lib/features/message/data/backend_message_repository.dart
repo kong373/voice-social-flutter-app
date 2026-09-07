@@ -10,7 +10,7 @@ import 'package:voice_social_app/features/message/domain/message_request_id.dart
 import 'package:voice_social_app/features/message/domain/message_repository.dart';
 
 class BackendMessageRepository
-    implements MessageRepository, VisiblePrivateMessageRepository {
+    implements MessageRepository, PagedPrivateMessageRepository {
   BackendMessageRepository({
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
@@ -140,12 +140,28 @@ class BackendMessageRepository
     allowBoundedWindow: true,
   );
 
+  @override
+  Future<PrivateMessageSyncBatch> fetchVisiblePrivateMessagePage(
+    ConversationSummary conversation, {
+    required bool Function() isCurrent,
+    String? cursor,
+  }) => _fetchPrivateMessages(
+    conversation,
+    isCurrent: isCurrent,
+    resumeCursor: cursor,
+    allowBoundedWindow: true,
+    maximumPages: 1,
+    markRead: false,
+  );
+
   Future<PrivateMessageSyncBatch> _fetchPrivateMessages(
     ConversationSummary conversation, {
     required bool Function() isCurrent,
     Set<String> knownMessageIds = const <String>{},
     String? resumeCursor,
     bool allowBoundedWindow = false,
+    int maximumPages = _maximumBackendPages,
+    bool markRead = true,
   }) async {
     final int accountId = _currentUserIdProvider();
     bool active() => isCurrent() && _currentUserIdProvider() == accountId;
@@ -164,7 +180,7 @@ class BackendMessageRepository
     String? cursor = resumeCursor;
     var hasMore = true;
     var fetchedPages = 0;
-    while (hasMore && fetchedPages < _maximumBackendPages) {
+    while (hasMore && fetchedPages < maximumPages) {
       fetchedPages += 1;
       final Map<String, String> query = <String, String>{
         'targetUserId': '${conversation.targetUserId}',
@@ -213,6 +229,18 @@ class BackendMessageRepository
         data['nextCursor'],
         field: 'nextCursor',
       );
+      if (maximumPages == 1 && hasMore) {
+        final nextId = BigInt.tryParse(nextCursor);
+        final previousId = cursor == null ? null : BigInt.tryParse(cursor);
+        if (nextId == null ||
+            nextId <= BigInt.zero ||
+            (cursor != null && (previousId == null || nextId >= previousId))) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '私聊历史分页游标必须为递减的正整数',
+          );
+        }
+      }
       if (pageConversationId != null) {
         final int targetUserId = _requiredPositiveInt(
           data['targetUserId'],
@@ -300,10 +328,24 @@ class BackendMessageRepository
       // read. The visible page owns and accepts the continuation cursor.
       return PrivateMessageSyncBatch(messages, nextCursor: cursor);
     }
+    if (markRead)
+      await markVisiblePrivateMessagesRead(conversation, isCurrent: active);
+    return active()
+        ? PrivateMessageSyncBatch(messages)
+        : const PrivateMessageSyncBatch([]);
+  }
+
+  @override
+  Future<void> markVisiblePrivateMessagesRead(
+    ConversationSummary conversation, {
+    required bool Function() isCurrent,
+  }) async {
+    final accountId = _currentUserIdProvider();
+    bool active() => isCurrent() && _currentUserIdProvider() == accountId;
     // Entering a conversation is the first-party read boundary.  Provider
     // delivery remains represented by the response-level status mapping; this
     // HTTP read never treats a provider callback as message content.
-    if (!active()) return const PrivateMessageSyncBatch([]);
+    if (!active()) return;
     await _runStableMessageWrite<void>(
       intent: 'private-read:${conversation.targetUserId}',
       action: (Map<String, String> headers) async {
@@ -346,7 +388,6 @@ class BackendMessageRepository
         }
       },
     );
-    return PrivateMessageSyncBatch(messages);
   }
 
   @override
@@ -928,7 +969,8 @@ class BackendMessageRepository
         message: '私聊 read 必须为布尔值',
       );
     }
-    if (rawReadAt != null) {
+    // FirstPartyMessageService.instant(null) serializes exactly "".
+    if (rawReadAt != null && rawReadAt != '') {
       // Require an unambiguous server instant; DateTime.parse alone accepts
       // overflowing calendar dates and timezone-less local timestamps.
       if (rawReadAt is! String ||

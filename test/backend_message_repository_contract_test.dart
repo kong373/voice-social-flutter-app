@@ -14,6 +14,94 @@ import 'package:voice_social_app/features/message/domain/message_models.dart';
 
 void main() {
   test(
+    'single cursor page never automatically marks the conversation read',
+    () async {
+      final harness = await _Harness.start(
+        (request) =>
+            _Response.ok(_historyPage(page: 1, hasMore: true, nextCursor: '5')),
+      );
+      addTearDown(harness.close);
+      final batch = await harness.repository.fetchVisiblePrivateMessagePage(
+        _conversation(),
+        isCurrent: () => true,
+        cursor: '10',
+      );
+      expect(batch.nextCursor, '5');
+      expect(harness.requests, hasLength(1));
+      expect(harness.requests.single.method, 'GET');
+    },
+  );
+  for (final cursor in ['10', '11', 'bad', '-1']) {
+    test(
+      'single cursor page rejects nondecreasing or invalid cursor $cursor',
+      () async {
+        final harness = await _Harness.start(
+          (request) => _Response.ok(
+            _historyPage(page: 1, hasMore: true, nextCursor: cursor),
+          ),
+        );
+        addTearDown(harness.close);
+        await expectLater(
+          harness.repository.fetchVisiblePrivateMessagePage(
+            _conversation(),
+            isCurrent: () => true,
+            cursor: '10',
+          ),
+          throwsA(isA<ApiException>()),
+        );
+        expect(harness.requests, hasLength(1));
+      },
+    );
+  }
+  for (final send in [false, true]) {
+    for (final read in <bool?>[false, null]) {
+      test(
+        'backend empty readAt ${send ? 'send' : 'history'} preserves $read',
+        () async {
+          final harness = await _Harness.start((request) {
+            final row = <String, Object?>{
+              'messageId': 'stored',
+              'senderUserId': 10001,
+              'receiverUserId': 99,
+              'direction': 'OUTGOING',
+              'messageType': 'TEXT',
+              'content': 'hello',
+              'storageStatus': 'FIRST_PARTY_STORED',
+              'deliveryStatus': 'VENDOR_BLOCKED',
+              'imStatus': 'VENDOR_BLOCKED',
+              'providerInvocation': false,
+              'read': read,
+              'readAt': '',
+              'createdAt': '2026-09-08T10:00:00Z',
+            };
+            if (send) return _Response.ok(row);
+            if (request.method == 'POST')
+              return _Response.ok({
+                'targetUserId': 99,
+                'markedRead': 0,
+                'unreadCount': 0,
+              });
+            return _Response.ok({
+              ..._historyPage(page: 1, hasMore: false, nextCursor: ''),
+              'list': [row],
+            });
+          });
+          addTearDown(harness.close);
+          final message = send
+              ? await harness.repository.sendPrivateMessage(
+                  conversation: _conversation(),
+                  content: 'hello',
+                )
+              : (await harness.repository.fetchPrivateMessages(
+                  _conversation(),
+                )).single;
+          expect(message.read, read);
+          expect(message.readAt, isNull);
+        },
+      );
+    }
+  }
+  test(
     'equal-time history retains server cursor order chronologically',
     () async {
       final harness = await _Harness.start((request) {
@@ -95,7 +183,7 @@ void main() {
     {'read': 1},
     {'read': []},
     {'readAt': 123},
-    {'readAt': ''},
+    {'readAt': ' '},
     {'readAt': '2026-09-08'},
     {'readAt': '2026-09-08T10:00:00'},
     {'readAt': '2026-02-30T10:00:00Z'},

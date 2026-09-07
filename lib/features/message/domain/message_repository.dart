@@ -21,6 +21,22 @@ class PrivateMessageSyncBatch {
   final String? nextCursor;
 }
 
+/// One validated cursor page per call, without implicitly marking history read.
+/// Allows the visible controller to publish newest rows before scanning old
+/// receipts, sharing a single flight and a two-page budget per polling turn.
+abstract interface class PagedPrivateMessageRepository
+    implements VisiblePrivateMessageRepository {
+  Future<PrivateMessageSyncBatch> fetchVisiblePrivateMessagePage(
+    ConversationSummary conversation, {
+    required bool Function() isCurrent,
+    String? cursor,
+  });
+  Future<void> markVisiblePrivateMessagesRead(
+    ConversationSummary conversation, {
+    required bool Function() isCurrent,
+  });
+}
+
 abstract interface class MessageRepository {
   bool get supportsConversationList;
   bool get supportsPrivateHistory;

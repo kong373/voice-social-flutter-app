@@ -10,11 +10,14 @@ import 'package:voice_social_app/features/message/data/mock_message_repository.d
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/domain/message_repository.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
+import 'package:voice_social_app/core/network/api_client.dart';
+import 'package:voice_social_app/core/network/backend_route_catalog.dart';
+import 'package:voice_social_app/features/message/data/backend_message_repository.dart';
 
 void main() {
   Future<AppDependencies> showChat(
     WidgetTester tester,
-    _History repository, {
+    MessageRepository repository, {
     GlobalKey<NavigatorState>? navigator,
   }) async {
     final dependencies = AppDependencies.forTestEnvironment(
@@ -58,6 +61,201 @@ void main() {
     });
     return dependencies;
   }
+
+  testWidgets(
+    '30001 cursor rows cannot starve newest messages behind old read scan',
+    (tester) async {
+      final api = _CursorApi()..oldDelay = const Duration(milliseconds: 100);
+      final repository = BackendMessageRepository(
+        apiClient: api,
+        routes: const BackendRouteCatalog(),
+        currentUserIdProvider: () => 1,
+      );
+      await showChat(tester, repository);
+      api.latest = 30002;
+      for (var tick = 0; tick < 50; tick++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(
+        find.text('row-30002'),
+        findsOneWidget,
+        reason:
+            'cursors=${api.cursors}; visible=${tester.widgetList<Text>(find.byType(Text)).map((t) => t.data).toList()}',
+      );
+      expect(api.maximumFlights, 1);
+      expect(
+        api.cursors.where((cursor) => cursor == null).length,
+        greaterThanOrEqualTo(2),
+      );
+      // Newest-first polling must continue even though the 300-page old scan
+      // is nowhere near complete. Each tick may fetch at most two pages.
+      expect(api.cursors.length, lessThanOrEqualTo(8));
+    },
+  );
+
+  List<ChatMessage> renderedMessages(WidgetTester tester) {
+    final list = tester.widget<ListView>(find.byType(ListView));
+    final delegate = list.childrenDelegate as SliverChildBuilderDelegate;
+    return List.generate(delegate.childCount!, (index) {
+      final dynamic bubble = delegate.builder(
+        tester.element(find.byType(ListView)),
+        index,
+      );
+      // Inspect the private stateless bubble produced by the real list builder.
+      // ignore: avoid_dynamic_calls
+      return bubble.message as ChatMessage;
+    });
+  }
+
+  testWidgets(
+    'cursor scan updates oldest receipt without loss or duplicate rows',
+    (tester) async {
+      final api = _CursorApi()..latest = 201;
+      await showChat(
+        tester,
+        BackendMessageRepository(
+          apiClient: api,
+          routes: const BackendRouteCatalog(),
+          currentUserIdProvider: () => 1,
+        ),
+      );
+      for (var tick = 0; tick < 25; tick++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(renderedMessages(tester).length, 201);
+      api.oldestRead = true;
+      for (var tick = 0; tick < 50; tick++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      final messages = renderedMessages(tester);
+      expect(
+        messages.map((message) => message.id),
+        List.generate(201, (index) => 'row-${index + 1}'),
+      );
+      expect(messages.first.read, isTrue);
+      expect(messages.first.readAt, DateTime.utc(2026, 9, 8, 10));
+      expect(api.maximumFlights, 1);
+      expect(api.marks, greaterThan(0));
+    },
+  );
+
+  for (final changeAccount in [false, true]) {
+    testWidgets(
+      'cursor scan late response rejected on ${changeAccount ? 'identity change' : 'hidden route'}',
+      (tester) async {
+        final api = _CursorApi()..latest = 301;
+        final navigator = GlobalKey<NavigatorState>();
+        var userId = 1;
+        final dependencies = await showChat(
+          tester,
+          BackendMessageRepository(
+            apiClient: api,
+            routes: const BackendRouteCatalog(),
+            currentUserIdProvider: () => userId,
+          ),
+          navigator: navigator,
+        );
+        api.oldGate = Completer<void>();
+        api.poisonOld = true;
+        api.latest = 302;
+        await tester.pump(const Duration(seconds: 2));
+        await tester.pump(const Duration(milliseconds: 200));
+        // The newest page is already accepted while the old page is pending.
+        expect(renderedMessages(tester).last.id, 'row-302');
+        final calls = api.cursors.length;
+        if (changeAccount) {
+          userId = 3;
+          await dependencies.sessionManager.save(_session(3));
+        } else {
+          navigator.currentState!.push(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('covered')),
+            ),
+          );
+        }
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 6));
+        expect(api.cursors.length, calls);
+        expect(api.marks, 0);
+        api.oldGate!.complete();
+        api.oldGate = null;
+        api.poisonOld = false;
+        await tester.pumpAndSettle();
+        expect(api.marks, 0);
+        if (!changeAccount) {
+          navigator.currentState!.pop();
+          await tester.pumpAndSettle();
+          expect(
+            renderedMessages(
+              tester,
+            ).any((message) => message.content.startsWith('late-old')),
+            isFalse,
+          );
+        } else {
+          expect(find.text('登录状态已改变，请重新进入会话。'), findsOneWidget);
+        }
+        expect(api.maximumFlights, 1);
+      },
+    );
+  }
+
+  testWidgets('cursor newest burst preserves the gap and defers marking read', (
+    tester,
+  ) async {
+    final api = _CursorApi()..latest = 201;
+    await showChat(
+      tester,
+      BackendMessageRepository(
+        apiClient: api,
+        routes: const BackendRouteCatalog(),
+        currentUserIdProvider: () => 1,
+      ),
+    );
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(renderedMessages(tester).length, 201);
+    final marks = api.marks;
+    api.latest = 451;
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(renderedMessages(tester).last.id, 'row-451');
+    expect(
+      api.marks,
+      marks,
+      reason: '100-row head and one old page do not cover the 250-row gap',
+    );
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(
+      renderedMessages(tester).map((message) => message.id),
+      List.generate(451, (index) => 'row-${index + 1}'),
+    );
+    expect(api.maximumFlights, 1);
+  });
+
+  testWidgets(
+    'invalid old cursor page cannot erase or block newest publication',
+    (tester) async {
+      final api = _CursorApi()..invalidOldTarget = true;
+      await showChat(
+        tester,
+        BackendMessageRepository(
+          apiClient: api,
+          routes: const BackendRouteCatalog(),
+          currentUserIdProvider: () => 1,
+        ),
+      );
+      expect(renderedMessages(tester).length, 100);
+      api.latest = 30002;
+      for (var tick = 0; tick < 50; tick++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('row-30002'), findsOneWidget);
+      expect(renderedMessages(tester).length, 101);
+      expect(api.marks, 0);
+      expect(api.maximumFlights, 1);
+    },
+  );
 
   testWidgets('sender receives authoritative read and never regresses', (
     tester,
@@ -398,6 +596,95 @@ AuthSession _session(int id) => AuthSession(
   mobile: '',
   roles: 'USER',
 );
+
+// Exercise the production repository/parser with the backend's id < cursor,
+// id DESC, pageSize/hasMore contract, rather than returning model snapshots.
+class _CursorApi extends ApiClient {
+  _CursorApi()
+    : super(
+        baseUri: Uri.parse('http://example.invalid/'),
+        clientType: 'test',
+        clientInnerVersion: '1',
+        authorizationProvider: () => null,
+      );
+  int latest = 30001;
+  int flights = 0;
+  int maximumFlights = 0;
+  int marks = 0;
+  Duration oldDelay = Duration.zero;
+  Completer<void>? oldGate;
+  bool oldestRead = false;
+  bool poisonOld = false;
+  bool invalidOldTarget = false;
+  final cursors = <String?>[];
+  @override
+  Future<ApiResponse> get(
+    String path, {
+    Map<String, String>? query,
+    Map<String, String>? headers,
+    bool authenticated = true,
+  }) async {
+    expect(path, '/app-api/user/imMessage/queryChat');
+    expect(query!['targetUserId'], '2');
+    final cursor = query['cursor'];
+    cursors.add(cursor);
+    flights++;
+    if (flights > maximumFlights) maximumFlights = flights;
+    final top = cursor == null ? latest : int.parse(cursor) - 1;
+    final count = top.clamp(0, int.parse(query['pageSize']!));
+    final rows = List.generate(count, (index) {
+      final id = top - index;
+      return <String, Object?>{
+        'messageId': 'row-$id',
+        'senderUserId': id == 30002 ? 2 : 1,
+        'direction': id == 30002 ? 'INCOMING' : 'OUTGOING',
+        'content': poisonOld && cursor != null ? 'late-old-$id' : 'row-$id',
+        'deliveryStatus': 'VENDOR_BLOCKED',
+        'read': id == 1 && oldestRead,
+        'readAt': id == 1 && oldestRead ? '2026-09-08T10:00:00Z' : '',
+        'createdAt': DateTime.utc(
+          2026,
+        ).add(Duration(seconds: id)).toIso8601String(),
+      };
+    });
+    if (cursor != null) {
+      if (oldGate != null) await oldGate!.future;
+      if (oldDelay != Duration.zero) await Future<void>.delayed(oldDelay);
+    }
+    flights--;
+    return ApiResponse(
+      code: 200,
+      message: '',
+      data: {
+        'list': rows,
+        'conversationId': 'conversation-2',
+        'targetUserId': cursor != null && invalidOldTarget ? 99 : 2,
+        'hasMore': top > count,
+        'nextCursor': top > count ? '${top - count + 1}' : '',
+        'unreadCount': 0,
+        'imStatus': 'VENDOR_BLOCKED',
+        'providerInvocation': false,
+      },
+    );
+  }
+
+  @override
+  Future<ApiResponse> post(
+    String path, {
+    Map<String, String>? query,
+    Map<String, String>? headers,
+    Map<String, Object?>? body,
+    bool authenticated = true,
+  }) async {
+    marks++;
+    return const ApiResponse(
+      code: 200,
+      message: '',
+      data: {'targetUserId': 2, 'markedRead': 0, 'unreadCount': 0},
+    );
+  }
+}
+
 ChatMessage _message(String id) => ChatMessage(
   id: id,
   conversationId: 'conversation-2',

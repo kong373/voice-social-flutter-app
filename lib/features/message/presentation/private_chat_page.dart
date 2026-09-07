@@ -35,6 +35,11 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   final Set<String> _historyMessageIds = <String>{};
   Set<String>? _catchupBoundary;
   String? _catchupCursor;
+  String? _readScanCursor;
+  bool _historyComplete = false;
+  final Set<String> _readScanCursors = {};
+  final Set<String> _gapCursors = {};
+  bool _refreshAgain = false;
 
   MessageRepository get _repository => _dependencies!.messageRepository;
 
@@ -113,6 +118,10 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       _historyMessageIds.clear();
       _catchupBoundary = null;
       _catchupCursor = null;
+      _readScanCursor = null;
+      _historyComplete = false;
+      _readScanCursors.clear();
+      _gapCursors.clear();
       _controller.clear();
       _pendingSendRequestId = null;
       _pendingSendContent = null;
@@ -144,14 +153,23 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   Future<void> _load({bool showLoading = true}) {
     if (!_checkAccount() || !_active) return Future<void>.value();
     final Future<void>? active = _refreshFlight;
-    if (active != null) return active;
+    if (active != null) {
+      if (_repository is PagedPrivateMessageRepository) _refreshAgain = true;
+      return active;
+    }
     _syncTimer?.cancel();
     final Future<void> operation = _performLoad(showLoading: showLoading);
     _refreshFlight = operation;
+    if (_repository is PagedPrivateMessageRepository) _scheduleSync();
     void completed() {
       if (identical(_refreshFlight, operation)) {
         _refreshFlight = null;
-        if (mounted) _scheduleSync();
+        if (mounted && _refreshAgain && _canAutoSync) {
+          _refreshAgain = false;
+          _load(showLoading: false);
+        } else if (mounted && _repository is! PagedPrivateMessageRepository) {
+          _scheduleSync();
+        }
       }
     }
 
@@ -190,6 +208,10 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       });
     }
     try {
+      if (repository is PagedPrivateMessageRepository) {
+        await _performPagedLoad(repository, requestId);
+        return;
+      }
       final Set<String> historyBoundary =
           _catchupBoundary ?? _readRefreshBoundary();
       final PrivateMessageSyncBatch batch =
@@ -260,9 +282,162 @@ class _PrivateChatPageState extends State<PrivateChatPage>
         // last first-party snapshot on screen and let the next hint/manual
         // refresh retry it; do not replace trusted content with a transient
         // error page.
-        _error = !showLoading && _messages.isNotEmpty
+        _error =
+            _messages.isNotEmpty &&
+                (!showLoading || repository is PagedPrivateMessageRepository)
             ? null
             : _messageFor(error);
+      });
+    }
+  }
+
+  Future<void> _performPagedLoad(
+    PagedPrivateMessageRepository repository,
+    int requestId,
+  ) async {
+    bool current() =>
+        _active &&
+        !_accountChanged &&
+        requestId == _loadRequestId &&
+        (_dependencies!.sessionManager.session?.userId ?? 0) == _accountId;
+    // Always start at the head, never at the old receipt cursor. Publish this
+    // response before any lower-priority work, under the same visibility lease.
+    final newest = await repository.fetchVisiblePrivateMessagePage(
+      _conversation,
+      isCurrent: current,
+    );
+    if (!current()) return;
+    if (newest.nextCursor != null &&
+        _historyMessageIds.isNotEmpty &&
+        !newest.messages.any(
+          (message) => _historyMessageIds.contains(message.id),
+        )) {
+      // More than one page arrived since the last head. Keep the original
+      // overlap boundary until this gap is filled; old receipt progress is
+      // independent and must not be used as an incremental message cursor.
+      _catchupBoundary ??= Set.of(_historyMessageIds);
+      _catchupCursor = newest.nextCursor;
+      _gapCursors.clear();
+    }
+    _publishPage(newest.messages, followLatest: true);
+    if (newest.nextCursor == null) {
+      _historyComplete = true;
+      _readScanCursor = null;
+      _readScanCursors.clear();
+      _catchupCursor = null;
+      _catchupBoundary = null;
+      _gapCursors.clear();
+    } else if (_readScanCursor == null) {
+      final newestIds = newest.messages.map((message) => message.id).toSet();
+      if (!_historyComplete ||
+          _messages.any(
+            (message) =>
+                message.isMine &&
+                message.read != true &&
+                !newestIds.contains(message.id),
+          )) {
+        _readScanCursor = newest.nextCursor;
+        _readScanCursors.clear();
+      }
+    }
+    // Never start another old page when the next newest poll is already due.
+    // One head + at most one old page per turn, all requests serialized.
+    if ((_catchupCursor != null || _readScanCursor != null) &&
+        !_refreshAgain &&
+        current()) {
+      final isGap = _catchupCursor != null;
+      final cursor = _catchupCursor ?? _readScanCursor!;
+      final seen = isGap ? _gapCursors : _readScanCursors;
+      final older = await repository.fetchVisiblePrivateMessagePage(
+        _conversation,
+        isCurrent: current,
+        cursor: cursor,
+      );
+      if (!current()) return;
+      if (older.nextCursor != null &&
+          (older.nextCursor == cursor || seen.contains(older.nextCursor))) {
+        throw StateError('私聊历史分页游标重复或无进展');
+      }
+      _publishPage(older.messages, followLatest: false);
+      seen.add(cursor);
+      if (isGap) {
+        final overlaps = older.messages.any(
+          (message) => _catchupBoundary!.contains(message.id),
+        );
+        _catchupCursor = overlaps ? null : older.nextCursor;
+        if (_catchupCursor == null) {
+          _catchupBoundary = null;
+          _gapCursors.clear();
+        }
+      } else {
+        _readScanCursor = older.nextCursor;
+      }
+      if (older.nextCursor == null && !isGap) {
+        _historyComplete = true;
+        _readScanCursors.clear();
+      }
+    }
+    // A one-page newest response is not proof that older incoming rows have
+    // been loaded. Only acknowledge after completing history, while visible.
+    if (_historyComplete &&
+        _catchupCursor == null &&
+        current() &&
+        !_refreshAgain) {
+      await repository.markVisiblePrivateMessagesRead(
+        _conversation,
+        isCurrent: current,
+      );
+    }
+  }
+
+  void _publishPage(List<ChatMessage> messages, {required bool followLatest}) {
+    _historyMessageIds.addAll(messages.map((message) => message.id));
+    if (_conversation.isDraft && messages.isNotEmpty) {
+      final identified = messages
+          .where((message) => message.conversationId != null)
+          .firstOrNull;
+      if (identified != null) {
+        _conversation = _conversation.withServerIdentity(
+          conversationId: identified.conversationId!,
+          serverUpdatedAt: messages.last.createdAt,
+        );
+      }
+    }
+    final merged = _mergeMessages(messages);
+    final previousExtent = _scrollController.hasClients
+        ? _scrollController.position.maxScrollExtent
+        : null;
+    final previousOffset = _scrollController.hasClients
+        ? _scrollController.offset
+        : null;
+    final shouldScroll =
+        merged.length > _messages.length &&
+        (_messages.isEmpty ||
+            !_scrollController.hasClients ||
+            _scrollController.position.extentAfter < 80);
+    setState(() {
+      _messages
+        ..clear()
+        ..addAll(merged);
+      _loading = false;
+      _error = null;
+    });
+    if (shouldScroll) {
+      _scrollToEnd();
+    } else if (!followLatest &&
+        previousExtent != null &&
+        previousOffset != null) {
+      // Prepending old history must not move a reader away from their anchor.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _scrollController.hasClients) {
+          final position = _scrollController.position;
+          _scrollController.jumpTo(
+            (previousOffset + position.maxScrollExtent - previousExtent).clamp(
+              position.minScrollExtent,
+              position.maxScrollExtent,
+            ),
+          );
+        }
       });
     }
   }
