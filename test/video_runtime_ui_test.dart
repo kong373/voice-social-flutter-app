@@ -12,6 +12,61 @@ import 'package:voice_social_app/features/shell/main_shell.dart';
 import 'support/golden_font_gate.dart';
 
 void main() {
+  for (final String area in <String>['public-screen', 'seat-grid']) {
+    testWidgets('iOS outside tap dismisses composer on $area', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(375, 667));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final dependencies = AppDependencies.mock();
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            theme: AppTheme.social().copyWith(platform: TargetPlatform.iOS),
+            home: MainShell(dependencies: dependencies, onSignOut: () async {}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('live-room-880217')));
+      await tester.pumpAndSettle();
+      final composer = find.byKey(const Key('video-room-composer'));
+      await tester.tap(composer);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 260);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(composer).focusNode!.hasFocus, isTrue);
+      final rect = tester.getRect(find.byKey(Key('video-room-$area')));
+      await tester.tapAt(rect.topLeft + const Offset(2, 2));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(composer).focusNode!.hasFocus, isFalse);
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      expect(find.text('更多').hitTestable(), findsOneWidget);
+      expect(find.text('成员').hitTestable(), findsOneWidget);
+
+      await tester.tap(composer);
+      await tester.pumpAndSettle();
+      await tester.enterText(composer, 'outside tap regression');
+      await tester.tap(find.byTooltip('发送'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(composer).controller!.text, isEmpty);
+      expect(find.textContaining('outside tap regression'), findsWidgets);
+      expect(tester.widget<TextField>(composer).focusNode!.hasFocus, isTrue);
+      await tester.tap(find.byKey(const Key('room-expression-button')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('room-expression-sheet')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('room-expression-晚安')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(composer).controller!.text, '[晚安]');
+      final outside = tester.getRect(find.byKey(Key('video-room-$area')));
+      await tester.tapAt(outside.topLeft + const Offset(2, 2));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('礼物').hitTestable());
+      await tester.pumpAndSettle();
+      expect(find.byType(GiftSheet), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
   for (final double keyboardHeight in <double>[260, 300]) {
     testWidgets(
       'SE room keeps public screen usable with $keyboardHeight keyboard',

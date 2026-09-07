@@ -56,6 +56,7 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
   int _category = 0;
   int _roomOffset = 0;
   int _loadGeneration = 0;
+  bool? _routeWasCurrent;
 
   List<DiscoveryRoom> get _visibleRooms {
     final List<DiscoveryRoom> matching = _rooms
@@ -86,10 +87,49 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
   @override
   void initState() {
     super.initState();
+    widget.dependencies.sessionManager.addListener(_onIdentityChanged);
     Future<void>.microtask(_load);
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool? current = ModalRoute.isCurrentOf(context);
+    final bool returned = _routeWasCurrent == false && current == true;
+    _routeWasCurrent = current;
+    if (returned) _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant VideoRuntimeHomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.dependencies != widget.dependencies ||
+        oldWidget.repository != widget.repository) {
+      oldWidget.dependencies.sessionManager.removeListener(_onIdentityChanged);
+      widget.dependencies.sessionManager.addListener(_onIdentityChanged);
+      _onIdentityChanged();
+    }
+  }
+
+  void _onIdentityChanged() {
+    ++_loadGeneration;
+    setState(() {
+      _rooms = const <DiscoveryRoom>[];
+      _error = null;
+      _loading = true;
+    });
+    if (_routeWasCurrent != false) _load();
+  }
+
+  @override
+  void dispose() {
+    widget.dependencies.sessionManager.removeListener(_onIdentityChanged);
+    ++_loadGeneration;
+    super.dispose();
+  }
+
   Future<void> _load() async {
+    if (!mounted) return;
     final int generation = ++_loadGeneration;
     if (mounted) {
       setState(() {

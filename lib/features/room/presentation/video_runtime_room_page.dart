@@ -261,6 +261,15 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Widget _roomContent() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      // Child controls win their taps; only otherwise unhandled taps dismiss.
+      onTap: _composerFocus.unfocus,
+      child: _roomContentBody(),
+    );
+  }
+
+  Widget _roomContentBody() {
     final double keyboard = MediaQuery.viewInsetsOf(context).bottom;
     final bool composing = keyboard > 0 || _composerFocus.hasFocus;
     return Stack(
