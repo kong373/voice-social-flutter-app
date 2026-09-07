@@ -30,13 +30,19 @@ import 'package:voice_social_app/features/account/domain/auth_models.dart';
 ///   Only two DISTINCT authenticated roles in this run release a phase.
 ///   Phases: joined, seated, public-sent, reentry-off-mic, reentry-left,
 ///   manual_room_reentry, gift-seated, gift-A, gift-B,
-///   off-mic, private-sent, complete. Reject unknown/out-of-order phases.
+///   off-mic, ten private-ready-N/private-received-N pairs, complete.
+///   Host records the ready release BEFORE either UI send and each peer-visible
+///   acknowledgement AFTER observation on one monotonic clock. The difference
+///   is an upper bound, not a cross-device wall-clock estimate. Require twenty
+///   distinct samples <= 5s for HTTP-fallback latency acceptance.
+///   Reject unknown/out-of-order phases.
 /// - Bind loopback only; reject redirects, expired/reused runs, role/token
 ///   mismatch; disable access/body logs; no business endpoints on this relay.
 ///   Run TTL <= 20 minutes; abort both drives on either failure; delete tokens,
 ///   revoke sessions and stop relay in host finally, including timeout.
 /// - Prepare two fresh distinct users with reciprocal peer IDs, same empty
-///   DIRECT room, available seats 1/2, snapshot-only transport, Star enabled
+///   DIRECT room, available seats 1/2, snapshot-only transport, seeded gift
+///   00000000-0000-0000-0000-000000002001 enabled
 ///   in its catalog category, enough gift coins, no following/block relation,
 ///   one visible unliked post per peer. No third participant or concurrent
 ///   wallet mutation. Relay verifies these before serving either config.
@@ -63,7 +69,7 @@ Future<String> readDualRuntimeRole({Future<String> Function()? read}) async {
   }
 }
 
-const dualPhases = <String>[
+final List<String> dualPhases = List<String>.unmodifiable(<String>[
   'joined',
   'seated',
   'public-sent',
@@ -74,9 +80,12 @@ const dualPhases = <String>[
   'gift-A',
   'gift-B',
   'off-mic',
-  'private-sent',
+  for (int index = 0; index < 10; index++) ...<String>[
+    'private-ready-$index',
+    'private-received-$index',
+  ],
   'complete',
-];
+]);
 
 void validateDualEnvironment(
   AppEnvironment env, {

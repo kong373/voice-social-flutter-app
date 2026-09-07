@@ -7,6 +7,23 @@ import '../integration_test/dual_first_party_business_support.dart';
 
 void main() {
   test(
+    'private acceptance has ten ordered send-ready and receive barriers',
+    () {
+      final privatePhases = dualPhases.where(
+        (phase) => phase.startsWith('private-'),
+      );
+      expect(privatePhases, <String>[
+        for (int index = 0; index < 10; index++) ...<String>[
+          'private-ready-$index',
+          'private-received-$index',
+        ],
+      ]);
+      expect(dualPhases.toSet().length, dualPhases.length);
+      expect(dualPhases.last, 'complete');
+    },
+  );
+
+  test(
     'device-private runtime role accepts only A or B, without a define',
     () async {
       for (final value in ['A', 'B', 'A\n', 'B\r\n']) {

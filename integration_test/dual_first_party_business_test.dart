@@ -384,36 +384,56 @@ void main() {
         () => find.byType(TextField).hitTestable().evaluate().isNotEmpty,
         'private composer',
       );
-      final privateText = config.message(role, 'private');
-      await tester.enterText(find.byType(TextField).hitTestable(), privateText);
-      await _tap(tester, find.byTooltip('发送消息'));
-      await _until(
-        tester,
-        () => find.text(privateText).evaluate().isNotEmpty,
-        'private UI send',
-      );
-      await _barrier(tester, relay, config, 'private-sent');
-      // Both users remain on this exact route. Navigation/manual refresh
-      // cannot substitute for automatic first-party receive recovery.
-      final peerPrivate = config.message(config.peerRole, 'private');
-      await _until(
-        tester,
-        () => find.text(peerPrivate).evaluate().isNotEmpty,
-        'private automatic receive without navigation',
-        timeout: const Duration(seconds: 5),
-      );
+      // Both users stay on the exact chat route for ten reciprocal messages.
+      // The host releases each ready barrier before either UI send and records
+      // each receive acknowledgement after the peer text is visible, providing
+      // twenty conservative timing bounds on one monotonic clock.
+      final Set<String> ownPrivateTexts = <String>{};
+      final Set<String> peerPrivateTexts = <String>{};
+      for (int index = 0; index < 10; index++) {
+        final privateText = config.message(role, 'private-$index');
+        final peerPrivate = config.message(config.peerRole, 'private-$index');
+        ownPrivateTexts.add(privateText);
+        peerPrivateTexts.add(peerPrivate);
+        await tester.enterText(
+          find.byType(TextField).hitTestable(),
+          privateText,
+        );
+        await _barrier(tester, relay, config, 'private-ready-$index');
+        await _tap(tester, find.byTooltip('发送消息'));
+        await _until(
+          tester,
+          () => find.text(privateText).evaluate().isNotEmpty,
+          'private UI send $index',
+        );
+        await _until(
+          tester,
+          () => find.text(peerPrivate).evaluate().isNotEmpty,
+          'private automatic receive without navigation $index',
+          timeout: const Duration(seconds: 5),
+        );
+        expect(find.text(peerPrivate), findsOneWidget);
+        await _barrier(tester, relay, config, 'private-received-$index');
+      }
       final conversation =
           (await dependencies.messageRepository.fetchConversations())
               .singleWhere((c) => c.targetUserId == config.peerUserId);
       final privateHistory = await dependencies.messageRepository
           .fetchPrivateMessages(conversation);
-      expect(
-        privateHistory.any(
-          (ChatMessage m) =>
-              m.senderUserId == config.peerUserId && m.content == peerPrivate,
-        ),
-        isTrue,
-      );
+      for (final (sender, texts) in <(int, Set<String>)>[
+        (config.session.userId, ownPrivateTexts),
+        (config.peerUserId, peerPrivateTexts),
+      ]) {
+        for (final text in texts) {
+          expect(
+            privateHistory.where(
+              (ChatMessage message) =>
+                  message.senderUserId == sender && message.content == text,
+            ),
+            hasLength(1),
+          );
+        }
+      }
 
       final post = await dependencies.dynamicRepository.fetchPost(
         config.peerPostId,
@@ -447,6 +467,9 @@ void main() {
         'roomReentry': 'separate_persistence_recovery',
         'publicVisibleBeforeReentry': visibleBeforeReentry,
         'privateReceive': 'automatic_http_sync_no_navigation',
+        'privateSentCount': ownPrivateTexts.length,
+        'privateReceivedCount': peerPrivateTexts.length,
+        'privateLatencyEvidence': 'host_monotonic_upper_bounds_required',
         'releaseAcceptance': 'PARTIAL_FIRST_PARTY_ONLY',
         'rtcAudio': 'DISABLED_NOT_TESTED',
         'imRealtime': 'DISABLED_NOT_TESTED',
