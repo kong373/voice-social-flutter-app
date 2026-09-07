@@ -319,7 +319,9 @@ void main() {
           final after = await dependencies.commerceRepository
               .fetchWalletSummary();
           expect(after.giftCoinBalance, before.giftCoinBalance! - star.price);
-          expect(receipt.remainingBalance, after.giftCoinBalance);
+          // Historical GET receipts attest immutable transfer fields, not a
+          // current balance. The wallet delta above and host per-transfer
+          // ledger checks remain mandatory; do not invent a GET balance field.
         }
         await _barrier(tester, relay, config, 'gift-$sender');
       }
