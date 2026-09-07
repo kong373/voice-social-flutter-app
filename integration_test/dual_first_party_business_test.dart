@@ -413,7 +413,28 @@ void main() {
               tester.widget<IconButton>(sendButton).onPressed != null,
           'private composer ready $index',
         );
+        // Sending temporarily disables the field and closes its native input
+        // connection. A real user taps it again; enterText alone may retain
+        // the test binding's cached EditableText and never reconnect it.
+        await _tap(tester, composer);
+        await _until(
+          tester,
+          () => tester
+              .widget<EditableText>(
+                find.descendant(
+                  of: composer,
+                  matching: find.byType(EditableText),
+                ),
+              )
+              .focusNode
+              .hasFocus,
+          'private input focus $index',
+        );
         await tester.enterText(composer, privateText);
+        expect(
+          tester.widget<TextField>(composer).controller!.text,
+          privateText,
+        );
         await _barrier(tester, relay, config, 'private-ready-$index');
         expect(
           tester.widget<TextField>(composer).controller!.text,
