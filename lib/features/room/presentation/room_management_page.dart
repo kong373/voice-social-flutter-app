@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
@@ -11,7 +13,7 @@ import 'package:voice_social_app/features/room/presentation/room_oxygen_componen
 
 enum _ManagementSection { members, seats, requests, joinRequests, bannedUsers }
 
-class RoomManagementPage extends StatefulWidget {
+class RoomManagementPage extends StatelessWidget {
   const RoomManagementPage({
     required this.roomId,
     required this.currentUserId,
@@ -34,10 +36,40 @@ class RoomManagementPage extends StatefulWidget {
   final RoomOperationsRepository? repositoryOverride;
 
   @override
-  State<RoomManagementPage> createState() => _RoomManagementPageState();
+  Widget build(BuildContext context) => _RoomManagementSession(
+    key: ValueKey((
+      roomId,
+      currentUserId,
+      currentRole,
+      coordinationMode,
+      repositoryOverride,
+    )),
+    configuration: this,
+  );
 }
 
-class _RoomManagementPageState extends State<RoomManagementPage> {
+// Bind all cached reads and pending operations to one room/viewer identity.
+// Replacing the public widget disposes this state before old replies can apply.
+class _RoomManagementSession extends StatefulWidget {
+  const _RoomManagementSession({required this.configuration, super.key});
+
+  final RoomManagementPage configuration;
+
+  @override
+  State<_RoomManagementSession> createState() => _RoomManagementPageState();
+}
+
+class _RoomManagementPageState extends State<_RoomManagementSession>
+    with WidgetsBindingObserver {
+  RoomManagementPage get configuration => widget.configuration;
+  Timer? _queueTimer;
+  bool _foreground = true;
+  bool _routeVisible = false;
+  bool _queueReading = false;
+  bool _queueKnown = false;
+  bool _queuePending = false;
+  int _queueGeneration = 0;
+  String? _queueError;
   RoomOperationsRepository? _repositoryInstance;
   RoomOperationsRepository get _repository => _repositoryInstance!;
   RoomJoinRequestRepository? _joinRequestRepository;
@@ -55,9 +87,9 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
   int? _busySeatNumber;
   String? _busyMicRequestId;
 
-  bool get _isOwner => widget.currentRole == RoomRole.owner;
+  bool get _isOwner => configuration.currentRole == RoomRole.owner;
   bool get _supportsMicRequests {
-    final MicCoordinationMode? explicitMode = widget.coordinationMode;
+    final MicCoordinationMode? explicitMode = configuration.coordinationMode;
     if (explicitMode != null) {
       // A page is scoped to one room. Never reuse a repository's last queue
       // response when the current authoritative room says DIRECT/unknown.
@@ -69,24 +101,98 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
   @override
   void initState() {
     super.initState();
-    _seats = List<MicSeat>.of(widget.seats);
+    WidgetsBinding.instance.addObserver(this);
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    _foreground = lifecycle == null || lifecycle == AppLifecycleState.resumed;
+    _seats = List<MicSeat>.of(configuration.seats);
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final visible = ModalRoute.isCurrentOf(context) ?? true;
+    if (_routeVisible != visible) {
+      _routeVisible = visible;
+      _pauseQueueSync();
+      if (_repositoryInstance != null) _refreshQueue();
+    }
     if (_repositoryInstance != null) {
       return;
     }
     _repositoryInstance =
-        widget.repositoryOverride ??
+        configuration.repositoryOverride ??
         AppDependencyScope.of(context).roomOperationsRepository;
     _joinRequestRepository = _repositoryInstance!.roomJoinRequestCapability;
     _banRepository = _repositoryInstance!.roomBanCapability;
     _load();
   }
 
+  bool get _canSyncQueue =>
+      mounted && _foreground && _routeVisible && _supportsMicRequests;
+
+  void _pauseQueueSync() {
+    _queueTimer?.cancel();
+    _queueTimer = null;
+    _queueGeneration++;
+    _queuePending = false;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    _pauseQueueSync();
+    if (_repositoryInstance != null) _refreshQueue();
+  }
+
+  @override
+  void dispose() {
+    _pauseQueueSync();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // The page has no shared RoomController. Keep this read lane queue-only,
+  // single-flight and visible-only; a write invalidates any older response.
+  Future<void> _refreshQueue() async {
+    if (!_canSyncQueue) return;
+    _queuePending = true;
+    if (_queueReading || _busyMicRequestId != null) return;
+    _queueTimer?.cancel();
+    _queueReading = true;
+    try {
+      do {
+        _queuePending = false;
+        final generation = _queueGeneration;
+        try {
+          final requests = await _repository.fetchMicRequests(
+            configuration.roomId,
+          );
+          if (!_canSyncQueue || generation != _queueGeneration) continue;
+          setState(() {
+            _requests
+              ..clear()
+              ..addAll(
+                requests.where((item) => item.isRequest && item.isPending),
+              );
+            _queueError = null;
+            _queueKnown = true;
+          });
+        } catch (error) {
+          if (_canSyncQueue && generation == _queueGeneration) {
+            setState(() => _queueError = _messageFor(error));
+          }
+        }
+      } while (_queuePending && _canSyncQueue && _busyMicRequestId == null);
+    } finally {
+      _queueReading = false;
+      if (_canSyncQueue && _busyMicRequestId == null) {
+        _queueTimer = Timer(const Duration(seconds: 2), _refreshQueue);
+      }
+    }
+  }
+
   Future<void> _load() async {
+    unawaited(_refreshQueue());
     setState(() {
       _loading = true;
       _error = null;
@@ -94,21 +200,18 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     try {
       final List<Future<Object>> futures = <Future<Object>>[
         _repository.fetchOnlineMembers(
-          roomId: widget.roomId,
+          roomId: configuration.roomId,
           page: 1,
           // Backend room-member pages cap pageSize at 50.
           pageSize: 50,
         ),
-        _repository.fetchMutedUsers(widget.roomId),
-        _repository.fetchManagers(widget.roomId),
+        _repository.fetchMutedUsers(configuration.roomId),
+        _repository.fetchManagers(configuration.roomId),
       ];
-      if (_supportsMicRequests) {
-        futures.add(_repository.fetchMicRequests(widget.roomId));
-      }
       if (_joinRequestRepository != null) {
         futures.add(
           _joinRequestRepository!.fetchJoinRequests(
-            roomId: widget.roomId,
+            roomId: configuration.roomId,
             page: 1,
             pageSize: 50,
           ),
@@ -117,7 +220,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       if (_banRepository != null) {
         futures.add(
           _banRepository!.fetchBannedUsers(
-            roomId: widget.roomId,
+            roomId: configuration.roomId,
             page: 1,
             pageSize: 50,
           ),
@@ -127,10 +230,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
       final RoomMemberPage page = results[0] as RoomMemberPage;
       final List<RoomMember> muted = results[1] as List<RoomMember>;
       final List<RoomMember> managers = results[2] as List<RoomMember>;
-      final List<MicAccessRequest> requests = _supportsMicRequests
-          ? results[3] as List<MicAccessRequest>
-          : const <MicAccessRequest>[];
-      int resultIndex = _supportsMicRequests ? 4 : 3;
+      int resultIndex = 3;
       final RoomJoinRequestPage? joinRequestPage =
           _joinRequestRepository == null
           ? null
@@ -183,10 +283,10 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
           ),
       ];
       members.sort((RoomMember left, RoomMember right) {
-        if (left.userId == widget.initialMemberId) {
+        if (left.userId == configuration.initialMemberId) {
           return -1;
         }
-        if (right.userId == widget.initialMemberId) {
+        if (right.userId == configuration.initialMemberId) {
           return 1;
         }
         if (left.isManager != right.isManager) {
@@ -201,15 +301,6 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
         _members
           ..clear()
           ..addAll(members);
-        _requests
-          ..clear()
-          ..addAll(
-            requests.where(
-              (MicAccessRequest request) =>
-                  request.status == MicRequestStatus.pending &&
-                  request.isRequest,
-            ),
-          );
         _joinRequests
           ..clear()
           ..addAll(joinRequestPage?.items ?? const <RoomJoinRequest>[]);
@@ -256,9 +347,9 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: RoomOxygenContextBar(
-                title: roomAuthorityTitle(widget.roomTitle),
-                subtitle: '房间号 ${widget.roomId} · 权威状态管理',
-                seed: widget.roomId,
+                title: roomAuthorityTitle(configuration.roomTitle),
+                subtitle: '房间号 ${configuration.roomId} · 权威状态管理',
+                seed: configuration.roomId,
                 status: _isOwner ? '房主' : '房管',
                 statusColor: _isOwner ? RoomColors.gold : RoomColors.primary,
               ),
@@ -294,7 +385,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
           if (supportsRequests)
             ButtonSegment<_ManagementSection>(
               value: _ManagementSection.requests,
-              label: Text('上麦申请 ${_requests.length}'),
+              label: Text(_queueKnown ? '上麦申请 ${_requests.length}' : '上麦申请'),
               icon: const Icon(Icons.mark_unread_chat_alt_outlined),
             ),
           if (supportsJoinRequests)
@@ -324,7 +415,10 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_error != null) {
+    final error =
+        _error ??
+        (_section == _ManagementSection.requests ? _queueError : null);
+    if (error != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(28),
@@ -333,7 +427,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
             children: <Widget>[
               const Icon(Icons.cloud_off_rounded, size: 44),
               const SizedBox(height: 16),
-              Text(_error!, textAlign: TextAlign.center),
+              Text(error, textAlign: TextAlign.center),
               const SizedBox(height: 18),
               FilledButton.tonal(onPressed: _load, child: const Text('重新加载')),
             ],
@@ -352,7 +446,9 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
 
   Widget _buildMembers() {
     final List<RoomMember> manageable = _members
-        .where((RoomMember member) => member.userId != widget.currentUserId)
+        .where(
+          (RoomMember member) => member.userId != configuration.currentUserId,
+        )
         .toList(growable: false);
     if (manageable.isEmpty) {
       return const Center(child: Text('当前没有可管理成员'));
@@ -485,6 +581,9 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
   }
 
   Widget _buildRequests() {
+    if (!_queueKnown) {
+      return const Center(child: CircularProgressIndicator());
+    }
     if (_requests.isEmpty) {
       return const Center(child: Text('当前没有待处理的上麦申请'));
     }
@@ -730,7 +829,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     await _runMemberOperation(
       member,
       () => _repository.setUserMuted(
-        roomId: widget.roomId,
+        roomId: configuration.roomId,
         userId: member.userId,
         muted: muted,
       ),
@@ -752,7 +851,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     await _runMemberOperation(
       member,
       () => _repository.setUserRole(
-        roomId: widget.roomId,
+        roomId: configuration.roomId,
         userId: member.userId,
         manager: manager,
       ),
@@ -771,7 +870,10 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     }
     await _runMemberOperation(
       member,
-      () => _repository.kickUser(roomId: widget.roomId, userId: member.userId),
+      () => _repository.kickUser(
+        roomId: configuration.roomId,
+        userId: member.userId,
+      ),
       successMessage: '已将 ${member.name} 移出房间',
     );
   }
@@ -799,7 +901,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     await _runMemberOperation(
       member,
       () => _repository.takeUserOffMic(
-        roomId: widget.roomId,
+        roomId: configuration.roomId,
         backendMicIndex: seat!.backendIndex,
         userId: member.userId,
       ),
@@ -853,7 +955,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     await _runMemberOperation(
       member,
       () => _repository.inviteUserToMic(
-        roomId: widget.roomId,
+        roomId: configuration.roomId,
         userId: member.userId,
         seatNumber: seatNumber,
       ),
@@ -891,7 +993,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     setState(() => _busySeatNumber = seat.number);
     try {
       await _repository.setSeatLocked(
-        roomId: widget.roomId,
+        roomId: configuration.roomId,
         backendMicIndex: seat.backendIndex,
         locked: locked,
       );
@@ -926,7 +1028,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     setState(() => _busySeatNumber = seat.number);
     try {
       await _repository.setSeatMuted(
-        roomId: widget.roomId,
+        roomId: configuration.roomId,
         backendMicIndex: seat.backendIndex,
         muted: muted,
       );
@@ -967,6 +1069,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     if (!request.isRequest || !request.isPending || _busyMicRequestId != null) {
       return;
     }
+    _pauseQueueSync();
     setState(() => _busyMicRequestId = request.id);
     try {
       await _repository.resolveMicRequest(
@@ -986,6 +1089,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     } finally {
       if (mounted) {
         setState(() => _busyMicRequestId = null);
+        unawaited(_refreshQueue());
       }
     }
   }
@@ -1037,7 +1141,7 @@ class _RoomManagementPageState extends State<RoomManagementPage> {
     setState(() => _busyUserId = banned.member.userId);
     try {
       await repository.unbanUser(
-        roomId: widget.roomId,
+        roomId: configuration.roomId,
         userId: banned.member.userId,
       );
       _changed = true;

@@ -14,6 +14,93 @@ import 'package:voice_social_app/features/room/infrastructure/room_realtime_gate
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
 void main() {
+  final ValueVariant<Size> viewports = ValueVariant<Size>(<Size>{
+    const Size(800, 600),
+    const Size(375, 667),
+  });
+  for (final MicRequestStatus status in <MicRequestStatus>[
+    MicRequestStatus.approved,
+    MicRequestStatus.rejected,
+  ]) {
+    testWidgets(
+      'open member sheet reflects authoritative ${status.name} without reopening',
+      (WidgetTester tester) async {
+        await tester.binding.setSurfaceSize(viewports.currentValue);
+        tester.platformDispatcher.textScaleFactorTestValue =
+            viewports.currentValue!.width == 375 ? 1.3 : 1;
+        addTearDown(() async {
+          await tester.binding.setSurfaceSize(null);
+          tester.platformDispatcher.clearTextScaleFactorTestValue();
+        });
+        final MockRoomOperationsRepository operations =
+            MockRoomOperationsRepository();
+        operations.seedMicRequestForQa(
+          _request(id: 'request-self', userId: 10001, name: '我', seatNumber: 5),
+        );
+        final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
+        final RoomController controller = RoomController(
+          roomId: 'approval-room',
+          title: '审批房',
+          currentUserId: 10001,
+          accessToken: 'test-token',
+          repository: _ApprovalRoomRepository(),
+          rtcAdapter: const SnapshotOnlyRtcAdapter(),
+          realtimeGateway: realtime,
+          roomOperationsRepository: operations,
+        );
+        addTearDown(() async {
+          controller.dispose();
+          await realtime.dispose();
+        });
+        await tester.pumpWidget(
+          AppDependencyScope(
+            dependencies: AppDependencies.mock(),
+            child: MaterialApp(
+              theme: AppTheme.dark(),
+              home: VideoRuntimeRoomPage(controller: controller),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('上麦'));
+        await tester.pumpAndSettle();
+        expect(find.text('你正在等待 5 号麦审批'), findsOneWidget);
+
+        operations.seedMicRequestForQa(
+          _request(
+            id: 'request-self',
+            userId: 10001,
+            name: '我',
+            seatNumber: 5,
+            status: status,
+          ),
+        );
+        // Deliver a new server queue projection, not a user refresh/navigation.
+        await controller.refreshMicRequests();
+        await tester.pumpAndSettle();
+
+        expect(find.text('审批上麦'), findsOneWidget);
+        expect(find.text('你正在等待 5 号麦审批'), findsNothing);
+        expect(
+          find.byKey(const Key('approval-mic-request-cancel')),
+          findsNothing,
+        );
+        expect(
+          find.text(
+            status == MicRequestStatus.approved ? '最近状态：已同意' : '最近状态：已拒绝',
+          ),
+          findsOneWidget,
+        );
+        Navigator.of(tester.element(find.text('审批上麦'))).pop();
+        await tester.pumpAndSettle();
+        await controller.refreshMicRequests();
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+      },
+      variant: viewports,
+    );
+  }
+
   testWidgets(
     'member mic sheet only exposes requests targeted at the authenticated member',
     (WidgetTester tester) async {
@@ -193,6 +280,7 @@ MicAccessRequest _request({
   MicRequestType type = MicRequestType.request,
   int? requestedByUserId,
   MicRequestTargetAction targetAction = MicRequestTargetAction.cancel,
+  MicRequestStatus status = MicRequestStatus.pending,
 }) {
   return MicAccessRequest(
     id: id,
@@ -203,7 +291,7 @@ MicAccessRequest _request({
       presence: RoomMemberPresence.listener,
     ),
     seatNumber: seatNumber,
-    status: MicRequestStatus.pending,
+    status: status,
     createdAt: DateTime.utc(2026, 8, 25),
     type: type,
     requestedByUserId: requestedByUserId ?? userId,
