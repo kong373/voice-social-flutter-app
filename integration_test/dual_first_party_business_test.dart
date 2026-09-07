@@ -419,8 +419,18 @@ Future<void> _until(
 
 Future<void> _tap(WidgetTester tester, Finder finder) async {
   await _until(tester, () => finder.evaluate().isNotEmpty, 'UI control');
-  await tester.ensureVisible(finder);
+  // A modal seat picker repeats the labels on the room underneath it. Only
+  // the unobscured target is actionable; never scroll/click a covered match.
+  if (finder.hitTestable().evaluate().isEmpty &&
+      finder.evaluate().length == 1) {
+    await tester.ensureVisible(finder);
+  }
   await tester.pump(const Duration(milliseconds: 300));
+  await _until(
+    tester,
+    () => finder.hitTestable().evaluate().length == 1,
+    'one unobscured UI control',
+  );
   await tester.tap(finder.hitTestable());
   await tester.pump(const Duration(milliseconds: 300));
 }
