@@ -13,6 +13,117 @@ import 'package:voice_social_app/features/message/data/backend_message_repositor
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 
 void main() {
+  test(
+    'equal-time history retains server cursor order chronologically',
+    () async {
+      final harness = await _Harness.start((request) {
+        if (request.method == 'POST')
+          return _Response.ok({
+            'targetUserId': 99,
+            'markedRead': 0,
+            'unreadCount': 0,
+          });
+        final page = _historyPage(page: 1, hasMore: false, nextCursor: '');
+        final row = (page['list'] as List).single as Map<String, Object?>;
+        page['list'] = [
+          {...row, 'messageId': 'newer'},
+          {...row, 'messageId': 'older'},
+        ];
+        return _Response.ok(page);
+      });
+      addTearDown(harness.close);
+      final messages = await harness.repository.fetchPrivateMessages(
+        _conversation(),
+      );
+      expect(messages.map((message) => message.id), ['older', 'newer']);
+    },
+  );
+
+  for (final projection in <Map<String, Object?>>[
+    {},
+    {'read': null, 'readAt': null},
+    {'read': false},
+    {'read': true},
+    {'read': true, 'readAt': '2026-09-08T10:00:00Z'},
+    {'readAt': '2026-09-08T10:00:00.123456Z'},
+  ]) {
+    test(
+      'private read authority preserves $projection independently of delivery',
+      () async {
+        final harness = await _Harness.start((request) {
+          if (request.method == 'POST')
+            return _Response.ok({
+              'targetUserId': 99,
+              'markedRead': 1,
+              'unreadCount': 0,
+            });
+          final page = _historyPage(page: 1, hasMore: false, nextCursor: '');
+          (page['list'] as List).cast<Map<String, Object?>>().single.addAll(
+            projection,
+          );
+          return _Response.ok(page);
+        });
+        addTearDown(harness.close);
+        final message = (await harness.repository.fetchPrivateMessages(
+          _conversation(),
+        )).single;
+        expect(
+          message.read,
+          projection['readAt'] != null ? true : projection['read'],
+        );
+        expect(
+          message.readAt,
+          projection['readAt'] == null
+              ? null
+              : DateTime.parse(projection['readAt']! as String),
+        );
+        expect(
+          message.copyWith(status: ChatMessageStatus.sent).read,
+          message.read,
+        );
+        expect(
+          message.copyWith(read: false).read,
+          message.read == true ? true : false,
+        );
+        expect(message.copyWith(read: false).readAt, message.readAt);
+        expect(message.deliveryStatus, MessageDeliveryStatus.vendorBlocked);
+      },
+    );
+  }
+  for (final projection in <Map<String, Object?>>[
+    {'read': 'true'},
+    {'read': 1},
+    {'read': []},
+    {'readAt': 123},
+    {'readAt': ''},
+    {'readAt': '2026-09-08'},
+    {'readAt': '2026-09-08T10:00:00'},
+    {'readAt': '2026-02-30T10:00:00Z'},
+    {'read': false, 'readAt': '2026-09-08T10:00:00Z'},
+  ]) {
+    test(
+      'private read parser rejects $projection before marking read',
+      () async {
+        final harness = await _Harness.start((request) {
+          final page = _historyPage(page: 1, hasMore: false, nextCursor: '');
+          (page['list'] as List).cast<Map<String, Object?>>().single.addAll(
+            projection,
+          );
+          return _Response.ok(page);
+        });
+        addTearDown(harness.close);
+        await expectLater(
+          harness.repository.fetchPrivateMessages(_conversation()),
+          throwsA(isA<ApiException>()),
+        );
+        expect(
+          harness.requests.where((request) => request.method == 'POST'),
+          isEmpty,
+        );
+      },
+    );
+  }
+
   test('message repository exposes first-party capability boundary', () async {
     final _Harness harness = await _Harness.start((RequestRecord request) {
       return _Response.ok(<String, Object?>{});

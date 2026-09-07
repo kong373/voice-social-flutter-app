@@ -59,6 +59,24 @@ void main() {
     return dependencies;
   }
 
+  testWidgets('sender receives authoritative read and never regresses', (
+    tester,
+  ) async {
+    final repository = _VisibleHistory()
+      ..messages.add(_message('own').copyWithReadForTest(false));
+    await showChat(tester, repository);
+    expect(find.textContaining('未读'), findsOneWidget);
+    repository.messages[0] = _message('own').copyWithReadForTest(true);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('已读'), findsOneWidget);
+    repository.messages[0] = _message('own').copyWithReadForTest(false);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('已读'), findsOneWidget);
+    expect(find.text('own'), findsOneWidget);
+  });
+
   testWidgets('a peer message appears without leaving the open chat', (
     tester,
   ) async {
@@ -72,6 +90,113 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('peer-1'), findsOneWidget);
     expect(repository.calls, greaterThanOrEqualTo(3));
+  });
+
+  testWidgets(
+    'receipt-only refresh preserves equal-time order and read timestamp',
+    (tester) async {
+      final repository = _History()
+        ..messages.addAll(
+          List.generate(
+            40,
+            (index) => _message('own-$index')
+                .copyWithReadForTest(true)
+                .copyWith(readAt: DateTime.utc(2026, 9, 8)),
+          ),
+        );
+      await showChat(tester, repository);
+      List<String> visibleOrder() => tester
+          .widgetList<Text>(find.byType(Text))
+          .map((text) => text.data ?? '')
+          .where((text) => text.startsWith('own-'))
+          .toList();
+      final before = visibleOrder();
+      repository.messages.replaceRange(
+        0,
+        40,
+        repository.messages.reversed.toList(),
+      );
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(visibleOrder(), before);
+      final message = repository.messages.first;
+      expect(message.copyWith(read: false).readAt, DateTime.utc(2026, 9, 8));
+      expect(message.copyWith(read: false).read, isTrue);
+    },
+  );
+
+  testWidgets(
+    'read refresh walks to oldest unresolved sender without dropping history',
+    (tester) async {
+      final repository = _VisibleHistory()
+        ..messages.addAll([
+          _message('old-own').copyWithReadForTest(false),
+          _message('new-peer'),
+        ]);
+      await showChat(tester, repository);
+      repository.messages
+        ..clear()
+        ..add(_message('new-peer'));
+      repository.nextCursor = 'older';
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(repository.boundaries.last, {'old-own'});
+      repository.messages
+        ..clear()
+        ..add(_message('old-own').copyWithReadForTest(true));
+      repository.nextCursor = null;
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(repository.cursors, contains('older'));
+      expect(find.text('old-own'), findsOneWidget);
+      expect(find.text('new-peer'), findsOneWidget);
+      expect(find.textContaining('已读'), findsOneWidget);
+    },
+  );
+
+  testWidgets('hidden then visible route rejects the old read response', (
+    tester,
+  ) async {
+    final repository = _History()
+      ..messages.add(_message('own').copyWithReadForTest(false));
+    final navigator = GlobalKey<NavigatorState>();
+    await showChat(tester, repository, navigator: navigator);
+    repository.pending = Completer<List<ChatMessage>>();
+    await tester.pump(const Duration(seconds: 3));
+    navigator.currentState!.push(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('cover')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    repository.pending!.complete([_message('own').copyWithReadForTest(true)]);
+    repository.pending = null;
+    await tester.pumpAndSettle();
+    expect(find.textContaining('未读'), findsOneWidget);
+  });
+
+  testWidgets('unknown and delivered do not imply read or unread', (
+    tester,
+  ) async {
+    final repository = _History()
+      ..messages.add(
+        ChatMessage(
+          id: 'own',
+          conversationId: 'conversation-2',
+          senderUserId: 1,
+          senderName: 'me',
+          content: 'own',
+          createdAt: DateTime(2026),
+          isMine: true,
+          status: ChatMessageStatus.sent,
+          deliveryStatus: MessageDeliveryStatus.delivered,
+        ),
+      );
+    await showChat(tester, repository);
+    expect(find.text('已留存·已读状态未知·实时已送达'), findsOneWidget);
+    expect(find.textContaining('未读'), findsNothing);
   });
 
   testWidgets(
@@ -284,6 +409,20 @@ ChatMessage _message(String id) => ChatMessage(
   status: ChatMessageStatus.sent,
 );
 
+extension on ChatMessage {
+  ChatMessage copyWithReadForTest(bool read) => ChatMessage(
+    id: id,
+    conversationId: conversationId,
+    senderUserId: 1,
+    senderName: 'me',
+    content: content,
+    createdAt: createdAt,
+    isMine: true,
+    status: ChatMessageStatus.storedPendingDelivery,
+    read: read,
+  );
+}
+
 class _History extends MockMessageRepository {
   int calls = 0;
   bool failNext = false;
@@ -334,5 +473,5 @@ class _VisibleHistory extends _History
     required ConversationSummary conversation,
     required String content,
     String? requestId,
-  }) async => _message(content);
+  }) async => _message(content).copyWithReadForTest(false);
 }

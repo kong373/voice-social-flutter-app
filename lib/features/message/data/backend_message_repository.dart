@@ -285,10 +285,16 @@ class BackendMessageRepository
         message: '私聊历史超过客户端安全分页上限',
       );
     }
-    messages.sort(
-      (ChatMessage left, ChatMessage right) =>
-          left.createdAt.compareTo(right.createdAt),
-    );
+    // The server uses id DESC across cursor pages. Reverse that order for
+    // equal timestamps instead of relying on Dart's unstable List.sort.
+    final ordered = messages.asMap().entries.toList()
+      ..sort((left, right) {
+        final byTime = left.value.createdAt.compareTo(right.value.createdAt);
+        return byTime != 0 ? byTime : right.key.compareTo(left.key);
+      });
+    messages
+      ..clear()
+      ..addAll(ordered.map((entry) => entry.value));
     if (hasMore) {
       // Publish the newest bounded batch without marking unseen older rows
       // read. The visible page owns and accepts the continuation cursor.
@@ -913,6 +919,38 @@ class BackendMessageRepository
     final String? conversationId =
         authoritativeConversationId ??
         (itemConversationId.isEmpty ? conversation.id : itemConversationId);
+    final Object? rawRead = item['read'];
+    final Object? rawReadAt = item['readAt'];
+    DateTime? readAt;
+    if (rawRead != null && rawRead is! bool) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '私聊 read 必须为布尔值',
+      );
+    }
+    if (rawReadAt != null) {
+      // Require an unambiguous server instant; DateTime.parse alone accepts
+      // overflowing calendar dates and timezone-less local timestamps.
+      if (rawReadAt is! String ||
+          !RegExp(
+            r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$',
+          ).hasMatch(rawReadAt)) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '私聊 readAt 必须为 UTC 时间',
+        );
+      }
+      readAt = DateTime.tryParse(rawReadAt);
+      if (readAt == null ||
+          readAt.toIso8601String().substring(0, 19) !=
+              rawReadAt.substring(0, 19) ||
+          rawRead == false) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '私聊已读状态或时间不一致',
+        );
+      }
+    }
     return ChatMessage(
       id: id,
       conversationId: conversationId,
@@ -926,6 +964,8 @@ class BackendMessageRepository
       isMine: mine,
       status: parsedStatus.status,
       deliveryStatus: parsedStatus.deliveryStatus,
+      read: readAt != null ? true : rawRead as bool?,
+      readAt: readAt,
     );
   }
 

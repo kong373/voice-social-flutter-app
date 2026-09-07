@@ -178,6 +178,8 @@ class ChatMessage {
     required this.isMine,
     required this.status,
     this.deliveryStatus = MessageDeliveryStatus.unknown,
+    this.read,
+    this.readAt,
   });
 
   final String id;
@@ -190,10 +192,34 @@ class ChatMessage {
   final ChatMessageStatus status;
   final MessageDeliveryStatus deliveryStatus;
 
+  /// First-party recipient read projection; null means unknown, not unread.
+  final bool? read;
+  final DateTime? readAt;
+
+  String get receiptLabel {
+    final reading = read == true
+        ? '已读'
+        : read == false
+        ? '未读'
+        : '已读状态未知';
+    final delivery = switch (deliveryStatus) {
+      MessageDeliveryStatus.delivered => '实时已送达',
+      MessageDeliveryStatus.vendorBlocked => '实时不可用',
+      MessageDeliveryStatus.failed => '实时投递失败',
+      MessageDeliveryStatus.pending ||
+      MessageDeliveryStatus.processing ||
+      MessageDeliveryStatus.retry => '实时待送达',
+      MessageDeliveryStatus.unknown => '实时投递未知',
+    };
+    return '已留存·$reading·$delivery';
+  }
+
   ChatMessage copyWith({
     ChatMessageStatus? status,
     String? conversationId,
     MessageDeliveryStatus? deliveryStatus,
+    bool? read,
+    DateTime? readAt,
   }) {
     return ChatMessage(
       id: id,
@@ -205,6 +231,10 @@ class ChatMessage {
       isMine: isMine,
       status: status ?? this.status,
       deliveryStatus: deliveryStatus ?? this.deliveryStatus,
+      read: this.read == true || this.readAt != null || readAt != null
+          ? true
+          : read ?? this.read,
+      readAt: this.readAt ?? readAt,
     );
   }
 }

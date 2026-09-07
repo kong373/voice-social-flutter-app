@@ -83,6 +83,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     } else if (!wasVisible && _visible) {
       _load(showLoading: false);
     } else if (!_visible) {
+      _loadRequestId += 1;
       _syncTimer?.cancel();
     }
   }
@@ -91,6 +92,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
     _visible = _active;
+    if (!_visible) _loadRequestId += 1;
     _syncTimer?.cancel();
     if (_visible && _loadStarted) {
       _load(showLoading: false);
@@ -189,7 +191,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     }
     try {
       final Set<String> historyBoundary =
-          _catchupBoundary ?? Set<String>.of(_historyMessageIds);
+          _catchupBoundary ?? _readRefreshBoundary();
       final PrivateMessageSyncBatch batch =
           repository is VisiblePrivateMessageRepository
           ? await repository.fetchVisiblePrivateMessages(
@@ -344,14 +346,42 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       for (final ChatMessage item in _messages) item.id: item,
     };
     for (final ChatMessage item in incoming) {
-      byId[item.id] = item;
+      final previous = byId[item.id];
+      byId[item.id] = item.copyWith(
+        read: previous?.read == true ? true : item.read ?? previous?.read,
+        readAt: previous?.readAt,
+      );
+    }
+    final order = <String, int>{};
+    for (final id in byId.keys) {
+      order[id] = order.length;
     }
     final List<ChatMessage> merged = byId.values.toList()
-      ..sort(
-        (ChatMessage left, ChatMessage right) =>
-            left.createdAt.compareTo(right.createdAt),
-      );
+      // List.sort is not stable. Preserve accepted order for equal timestamps
+      // so a receipt-only update cannot shuffle existing bubbles.
+      ..sort((ChatMessage left, ChatMessage right) {
+        final byTime = left.createdAt.compareTo(right.createdAt);
+        return byTime != 0
+            ? byTime
+            : order[left.id]!.compareTo(order[right.id]!);
+      });
     return merged;
+  }
+
+  Set<String> _readRefreshBoundary() {
+    // queryChat paginates by creation ID, not state changes. Walk through the
+    // oldest unresolved outgoing row already accepted from history.
+    // A send-only receipt must not advance the catch-up boundary and skip
+    // unseen peer rows between the previous snapshot and that receipt.
+    // The repository still caps each flight and resumes via _catchupCursor.
+    final unresolved = _messages.where(
+      (item) =>
+          item.isMine &&
+          item.read != true &&
+          _historyMessageIds.contains(item.id),
+    );
+    if (unresolved.isNotEmpty) return {unresolved.first.id};
+    return Set<String>.of(_historyMessageIds);
   }
 
   void _openProfile() {
@@ -589,13 +619,16 @@ class _ChatBubble extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            Row(
-              mainAxisSize: MainAxisSize.min,
+            Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: <Widget>[
-                if (message.status ==
-                    ChatMessageStatus.storedPendingDelivery) ...<Widget>[
+                if (message.isMine &&
+                    (message.status == ChatMessageStatus.sent ||
+                        message.status ==
+                            ChatMessageStatus
+                                .storedPendingDelivery)) ...<Widget>[
                   Text(
-                    '已留存·实时未送达',
+                    message.receiptLabel,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: message.isMine
                           ? Colors.white.withValues(alpha: 0.86)
