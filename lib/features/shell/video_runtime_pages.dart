@@ -18,6 +18,7 @@ import 'package:voice_social_app/features/discovery/presentation/saved_rooms_pag
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
+import 'package:voice_social_app/features/social/presentation/public_user_id_label.dart';
 import 'package:voice_social_app/features/shell/live_read_only_repository.dart';
 import 'package:voice_social_app/features/shell/live_vendor_boundary_page.dart';
 
@@ -1873,11 +1874,11 @@ class _ProfileHeader extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 5),
-                    Text(
-                      'ID ${profile.account} · '
-                      '${profile.user.signature.isEmpty ? '今天也在认真生活' : profile.user.signature}',
+                    PublicUserIdLabel(
+                      userId: profile.user.userId,
+                      suffix:
+                          ' · ${profile.user.signature.isEmpty ? '今天也在认真生活' : profile.user.signature}',
                       maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: SocialColors.textSecondary,
                         fontSize: 11,

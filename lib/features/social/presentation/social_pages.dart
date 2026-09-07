@@ -11,6 +11,7 @@ import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/room/presentation/room_deep_link_page.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
+import 'package:voice_social_app/features/social/presentation/public_user_id_label.dart';
 
 part 'social_profile_pages.dart';
 part 'social_relation_pages.dart';

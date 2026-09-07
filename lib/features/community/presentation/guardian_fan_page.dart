@@ -294,6 +294,8 @@ class _GuardianFanPageState extends State<GuardianFanPage> {
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
                       labelText: '主播用户 ID',
+                      helperText: '在主播个人主页点击 ID，复制数字用户号',
+                      helperMaxLines: 2,
                       prefixIcon: Icon(Icons.person_search_outlined),
                       fillColor: Color(0xFFF7F5FF),
                     ),

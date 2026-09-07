@@ -733,8 +733,8 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
                   ),
                 ),
                 const SizedBox(height: 3),
-                Text(
-                  'ID ${profile.account}',
+                PublicUserIdLabel(
+                  userId: profile.user.userId,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: RoomColors.textSecondary,

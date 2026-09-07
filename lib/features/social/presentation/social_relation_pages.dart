@@ -393,46 +393,108 @@ class PrivacyBlacklistPage extends StatefulWidget {
 class _PrivacyBlacklistPageState extends State<PrivacyBlacklistPage> {
   PrivacySettings? _settings;
   List<SocialUser>? _blacklist;
+  bool _loadStarted = false;
+  bool _loading = false;
+  bool _mutating = false;
+  String? _error;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_settings == null) {
+    if (!_loadStarted) {
+      _loadStarted = true;
       _load();
     }
   }
 
   Future<void> _load() async {
-    final SocialRepository repository = AppDependencyScope.of(
-      context,
-    ).socialRepository;
-    final List<Object> values = await Future.wait<Object>(<Future<Object>>[
-      repository.fetchPrivacySettings(),
-      repository.fetchBlacklist(page: 1, pageSize: 100),
-    ]);
-    if (mounted) {
-      setState(() {
-        _settings = values[0] as PrivacySettings;
-        _blacklist = (values[1] as SocialPage<SocialUser>).items;
-      });
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final SocialRepository repository = AppDependencyScope.of(
+        context,
+      ).socialRepository;
+      final List<Object> values = await Future.wait<Object>(<Future<Object>>[
+        repository.fetchPrivacySettings(),
+        _fetchBlacklist(repository),
+      ]);
+      if (mounted) {
+        setState(() {
+          _settings = values[0] as PrivacySettings;
+          _blacklist = values[1] as List<SocialUser>;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = _messageFor(error));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<List<SocialUser>> _fetchBlacklist(SocialRepository repository) async {
+    final List<SocialUser> users = <SocialUser>[];
+    int page = 1;
+    while (true) {
+      final SocialPage<SocialUser> result = await repository.fetchBlacklist(
+        page: page,
+        pageSize: 50,
+      );
+      users.addAll(result.items);
+      if (!result.hasMore || !mounted) return users;
+      page += 1;
     }
   }
 
   Future<void> _togglePrivacy(bool value) async {
-    final PrivacySettings updated = await AppDependencyScope.of(
-      context,
-    ).socialRepository.updatePrivacySettings(onlyFollowedCanFollow: value);
-    if (mounted) {
-      setState(() => _settings = updated);
+    if (_mutating || _loading) return;
+    setState(() => _mutating = true);
+    try {
+      final PrivacySettings updated = await AppDependencyScope.of(
+        context,
+      ).socialRepository.updatePrivacySettings(onlyFollowedCanFollow: value);
+      if (mounted) {
+        setState(() => _settings = updated);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _mutating = false);
+      }
     }
   }
 
   Future<void> _unblock(SocialUser user) async {
-    await AppDependencyScope.of(
-      context,
-    ).socialRepository.setBlocked(userId: user.userId, blocked: false);
-    if (mounted) {
-      await _load();
+    if (_mutating || _loading) return;
+    setState(() => _mutating = true);
+    try {
+      await AppDependencyScope.of(
+        context,
+      ).socialRepository.setBlocked(userId: user.userId, blocked: false);
+      if (mounted) {
+        await _load();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _mutating = false);
+      }
     }
   }
 
@@ -440,8 +502,10 @@ class _PrivacyBlacklistPageState extends State<PrivacyBlacklistPage> {
   Widget build(BuildContext context) {
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('隐私与黑名单')),
-      body: _settings == null
+      body: _loading
           ? const Center(child: CircularProgressIndicator())
+          : _error != null
+          ? _ErrorState(message: _error!, onRetry: _load)
           : ListView(
               padding: const EdgeInsets.fromLTRB(14, 4, 14, 28),
               children: <Widget>[
@@ -490,7 +554,7 @@ class _PrivacyBlacklistPageState extends State<PrivacyBlacklistPage> {
                       ),
                       Switch(
                         value: _settings!.onlyFollowedCanFollow,
-                        onChanged: _togglePrivacy,
+                        onChanged: _mutating ? null : _togglePrivacy,
                       ),
                     ],
                   ),
@@ -522,7 +586,9 @@ class _PrivacyBlacklistPageState extends State<PrivacyBlacklistPage> {
                             subtitle: '已屏蔽对方的关系与互动',
                             onTap: () {},
                             trailing: TextButton(
-                              onPressed: () => _unblock(_blacklist![index]),
+                              onPressed: _mutating
+                                  ? null
+                                  : () => _unblock(_blacklist![index]),
                               style: TextButton.styleFrom(
                                 minimumSize: const Size(48, 34),
                               ),

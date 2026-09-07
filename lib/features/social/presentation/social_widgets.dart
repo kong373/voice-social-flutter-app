@@ -40,8 +40,9 @@ class _ProfileHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 3),
-              Text(
-                '用户号 ${profile.account}',
+              PublicUserIdLabel(
+                userId: profile.user.userId,
+                prefix: '用户号',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 4),
@@ -123,10 +124,11 @@ class _MineHeroCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 5),
-                    Text(
-                      'ID ${profile.account} · ${profile.user.signature.isEmpty ? '今天也在认真生活' : profile.user.signature}',
+                    PublicUserIdLabel(
+                      userId: profile.user.userId,
+                      suffix:
+                          ' · ${profile.user.signature.isEmpty ? '今天也在认真生活' : profile.user.signature}',
                       maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: SocialColors.textSecondary,
                         fontSize: 11,
