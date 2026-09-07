@@ -105,10 +105,7 @@ void main() {
         'room entry',
       );
       expect(controller.isSnapshotOnly, isTrue);
-      expect(
-        dependencies.roomOperationsRepository.micCoordinationMode,
-        MicCoordinationMode.direct,
-      );
+      expect(controller.micCoordinationMode, MicCoordinationMode.direct);
       await _barrier(tester, relay, config, 'joined');
       final members = await dependencies.roomOperationsRepository
           .fetchOnlineMembers(roomId: config.roomId, page: 1);
