@@ -18,6 +18,56 @@ required() {
   printf '%s' "$value"
 }
 
+parse_refund_scope() {
+  case "${QA_M4_REFUND_SCOPE-strict}" in
+    strict|deferred) printf '%s\n' "${QA_M4_REFUND_SCOPE-strict}" ;;
+    *) printf 'QA_M4_REFUND_SCOPE must be strict or deferred\n' >&2; return 64 ;;
+  esac
+}
+REFUND_SCOPE="$(parse_refund_scope)" || exit 64
+readonly REFUND_SCOPE
+SCOPED_SUCCESS='PASS'
+[[ "$REFUND_SCOPE" != deferred ]] || SCOPED_SUCCESS='PASS_WITH_EXEMPTIONS'
+readonly SCOPED_SUCCESS
+
+# Validate profile evidence independently of the acceptance marker. No refund
+# operation (including a preexisting result) can count as completed in deferred.
+validate_refund_profile() {
+  python3 - "$1" "$REFUND_SCOPE" "$SCOPED_SUCCESS" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path, scope, success = sys.argv[1:]
+text = Path(path).read_text(encoding="utf-8")
+def markers(name):
+    return re.findall(r"(?:^|\s)" + name + r"::([^\s]+)", text)
+expected = [
+    "commerce.refund.result", "commerce.refund.retry", "commerce.refund.submit"
+] if scope == "deferred" else []
+if markers("M4_REFUND_SCOPE") != [scope]:
+    raise SystemExit(1)
+if markers("M4_ACCEPTANCE") != [success]:
+    raise SystemExit(1)
+if sorted(markers("M4_EXEMPT_NOT_COMPLETED")) != expected:
+    raise SystemExit(1)
+if markers("M4_RELEASE_READINESS") != ["NOT_RELEASE_READY"]:
+    raise SystemExit(1)
+if scope == "deferred":
+    if any(route.split("::")[0] in expected for route in markers("M4_ROUTE_STATUS")):
+        raise SystemExit(1)
+    for capability in ["commerce.refund.eligibility", "commerce.refund.records"]:
+        if not any(re.fullmatch(re.escape(capability) + r"::GET::[^:]+::2[0-9]{2}::success", route)
+                   for route in markers("M4_ROUTE_STATUS")):
+            raise SystemExit(1)
+    invariants = markers("M4_AUTHORITY_INVARIANT")
+    for required in ["refund_deferred_authoritative_denial_confirmed",
+                     "refund_records_page_reachable_without_submission"]:
+        if required not in invariants:
+            raise SystemExit(1)
+PY
+}
+
 parse_backend_port() {
   if [[ "${QA_M4_BACKEND_PORT+x}" != x ]]; then
     printf '18080\n'
@@ -205,13 +255,16 @@ validate_log_evidence() {
   [[ -s "$log" ]] || return 1
   local acceptance_count provider_count provider_nonzero bad_status
   local backend_port_count backend_port_expected_count
-  acceptance_count="$(grep -Ec '(^|[[:space:]])M4_ACCEPTANCE::PASS($|[[:space:]])' "$log" || true)"
+  acceptance_count="$(grep -Ec "(^|[[:space:]])M4_ACCEPTANCE::${SCOPED_SUCCESS}($|[[:space:]])" "$log" || true)"
   provider_count="$(grep -Ec '(^|[[:space:]])M4_PROVIDER_CALLS::0($|[[:space:]])' "$log" || true)"
   provider_nonzero="$(awk '/M4_PROVIDER_CALLS::/ && $0 !~ /M4_PROVIDER_CALLS::0([[:space:]]|$)/ {count += 1} END {print count + 0}' "$log")"
   bad_status="$(awk -F '::' '/M4_ROUTE_STATUS::/ {if ($5 !~ /^[2-4][0-9][0-9]$/) count += 1} END {print count + 0}' "$log")"
   backend_port_count="$(grep -Ec '(^|[[:space:]])M4_BACKEND_PORT::[0-9]+($|[[:space:]])' "$log" || true)"
   backend_port_expected_count="$(grep -Ec "(^|[[:space:]])M4_BACKEND_PORT::${EXPECTED_BACKEND_PORT}($|[[:space:]])" "$log" || true)"
   [[ "$acceptance_count" -eq 1 ]] || return 1
+  validate_refund_profile "$log" || return 1
+  [[ -f "$dir/exempt-not-completed.txt" ]] || return 1
+  diff -u "$dir/exempt-not-completed.txt" <(grep -oE 'M4_EXEMPT_NOT_COMPLETED::[^[:space:]]+' "$log" || true) >/dev/null || return 1
   [[ "$provider_count" -eq 1 && "$provider_nonzero" -eq 0 ]] || return 1
   [[ "$bad_status" -eq 0 ]] || return 1
   [[ "$backend_port_count" -eq 1 && "$backend_port_expected_count" -eq 1 ]] || return 1
@@ -224,9 +277,14 @@ validate_avd() {
   local dir="$ARTIFACT_ROOT/$avd"
   local result="$dir/result.txt"
   local avd_android_host_source_sha256
+  local metadata
   [[ -f "$result" ]] || { add_reason "$avd:result_missing"; return; }
-  [[ "$(field "$result" result)" == PASS ]] || { add_reason "$avd:result_not_pass"; return; }
-  [[ "$(field "$result" acceptance_status)" == PASS ]] || { add_reason "$avd:acceptance_not_pass"; return; }
+  [[ "$(field "$result" result)" == "$SCOPED_SUCCESS" ]] || { add_reason "$avd:result_not_pass"; return; }
+  [[ "$(field "$result" acceptance_status)" == "$SCOPED_SUCCESS" ]] || { add_reason "$avd:acceptance_not_pass"; return; }
+  for metadata in "$result" "$dir/environment.txt"; do
+    [[ -f "$metadata" && "$(sed -n 's/^refund_scope=//p' "$metadata")" == "$REFUND_SCOPE" ]] || add_reason "$avd:refund_scope_mismatch"
+    [[ -f "$metadata" && "$(sed -n 's/^release_readiness=//p' "$metadata")" == NOT_RELEASE_READY ]] || add_reason "$avd:release_readiness_mismatch"
+  done
   [[ "$(field "$result" run_id)" == "$EXPECTED_RUN_ID" ]] || add_reason "$avd:run_id_mismatch"
   [[ "$(field "$result" fixture_id)" == "$EXPECTED_FIXTURE_ID" ]] || add_reason "$avd:fixture_id_mismatch"
   [[ "$(field "$result" fixture_status)" == "$EXPECTED_FIXTURE_STATUS" ]] || add_reason "$avd:fixture_status_mismatch"
@@ -266,25 +324,31 @@ validate_avd() {
   [[ -f "$dir/logs/crash-anr.txt" && ! -s "$dir/logs/crash-anr.txt" ]] || add_reason "$avd:crash_anr_log_not_clean"
   validate_log_evidence "$dir" || add_reason "$avd:log_evidence_not_strict"
   validate_db_evidence "$dir/db-evidence.json" "$avd" "$(field "$result" db_start_nonce)" || add_reason "$avd:db_evidence_contract_invalid"
-  avd_results+=("$avd=PASS")
+  avd_results+=("$avd=$SCOPED_SUCCESS")
 }
 
 validate_avd AVD-A
 validate_avd AVD-B
 
 conclusion='ANDROID_EMULATOR_PASS'
+[[ "$REFUND_SCOPE" != deferred ]] || conclusion='ANDROID_EMULATOR_PASS_WITH_EXEMPTIONS'
 if ((${#reasons[@]} > 0)) || ((${#avd_results[@]} != 2)); then
   conclusion='ANDROID_EMULATOR_FAIL'
 fi
 
-python3 - "$AGGREGATE_JSON" "$conclusion" "$EXPECTED_FLUTTER_SHA" "$EXPECTED_BACKEND_SHA" "$android_host_source_sha256" "$EXPECTED_FLUTTER_VERSION" "$EXPECTED_DART_VERSION" "$EXPECTED_FLUTTER_REVISION" "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" "$EXPECTED_FIXTURE_STATUS" "$EXPECTED_BACKEND_PORT" "${reasons[*]-}" <<'PY'
+python3 - "$AGGREGATE_JSON" "$conclusion" "$EXPECTED_FLUTTER_SHA" "$EXPECTED_BACKEND_SHA" "$android_host_source_sha256" "$EXPECTED_FLUTTER_VERSION" "$EXPECTED_DART_VERSION" "$EXPECTED_FLUTTER_REVISION" "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" "$EXPECTED_FIXTURE_STATUS" "$EXPECTED_BACKEND_PORT" "${reasons[*]-}" "$REFUND_SCOPE" "$SCOPED_SUCCESS" <<'PY'
 import json
 import sys
 
-path, conclusion, flutter_sha, backend_sha, android_host_source_sha256, flutter_version, dart_version, flutter_revision, run_id, fixture_id, fixture_status, backend_port, raw_reasons = sys.argv[1:]
+path, conclusion, flutter_sha, backend_sha, android_host_source_sha256, flutter_version, dart_version, flutter_revision, run_id, fixture_id, fixture_status, backend_port, raw_reasons, refund_scope, scoped_success = sys.argv[1:]
 reasons = [item for item in raw_reasons.splitlines() if item]
 payload = {
     "conclusion": conclusion,
+    "refund_scope": refund_scope,
+    "release_readiness": "NOT_RELEASE_READY",
+    "EXEMPT_NOT_COMPLETED": [
+        "commerce.refund.result", "commerce.refund.retry", "commerce.refund.submit"
+    ] if refund_scope == "deferred" else [],
     "tested_git_sha": flutter_sha,
     "backend_sha": backend_sha,
     "android_host_source_sha256": android_host_source_sha256,
@@ -296,8 +360,8 @@ payload = {
     "fixture_status": fixture_status,
     "backend_port": int(backend_port),
     "avd": {
-        "AVD-A": "PASS" if not any(item.startswith("AVD-A:") for item in reasons) else "FAIL",
-        "AVD-B": "PASS" if not any(item.startswith("AVD-B:") for item in reasons) else "FAIL",
+        "AVD-A": scoped_success if not any(item.startswith("AVD-A:") for item in reasons) else "FAIL",
+        "AVD-B": scoped_success if not any(item.startswith("AVD-B:") for item in reasons) else "FAIL",
     },
     "reasons": reasons,
     "providerCalls": 0,
@@ -311,6 +375,10 @@ PY
 {
   printf 'M4 authoritative live AVD aggregate\n'
   printf 'conclusion=%s\n' "$conclusion"
+  printf 'refund_scope=%s\nrelease_readiness=NOT_RELEASE_READY\n' "$REFUND_SCOPE"
+  if [[ "$REFUND_SCOPE" == deferred ]]; then
+    printf 'EXEMPT_NOT_COMPLETED=%s\n' commerce.refund.result commerce.refund.retry commerce.refund.submit
+  fi
   printf 'run_id=%s\nfixture_id=%s\nfixture_status=%s\n' "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" "$EXPECTED_FIXTURE_STATUS"
   printf 'backend_port=%s\n' "$EXPECTED_BACKEND_PORT"
   printf 'tested_git_sha=%s\nbackend_sha=%s\n' "$EXPECTED_FLUTTER_SHA" "$EXPECTED_BACKEND_SHA"
@@ -318,16 +386,16 @@ PY
   printf 'flutter_version=%s\ndart_version=%s\nflutter_revision=%s\n' \
     "$EXPECTED_FLUTTER_VERSION" "$EXPECTED_DART_VERSION" "$EXPECTED_FLUTTER_REVISION"
   printf 'AVD-A=%s\nAVD-B=%s\n' \
-    "$(if printf '%s\n' "${reasons[@]-}" | grep -q '^AVD-A:'; then printf FAIL; else printf PASS; fi)" \
-    "$(if printf '%s\n' "${reasons[@]-}" | grep -q '^AVD-B:'; then printf FAIL; else printf PASS; fi)"
+    "$(if printf '%s\n' "${reasons[@]-}" | grep -q '^AVD-A:'; then printf FAIL; else printf '%s' "$SCOPED_SUCCESS"; fi)" \
+    "$(if printf '%s\n' "${reasons[@]-}" | grep -q '^AVD-B:'; then printf FAIL; else printf '%s' "$SCOPED_SUCCESS"; fi)"
   printf 'providerCalls=0\nsecrets=false\n'
   if ((${#reasons[@]} > 0)); then
     printf 'reasons=%s\n' "$(IFS=';'; printf '%s' "${reasons[*]}")"
   fi
 } >"$AGGREGATE_TEXT"
 
-if [[ "$conclusion" != ANDROID_EMULATOR_PASS ]]; then
+if [[ "$conclusion" == ANDROID_EMULATOR_FAIL ]]; then
   printf '%s\n' "M4 aggregate failed; see $AGGREGATE_TEXT" >&2
   exit 1
 fi
-printf '%s\n' "M4 aggregate PASS: both AVDs and both candidate SHAs matched."
+printf '%s\n' "M4 aggregate $SCOPED_SUCCESS: both AVDs and both candidate SHAs matched; release NOT_RELEASE_READY."

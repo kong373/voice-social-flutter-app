@@ -18,6 +18,56 @@ required() {
   printf '%s' "$value"
 }
 
+parse_refund_scope() {
+  case "${QA_M4_REFUND_SCOPE-strict}" in
+    strict|deferred) printf '%s\n' "${QA_M4_REFUND_SCOPE-strict}" ;;
+    *) printf 'QA_M4_REFUND_SCOPE must be strict or deferred\n' >&2; return 64 ;;
+  esac
+}
+REFUND_SCOPE="$(parse_refund_scope)" || exit 64
+readonly REFUND_SCOPE
+SCOPED_SUCCESS='PASS'
+[[ "$REFUND_SCOPE" != deferred ]] || SCOPED_SUCCESS='PASS_WITH_EXEMPTIONS'
+readonly SCOPED_SUCCESS
+
+# Validate profile evidence independently of the acceptance marker. No refund
+# operation (including a preexisting result) can count as completed in deferred.
+validate_refund_profile() {
+  python3 - "$1" "$REFUND_SCOPE" "$SCOPED_SUCCESS" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path, scope, success = sys.argv[1:]
+text = Path(path).read_text(encoding="utf-8")
+def markers(name):
+    return re.findall(r"(?:^|\s)" + name + r"::([^\s]+)", text)
+expected = [
+    "commerce.refund.result", "commerce.refund.retry", "commerce.refund.submit"
+] if scope == "deferred" else []
+if markers("M4_REFUND_SCOPE") != [scope]:
+    raise SystemExit(1)
+if markers("M4_ACCEPTANCE") != [success]:
+    raise SystemExit(1)
+if sorted(markers("M4_EXEMPT_NOT_COMPLETED")) != expected:
+    raise SystemExit(1)
+if markers("M4_RELEASE_READINESS") != ["NOT_RELEASE_READY"]:
+    raise SystemExit(1)
+if scope == "deferred":
+    if any(route.split("::")[0] in expected for route in markers("M4_ROUTE_STATUS")):
+        raise SystemExit(1)
+    for capability in ["commerce.refund.eligibility", "commerce.refund.records"]:
+        if not any(re.fullmatch(re.escape(capability) + r"::GET::[^:]+::2[0-9]{2}::success", route)
+                   for route in markers("M4_ROUTE_STATUS")):
+            raise SystemExit(1)
+    invariants = markers("M4_AUTHORITY_INVARIANT")
+    for required in ["refund_deferred_authoritative_denial_confirmed",
+                     "refund_records_page_reachable_without_submission"]:
+        if required not in invariants:
+            raise SystemExit(1)
+PY
+}
+
 parse_backend_port() {
   if [[ "${QA_M4_BACKEND_PORT+x}" != x ]]; then
     printf '18080\n'
@@ -394,7 +444,8 @@ cleanup() {
   fi
   {
     printf 'M4 authoritative live AVD acceptance\n'
-    printf 'conclusion=%s\n' "$OVERALL_RESULT"
+    printf 'conclusion=%s\n' "$( [[ "$OVERALL_RESULT" == PASS ]] && printf '%s' "$SCOPED_SUCCESS" || printf FAIL )"
+    printf 'refund_scope=%s\nrelease_readiness=NOT_RELEASE_READY\n' "$REFUND_SCOPE"
     printf 'flutter_sha=%s\n' "$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || printf unknown)"
     printf 'backend_sha=%s\n' "$(git -C "$BACKEND_REPO" rev-parse HEAD 2>/dev/null || printf unknown)"
     printf 'android_host_source_sha256=%s\n' "${ANDROID_HOST_SOURCE_SHA256:-unknown}"
@@ -996,6 +1047,7 @@ write_environment() {
     printf 'oauth_client_id_loaded_by_flutter=false\n'
     printf 'development_outbox_key_loaded_by_flutter=false\nprovider_calls_made=false\n'
     printf '%s\n' "$viewport"
+    printf 'refund_scope=%s\nrelease_readiness=NOT_RELEASE_READY\n' "$REFUND_SCOPE"
   } >"$dir/environment.txt"
 }
 
@@ -1553,6 +1605,7 @@ run_one() {
       --dart-define=QA_M4_BACKEND_PORT="$BACKEND_PORT" \
       --dart-define=M4_RUNTIME_CONFIG_PORT="$RELAY_PORT" \
       --dart-define=QA_M4_FIXTURE_ID="$FIXTURE_ID" \
+      --dart-define=QA_M4_REFUND_SCOPE="$REFUND_SCOPE" \
       --dart-define=M4_EXPECTED_FLUTTER_SHA="$FLUTTER_SHA_EXPECTED" \
       --dart-define=M4_EXPECTED_BACKEND_SHA="$BACKEND_SHA_EXPECTED" \
       --dart-define=QA_AVD_ID="$avd" \
@@ -1588,7 +1641,7 @@ run_one() {
 
   local expected_marker="M4_VIEWPORT::$avd::"$width"x"$height"::$dpr"
   local acceptance_marker
-  acceptance_marker="$(grep -Ec '(^|[[:space:]])M4_ACCEPTANCE::PASS($|[[:space:]])' "$dir/logs/flutter-drive.log" || true)"
+  acceptance_marker="$(grep -Ec "(^|[[:space:]])M4_ACCEPTANCE::${SCOPED_SUCCESS}($|[[:space:]])" "$dir/logs/flutter-drive.log" || true)"
   acceptance_failure_marker="$(grep -Ec '(^|[[:space:]])M4_ACCEPTANCE::FAIL($|[[:space:]])' "$dir/logs/flutter-drive.log" || true)"
   bad_route_status_count="$(awk -F '::' '/M4_ROUTE_STATUS::/ {if ($5 !~ /^[2-4][0-9][0-9]$/) count += 1} END {print count + 0}' "$dir/logs/flutter-drive.log")"
   local secret_status='PASS'
@@ -1609,18 +1662,23 @@ run_one() {
   elif [[ "$hard_count" -ne 0 || "$crash_count" -ne 0 ]]; then result='FAIL'; reason='hard_flutter_or_android_finding'
   elif [[ "$db_status" != 'COLLECTED' ]]; then result='FAIL'; reason='db_write_evidence_missing_or_failed'
   elif [[ "$secret_status" != PASS || "$apk_status" != PASS ]]; then result='FAIL'; reason='secret_scan_failed'
+  elif ! validate_refund_profile "$dir/logs/flutter-drive.log"; then result='FAIL'; reason='refund_profile_mismatch'
   fi
+  local scoped_result="$result"
+  [[ "$result" != PASS ]] || scoped_result="$SCOPED_SUCCESS"
+  grep -oE 'M4_EXEMPT_NOT_COMPLETED::[^[:space:]]+' "$dir/logs/flutter-drive.log" >"$dir/exempt-not-completed.txt" || true
   local backend_mapping_status='NOT_PROVEN'
   [[ "$db_status" == 'COLLECTED' ]] && backend_mapping_status='true'
   {
-    printf 'result=%s\nreason=%s\navd=%s\napi_level=%s\nprofile=%s\nserial=%s\n' "$result" "$reason" "$avd" "$api" "$profile" "$serial"
+    printf 'result=%s\nreason=%s\navd=%s\napi_level=%s\nprofile=%s\nserial=%s\n' "$scoped_result" "$reason" "$avd" "$api" "$profile" "$serial"
+    printf 'refund_scope=%s\nrelease_readiness=NOT_RELEASE_READY\n' "$REFUND_SCOPE"
     printf 'run_id=%s\nfixture_id=%s\nfixture_status=%s\ndb_start_nonce=%s\nbackend_port=%s\nbackend_port_mapping_matches=%s\ntested_git_sha=%s\nflutter_sha=%s\nbackend_sha=%s\nhttp_route_marker_count=%s\nauthority_invariant_count=%s\n' \
       "$RUN_ID" "$FIXTURE_ID" "$FIXTURE_STATUS" "$DB_START_NONCE" "$BACKEND_PORT" "$backend_mapping_status" "$FLUTTER_SHA_ACTUAL" "$FLUTTER_SHA_ACTUAL" "$BACKEND_SHA_ACTUAL" "$marker_count" "$invariant_count"
     printf 'android_host_source_sha256=%s\n' "$ANDROID_HOST_SOURCE_SHA256"
     printf 'flutter_version=%s\ndart_version=%s\nflutter_revision=%s\n' \
       "$FLUTTER_FRAMEWORK_VERSION" "$FLUTTER_DART_VERSION" "$FLUTTER_FRAMEWORK_REVISION"
     printf 'screenshot_count=%s\nhard_finding_count=%s\ncrash_anr_count=%s\n' "$screenshot_count" "$hard_count" "$crash_count"
-    printf 'acceptance_status=%s\nprovider_calls_made=false\ndb_evidence=%s\nsecret_scan=%s\napk_secret_scan=%s\n' "$([[ "$result" == PASS ]] && printf PASS || printf FAIL)" "$db_status" "$secret_status" "$apk_status"
+    printf 'acceptance_status=%s\nprovider_calls_made=false\ndb_evidence=%s\nsecret_scan=%s\napk_secret_scan=%s\n' "$scoped_result" "$db_status" "$secret_status" "$apk_status"
   } >"$dir/result.txt"
   [[ "$result" == PASS ]] || { OVERALL_RESULT='FAIL'; return 1; }
   return 0

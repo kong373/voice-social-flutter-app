@@ -31,6 +31,49 @@ import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'm2_4_test_support.dart';
 import 'm4_commerce_ui_support.dart';
 
+/// Release-only scope; the default M4 mutation contract remains strict.
+class M4RefundScope {
+  M4RefundScope(String value) : deferred = value == 'deferred' {
+    if (value != 'strict' && value != 'deferred') {
+      throw ArgumentError('QA_M4_REFUND_SCOPE must be strict or deferred');
+    }
+  }
+
+  final bool deferred;
+  String get value => deferred ? 'deferred' : 'strict';
+  String get success => deferred ? 'PASS_WITH_EXEMPTIONS' : 'PASS';
+  Set<String> get exemptions => deferred
+      ? <String>{
+          'commerce.refund.submit',
+          'commerce.refund.result',
+          'commerce.refund.retry',
+        }
+      : <String>{};
+
+  Set<String> requiredCapabilities(Set<String> strict) =>
+      strict.difference(exemptions);
+
+  Future<bool> runRefund(
+    RefundEligibility eligibility,
+    Future<void> Function() strictOperation,
+  ) async {
+    if (!deferred) {
+      await strictOperation();
+      return false;
+    }
+    if (eligibility.allowed || eligibility.message.trim().isEmpty) {
+      throw TestFailure(
+        'Deferred refund requires an authoritative denial with a reason.',
+      );
+    }
+    return true;
+  }
+}
+
+final M4RefundScope _refundScope = M4RefundScope(
+  const String.fromEnvironment('QA_M4_REFUND_SCOPE', defaultValue: 'strict'),
+);
+
 /// The relay is started by run_m4_authoritative_live_avd.sh. It is deliberately
 /// not a backend substitute: it only returns operator-provided development
 /// test configuration over an ephemeral host port. Phone and public-client
@@ -68,6 +111,8 @@ final RegExp _canonicalRoomUuidPattern = RegExp(
 );
 
 void _validateBackendTarget() {
+  // Validate the scope before any backend or UI work.
+  _refundScope.value;
   if (!_allowedBackendPortValues.contains(_backendPortValue)) {
     throw TestFailure('QA_M4_BACKEND_PORT must be exactly 18080 or 28080.');
   }
@@ -2029,6 +2074,27 @@ Future<void> _runRefundMutation(
   required PaymentOrder order,
   required RefundEligibility eligibility,
 }) async {
+  if (await _refundScope.runRefund(
+    eligibility,
+    () => _runStrictRefundMutation(
+      dependencies,
+      evidence,
+      routes: routes,
+      order: order,
+      eligibility: eligibility,
+    ),
+  )) {
+    evidence.invariant('refund_deferred_authoritative_denial_confirmed');
+  }
+}
+
+Future<void> _runStrictRefundMutation(
+  AppDependencies dependencies,
+  _M4Evidence evidence, {
+  required BackendRouteCatalog routes,
+  required PaymentOrder order,
+  required RefundEligibility eligibility,
+}) async {
   String? existingApplicationId = eligibility.existingApplicationId?.trim();
   RefundApplication? application;
 
@@ -2724,6 +2790,10 @@ Future<void> _runCommerceFlow(
             find.textContaining('失败').evaluate().isNotEmpty,
         description: 'refund records or explicit blocked state',
       );
+      if (_refundScope.deferred &&
+          find.textContaining('失败').evaluate().isNotEmpty) {
+        throw TestFailure('Deferred refund page read failed.');
+      }
       evidence.invariant('refund_records_page_reachable_without_submission');
       await captureQaScreenshot(
         tester,
@@ -3266,11 +3336,15 @@ class _M4Evidence {
   };
 
   final Set<String> _requiredCapabilities = <String>{
-    ..._baseRequiredCapabilities,
+    ..._refundScope.requiredCapabilities(_baseRequiredCapabilities),
+    if (_refundScope.deferred) 'commerce.refund.eligibility',
   };
   final Set<String> _preexistingCapabilities = <String>{};
 
   static Set<String> get _requiredInvariants => <String>{
+    if (_refundScope.deferred) 'refund_deferred_authoritative_denial_confirmed',
+    if (_refundScope.deferred)
+      'refund_records_page_reachable_without_submission',
     'authoritative_backend_target_10_0_2_2_$_backendPortValue',
     'development_otp_consumed_in_memory_only',
     'vendor_readiness_observed_without_client_provider',
@@ -3294,6 +3368,9 @@ class _M4Evidence {
   };
 
   void requireCapability(String capability) {
+    if (_refundScope.exemptions.contains(capability)) {
+      throw TestFailure('Deferred refund operation attempted: $capability');
+    }
     _requiredCapabilities.add(capability);
   }
 
@@ -3324,6 +3401,9 @@ class _M4Evidence {
     final String marker =
         'M4_ROUTE_STATUS::$safeCapability::$method::$route::$status::$safeState';
     _routes.add(marker);
+    if (_refundScope.exemptions.contains(capability)) {
+      _violations.add('$capability:deferred_operation_attempted');
+    }
     if (status < 200 || status >= 600) {
       _violations.add('$safeCapability:invalid_http_status');
     }
@@ -3448,8 +3528,11 @@ class _M4Evidence {
       'providerCalls': 0,
       'providerCallEvidence': 'none',
       'secretsInClient': false,
-      'acceptance': pass ? 'PASS' : 'FAIL',
-      'result': pass ? 'PASS' : 'FAIL',
+      'refund_scope': _refundScope.value,
+      'exempt_not_completed': _refundScope.exemptions.toList()..sort(),
+      'release_readiness': 'NOT_RELEASE_READY',
+      'acceptance': pass ? _refundScope.success : 'FAIL',
+      'result': pass ? _refundScope.success : 'FAIL',
     };
     binding.reportData ??= <String, dynamic>{};
     binding.reportData!['m4Acceptance'] = result;
@@ -3458,7 +3541,12 @@ class _M4Evidence {
     debugPrint('M4_AUTHORITY_EVIDENCE::${uniqueInvariants.length}');
     debugPrint('M4_ROUTE_MARKERS::${uniqueRoutes.length}');
     debugPrint('M4_SECRETS_IN_CLIENT::0');
-    debugPrint('M4_ACCEPTANCE::${pass ? 'PASS' : 'FAIL'}');
+    debugPrint('M4_REFUND_SCOPE::${_refundScope.value}');
+    for (final String capability in _refundScope.exemptions.toList()..sort()) {
+      debugPrint('M4_EXEMPT_NOT_COMPLETED::$capability');
+    }
+    debugPrint('M4_RELEASE_READINESS::NOT_RELEASE_READY');
+    debugPrint('M4_ACCEPTANCE::${pass ? _refundScope.success : 'FAIL'}');
     if (!pass) {
       throw TestFailure(
         'M4 acceptance evidence incomplete: ${_violations.toList()..sort()}',

@@ -283,7 +283,16 @@ exit "\$status"
     String flutterVersion = '3.44.7',
     String fixtureId = 'm4-fresh-test-fixture',
     String fixtureStatus = 'fresh_dedicated',
+    String refundScope = 'strict',
   }) {
+    final String scopedSuccess = refundScope == 'deferred'
+        ? 'PASS_WITH_EXEMPTIONS'
+        : 'PASS';
+    final String exemptionMarkers = refundScope == 'deferred'
+        ? 'M4_EXEMPT_NOT_COMPLETED::commerce.refund.result\n'
+              'M4_EXEMPT_NOT_COMPLETED::commerce.refund.retry\n'
+              'M4_EXEMPT_NOT_COMPLETED::commerce.refund.submit\n'
+        : '';
     final Directory root = Directory.systemTemp.createTempSync(
       'm4-aggregate-contract-',
     );
@@ -320,6 +329,7 @@ exit "\$status"
           : backendPort;
       final int evidenceBackendPort = dbBackendPort ?? selectedBackendPort;
       File('${dir.path}/environment.txt').writeAsStringSync(
+        'refund_scope=$refundScope\nrelease_readiness=NOT_RELEASE_READY\n'
         'backend_mode=live\n'
         'backend_port=$selectedBackendPort\n'
         'backend_base_url=http://10.0.2.2:$selectedBackendPort/\n',
@@ -371,8 +381,10 @@ exit "\$status"
       }
       File('${dir.path}/result.txt').writeAsStringSync(
         [
-          'result=${pass ? 'PASS' : 'FAIL'}',
-          'acceptance_status=${pass ? 'PASS' : 'FAIL'}',
+          'result=${pass ? scopedSuccess : 'FAIL'}',
+          'acceptance_status=${pass ? scopedSuccess : 'FAIL'}',
+          'refund_scope=$refundScope',
+          'release_readiness=NOT_RELEASE_READY',
           'run_id=m4-test-run',
           'fixture_id=$fixtureId',
           'fixture_status=$fixtureStatus',
@@ -398,14 +410,26 @@ exit "\$status"
           '',
         ].join('\n'),
       );
+      File(
+        '${dir.path}/exempt-not-completed.txt',
+      ).writeAsStringSync(exemptionMarkers);
       File('${dir.path}/logs/flutter-drive.log').writeAsStringSync(
         [
+          'M4_REFUND_SCOPE::$refundScope',
+          'M4_RELEASE_READINESS::NOT_RELEASE_READY',
+          exemptionMarkers.trimRight(),
+          if (refundScope == 'deferred') ...<String>[
+            'M4_ROUTE_STATUS::commerce.refund.eligibility::GET::/refund/check::200::success',
+            'M4_ROUTE_STATUS::commerce.refund.records::GET::/refund/history::200::success',
+            'M4_AUTHORITY_INVARIANT::refund_deferred_authoritative_denial_confirmed',
+            'M4_AUTHORITY_INVARIANT::refund_records_page_reachable_without_submission',
+          ],
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_ROUTE_STATUS::required::GET::/health::$routeStatus::success',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_AUTHORITY_INVARIANT::session_owner_matches_account',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_AUTHORITY_INVARIANT::room_exit_compensates_enter',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_BACKEND_PORT::$selectedBackendPort',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_PROVIDER_CALLS::${providerCall ? '1' : '0'}',
-          '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_ACCEPTANCE::${pass ? 'PASS' : 'FAIL'}',
+          '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_ACCEPTANCE::${pass ? scopedSuccess : 'FAIL'}',
           '',
         ].join('\n'),
       );
@@ -465,6 +489,7 @@ exit "\$status"
       'QA_M4_FIXTURE_STATUS': 'fresh_dedicated',
     };
     environment.remove('QA_M4_BACKEND_PORT');
+    environment.remove('QA_M4_REFUND_SCOPE');
     if (backendPort != null) {
       environment['QA_M4_BACKEND_PORT'] = backendPort;
     }
@@ -477,7 +502,10 @@ exit "\$status"
   test('live integration cannot emit an unconditional PASS', () {
     expect(integrationSource, contains('M4_EXPECTED_FLUTTER_SHA'));
     expect(integrationSource, contains('M4_EXPECTED_BACKEND_SHA'));
-    expect(integrationSource, contains("'acceptance': pass ? 'PASS' : 'FAIL'"));
+    expect(
+      integrationSource,
+      contains("'acceptance': pass ? _refundScope.success : 'FAIL'"),
+    );
     expect(integrationSource, contains('if (!pass)'));
     expect(integrationSource, contains("state: 'composite_success'"));
     expect(integrationSource, isNot(contains("'result': 'PASS',")));
@@ -1816,6 +1844,190 @@ printf '%s\n' 'safe prefix; $(touch should-not-run)' | contains_literal_stream "
       contains('backend_port_mapping_matches=true'),
     );
   });
+
+  ProcessResult validateRunnerRefundProfile(Directory root) => Process.runSync(
+    '/bin/bash',
+    <String>[
+      '-c',
+      '${runnerBlock('parse_refund_scope() {', 'parse_backend_port() {')}\nvalidate_refund_profile "\$1"',
+      'm4-profile-contract',
+      '${root.path}/AVD-B/logs/flutter-drive.log',
+    ],
+    environment: <String, String>{
+      'PATH': '/usr/bin:/bin',
+      'QA_M4_REFUND_SCOPE': 'deferred',
+    },
+    includeParentEnvironment: false,
+  );
+
+  test('deferred aggregate is scoped and never release ready', () {
+    final Directory root = makeEvidence(refundScope: 'deferred');
+    expect(validateRunnerRefundProfile(root).exitCode, 0);
+    final ProcessResult result = runAggregate(
+      root,
+      environmentOverrides: <String, String>{'QA_M4_REFUND_SCOPE': 'deferred'},
+    );
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    final Map<String, dynamic> verdict =
+        jsonDecode(
+              File('${root.path}/aggregate-verdict.json').readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    expect(verdict['conclusion'], 'ANDROID_EMULATOR_PASS_WITH_EXEMPTIONS');
+    expect(verdict['release_readiness'], 'NOT_RELEASE_READY');
+    expect(verdict['EXEMPT_NOT_COMPLETED'], hasLength(3));
+    expect(verdict['avd'], <String, String>{
+      'AVD-A': 'PASS_WITH_EXEMPTIONS',
+      'AVD-B': 'PASS_WITH_EXEMPTIONS',
+    });
+    expect(result.stdout, isNot(contains('M4 aggregate PASS:')));
+    expect(runAggregate(root).exitCode, isNot(0));
+  });
+
+  for (final String corruption in <String>[
+    'metadata',
+    'duplicate_metadata',
+    'environment',
+    'log_scope',
+    'full_pass',
+    'mixed_pass',
+    'refund_write',
+    'missing_read',
+    'missing_denial',
+    'missing_page',
+    'missing_exemption',
+    'extra_exemption',
+    'list_mismatch',
+    'db',
+    'sha',
+    'hard_error',
+  ]) {
+    test('deferred rejects $corruption', () {
+      final Directory root = makeEvidence(refundScope: 'deferred');
+      final String avd = '${root.path}/AVD-B';
+      void replace(String path, String before, String after) {
+        final File file = File('$avd/$path');
+        final String source = file.readAsStringSync();
+        expect(source, contains(before));
+        file.writeAsStringSync(source.replaceAll(before, after));
+      }
+
+      switch (corruption) {
+        case 'metadata':
+          replace('result.txt', 'refund_scope=deferred', 'refund_scope=strict');
+        case 'duplicate_metadata':
+          replace(
+            'result.txt',
+            'refund_scope=deferred',
+            'refund_scope=deferred\nrefund_scope=strict',
+          );
+        case 'environment':
+          replace(
+            'environment.txt',
+            'refund_scope=deferred',
+            'refund_scope=strict',
+          );
+        case 'log_scope':
+          replace(
+            'logs/flutter-drive.log',
+            'M4_REFUND_SCOPE::deferred',
+            'M4_REFUND_SCOPE::strict',
+          );
+        case 'full_pass':
+          replace(
+            'logs/flutter-drive.log',
+            'M4_ACCEPTANCE::PASS_WITH_EXEMPTIONS',
+            'M4_ACCEPTANCE::PASS',
+          );
+        case 'mixed_pass':
+          replace(
+            'logs/flutter-drive.log',
+            'M4_ACCEPTANCE::PASS_WITH_EXEMPTIONS',
+            'M4_ACCEPTANCE::PASS_WITH_EXEMPTIONS\nM4_ACCEPTANCE::PASS',
+          );
+        case 'refund_write':
+          replace(
+            'logs/flutter-drive.log',
+            'M4_REFUND_SCOPE::deferred',
+            'M4_REFUND_SCOPE::deferred\nM4_ROUTE_STATUS::commerce.refund.retry::POST::/refund/retry::200::success',
+          );
+        case 'missing_read':
+          replace(
+            'logs/flutter-drive.log',
+            'commerce.refund.eligibility',
+            'missing.read',
+          );
+        case 'missing_denial':
+          replace(
+            'logs/flutter-drive.log',
+            'refund_deferred_authoritative_denial_confirmed',
+            'missing_denial',
+          );
+        case 'missing_page':
+          replace(
+            'logs/flutter-drive.log',
+            'refund_records_page_reachable_without_submission',
+            'missing_page',
+          );
+        case 'missing_exemption':
+          replace(
+            'logs/flutter-drive.log',
+            'M4_EXEMPT_NOT_COMPLETED::commerce.refund.submit',
+            '',
+          );
+        case 'extra_exemption':
+          replace(
+            'logs/flutter-drive.log',
+            'M4_REFUND_SCOPE::deferred',
+            'M4_REFUND_SCOPE::deferred\nM4_EXEMPT_NOT_COMPLETED::commerce.gift.send',
+          );
+        case 'list_mismatch':
+          replace(
+            'exempt-not-completed.txt',
+            'commerce.refund.submit',
+            'commerce.gift.send',
+          );
+        case 'db':
+          File('$avd/db-evidence.json').deleteSync();
+        case 'sha':
+          replace(
+            'result.txt',
+            'tested_git_sha=$flutterSha',
+            'tested_git_sha=$backendSha',
+          );
+        case 'hard_error':
+          replace('result.txt', 'hard_finding_count=0', 'hard_finding_count=1');
+      }
+      if (<String>{
+        'log_scope',
+        'full_pass',
+        'mixed_pass',
+        'refund_write',
+        'missing_read',
+        'missing_denial',
+        'missing_page',
+        'missing_exemption',
+        'extra_exemption',
+      }.contains(corruption)) {
+        expect(validateRunnerRefundProfile(root).exitCode, isNot(0));
+      }
+      final ProcessResult result = runAggregate(
+        root,
+        environmentOverrides: <String, String>{
+          'QA_M4_REFUND_SCOPE': 'deferred',
+        },
+      );
+      expect(
+        result.exitCode,
+        isNot(0),
+        reason: '${result.stdout}\n${result.stderr}',
+      );
+      expect(
+        File('${root.path}/aggregate-verdict.txt').readAsStringSync(),
+        contains('conclusion=ANDROID_EMULATOR_FAIL'),
+      );
+    });
+  }
 
   test(
     'aggregate passes complete evidence for the explicitly selected 28080',

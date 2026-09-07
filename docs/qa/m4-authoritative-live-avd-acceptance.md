@@ -1,5 +1,48 @@
 # M4 authoritative live AVD acceptance
 
+## Release-only refund deferral (not completed)
+
+The default is `QA_M4_REFUND_SCOPE=strict`. Without an explicit flag, the
+original required-mutation semantics remain: refund submit/result must complete;
+an authoritative denial or a local/UI outcome does not satisfy them.
+Only `strict` and `deferred` are accepted. Empty or unknown values fail before
+the runner performs setup or starts any process.
+
+For the currently authorized release QA scope, explicitly set
+`QA_M4_REFUND_SCOPE=deferred` for **both** the runner and aggregate invocation.
+This profile defers the entire refund submit/result/retry flow. It never calls
+refund submission, retry, result recovery, or a real refund provider. Eligibility
+and history reads still run; a nonempty authoritative denial and a reachable
+refund records page are mandatory. An allowed eligibility response fails closed
+without issuing a refund write. Missing orders, failed reads, missing page
+evidence, or missing denial evidence remain failures.
+
+The original strict capability set remains in source. Deferred scope explicitly
+exempts only the following operations and reports each as
+`EXEMPT_NOT_COMPLETED`, never as a successful route or preexisting completion:
+
+- `commerce.refund.submit`
+- `commerce.refund.result`
+- `commerce.refund.retry`
+
+All other required capabilities, authority invariants, database evidence,
+hard-error checks, provider-zero requirements and candidate SHA bindings remain
+unchanged. The profile adds mandatory refund read and denial/page evidence.
+The runner binds the selected scope into Dart defines, logs, environment and
+result metadata. The aggregate requires matching scope in both AVDs, exact
+exemption markers and matching `exempt-not-completed.txt` files. Unknown,
+missing, mixed or contradictory profile evidence fails. Strict evidence from
+older runners without these metadata fields must be regenerated.
+
+A successful scoped run emits `M4_ACCEPTANCE::PASS_WITH_EXEMPTIONS`, per-AVD
+`PASS_WITH_EXEMPTIONS`, and aggregate
+`ANDROID_EMULATOR_PASS_WITH_EXEMPTIONS`. It cannot emit the complete
+`M4_ACCEPTANCE::PASS` or `ANDROID_EMULATOR_PASS` verdict. Exit zero means
+only the selected scope passed. **Overall release remains
+`NOT_RELEASE_READY`**; these QA results do not complete the deferred Alipay
+refund write chain or authorize release. Runtime/device evidence remains the
+responsibility of the main acceptance task.
+
 This document defines the acceptance contract for the Flutter client against
 the first-party development backend at the selected Android-emulator origin
 `http://10.0.2.2:${QA_M4_BACKEND_PORT}/`. It is a runner specification, not a record of a
