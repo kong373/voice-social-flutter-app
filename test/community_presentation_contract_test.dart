@@ -353,6 +353,9 @@ class _ContractHttpClient implements HttpClient {
   final List<Uri> requests;
 
   @override
+  Duration idleTimeout = const Duration(seconds: 15);
+
+  @override
   Future<HttpClientRequest> openUrl(String method, Uri url) async {
     requests.add(url);
     return _ContractHttpClientRequest(url);

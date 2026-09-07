@@ -161,6 +161,9 @@ class _RecordingHttpClient implements HttpClient {
   final _RequestRecorder recorder;
 
   @override
+  Duration idleTimeout = const Duration(seconds: 15);
+
+  @override
   Future<HttpClientRequest> openUrl(String method, Uri url) async {
     recorder.paths.add(url.path);
     return _RecordingHttpClientRequest(_guardianResponse(url.path));

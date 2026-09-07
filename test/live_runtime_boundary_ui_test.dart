@@ -217,6 +217,9 @@ void main() {
 
 class _DynamicFeedHttpClient implements HttpClient {
   @override
+  Duration idleTimeout = const Duration(seconds: 15);
+
+  @override
   Future<HttpClientRequest> openUrl(String method, Uri url) async {
     expect(method, 'GET');
     expect(url.path, '/app-mini-api/mini/v1/dynamic/list');
