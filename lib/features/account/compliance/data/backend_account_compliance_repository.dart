@@ -103,7 +103,7 @@ class BackendAccountComplianceRepository
             platformType: platformType,
           ),
           _apiClient.get(_routes.accountRealName),
-          _apiClient.get(_routes.accountSessions),
+          _fetchDeviceSessions(),
         ]);
     final ApiResponse youthResponse = authorities[0] as ApiResponse;
     final ApiResponse restrictionsResponse = authorities[1] as ApiResponse;
@@ -111,7 +111,8 @@ class BackendAccountComplianceRepository
         authorities[2] as CancellationEligibility;
     final VersionUpdateInfo versionInfo = authorities[3] as VersionUpdateInfo;
     final ApiResponse realNameResponse = authorities[4] as ApiResponse;
-    final ApiResponse sessionsResponse = authorities[5] as ApiResponse;
+    final List<DeviceSession> deviceSessions =
+        authorities[5] as List<DeviceSession>;
 
     final Map<String, Object?> youth = _requireMap(youthResponse.data, '青少年模式');
     final Map<String, Object?> restrictions = _requireMap(
@@ -121,10 +122,6 @@ class BackendAccountComplianceRepository
     final Map<String, Object?> realName = _requireMap(
       realNameResponse.data,
       '实名认证',
-    );
-    final Map<String, Object?> sessions = _requireMap(
-      sessionsResponse.data,
-      '设备会话',
     );
     final int verificationCode = _parseVerificationCode(realName);
     final bool youthModeEnabled = _requiredBool(
@@ -171,18 +168,6 @@ class BackendAccountComplianceRepository
     final Map<String, Object?> latestRestriction = restrictionList.isEmpty
         ? const <String, Object?>{}
         : _parseRestriction(restrictionList.first);
-    final List<Object?> sessionList = _requireList(
-      sessions['list'],
-      '设备会话 list',
-    );
-    final int sessionTotal = _requiredNonNegativeInt(sessions, 'total', '设备会话');
-    if (sessionTotal != sessionList.length) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '设备会话响应中的 total 与 list 数量不一致',
-      );
-    }
-    final List<DeviceSession> deviceSessions = _parseSessions(sessionList);
     final List<PermissionSetting> permissions = await _permissionSettings();
 
     return AccountComplianceSnapshot(
@@ -203,6 +188,83 @@ class BackendAccountComplianceRepository
       versionInfo: versionInfo,
       sessions: deviceSessions,
       permissions: permissions,
+    );
+  }
+
+  Future<List<DeviceSession>> _fetchDeviceSessions() async {
+    const int pageSize = 20;
+    // Bound network/memory work even when a server advertises an enormous total.
+    const int maxPages = 100;
+    const metadata = <String>['pageNum', 'pageSize', 'pages', 'hasMore'];
+    final sessions = <DeviceSession>[];
+    final ids = <String>{};
+    int? expectedTotal;
+    for (int pageNum = 1; pageNum <= maxPages; pageNum++) {
+      final response = await _apiClient.get(
+        _routes.accountSessions,
+        query: <String, String>{'pageNum': '$pageNum', 'pageSize': '$pageSize'},
+      );
+      final data = _requireMap(response.data, '设备会话');
+      final list = _requireList(data['list'], '设备会话 list');
+      final total = _requiredNonNegativeInt(data, 'total', '设备会话');
+      final bool paginated = metadata.any(data.containsKey);
+      bool hasMore = false;
+      if (!paginated) {
+        // Historical complete-list fixtures are valid only on the first page.
+        if (pageNum != 1 || total != list.length) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '设备会话响应中的 total 与完整 list 数量不一致',
+          );
+        }
+      } else {
+        final returnedPage = _requiredPositiveInt(data, 'pageNum', '设备会话');
+        final returnedSize = _requiredPositiveInt(data, 'pageSize', '设备会话');
+        final pages = _requiredNonNegativeInt(data, 'pages', '设备会话');
+        hasMore = _requiredBool(data, 'hasMore', '设备会话');
+        final expectedPages = (total + pageSize - 1) ~/ pageSize;
+        final remaining = total - (pageNum - 1) * pageSize;
+        final expectedLength = remaining > pageSize ? pageSize : remaining;
+        if (returnedPage != pageNum ||
+            returnedSize != pageSize ||
+            pages != expectedPages ||
+            pages > maxPages ||
+            (expectedTotal != null && total != expectedTotal) ||
+            (pageNum > pages && !(pageNum == 1 && total == 0)) ||
+            hasMore != (pageNum < pages) ||
+            list.length != expectedLength) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '设备会话分页信息不一致或超出读取上限，请重试',
+          );
+        }
+      }
+      expectedTotal ??= total;
+      final parsed = _parseSessions(list);
+      for (final session in parsed) {
+        // Offset pagination can repeat records when last_used_at changes.
+        // Never deduplicate and pretend that the resulting list is complete.
+        if (!ids.add(session.id)) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '设备会话分页出现重复记录，请重试',
+          );
+        }
+        sessions.add(session);
+      }
+      if (!hasMore) {
+        if (sessions.length != expectedTotal) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '设备会话完整列表数量与 total 不一致',
+          );
+        }
+        return sessions;
+      }
+    }
+    throw const ApiException(
+      kind: ApiFailureKind.protocol,
+      message: '设备会话分页超出读取上限，请重试',
     );
   }
 
