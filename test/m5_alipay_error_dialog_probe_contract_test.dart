@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -17,7 +18,15 @@ void main() {
   final File focusedTarget = File(
     'integration_test/alipay_focused_smoke_test.dart',
   ).absolute;
-  const String serial = 'R58PHYSICAL001';
+  final Random serialRandom = Random.secure();
+  final Map<String, String> fixtureSerials = <String, String>{};
+  // Keep each fixture isolated across processes and worktrees, while both
+  // contenders in the lock test resolve to the same serial for their fixture.
+  String fakeSerial(Directory root) => fixtureSerials.putIfAbsent(
+    root.path,
+    () =>
+        'FAKE${pid}X${List<String>.generate(16, (_) => serialRandom.nextInt(256).toRadixString(16).padLeft(2, '0')).join()}',
+  );
   const String packageName = 'com.eg.android.AlipayGphoneRC';
   const String helperApplicationId = 'com.kong373.voicesocial.qa.alipayhelper';
   const String helperTestPackage =
@@ -167,7 +176,7 @@ import time
 calls = pathlib.Path(os.environ["FAKE_CALLS"])
 with calls.open("a") as stream:
     stream.write(" ".join(sys.argv[1:]) + "\\n")
-if len(sys.argv) < 3 or sys.argv[1] != "-s" or sys.argv[2] != "R58PHYSICAL001":
+if len(sys.argv) < 3 or sys.argv[1] != "-s" or sys.argv[2] != "${fakeSerial(root)}":
     raise SystemExit(91)
 args = sys.argv[3:]
 if not args:
@@ -329,7 +338,7 @@ else:
       '--adb',
       fake.path,
       '--serial',
-      serial,
+      fakeSerial(fake.parent),
       '--flutter-log',
       log.path,
       '--sdk-root',
@@ -358,7 +367,7 @@ else:
     ],
     String logContents = '$launchMarker\n$invocationStart\n',
     String? androidSerial,
-    String selectedSerial = serial,
+    String? selectedSerial,
     int markerTimeout = 1,
     bool helperFail = false,
     String verifyMode = 'ok',
@@ -379,7 +388,7 @@ else:
       log,
       markerTimeout: markerTimeout,
       selectedJavaHome: selectedJavaHome,
-    )..[4] = selectedSerial;
+    )..[4] = selectedSerial ?? fakeSerial(root);
     return Process.runSync(
       '/bin/bash',
       args,
@@ -396,6 +405,25 @@ else:
       includeParentEnvironment: false,
     );
   }
+
+  test('independent fixtures use distinct legal fake serials', () {
+    final Directory first = sandbox('alipay-error-dialog-isolation-');
+    final Directory second = sandbox('alipay-error-dialog-isolation-');
+    String serialFor(Directory root) => probeArgs(
+      File('${root.path}/adb'),
+      File('${root.path}/flutter.log'),
+    )[4];
+    final String firstSerial = serialFor(first);
+    final String secondSerial = serialFor(second);
+    expect(firstSerial, isNot(secondSerial));
+    expect(serialFor(first), firstSerial);
+    for (final String value in <String>[firstSerial, secondSerial]) {
+      expect(value, matches(RegExp(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')));
+      expect(value.toLowerCase(), isNot(contains('emulator')));
+      expect(value.toLowerCase(), isNot(contains('qemu')));
+      expect(value, isNot('R58PHYSICAL001'));
+    }
+  });
 
   test('probe is shell-valid and exposes only the narrow operation', () {
     expect(probe.existsSync(), isTrue);
