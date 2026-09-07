@@ -1120,6 +1120,72 @@ printf 'sdk.dir=/development/android\nflutter.sdk=/development/flutter\n' >"$tar
     },
   );
 
+  test('runtime relay feeder spans the full Flutter drive deadline', () {
+    expect(
+      runnerSource,
+      contains("readonly FLUTTER_DRIVE_TIMEOUT_SECONDS='1500'"),
+    );
+    expect(
+      runnerSource,
+      contains("readonly FLUTTER_DRIVE_KILL_AFTER_SECONDS='30'"),
+    );
+    expect(
+      runnerSource,
+      contains(
+        'readonly RUNTIME_TOKEN_FEEDER_DEADLINE_SECONDS="\$(('
+        'FLUTTER_DRIVE_TIMEOUT_SECONDS + FLUTTER_DRIVE_KILL_AFTER_SECONDS))"',
+      ),
+    );
+    expect(
+      runnerSource,
+      contains("readonly RUNTIME_TOKEN_FEED_INTERVAL_MILLIS='250'"),
+    );
+
+    final String script =
+        '''
+set -Eeuo pipefail
+${runnerBlock('runtime_token_feeder_iterations() {', '\nfeed_runtime_relay_token() {')}
+cold_build_millis=89300
+full_deadline_seconds=1530
+interval_millis=250
+iterations="\$(runtime_token_feeder_iterations "\$full_deadline_seconds" "\$interval_millis")"
+[[ "\$iterations" -gt \$((cold_build_millis / interval_millis)) ]]
+[[ "\$iterations" -eq 6120 ]]
+printf 'iterations=%s\\n' "\$iterations"
+''';
+    final ProcessResult result = Process.runSync('/bin/bash', <String>[
+      '-c',
+      script,
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains('iterations=6120'));
+  });
+
+  test('cleanup tolerates an empty DB evidence array under nounset', () {
+    expect(runnerSource, contains('cleanup_raw_evidence_files() {'));
+    expect(
+      runnerSource,
+      contains('if [[ \${DB_EVIDENCE_RAW_FILES[@]+_} ]]; then'),
+    );
+
+    final String script =
+        '''
+set -Eeuo pipefail
+DB_EVIDENCE_RAW_FILES=()
+ARTIFACT_ROOT=/unused-m4-artifact-root
+cleanup_failed=0
+${runnerBlock('cleanup_raw_evidence_files() {', '\ncleanup() {')}
+cleanup_raw_evidence_files
+printf 'cleanup_failed=%s\\n' "\$cleanup_failed"
+''';
+    final ProcessResult result = Process.runSync('/bin/bash', <String>[
+      '-c',
+      script,
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains('cleanup_failed=0'));
+  });
+
   test('fixture nickname fits the registration UI limit end to end', () {
     final String helperSource = dbEvidenceHelper.readAsStringSync();
     expect(registrationSource, contains('maxLength: 16'));

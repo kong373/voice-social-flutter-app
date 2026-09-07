@@ -68,6 +68,10 @@ readonly B_HEIGHT='800'
 readonly B_DPR='2.40'
 readonly SMS_COOLDOWN_SECONDS='60'
 readonly SMS_COOLDOWN_BUFFER_SECONDS='5'
+readonly FLUTTER_DRIVE_TIMEOUT_SECONDS='1500'
+readonly FLUTTER_DRIVE_KILL_AFTER_SECONDS='30'
+readonly RUNTIME_TOKEN_FEED_INTERVAL_MILLIS='250'
+readonly RUNTIME_TOKEN_FEEDER_DEADLINE_SECONDS="$((FLUTTER_DRIVE_TIMEOUT_SECONDS + FLUTTER_DRIVE_KILL_AFTER_SECONDS))"
 readonly APP_PACKAGE='com.kong373.voice_social_app'
 readonly RUNTIME_TOKEN_FILE='cache/m4-runtime-relay-token'
 readonly RUNTIME_TOKEN_TMP_FILE="$RUNTIME_TOKEN_FILE.tmp"
@@ -354,6 +358,19 @@ PY
   ANDROID_HOST_SOURCE_SHA256="$digest"
 }
 
+cleanup_raw_evidence_files() {
+  if [[ ${DB_EVIDENCE_RAW_FILES[@]+_} ]]; then
+    local raw_evidence_file
+    for raw_evidence_file in "${DB_EVIDENCE_RAW_FILES[@]}"; do
+      if [[ "$raw_evidence_file" == "$ARTIFACT_ROOT"/AVD-[AB]/.m4-db-evidence.* ]]; then
+        rm -f -- "$raw_evidence_file" || cleanup_failed=1
+      else
+        cleanup_failed=1
+      fi
+    done
+  fi
+}
+
 cleanup() {
   local incoming_status=$?
   local cleanup_failed=0
@@ -364,14 +381,7 @@ cleanup() {
     kill "$RUNTIME_TOKEN_FEEDER_PID" 2>/dev/null || true
     wait "$RUNTIME_TOKEN_FEEDER_PID" 2>/dev/null || true
   }
-  local raw_evidence_file
-  for raw_evidence_file in "${DB_EVIDENCE_RAW_FILES[@]}"; do
-    if [[ "$raw_evidence_file" == "$ARTIFACT_ROOT"/AVD-[AB]/.m4-db-evidence.* ]]; then
-      rm -f -- "$raw_evidence_file" || cleanup_failed=1
-    else
-      cleanup_failed=1
-    fi
-  done
+  cleanup_raw_evidence_files
   local started_serial
   if [[ -f "$STARTED_SERIALS_FILE" ]]; then
     while IFS= read -r started_serial; do
@@ -783,16 +793,30 @@ PY
   fail 'runtime config relay did not become ready'
 }
 
+runtime_token_feeder_iterations() {
+  [[ "$#" -eq 2 ]] || return 64
+  local deadline_seconds="$1"
+  local interval_millis="$2"
+  [[ "$deadline_seconds" =~ ^[0-9]+$ ]] || return 64
+  [[ "$interval_millis" =~ ^[1-9][0-9]*$ ]] || return 64
+  printf '%s\n' "$(((deadline_seconds * 1000 + interval_millis - 1) / interval_millis))"
+}
+
 feed_runtime_relay_token() {
   local serial="$1"
   local token="$2"
   [[ "$serial" =~ ^[A-Za-z0-9_.:-]{1,80}$ ]] || fail 'runtime token feeder serial is invalid'
   [[ "${#token}" -ge 64 ]] || fail 'runtime token feeder token is invalid'
+  local feeder_iterations
+  feeder_iterations="$(runtime_token_feeder_iterations \
+    "$RUNTIME_TOKEN_FEEDER_DEADLINE_SECONDS" "$RUNTIME_TOKEN_FEED_INTERVAL_MILLIS")" ||
+    fail 'runtime token feeder deadline is invalid'
   (
     # Flutter drive installs a debug APK after this feeder starts. Repeating
     # the 0600 cache-file write bridges that install window without passing the
     # bearer through dart-define, process arguments, logs, or artifacts.
-    for _ in {1..240}; do
+    local iteration
+    for ((iteration = 0; iteration < feeder_iterations; iteration++)); do
       printf '%s' "$token" |
         adb -s "$serial" shell run-as "$APP_PACKAGE" tee "$RUNTIME_TOKEN_TMP_FILE" \
           >/dev/null 2>&1 &&
@@ -1514,7 +1538,7 @@ run_one() {
   [[ "$avd" == 'AVD-B' ]] && relay_token="$RELAY_TOKEN_B"
   feed_runtime_relay_token "$serial" "$relay_token"
   set +e
-  run_with_timeout 1500 30 \
+  run_with_timeout "$FLUTTER_DRIVE_TIMEOUT_SECONDS" "$FLUTTER_DRIVE_KILL_AFTER_SECONDS" \
     env -u QA_LIVE_PHONE -u QA_OAUTH_CLIENT_ID \
       -u QA_DB_EVIDENCE_URL -u QA_DB_EVIDENCE_TOKEN \
       -u DEVELOPMENT_OUTBOX_KEY -u QA_DEVELOPMENT_OUTBOX_KEY \
