@@ -398,7 +398,11 @@ void main() {
         ownPrivateTexts.add(privateText);
         peerPrivateTexts.add(peerPrivate);
         final composer = find.byType(TextField).hitTestable();
-        final sendButton = find.byTooltip('发送消息').hitTestable();
+        final sendButton = find
+            .byWidgetPredicate(
+              (widget) => widget is IconButton && widget.tooltip == '发送消息',
+            )
+            .hitTestable();
         await _until(
           tester,
           () =>
