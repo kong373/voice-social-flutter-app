@@ -177,6 +177,7 @@ if args[0] == "get-state":
     started = os.environ.get("FAKE_STARTED_FILE")
     release = os.environ.get("FAKE_RELEASE_FILE")
     if hold and started and release and not pathlib.Path(started).exists():
+        time.sleep(float(os.environ.get("FAKE_START_DELAY_SECONDS", "0")))
         pathlib.Path(started).write_text("started")
         while not pathlib.Path(release).exists():
             time.sleep(0.01)
@@ -1009,6 +1010,9 @@ else:
         startedFile: started.path,
         releaseFile: release.path,
       );
+      // Model slower process setup without delaying the second process or
+      // changing any serial-lock behavior in the production probe.
+      envOne['FAKE_START_DELAY_SECONDS'] = '3';
       final Map<String, String> envTwo = fakeEnvironment(
         root,
         callsPath: callsTwo,
@@ -1024,8 +1028,11 @@ else:
       int? secondExit;
       int? firstExit;
       try {
+        // This is fixture readiness, before testing contention. Source
+        // attestation and cold shell/Python startup can legitimately exceed
+        // two seconds; still require the first process to reach fake adb.
         final DateTime deadline = DateTime.now().add(
-          const Duration(seconds: 2),
+          const Duration(seconds: 10),
         );
         while (!started.existsSync() && DateTime.now().isBefore(deadline)) {
           await Future<void>.delayed(const Duration(milliseconds: 10));
