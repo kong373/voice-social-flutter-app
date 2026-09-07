@@ -151,7 +151,8 @@ void main() {
       );
       await tester.testTextInput.receiveAction(TextInputAction.send);
       FocusManager.instance.primaryFocus?.unfocus();
-      tester.testTextInput.hide();
+      // Unfocus unregisters the test input connection on a live device.
+      // Do not call TestTextInput.hide() after that connection has closed.
       await tester.pump(const Duration(milliseconds: 300));
       await _until(
         tester,
