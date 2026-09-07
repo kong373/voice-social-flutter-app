@@ -408,11 +408,11 @@ void main() {
         );
         await _until(
           tester,
-          () => find.text(peerPrivate).evaluate().isNotEmpty,
+          () => find.text(peerPrivate).hitTestable().evaluate().length == 1,
           'private automatic receive without navigation $index',
           timeout: const Duration(seconds: 5),
         );
-        expect(find.text(peerPrivate), findsOneWidget);
+        expect(find.text(peerPrivate).hitTestable(), findsOneWidget);
         await _barrier(tester, relay, config, 'private-received-$index');
       }
       final conversation =
