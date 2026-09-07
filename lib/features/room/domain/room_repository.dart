@@ -14,6 +14,14 @@ class RoomJoinRequestPendingException extends ApiException {
   final String? joinRequestId;
 }
 
+/// Optional read-only authority capability; reading never joins a room.
+abstract interface class RoomAuthorityRepository {
+  Future<RoomAuthorityProjection> fetchRoomAuthority({
+    required String roomId,
+    required int currentUserId,
+  });
+}
+
 abstract interface class RoomRepository {
   Future<RoomSnapshot> enterRoom({
     required String roomId,

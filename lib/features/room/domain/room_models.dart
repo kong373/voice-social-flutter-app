@@ -225,6 +225,23 @@ class RoomMessage {
   final int? eventVersion;
 }
 
+/// Authenticated viewer authority returned by the first-party room read API.
+class RoomAuthorityProjection {
+  const RoomAuthorityProjection({
+    required this.snapshot,
+    required this.viewerUserId,
+    required this.memberActive,
+    required this.roomMuted,
+    required this.version,
+  });
+
+  final RoomSnapshot snapshot;
+  final int viewerUserId;
+  final bool memberActive;
+  final bool roomMuted;
+  final int version;
+}
+
 class RoomSnapshot {
   const RoomSnapshot({
     required this.roomId,
@@ -245,6 +262,7 @@ class RoomSnapshot {
     this.onlineCount,
     this.coverUrl,
     this.backgroundUrl,
+    this.sessionId,
   });
 
   final String roomId;
@@ -270,6 +288,9 @@ class RoomSnapshot {
   final String? coverUrl;
   final String? backgroundUrl;
 
+  /// First-party membership identifier, never an RTC or authentication token.
+  final String? sessionId;
+
   bool get isSnapshotOnly => transportMode == RoomTransportMode.snapshotOnly;
 
   RoomSnapshot copyWith({
@@ -286,9 +307,11 @@ class RoomSnapshot {
     int? giftBalance,
     String? accessMode,
     int? onlineCount,
+    String? sessionId,
   }) {
     return RoomSnapshot(
       roomId: roomId,
+      sessionId: sessionId ?? this.sessionId,
       roomCode: roomCode,
       title: title ?? this.title,
       topic: topic ?? this.topic,

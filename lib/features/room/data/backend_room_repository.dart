@@ -17,6 +17,7 @@ import 'package:voice_social_app/features/im/domain/tencent_im_room_models.dart'
 class BackendRoomRepository
     implements
         RoomRepository,
+        RoomAuthorityRepository,
         GiftReceiptRepository,
         RtcTokenRepository,
         TencentImRoomSessionSource,
@@ -109,6 +110,74 @@ class BackendRoomRepository
       response.data,
       expectedRoomId: normalizedRoomId,
     );
+  }
+
+  @override
+  Future<RoomAuthorityProjection> fetchRoomAuthority({
+    required String roomId,
+    required int currentUserId,
+  }) async {
+    if (roomId.trim().isEmpty || currentUserId <= 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '房间 ID 和当前用户 ID 必须有效',
+      );
+    }
+    final ApiResponse response = await _apiClient.get(
+      _routes.queryRoomOtherInfo,
+      query: <String, String>{'roomId': roomId},
+    );
+    final Map<String, Object?> data = _asMap(response.data);
+    final Object? viewerUserId = data['viewerUserId'];
+    final Object? memberActive = data['memberActive'];
+    final Object? roomMuted = data['roomMuted'];
+    final Object? version = data['version'];
+    if (data['roomId'] != roomId ||
+        <String>[
+          'roomIdStr',
+          'id',
+        ].any((String key) => data.containsKey(key) && data[key] != roomId) ||
+        viewerUserId is! int ||
+        viewerUserId != currentUserId ||
+        memberActive is! bool ||
+        roomMuted is! bool ||
+        version is! int ||
+        version < 0 ||
+        data['activeSession'] is! bool) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '房间权威响应身份、版本或状态无效',
+      );
+    }
+    final String? sessionId = _sessionIdFromData(data);
+    if (memberActive && (data['activeSession'] != true || sessionId == null)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '活跃房间成员缺少有效会话',
+      );
+    }
+    // Read data directly: joined=false/closed is authority, not an entry
+    // failure. Do not acquire credentials or update active/IM session state.
+    return RoomAuthorityProjection(
+      snapshot: _snapshotFromData(data, currentUserId: currentUserId),
+      viewerUserId: viewerUserId,
+      memberActive: memberActive,
+      roomMuted: roomMuted,
+      version: version,
+    );
+  }
+
+  static String? _sessionIdFromData(Map<String, Object?> data) {
+    if (!data.containsKey('sessionId')) return null;
+    final Object? value = data['sessionId'];
+    if (value is! String ||
+        !TencentImAvChatRoomSession.identifierPattern.hasMatch(value)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '房间会话标识无效',
+      );
+    }
+    return value;
   }
 
   void _setTencentImRoomSession(
@@ -453,6 +522,7 @@ class BackendRoomRepository
     final String memberRole = _memberRoleFromData(data);
     return RoomSnapshot(
       roomId: resolvedRoomId,
+      sessionId: _sessionIdFromData(data),
       roomCode: _nonEmptyString(data['roomCode']) ?? resolvedRoomId,
       title:
           _nonEmptyString(data['roomName']) ??
