@@ -569,6 +569,7 @@ class ContractHandler(BaseHTTPRequestHandler):
         if path == ACCOUNT_CANCELLATION:
             return {
                 "canLogout": True,
+                "canCancel": False,
                 "eligible": True,
                 "status": "NONE",
                 "latestRequest": {},

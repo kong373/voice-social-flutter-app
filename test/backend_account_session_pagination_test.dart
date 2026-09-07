@@ -50,6 +50,7 @@ Future<AccountComplianceSnapshot> fetch(
       },
       '/app-api/user/queryUserLogout' => <String, Object?>{
         'canLogout': true,
+        'canCancel': false,
         'eligible': true,
         'status': 'NONE',
         'latestRequest': <String, Object?>{},

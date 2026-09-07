@@ -730,7 +730,16 @@ class BackendAccountComplianceRepository
         message: '撤销注销响应缺少服务端状态',
       );
     }
-    return _parseCancellation(data);
+    final result = _parseCancellation(data);
+    if (result.status == 'COOLING_OFF' ||
+        result.canCancel ||
+        _string(latestRequest['status']).toUpperCase() != 'CANCELLED') {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '撤销注销响应未确认申请已撤销',
+      );
+    }
+    return result;
   }
 
   @override
@@ -1079,6 +1088,13 @@ class BackendAccountComplianceRepository
     }
     final bool eligible = _requiredBool(data, 'eligible', '账户注销资格');
     final bool canLogout = _requiredBool(data, 'canLogout', '账户注销资格');
+    final bool canCancel = _requiredBool(data, 'canCancel', '账户注销资格');
+    if (canCancel && status != 'COOLING_OFF') {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '账户注销资格响应中的撤销资格与申请状态矛盾',
+      );
+    }
     if (eligible != canLogout || eligible != (status == 'NONE')) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -1110,6 +1126,14 @@ class BackendAccountComplianceRepository
           message: '账户注销资格响应缺少有效冷静期截止时间',
         );
       }
+      if (data.containsKey('coolingEndsAt') &&
+          DateTime.tryParse(_string(data['coolingEndsAt'])) !=
+              DateTime.tryParse(_string(latestRequest['coolingEndsAt']))) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '账户注销资格响应中的截止时间互相矛盾',
+        );
+      }
     } else if (latestRequest.isNotEmpty &&
         _string(latestRequest['status']).toUpperCase() == 'COOLING_OFF') {
       throw const ApiException(
@@ -1119,11 +1143,9 @@ class BackendAccountComplianceRepository
     }
     return CancellationEligibility(
       allowed: eligible,
-      canCancel: status == 'COOLING_OFF',
+      canCancel: canCancel,
       status: status,
-      coolingEndsAt: _string(
-        data['coolingEndsAt'] ?? latestRequest['coolingEndsAt'],
-      ),
+      coolingEndsAt: _string(latestRequest['coolingEndsAt']),
       message: _cancellationMessage(status, eligible),
       mobile: _maskMobile(_string(data['phone'] ?? data['mobile'])),
       // The first-party endpoint requires an explicit confirmation body. It

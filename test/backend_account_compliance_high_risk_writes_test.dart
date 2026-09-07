@@ -196,6 +196,7 @@ Map<String, Object?> get _coolingOffData => <String, Object?>{
   'eligible': false,
   'status': 'COOLING_OFF',
   'canLogout': false,
+  'canCancel': true,
   'requiresConfirmation': true,
   'immediateDeletion': false,
   'latestRequest': <String, Object?>{

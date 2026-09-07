@@ -17,6 +17,142 @@ const String submittedAppealId = '55555555-5555-4555-8555-555555555555';
 
 void main() {
   test(
+    'cancel mutation never treats a still-pending request as revoked',
+    () async {
+      final server = await startServer(
+        (request) => reply(
+          request,
+          data: <String, Object?>{
+            'status': 'COOLING_OFF',
+            'eligible': false,
+            'canLogout': false,
+            'canCancel': false,
+            'requiresConfirmation': true,
+            'immediateDeletion': false,
+            'latestRequest': <String, Object?>{
+              'status': 'COOLING_OFF',
+              'coolingEndsAt': '2020-01-01T00:00:00Z',
+            },
+          },
+        ),
+      );
+      try {
+        await expectLater(
+          BackendAccountComplianceRepository(
+            apiClient: client(server),
+          ).cancelDeletion(),
+          throwsA(
+            isA<ApiException>().having(
+              (error) => error.kind,
+              'kind',
+              ApiFailureKind.protocol,
+            ),
+          ),
+        );
+      } finally {
+        await server.close(force: true);
+      }
+    },
+  );
+
+  test(
+    'cancellation uses server revoke authority, not status or device time',
+    () async {
+      for (final canCancel in <bool>[false, true]) {
+        final server = await startServer(
+          (request) => reply(
+            request,
+            data: <String, Object?>{
+              'status': 'COOLING_OFF',
+              'eligible': false,
+              'canLogout': false,
+              'canCancel': canCancel,
+              'requiresConfirmation': true,
+              'immediateDeletion': false,
+              'latestRequest': <String, Object?>{
+                'status': 'COOLING_OFF',
+                'coolingEndsAt': '2020-01-01T00:00:00Z',
+              },
+            },
+          ),
+        );
+        try {
+          final value = await BackendAccountComplianceRepository(
+            apiClient: client(server),
+          ).queryCancellationEligibility();
+          expect(value.status, 'COOLING_OFF');
+          expect(value.canCancel, canCancel);
+          expect(value.allowed, isFalse);
+        } finally {
+          await server.close(force: true);
+        }
+      }
+    },
+  );
+
+  test(
+    'cancellation rejects missing malformed contradictory revoke authority',
+    () async {
+      for (final changes in <Map<String, Object?>>[
+        <String, Object?>{},
+        <String, Object?>{'canCancel': null},
+        <String, Object?>{'canCancel': 'true'},
+        <String, Object?>{'canCancel': 1},
+        <String, Object?>{
+          'canCancel': true,
+          'status': 'NONE',
+          'eligible': true,
+          'canLogout': true,
+          'latestRequest': <String, Object?>{},
+        },
+        <String, Object?>{
+          'canCancel': true,
+          'status': 'BLOCKED',
+          'latestRequest': <String, Object?>{},
+        },
+        <String, Object?>{
+          'canCancel': true,
+          'coolingEndsAt': '2030-01-02T00:00:00Z',
+        },
+      ]) {
+        final server = await startServer(
+          (request) => reply(
+            request,
+            data: <String, Object?>{
+              'status': 'COOLING_OFF',
+              'eligible': false,
+              'canLogout': false,
+              'requiresConfirmation': true,
+              'immediateDeletion': false,
+              'latestRequest': <String, Object?>{
+                'status': 'COOLING_OFF',
+                'coolingEndsAt': '2030-01-01T00:00:00Z',
+              },
+              ...changes,
+            },
+          ),
+        );
+        try {
+          await expectLater(
+            BackendAccountComplianceRepository(
+              apiClient: client(server),
+            ).queryCancellationEligibility(),
+            throwsA(
+              isA<ApiException>().having(
+                (error) => error.kind,
+                'kind',
+                ApiFailureKind.protocol,
+              ),
+            ),
+          );
+        } finally {
+          await server.close(force: true);
+        }
+      }
+    },
+  );
+
+  test(
     'snapshot uses first-party routes and parses authoritative fields',
     () async {
       final List<RequestRecord> requests = <RequestRecord>[];
@@ -69,6 +205,7 @@ void main() {
               request,
               data: <String, Object?>{
                 'canLogout': true,
+                'canCancel': false,
                 'eligible': true,
                 'status': 'NONE',
                 'latestRequest': <String, Object?>{},
@@ -252,6 +389,7 @@ void main() {
               request,
               data: <String, Object?>{
                 'canLogout': true,
+                'canCancel': false,
                 'eligible': true,
                 'status': 'NONE',
                 'latestRequest': <String, Object?>{},
@@ -357,6 +495,7 @@ void main() {
             request,
             data: <String, Object?>{
               'canLogout': true,
+              'canCancel': false,
               'eligible': true,
               'status': 'NONE',
               'latestRequest': <String, Object?>{},
@@ -458,6 +597,7 @@ void main() {
         },
         '/app-api/user/queryUserLogout' => <String, Object?>{
           'canLogout': true,
+          'canCancel': false,
           'eligible': true,
           'status': 'NONE',
           'latestRequest': <String, Object?>{},
@@ -518,6 +658,7 @@ void main() {
           '/app-api/user/queryUserLogout',
           <String, Object?>{
             'canLogout': true,
+            'canCancel': false,
             'eligible': 1,
             'status': 'NONE',
             'latestRequest': <String, Object?>{},
@@ -617,6 +758,7 @@ void main() {
                 'eligible': false,
                 'status': 'COOLING_OFF',
                 'canLogout': false,
+                'canCancel': true,
                 'requiresConfirmation': true,
                 'immediateDeletion': false,
                 'latestRequest': <String, Object?>{
@@ -689,6 +831,7 @@ void main() {
                 request,
                 data: <String, Object?>{
                   'canLogout': false,
+                  'canCancel': true,
                   'eligible': false,
                   'status': 'COOLING_OFF',
                   'coolingDays': 7,
@@ -705,6 +848,7 @@ void main() {
               request,
               data: <String, Object?>{
                 'canLogout': true,
+                'canCancel': false,
                 'eligible': true,
                 'status': 'NONE',
                 'requiresConfirmation': true,
@@ -723,6 +867,7 @@ void main() {
               request,
               data: <String, Object?>{
                 'canLogout': true,
+                'canCancel': false,
                 'eligible': true,
                 'status': 'NONE',
                 'requiresConfirmation': true,
@@ -776,6 +921,7 @@ void main() {
           data: <String, Object?>{
             'eligible': false,
             'canLogout': false,
+            'canCancel': false,
             'status': 'BLOCKED',
             'requiresConfirmation': true,
             'immediateDeletion': false,
@@ -825,6 +971,7 @@ void main() {
             data: <String, Object?>{
               'eligible': false,
               'canLogout': false,
+              'canCancel': false,
               'status': 'BLOCKED',
               'requiresConfirmation': true,
               'immediateDeletion': false,

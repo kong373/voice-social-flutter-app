@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
@@ -332,48 +335,176 @@ class AccountCancellationPage extends StatefulWidget {
       _AccountCancellationPageState();
 }
 
-class _AccountCancellationPageState extends State<AccountCancellationPage> {
+class _AccountCancellationPageState extends State<AccountCancellationPage>
+    with WidgetsBindingObserver {
   final TextEditingController _codeController = TextEditingController();
   CancellationEligibility? _eligibility;
   String? _error;
   bool _busy = false;
+  bool _checking = false;
+  bool _foreground = true;
+  bool _visible = false;
+  bool _identityChanged = false;
+  bool _coolingObserved = false;
+  bool _readPending = false;
+  int _generation = 0;
+  int? _identityGeneration;
+  AppDependencies? _dependencies;
+  Future<void>? _readFlight;
+  Timer? _refreshTimer;
+  ModalRoute<void>? _route;
+
+  bool get _active =>
+      mounted &&
+      _foreground &&
+      (_route?.isCurrent ?? _visible) &&
+      !_identityChanged;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final state = WidgetsBinding.instance.lifecycleState;
+    _foreground = state == null || state == AppLifecycleState.resumed;
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_eligibility == null) {
-      _load();
+    final dependencies = AppDependencyScope.of(context);
+    _route = ModalRoute.of<void>(context);
+    final visible = ModalRoute.isCurrentOf(context) ?? true;
+    if (_dependencies == null) {
+      _dependencies = dependencies;
+      _identityGeneration = dependencies.sessionManager.identityGeneration;
+      dependencies.sessionManager.addListener(_onIdentityChanged);
+      _visible = visible;
+      unawaited(_load());
+    } else if (!identical(_dependencies, dependencies)) {
+      _invalidateIdentity();
+    } else if (_visible != visible) {
+      _visible = visible;
+      _pauseReads();
+      if (_active) unawaited(_load());
     }
   }
 
   @override
+  void didUpdateWidget(AccountCancellationPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.account != widget.account) _invalidateIdentity();
+  }
+
+  void _onIdentityChanged() {
+    if (_dependencies!.sessionManager.identityGeneration !=
+        _identityGeneration) {
+      _invalidateIdentity();
+    }
+  }
+
+  void _invalidateIdentity() {
+    if (!mounted || _identityChanged) return;
+    _pauseReads();
+    _codeController.clear();
+    setState(() {
+      _identityChanged = true;
+      _eligibility = null;
+      _error = '登录状态已改变，请重新进入账号注销页。';
+    });
+  }
+
+  void _pauseReads() {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+    _generation++;
+    _readPending = false;
+    _checking = true;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    _pauseReads();
+    if (_dependencies != null && _active) unawaited(_load());
+  }
+
+  @override
   void dispose() {
+    _pauseReads();
+    WidgetsBinding.instance.removeObserver(this);
+    _dependencies?.sessionManager.removeListener(_onIdentityChanged);
     _codeController.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    if (mounted) {
-      setState(() => _error = null);
-    }
-    try {
-      final CancellationEligibility value = await AppDependencyScope.of(
-        context,
-      ).accountComplianceRepository.queryCancellationEligibility();
-      if (mounted) {
+  Future<void> _load() {
+    if (!_active || _busy) return Future<void>.value();
+    _readPending = true;
+    if (_readFlight != null) return _readFlight!;
+    _refreshTimer?.cancel();
+    final operation = _readAuthority();
+    _readFlight = operation;
+    operation.whenComplete(() {
+      _readFlight = null;
+      _scheduleRefresh();
+    });
+    return operation;
+  }
+
+  Future<void> _readAuthority() async {
+    do {
+      _readPending = false;
+      final generation = _generation;
+      setState(() {
+        _checking = true;
+        _error = null;
+      });
+      try {
+        final value = await _dependencies!.accountComplianceRepository
+            .queryCancellationEligibility();
+        if (!_active || generation != _generation) continue;
         setState(() {
           _eligibility = value;
-          _error = null;
+          _coolingObserved = value.status == 'COOLING_OFF';
+          _checking = false;
+        });
+      } catch (error) {
+        if (!_active || generation != _generation) continue;
+        setState(() {
+          _eligibility = null;
+          _checking = false;
+          _error = _messageFor(error);
         });
       }
-    } catch (error) {
-      if (mounted) {
-        setState(() => _error = _messageFor(error));
+    } while (_readPending && _active && !_busy);
+  }
+
+  void _scheduleRefresh() {
+    _refreshTimer?.cancel();
+    if (!_active || _busy || !_coolingObserved) return;
+    var delay = const Duration(seconds: 2);
+    final deadline = DateTime.tryParse(_eligibility?.coolingEndsAt ?? '');
+    if (_eligibility?.canCancel == true && deadline != null) {
+      final untilDeadline = deadline.difference(DateTime.now());
+      // The device clock only schedules a read; it never grants/revokes the
+      // server-owned capability. A skewed clock must not create a tight loop.
+      if (untilDeadline > Duration.zero && untilDeadline < delay) {
+        delay = untilDeadline;
       }
     }
+    _refreshTimer = Timer(delay, () => unawaited(_load()));
+  }
+
+  String _deadlineText(String value) {
+    final date = DateTime.tryParse(value)?.toLocal();
+    if (date == null) return '截止时间待确认';
+    final locale = MaterialLocalizations.of(context);
+    return '${locale.formatMediumDate(date)} ${locale.formatTimeOfDay(TimeOfDay.fromDateTime(date), alwaysUse24HourFormat: true)}';
   }
 
   Future<void> _sendCode() async {
+    if (!mounted || !_active || _checking || _eligibility?.allowed != true)
+      return;
     try {
       final bool sent = await AppDependencyScope.of(
         context,
@@ -395,7 +526,7 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
   }
 
   Future<void> _submit() async {
-    if (_busy) {
+    if (_busy || !_active || _checking || _eligibility?.allowed != true) {
       return;
     }
     final bool? confirmed = await showDialog<bool>(
@@ -418,15 +549,18 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
     if (confirmed != true || !mounted) {
       return;
     }
+    await _load();
+    if (!_active || _checking || _eligibility?.allowed != true) return;
+    _pauseReads();
+    final generation = _generation;
     setState(() => _busy = true);
     try {
-      await AppDependencyScope.of(context).accountComplianceRepository
-          .requestCancellation(smsCode: _codeController.text.trim());
-      if (mounted) {
-        await _load();
-      }
+      await _dependencies!.accountComplianceRepository.requestCancellation(
+        smsCode: _codeController.text.trim(),
+      );
+      // Always re-read after the mutation once the busy lane is released.
     } catch (error) {
-      if (mounted) {
+      if (mounted && _active && generation == _generation) {
         showAccountComplianceRetrySnackBar(
           context,
           message: _messageFor(error),
@@ -436,36 +570,38 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
     } finally {
       if (mounted) {
         setState(() => _busy = false);
+        await _load();
       }
     }
   }
 
   Future<void> _cancelDeletion() async {
-    if (_busy) {
+    if (_busy || !_active || _checking || _eligibility?.canCancel != true) {
       return;
     }
+    _pauseReads();
+    final generation = _generation;
     setState(() => _busy = true);
     try {
       final CancellationEligibility value = await AppDependencyScope.of(
         context,
       ).accountComplianceRepository.cancelDeletion();
-      if (mounted) {
+      if (mounted && _active && generation == _generation) {
         setState(() => _eligibility = value);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('注销申请已撤销')));
       }
     } catch (error) {
-      if (mounted) {
-        showAccountComplianceRetrySnackBar(
+      if (mounted && _active && generation == _generation) {
+        ScaffoldMessenger.of(
           context,
-          message: _messageFor(error),
-          onRetry: _cancelDeletion,
-        );
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
       if (mounted) {
         setState(() => _busy = false);
+        await _load();
       }
     }
   }
@@ -487,6 +623,8 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
                   icon: Icons.person_remove_alt_1_outlined,
                   title: eligibility.canCancel
                       ? '注销冷静期中'
+                      : eligibility.status == 'COOLING_OFF'
+                      ? '注销申请处理中'
                       : eligibility.allowed
                       ? '可以申请注销'
                       : '暂不能申请注销',
@@ -496,8 +634,12 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
                       : eligibility.allowed
                       ? AppColors.warning
                       : AccountOxygenColors.violet,
-                  badge: eligibility.canCancel
+                  badge: _checking
+                      ? '正在核验'
+                      : eligibility.canCancel
                       ? '可撤销'
+                      : eligibility.status == 'COOLING_OFF'
+                      ? '当前不可撤销'
                       : eligibility.allowed
                       ? '高风险操作'
                       : '条件未满足',
@@ -508,7 +650,7 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
                   text: '注销会影响资料、关系与账号访问，请先确认钱包和其他未完成事项。',
                   tone: AppColors.warning,
                 ),
-                if (eligibility.canCancel) ...<Widget>[
+                if (eligibility.status == 'COOLING_OFF') ...<Widget>[
                   const SizedBox(height: 18),
                   const AccountSectionLabel(text: '注销冷静期'),
                   AccountSheet(
@@ -517,18 +659,20 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
                       children: <Widget>[
                         AccountNoticeStrip(
                           icon: Icons.schedule_rounded,
-                          text: eligibility.coolingEndsAt.isEmpty
-                              ? '服务端确认账号正在注销冷静期内，可撤销本次注销申请。'
-                              : '服务端确认账号正在注销冷静期内，预计截止 ${eligibility.coolingEndsAt}。',
+                          text: eligibility.canCancel
+                              ? '可在冷静期内撤销申请，截止 ${_deadlineText(eligibility.coolingEndsAt)}。'
+                              : '注销申请仍在处理中，当前不可撤销。状态会自动更新。',
                           tone: AppColors.warning,
                         ),
-                        const SizedBox(height: 14),
-                        AccountPrimaryAction(
-                          label: '撤销注销',
-                          icon: Icons.undo_rounded,
-                          busy: _busy,
-                          onPressed: _cancelDeletion,
-                        ),
+                        if (eligibility.canCancel) ...<Widget>[
+                          const SizedBox(height: 14),
+                          AccountPrimaryAction(
+                            label: '撤销注销',
+                            icon: Icons.undo_rounded,
+                            busy: _busy,
+                            onPressed: _checking ? null : _cancelDeletion,
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -562,14 +706,14 @@ class _AccountCancellationPageState extends State<AccountCancellationPage> {
                         else
                           const AccountNoticeStrip(
                             icon: Icons.verified_user_outlined,
-                            text: '当前第一方流程采用服务端明确确认并进入 7 天冷静期，不伪造短信验证。',
+                            text: '确认申请后将进入 7 天冷静期，冷静期内可以撤销。',
                             tone: AccountOxygenColors.violet,
                           ),
                         const SizedBox(height: 14),
                         AccountPrimaryAction(
                           label: '申请注销',
                           busy: _busy,
-                          onPressed: _submit,
+                          onPressed: _checking ? null : _submit,
                         ),
                       ],
                     ),
