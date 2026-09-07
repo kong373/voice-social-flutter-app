@@ -149,7 +149,22 @@ void main() {
         find.byKey(const Key('video-room-composer')),
         publicText,
       );
-      await tester.testTextInput.receiveAction(TextInputAction.send);
+      // Focusing changes the room dock into the composer. Wait for that
+      // visible control and use its real callback, rather than submitting
+      // through a test IME connection that may have just been replaced.
+      await _until(
+        tester,
+        () => find.byTooltip('发送').hitTestable().evaluate().length == 1,
+        'public send button',
+      );
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('video-room-composer')))
+            .controller!
+            .text,
+        publicText,
+      );
+      await _tap(tester, find.byTooltip('发送'));
       FocusManager.instance.primaryFocus?.unfocus();
       // Unfocus unregisters the test input connection on a live device.
       // Do not call TestTextInput.hide() after that connection has closed.
