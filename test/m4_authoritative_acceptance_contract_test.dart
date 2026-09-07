@@ -1779,6 +1779,18 @@ printf '%s\n' 'safe prefix; $(touch should-not-run)' | contains_literal_stream "
     },
   );
 
+  test('M4 consent flow uses the viewport-safe shared helper', () {
+    expect(
+      integrationSource,
+      contains('await acceptConsentIfVisible(tester);'),
+    );
+    expect(
+      integrationSource,
+      isNot(contains('const Offset(0, -1200)')),
+      reason: 'M4 consent must not use a viewport-fragile large drag.',
+    );
+  });
+
   test('aggregate passes only with complete matching A/B evidence', () {
     final Directory root = makeEvidence();
     final ProcessResult result = runAggregate(root);
