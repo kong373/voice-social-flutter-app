@@ -211,6 +211,9 @@ class DualRelay {
         Uri(scheme: 'http', host: '10.0.2.2', port: port, path: path),
       );
       req.followRedirects = false;
+      // UI steps can outlive the host relay's idle keep-alive window. This
+      // control channel uses a fresh connection, never a business retry.
+      req.persistentConnection = false;
       req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_bearer');
       if (body != null) {
         req.headers.contentType = ContentType.json;
