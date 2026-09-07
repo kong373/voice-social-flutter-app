@@ -9,9 +9,13 @@ import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
+import 'package:voice_social_app/features/community/data/mock_community_repository.dart';
+import 'package:voice_social_app/features/community/domain/community_models.dart';
+import 'package:voice_social_app/features/community/domain/community_repository.dart';
 import 'package:voice_social_app/features/community/presentation/community_pages.dart';
 
 void main() {
+  _cpTimeDisplayTests();
   testWidgets('guild applications expose state and only pending actions', (
     WidgetTester tester,
   ) async {
@@ -53,6 +57,7 @@ void main() {
     final _ContractHttpOverrides overrides = _ContractHttpOverrides();
     await HttpOverrides.runZoned(() async {
       final AppDependencies dependencies = AppDependencies.forTestEnvironment(
+        mockNow: DateTime(2026, 9, 7),
         environment: AppEnvironment(
           backendMode: BackendMode.live,
           apiBaseUrl: 'https://community.test/',
@@ -109,7 +114,8 @@ void main() {
       await pumpPage(const CpRelationPage());
       expect(find.text('已相伴 2 天'), findsOneWidget);
       expect(find.text('相伴天数未知'), findsNothing);
-      expect(find.text('建立于 2026-08-22T00:00:00Z'), findsOneWidget);
+      final DateTime boundAt = DateTime.parse('2026-08-22T00:00:00Z').toLocal();
+      expect(find.text('建立于 ${boundAt.month}月${boundAt.day}日'), findsOneWidget);
     }, createHttpClient: overrides.createHttpClient);
   });
 
@@ -218,6 +224,111 @@ void main() {
       );
     }, createHttpClient: overrides.createHttpClient);
   });
+}
+
+void _cpTimeDisplayTests() {
+  Future<void> showCp(WidgetTester tester, String raw, DateTime now) async {
+    tester.view.physicalSize = const Size(430, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: _Dependencies(_CpRepository(raw), now),
+        child: const MaterialApp(home: CpRelationPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  for (final String raw in <String>[
+    '2026-09-07T07:53:45.123456Z',
+    '2026-09-06T18:03:45.123Z', // Next calendar day in Asia/Shanghai.
+    '2026-09-07T16:53:45.123+09:00',
+  ]) {
+    testWidgets('CP relation and invitation show local clock for $raw', (
+      WidgetTester tester,
+    ) async {
+      final DateTime local = DateTime.parse(raw).toLocal();
+      final String clock =
+          '${local.hour.toString().padLeft(2, '0')}:'
+          '${local.minute.toString().padLeft(2, '0')}';
+      await showCp(tester, raw, local);
+      expect(find.text('建立于 $clock'), findsOneWidget);
+      expect(find.text(clock), findsOneWidget);
+      expect(find.textContaining(raw), findsNothing);
+      expect(find.text('接受'), findsOneWidget);
+      expect(find.text('拒绝'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('CP past dates use the existing readable month/day convention', (
+    WidgetTester tester,
+  ) async {
+    const String raw = '2026-09-06T18:03:45.123Z';
+    final DateTime local = DateTime.parse(raw).toLocal();
+    await showCp(tester, raw, local.add(const Duration(days: 2)));
+    final String date = '${local.month}月${local.day}日';
+    expect(find.text('建立于 $date'), findsOneWidget);
+    expect(find.text(date), findsOneWidget);
+    expect(find.textContaining(raw), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('CP missing and non-date timestamps never invent a date', (
+    WidgetTester tester,
+  ) async {
+    await showCp(tester, '', DateTime(2026, 9, 7));
+    expect(find.text('建立时间未知'), findsOneWidget);
+    expect(find.textContaining('建立于'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await showCp(tester, '时间待确认', DateTime(2026, 9, 7));
+    expect(find.text('建立于 时间待确认'), findsOneWidget);
+    expect(find.text('时间待确认'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+class _CpRepository extends MockCommunityRepository {
+  _CpRepository(this.raw);
+  final String raw;
+
+  @override
+  Future<List<CpRelation>> fetchCpRelations() async => <CpRelation>[
+    CpRelation(
+      relationId: 'cp-1',
+      userId: 20001,
+      nickname: '相伴用户',
+      boundAt: raw,
+    ),
+  ];
+
+  @override
+  Future<List<CpInvitation>> fetchPendingCpInvitations() async =>
+      <CpInvitation>[
+        CpInvitation(
+          invitationId: 'invitation-1',
+          userId: 20002,
+          nickname: '邀请用户',
+          createdAt: raw,
+        ),
+      ];
+}
+
+class _Dependencies implements AppDependencies {
+  _Dependencies(this.communityRepository, this.now);
+  final DateTime now;
+
+  @override
+  final CommunityRepository communityRepository;
+
+  @override
+  DateTime Function() get currentTime =>
+      () => now;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _ContractHttpOverrides extends HttpOverrides {

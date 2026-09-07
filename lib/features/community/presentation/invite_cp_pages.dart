@@ -312,6 +312,7 @@ class _CpRelationPageState extends State<CpRelationPage> {
   }
 
   Widget _relationCard(CpRelation relation) {
+    final DateTime now = AppDependencyScope.of(context).currentTime();
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
       child: _CommunitySection(
@@ -379,7 +380,7 @@ class _CpRelationPageState extends State<CpRelationPage> {
                   Text(
                     relation.boundAt.isEmpty
                         ? '建立时间未知'
-                        : '建立于 ${relation.boundAt}',
+                        : '建立于 ${formatMessageTimeText(relation.boundAt, now)}',
                     style: const TextStyle(
                       color: _CommunityPalette.muted,
                       fontSize: 10,
@@ -410,6 +411,7 @@ class _CpRelationPageState extends State<CpRelationPage> {
   }
 
   Widget _invitationCard(CpInvitation invitation) {
+    final DateTime now = AppDependencyScope.of(context).currentTime();
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: _CommunitySection(
@@ -432,7 +434,7 @@ class _CpRelationPageState extends State<CpRelationPage> {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    invitation.createdAt,
+                    formatMessageTimeText(invitation.createdAt, now),
                     style: const TextStyle(
                       color: _CommunityPalette.muted,
                       fontSize: 11,
