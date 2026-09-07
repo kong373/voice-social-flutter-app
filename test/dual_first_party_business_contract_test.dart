@@ -6,6 +6,7 @@ import 'package:voice_social_app/app/app_environment.dart';
 import '../integration_test/dual_first_party_business_support.dart';
 
 void main() {
+  final android = DualPlatformSupport.forTest(DualPlatform.android);
   test(
     'private acceptance has ten ordered send-ready and receive barriers',
     () {
@@ -60,6 +61,7 @@ void main() {
     role,
     expectedFlutterSha: flutterSha,
     expectedBackendSha: backendSha,
+    platformForTest: android,
   );
   Map<String, dynamic> runtimeConfig() {
     final now = DateTime.now();
@@ -91,6 +93,17 @@ void main() {
       {'peerUserId': 1},
       {'role': 'B'},
       {'apiBaseUrl': 'http://10.0.2.2:18080/'},
+      {
+        'expiresAt': DateTime.now()
+            .add(const Duration(minutes: 20, seconds: 30))
+            .toIso8601String(),
+        'session': {
+          ...(runtimeConfig()['session'] as Map<String, dynamic>),
+          'expiresAt': DateTime.now()
+              .add(const Duration(minutes: 30))
+              .toIso8601String(),
+        },
+      },
       {
         'expiresAt': DateTime.now()
             .subtract(const Duration(seconds: 1))
@@ -156,7 +169,10 @@ void main() {
   );
 
   test('only isolated live development with vendors disabled is accepted', () {
-    expect(() => validateDualEnvironment(environment()), returnsNormally);
+    expect(
+      () => validateDualEnvironment(environment(), platformForTest: android),
+      returnsNormally,
+    );
     for (final env in [
       environment(url: 'http://10.0.2.2:18080/'),
       environment(url: '$dualBackend?redirect=1'),
@@ -168,12 +184,67 @@ void main() {
       environment(apple: true),
       environment(alipay: true),
     ]) {
-      expect(() => validateDualEnvironment(env), throwsStateError);
+      expect(
+        () => validateDualEnvironment(env, platformForTest: android),
+        throwsStateError,
+      );
     }
     expect(
       () => validateDualEnvironment(environment(), release: true),
       throwsStateError,
     );
+  });
+
+  test('each runtime origin is accepted only on its actual platform', () {
+    for (final platform in DualPlatform.values) {
+      final support = DualPlatformSupport.forTest(platform);
+      final roleB = DualConfig(
+        runtimeConfig()..addAll({'role': 'B', 'apiBaseUrl': support.backend}),
+        'B',
+        expectedFlutterSha: flutterSha,
+        expectedBackendSha: backendSha,
+        platformForTest: support,
+      );
+      expect(roleB.peerRole, 'A');
+      expect(roleB.flutterSha, flutterSha);
+      for (final origin in [
+        dualBackend,
+        'http://127.0.0.1:28080/',
+        'http://127.0.0.1:18080/',
+        'http://localhost:28080/',
+        'https://example.com/',
+        '${support.backend}?x=1',
+      ]) {
+        final accepted = origin == support.backend;
+        expect(
+          () => validateDualEnvironment(
+            environment(url: origin),
+            platformForTest: support,
+          ),
+          accepted ? returnsNormally : throwsStateError,
+        );
+        expect(
+          () => DualConfig(
+            runtimeConfig()..['apiBaseUrl'] = origin,
+            'A',
+            expectedFlutterSha: flutterSha,
+            expectedBackendSha: backendSha,
+            platformForTest: support,
+          ),
+          accepted ? returnsNormally : throwsStateError,
+        );
+      }
+      expect(
+        () => DualConfig(
+          runtimeConfig()..['apiBaseUrl'] = support.backend,
+          'B',
+          expectedFlutterSha: flutterSha,
+          expectedBackendSha: backendSha,
+          platformForTest: support,
+        ),
+        throwsStateError,
+      );
+    }
   });
 
   test('invalid configuration never echoes payload or parser details', () {
