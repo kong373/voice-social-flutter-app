@@ -753,9 +753,9 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     final Object flight = Object();
     _leaseFlight = flight;
     final Duration started = _leaseElapsed;
-    bool current() =>
+    bool ownsFlight() =>
         identical(_leaseFlight, flight) &&
-        _isJoinedEpoch(epoch) &&
+        _isCurrent(epoch) &&
         _lease?.sessionId == lease.sessionId;
     try {
       final String requestId = _leaseRequestId ??= _newRequestId('room-lease');
@@ -767,7 +767,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
             requestId: requestId,
             currentUserId: _currentUserId,
           );
-      if (!current()) return;
+      if (!ownsFlight() || !_isJoinedEpoch(epoch)) return;
       if (!renewed.isValid ||
           renewed.sessionId != lease.sessionId ||
           renewed.sequence != lease.sequence + 1 ||
@@ -780,7 +780,9 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       _setLeaseDeadline(renewed, started, previous: lease);
       _notify();
     } catch (error) {
-      if (!current()) return;
+      // A reconnect does not change lease ownership. Its in-flight heartbeat
+      // must still revoke the session on an explicit authentication/lease error.
+      if (!ownsFlight()) return;
       if (error is ApiException &&
           (error.code == 40936 ||
               error.code == 40937 ||

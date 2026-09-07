@@ -33,6 +33,7 @@ class Repo extends MockRoomRepository implements RoomLeaseRepository {
   int Function() now = () => 0;
   final calls = <({int sequence, String requestId})>[];
   Completer<RoomSessionLease>? pending;
+  Completer<RoomSnapshot>? pendingReconnect;
   Object? failure;
   bool failExit = false;
   int exits = 0;
@@ -69,6 +70,13 @@ class Repo extends MockRoomRepository implements RoomLeaseRepository {
   );
   @override
   Future<List<RoomMessage>> fetchPublicMessages(String roomId) async => [];
+  @override
+  Future<RoomSnapshot> reconnectRoom({
+    required String roomId,
+    required int currentUserId,
+  }) =>
+      pendingReconnect?.future ??
+      super.reconnectRoom(roomId: roomId, currentUserId: currentUserId);
   @override
   Future<void> exitRoom(String roomId) async {
     exits++;
@@ -260,6 +268,41 @@ void main() {
     });
   }
   for (final code in [40936, 40937, 40101]) {
+    testWidgets('heartbeat $code revokes during pending reconnect', (
+      tester,
+    ) async {
+      setup(repository: Repo()..interactive = true);
+      await controller.join();
+      final oldSnapshot = controller.snapshot!;
+      await rtc.setLocalAudioEnabled(true);
+      repo.pending = Completer<RoomSessionLease>();
+      await tick(tester, 20);
+      expect(repo.calls, hasLength(1));
+      repo.pendingReconnect = Completer<RoomSnapshot>();
+      final reconnect = controller.reconnect();
+      expect(controller.status, RoomSessionStatus.reconnecting);
+      repo.pending!.completeError(
+        ApiException(
+          kind: ApiFailureKind.business,
+          code: code,
+          message: 'expired',
+        ),
+      );
+      await tester.pump();
+      expect(controller.status, RoomSessionStatus.left);
+      expect(controller.canSendPublicMessage, isFalse);
+      expect(rtc.audioEnabled, isFalse);
+      expect(rtc.joined, isFalse);
+      expect(repo.exits, 0);
+      repo.pendingReconnect!.complete(oldSnapshot);
+      await reconnect;
+      await tester.pump();
+      expect(controller.status, RoomSessionStatus.left);
+      expect(rtc.audioEnabled, isFalse);
+      expect(rtc.joined, isFalse);
+      await tick(tester, 100);
+      expect(repo.calls, hasLength(1));
+    });
     testWidgets('$code revokes local session without exit write', (
       tester,
     ) async {
