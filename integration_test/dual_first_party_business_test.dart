@@ -145,17 +145,17 @@ void main() {
       );
 
       final publicText = config.message(role, 'public');
-      await tester.enterText(
-        find.byKey(const Key('video-room-composer')),
-        publicText,
-      );
       // Focusing changes the room dock into the composer. Wait for that
-      // visible control and use its real callback, rather than submitting
-      // through a test IME connection that may have just been replaced.
+      // replacement before typing, then use its visible send callback.
+      await _tap(tester, find.byKey(const Key('video-room-composer')));
       await _until(
         tester,
         () => find.byTooltip('发送').hitTestable().evaluate().length == 1,
         'public send button',
+      );
+      await tester.enterText(
+        find.byKey(const Key('video-room-composer')),
+        publicText,
       );
       expect(
         tester
