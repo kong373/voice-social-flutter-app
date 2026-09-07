@@ -452,7 +452,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
               ),
             ),
             const SizedBox(height: 14),
-            const _InfoBanner(text: '头像和封面上传需要对象存储适配器。本阶段先完成可直接联调的文字资料。'),
+            const _InfoBanner(text: '暂不支持修改头像和封面，可编辑下方个人资料。'),
             const SizedBox(height: 12),
             _OxygenPanel(
               child: Column(

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
@@ -278,7 +279,14 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
       ),
       AuthFlowStage.signedOut => LoginPage(
         controller: _controller,
-        showLiveReadiness: widget.dependencies.environment.isLive,
+        showLiveReadiness:
+            kDebugMode &&
+            widget.dependencies.environment.isLive &&
+            widget
+                .dependencies
+                .environment
+                .deploymentEnvironment
+                .allowsDevelopmentTools,
         liveReadinessService: _liveReadinessService,
       ),
       AuthFlowStage.registrationRequired => RegistrationPage(

@@ -39,8 +39,10 @@ void main() {
         findsOneWidget,
       );
     }
-    expect(find.text('VENDOR_BLOCKED'), findsNWidgets(2));
-    expect(find.textContaining('不会伪造绑定或分享成功'), findsOneWidget);
+    expect(find.text('暂不可用'), findsWidgets);
+    expect(find.textContaining('不会发起第三方授权'), findsOneWidget);
+    expect(find.textContaining('VENDOR_BLOCKED'), findsNothing);
+    expect(find.textContaining('providerInvocation'), findsNothing);
   });
 
   testWidgets('QA page frame reflects the selected role and scenario', (

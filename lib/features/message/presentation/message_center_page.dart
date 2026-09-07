@@ -314,7 +314,7 @@ class _MessageCenterPageState extends State<MessageCenterPage>
                     if (!_repository.supportsPrivateRealtime)
                       const _MessageInfoCard(
                         icon: Icons.chat_bubble_outline_rounded,
-                        text: '第一方会话、历史、未读与发送已落库；腾讯 IM 实时投递仍为 VENDOR_BLOCKED。',
+                        text: '实时消息暂不可用，已保存的消息记录仍可查看。',
                       ),
                     if (!_repository.supportsConversationList) ...<Widget>[
                       const SizedBox(height: 10),

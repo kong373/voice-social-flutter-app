@@ -32,7 +32,7 @@ void main() {
       snapshot.notificationPermission,
       NativeNotificationPermissionState.unavailable,
     );
-    expect(snapshot.message, contains('VENDOR_BLOCKED'));
+    expect(snapshot.message, contains('实时消息暂不可用'));
     await expectLater(
       repository.requestNotificationPermission(),
       throwsA(

@@ -24,6 +24,39 @@ const AppEnvironment liveEnvironment = AppEnvironment(
 );
 
 void main() {
+  for (final deployment in DeploymentEnvironment.values) {
+    testWidgets('login diagnostic visibility in ${deployment.name}', (
+      tester,
+    ) async {
+      final dependencies = AppDependencies.forTestEnvironment(
+        environment: AppEnvironment(
+          backendMode: BackendMode.live,
+          apiBaseUrl: 'https://example.invalid',
+          clientType: 'Android',
+          clientInnerVersion: '6',
+          oauthClientId: 'public-client',
+          realtimeEndpoint: '',
+          deploymentEnvironment: deployment,
+        ),
+        initialStorage: <String, String>{
+          AuthSessionManager.consentStorageKey:
+              AuthSessionManager.consentStorageValue,
+        },
+      );
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(home: AppGate(dependencies: dependencies)),
+        ),
+      );
+      await _pumpUntil(tester, find.text('登录 / 注册'));
+      expect(
+        find.byKey(const Key('live-backend-readiness-entry')),
+        deployment.allowsDevelopmentTools ? findsOneWidget : findsNothing,
+      );
+    });
+  }
+
   testWidgets(
     'live account restriction blocks MainShell with appeal and exit',
     (WidgetTester tester) async {

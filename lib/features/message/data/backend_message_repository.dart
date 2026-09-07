@@ -770,10 +770,7 @@ class BackendMessageRepository
     final NativeNotificationPermissionState notificationPermission =
         await _nativeNotificationPermission();
     final bool privateRealtimeAvailable = supportsPrivateRealtime;
-    final String unavailableRealtimeMessage =
-        _privateRealtimeAvailabilityProvider == null
-        ? '腾讯 IM 实时投递仍为 VENDOR_BLOCKED。'
-        : '腾讯 IM 实时会话当前不可用。';
+    const String unavailableRealtimeMessage = '实时消息暂不可用，消息记录仍可查看。';
     return MessageRecoverySnapshot(
       privateRealtimeAvailable: privateRealtimeAvailable,
       notificationPermission: notificationPermission,
@@ -782,11 +779,11 @@ class BackendMessageRepository
           notificationPermission ==
               NativeNotificationPermissionState.unavailable
           ? privateRealtimeAvailable
-                ? '第一方消息记录与通知已接通；腾讯 IM 实时会话已连接。'
-                : '第一方消息记录与通知已接通；$unavailableRealtimeMessage'
+                ? '实时消息已连接，当前无法获取系统通知权限状态。'
+                : '当前无法获取系统通知权限状态。$unavailableRealtimeMessage'
           : privateRealtimeAvailable
-          ? '系统通知状态由 Android/iOS 原生权限返回；腾讯 IM 实时会话已连接。'
-          : '系统通知状态由 Android/iOS 原生权限返回；$unavailableRealtimeMessage',
+          ? '实时消息已连接，系统通知权限状态如下。'
+          : '系统通知权限状态如下。$unavailableRealtimeMessage',
     );
   }
 

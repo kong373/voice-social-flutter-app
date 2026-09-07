@@ -126,7 +126,7 @@ class _MessagePermissionRecoveryPageState
                           title: '私聊实时通道',
                           value: snapshot.privateRealtimeAvailable
                               ? '当前可用'
-                              : '腾讯 IM 尚未接入',
+                              : '实时消息暂不可用',
                         ),
                         const Divider(height: 1),
                         _RecoveryStatusRow(
@@ -179,7 +179,7 @@ class _MessagePermissionRecoveryPageState
                   ] else
                     const _MessageInfoCard(
                       icon: Icons.settings_outlined,
-                      text: '原生通知权限适配器尚未接入，Live 模式不会把未知状态显示成已授权。',
+                      text: '当前无法获取系统通知权限状态，请在系统设置中检查通知权限。',
                     ),
                   const SizedBox(height: 10),
                   OutlinedButton.icon(

@@ -146,7 +146,7 @@ class _LoginPageState extends State<LoginPage> {
             ],
             const SizedBox(height: 14),
             Text(
-              '未注册手机号会在验证后进入资料完善。实时语音、即时消息与支付渠道仍会在厂商适配器接入前保持不可用。',
+              '未注册手机号会在验证后进入资料完善。',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: AccountOxygenColors.muted,

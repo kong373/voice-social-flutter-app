@@ -447,7 +447,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
               padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
               child: const _MessageInfoCard(
                 icon: Icons.lock_outline_rounded,
-                text: '第一方消息可写入并恢复；腾讯 IM 实时投递仍为 VENDOR_BLOCKED，不伪造在线状态。',
+                text: '实时消息暂不可用，已保存的消息记录仍可查看。',
               ),
             ),
           if (_conversation.isDraft)

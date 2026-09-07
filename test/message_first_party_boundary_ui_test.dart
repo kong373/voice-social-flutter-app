@@ -11,6 +11,28 @@ import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 
 void main() {
+  testWidgets('recovery does not confuse disconnected with unintegrated', (
+    tester,
+  ) async {
+    final dependencies = AppDependencies.forTestEnvironment(
+      environment: AppEnvironment.mock(),
+      messageRepository: _DisconnectedRecoveryRepository(),
+    );
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: dependencies,
+        child: MaterialApp(
+          theme: AppTheme.social(),
+          home: const MessagePermissionRecoveryPage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('实时消息暂不可用'), findsOneWidget);
+    expect(find.text('腾讯 IM 尚未接入'), findsNothing);
+    expect(find.text('刷新恢复状态'), findsOneWidget);
+  });
+
   testWidgets('first-party stored chat never claims realtime online', (
     WidgetTester tester,
   ) async {
@@ -41,7 +63,7 @@ void main() {
 
     expect(find.text('服务端留存'), findsOneWidget);
     expect(find.text('实时在线'), findsNothing);
-    expect(find.textContaining('VENDOR_BLOCKED'), findsOneWidget);
+    expect(find.textContaining('实时消息暂不可用'), findsOneWidget);
     expect(find.text('输入消息（服务端留存）…'), findsOneWidget);
   });
 
@@ -87,6 +109,17 @@ void main() {
       expect(repository.sendCount, 1);
     },
   );
+}
+
+class _DisconnectedRecoveryRepository extends MockMessageRepository {
+  @override
+  Future<MessageRecoverySnapshot> fetchRecoverySnapshot() async =>
+      const MessageRecoverySnapshot(
+        privateRealtimeAvailable: false,
+        notificationPermission: NativeNotificationPermissionState.denied,
+        lastNotificationSyncAt: null,
+        message: '正在恢复消息连接',
+      );
 }
 
 class _StoredOnlyMessageRepository extends MockMessageRepository {

@@ -1643,24 +1643,18 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
               ),
             ),
             if (live) ...<Widget>[
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                sliver: SliverToBoxAdapter(
-                  child: _LiveStatusBanner(
-                    key: const Key('live-account-boundary'),
-                    icon: Icons.verified_user_outlined,
-                    title: 'Live 模式保留真实资料与第一方入口',
-                    description: switch ((_liveOverview, _liveError)) {
-                      (final LiveReadOnlyOverview overview?, _) =>
-                        '账号 ${overview.user.account} 已接入真实资料；钱包余额与流水、订单与退款记录、礼物与装扮目录、活动、通知、帮助与资料设置保持可达。正式支付渠道、对象存储上传与任何 provider 调起继续严格关闭；装扮购买与穿戴只接受服务端权威结果。',
-                      (_, final String error?) =>
-                        '真实资料与第一方入口保持可达；钱包余额与流水、订单与退款记录、礼物与装扮目录可以查看。正式支付渠道、对象存储上传与任何 provider 调起继续严格关闭。厂商边界状态暂不可读：$error',
-                      _ =>
-                        '真实资料与第一方入口保持可达；钱包余额与流水、订单与退款记录、礼物与装扮目录可以查看。正式支付渠道、对象存储上传与任何 provider 调起继续严格关闭；装扮购买与穿戴只接受服务端权威结果。',
-                    },
+              if (_showDeveloperDiagnostics)
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: _LiveStatusBanner(
+                      key: const Key('live-account-boundary'),
+                      icon: Icons.verified_user_outlined,
+                      title: '开发环境数据诊断',
+                      description: '资料与业务结果以服务端为准。各项厂商能力的配置和连接状态请查看下方开发环境接入诊断。',
+                    ),
                   ),
                 ),
-              ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
                 sliver: SliverToBoxAdapter(

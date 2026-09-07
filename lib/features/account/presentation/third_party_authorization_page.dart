@@ -37,14 +37,14 @@ const List<AccountVendorBoundaryContract> accountVendorBoundaryContracts =
       AccountVendorBoundaryContract(
         capability: 'SOCIAL_ACCOUNT_BINDING',
         label: '社交账号绑定',
-        description: '微信、QQ 等 OAuth 绑定/解绑与回调尚未接入',
+        description: '暂不支持绑定或解绑微信、QQ等社交账号',
         icon: Icons.chat_bubble_outline_rounded,
         tone: Color(0xFF48B778),
       ),
       AccountVendorBoundaryContract(
         capability: 'NATIVE_SHARE',
         label: '原生分享',
-        description: '原生分享目标、SDK 和回调确认尚未接入',
+        description: '暂不支持通过系统分享面板分享内容',
         icon: Icons.ios_share_rounded,
         tone: AccountOxygenColors.violet,
       ),
@@ -63,7 +63,7 @@ class ThirdPartyAuthorizationPage extends StatelessWidget {
           children: <Widget>[
             const _AuthorizationBoundary(),
             const SizedBox(height: 20),
-            const AccountSectionLabel(text: '可用授权方式'),
+            const AccountSectionLabel(text: '授权方式'),
             AccountSheet(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
               child: Column(
@@ -82,7 +82,7 @@ class ThirdPartyAuthorizationPage extends StatelessWidget {
                       subtitle:
                           accountVendorBoundaryContracts[index].description,
                       trailing: AccountStatusPill(
-                        label: accountVendorBoundaryContracts[index].status,
+                        label: '暂不可用',
                         color: AppColors.warning,
                       ),
                       tone: accountVendorBoundaryContracts[index].tone,
@@ -95,8 +95,7 @@ class ThirdPartyAuthorizationPage extends StatelessWidget {
             const SizedBox(height: 12),
             const AccountNoticeStrip(
               icon: Icons.lock_outline_rounded,
-              text:
-                  'AC-004 契约 $accountVendorBoundaryContractVersion：账号绑定、授权回调和原生分享都必须由已审核的供应商 SDK 与服务端状态共同确认。当前构建 providerInvocation=false，不会伪造绑定或分享成功，也不会请求真实第三方凭据。',
+              text: '当前版本暂不支持社交账号绑定及系统分享，不会发起第三方授权。',
               tone: AccountOxygenColors.cyan,
             ),
           ],
@@ -114,9 +113,9 @@ class _AuthorizationBoundary extends StatelessWidget {
     return const AccountStatusHero(
       icon: Icons.verified_user_outlined,
       title: '授权服务暂不可用',
-      description: 'AC-004：第三方账号绑定与原生分享保持 VENDOR_BLOCKED，所有操作失败关闭。',
+      description: '社交账号绑定及系统分享暂不可用，后续开放时会在这里显示。',
       tone: AppColors.warning,
-      badge: '安全关闭',
+      badge: '暂不可用',
     );
   }
 }

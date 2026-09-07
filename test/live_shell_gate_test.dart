@@ -55,6 +55,7 @@ void main() {
   Future<void> pumpLiveAccountRoot(
     WidgetTester tester, {
     required ThemeData outerTheme,
+    AppEnvironment environment = liveTestEnvironment,
     AppDependencies? scopeDependencies,
     Future<void> Function()? onSignOut,
   }) async {
@@ -64,7 +65,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final AppDependencies dependencies = AppDependencies.forTestEnvironment(
-      environment: liveTestEnvironment,
+      environment: environment,
     );
     final AppDependencies inheritedDependencies =
         scopeDependencies ?? dependencies;
@@ -86,6 +87,35 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+  }
+
+  for (final deployment in <DeploymentEnvironment>[
+    DeploymentEnvironment.staging,
+    DeploymentEnvironment.production,
+  ]) {
+    testWidgets('account hides developer diagnostics in ${deployment.name}', (
+      tester,
+    ) async {
+      await pumpLiveAccountRoot(
+        tester,
+        outerTheme: AppTheme.social(),
+        environment: AppEnvironment(
+          backendMode: BackendMode.live,
+          apiBaseUrl: 'https://example.invalid',
+          clientType: 'Android',
+          clientInnerVersion: '1',
+          oauthClientId: 'public-client',
+          realtimeEndpoint: '',
+          deploymentEnvironment: deployment,
+        ),
+      );
+      expect(find.byKey(const Key('live-account-boundary')), findsNothing);
+      expect(find.byKey(const Key('open-vendor-diagnostics')), findsNothing);
+      expect(find.text('开发环境接入诊断'), findsNothing);
+      expect(find.text('钱包'), findsOneWidget);
+      expect(find.text('收藏房间'), findsOneWidget);
+      expect(find.text('装扮'), findsOneWidget);
+    });
   }
 
   for (final ({String name, ThemeData theme}) themeCase
@@ -114,7 +144,7 @@ void main() {
         expect(find.text('打招呼'), findsOneWidget);
         expect(find.text('互动消息'), findsOneWidget);
         expect(find.text('好友请求'), findsOneWidget);
-        expect(find.textContaining('VENDOR_BLOCKED'), findsOneWidget);
+        expect(find.textContaining('实时消息暂不可用'), findsOneWidget);
       },
     );
 
@@ -254,8 +284,8 @@ void main() {
 
         expect(find.text('钱包'), findsOneWidget);
         expect(find.text('装扮'), findsOneWidget);
-        expect(find.textContaining('正式支付渠道'), findsOneWidget);
-        expect(find.textContaining('对象存储上传'), findsOneWidget);
+        expect(find.text('开发环境数据诊断'), findsOneWidget);
+        expect(find.textContaining('任何 provider 调起继续严格关闭'), findsNothing);
 
         await tester.tap(find.text('钱包').hitTestable().first);
         await tester.pumpAndSettle();
