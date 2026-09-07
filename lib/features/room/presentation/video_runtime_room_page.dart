@@ -52,6 +52,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   bool _ending = false;
   bool _allowPop = false;
   String? _presentedError;
+  String? _lastMessageIdentity;
 
   RoomController get _controller => widget.controller;
 
@@ -91,6 +92,19 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     if (!mounted) {
       return;
     }
+    final List<RoomMessage> messages = _controller.messages;
+    final RoomMessage? latest = messages.isEmpty ? null : messages.last;
+    final String? identity = latest == null
+        ? null
+        : latest.messageId ??
+              '${messages.length}:${latest.senderId}:${latest.content}';
+    final bool changedMessage = identity != _lastMessageIdentity;
+    _lastMessageIdentity = identity;
+    final bool followTail =
+        changedMessage &&
+        (latest?.senderId == _controller.currentUserId ||
+            !_messageScroll.hasClients ||
+            _messageScroll.position.extentAfter < 96);
     setState(() {});
     final String? error = _controller.errorMessage;
     if (error != null && error != _presentedError) {
@@ -105,6 +119,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         _controller.clearError();
       });
     }
+    if (!followTail) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_messageScroll.hasClients) {
         _messageScroll.animateTo(

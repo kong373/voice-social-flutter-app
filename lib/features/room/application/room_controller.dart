@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/im/application/tencent_im_avchat_room_coordinator.dart';
 import 'package:voice_social_app/features/im/domain/tencent_im_room_models.dart';
@@ -14,7 +14,7 @@ import 'package:voice_social_app/features/room/domain/room_operations_repository
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
-class RoomController extends ChangeNotifier {
+class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   /// The backend IM outbox is a 30-second fixed-delay worker. Keep the
   /// default client window above two worker periods so a room entered just
   /// after a worker tick can still observe the next two attempts. Tests may
@@ -46,6 +46,11 @@ class RoomController extends ChangeNotifier {
     bool allowSyntheticPublicMessages = true,
     String Function(String prefix)? requestIdGenerator,
     TencentImAvChatRoomCoordinator? tencentImAvChatRoomCoordinator,
+    Duration authoritySyncInterval = const Duration(seconds: 3),
+    Listenable? sessionChanges,
+    int? Function()? activeUserId,
+    int Function()? identityGeneration,
+    WidgetsBinding? lifecycleBinding,
     Duration tencentImReadinessPollInterval =
         _defaultTencentImReadinessPollInterval,
     Duration tencentImReadinessPollWindow =
@@ -60,6 +65,15 @@ class RoomController extends ChangeNotifier {
        _allowSyntheticPublicMessages = allowSyntheticPublicMessages,
        _requestIdGenerator = requestIdGenerator ?? _secureRequestId,
        _tencentImAvChatRoomCoordinator = tencentImAvChatRoomCoordinator,
+       _authoritySyncInterval = _positiveDuration(
+         authoritySyncInterval,
+         'authoritySyncInterval',
+       ),
+       _sessionChanges = sessionChanges,
+       _activeUserId = activeUserId,
+       _identityGenerationSource = identityGeneration,
+       _boundIdentityGeneration = identityGeneration?.call(),
+       _lifecycleBinding = lifecycleBinding,
        _tencentImReadinessPollInterval = _positiveDuration(
          tencentImReadinessPollInterval,
          'tencentImReadinessPollInterval',
@@ -68,6 +82,10 @@ class RoomController extends ChangeNotifier {
          tencentImReadinessPollWindow,
          'tencentImReadinessPollWindow',
        ) {
+    _sessionChanges?.addListener(_onSessionChanged);
+    _lifecycleBinding?.addObserver(this);
+    final AppLifecycleState? lifecycle = _lifecycleBinding?.lifecycleState;
+    _foreground = lifecycle == null || lifecycle == AppLifecycleState.resumed;
     final TencentImAvChatRoomCoordinator? coordinator =
         _tencentImAvChatRoomCoordinator;
     if (coordinator != null) {
@@ -92,11 +110,36 @@ class RoomController extends ChangeNotifier {
   final TencentImAvChatRoomCoordinator? _tencentImAvChatRoomCoordinator;
   final Duration _tencentImReadinessPollInterval;
   final Duration _tencentImReadinessPollWindow;
+  final Duration _authoritySyncInterval;
+  final Listenable? _sessionChanges;
+  final int? Function()? _activeUserId;
+  final int Function()? _identityGenerationSource;
+  final int? _boundIdentityGeneration;
+  bool _identityInvalidated = false;
+  final WidgetsBinding? _lifecycleBinding;
+  Timer? _authorityTimer;
+  Future<void>? _authorityFlight;
+  bool _authorityPending = false;
+  bool _foregroundReadInFlight = false;
+  bool _foregroundReadPending = false;
+  bool _foreground = true;
+  bool _authorityKnown = false;
+  bool _authoritySyncDegraded = false;
+  int _authorityGeneration = 0;
+  int _authorityMutationCount = 0;
+  int _authorityVersion = -1;
   TencentImRoomRefreshRegistration? _tencentImRefreshRegistration;
   TencentImAvChatRoomSession? _tencentImSession;
   _CancelableTencentImReadinessWait? _tencentImReadinessWait;
 
-  RoomSnapshot? _snapshot;
+  RoomSnapshot? _roomSnapshot;
+  RoomSnapshot? get _snapshot => _roomSnapshot;
+  set _snapshot(RoomSnapshot? value) {
+    // Every local mutation/explicit reconnect invalidates older GET results.
+    _authorityGeneration += 1;
+    _roomSnapshot = value;
+  }
+
   final List<RoomMessage> _messages = <RoomMessage>[];
   RoomSessionStatus _status = RoomSessionStatus.idle;
   StreamSubscription<RoomRealtimeEvent>? _realtimeSubscription;
@@ -161,7 +204,7 @@ class RoomController extends ChangeNotifier {
   }
 
   bool get giftSubmitting => _giftSubmitting;
-  bool get realtimeDegraded => _realtimeDegraded;
+  bool get realtimeDegraded => _realtimeDegraded || _authoritySyncDegraded;
   bool get isSnapshotOnly => _snapshot?.isSnapshotOnly ?? false;
   bool get allowsSyntheticPublicMessages =>
       _allowSyntheticPublicMessages && !isSnapshotOnly;
@@ -194,7 +237,9 @@ class RoomController extends ChangeNotifier {
 
   bool allows(RoomCapability capability) {
     final RoomSnapshot? snapshot = _snapshot;
-    if (snapshot == null) {
+    if (snapshot == null ||
+        (_repository is RoomAuthorityRepository &&
+            (!_authorityKnown || _status != RoomSessionStatus.joined))) {
       return false;
     }
     return _permissionPolicy.allows(
@@ -217,7 +262,7 @@ class RoomController extends ChangeNotifier {
     RoomEntrySource source = RoomEntrySource.home,
     String? password,
   }) async {
-    if (_disposed) {
+    if (_disposed || !_sameIdentity) {
       return;
     }
     if (_status == RoomSessionStatus.joining ||
@@ -227,6 +272,9 @@ class RoomController extends ChangeNotifier {
       return;
     }
     _invalidateTencentImReadinessPoll();
+    _stopAuthoritySync();
+    _authorityKnown = false;
+    _authorityVersion = -1;
     final int sessionEpoch = ++_sessionEpoch;
     _joinCancelled = false;
     _pendingJoinRequestRoomId = null;
@@ -322,9 +370,13 @@ class RoomController extends ChangeNotifier {
         await _abandonEnteredRoom(snapshot, sessionEpoch: sessionEpoch);
         return;
       }
-      await _loadPublicHistory(snapshot, sessionEpoch: sessionEpoch);
-      if (micCoordinationMode == MicCoordinationMode.approval) {
-        await _loadMicRequests(sessionEpoch: sessionEpoch);
+      if (_repository is RoomAuthorityRepository) {
+        await refreshRoomAuthority();
+      } else {
+        await _loadPublicHistory(snapshot, sessionEpoch: sessionEpoch);
+        if (micCoordinationMode == MicCoordinationMode.approval) {
+          await _loadMicRequests(sessionEpoch: sessionEpoch);
+        }
       }
     } catch (error) {
       if (!_isCurrent(sessionEpoch) || _joinCancelled) {
@@ -549,10 +601,278 @@ class RoomController extends ChangeNotifier {
     _tencentImReadinessWait = null;
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    setForeground(state == AppLifecycleState.resumed);
+  }
+
+  /// A minimized room keeps one controller, so it also keeps just one loop.
+  /// Background HTTP-only rooms pause reads. An owned live RTC connection
+  /// keeps authority checks so moderation can still revoke publication.
+  void setForeground(bool foreground) {
+    if (_disposed || _foreground == foreground) return;
+    _foreground = foreground;
+    _stopAuthoritySync();
+    if (_canSyncAuthority) unawaited(refreshRoomAuthority());
+  }
+
+  void _onSessionChanged() {
+    if (_disposed || _activeUserId == null || _activeUserId() == _currentUserId)
+      return;
+    _identityInvalidated = true;
+    _endAuthoritySession('登录状态已变化，请重新进入房间');
+    _snapshot = null;
+    _messages.clear();
+    _notify();
+  }
+
+  bool get _canSyncAuthority =>
+      !_disposed &&
+      (_foreground ||
+          (_rtcConnected && _ownsRtcTransport(_transportLeaseId))) &&
+      _repository is RoomAuthorityRepository &&
+      _status == RoomSessionStatus.joined &&
+      _sameIdentity;
+
+  bool get _sameIdentity =>
+      !_identityInvalidated &&
+      (_activeUserId == null || _activeUserId() == _currentUserId) &&
+      (_identityGenerationSource == null ||
+          _identityGenerationSource() == _boundIdentityGeneration);
+
+  bool _authorityReadIsCurrent(int epoch, int generation) =>
+      _canSyncAuthority &&
+      _isJoinedEpoch(epoch) &&
+      generation == _authorityGeneration &&
+      _authorityMutationCount == 0;
+
+  void _stopAuthoritySync() {
+    _authorityTimer?.cancel();
+    _authorityTimer = null;
+    _authorityGeneration += 1;
+    _micQueueEpoch += 1;
+    _micQueueLoading = false;
+    _authorityPending = false;
+    _foregroundReadPending = false;
+  }
+
+  void _scheduleAuthoritySync() {
+    _authorityTimer?.cancel();
+    _authorityTimer = null;
+    if (!_canSyncAuthority || _authorityMutationCount != 0) return;
+    _authorityTimer = Timer(_authoritySyncInterval, () {
+      _authorityTimer = null;
+      unawaited(refreshRoomAuthority());
+    });
+  }
+
+  /// Single-flight, read-only synchronization. Hints arriving during a read
+  /// coalesce into a subsequent read; failures retry on the bounded timer.
+  Future<void> refreshRoomAuthority() {
+    if (!_canSyncAuthority) return Future<void>.value();
+    _authorityPending = true;
+    if (_authorityMutationCount != 0) return Future<void>.value();
+    final Future<void>? flight = _authorityFlight;
+    if (flight != null) return flight;
+    _authorityTimer?.cancel();
+    _authorityTimer = null;
+    final Completer<void> completion = Completer<void>();
+    _authorityFlight = completion.future;
+    unawaited(() async {
+      try {
+        do {
+          _authorityPending = false;
+          await _readRoomAuthorityOnce();
+        } while (_authorityPending &&
+            _canSyncAuthority &&
+            _authorityMutationCount == 0);
+      } finally {
+        _authorityFlight = null;
+        _scheduleAuthoritySync();
+        completion.complete();
+      }
+    }());
+    return completion.future;
+  }
+
+  Future<void> _readRoomAuthorityOnce() async {
+    final int epoch = _sessionEpoch;
+    final int generation = _authorityGeneration;
+    if (!_authorityReadIsCurrent(epoch, generation)) return;
+    try {
+      final RoomAuthorityProjection projection =
+          await (_repository as RoomAuthorityRepository).fetchRoomAuthority(
+            roomId: roomId,
+            currentUserId: _currentUserId,
+          );
+      if (!_authorityReadIsCurrent(epoch, generation)) return;
+      final RoomSnapshot? previous = _snapshot;
+      if (projection.viewerUserId != _currentUserId ||
+          projection.snapshot.roomId != roomId ||
+          projection.version < 0) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '房间状态响应与当前会话不一致',
+        );
+      }
+      if (projection.version < _authorityVersion) return;
+      if (!projection.memberActive ||
+          (previous?.sessionId != null &&
+              projection.snapshot.sessionId != previous!.sessionId)) {
+        _endAuthoritySession('当前房间会话已结束，请重新进入房间');
+        return;
+      }
+      if (previous == null) return;
+      _authorityVersion = projection.version;
+      _authorityKnown = true;
+      _authoritySyncDegraded = false;
+      _mutedInRoom = projection.roomMuted;
+      // A GET projection never grants a new RTC token, reconnects a provider,
+      // or turns on the microphone. Preserve the established transport.
+      final RoomSnapshot next = projection.snapshot.copyWith(
+        rtc: previous.rtc,
+        transportMode: previous.transportMode,
+        giftBalance: projection.snapshot.giftBalance ?? previous.giftBalance,
+      );
+      _roomSnapshot = next;
+      if (_mutedInRoom ||
+          !_snapshotAllowsRtcPublication(next) ||
+          next.role == RoomRole.listener ||
+          next.role == RoomRole.guest) {
+        _rtcAudioAuthorityGeneration += 1;
+        _rtcAudioRequested = false;
+        await _disableRtcPublication();
+      }
+      if (!_authorityReadIsCurrent(epoch, generation)) return;
+      _notify();
+    } catch (error) {
+      if (!_authorityReadIsCurrent(epoch, generation)) return;
+      if (error is ApiException && error.kind == ApiFailureKind.unauthorized) {
+        _endAuthoritySession('登录状态已失效，请重新登录');
+        return;
+      }
+      // Retain the last confirmed view during transient failures, and expose
+      // the degradation; never infer membership/permission from an error.
+      _authoritySyncDegraded = true;
+      _notify();
+    }
+    if (!_authorityReadIsCurrent(epoch, generation) ||
+        !_authorityKnown ||
+        !_foreground)
+      return;
+    _refreshForegroundRoomData();
+  }
+
+  // A slow public-history request must never block a background RTC revoke.
+  // This lane is independently single-flight and foreground-only.
+  void _refreshForegroundRoomData() {
+    if (!_canSyncAuthority || !_foreground) return;
+    _foregroundReadPending = true;
+    if (_foregroundReadInFlight) return;
+    _foregroundReadInFlight = true;
+    unawaited(() async {
+      try {
+        do {
+          _foregroundReadPending = false;
+          final int epoch = _sessionEpoch;
+          final int generation = _authorityGeneration;
+          await _refreshPublicHistoryReadOnly(epoch, generation);
+          if (_foreground &&
+              _authorityReadIsCurrent(epoch, generation) &&
+              micCoordinationMode == MicCoordinationMode.approval) {
+            await _loadMicRequests(sessionEpoch: epoch, quiet: true);
+          }
+        } while (_foregroundReadPending &&
+            _canSyncAuthority &&
+            _foreground &&
+            _authorityMutationCount == 0);
+      } finally {
+        _foregroundReadInFlight = false;
+      }
+    }());
+  }
+
+  Future<void> _refreshPublicHistoryReadOnly(int epoch, int generation) async {
+    final Set<String?> before = _messages.map((item) => item.messageId).toSet();
+    try {
+      final List<RoomMessage> history = await _repository.fetchPublicMessages(
+        roomId,
+      );
+      if (!_foreground || !_authorityReadIsCurrent(epoch, generation)) return;
+      final Set<String?> incoming = history
+          .map((item) => item.messageId)
+          .toSet();
+      // A send may finish while GET is in flight. Preserve that newer receipt,
+      // but otherwise replace history so server removals are respected.
+      final List<RoomMessage> appended = _messages
+          .where(
+            (item) =>
+                item.messageId != null &&
+                !before.contains(item.messageId) &&
+                !incoming.contains(item.messageId),
+          )
+          .toList();
+      _messages
+        ..clear()
+        ..addAll(history)
+        ..addAll(appended);
+      _historyErrorKind = null;
+      _historyErrorMessage = null;
+      _notify();
+    } catch (error) {
+      if (!_foreground || !_authorityReadIsCurrent(epoch, generation)) return;
+      _historyErrorKind = error is ApiException
+          ? error.kind
+          : ApiFailureKind.protocol;
+      _historyErrorMessage = '公屏同步暂时不可用，正在自动重试';
+      _notify();
+    }
+  }
+
+  void _endAuthoritySession(String message) {
+    final Object? transportLease = _transportLeaseId;
+    final TencentImAvChatRoomSession? imSession = _tencentImSession;
+    _invalidateSession();
+    _status = RoomSessionStatus.left;
+    _authorityKnown = false;
+    _errorMessage = message;
+    _tencentImSession = null;
+    if (imSession != null && _tencentImAvChatRoomCoordinator != null) {
+      unawaited(
+        _ignoreTencentLeave(
+          _tencentImAvChatRoomCoordinator.leaveIfCurrent(
+            roomId: imSession.roomId,
+            sessionId: imSession.sessionId,
+          ),
+        ),
+      );
+    }
+    unawaited(
+      _cleanupTransport(swallowErrors: true, transportLease: transportLease),
+    );
+    _notify();
+  }
+
+  void _beginAuthorityMutation() {
+    _authorityMutationCount += 1;
+    _stopAuthoritySync();
+  }
+
+  void _endAuthorityMutation(int epoch) {
+    if (!_isCurrent(epoch)) return;
+    _authorityMutationCount -= 1;
+    _authorityGeneration += 1;
+    if (_authorityMutationCount == 0) unawaited(refreshRoomAuthority());
+  }
+
   /// Provider custom elements are metadata-only invalidation hints. The
   /// authoritative HTTP history replaces the rendered list; no custom payload
   /// is ever parsed into a message or permission decision here.
   Future<void> _refreshFromTencentHint(String hintedRoomId) async {
+    if (_repository is RoomAuthorityRepository) {
+      if (hintedRoomId.trim() == roomId) await refreshRoomAuthority();
+      return;
+    }
     final RoomSnapshot? snapshot = _snapshot;
     final String normalizedRoomId = hintedRoomId.trim();
     if (_disposed ||
@@ -601,6 +921,10 @@ class RoomController extends ChangeNotifier {
     RoomSnapshot snapshot, {
     required int sessionEpoch,
   }) async {
+    if (_repository is RoomAuthorityRepository) {
+      if (_isJoinedEpoch(sessionEpoch)) await refreshRoomAuthority();
+      return;
+    }
     if (!_isJoinedEpoch(sessionEpoch)) {
       return;
     }
@@ -664,6 +988,7 @@ class RoomController extends ChangeNotifier {
     _notify();
     bool serverMicMutationCommitted = false;
     final RoomSnapshot? previousSnapshot = _snapshot;
+    _beginAuthorityMutation();
     try {
       if (micCoordinationMode == MicCoordinationMode.approval) {
         final RoomOperationsRepository? operations = _roomOperationsRepository;
@@ -762,6 +1087,7 @@ class RoomController extends ChangeNotifier {
       _errorMessage = _messageFor(error, fallback: '申请上麦失败');
       return false;
     } finally {
+      _endAuthorityMutation(sessionEpoch);
       if (_isCurrent(sessionEpoch)) {
         _micRequestPending = false;
         _notify();
@@ -793,6 +1119,7 @@ class RoomController extends ChangeNotifier {
     _micRequestPending = true;
     _errorMessage = null;
     _notify();
+    _beginAuthorityMutation();
     try {
       await operations.cancelMicRequest(requestId: requestId);
       if (!_isJoinedEpoch(sessionEpoch)) {
@@ -806,6 +1133,7 @@ class RoomController extends ChangeNotifier {
       }
       return false;
     } finally {
+      _endAuthorityMutation(sessionEpoch);
       if (_isCurrent(sessionEpoch)) {
         _micRequestPending = false;
         _notify();
@@ -832,6 +1160,7 @@ class RoomController extends ChangeNotifier {
     _notify();
     bool serverInviteMutationCommitted = false;
     final RoomSnapshot? previousSnapshot = _snapshot;
+    _beginAuthorityMutation();
     try {
       await operations.resolveMicRequest(
         requestId: requestId,
@@ -888,6 +1217,7 @@ class RoomController extends ChangeNotifier {
       }
       return false;
     } finally {
+      _endAuthorityMutation(sessionEpoch);
       if (_isCurrent(sessionEpoch)) {
         _micRequestPending = false;
         _notify();
@@ -895,7 +1225,10 @@ class RoomController extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadMicRequests({required int sessionEpoch}) async {
+  Future<void> _loadMicRequests({
+    required int sessionEpoch,
+    bool quiet = false,
+  }) async {
     final RoomOperationsRepository? operations = _roomOperationsRepository;
     if (operations == null ||
         !_isJoinedEpoch(sessionEpoch) ||
@@ -904,7 +1237,7 @@ class RoomController extends ChangeNotifier {
     }
     final int queueEpoch = ++_micQueueEpoch;
     _micQueueLoading = true;
-    _notify();
+    if (!quiet) _notify();
     try {
       final List<MicAccessRequest> requests = await operations.fetchMicRequests(
         roomId,
@@ -915,7 +1248,9 @@ class RoomController extends ChangeNotifier {
           ..addAll(requests);
       }
     } catch (error) {
-      if (_isJoinedEpoch(sessionEpoch) && queueEpoch == _micQueueEpoch) {
+      if (!quiet &&
+          _isJoinedEpoch(sessionEpoch) &&
+          queueEpoch == _micQueueEpoch) {
         _errorMessage = _messageFor(error, fallback: '上麦申请状态暂时不可用');
       }
     } finally {
@@ -938,6 +1273,7 @@ class RoomController extends ChangeNotifier {
     }
     final int sessionEpoch = _sessionEpoch;
     bool serverMicMutationCommitted = false;
+    _beginAuthorityMutation();
     try {
       await _repository.leaveMic();
       serverMicMutationCommitted = true;
@@ -996,6 +1332,8 @@ class RoomController extends ChangeNotifier {
       _errorMessage = _messageFor(error, fallback: '下麦失败');
       _notify();
       return false;
+    } finally {
+      _endAuthorityMutation(sessionEpoch);
     }
   }
 
@@ -1022,6 +1360,7 @@ class RoomController extends ChangeNotifier {
     final bool nextMuted = !micMuted;
     final int authorityGeneration = _rtcAudioAuthorityGeneration;
     bool serverMicMutationCommitted = false;
+    _beginAuthorityMutation();
     try {
       await _repository.setSelfMicrophoneMuted(
         backendMicIndex: ownSeat.backendIndex,
@@ -1100,6 +1439,8 @@ class RoomController extends ChangeNotifier {
       _errorMessage = _messageFor(error, fallback: '麦克风状态更新失败');
       _notify();
       return false;
+    } finally {
+      _endAuthorityMutation(sessionEpoch);
     }
   }
 
@@ -1222,7 +1563,9 @@ class RoomController extends ChangeNotifier {
       }
       final int? remainingBalance = receipt.remainingBalance;
       if (remainingBalance != null) {
-        _snapshot = snapshot.copyWith(giftBalance: remainingBalance);
+        _snapshot = (_snapshot ?? snapshot).copyWith(
+          giftBalance: remainingBalance,
+        );
       }
       _giftRequestId = null;
       _giftRequestKey = null;
@@ -1305,6 +1648,7 @@ class RoomController extends ChangeNotifier {
       return;
     }
     final int sessionEpoch = _sessionEpoch;
+    _stopAuthoritySync();
     _status = RoomSessionStatus.reconnecting;
     _errorMessage = null;
     _notify();
@@ -1383,6 +1727,7 @@ class RoomController extends ChangeNotifier {
     }
     if (_isCurrent(sessionEpoch)) {
       _notify();
+      unawaited(refreshRoomAuthority());
     }
   }
 
@@ -1451,6 +1796,7 @@ class RoomController extends ChangeNotifier {
       _errorMessage = _messageFor(error, fallback: '离开房间失败，请重试');
       _status = previousStatus;
       _notify();
+      unawaited(refreshRoomAuthority());
       return false;
     }
   }
@@ -1603,6 +1949,10 @@ class RoomController extends ChangeNotifier {
   }
 
   Future<void> _refreshAfterRealtimeEvent({required int sessionEpoch}) async {
+    if (_repository is RoomAuthorityRepository) {
+      if (_isJoinedEpoch(sessionEpoch)) await refreshRoomAuthority();
+      return;
+    }
     if (_refreshingFromEvent || !_isJoinedEpoch(sessionEpoch)) {
       return;
     }
@@ -1690,6 +2040,9 @@ class RoomController extends ChangeNotifier {
   }
 
   bool _canCompensateJoin(int sessionEpoch) {
+    // The shared API client follows the current login. Late old-account
+    // compensation must not use a new login, including A -> B -> A.
+    if (!_sameIdentity) return false;
     if (_sessionEpoch == sessionEpoch || _disposed) {
       return true;
     }
@@ -1701,6 +2054,9 @@ class RoomController extends ChangeNotifier {
 
   int _invalidateSession() {
     _sessionEpoch += 1;
+    _stopAuthoritySync();
+    _authorityMutationCount = 0;
+    _authorityKnown = false;
     _invalidateTencentImReadinessPoll();
     _rtcAudioAuthorityGeneration += 1;
     _micQueueEpoch += 1;
@@ -1724,7 +2080,7 @@ class RoomController extends ChangeNotifier {
   }
 
   bool _isCurrent(int sessionEpoch) =>
-      !_disposed && sessionEpoch == _sessionEpoch;
+      !_disposed && _sameIdentity && sessionEpoch == _sessionEpoch;
 
   bool _isJoinedEpoch(int sessionEpoch) =>
       _isCurrent(sessionEpoch) && _status == RoomSessionStatus.joined;
@@ -2293,6 +2649,9 @@ class RoomController extends ChangeNotifier {
       return;
     }
     _sessionEpoch += 1;
+    _stopAuthoritySync();
+    _sessionChanges?.removeListener(_onSessionChanged);
+    _lifecycleBinding?.removeObserver(this);
     _invalidateTencentImReadinessPoll();
     _rtcAudioAuthorityGeneration += 1;
     _micQueueEpoch += 1;

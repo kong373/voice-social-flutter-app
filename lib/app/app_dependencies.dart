@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
@@ -563,6 +563,14 @@ class AppDependencies {
       realtimeGateway: realtimeGateway,
       allowSyntheticPublicMessages: !environment.isLive,
       tencentImAvChatRoomCoordinator: tencentImAvChatRoomCoordinator,
+      sessionChanges: environment.isLive ? sessionManager : null,
+      identityGeneration: environment.isLive
+          ? () => sessionManager.identityGeneration
+          : null,
+      activeUserId: environment.isLive
+          ? () => sessionManager.session?.userId
+          : null,
+      lifecycleBinding: WidgetsBinding.instance,
     );
   }
 }

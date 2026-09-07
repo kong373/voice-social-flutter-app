@@ -23,15 +23,20 @@ class AuthSessionManager extends ChangeNotifier {
 
   final KeyValueStore _store;
   AuthSession? _session;
+  int _identityGeneration = 0;
 
   AuthSession? get session => _session;
+  int get identityGeneration => _identityGeneration;
 
   void _publishSession(AuthSession? value) {
     final bool identityChanged = _session?.userId != value?.userId;
     _session = value;
     // Refreshing a token for the same identity keeps the visible chat alive.
     // Logout/account switches permanently invalidate its pending read lease.
-    if (identityChanged) notifyListeners();
+    if (identityChanged) {
+      _identityGeneration += 1;
+      notifyListeners();
+    }
   }
 
   String? get authorizationHeader => _session?.authorizationHeader;
