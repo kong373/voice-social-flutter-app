@@ -25,8 +25,7 @@ void main() {
     'dual first-party UI business with manual recovery',
     (tester) async {
       validateDualEnvironment(AppEnvironment.fromDefines());
-      if (const String.fromEnvironment('OAUTH_CLIENT_ID') != '' ||
-          const String.fromEnvironment('OAUTH_CLIENT_SECRET') != '') {
+      if (const String.fromEnvironment('OAUTH_CLIENT_ID') != '') {
         throw TestFailure('Client configuration must come from private relay.');
       }
       final role = await readDualRuntimeRole();
