@@ -223,6 +223,7 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage>
         _reading ||
         _busy ||
         _loading ||
+        _pending ||
         !current.canCancel) {
       return;
     }
@@ -407,7 +408,9 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage>
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: _busy || _loading ? null : _cancel,
+              onPressed: _busy || _loading || _reading || !_active || _pending
+                  ? null
+                  : _cancel,
               icon: _busy
                   ? const SizedBox(
                       width: 17,

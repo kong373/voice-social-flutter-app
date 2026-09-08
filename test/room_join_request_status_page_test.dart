@@ -19,6 +19,36 @@ import 'package:voice_social_app/features/room/domain/room_operations_repository
 import 'package:voice_social_app/features/room/presentation/room_join_request_status_page.dart';
 
 void main() {
+  testWidgets('silent polling disables cancellation until the read completes', (
+    tester,
+  ) async {
+    final repository = _ApplicantRepository(
+      _status(RoomJoinRequestStatus.pending),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RoomJoinRequestStatusPage(
+          roomId: 'room-9527',
+          repositoryOverride: repository,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final cancelButton = find.widgetWithText(FilledButton, '撤回申请');
+    expect(tester.widget<FilledButton>(cancelButton).onPressed, isNotNull);
+
+    repository.delayNextStatusFetch();
+    await tester.pump(const Duration(seconds: 2));
+    expect(repository.statusCalls, 2);
+    expect(tester.widget<FilledButton>(cancelButton).onPressed, isNull);
+    expect(repository.cancelCalls, 0);
+
+    repository.completeDelayedStatusFetch();
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(cancelButton).onPressed, isNotNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   for (final change in ['none', 'account', 'pending']) {
     testWidgets(
       'continue retries normal join only for original identity ($change); refusal never paints joined',
