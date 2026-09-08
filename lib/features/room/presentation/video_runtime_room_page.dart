@@ -1299,6 +1299,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (BuildContext context) => RoomMembersPage(
+          controller: _controller,
           roomId: snapshot.roomId,
           roomCode: snapshot.roomCode,
           currentUserId: _controller.currentUserId,

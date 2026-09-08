@@ -13,6 +13,33 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/presentation/room_members_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
+import 'package:voice_social_app/features/room/application/room_controller.dart';
+import 'package:voice_social_app/features/room/domain/room_repository.dart';
+import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
+import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
+import 'room_lease_controller_test.dart' as lease_fixture;
+
+class _AuthorityRepository extends lease_fixture.Repo
+    implements RoomAuthorityRepository {
+  bool memberActive = true;
+  int version = 0;
+  @override
+  Future<RoomAuthorityProjection> fetchRoomAuthority({
+    required String roomId,
+    required int currentUserId,
+  }) async => RoomAuthorityProjection(
+    snapshot: await enterRoom(
+      roomId: roomId,
+      password: null,
+      source: RoomEntrySource.home,
+      currentUserId: currentUserId,
+    ),
+    viewerUserId: currentUserId,
+    memberActive: memberActive,
+    roomMuted: false,
+    version: ++version,
+  );
+}
 
 class _Dependencies extends Fake implements AppDependencies {
   final backing = AppDependencies.mock();
@@ -125,6 +152,161 @@ Future<void> _open(WidgetTester tester, _Dependencies deps) async {
 }
 
 void main() {
+  for (final ending in ['projection', 'resumeExpiry', 'backgroundDeadline']) {
+    testWidgets(
+      'actual controller authority ends with unchanged binding ending=$ending',
+      (tester) async {
+        final base = _Dependencies();
+        final deps = _LeaseDependencies(base);
+        final repository = _AuthorityRepository();
+        var elapsed = Duration.zero;
+        final controller = RoomController(
+          roomId: 'room',
+          title: '',
+          currentUserId: 1,
+          accessToken: '',
+          repository: repository,
+          rtcAdapter: MockRtcAdapter(),
+          realtimeGateway: SnapshotOnlyRoomRealtimeGateway(),
+          leaseElapsed: () => elapsed,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await controller.join();
+        expect(controller.status, RoomSessionStatus.joined);
+        await tester.pumpWidget(
+          AppDependencyScope(
+            dependencies: deps,
+            child: MaterialApp(
+              home: RoomMembersPage(
+                roomId: 'room',
+                currentUserId: 1,
+                currentRole: RoomRole.owner,
+                seats: const [],
+                controller: controller,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        addTearDown(() async {
+          await tester.pumpWidget(const SizedBox());
+          controller.dispose();
+          base.backing.dispose();
+          await tester.pump();
+        });
+        expect(find.text('远端成员'), findsOneWidget);
+        final repo = deps.roomOperationsRepository;
+        final bindingGeneration = repo.leaseBinding.generation;
+        final pending = Completer<RoomMemberPage>();
+        repo.reads.pending = pending;
+        await tester.pump(const Duration(seconds: 2));
+        final reads = repo.reads.reads;
+        if (ending != 'projection') {
+          controller.setForeground(false);
+          elapsed = const Duration(seconds: 91);
+          if (ending == 'resumeExpiry') {
+            controller.setForeground(true);
+          } else {
+            await tester.pump(const Duration(seconds: 91));
+          }
+        } else {
+          repository.memberActive = false;
+          await controller.refreshRoomAuthority();
+        }
+        expect(controller.status, RoomSessionStatus.left);
+        expect(repo.leaseBinding.generation, bindingGeneration);
+        await tester.pump();
+        expect(find.text('远端成员'), findsNothing);
+        expect(
+          tester
+              .widget<RoomOxygenContextBar>(find.byType(RoomOxygenContextBar))
+              .status,
+          '已失效',
+        );
+        pending.complete(
+          const RoomMemberPage(items: [_listener], page: 1, total: 1, pages: 1),
+        );
+        await tester.pump(const Duration(seconds: 10));
+        expect(find.text('远端成员'), findsNothing);
+        expect(repo.reads.reads, reads);
+        expect(find.byTooltip('刷新'), findsNothing);
+      },
+    );
+  }
+  testWidgets(
+    'actual controller heartbeat and same-user rotation keep members active',
+    (tester) async {
+      final base = _Dependencies();
+      AuthSession session(String token) => AuthSession(
+        accessToken: token,
+        tokenType: 'Bearer',
+        expiresAt: DateTime(2030),
+        userId: 1,
+        mobile: '',
+        roles: '',
+      );
+      await base.sessionManager.save(session('before'));
+      final deps = _LeaseDependencies(base);
+      var elapsed = Duration.zero;
+      final repository = lease_fixture.Repo()..now = () => elapsed.inSeconds;
+      final controller = RoomController(
+        roomId: 'room',
+        title: '',
+        currentUserId: 1,
+        accessToken: '',
+        repository: repository,
+        rtcAdapter: MockRtcAdapter(),
+        realtimeGateway: SnapshotOnlyRoomRealtimeGateway(),
+        leaseElapsed: () => elapsed,
+        sessionChanges: base.sessionManager,
+        activeUserId: () => base.sessionManager.session?.userId,
+        identityGeneration: () => base.sessionManager.identityGeneration,
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await controller.join();
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: deps,
+          child: MaterialApp(
+            home: RoomMembersPage(
+              roomId: 'room',
+              currentUserId: 1,
+              currentRole: RoomRole.listener,
+              seats: const [],
+              controller: controller,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox());
+        controller.dispose();
+        base.backing.dispose();
+        await tester.pump();
+      });
+      final generation = base.sessionManager.identityGeneration;
+      await base.sessionManager.save(session('after'));
+      elapsed = const Duration(seconds: 20);
+      await tester.pump(const Duration(seconds: 20));
+      await tester.pump();
+      expect(repository.calls, hasLength(1));
+      expect(controller.snapshot!.roomLease!.sequence, 1);
+      expect(controller.status, RoomSessionStatus.joined);
+      expect(base.sessionManager.identityGeneration, generation);
+      expect(find.text('远端成员'), findsOneWidget);
+      expect(find.text('成员页已失效'), findsNothing);
+      deps.roomOperationsRepository.reads.members = [];
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+      expect(find.text('远端成员'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      controller.dispose();
+      await tester.pump();
+    },
+  );
   testWidgets(
     'same-user access rotation preserves identity and member polling',
     (tester) async {

@@ -8,6 +8,7 @@ import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
+import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/data/backend_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
@@ -27,6 +28,7 @@ class RoomMembersPage extends StatefulWidget {
     required this.seats,
     this.roomTitle,
     this.roomCode,
+    this.controller,
     super.key,
   });
 
@@ -36,6 +38,7 @@ class RoomMembersPage extends StatefulWidget {
   final List<MicSeat> seats;
   final String? roomTitle;
   final String? roomCode;
+  final RoomController? controller;
 
   @override
   State<RoomMembersPage> createState() => _RoomMembersPageState();
@@ -53,6 +56,28 @@ class _RoomMembersPageState extends State<RoomMembersPage>
   int _generation = 0;
   int? _identityGeneration;
   int? _leaseGeneration;
+  String? _controllerSessionId;
+
+  bool _checkController() {
+    final controller = widget.controller;
+    if (controller == null) return true;
+    if (controller.roomId != widget.roomId ||
+        controller.currentUserId != widget.currentUserId ||
+        controller.snapshot == null ||
+        controller.snapshot!.sessionId != _controllerSessionId ||
+        (controller.status != RoomSessionStatus.joined &&
+            controller.status != RoomSessionStatus.reconnecting)) {
+      if (!_invalidIdentity) _invalidate();
+      return false;
+    }
+    return true;
+  }
+
+  void _controllerChanged() {
+    if (!mounted || _invalidIdentity) return;
+    if (_checkController()) setState(() {});
+  }
+
   bool _checkLease() {
     final repository = _repositoryInstance;
     if (repository is BackendRoomOperationsRepository &&
@@ -80,14 +105,19 @@ class _RoomMembersPageState extends State<RoomMembersPage>
   int _page = 1;
   bool _hasMore = false;
 
-  bool get _canManage =>
-      widget.currentRole == RoomRole.owner ||
-      widget.currentRole == RoomRole.moderator ||
-      widget.currentRole == RoomRole.platformModerator;
+  bool get _canManage {
+    final role = widget.controller?.role ?? widget.currentRole;
+    return !_invalidIdentity &&
+        (role == RoomRole.owner ||
+            role == RoomRole.moderator ||
+            role == RoomRole.platformModerator);
+  }
 
   @override
   void initState() {
     super.initState();
+    _controllerSessionId = widget.controller?.snapshot?.sessionId;
+    widget.controller?.addListener(_controllerChanged);
     WidgetsBinding.instance.addObserver(this);
     final state = WidgetsBinding.instance.lifecycleState;
     _foreground = state == null || state == AppLifecycleState.resumed;
@@ -120,6 +150,12 @@ class _RoomMembersPageState extends State<RoomMembersPage>
   @override
   void didUpdateWidget(RoomMembersPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller?.removeListener(_controllerChanged);
+      widget.controller?.addListener(_controllerChanged);
+      _invalidate();
+      return;
+    }
     if (oldWidget.roomId != widget.roomId ||
         oldWidget.currentUserId != widget.currentUserId) {
       _pause();
@@ -141,6 +177,7 @@ class _RoomMembersPageState extends State<RoomMembersPage>
   @override
   void dispose() {
     _pause();
+    widget.controller?.removeListener(_controllerChanged);
     _dependencies?.sessionManager.removeListener(_identityChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -173,7 +210,7 @@ class _RoomMembersPageState extends State<RoomMembersPage>
   }
 
   Future<void> _load({required bool reset}) async {
-    if (!_active || !_checkLease()) return;
+    if (!_active || !_checkController() || !_checkLease()) return;
     if (_reading) {
       if (reset) _pending = true;
       return;
@@ -202,7 +239,11 @@ class _RoomMembersPageState extends State<RoomMembersPage>
               roomId: roomId,
               page: number,
             );
-            if (!_active || generation != _generation || !_checkLease()) break;
+            if (!_active ||
+                generation != _generation ||
+                !_checkController() ||
+                !_checkLease())
+              break;
             refreshed.addAll(_withSeatPresence(page.items));
             last = page;
             if (!page.hasMore) break;
@@ -219,7 +260,10 @@ class _RoomMembersPageState extends State<RoomMembersPage>
             });
           }
         } catch (error) {
-          if (_active && generation == _generation && _checkLease()) {
+          if (_active &&
+              generation == _generation &&
+              _checkController() &&
+              _checkLease()) {
             setState(() {
               _error = error.toString();
               _loading = false;
