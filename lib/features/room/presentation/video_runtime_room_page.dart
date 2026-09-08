@@ -52,10 +52,18 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   bool _ending = false;
   bool _allowPop = false;
   String? _presentedError;
+  String? _sessionEndMessage;
   String? _lastMessageIdentity;
   bool _joinStatusOpen = false;
 
   RoomController get _controller => widget.controller;
+
+  bool get _sessionEnded => switch (_controller.status) {
+    RoomSessionStatus.left ||
+    RoomSessionStatus.closed ||
+    RoomSessionStatus.kicked => true,
+    _ => false,
+  };
 
   @override
   void initState() {
@@ -93,6 +101,15 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     if (!mounted) {
       return;
     }
+    if (_sessionEnded) {
+      _sessionEndMessage = _controller.errorMessage ?? _sessionEndMessage;
+      _composer.clear();
+      _composerFocus.unfocus();
+      _giftTimer?.cancel();
+      _showGiftCelebration = false;
+    } else {
+      _sessionEndMessage = null;
+    }
     final List<RoomMessage> messages = _controller.messages;
     final RoomMessage? latest = messages.isEmpty ? null : messages.last;
     final String? identity = latest == null
@@ -108,7 +125,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
             _messageScroll.position.extentAfter < 96);
     setState(() {});
     final String? error = _controller.errorMessage;
-    if (error != null && error != _presentedError) {
+    if (!_sessionEnded && error != null && error != _presentedError) {
       _presentedError = error;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) {
@@ -151,12 +168,91 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           body: switch (_controller.status) {
             RoomSessionStatus.idle ||
             RoomSessionStatus.joining => _joiningState(),
-            RoomSessionStatus.failed when _controller.snapshot == null =>
-              _failureState(),
+            RoomSessionStatus.failed => _failureState(),
+            RoomSessionStatus.left ||
+            RoomSessionStatus.closed ||
+            RoomSessionStatus.kicked => _sessionEndedState(),
             _ => _roomContent(),
           },
         ),
       ),
+    );
+  }
+
+  Widget _sessionEndedState() {
+    final bool canReenter =
+        _controller.status == RoomSessionStatus.left &&
+        _controller.snapshot != null;
+    final String title = switch (_controller.status) {
+      RoomSessionStatus.kicked => '你已被移出房间',
+      RoomSessionStatus.closed => '房间当前不可用',
+      _ => '房间会话已结束',
+    };
+    return Stack(
+      children: <Widget>[
+        const _VideoRoomBackground(),
+        SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  tooltip: '返回',
+                  onPressed: () => _popRoom(VideoRoomExit.ended),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        const Icon(
+                          Icons.meeting_room_outlined,
+                          size: 46,
+                          color: RoomColors.warning,
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          title,
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(color: RoomColors.textPrimary),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          _controller.status == RoomSessionStatus.left
+                              ? (_sessionEndMessage ??
+                                    (canReenter
+                                        ? '当前会话已失效，重新进入后将同步最新房间状态。'
+                                        : '当前无法继续使用此房间，请返回首页。'))
+                              : '当前无法继续使用此房间，请返回首页。',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 22),
+                        if (canReenter)
+                          FilledButton(
+                            onPressed: () =>
+                                _controller.join(source: widget.entrySource),
+                            child: const Text('重新进入'),
+                          ),
+                        TextButton(
+                          onPressed: () => _popRoom(VideoRoomExit.ended),
+                          child: const Text('返回首页'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -1427,8 +1523,16 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Future<void> _showExitChoices() async {
+    if (_sessionEnded || _controller.status == RoomSessionStatus.failed) {
+      _popRoom(VideoRoomExit.ended);
+      return;
+    }
     final RoomPkBattle? activePk = await _fetchActivePk();
     if (!mounted) {
+      return;
+    }
+    if (_sessionEnded || _controller.status == RoomSessionStatus.failed) {
+      _popRoom(VideoRoomExit.ended);
       return;
     }
     if (activePk?.isActive == true) {
@@ -1478,6 +1582,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   void _minimize() {
+    if (_sessionEnded) {
+      _popRoom(VideoRoomExit.ended);
+      return;
+    }
     if (widget.allowMinimize) {
       _popRoom(VideoRoomExit.minimized);
     }
