@@ -19,9 +19,12 @@ import 'package:voice_social_app/features/shell/main_shell.dart';
 import 'package:voice_social_app/features/version/presentation/app_version_gate_page.dart';
 
 class AppGate extends StatefulWidget {
-  const AppGate({required this.dependencies, super.key});
+  const AppGate({required this.dependencies, this.onAccessBlocked, super.key});
 
   final AppDependencies dependencies;
+
+  /// The app owner discards its protected Navigator, not an animated pop.
+  final VoidCallback? onAccessBlocked;
 
   @override
   State<AppGate> createState() => _AppGateState();
@@ -119,13 +122,17 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
   }
 
   void _handleAuthChanged() {
-    // AuthController can notify while a previous live snapshot is still in
-    // memory. Clear it before the rebuild that observes a new principal so a
-    // stale account can never briefly reach MainShell.
+    // A rotated credential for the same identity must not dispose MainShell
+    // (and its selected tab) while the next status check is in flight. Keep
+    // only a previously verified snapshot; a new identity has no such grant.
+    // Failure/restriction from the fresh check still replaces it below.
     if (!identical(_preflightSession, _controller.session)) {
-      _liveCompliance = null;
-      _livePreflightError = null;
-      _versionDeferred = false;
+      if (_controller.stage != AuthFlowStage.signedIn ||
+          !_sameSessionIdentity(_preflightSession, _controller.session)) {
+        _liveCompliance = null;
+        _livePreflightError = null;
+        _versionDeferred = false;
+      }
       _preflightSession = null;
     }
     if (mounted) {
@@ -144,6 +151,15 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
       _resetLivePreflight();
     }
   }
+
+  bool _sameSessionIdentity(AuthSession? previous, AuthSession? current) =>
+      previous != null &&
+      current != null &&
+      previous.userId == current.userId &&
+      previous.deviceId == current.deviceId &&
+      previous.clientId == current.clientId &&
+      previous.mobile == current.mobile &&
+      previous.roles == current.roles;
 
   void _resetLivePreflight() {
     if (_controller.stage == AuthFlowStage.signedIn) {
@@ -209,10 +225,18 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
         return;
       }
       setState(() {
+        final VersionUpdateInfo? previousVersion = _liveCompliance?.versionInfo;
+        if (previousVersion == null ||
+            previousVersion.hasUpdate != snapshot.versionInfo.hasUpdate ||
+            previousVersion.versionName != snapshot.versionInfo.versionName ||
+            previousVersion.packageUrl != snapshot.versionInfo.packageUrl ||
+            previousVersion.forceUpdate != snapshot.versionInfo.forceUpdate) {
+          _versionDeferred = false;
+        }
         _liveCompliance = snapshot;
         _livePreflightError = null;
-        _versionDeferred = false;
       });
+      _revealBlockingLiveGate(session);
     } catch (error) {
       if (!mounted ||
           _controller.stage != AuthFlowStage.signedIn ||
@@ -225,7 +249,30 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
             ? error.message
             : '账号状态检查失败，请重试。';
       });
+      _revealBlockingLiveGate(session);
     }
+  }
+
+  bool get _liveEntryBlocked {
+    final snapshot = _liveCompliance;
+    if (snapshot == null) return true;
+    return snapshot.restriction.isRestricted ||
+        !snapshot.accountUsable ||
+        (snapshot.versionInfo.hasUpdate &&
+            (snapshot.versionInfo.forceUpdate || !_versionDeferred));
+  }
+
+  void _revealBlockingLiveGate(AuthSession checkedSession) {
+    if (!mounted ||
+        _controller.stage != AuthFlowStage.signedIn ||
+        !identical(_controller.session, checkedSession) ||
+        !_liveEntryBlocked) {
+      return;
+    }
+    // Keep this checked gate state via its stable key, but replace the route
+    // owner in the same next build. Old pages/dialogs are disposed without a
+    // pop-animation window in which a delayed request could push again.
+    widget.onAccessBlocked?.call();
   }
 
   Widget _buildLiveEntryGate() {

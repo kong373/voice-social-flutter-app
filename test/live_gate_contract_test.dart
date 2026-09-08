@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:voice_social_app/app/app.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/app/app_environment.dart';
@@ -12,6 +13,7 @@ import 'package:voice_social_app/features/account/compliance/domain/account_comp
 import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/account/compliance/infrastructure/native_permission_adapter.dart';
+import 'package:voice_social_app/features/shell/main_shell.dart';
 
 const AppEnvironment liveEnvironment = AppEnvironment(
   backendMode: BackendMode.live,
@@ -164,6 +166,213 @@ void main() {
     },
   );
 
+  for (final outcome in <String>['allowed', 'restricted', 'network-error']) {
+    testWidgets(
+      'same identity rotation preserves shell while rechecking $outcome',
+      (tester) async {
+        final repository = _SwitchingGateComplianceRepository(_snapshot());
+        final dependencies = _dependencies(repository);
+        await tester.pumpWidget(
+          AppDependencyScope(
+            dependencies: dependencies,
+            child: MaterialApp(home: AppGate(dependencies: dependencies)),
+          ),
+        );
+        await _pumpUntil(tester, find.byKey(const Key('live-home-ready')));
+        final previousShell = tester.element(find.byType(MainShell));
+        await tester.tap(find.text('我的').hitTestable());
+        await tester.pump();
+        expect(tester.widget<IndexedStack>(find.byType(IndexedStack)).index, 3);
+        final current = dependencies.authController.session!;
+        await dependencies.sessionManager.save(
+          AuthSession(
+            accessToken: 'rotated-access',
+            refreshToken: 'rotated-refresh',
+            tokenType: current.tokenType,
+            expiresAt: DateTime.now().add(const Duration(hours: 1)),
+            refreshExpiresAt: current.refreshExpiresAt,
+            deviceId: current.deviceId,
+            clientId: current.clientId,
+            userId: current.userId,
+            mobile: current.mobile,
+            roles: current.roles,
+          ),
+        );
+        dependencies.authController.notifyListeners();
+        await tester.pump();
+        expect(repository.calls, 2);
+        expect(previousShell.mounted, isTrue);
+        expect(tester.element(find.byType(MainShell)), same(previousShell));
+        expect(tester.widget<IndexedStack>(find.byType(IndexedStack)).index, 3);
+        if (outcome == 'network-error') {
+          repository.secondSnapshot.completeError(
+            const ApiException(kind: ApiFailureKind.timeout, message: '状态检查超时'),
+          );
+          await _pumpUntil(
+            tester,
+            find.byKey(const Key('account-access-gate-error')),
+          );
+          expect(find.byType(MainShell), findsNothing);
+        } else {
+          repository.secondSnapshot.complete(
+            outcome == 'allowed'
+                ? _snapshot()
+                : _snapshot(accountUsable: false),
+          );
+          if (outcome == 'allowed') {
+            await tester.pump();
+            expect(tester.element(find.byType(MainShell)), same(previousShell));
+            expect(
+              tester.widget<IndexedStack>(find.byType(IndexedStack)).index,
+              3,
+            );
+          } else {
+            await _pumpUntil(
+              tester,
+              find.byKey(const Key('live-account-restricted')),
+            );
+            expect(find.byType(MainShell), findsNothing);
+          }
+        }
+        await tester.pumpWidget(const SizedBox());
+        dependencies.dispose();
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('same optional update deferral survives normal rotation', (
+    tester,
+  ) async {
+    const policy = VersionUpdateInfo(
+      hasUpdate: true,
+      forceUpdate: false,
+      versionName: '7.0.0',
+      releaseNotes: '安全更新',
+      packageUrl: 'https://updates.example.invalid/app.apk',
+    );
+    final repository = _SwitchingGateComplianceRepository(
+      _snapshot(versionInfo: policy),
+    );
+    final dependencies = _dependencies(repository);
+    await tester.pumpWidget(VoiceSocialApp(dependencies: dependencies));
+    await _pumpUntil(tester, find.byKey(const Key('app-version-gate-later')));
+    await tester.tap(find.byKey(const Key('app-version-gate-later')));
+    await _pumpUntil(tester, find.byKey(const Key('live-home-ready')));
+    await tester.tap(find.text('我的').hitTestable());
+    await tester.pump();
+    expect(tester.widget<IndexedStack>(find.byType(IndexedStack)).index, 3);
+    final shell = tester.element(find.byType(MainShell));
+    await _rotate(dependencies);
+    await tester.pump();
+    repository.secondSnapshot.complete(_snapshot(versionInfo: policy));
+    await tester.pump();
+    expect(shell.mounted, isTrue);
+    expect(tester.element(find.byType(MainShell)), same(shell));
+    expect(tester.widget<IndexedStack>(find.byType(IndexedStack)).index, 3);
+    expect(find.byKey(const Key('live-version-policy')), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final outcome in ['restricted', 'network-error', 'mandatory-update']) {
+    testWidgets('fresh $outcome removes pushed pages and dialog', (
+      tester,
+    ) async {
+      final repository = _SwitchingGateComplianceRepository(_snapshot());
+      final dependencies = _dependencies(repository);
+      await tester.pumpWidget(VoiceSocialApp(dependencies: dependencies));
+      await _pumpUntil(tester, find.byKey(const Key('live-home-ready')));
+      final gateState = tester.state(find.byType(AppGate));
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      unawaited(
+        navigator.push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('old protected page')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final oldContext = tester.element(find.text('old protected page'));
+      final delayed = Completer<void>();
+      final lateNavigation = delayed.future.then((_) {
+        if (oldContext.mounted) {
+          unawaited(
+            Navigator.of(oldContext).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    const Scaffold(body: Text('late reopened page')),
+              ),
+            ),
+          );
+        }
+      });
+      unawaited(
+        showDialog<void>(
+          context: oldContext,
+          builder: (_) =>
+              const AlertDialog(content: Text('old protected dialog')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _rotate(dependencies);
+      await tester.pump();
+      expect(oldContext.mounted, isTrue);
+      if (outcome == 'network-error') {
+        repository.secondSnapshot.completeError(
+          const ApiException(kind: ApiFailureKind.timeout, message: '状态检查超时'),
+        );
+      } else {
+        repository.secondSnapshot.complete(
+          outcome == 'restricted'
+              ? _snapshot(accountUsable: false)
+              : _snapshot(
+                  versionInfo: const VersionUpdateInfo(
+                    hasUpdate: true,
+                    forceUpdate: true,
+                    versionName: '8.0.0',
+                    releaseNotes: '必须升级',
+                    packageUrl: 'https://updates.example.invalid/app.apk',
+                  ),
+                ),
+        );
+      }
+      // Complete an in-flight page operation before an animated pop finishes.
+      await tester.pump();
+      delayed.complete();
+      await lateNavigation;
+      await tester.pumpAndSettle();
+      expect(oldContext.mounted, isFalse);
+      expect(find.text('old protected page'), findsNothing);
+      expect(find.text('old protected dialog'), findsNothing);
+      expect(find.text('late reopened page'), findsNothing);
+      expect(
+        find.byKey(
+          Key(switch (outcome) {
+            'restricted' => 'live-account-restricted',
+            'network-error' => 'account-access-gate-error',
+            _ => 'live-version-policy',
+          }),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.state<NavigatorState>(find.byType(Navigator)).canPop(),
+        isFalse,
+      );
+      expect(tester.state(find.byType(AppGate)), same(gateState));
+      expect(repository.calls, 2);
+      await dependencies.authController.discardSessionAndSignOut();
+      await tester.pumpAndSettle();
+      expect(find.text('登录 / 注册'), findsWidgets);
+      expect(find.byKey(const Key('live-version-policy')), findsNothing);
+      expect(find.byKey(const Key('live-account-restricted')), findsNothing);
+      expect(repository.calls, 2);
+      await tester.pumpWidget(const SizedBox());
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets(
     'optional version policy offers later and then enters MainShell',
     (WidgetTester tester) async {
@@ -262,6 +471,25 @@ void main() {
     expect(find.textContaining('不等于已安装更新'), findsOneWidget);
     expect(find.byKey(const Key('live-home-ready')), findsNothing);
   });
+}
+
+Future<void> _rotate(AppDependencies dependencies) async {
+  final current = dependencies.authController.session!;
+  await dependencies.sessionManager.save(
+    AuthSession(
+      accessToken: 'rotated-access',
+      refreshToken: 'rotated-refresh',
+      tokenType: current.tokenType,
+      expiresAt: DateTime.now().add(const Duration(hours: 1)),
+      refreshExpiresAt: current.refreshExpiresAt,
+      deviceId: current.deviceId,
+      clientId: current.clientId,
+      userId: current.userId,
+      mobile: current.mobile,
+      roles: current.roles,
+    ),
+  );
+  dependencies.authController.notifyListeners();
 }
 
 Future<void> _pumpUntil(WidgetTester tester, Finder finder) async {

@@ -36,11 +36,13 @@ class AuthNavigationBoundary extends StatefulWidget {
   const AuthNavigationBoundary({
     required this.controller,
     required this.builder,
+    this.navigationRevision = 0,
     super.key,
   });
 
   final AuthController controller;
   final Widget Function(GlobalKey<NavigatorState>) builder;
+  final int navigationRevision;
 
   @override
   State<AuthNavigationBoundary> createState() => _AuthNavigationBoundaryState();
@@ -78,6 +80,9 @@ class _AuthNavigationBoundaryState extends State<AuthNavigationBoundary> {
   @override
   void didUpdateWidget(AuthNavigationBoundary oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.navigationRevision != widget.navigationRevision) {
+      _navigatorKey = GlobalKey<NavigatorState>();
+    }
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_handleAuthChanged);
       widget.controller.addListener(_handleAuthChanged);
@@ -96,12 +101,20 @@ class _AuthNavigationBoundaryState extends State<AuthNavigationBoundary> {
 }
 
 class _VoiceSocialAppState extends State<VoiceSocialApp> {
+  final GlobalKey _appGateKey = GlobalKey();
+  int _navigationRevision = 0;
+
+  void _discardProtectedRoutes() {
+    if (mounted) setState(() => _navigationRevision += 1);
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppDependencyScope(
       dependencies: widget.dependencies,
       child: AuthNavigationBoundary(
         controller: widget.dependencies.authController,
+        navigationRevision: _navigationRevision,
         builder: (navigatorKey) => MaterialApp(
           navigatorKey: navigatorKey,
           debugShowCheckedModeBanner: false,
@@ -117,7 +130,11 @@ class _VoiceSocialAppState extends State<VoiceSocialApp> {
                   dependencies: widget.dependencies,
                   onSignOut: () async {},
                 )
-              : AppGate(dependencies: widget.dependencies),
+              : AppGate(
+                  key: _appGateKey,
+                  dependencies: widget.dependencies,
+                  onAccessBlocked: _discardProtectedRoutes,
+                ),
         ),
       ),
     );
