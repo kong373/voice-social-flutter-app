@@ -15,7 +15,7 @@ void main() {
     messenger.setMockMethodCallHandler(eventChannel, (_) async => null);
     messenger.setMockMethodCallHandler(
       channel,
-      (call) async => call.method != 'stop',
+      (call) async => call.method == 'stop' ? null : true,
     );
   });
   tearDown(() {
@@ -50,16 +50,19 @@ void main() {
     },
   );
   test('non boolean native result fails closed', () async {
-    messenger.setMockMethodCallHandler(channel, (_) async => 1);
+    messenger.setMockMethodCallHandler(
+      channel,
+      (call) async => call.method == 'stop' ? null : 1,
+    );
     final audio = FirstPartyRoomAudio();
     expect(await audio.start(sessionId: id, microphone: true), isFalse);
     await audio.dispose();
   });
   test('stable platform failure is false', () async {
-    messenger.setMockMethodCallHandler(
-      channel,
-      (_) async => throw PlatformException(code: 'unavailable'),
-    );
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'stop') return null;
+      throw PlatformException(code: 'unavailable');
+    });
     final audio = FirstPartyRoomAudio();
     expect(await audio.start(sessionId: id, microphone: false), isFalse);
     await audio.dispose();
@@ -79,7 +82,7 @@ void main() {
     expect(errors.every((e) => e is FormatException), isTrue);
     expect(values, hasLength(1));
     expect(values.single.sessionId, id);
-    expect(values.single.active, isTrue);
+    expect(values.single.active, isFalse);
     await sub.cancel();
     await audio.dispose();
   });
@@ -119,7 +122,7 @@ void main() {
     final calls = <String>[];
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call.method);
-      return call.method == 'start';
+      return call.method == 'stop' ? null : call.method == 'start';
     });
     final audio = FirstPartyRoomAudio();
     final values = <RoomAudioActivity>[];
@@ -141,6 +144,8 @@ void main() {
         channel,
         (call) async => call.method == 'start'
             ? (call.arguments as Map)['microphone'] == false
+            : call.method == 'stop'
+            ? null
             : true,
       );
       final audio = FirstPartyRoomAudio();

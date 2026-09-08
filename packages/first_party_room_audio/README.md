@@ -10,6 +10,7 @@ RtcAdapter, RoomController and backend integration belong to the main task.
 
 ```dart
 final audio = FirstPartyRoomAudio(); // Exactly one owner per Flutter engine.
+// Optional test seam: channelTimeout; production default is 5 seconds.
 Future<bool> start({required String sessionId, required bool microphone});
 Future<void> stop({required String sessionId});
 Future<bool> isActive({required String sessionId});
@@ -42,6 +43,28 @@ malformed events produce `FormatException` on the stream. Native start denial
 returns false. Dart maps PlatformException/MissingPluginException for bool
 operations to false; stop/dispose propagate channel errors rather than pretend
 cleanup succeeded. Neither layer logs identifiers or platform exception text.
+
+Every method invocation has a five-second wait limit (covers Android's
+four-second launch deadline). Tests can inject a positive `channelTimeout`.
+start/isActive/renew timeout or unknown results return false and invalidate the
+matching locally owned generation, immediately cancelling its renewal timer.
+An explicit false start remains a rejected promotion and preserves an existing
+listen lease. Uncertain starts receive a bounded best-effort stop addressed to
+the original UUID. Late responses and positive events cannot revive an
+invalidated generation. A query for an unowned UUID never cleans up another
+generation.
+
+Malformed events first invalidate the current/pending generation, emit its
+inactive event and issue bounded best-effort cleanup, then deliver
+`FormatException`. They cannot keep renewing a lease. Inactive here means local
+lease validity was revoked, not that native stop was confirmed. Unconfirmed
+stops are retained for disposal to retry. Explicit stop/dispose propagate
+`TimeoutException` or channel errors; non-null stop responses are
+`invalid_response`. Repeated dispose returns the same result, including failure.
+Disposal also bounds subscription cancellation and stream closure. The limit is
+per operation, not a promise that queued disposal plus all cleanup stages ends
+within five seconds. Native lease expiry remains the fallback if cleanup has
+no acknowledgement. Use a fresh UUID for each replacement generation.
 
 Events retain generation identity: consumers must ignore stale generations.
 The Dart wrapper only clears its current lease on a matching inactive event.
@@ -135,10 +158,19 @@ The main task must add the host background mode and own SDK stop/mute/wiring.
 Small tests only; no devices, Docker, actual RTC/vendor call, Gradle build,
 Xcode build or full app test suite was started.
 
-Completed locally: 9 Dart tests passed (21 seconds), Dart analysis reported no
+Initial delivery: 9 Dart tests passed (21 seconds), Dart analysis reported no
 issues, pure Kotlin boundary checks passed, Swift parse and Ruby podspec syntax
 checks passed. The renewal test uses a bounded real timer; an earlier fake-clock
 test attempt hung and was replaced before this passing run.
+
+Follow-up bounded-channel regression: the old implementation (with only the
+constructor test seam added) reproduced a hung-start timeout and missing
+inactive event. The corrected package adds hanging start/renew/stop/dispose,
+isActive timeout, late response, stale cleanup and malformed-event/no-renew
+tests. Android notification/channel labels are now Simplified Chinese.
+Final follow-up result: all 17 package tests passed in 21 seconds, Dart analysis
+reported no issues, and the patch passed `git diff --check`.
+This follow-up does not add native compilation or device evidence.
 
 - Dart test-first initial failure: missing implementation, then package tests.
 - `flutter test --no-pub`: public contract, malformed events, generation
