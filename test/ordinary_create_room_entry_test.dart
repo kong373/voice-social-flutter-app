@@ -14,7 +14,9 @@ void main() {
   for (final bool closed in <bool>[false, true]) {
     testWidgets('ordinary home opens owned room form and refreshes on back '
         '(closed=$closed)', (WidgetTester tester) async {
-      await tester.binding.setSurfaceSize(const Size(390, 844));
+      await tester.binding.setSurfaceSize(
+        closed ? const Size(360, 800) : const Size(390, 844),
+      );
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final repository = _HomeRooms();
       final dependencies = AppDependencies.forTestEnvironment(
@@ -32,6 +34,12 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.social(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(closed ? 1.3 : 1)),
+            child: child!,
+          ),
           home: AppDependencyScope(
             dependencies: dependencies,
             child: Scaffold(
