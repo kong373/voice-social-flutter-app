@@ -1,3 +1,4 @@
+import 'room_lease_contract_fixture.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -133,6 +134,7 @@ void main() {
           case '/app-api/rooms/setRoomTopics':
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': '9527',
               'topic': '新内容',
               'expectedVersion': 1,
@@ -148,6 +150,7 @@ void main() {
           case '/app-api/roomUsers/setMuted':
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': '9527',
               'targetUserId': 10002,
               'muted': true,
@@ -162,6 +165,7 @@ void main() {
           case '/app-api/roomUsers/setRole':
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': '9527',
               'targetUserId': 10002,
               'role': 'MEMBER',
@@ -176,6 +180,7 @@ void main() {
           case '/app-api/room/com/kickout':
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': '9527',
               'targetUserId': 10002,
               'ban': true,
@@ -191,6 +196,7 @@ void main() {
           case '/app-api/micUserBase/hugUserDownMic':
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': '9527',
               'targetUserId': 10002,
               'seatNumber': 3,
@@ -205,6 +211,7 @@ void main() {
           case '/app-api/micBase/lockMike':
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': '9527',
               'seatNumber': 4,
             });
@@ -220,6 +227,7 @@ void main() {
           case '/app-api/micBase/unlockMike':
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': '9527',
               'seatNumber': 4,
             });
@@ -235,6 +243,7 @@ void main() {
           case '/app-api/micBase/openMike':
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': '9527',
               'userId': 10001,
               'seatNumber': 4,
@@ -252,6 +261,7 @@ void main() {
           case '/app-api/micBase/closedMike':
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': '9527',
               'userId': 10001,
               'seatNumber': 5,
@@ -272,7 +282,10 @@ void main() {
       });
       addTearDown(server.close);
       final BackendRoomOperationsRepository repository =
-          BackendRoomOperationsRepository(apiClient: server.client);
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: server.client,
+          );
 
       final RoomMemberPage online = await repository.fetchOnlineMembers(
         roomId: '9527',
@@ -379,6 +392,7 @@ void main() {
             }
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': '9527',
               'seatNumber': 3,
             });
@@ -400,7 +414,10 @@ void main() {
             );
           case '/app-mini-api/mini/v1/rooms/mic-requests/cancel':
             expect(request.method, 'POST');
-            expect(request.body, <String, Object?>{'requestId': 'request-1'});
+            expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
+              'requestId': 'request-1',
+            });
             status = 'CANCELLED';
             return _Reply(
               data: _micRequestRecord(
@@ -416,6 +433,7 @@ void main() {
           case '/app-mini-api/mini/v1/rooms/mic-requests/resolve':
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'requestId': 'request-1',
               'accepted': true,
             });
@@ -437,6 +455,7 @@ void main() {
           case '/app-mini-api/mini/v1/rooms/mic-requests/invite':
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': '9527',
               'userId': 10002,
               'seatNumber': 4,
@@ -457,7 +476,10 @@ void main() {
       });
       addTearDown(server.close);
       final BackendRoomOperationsRepository repository =
-          BackendRoomOperationsRepository(apiClient: server.client);
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: server.client,
+          );
 
       expect(repository.micCoordinationMode, MicCoordinationMode.unavailable);
       expect(
@@ -514,7 +536,10 @@ void main() {
     });
     addTearDown(server.close);
     final BackendRoomOperationsRepository repository =
-        BackendRoomOperationsRepository(apiClient: server.client);
+        BackendRoomOperationsRepository(
+          leaseBinding: admittedRoomFixture(),
+          apiClient: server.client,
+        );
     await expectLater(
       repository.fetchMicRequests('9527'),
       throwsA(
@@ -560,7 +585,10 @@ void main() {
     });
     addTearDown(server.close);
     final BackendRoomOperationsRepository repository =
-        BackendRoomOperationsRepository(apiClient: server.client);
+        BackendRoomOperationsRepository(
+          leaseBinding: admittedRoomFixture(),
+          apiClient: server.client,
+        );
     await expectLater(
       repository.fetchMicRequests('9527'),
       throwsA(
@@ -602,7 +630,10 @@ void main() {
       });
       addTearDown(server.close);
       final BackendRoomOperationsRepository repository =
-          BackendRoomOperationsRepository(apiClient: server.client);
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: server.client,
+          );
 
       final List<MicAccessRequest> requests = await repository.fetchMicRequests(
         '9527',
@@ -655,7 +686,10 @@ void main() {
     });
     addTearDown(server.close);
     final BackendRoomOperationsRepository repository =
-        BackendRoomOperationsRepository(apiClient: server.client);
+        BackendRoomOperationsRepository(
+          leaseBinding: admittedRoomFixture(roomId: 'room-b'),
+          apiClient: server.client,
+        );
 
     final Future<RoomMemberPage> roomARead = repository.fetchOnlineMembers(
       roomId: 'room-a',
@@ -674,10 +708,13 @@ void main() {
       final RoomMemberPage roomAPage = await roomARead;
       expect(roomAPage.items.single.userId, 10001);
 
-      await repository.setSeatMuted(
-        roomId: 'room-a',
-        backendMicIndex: 4,
-        muted: true,
+      await expectLater(
+        repository.setSeatMuted(
+          roomId: 'room-a',
+          backendMicIndex: 4,
+          muted: true,
+        ),
+        throwsA(isA<ApiException>()),
       );
       await repository.setSeatMuted(
         roomId: 'room-b',
@@ -691,14 +728,9 @@ void main() {
                 request.path == '/app-api/micBase/closedMike',
           )
           .toList(growable: false);
-      expect(writes, hasLength(2));
+      expect(writes, hasLength(1));
       expect(writes[0].body, <String, Object?>{
-        'roomId': 'room-a',
-        'userId': 10001,
-        'seatNumber': 4,
-        'muted': true,
-      });
-      expect(writes[1].body, <String, Object?>{
+        'sessionId': roomLeaseSessionId,
         'roomId': 'room-b',
         'userId': 20002,
         'seatNumber': 4,
@@ -725,7 +757,10 @@ void main() {
       );
       addTearDown(server.close);
       final BackendRoomOperationsRepository repository =
-          BackendRoomOperationsRepository(apiClient: server.client);
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: server.client,
+          );
 
       await expectLater(
         repository.fetchTopic('9527'),
@@ -765,7 +800,10 @@ void main() {
         ),
       );
       final BackendRoomOperationsRepository repository =
-          BackendRoomOperationsRepository(apiClient: server.client);
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: server.client,
+          );
       await expectLater(
         repository.fetchTopic('9527'),
         throwsA(
@@ -963,7 +1001,10 @@ void main() {
             );
           });
           final BackendRoomOperationsRepository repository =
-              BackendRoomOperationsRepository(apiClient: server.client);
+              BackendRoomOperationsRepository(
+                leaseBinding: admittedRoomFixture(),
+                apiClient: server.client,
+              );
 
           await expectLater(
             write.invoke(repository),
@@ -1026,7 +1067,10 @@ void main() {
           return _Reply(data: payload);
         });
         final BackendRoomOperationsRepository repository =
-            BackendRoomOperationsRepository(apiClient: server.client);
+            BackendRoomOperationsRepository(
+              leaseBinding: admittedRoomFixture(),
+              apiClient: server.client,
+            );
 
         await expectLater(
           repository.fetchOnlineMembers(roomId: '9527', page: 1),
@@ -1057,6 +1101,7 @@ void main() {
         });
         final BackendRoomOperationsRepository missingListRepository =
             BackendRoomOperationsRepository(
+              leaseBinding: admittedRoomFixture(),
               apiClient: missingListServer.client,
             );
         await expectLater(
@@ -1089,7 +1134,10 @@ void main() {
           return _Reply(data: payload);
         });
         final BackendRoomOperationsRepository repository =
-            BackendRoomOperationsRepository(apiClient: server.client);
+            BackendRoomOperationsRepository(
+              leaseBinding: admittedRoomFixture(),
+              apiClient: server.client,
+            );
 
         await expectLater(
           repository.fetchOnlineMembers(roomId: '9527', page: 1),
@@ -1144,7 +1192,10 @@ void main() {
           (_CapturedRequest request) => _Reply(data: malformedPage),
         );
         final BackendRoomOperationsRepository repository =
-            BackendRoomOperationsRepository(apiClient: server.client);
+            BackendRoomOperationsRepository(
+              leaseBinding: admittedRoomFixture(),
+              apiClient: server.client,
+            );
         await expectLater(
           repository.fetchOnlineMembers(roomId: '9527', page: 1, pageSize: 20),
           throwsA(isA<ApiException>()),
@@ -1187,7 +1238,10 @@ void main() {
         );
       });
       final BackendRoomOperationsRepository repository =
-          BackendRoomOperationsRepository(apiClient: server.client);
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: server.client,
+          );
 
       final RoomMemberPage first = await repository.fetchOnlineMembers(
         roomId: '9527',
@@ -1247,7 +1301,10 @@ void main() {
       });
       addTearDown(server.close);
       final BackendRoomOperationsRepository repository =
-          BackendRoomOperationsRepository(apiClient: server.client);
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: server.client,
+          );
 
       final List<RoomMember> listeners = await repository.fetchOffMicListeners(
         '9527',
@@ -1283,7 +1340,10 @@ void main() {
         );
       });
       final BackendRoomOperationsRepository driftRepository =
-          BackendRoomOperationsRepository(apiClient: driftServer.client);
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: driftServer.client,
+          );
       await expectLater(
         driftRepository.fetchOffMicListeners('9527'),
         throwsA(isA<ApiException>()),
@@ -1306,7 +1366,10 @@ void main() {
         ),
       );
       final BackendRoomOperationsRepository unsafeRepository =
-          BackendRoomOperationsRepository(apiClient: unsafeServer.client);
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: unsafeServer.client,
+          );
       await expectLater(
         unsafeRepository.fetchOffMicListeners('9527'),
         throwsA(isA<ApiException>()),
@@ -1334,7 +1397,10 @@ void main() {
       );
       addTearDown(server.close);
       final BackendRoomOperationsRepository repository =
-          BackendRoomOperationsRepository(apiClient: server.client);
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: server.client,
+          );
 
       final RoomMemberPage page = await repository.fetchOnlineMembers(
         roomId: '9527',
@@ -1355,6 +1421,7 @@ void main() {
         expect(request.path, '/app-api/rooms/setRoomTopics');
         expect(request.method, 'POST');
         expect(request.body, <String, Object?>{
+          'sessionId': roomLeaseSessionId,
           'roomId': '9527',
           'topic': '新内容',
           'expectedVersion': 4,
@@ -1368,7 +1435,10 @@ void main() {
       });
       addTearDown(server.close);
       final BackendRoomOperationsRepository repository =
-          BackendRoomOperationsRepository(apiClient: server.client);
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: server.client,
+          );
 
       await expectLater(
         repository.updateTopic(
@@ -1398,7 +1468,10 @@ void main() {
       );
       addTearDown(server.close);
       final BackendRoomOperationsRepository repository =
-          BackendRoomOperationsRepository(apiClient: server.client);
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: server.client,
+          );
 
       for (final int? version in <int?>[null, -1]) {
         await expectLater(

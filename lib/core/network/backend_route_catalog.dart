@@ -5,6 +5,7 @@ class BackendRouteCatalog {
         '/app-register-api/userAccount/v1/loginByMobileAndSmsCode',
     this.registerByMobile = '/app-register-api/userAccount/v1/registerByMobile',
     this.enterRoom = '/app-room-api/room/com/v1/enterRoom',
+    this.heartbeatRoom = '/app-room-api/room/com/v1/heartbeatRoom',
     this.createRoom = '/app-mini-api/mini/v1/rooms',
     this.closeRoom = '/app-mini-api/mini/v1/rooms/close',
     this.reopenRoom = '/app-mini-api/mini/v1/rooms/reopen',
@@ -204,6 +205,7 @@ class BackendRouteCatalog {
   final String loginBySms;
   final String registerByMobile;
   final String enterRoom;
+  final String heartbeatRoom;
   final String createRoom;
   final String closeRoom;
   final String reopenRoom;

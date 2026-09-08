@@ -7,6 +7,7 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_rtc_token_repository.dart';
 import 'package:voice_social_app/features/room/data/room_write_guard.dart';
+import 'package:voice_social_app/features/room/data/room_lease_binding.dart';
 import 'package:voice_social_app/features/im/domain/tencent_im_room_models.dart';
 
 /// M3.2A live repository.
@@ -18,6 +19,7 @@ class BackendRoomRepository
     implements
         RoomRepository,
         RoomAuthorityRepository,
+        RoomLeaseRepository,
         GiftReceiptRepository,
         RtcTokenRepository,
         TencentImRoomSessionSource,
@@ -28,26 +30,133 @@ class BackendRoomRepository
     FixedEightSeatAdapter seatAdapter = const FixedEightSeatAdapter(),
     RtcTokenRepository? rtcTokenRepository,
     DateTime Function()? now,
+    RoomLeaseBinding? leaseBinding,
   }) : _apiClient = apiClient,
        _routes = routes,
        _seatAdapter = seatAdapter,
        _rtcTokenRepository = rtcTokenRepository,
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       leaseBinding = leaseBinding ?? RoomLeaseBinding();
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
   final FixedEightSeatAdapter _seatAdapter;
   final RtcTokenRepository? _rtcTokenRepository;
   final DateTime Function() _now;
+  final RoomLeaseBinding leaseBinding;
+  final RoomWriteGuard _leaseWriteGuard = RoomWriteGuard(scope: 'room-lease');
   final RoomWriteGuard _writeGuard = RoomWriteGuard(scope: 'room-session');
-  final RoomWriteGuard _giftWriteGuard = RoomWriteGuard(scope: 'room-gift');
-  String? _activeRoomId;
-  int? _activeCurrentUserId;
+  int? get _activeCurrentUserId => leaseBinding.current?.userId;
+  int? _imGeneration;
   final Map<String, TencentImAvChatRoomSession> _tencentImRoomSessions =
       <String, TencentImAvChatRoomSession>{};
   TencentImAvChatRoomSession? _lastTencentImRoomSession;
 
   static const int _publicMessagesPageSize = 50;
+
+  @override
+  Future<RoomSessionLease> renewRoomLease({
+    required String roomId,
+    required String sessionId,
+    required int sequence,
+    required String requestId,
+    required int currentUserId,
+  }) async {
+    final int generation = leaseBinding.generation;
+    final membership = leaseBinding.require(roomId);
+    if (membership.userId != currentUserId ||
+        membership.lease.sessionId != sessionId)
+      throw RoomLeaseBinding.stale();
+    if (sequence < 1 ||
+        sequence > 9007199254740991 ||
+        !RegExp(r'^[A-Za-z0-9._:-]{1,128}$').hasMatch(requestId)) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '心跳序号或请求标识无效',
+      );
+    }
+    if ((membership.pendingSequence != null &&
+            (membership.pendingSequence != sequence ||
+                membership.pendingRequestId != requestId)) ||
+        (membership.pendingSequence == null &&
+            sequence != membership.lease.sequence + 1)) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        code: 40938,
+        message: '心跳序号或重试标识不一致',
+      );
+    }
+    membership.pendingSequence = sequence;
+    membership.pendingRequestId = requestId;
+    return _leaseWriteGuard.run<RoomSessionLease>(
+      intent: 'heartbeat:$generation:$roomId:$sessionId:$sequence',
+      requestId: requestId,
+      action: (headers) async {
+        leaseBinding.check(generation);
+        final response = await _apiClient.postWithoutUnauthorizedRecovery(
+          _routes.heartbeatRoom,
+          headers: headers,
+          body: {
+            'roomId': roomId,
+            'sessionId': sessionId,
+            'sequence': sequence,
+          },
+        );
+        final lease = parseRoomLease(response.data, sessionId: sessionId);
+        if (lease.sequence != sequence ||
+            lease.serverTime.isBefore(membership.lease.serverTime) ||
+            lease.expiresAt.isBefore(membership.lease.expiresAt)) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '心跳响应序号或截止时间倒退',
+          );
+        }
+        leaseBinding.check(generation);
+        membership.lease = lease;
+        membership.pendingSequence = null;
+        membership.pendingRequestId = null;
+        return lease;
+      },
+    );
+  }
+
+  Future<T> _runMemberWrite<T>({
+    required String intent,
+    String? fingerprint,
+    String? requestId,
+    required Future<T> Function(Map<String, String>) action,
+  }) {
+    final generation = leaseBinding.generation;
+    leaseBinding.require();
+    return _writeGuard.run<T>(
+      intent: '$generation:$intent',
+      fingerprint: fingerprint == null ? null : '$generation:$fingerprint',
+      requestId: requestId,
+      action: (headers) async {
+        leaseBinding.check(generation);
+        final result = await action(headers);
+        leaseBinding.check(generation);
+        return result;
+      },
+    );
+  }
+
+  Future<ApiResponse> _postMember(
+    String path, {
+    Map<String, String>? headers,
+    required Map<String, Object?> body,
+  }) async {
+    final generation = leaseBinding.generation;
+    final membership = leaseBinding.require(body['roomId'] as String?);
+    final response = await _apiClient.postWithoutUnauthorizedRecovery(
+      path,
+      headers: headers,
+      body: {...body, 'sessionId': membership.lease.sessionId},
+    );
+    leaseBinding.check(generation);
+    return response;
+  }
+
   static const int _maximumPublicMessagePages = 100;
   static const int _maximumEventVersion = 0x7fffffffffffffff;
   static const Set<String> _publicMessageRealtimeStatuses = <String>{
@@ -63,11 +172,23 @@ class BackendRoomRepository
   };
 
   @override
-  TencentImAvChatRoomSession? get lastTencentImRoomSession =>
-      _lastTencentImRoomSession;
+  TencentImAvChatRoomSession? get lastTencentImRoomSession {
+    _syncImGeneration();
+    return _lastTencentImRoomSession;
+  }
+
+  void _syncImGeneration() {
+    final generation = leaseBinding.generation;
+    if (_imGeneration != generation) {
+      _imGeneration = generation;
+      _tencentImRoomSessions.clear();
+      _lastTencentImRoomSession = null;
+    }
+  }
 
   @override
   TencentImAvChatRoomSession? takeTencentImRoomSession(String roomId) {
+    _syncImGeneration();
     final String normalizedRoomId = roomId.trim();
     final TencentImAvChatRoomSession? session = _tencentImRoomSessions.remove(
       normalizedRoomId,
@@ -87,6 +208,7 @@ class BackendRoomRepository
   Future<TencentImAvChatRoomSession?> fetchTencentImRoomReadiness(
     String roomId,
   ) async {
+    final generation = leaseBinding.generation;
     final String normalizedRoomId = roomId.trim();
     if (normalizedRoomId.isEmpty) {
       throw const ApiException(
@@ -106,6 +228,7 @@ class BackendRoomRepository
     // reason to fabricate a provider join. The strict parser still enforces
     // the exact room/session/version/seven-field group contract whenever the
     // backend supplies it.
+    leaseBinding.check(generation);
     return TencentImAvChatRoomSession.tryParseRoomReadinessFromRoomData(
       response.data,
       expectedRoomId: normalizedRoomId,
@@ -117,6 +240,7 @@ class BackendRoomRepository
     required String roomId,
     required int currentUserId,
   }) async {
+    final generation = leaseBinding.generation;
     if (roomId.trim().isEmpty || currentUserId <= 0) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
@@ -128,6 +252,7 @@ class BackendRoomRepository
       query: <String, String>{'roomId': roomId},
     );
     final Map<String, Object?> data = _asMap(response.data);
+    leaseBinding.check(generation);
     final Object? viewerUserId = data['viewerUserId'];
     final Object? memberActive = data['memberActive'];
     final Object? roomMuted = data['roomMuted'];
@@ -155,6 +280,9 @@ class BackendRoomRepository
         kind: ApiFailureKind.protocol,
         message: '活跃房间成员缺少有效会话',
       );
+    }
+    if (memberActive) {
+      parseRoomLease(data['roomLease'], sessionId: sessionId);
     }
     // Read data directly: joined=false/closed is authority, not an entry
     // failure. Do not acquire credentials or update active/IM session state.
@@ -184,6 +312,7 @@ class BackendRoomRepository
     String roomId,
     TencentImAvChatRoomSession? session,
   ) {
+    _syncImGeneration();
     if (session == null) {
       _clearTencentImRoomSession(roomId);
       return;
@@ -279,11 +408,28 @@ class BackendRoomRepository
   }) async {
     final String normalizedRoomId = roomId.trim();
     final String? normalizedPassword = password?.trim();
+    if (normalizedRoomId.isEmpty || currentUserId <= 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '房间 ID 和当前用户 ID 必须有效',
+      );
+    }
+    final String intent = roomIntentDigest(
+      scope: 'enter-room',
+      fields: [
+        normalizedRoomId,
+        '${source.backendCode}',
+        normalizedPassword ?? '',
+        '$currentUserId',
+      ],
+    );
+    final int generation = leaseBinding.beginEntry(intent);
     _clearTencentImRoomSession(normalizedRoomId);
     return _writeGuard.run<RoomSnapshot>(
       intent: roomIntentDigest(
         scope: 'enter-room',
         fields: <String>[
+          '$generation',
           normalizedRoomId,
           '${source.backendCode}',
           normalizedPassword ?? '',
@@ -291,6 +437,7 @@ class BackendRoomRepository
         ],
       ),
       action: (Map<String, String> headers) async {
+        leaseBinding.check(generation);
         final Map<String, Object?> body = <String, Object?>{
           'roomId': normalizedRoomId,
           'source': source.backendCode,
@@ -298,18 +445,19 @@ class BackendRoomRepository
         if (normalizedPassword != null && normalizedPassword.isNotEmpty) {
           body['password'] = normalizedPassword;
         }
-        final ApiResponse response = await _apiClient.post(
-          _routes.enterRoom,
-          headers: headers,
-          body: body,
-        );
+        final ApiResponse response = await _apiClient
+            .postWithoutUnauthorizedRecovery(
+              _routes.enterRoom,
+              headers: headers,
+              body: body,
+            );
         RoomWriteGuard.validateMutationResponse(response, operation: '进入房间');
+        leaseBinding.check(generation);
         final TencentImAvChatRoomSession? tencentImRoomSession =
             TencentImAvChatRoomSession.tryParseRoomReadinessFromRoomData(
               response.data,
               expectedRoomId: normalizedRoomId,
             );
-        _setTencentImRoomSession(normalizedRoomId, tencentImRoomSession);
         _assertRawRequestedRoomIdentity(
           response,
           requestedRoomId: normalizedRoomId,
@@ -327,8 +475,13 @@ class BackendRoomRepository
           snapshot,
           currentUserId: currentUserId,
         );
-        _activeRoomId = transportReady.roomId;
-        _activeCurrentUserId = currentUserId;
+        leaseBinding.bind(
+          generation,
+          normalizedRoomId,
+          currentUserId,
+          transportReady.roomLease!,
+        );
+        _setTencentImRoomSession(normalizedRoomId, tencentImRoomSession);
         return transportReady;
       },
     );
@@ -340,23 +493,29 @@ class BackendRoomRepository
     required int currentUserId,
   }) async {
     final String normalizedRoomId = roomId.trim();
-    _clearTencentImRoomSession(normalizedRoomId);
+    final membership = leaseBinding.require(normalizedRoomId);
+    if (membership.userId != currentUserId) throw RoomLeaseBinding.stale();
+    final int generation = leaseBinding.generation;
     return _writeGuard.run<RoomSnapshot>(
-      intent: 'reconnect:$normalizedRoomId:$currentUserId',
+      intent: 'reconnect:$generation:$normalizedRoomId:$currentUserId',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
-          _routes.reconnectRoom,
-          headers: headers,
-          body: <String, Object?>{'roomId': normalizedRoomId},
-        );
+        leaseBinding.check(generation);
+        final ApiResponse response = await _apiClient
+            .postWithoutUnauthorizedRecovery(
+              _routes.reconnectRoom,
+              headers: headers,
+              body: <String, Object?>{
+                'roomId': normalizedRoomId,
+                'sessionId': membership.lease.sessionId,
+              },
+            );
         RoomWriteGuard.validateMutationResponse(response, operation: '恢复房间会话');
-        _setTencentImRoomSession(
-          normalizedRoomId,
-          TencentImAvChatRoomSession.tryParseRoomReadinessFromRoomData(
-            response.data,
-            expectedRoomId: normalizedRoomId,
-          ),
-        );
+        leaseBinding.check(generation);
+        final tencentImRoomSession =
+            TencentImAvChatRoomSession.tryParseRoomReadinessFromRoomData(
+              response.data,
+              expectedRoomId: normalizedRoomId,
+            );
         _assertRawRequestedRoomIdentity(
           response,
           requestedRoomId: normalizedRoomId,
@@ -365,6 +524,10 @@ class BackendRoomRepository
           response,
           currentUserId: currentUserId,
         );
+        if (snapshot.sessionId != membership.lease.sessionId ||
+            snapshot.roomLease!.sequence < membership.lease.sequence) {
+          throw RoomLeaseBinding.stale();
+        }
         _assertRequestedRoomIdentity(
           response,
           snapshot,
@@ -374,8 +537,24 @@ class BackendRoomRepository
           snapshot,
           currentUserId: currentUserId,
         );
-        _activeRoomId = transportReady.roomId;
-        _activeCurrentUserId = currentUserId;
+        leaseBinding.check(generation);
+        // A read-like reconnect may race a heartbeat. Never roll its lease back.
+        final lease = transportReady.roomLease!;
+        final previous = membership.lease;
+        if (lease.sequence < previous.sequence ||
+            lease.serverTime.isBefore(previous.serverTime) ||
+            lease.expiresAt.isBefore(previous.expiresAt) ||
+            (lease.sequence == previous.sequence &&
+                lease.expiresAt != previous.expiresAt)) {
+          throw RoomLeaseBinding.stale();
+        }
+        membership.lease = lease;
+        if (membership.pendingSequence != null &&
+            membership.pendingSequence! <= lease.sequence) {
+          membership.pendingSequence = null;
+          membership.pendingRequestId = null;
+        }
+        _setTencentImRoomSession(normalizedRoomId, tencentImRoomSession);
         return transportReady;
       },
     );
@@ -449,6 +628,7 @@ class BackendRoomRepository
         joinRequestId: _nonEmptyString(data['joinRequestId']),
       );
     }
+    parseRoomLease(data['roomLease'], sessionId: data['sessionId']);
     return _snapshotFromData(data, currentUserId: currentUserId);
   }
 
@@ -523,6 +703,9 @@ class BackendRoomRepository
     return RoomSnapshot(
       roomId: resolvedRoomId,
       sessionId: _sessionIdFromData(data),
+      roomLease: data.containsKey('roomLease')
+          ? parseRoomLease(data['roomLease'], sessionId: data['sessionId'])
+          : null,
       roomCode: _nonEmptyString(data['roomCode']) ?? resolvedRoomId,
       title:
           _nonEmptyString(data['roomName']) ??
@@ -566,14 +749,21 @@ class BackendRoomRepository
   @override
   Future<void> exitRoom(String roomId) async {
     final String normalizedRoomId = roomId.trim();
+    final int generation = leaseBinding.generation;
+    final membership = leaseBinding.require(normalizedRoomId);
     await _writeGuard.run<void>(
-      intent: 'exit:$normalizedRoomId',
+      intent: 'exit:$generation:$normalizedRoomId',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
-          _routes.exitRoom,
-          headers: headers,
-          body: <String, Object?>{'roomId': normalizedRoomId},
-        );
+        leaseBinding.check(generation);
+        final ApiResponse response = await _apiClient
+            .postWithoutUnauthorizedRecovery(
+              _routes.exitRoom,
+              headers: headers,
+              body: <String, Object?>{
+                'roomId': normalizedRoomId,
+                'sessionId': membership.lease.sessionId,
+              },
+            );
         final Map<String, Object?> data = _requiredMutationMap(
           response,
           operation: '退出房间',
@@ -589,20 +779,18 @@ class BackendRoomRepository
         }
       },
     );
-    if (_activeRoomId == normalizedRoomId) {
-      _activeRoomId = null;
-      _activeCurrentUserId = null;
-    }
+    if (leaseBinding.generation != generation) return;
+    leaseBinding.clear(generation);
     _clearTencentImRoomSession(normalizedRoomId);
   }
 
   @override
   Future<void> requestMic(int backendMicIndex) async {
     final String roomId = _requireActiveRoom();
-    await _writeGuard.run<void>(
+    await _runMemberWrite<void>(
       intent: 'up-mic:$roomId:$backendMicIndex',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _postMember(
           _routes.userUpMic,
           headers: headers,
           body: <String, Object?>{
@@ -640,10 +828,10 @@ class BackendRoomRepository
   @override
   Future<void> leaveMic() async {
     final String roomId = _requireActiveRoom();
-    await _writeGuard.run<void>(
+    await _runMemberWrite<void>(
       intent: 'leave-mic:$roomId',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _postMember(
           _routes.userLeaveMic,
           headers: headers,
           body: <String, Object?>{'roomId': roomId},
@@ -671,10 +859,10 @@ class BackendRoomRepository
   }) async {
     final String roomId = _requireActiveRoom();
     final int userId = _requireActiveCurrentUser();
-    await _writeGuard.run<void>(
+    await _runMemberWrite<void>(
       intent: 'self-mute:$roomId:$userId:$backendMicIndex:$muted',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _postMember(
           muted ? _routes.closeMic : _routes.openMic,
           headers: headers,
           body: <String, Object?>{
@@ -718,7 +906,7 @@ class BackendRoomRepository
         message: '公屏内容不能为空',
       );
     }
-    final ApiResponse response = await _apiClient.post(
+    final ApiResponse response = await _postMember(
       _routes.sendPublicMessage,
       headers: _requestHeaders(requestId),
       body: <String, Object?>{'roomId': roomId, 'content': content.trim()},
@@ -867,12 +1055,12 @@ class BackendRoomRepository
         'WALLET',
       ],
     );
-    return _giftWriteGuard.run<GiftReceipt>(
+    return _runMemberWrite<GiftReceipt>(
       intent: intent,
       fingerprint: intent,
       requestId: requestId,
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _postMember(
           _routes.sendGift,
           headers: headers,
           body: <String, Object?>{
@@ -1550,7 +1738,7 @@ class BackendRoomRepository
   }
 
   String _requireActiveRoom() {
-    final String? roomId = _activeRoomId;
+    final String? roomId = leaseBinding.current?.roomId;
     if (roomId == null || roomId.isEmpty) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
@@ -1561,7 +1749,7 @@ class BackendRoomRepository
   }
 
   int _requireActiveCurrentUser() {
-    final int? userId = _activeCurrentUserId;
+    final int? userId = leaseBinding.current?.userId;
     if (userId == null || userId <= 0) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,

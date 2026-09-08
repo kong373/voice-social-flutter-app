@@ -1,3 +1,4 @@
+import 'room_lease_contract_fixture.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -88,6 +89,7 @@ void main() {
           case '/app-mini-api/mini/v1/rooms/join-requests/resolve':
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'joinRequestId': 'join-request-1',
               'approved': true,
             });
@@ -101,6 +103,7 @@ void main() {
           case '/app-mini-api/mini/v1/rooms/unban':
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': 'room-9527',
               'userId': 10003,
             });
@@ -119,7 +122,10 @@ void main() {
       addTearDown(server.close);
 
       final BackendRoomOperationsRepository repository =
-          BackendRoomOperationsRepository(apiClient: server.client);
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(roomId: 'room-9527'),
+            apiClient: server.client,
+          );
       final RoomJoinRequestPage requests = await repository.fetchJoinRequests(
         roomId: 'room-9527',
       );

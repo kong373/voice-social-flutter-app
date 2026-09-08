@@ -53,6 +53,7 @@ import 'package:voice_social_app/features/room/data/backend_rtc_token_repository
 import 'package:voice_social_app/features/room/data/mock_room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/data/mock_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/data/mock_room_repository.dart';
+import 'package:voice_social_app/features/room/data/room_lease_binding.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
@@ -380,16 +381,24 @@ class AppDependencies {
             now: currentTime,
           )
         : null;
+    final roomLeaseBinding = RoomLeaseBinding(
+      authenticationGeneration: () => sessionManager.identityGeneration,
+    );
     final RoomRepository roomRepository = environment.isLive
         ? BackendRoomRepository(
             apiClient: apiClient,
             routes: routes,
             rtcTokenRepository: rtcTokenRepository,
+            leaseBinding: roomLeaseBinding,
             now: currentTime,
           )
         : MockRoomRepository();
     final RoomOperationsRepository roomOperationsRepository = environment.isLive
-        ? BackendRoomOperationsRepository(apiClient: apiClient, routes: routes)
+        ? BackendRoomOperationsRepository(
+            apiClient: apiClient,
+            routes: routes,
+            leaseBinding: roomLeaseBinding,
+          )
         : MockRoomOperationsRepository(
             micCoordinationMode: MicCoordinationMode.direct,
           );
@@ -528,6 +537,10 @@ class AppDependencies {
   /// alive after a widget test would make Flutter report a pending timer even
   /// though the visible tree has been disposed.
   void dispose() {
+    final repository = roomRepository;
+    if (repository is BackendRoomRepository) {
+      repository.leaseBinding.clear(repository.leaseBinding.generation);
+    }
     authController.dispose();
     imSessionCoordinator.dispose();
     unawaited(tencentImAvChatRoomCoordinator.dispose());

@@ -1,3 +1,4 @@
+import 'room_lease_contract_fixture.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -14,7 +15,8 @@ Map<String, Object?> _fixture() => <String, Object?>{
   'roomMuted': true,
   'version': 7,
   'activeSession': true,
-  'sessionId': 'session-1',
+  'sessionId': roomLeaseSessionId,
+  'roomLease': roomLeaseWireFixture(),
   'status': 'OPEN',
   'ownerUserId': 9,
   'memberRole': 'MODERATOR',
@@ -60,8 +62,11 @@ void main() {
       expect(result.memberActive, isTrue);
       expect(result.roomMuted, isTrue);
       expect(result.version, 7);
-      expect(result.snapshot.sessionId, 'session-1');
-      expect(result.snapshot.copyWith(title: 'Changed').sessionId, 'session-1');
+      expect(result.snapshot.sessionId, roomLeaseSessionId);
+      expect(
+        result.snapshot.copyWith(title: 'Changed').sessionId,
+        roomLeaseSessionId,
+      );
       expect(result.snapshot.title, 'Authority room');
       expect(result.snapshot.topic, 'Topic');
       expect(result.snapshot.role, RoomRole.moderator);
@@ -113,12 +118,15 @@ void main() {
       );
       final cached = repository.lastTencentImRoomSession;
       expect(cached, isNotNull);
-      data['sessionId'] = 'session-2';
+      data['sessionId'] = '22222222-2222-4222-8222-222222222222';
+      data['roomLease'] = roomLeaseWireFixture(
+        sessionId: data['sessionId']! as String,
+      );
       final result = await repository.fetchRoomAuthority(
         roomId: 'room-1',
         currentUserId: 42,
       );
-      expect(result.snapshot.sessionId, 'session-2');
+      expect(result.snapshot.sessionId, '22222222-2222-4222-8222-222222222222');
       expect(repository.lastTencentImRoomSession, same(cached));
       expect(repository.takeTencentImRoomSession('room-1'), same(cached));
       expect(api.calls, <String>['POST', 'GET']);
@@ -126,6 +134,7 @@ void main() {
       api.allowMic = true;
       await repository.setSelfMicrophoneMuted(backendMicIndex: 0, muted: true);
       expect(api.lastBody, <String, Object?>{
+        'sessionId': roomLeaseSessionId,
         'roomId': 'room-1',
         'userId': 9,
         'seatNumber': 0,
@@ -181,6 +190,7 @@ void main() {
       () async {
         final Map<String, Object?> data = _fixture()
           ..remove('sessionId')
+          ..remove('roomLease')
           ..addAll(<String, Object?>{
             'status': status,
             'joined': false,
@@ -251,6 +261,7 @@ void main() {
       '${reconnect ? 'reconnect' : 'enter'} rejects present null session',
       () async {
         final repository = BackendRoomRepository(
+          leaseBinding: admittedRoomFixture(roomId: 'room-1', userId: 42),
           apiClient: _Api(_fixture()..['sessionId'] = null, allowEntry: true),
         );
         await expectLater(
@@ -267,7 +278,7 @@ void main() {
       },
     );
     for (final Object? session in <Object?>[
-      'session-1',
+      roomLeaseSessionId,
       null,
       '',
       2,
@@ -278,6 +289,7 @@ void main() {
         final data = _fixture()..remove('sessionId');
         if (session != null) data['sessionId'] = session;
         final repository = BackendRoomRepository(
+          leaseBinding: admittedRoomFixture(roomId: 'room-1', userId: 42),
           apiClient: _Api(data, allowEntry: true),
         );
         final Future<RoomSnapshot> future = reconnect
@@ -288,7 +300,7 @@ void main() {
                 source: RoomEntrySource.home,
                 currentUserId: 42,
               );
-        if (session == null || session == 'session-1') {
+        if (session == roomLeaseSessionId) {
           final snapshot = await future;
           expect(snapshot.sessionId, session);
           expect(snapshot.copyWith().sessionId, session);
@@ -324,7 +336,7 @@ class _Api implements ApiClient {
   }
 
   @override
-  Future<ApiResponse> post(
+  Future<ApiResponse> postWithoutUnauthorizedRecovery(
     String path, {
     Map<String, String>? query,
     Map<String, String>? headers,

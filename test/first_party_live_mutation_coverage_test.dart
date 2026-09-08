@@ -1,3 +1,4 @@
+import 'room_lease_contract_fixture.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -287,6 +288,7 @@ void main() {
       });
       addTearDown(server.close);
       final BackendRoomRepository repository = BackendRoomRepository(
+        leaseBinding: admittedRoomFixture(roomId: _roomId),
         apiClient: server.client,
       );
       final Future<GiftReceipt> first = repository.sendGift(
@@ -322,6 +324,7 @@ void main() {
         server.requests.last.path,
         '/app-room-api/room/com/v1/giftReceipt',
       );
+      repository.leaseBinding.clear(repository.leaseBinding.generation);
       await expectLater(
         repository.fetchGiftReceipt(transferId: _transferId),
         throwsA(
@@ -369,6 +372,7 @@ void main() {
             });
           case '/app-api/roomUsers/setMuted':
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': 'room-1',
               'targetUserId': 20002,
               'muted': true,
@@ -380,6 +384,7 @@ void main() {
             });
           case '/app-api/roomUsers/setRole':
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': 'room-1',
               'targetUserId': 20002,
               'role': 'MANAGER',
@@ -391,6 +396,7 @@ void main() {
             });
           case '/app-api/room/com/kickout':
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': 'room-1',
               'targetUserId': 20002,
               'ban': true,
@@ -402,6 +408,7 @@ void main() {
             });
           case '/app-api/micBase/closedMike':
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': 'room-1',
               'userId': 20002,
               'seatNumber': 2,
@@ -415,6 +422,7 @@ void main() {
             });
           case '/app-api/micBase/openMike':
             expect(request.body, <String, Object?>{
+              'sessionId': roomLeaseSessionId,
               'roomId': 'room-1',
               'userId': 20002,
               'seatNumber': 2,
@@ -444,7 +452,10 @@ void main() {
       });
       addTearDown(server.close);
       final BackendRoomOperationsRepository repository =
-          BackendRoomOperationsRepository(apiClient: server.client);
+          BackendRoomOperationsRepository(
+            apiClient: server.client,
+            leaseBinding: admittedRoomFixture(roomId: 'room-1'),
+          );
       // The live repository cannot infer direct microphone coordination from
       // the legacy moderation endpoints.  Only the approval queue response is
       // allowed to authorize the queue capability.

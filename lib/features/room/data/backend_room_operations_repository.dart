@@ -5,6 +5,7 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/data/room_write_guard.dart';
+import 'package:voice_social_app/features/room/data/room_lease_binding.dart';
 
 class BackendRoomOperationsRepository
     implements
@@ -17,11 +18,84 @@ class BackendRoomOperationsRepository
   BackendRoomOperationsRepository({
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
+    RoomLeaseBinding? leaseBinding,
   }) : _apiClient = apiClient,
-       _routes = routes;
+       _routes = routes,
+       leaseBinding = leaseBinding ?? RoomLeaseBinding();
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
+  final RoomLeaseBinding leaseBinding;
+  int? _cacheGeneration;
+
+  int _syncGeneration() {
+    final generation = leaseBinding.generation;
+    if (_cacheGeneration != generation) {
+      _cacheGeneration = generation;
+      _seatOccupantsByRoom.clear();
+      _micRequestsById.clear();
+      _micCoordinationMode = MicCoordinationMode.unavailable;
+    }
+    return generation;
+  }
+
+  Future<T> _runWrite<T>({
+    required String intent,
+    String? fingerprint,
+    String? requestId,
+    required Future<T> Function(Map<String, String>) action,
+  }) {
+    final generation = _syncGeneration();
+    return _writeGuard.run<T>(
+      intent: '$generation:$intent',
+      fingerprint: fingerprint == null ? null : '$generation:$fingerprint',
+      requestId: requestId,
+      action: (headers) async {
+        leaseBinding.check(generation);
+        final result = await action(headers);
+        leaseBinding.check(generation);
+        return result;
+      },
+    );
+  }
+
+  Future<ApiResponse> _post(
+    String path, {
+    Map<String, String>? headers,
+    required Map<String, Object?> body,
+  }) async {
+    final generation = _syncGeneration();
+    final isRead =
+        path == _routes.roomOnlineMembers || path == _routes.roomOffMicMembers;
+    // Applicant cancellation is deliberately available before admission.
+    // Owner resource edits keep their existing offline authorization.
+    final requiresMembership = <String>{
+      _routes.takeUserOffMic,
+      _routes.closeMic,
+      _routes.openMic,
+      _routes.roomMicRequests,
+      _routes.cancelRoomMicRequest,
+      _routes.resolveRoomMicRequest,
+      _routes.inviteRoomMicRequest,
+    }.contains(path);
+    final membership = requiresMembership
+        ? leaseBinding.require(body['roomId'] as String?)
+        : leaseBinding.current;
+    final response = await _apiClient.postWithoutUnauthorizedRecovery(
+      path,
+      headers: headers,
+      body: {
+        ...body,
+        if (!isRead &&
+            membership != null &&
+            (body['roomId'] == null || body['roomId'] == membership.roomId))
+          'sessionId': membership.lease.sessionId,
+      },
+    );
+    leaseBinding.check(generation);
+    return response;
+  }
+
   final RoomWriteGuard _writeGuard = RoomWriteGuard(scope: 'room-operations');
   final Map<String, Map<int, int>> _seatOccupantsByRoom =
       <String, Map<int, int>>{};
@@ -30,7 +104,10 @@ class BackendRoomOperationsRepository
   MicCoordinationMode _micCoordinationMode = MicCoordinationMode.unavailable;
 
   @override
-  MicCoordinationMode get micCoordinationMode => _micCoordinationMode;
+  MicCoordinationMode get micCoordinationMode {
+    _syncGeneration();
+    return _micCoordinationMode;
+  }
 
   @override
   Future<RoomMemberPage> fetchOnlineMembers({
@@ -39,7 +116,7 @@ class BackendRoomOperationsRepository
     int pageSize = 20,
   }) async {
     _validateMemberPageRequest(page: page, pageSize: pageSize);
-    final ApiResponse response = await _apiClient.post(
+    final ApiResponse response = await _post(
       _routes.roomOnlineMembers,
       body: <String, Object?>{
         'roomId': roomId,
@@ -80,7 +157,7 @@ class BackendRoomOperationsRepository
   @override
   Future<List<RoomMember>> fetchOffMicListeners(String roomId) async {
     final List<Map<String, Object?>> items = await _fetchAllMemberPages(
-      fetchPage: (int page, int pageSize) => _apiClient.post(
+      fetchPage: (int page, int pageSize) => _post(
         _routes.roomOffMicMembers,
         body: <String, Object?>{
           'roomId': roomId,
@@ -274,14 +351,14 @@ class BackendRoomOperationsRepository
       joinRequestId,
       '入房申请 ID',
     );
-    return _writeGuard.run<RoomJoinRequestCancellation>(
+    return _runWrite<RoomJoinRequestCancellation>(
       intent:
           'room-join-request-cancel:$normalizedRoomId:$normalizedJoinRequestId',
       requestId: requestId,
       fingerprint:
           'ROOM_JOIN_REQUEST_CANCEL|$normalizedRoomId|$normalizedJoinRequestId',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _routes.cancelRoomJoinRequest,
           headers: headers,
           body: <String, Object?>{
@@ -353,13 +430,11 @@ class BackendRoomOperationsRepository
         message: '入房申请 ID 无效',
       );
     }
-    await _writeGuard.run<void>(
+    await _runWrite<void>(
       intent: 'room-join-request:$normalizedId:$approved',
+      requestId: requestId,
       action: (Map<String, String> headers) async {
-        if (requestId != null && requestId.trim().isNotEmpty) {
-          headers['X-Request-Id'] = requestId.trim();
-        }
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _routes.resolveRoomJoinRequest,
           headers: headers,
           body: <String, Object?>{
@@ -431,13 +506,11 @@ class BackendRoomOperationsRepository
         message: '解封目标无效',
       );
     }
-    await _writeGuard.run<void>(
+    await _runWrite<void>(
       intent: 'room-unban:$normalizedRoomId:$userId',
+      requestId: requestId,
       action: (Map<String, String> headers) async {
-        if (requestId != null && requestId.trim().isNotEmpty) {
-          headers['X-Request-Id'] = requestId.trim();
-        }
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _routes.unbanRoomUser,
           headers: headers,
           body: <String, Object?>{'roomId': normalizedRoomId, 'userId': userId},
@@ -491,10 +564,10 @@ class BackendRoomOperationsRepository
       topic.version,
       operation: '更新房间话题',
     );
-    await _writeGuard.run<void>(
+    await _runWrite<void>(
       intent: 'topic:$roomId:$normalizedTopic:$expectedVersion',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _routes.updateRoomTopic,
           headers: headers,
           body: <String, Object?>{
@@ -527,10 +600,10 @@ class BackendRoomOperationsRepository
     required int userId,
     required bool muted,
   }) async {
-    await _writeGuard.run<void>(
+    await _runWrite<void>(
       intent: 'mute:$roomId:$userId:$muted',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _routes.setRoomUserMuted,
           headers: headers,
           body: <String, Object?>{
@@ -562,10 +635,10 @@ class BackendRoomOperationsRepository
     required int userId,
     required bool manager,
   }) async {
-    await _writeGuard.run<void>(
+    await _runWrite<void>(
       intent: 'role:$roomId:$userId:$manager',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _routes.setRoomUserRole,
           headers: headers,
           body: <String, Object?>{
@@ -594,10 +667,10 @@ class BackendRoomOperationsRepository
 
   @override
   Future<void> kickUser({required String roomId, required int userId}) async {
-    await _writeGuard.run<void>(
+    await _runWrite<void>(
       intent: 'kick:$roomId:$userId',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _routes.kickRoomUser,
           headers: headers,
           body: <String, Object?>{
@@ -629,10 +702,10 @@ class BackendRoomOperationsRepository
     required int backendMicIndex,
     required int userId,
   }) async {
-    await _writeGuard.run<void>(
+    await _runWrite<void>(
       intent: 'off-mic:$roomId:$userId:$backendMicIndex',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _routes.takeUserOffMic,
           headers: headers,
           body: <String, Object?>{
@@ -664,10 +737,10 @@ class BackendRoomOperationsRepository
     required int backendMicIndex,
     required bool locked,
   }) async {
-    await _writeGuard.run<void>(
+    await _runWrite<void>(
       intent: 'seat-lock:$roomId:$backendMicIndex:$locked',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           locked ? _routes.lockMic : _routes.unlockMic,
           headers: headers,
           body: <String, Object?>{
@@ -698,6 +771,7 @@ class BackendRoomOperationsRepository
     required int backendMicIndex,
     required bool muted,
   }) async {
+    _syncGeneration();
     final int? userId = _seatOccupantsByRoom[roomId]?[backendMicIndex];
     if (userId == null) {
       throw const ApiException(
@@ -705,10 +779,10 @@ class BackendRoomOperationsRepository
         message: '该麦位当前没有可确认的成员，拒绝对错误用户执行闭麦操作',
       );
     }
-    await _writeGuard.run<void>(
+    await _runWrite<void>(
       intent: 'seat-mute:$roomId:$backendMicIndex:$userId:$muted',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           muted ? _routes.closeMic : _routes.openMic,
           headers: headers,
           body: <String, Object?>{
@@ -738,6 +812,7 @@ class BackendRoomOperationsRepository
 
   @override
   Future<List<MicAccessRequest>> fetchMicRequests(String roomId) async {
+    final generation = _syncGeneration();
     final String normalizedRoomId = _requiredIdentifier(roomId, '房间 ID');
     final ApiResponse response = await _apiClient.get(
       _routes.roomMicRequests,
@@ -792,7 +867,11 @@ class BackendRoomOperationsRepository
           expectedRoomId: normalizedRoomId,
         ),
     ];
+    leaseBinding.check(generation);
     _micCoordinationMode = MicCoordinationMode.approval;
+    _micRequestsById.removeWhere(
+      (_, request) => request.roomId == normalizedRoomId,
+    );
     _micRequestsById.addEntries(
       requests.map(
         (MicAccessRequest request) =>
@@ -815,12 +894,12 @@ class BackendRoomOperationsRepository
         message: '上麦申请成员或麦位无效',
       );
     }
-    await _writeGuard.run<void>(
+    await _runWrite<void>(
       intent: 'mic-request-submit:$normalizedRoomId:$userId:$seatNumber',
       fingerprint:
           'ROOM_MIC_REQUEST_SUBMIT|$normalizedRoomId|$userId|$seatNumber',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _routes.roomMicRequests,
           headers: headers,
           // X-Request-Id is transport-only. The JSON requestId field is
@@ -872,11 +951,11 @@ class BackendRoomOperationsRepository
       requestId,
       '上麦申请 ID',
     );
-    await _writeGuard.run<void>(
+    await _runWrite<void>(
       intent: 'mic-request-cancel:$normalizedRequestId',
       fingerprint: 'ROOM_MIC_REQUEST_CANCEL|$normalizedRequestId',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _routes.cancelRoomMicRequest,
           headers: headers,
           body: <String, Object?>{'requestId': normalizedRequestId},
@@ -925,11 +1004,11 @@ class BackendRoomOperationsRepository
       requestId,
       '上麦申请 ID',
     );
-    await _writeGuard.run<void>(
+    await _runWrite<void>(
       intent: 'mic-request-resolve:$normalizedRequestId:$accepted',
       fingerprint: 'ROOM_MIC_REQUEST_RESOLVE|$normalizedRequestId|$accepted',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _routes.resolveRoomMicRequest,
           headers: headers,
           // The backend accepts one strict boolean decision. Do not send both
@@ -1006,11 +1085,11 @@ class BackendRoomOperationsRepository
         message: '邀请成员或麦位无效',
       );
     }
-    await _writeGuard.run<void>(
+    await _runWrite<void>(
       intent: 'mic-invite:$normalizedRoomId:$userId:$seatNumber',
       fingerprint: 'ROOM_MIC_INVITE|$normalizedRoomId|$userId|$seatNumber',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _routes.inviteRoomMicRequest,
           headers: headers,
           body: <String, Object?>{
