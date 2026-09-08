@@ -10,11 +10,260 @@ import 'package:voice_social_app/features/social/data/backend_social_repository.
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 
 void main() {
+  test(
+    'support detail exposes authoritative staff timeline and closed state',
+    () async {
+      final server = await _startServer((request, body) async {
+        await _reply(request, data: _supportReplyData(status: 'CLOSED'));
+      });
+      addTearDown(() => server.close(force: true));
+      final repo = BackendSocialRepository(
+        apiClient: _client(server),
+        currentUserIdProvider: () => 10001,
+      );
+      final ticket = await repo.fetchSupportTicket('ticket-1');
+      expect(ticket.status, SupportTicketStatus.closed);
+      expect(ticket.canReply, isFalse);
+      expect(ticket.events.first.actorLabel, '客服回复');
+      expect(ticket.events.first.message, '<b>请补充发生时间</b>');
+      expect(ticket.events.first.createdAt, DateTime.utc(2026, 9, 9));
+      expect(ticket.version, 2);
+    },
+  );
+
+  for (final invalid in <Object?>[
+    null,
+    'bad-events',
+    <Object?>[<String, Object?>{}],
+    <Object?>[
+      <String, Object?>{
+        'actorType': 'ADMIN_SECRET',
+        'eventType': 'MESSAGE',
+        'message': 'x',
+        'createdAt': '2026-09-09T00:00:00Z',
+      },
+    ],
+  ]) {
+    test(
+      'support event shape rejects ${invalid.runtimeType}: $invalid',
+      () async {
+        final server = await _startServer((request, body) async {
+          await _reply(
+            request,
+            data: <String, Object?>{..._supportReplyData(), 'events': invalid},
+          );
+        });
+        addTearDown(() => server.close(force: true));
+        final repo = BackendSocialRepository(
+          apiClient: _client(server),
+          currentUserIdProvider: () => 10001,
+        );
+        await expectLater(
+          repo.fetchSupportTicket('ticket-1'),
+          throwsA(
+            isA<ApiException>().having(
+              (e) => e.kind,
+              'kind',
+              ApiFailureKind.protocol,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  test(
+    'support reply sends only message with stable retry identity and coalesces duplicates',
+    () async {
+      final ids = <String>[];
+      final gate = Completer<void>();
+      final entered = Completer<void>();
+      int calls = 0;
+      final server = await _startServer((request, body) async {
+        calls++;
+        expect(request.method, 'POST');
+        expect(
+          request.uri.path,
+          '/app-mini-api/mini/v1/support/tickets/ticket-1/replies',
+        );
+        expect(request.uri.queryParameters, isEmpty);
+        expect(body, <String, Object?>{'message': '已补充时间'});
+        expect(
+          captureContractAuthorization(request),
+          contractTestAuthorization,
+        );
+        ids.add(request.headers.value('X-Request-Id')!);
+        if (calls == 1) {
+          await _reply(request, status: 503, code: 50301, message: '连接失败');
+        } else {
+          entered.complete();
+          await gate.future;
+          await _reply(request, data: _supportReplyData());
+        }
+      });
+      addTearDown(() => server.close(force: true));
+      final repo = BackendSocialRepository(
+        apiClient: _client(server),
+        currentUserIdProvider: () => 10001,
+      );
+      await expectLater(
+        repo.replyToSupportTicket(ticketId: 'ticket-1', message: '  已补充时间  '),
+        throwsA(isA<ApiException>()),
+      );
+      final first = repo.replyToSupportTicket(
+        ticketId: 'ticket-1',
+        message: '已补充时间',
+      );
+      final second = repo.replyToSupportTicket(
+        ticketId: 'ticket-1',
+        message: '已补充时间',
+      );
+      await entered.future;
+      expect(calls, 2);
+      expect(ids.first, ids.last);
+      expect(ids.first, matches(RegExp(r'^[A-Za-z0-9._:-]{1,80}$')));
+      gate.complete();
+      final results = await Future.wait(<Future<SupportTicket>>[first, second]);
+      expect(
+        results.every(
+          (ticket) => ticket.status == SupportTicketStatus.processing,
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'support reply rejects mismatched receipt and retains request for recovery',
+    () async {
+      final ids = <String>[];
+      final server = await _startServer((request, body) async {
+        ids.add(request.headers.value('X-Request-Id')!);
+        await _reply(
+          request,
+          data: <String, Object?>{
+            ..._supportReplyData(),
+            if (ids.length == 1) 'ticketId': 'other-ticket',
+          },
+        );
+      });
+      addTearDown(() => server.close(force: true));
+      final repo = BackendSocialRepository(
+        apiClient: _client(server),
+        currentUserIdProvider: () => 10001,
+      );
+      await expectLater(
+        repo.replyToSupportTicket(ticketId: 'ticket-1', message: '已补充时间'),
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+      await repo.replyToSupportTicket(ticketId: 'ticket-1', message: '已补充时间');
+      expect(ids[0], ids[1]);
+    },
+  );
+
+  test(
+    'support reply validates before HTTP and rejects late result after account switch',
+    () async {
+      int calls = 0;
+      int userId = 10001;
+      final entered = Completer<void>();
+      final gate = Completer<void>();
+      final server = await _startServer((request, body) async {
+        calls++;
+        entered.complete();
+        await gate.future;
+        await _reply(request, data: _supportReplyData());
+      });
+      addTearDown(() => server.close(force: true));
+      final repo = BackendSocialRepository(
+        apiClient: _client(server),
+        currentUserIdProvider: () => userId,
+      );
+      for (final (id, message) in <(String, String)>[
+        ('../other', 'x'),
+        ('ticket-1', ' '),
+        ('ticket-1', 'x' * 1001),
+      ]) {
+        expect(
+          () => repo.replyToSupportTicket(ticketId: id, message: message),
+          throwsA(isA<ApiException>()),
+        );
+      }
+      expect(calls, 0);
+      final result = repo.replyToSupportTicket(
+        ticketId: 'ticket-1',
+        message: '已补充时间',
+      );
+      final expectation = expectLater(
+        result,
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e.kind,
+            'kind',
+            ApiFailureKind.unauthorized,
+          ),
+        ),
+      );
+      await entered.future;
+      userId = 10002;
+      gate.complete();
+      await expectation;
+    },
+  );
+
+  test(
+    'support detail rejects malformed staff events instead of hiding replies',
+    () async {
+      final server = await _startServer((request, body) async {
+        await _reply(
+          request,
+          data: <String, Object?>{
+            'ticketId': 'ticket-1',
+            'subject': '反馈',
+            'content': '描述',
+            'status': 'WAITING_USER',
+            'createdAt': '2026-09-09T00:00:00Z',
+            'progressAvailable': true,
+            'events': <Object?>[
+              <String, Object?>{
+                'actorType': 'AGENT',
+                'eventType': 'MESSAGE',
+                'message': '请补充信息',
+                'createdAt': 'invalid-date',
+              },
+            ],
+          },
+        );
+      });
+      addTearDown(() => server.close(force: true));
+      final repository = BackendSocialRepository(
+        apiClient: _client(server),
+        currentUserIdProvider: () => 10001,
+      );
+      await expectLater(
+        repository.fetchSupportTicket('ticket-1'),
+        throwsA(
+          isA<ApiException>().having(
+            (error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+    },
+  );
+
   for (final (String raw, SupportTicketStatus status, String text)
       in <(String, SupportTicketStatus, String)>[
         ('ACCEPTED', SupportTicketStatus.accepted, '客服已受理'),
         ('WAITING_USER', SupportTicketStatus.waitingUser, '等待补充信息'),
-        ('CLOSED', SupportTicketStatus.resolved, '问题已处理'),
+        ('CLOSED', SupportTicketStatus.closed, '工单已关闭'),
         ('UNKNOWN_STATE', SupportTicketStatus.unavailable, '工单状态暂不可用'),
       ]) {
     test('support history preserves $raw status', () async {
@@ -3083,6 +3332,31 @@ Future<HttpServer> _startServer(
   });
   return server;
 }
+
+Map<String, Object?> _supportReplyData({String status = 'PROCESSING'}) =>
+    <String, Object?>{
+      'ticketId': 'ticket-1',
+      'subject': '页面反馈',
+      'content': '问题描述',
+      'status': status,
+      'createdAt': '2026-09-09T00:00:00Z',
+      'progressAvailable': true,
+      'version': 2,
+      'events': <Object?>[
+        <String, Object?>{
+          'actorType': 'AGENT',
+          'eventType': 'MESSAGE',
+          'message': '<b>请补充发生时间</b>',
+          'createdAt': '2026-09-09T00:00:00Z',
+        },
+        <String, Object?>{
+          'actorType': 'USER',
+          'eventType': 'MESSAGE',
+          'message': '已补充时间',
+          'createdAt': '2026-09-09T00:01:00Z',
+        },
+      ],
+    };
 
 Future<void> _reply(
   HttpRequest request, {

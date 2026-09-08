@@ -35,6 +35,7 @@ enum SupportTicketStatus {
   processing,
   waitingUser,
   resolved,
+  closed,
   rejected,
   unavailable,
 }
@@ -238,6 +239,26 @@ class SupportChannel {
   final bool liveConversationAvailable;
 }
 
+class SupportTicketEvent {
+  const SupportTicketEvent({
+    required this.actorType,
+    required this.eventType,
+    required this.message,
+    required this.createdAt,
+  });
+
+  final String actorType;
+  final String eventType;
+  final String message;
+  final DateTime createdAt;
+
+  String get actorLabel => switch (actorType) {
+    'AGENT' => '客服回复',
+    'USER' => eventType == 'CREATED' ? '提交反馈' : '我的补充',
+    _ => '处理进度',
+  };
+}
+
 class SupportTicket {
   const SupportTicket({
     required this.id,
@@ -247,6 +268,8 @@ class SupportTicket {
     required this.statusText,
     required this.createdAt,
     required this.progressAvailable,
+    this.events = const <SupportTicketEvent>[],
+    this.version = 0,
   });
 
   final String id;
@@ -256,6 +279,18 @@ class SupportTicket {
   final String statusText;
   final DateTime createdAt;
   final bool progressAvailable;
+  final List<SupportTicketEvent> events;
+  final int version;
+
+  bool get canReply =>
+      progressAvailable &&
+      switch (status) {
+        SupportTicketStatus.submitted ||
+        SupportTicketStatus.accepted ||
+        SupportTicketStatus.processing ||
+        SupportTicketStatus.waitingUser => true,
+        _ => false,
+      };
 }
 
 class SocialPage<T> {
@@ -345,6 +380,11 @@ abstract interface class SocialRepository {
   });
 
   Future<SupportTicket> fetchSupportTicket(String ticketId);
+
+  Future<SupportTicket> replyToSupportTicket({
+    required String ticketId,
+    required String message,
+  });
 
   Future<SocialPage<SupportTicket>> fetchSupportTickets({
     required int page,

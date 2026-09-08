@@ -800,7 +800,72 @@ class BackendSocialRepository implements SocialRepository {
       _routes.supportTicket,
       query: <String, String>{'ticketId': normalizedId},
     );
-    return _supportTicketFromMap(_asMap(response.data));
+    final SupportTicket ticket = _supportTicketFromMap(_asMap(response.data));
+    if (ticket.id != normalizedId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '工单响应与请求不一致',
+      );
+    }
+    return ticket;
+  }
+
+  @override
+  Future<SupportTicket> replyToSupportTicket({
+    required String ticketId,
+    required String message,
+  }) {
+    final String id = ticketId.trim();
+    final String text = message.trim();
+    if (!RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(id) ||
+        text.isEmpty ||
+        text.length > 1000) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '补充内容应为 1 至 1000 个字符，工单编号须有效',
+      );
+    }
+    final int userId = _currentUserIdProvider();
+    void checkIdentity() {
+      if (userId <= 0 || userId != _currentUserIdProvider()) {
+        throw const ApiException(
+          kind: ApiFailureKind.unauthorized,
+          message: '账号已变化，请重新打开工单',
+        );
+      }
+    }
+
+    checkIdentity();
+    return _writeCoordinator.run<SupportTicket>(
+      intentKey: 'support-reply:${_intentDigest(<Object?>[userId, id, text])}',
+      serialKey: 'support-reply:$userId:$id',
+      requestIdPrefix: 'support-reply',
+      action: (headers) async {
+        checkIdentity();
+        final ApiResponse response = await _apiClient.post(
+          '${_routes.supportTickets}/${Uri.encodeComponent(id)}/replies',
+          headers: headers,
+          body: <String, Object?>{'message': text},
+        );
+        checkIdentity();
+        final Map<String, Object?> data = _requiredSocialMap(response.data);
+        final SupportTicket ticket = _supportTicketFromMap(data);
+        if (ticket.id != id ||
+            ticket.version < 1 ||
+            !ticket.events.any(
+              (event) =>
+                  event.actorType == 'USER' &&
+                  event.eventType == 'MESSAGE' &&
+                  event.message == text,
+            )) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '补充反馈尚未获得有效回执，请重试查询',
+          );
+        }
+        return ticket;
+      },
+    );
   }
 
   @override
@@ -1673,6 +1738,62 @@ class BackendSocialRepository implements SocialRepository {
       createdAt: createdAt,
       progressAvailable:
           _asBool(data['progressAvailable']) || data.containsKey('events'),
+      events: _supportEvents(data),
+      version: _supportVersion(data),
+    );
+  }
+
+  static int _supportVersion(Map<String, Object?> data) {
+    if (!data.containsKey('version')) return 0;
+    final Object? value = data['version'];
+    if (value is! int || value < 0 || value > 9007199254740991) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '工单版本响应无效',
+      );
+    }
+    return value;
+  }
+
+  static List<SupportTicketEvent> _supportEvents(Map<String, Object?> data) {
+    if (!data.containsKey('events')) return const <SupportTicketEvent>[];
+    final Object? raw = data['events'];
+    if (raw is! List) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '工单处理记录响应无效',
+      );
+    }
+    return List<SupportTicketEvent>.unmodifiable(
+      raw.map((value) {
+        final Map<String, Object?> event = _requiredSocialMap(value);
+        final Object? actor = event['actorType'];
+        final Object? type = event['eventType'];
+        final Object? text = event['message'];
+        final DateTime? time = _asDateTime(event['createdAt']);
+        if (!const <String>{'USER', 'SYSTEM', 'AGENT'}.contains(actor) ||
+            !const <String>{
+              'CREATED',
+              'STATUS_CHANGED',
+              'MESSAGE',
+              'RESOLVED',
+            }.contains(type) ||
+            text is! String ||
+            text.trim().isEmpty ||
+            text.length > 1000 ||
+            time == null) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '工单处理记录字段无效',
+          );
+        }
+        return SupportTicketEvent(
+          actorType: actor! as String,
+          eventType: type! as String,
+          message: text,
+          createdAt: time,
+        );
+      }),
     );
   }
 
@@ -1688,8 +1809,9 @@ class BackendSocialRepository implements SocialRepository {
       case 'WAITING_USER':
         return SupportTicketStatus.waitingUser;
       case 'RESOLVED':
-      case 'CLOSED':
         return SupportTicketStatus.resolved;
+      case 'CLOSED':
+        return SupportTicketStatus.closed;
       case 'REJECTED':
         return SupportTicketStatus.rejected;
       default:
@@ -1704,6 +1826,7 @@ class BackendSocialRepository implements SocialRepository {
       SupportTicketStatus.processing => '客服处理中',
       SupportTicketStatus.waitingUser => '等待补充信息',
       SupportTicketStatus.resolved => '问题已处理',
+      SupportTicketStatus.closed => '工单已关闭',
       SupportTicketStatus.rejected => '工单已驳回',
       SupportTicketStatus.unavailable => '工单状态暂不可用',
     };

@@ -576,6 +576,15 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
   late SupportTicket _ticket;
   bool _refreshing = false;
   bool _initialized = false;
+  bool _detailLoaded = false;
+  bool _sending = false;
+  final TextEditingController _replyController = TextEditingController();
+
+  @override
+  void dispose() {
+    _replyController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -593,7 +602,7 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
   }
 
   Future<void> _refresh() async {
-    if (!_ticket.progressAvailable || _refreshing) {
+    if (!_ticket.progressAvailable || _refreshing || _sending) {
       return;
     }
     setState(() => _refreshing = true);
@@ -602,7 +611,10 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
         context,
       ).socialRepository.fetchSupportTicket(_ticket.id);
       if (mounted) {
-        setState(() => _ticket = value);
+        setState(() {
+          _ticket = value;
+          _detailLoaded = true;
+        });
       }
     } catch (error) {
       if (mounted) {
@@ -617,6 +629,43 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
     }
   }
 
+  Future<void> _sendReply() async {
+    final String message = _replyController.text.trim();
+    if (!_detailLoaded ||
+        !_ticket.canReply ||
+        _sending ||
+        _refreshing ||
+        message.isEmpty ||
+        message.length > 1000)
+      return;
+    bool refreshAfterConflict = false;
+    setState(() => _sending = true);
+    try {
+      final SupportTicket ticket = await AppDependencyScope.of(context)
+          .socialRepository
+          .replyToSupportTicket(ticketId: _ticket.id, message: message);
+      if (!mounted) return;
+      setState(() => _ticket = ticket);
+      _replyController.clear();
+      FocusScope.of(context).unfocus();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('补充内容已提交')));
+    } catch (error) {
+      refreshAfterConflict =
+          error is ApiException &&
+          (error.httpStatus == 409 || error.kind == ApiFailureKind.conflict);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+    if (mounted && refreshAfterConflict) await _refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     return SocialPageScaffold(
@@ -625,7 +674,7 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
         actions: <Widget>[
           IconButton(
             tooltip: '刷新工单进度',
-            onPressed: _ticket.progressAvailable && !_refreshing
+            onPressed: _ticket.progressAvailable && !_refreshing && !_sending
                 ? _refresh
                 : null,
             icon: const Icon(Icons.refresh_rounded),
@@ -698,6 +747,93 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
               ],
             ),
           ),
+          if (_ticket.events.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 14),
+            _OxygenPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const _OxygenSectionLabel(title: '处理记录'),
+                  for (final SupportTicketEvent event in _ticket.events)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            event.actorLabel,
+                            style: const TextStyle(
+                              color: SocialColors.primary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            event.message,
+                            style: const TextStyle(
+                              color: SocialColors.textPrimary,
+                              fontSize: 14,
+                              height: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _formatDateTime(event.createdAt),
+                            style: const TextStyle(
+                              color: SocialColors.textSecondary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          if (_detailLoaded && _ticket.canReply) ...<Widget>[
+            const SizedBox(height: 14),
+            _OxygenPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const _OxygenSectionLabel(title: '补充反馈'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    key: const ValueKey<String>('support-reply-input'),
+                    controller: _replyController,
+                    enabled: !_sending,
+                    minLines: 2,
+                    maxLines: 5,
+                    maxLength: 1000,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      labelText: '补充说明',
+                      hintText: '请填写需要补充的信息',
+                      counterText:
+                          '${_replyController.text.trim().length}/1000',
+                      errorText: _replyController.text.trim().length > 1000
+                          ? '补充说明超过1000字符，请缩短内容'
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    key: const ValueKey<String>('support-reply-submit'),
+                    onPressed:
+                        !_sending &&
+                            !_refreshing &&
+                            _replyController.text.trim().isNotEmpty &&
+                            _replyController.text.trim().length <= 1000
+                        ? _sendReply
+                        : null,
+                    child: Text(_sending ? '提交中…' : '提交补充'),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -470,6 +470,46 @@ class MockSocialRepository implements SocialRepository {
     );
   }
 
+  @override
+  Future<SupportTicket> replyToSupportTicket({
+    required String ticketId,
+    required String message,
+  }) async {
+    final SupportTicket current = await fetchSupportTicket(ticketId);
+    final String text = message.trim();
+    if (!current.canReply || text.isEmpty || text.length > 1000) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '当前工单不可补充或内容无效',
+      );
+    }
+    final SupportTicket result = SupportTicket(
+      id: current.id,
+      subject: current.subject,
+      content: current.content,
+      status: current.status == SupportTicketStatus.waitingUser
+          ? SupportTicketStatus.processing
+          : current.status,
+      statusText: current.status == SupportTicketStatus.waitingUser
+          ? '客服处理中'
+          : current.statusText,
+      createdAt: current.createdAt,
+      progressAvailable: current.progressAvailable,
+      version: current.version + 1,
+      events: List<SupportTicketEvent>.unmodifiable(<SupportTicketEvent>[
+        ...current.events,
+        SupportTicketEvent(
+          actorType: 'USER',
+          eventType: 'MESSAGE',
+          message: text,
+          createdAt: DateTime.now(),
+        ),
+      ]),
+    );
+    _tickets[ticketId] = result;
+    return result;
+  }
+
   SocialUser _requireUser(int userId) {
     final SocialUser? user = _users[userId];
     if (user == null) {
