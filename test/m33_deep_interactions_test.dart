@@ -85,6 +85,7 @@ void main() {
       const AccountAppealPage(account: '13800138000'),
     );
     await tester.enterText(find.byType(TextField), '这是用于验证完整申诉提交交互的测试说明。');
+    await tester.pump();
     await tester.tap(find.text('提交申诉'));
     await tester.pumpAndSettle();
     expect(find.text('申诉审核中'), findsOneWidget);
