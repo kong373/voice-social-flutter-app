@@ -49,6 +49,7 @@ void main() {
     String? reverseMapping = 'tcp:18080 tcp:18080',
     String qemuKernel = '0',
     int cashierDumps = 3,
+    int cashierPollDelaySeconds = 0,
     List<String> markersAfterBack = const <String>[],
   }) {
     File('${root.path}/adb.calls').writeAsStringSync('');
@@ -105,6 +106,7 @@ case "\${1:-}" in
         [[ "\${2:-}" == 'activity' && "\${3:-}" == 'activities' ]] || exit 92
         count=\$(<"\${FAKE_DUMPSYS}"); count=\$((count + 1)); printf '%s' "\$count" >"\${FAKE_DUMPSYS}"
         if (( count <= $cashierDumps )); then
+          if (( $cashierPollDelaySeconds > 0 )); then sleep '$cashierPollDelaySeconds'; fi
           printf '%s\\n' '${activityDumpPrefix}${package}/${activity}${activityDumpSuffix}'
         else
           printf '%s\\n' 'mResumedActivity: ActivityRecord{com.kong373.voice_social_app/.MainActivity}'
@@ -142,7 +144,10 @@ esac
     String logContents = '',
     String? serialEnvironment,
     int markerTimeout = 1,
-    int cashierTimeout = 1,
+    // Three fresh UI polls spawn shell/XML processes before BACK can emit any
+    // markers. This setup budget must not race the marker contract under load.
+    // Cases testing unavailable UI keep an explicit short cashier deadline.
+    int cashierTimeout = 10,
   }) {
     final File log = File('${root.path}/flutter.log')
       ..writeAsStringSync(logContents);
@@ -182,6 +187,12 @@ esac
       includeParentEnvironment: false,
     );
   }
+
+  String operatorDiagnostics(Directory root, ProcessResult result) =>
+      'stdout:\n${result.stdout}\nstderr:\n${result.stderr}\n'
+      'back.count=${File('${root.path}/back.count').readAsStringSync()}\n'
+      'dumpsys.count=${File('${root.path}/dumpsys.count').readAsStringSync()}\n'
+      'ui.count=${File('${root.path}/ui.count').readAsStringSync()}';
 
   test('physical runner and operator are present and shell-valid', () {
     expect(runner.existsSync(), isTrue);
@@ -633,6 +644,7 @@ esac
       final ProcessResult wrongPackage = runOperator(
         packageRoot,
         adb: packageAdb,
+        cashierTimeout: 1,
       );
       expect(wrongPackage.exitCode, isNot(0));
       expect(File('${packageRoot.path}/back.count').readAsStringSync(), '0');
@@ -653,6 +665,7 @@ esac
         final ProcessResult wrongActivity = runOperator(
           activityRoot,
           adb: activityAdb,
+          cashierTimeout: 1,
         );
         expect(wrongActivity.exitCode, isNot(0));
         expect(File('${activityRoot.path}/back.count').readAsStringSync(), '0');
@@ -670,7 +683,12 @@ esac
         adb: adb,
         logContents: '$stale\n',
       );
-      expect(result.exitCode, 65, reason: stale);
+      expect(
+        result.exitCode,
+        65,
+        reason: '$stale\n${operatorDiagnostics(root, result)}',
+      );
+      expect(result.stderr, contains('stale native or bridge marker'));
       expect(File('${root.path}/adb.calls').readAsStringSync(), isEmpty);
     }
 
@@ -684,7 +702,14 @@ esac
         markersAfterBack: <String>[invalid, bridgeReturned],
       );
       final ProcessResult result = runOperator(root, adb: adb);
-      expect(result.exitCode, 65, reason: invalid);
+      expect(
+        result.exitCode,
+        65,
+        reason: '$invalid\n${operatorDiagnostics(root, result)}',
+      );
+      expect(result.stdout, contains('UI_READY::polls=3'));
+      expect(result.stdout, contains('TARGET_LEFT_AFTER_BACK'));
+      expect(result.stderr, contains('result marker rejected'));
       expect(File('${root.path}/back.count').readAsStringSync(), '1');
       expect(result.stdout, isNot(contains('::PASS')));
     }
@@ -692,7 +717,39 @@ esac
     final Directory timeoutRoot = sandbox('alipay-physical-marker-timeout-');
     final File timeoutAdb = fakeAdb(timeoutRoot);
     final ProcessResult timeout = runOperator(timeoutRoot, adb: timeoutAdb);
-    expect(timeout.exitCode, 70);
+    expect(
+      timeout.exitCode,
+      70,
+      reason: operatorDiagnostics(timeoutRoot, timeout),
+    );
+    expect(timeout.stdout, contains('TARGET_LEFT_AFTER_BACK'));
+    expect(
+      timeout.stderr,
+      contains('trusted native cancellation marker pair was not observed'),
+    );
     expect(File('${timeoutRoot.path}/back.count').readAsStringSync(), '1');
+    expect(timeout.stdout, isNot(contains('::PASS')));
+  });
+
+  test('slow cashier setup still reaches strict marker rejection', () {
+    final Directory root = sandbox('alipay-physical-slow-cashier-');
+    final File adb = fakeAdb(
+      root,
+      // Three one-second polls exceed the old one-second setup budget before
+      // BACK. Use a current-run marker so rejection is about none, not runId.
+      cashierPollDelaySeconds: 1,
+      markersAfterBack: <String>[
+        'M5_ALIPAY_NATIVE_RESULT::sdkCompleted=0::resultStatus=none::runId=$isolationRunId',
+        bridgeReturned,
+      ],
+    );
+    final ProcessResult result = runOperator(root, adb: adb);
+    expect(result.exitCode, 65, reason: operatorDiagnostics(root, result));
+    expect(result.stdout, contains('UI_READY::polls=3'));
+    expect(result.stdout, contains('TARGET_LEFT_AFTER_BACK'));
+    expect(result.stderr, contains('result marker rejected'));
+    expect(File('${root.path}/ui.count').readAsStringSync(), '3');
+    expect(File('${root.path}/back.count').readAsStringSync(), '1');
+    expect(result.stdout, isNot(contains('::PASS')));
   });
 }
