@@ -92,6 +92,7 @@ class BackendRouteCatalog {
     this.friendRequestResolve =
         '/app-mini-api/mini/v1/social/friend-request/resolve',
     this.supportTicket = '/app-mini-api/mini/v1/support/ticket',
+    this.supportTickets = '/app-mini-api/mini/v1/support/tickets',
     this.ncoinBalance = '/app-economy-api/ncoin',
     this.paymentOrders = '/app-economy-api/pay/getOrders',
     this.paymentOrderResult = '/app-economy-api/pay/isOrderSuccess',
@@ -295,6 +296,7 @@ class BackendRouteCatalog {
   final String friendRequestSend;
   final String friendRequestResolve;
   final String supportTicket;
+  final String supportTickets;
   final String ncoinBalance;
   final String paymentOrders;
   final String paymentOrderResult;

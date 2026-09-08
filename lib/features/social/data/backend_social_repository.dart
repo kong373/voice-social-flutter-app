@@ -715,7 +715,7 @@ class BackendSocialRepository implements SocialRepository {
     return SupportChannel(
       id: _string(data['accid'], fallback: 'customer-service'),
       name: '平台客服',
-      description: '即时客服会话需要腾讯 IM；当前可以提交意见反馈。',
+      description: '提交问题后，可在“我的反馈”查看处理状态。',
       liveConversationAvailable: false,
     );
   }
@@ -801,6 +801,30 @@ class BackendSocialRepository implements SocialRepository {
       query: <String, String>{'ticketId': normalizedId},
     );
     return _supportTicketFromMap(_asMap(response.data));
+  }
+
+  @override
+  Future<SocialPage<SupportTicket>> fetchSupportTickets({
+    required int page,
+    required int pageSize,
+  }) async {
+    _validateSocialPageRequest(page: page, pageSize: pageSize);
+    if ((page - 1) * pageSize > 0x7fffffff) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '反馈列表页码超出范围',
+      );
+    }
+    final ApiResponse response = await _apiClient.get(
+      _routes.supportTickets,
+      query: <String, String>{'page': '$page', 'pageSize': '$pageSize'},
+    );
+    return _socialPage<SupportTicket>(
+      response.data,
+      page: page,
+      pageSize: pageSize,
+      mapItem: _supportTicketFromMap,
+    );
   }
 
   static void _validatePersonalProfile(Map<String, Object?> data) {
@@ -1134,11 +1158,11 @@ class BackendSocialRepository implements SocialRepository {
     return parsed;
   }
 
-  static SocialPage<SocialUser> _socialPage(
+  static SocialPage<T> _socialPage<T>(
     Object? value, {
     required int page,
     required int pageSize,
-    required SocialUser Function(Map<String, Object?> raw) mapItem,
+    required T Function(Map<String, Object?> raw) mapItem,
   }) {
     final Map<String, Object?> data = _requiredSocialMap(value);
     final List<Object?> rawList = _requiredSocialList(data['list'], 'list');
@@ -1196,7 +1220,7 @@ class BackendSocialRepository implements SocialRepository {
         );
       }
     }
-    final List<SocialUser> items = <SocialUser>[
+    final List<T> items = <T>[
       for (final Map<String, Object?> raw in listedItems) mapItem(raw),
     ];
     if (current < pages && items.isEmpty) {
@@ -1205,7 +1229,7 @@ class BackendSocialRepository implements SocialRepository {
         message: '社交分页仍有后续页但当前页为空',
       );
     }
-    return SocialPage<SocialUser>(
+    return SocialPage<T>(
       items: items,
       page: current,
       pageSize: size,
@@ -1656,9 +1680,13 @@ class BackendSocialRepository implements SocialRepository {
     switch (value?.toString().trim().toUpperCase()) {
       case 'SUBMITTED':
         return SupportTicketStatus.submitted;
+      case 'ACCEPTED':
+        return SupportTicketStatus.accepted;
       case 'PROCESSING':
       case 'IN_PROGRESS':
         return SupportTicketStatus.processing;
+      case 'WAITING_USER':
+        return SupportTicketStatus.waitingUser;
       case 'RESOLVED':
       case 'CLOSED':
         return SupportTicketStatus.resolved;
@@ -1672,7 +1700,9 @@ class BackendSocialRepository implements SocialRepository {
   static String _statusText(SupportTicketStatus status) {
     return switch (status) {
       SupportTicketStatus.submitted => '已提交，等待客服处理',
+      SupportTicketStatus.accepted => '客服已受理',
       SupportTicketStatus.processing => '客服处理中',
+      SupportTicketStatus.waitingUser => '等待补充信息',
       SupportTicketStatus.resolved => '问题已处理',
       SupportTicketStatus.rejected => '工单已驳回',
       SupportTicketStatus.unavailable => '工单状态暂不可用',

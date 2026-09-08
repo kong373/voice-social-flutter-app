@@ -296,7 +296,7 @@ void main() {
         expect(find.text('充值订单'), findsOneWidget);
         expect(find.textContaining('退款'), findsWidgets);
         expect(find.text('礼物'), findsOneWidget);
-        expect(find.textContaining('尚在申请'), findsOneWidget);
+        expect(find.text('可用商品和支付方式以充值页为准，到账状态可在充值订单中查询。'), findsOneWidget);
 
         await tester.tap(find.text('礼物').hitTestable());
         await tester.pumpAndSettle();

@@ -207,11 +207,15 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
   final TextEditingController _contentController = TextEditingController();
   SupportChannel? _channel;
   bool _busy = false;
+  bool _initialized = false;
+  bool _loading = false;
+  String? _error;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_channel == null) {
+    if (!_initialized) {
+      _initialized = true;
       _load();
     }
   }
@@ -224,11 +228,20 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
   }
 
   Future<void> _load() async {
-    final SupportChannel value = await AppDependencyScope.of(
-      context,
-    ).socialRepository.fetchCustomerService();
-    if (mounted) {
-      setState(() => _channel = value);
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final SupportChannel value = await AppDependencyScope.of(
+        context,
+      ).socialRepository.fetchCustomerService();
+      if (mounted) setState(() => _channel = value);
+    } catch (error) {
+      if (mounted) setState(() => _error = _messageFor(error));
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -245,6 +258,9 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
             content: _contentController.text,
           );
       if (mounted) {
+        _subjectController.clear();
+        _contentController.clear();
+        FocusScope.of(context).unfocus();
         await Navigator.of(context).push<void>(
           MaterialPageRoute<void>(
             builder: (BuildContext context) =>
@@ -268,9 +284,24 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
   @override
   Widget build(BuildContext context) {
     return SocialPageScaffold(
-      appBar: AppBar(title: const Text('帮助与客服')),
-      body: _channel == null
+      appBar: AppBar(
+        title: const Text('帮助与客服'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (BuildContext context) =>
+                    const SupportTicketHistoryPage(),
+              ),
+            ),
+            child: const Text('我的反馈'),
+          ),
+        ],
+      ),
+      body: _loading
           ? const Center(child: CircularProgressIndicator())
+          : _error != null
+          ? _ErrorState(message: _error!, onRetry: _load)
           : ListView(
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 30),
               children: <Widget>[
@@ -332,7 +363,7 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
                 ),
                 if (!_channel!.liveConversationAvailable) ...<Widget>[
                   const SizedBox(height: 12),
-                  const _InfoBanner(text: '腾讯 IM 接入前不开放伪即时客服会话。'),
+                  const _InfoBanner(text: '请提交问题描述，之后可在“我的反馈”查看处理状态。'),
                 ],
                 const SizedBox(height: 16),
                 const _OxygenSectionLabel(title: '提交问题'),
@@ -366,6 +397,172 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
   }
 }
 
+class SupportTicketHistoryPage extends StatefulWidget {
+  const SupportTicketHistoryPage({super.key});
+
+  @override
+  State<SupportTicketHistoryPage> createState() =>
+      _SupportTicketHistoryPageState();
+}
+
+class _SupportTicketHistoryPageState extends State<SupportTicketHistoryPage> {
+  final List<SupportTicket> _tickets = <SupportTicket>[];
+  bool _initialized = false;
+  bool _loading = false;
+  bool _hasMore = false;
+  bool _retryReset = true;
+  bool _refreshPending = false;
+  int _page = 0;
+  String? _error;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      _initialized = true;
+      _load(reset: true);
+    }
+  }
+
+  Future<void> _load({required bool reset}) async {
+    if (_loading) {
+      if (reset) _refreshPending = true;
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _error = null;
+      _retryReset = reset;
+    });
+    try {
+      final SocialPage<SupportTicket> result =
+          await AppDependencyScope.of(context).socialRepository
+              .fetchSupportTickets(page: reset ? 1 : _page + 1, pageSize: 20);
+      if (!mounted) return;
+      setState(() {
+        if (reset) _tickets.clear();
+        // A new ticket can shift offset pages while the user is browsing.
+        final Set<String> ids = _tickets
+            .map((SupportTicket ticket) => ticket.id)
+            .toSet();
+        _tickets.addAll(
+          result.items.where((SupportTicket ticket) => ids.add(ticket.id)),
+        );
+        _page = result.page;
+        _hasMore = result.hasMore;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _error = _messageFor(error));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+      if (mounted && _refreshPending) {
+        _refreshPending = false;
+        await _load(reset: true);
+      }
+    }
+  }
+
+  Future<void> _open(SupportTicket ticket) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) =>
+            SupportTicketPage(initialTicket: ticket),
+      ),
+    );
+    if (mounted) await _load(reset: true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SocialPageScaffold(
+      appBar: AppBar(
+        title: const Text('我的反馈'),
+        actions: <Widget>[
+          IconButton(
+            tooltip: '刷新反馈列表',
+            onPressed: _loading ? null : () => _load(reset: true),
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
+      body: _loading && _tickets.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null && _tickets.isEmpty
+          ? _ErrorState(message: _error!, onRetry: () => _load(reset: true))
+          : RefreshIndicator(
+              onRefresh: () => _load(reset: true),
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 30),
+                children: <Widget>[
+                  if (_tickets.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Center(child: Text('还没有提交过反馈')),
+                    ),
+                  for (final SupportTicket ticket in _tickets)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _OxygenPanel(
+                        padding: EdgeInsets.zero,
+                        child: ListTile(
+                          key: ValueKey<String>('support-ticket-${ticket.id}'),
+                          title: Text(
+                            ticket.subject,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                ticket.content,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                ticket.statusText,
+                                style: const TextStyle(
+                                  color: SocialColors.primary,
+                                ),
+                              ),
+                              Text(
+                                _formatDateTime(ticket.createdAt),
+                                style: const TextStyle(
+                                  color: SocialColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: () => _open(ticket),
+                        ),
+                      ),
+                    ),
+                  if (_error != null) ...<Widget>[
+                    Text(_error!, textAlign: TextAlign.center),
+                    TextButton(
+                      onPressed: () => _load(reset: _retryReset),
+                      child: const Text('重试'),
+                    ),
+                  ] else if (_loading)
+                    const Center(child: CircularProgressIndicator())
+                  else if (_hasMore)
+                    TextButton(
+                      onPressed: () => _load(reset: false),
+                      child: const Text('加载更多'),
+                    )
+                  else if (_tickets.isNotEmpty)
+                    const Center(child: Text('已显示全部反馈')),
+                ],
+              ),
+            ),
+    );
+  }
+}
+
 class SupportTicketPage extends StatefulWidget {
   const SupportTicketPage({required this.initialTicket, super.key});
 
@@ -378,11 +575,21 @@ class SupportTicketPage extends StatefulWidget {
 class _SupportTicketPageState extends State<SupportTicketPage> {
   late SupportTicket _ticket;
   bool _refreshing = false;
+  bool _initialized = false;
 
   @override
   void initState() {
     super.initState();
     _ticket = widget.initialTicket;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      _initialized = true;
+      _refresh();
+    }
   }
 
   Future<void> _refresh() async {
@@ -417,7 +624,10 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
         title: const Text('工单详情与处理进度'),
         actions: <Widget>[
           IconButton(
-            onPressed: _ticket.progressAvailable ? _refresh : null,
+            tooltip: '刷新工单进度',
+            onPressed: _ticket.progressAvailable && !_refreshing
+                ? _refresh
+                : null,
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],

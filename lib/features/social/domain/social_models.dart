@@ -31,7 +31,9 @@ bool isCanonicalReportRoomId(String value) =>
 
 enum SupportTicketStatus {
   submitted,
+  accepted,
   processing,
+  waitingUser,
   resolved,
   rejected,
   unavailable,
@@ -343,4 +345,9 @@ abstract interface class SocialRepository {
   });
 
   Future<SupportTicket> fetchSupportTicket(String ticketId);
+
+  Future<SocialPage<SupportTicket>> fetchSupportTickets({
+    required int page,
+    required int pageSize,
+  });
 }

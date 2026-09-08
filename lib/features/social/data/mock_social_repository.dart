@@ -458,6 +458,18 @@ class MockSocialRepository implements SocialRepository {
     return ticket;
   }
 
+  @override
+  Future<SocialPage<SupportTicket>> fetchSupportTickets({
+    required int page,
+    required int pageSize,
+  }) async {
+    return _page<SupportTicket>(
+      _tickets.values.toList().reversed.toList(),
+      page: page,
+      pageSize: pageSize,
+    );
+  }
+
   SocialUser _requireUser(int userId) {
     final SocialUser? user = _users[userId];
     if (user == null) {
@@ -469,8 +481,8 @@ class MockSocialRepository implements SocialRepository {
     return user;
   }
 
-  static SocialPage<SocialUser> _page(
-    List<SocialUser> items, {
+  static SocialPage<T> _page<T>(
+    List<T> items, {
     required int page,
     required int pageSize,
   }) {
@@ -478,10 +490,10 @@ class MockSocialRepository implements SocialRepository {
     final int safePageSize = pageSize < 1 ? 20 : pageSize;
     final int start = (safePage - 1) * safePageSize;
     final int end = (start + safePageSize).clamp(0, items.length).toInt();
-    final List<SocialUser> slice = start >= items.length
-        ? const <SocialUser>[]
+    final List<T> slice = start >= items.length
+        ? <T>[]
         : items.sublist(start, end);
-    return SocialPage<SocialUser>(
+    return SocialPage<T>(
       items: slice,
       page: safePage,
       pageSize: safePageSize,

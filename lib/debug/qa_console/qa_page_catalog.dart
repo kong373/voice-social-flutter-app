@@ -432,7 +432,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
     area: ProductArea.social,
     widgetClass: 'SupportTicketPage',
     sourcePath: 'lib/features/social/presentation/social_support_pages.dart',
-    userEntry: '帮助与客服 → 已提交工单',
+    userEntry: '帮助与客服 → 我的反馈 → 工单详情',
     requiredStates: const <QaPageState>[
       QaPageState.loading,
       QaPageState.success,

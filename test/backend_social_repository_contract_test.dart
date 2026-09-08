@@ -10,6 +10,205 @@ import 'package:voice_social_app/features/social/data/backend_social_repository.
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 
 void main() {
+  for (final (String raw, SupportTicketStatus status, String text)
+      in <(String, SupportTicketStatus, String)>[
+        ('ACCEPTED', SupportTicketStatus.accepted, '客服已受理'),
+        ('WAITING_USER', SupportTicketStatus.waitingUser, '等待补充信息'),
+        ('CLOSED', SupportTicketStatus.resolved, '问题已处理'),
+        ('UNKNOWN_STATE', SupportTicketStatus.unavailable, '工单状态暂不可用'),
+      ]) {
+    test('support history preserves $raw status', () async {
+      final HttpServer server = await _startServer((request, body) async {
+        final item = <String, Object?>{
+          'ticketId': 'ticket-1',
+          'status': raw,
+          'subject': '反馈',
+          'content': '描述',
+          'createdAt': '2026-09-09T00:00:00Z',
+          'progressAvailable': true,
+        };
+        await _reply(
+          request,
+          data: <String, Object?>{
+            'list': <Object?>[item],
+            'records': <Object?>[item],
+            'current': 1,
+            'size': 20,
+            'pageSize': 20,
+            'total': 1,
+            'pages': 1,
+          },
+        );
+      });
+      addTearDown(() => server.close(force: true));
+      final repository = BackendSocialRepository(
+        apiClient: _client(server),
+        currentUserIdProvider: () => 10001,
+      );
+      final result = await repository.fetchSupportTickets(
+        page: 1,
+        pageSize: 20,
+      );
+      expect(result.items.single.status, status);
+      expect(result.items.single.statusText, text);
+    });
+  }
+  test(
+    'support history is authenticated GET with exact pagination and no user override',
+    () async {
+      final List<int> pages = <int>[];
+      final HttpServer server = await _startServer((request, body) async {
+        expect(request.method, 'GET');
+        expect(request.uri.path, '/app-mini-api/mini/v1/support/tickets');
+        expect(
+          captureContractAuthorization(request),
+          contractTestAuthorization,
+        );
+        expect(body, isNull);
+        expect(
+          request.uri.queryParameters.keys,
+          unorderedEquals(<String>['page', 'pageSize']),
+        );
+        final int page = int.parse(request.uri.queryParameters['page']!);
+        expect(request.uri.queryParameters['pageSize'], '1');
+        pages.add(page);
+        final List<Object?> items = page <= 2
+            ? <Object?>[
+                <String, Object?>{
+                  'ticketId': 'ticket-${3 - page}',
+                  'subject': '反馈 $page',
+                  'content': '问题内容',
+                  'status': page == 1 ? 'PROCESSING' : 'SUBMITTED',
+                  'createdAt': '2026-09-09T00:00:00Z',
+                  'progressAvailable': true,
+                },
+              ]
+            : <Object?>[];
+        await _reply(
+          request,
+          data: <String, Object?>{
+            'list': items,
+            'records': items,
+            'current': page,
+            'size': 1,
+            'pageSize': 1,
+            'total': 2,
+            'pages': 2,
+          },
+        );
+      });
+      addTearDown(() => server.close(force: true));
+      final repository = BackendSocialRepository(
+        apiClient: _client(server),
+        currentUserIdProvider: () => 10001,
+      );
+      final first = await repository.fetchSupportTickets(page: 1, pageSize: 1);
+      expect(first.items.single.id, 'ticket-2');
+      expect(first.items.single.status, SupportTicketStatus.processing);
+      expect(first.items.single.progressAvailable, isTrue);
+      expect(first.hasMore, isTrue);
+      final last = await repository.fetchSupportTickets(page: 2, pageSize: 1);
+      expect(last.items.single.id, 'ticket-1');
+      expect(last.hasMore, isFalse);
+      expect(
+        (await repository.fetchSupportTickets(page: 3, pageSize: 1)).items,
+        isEmpty,
+      );
+      expect(pages, <int>[1, 2, 3]);
+    },
+  );
+
+  test('support history rejects invalid page requests before HTTP', () async {
+    int calls = 0;
+    final HttpServer server = await _startServer((request, body) async {
+      calls += 1;
+      await _reply(request);
+    });
+    addTearDown(() => server.close(force: true));
+    final repository = BackendSocialRepository(
+      apiClient: _client(server),
+      currentUserIdProvider: () => 10001,
+    );
+    for (final (int page, int size) in <(int, int)>[
+      (0, 20),
+      (1, 0),
+      (1, 51),
+      (0x7fffffff, 20),
+    ]) {
+      await expectLater(
+        repository.fetchSupportTickets(page: page, pageSize: size),
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e.kind,
+            'kind',
+            ApiFailureKind.validation,
+          ),
+        ),
+      );
+    }
+    expect(calls, 0);
+  });
+
+  test(
+    'support history does not treat malformed ticket or pagination as empty',
+    () async {
+      Object? payload;
+      final HttpServer server = await _startServer(
+        (request, body) => _reply(request, data: payload),
+      );
+      addTearDown(() => server.close(force: true));
+      final repository = BackendSocialRepository(
+        apiClient: _client(server),
+        currentUserIdProvider: () => 10001,
+      );
+      for (final Object? invalid in <Object?>[
+        null,
+        <String, Object?>{
+          'list': <Object?>[],
+          'records': <Object?>[],
+          'current': 1,
+          'size': 20,
+          'pageSize': 20,
+          'total': 1,
+          'pages': 1,
+        },
+        <String, Object?>{
+          'list': <Object?>[<String, Object?>{}],
+          'records': <Object?>[<String, Object?>{}],
+          'current': 1,
+          'size': 20,
+          'pageSize': 20,
+          'total': 1,
+          'pages': 1,
+        },
+      ]) {
+        payload = invalid;
+        await expectLater(
+          repository.fetchSupportTickets(page: 1, pageSize: 20),
+          throwsA(
+            isA<ApiException>().having(
+              (e) => e.kind,
+              'kind',
+              ApiFailureKind.protocol,
+            ),
+          ),
+        );
+      }
+      payload = <String, Object?>{
+        'list': <Object?>[],
+        'records': <Object?>[],
+        'current': 1,
+        'size': 20,
+        'pageSize': 20,
+        'total': 0,
+        'pages': 0,
+      };
+      final empty = await repository.fetchSupportTickets(page: 1, pageSize: 20);
+      expect(empty.items, isEmpty);
+      expect(empty.hasMore, isFalse);
+    },
+  );
+
   test(
     'profile, profile update, and public profile use exact endpoints',
     () async {

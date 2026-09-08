@@ -96,7 +96,9 @@ void main() {
       );
       expect(withdrawalEntry, findsOneWidget);
 
-      final Finder paymentBoundary = find.textContaining('微信支付、支付宝和 Apple IAP');
+      final Finder paymentBoundary = find.text(
+        '可用商品和支付方式以充值页为准，到账状态可在充值订单中查询。',
+      );
       await tester.scrollUntilVisible(
         paymentBoundary,
         240,
