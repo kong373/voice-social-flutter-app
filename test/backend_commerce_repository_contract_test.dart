@@ -12,6 +12,48 @@ import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 
 void main() {
   test(
+    'guild gift share stays cash income and retains its own label',
+    () async {
+      final _Harness harness = await _Harness.start((RequestRecord request) {
+        return _Response.ok(<String, Object?>{
+          'currency': 'CASH_CNY',
+          'list': <Object?>[
+            <String, Object?>{
+              'transactionId': 'guild-share-001',
+              'type': 'CREDIT',
+              'amountMinor': 148,
+              'businessType': 'GUILD_GIFT_INCOME',
+              'businessId': 'gift-transfer-001',
+              'counterpartyUserId': 2002,
+              'description': '公会礼物分成',
+              'createdAt': '2026-09-08T10:00:00Z',
+              'currency': 'CASH_CNY',
+            },
+          ],
+          'pageNum': 1,
+          'pageSize': 100,
+          'total': 1,
+          'pages': 1,
+        });
+      });
+      addTearDown(harness.close);
+      final CommercePage<LedgerEntry> result = await harness.repository
+          .fetchLedger(
+            currency: LedgerCurrency.cashCny,
+            direction: LedgerDirection.income,
+            page: 1,
+            pageSize: 20,
+          );
+      final LedgerEntry entry = result.items.single;
+      expect(entry.kind, LedgerKind.giftIncome);
+      expect(entry.title, '公会礼物分成');
+      expect(entry.amount, 1.48);
+      expect(entry.currency, LedgerCurrency.cashCny);
+      expect(entry.rawSubtype, 'guild_gift_income');
+    },
+  );
+
+  test(
     'wallet and ledger use M4 currency/page contract and minor units',
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {

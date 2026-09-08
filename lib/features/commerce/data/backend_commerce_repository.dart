@@ -1472,7 +1472,7 @@ class BackendCommerceRepository implements CommerceRepository {
 
   static LedgerKind _ledgerKind(String businessType) {
     return switch (businessType) {
-      'GIFT_INCOME' => LedgerKind.giftIncome,
+      'GIFT_INCOME' || 'GUILD_GIFT_INCOME' => LedgerKind.giftIncome,
       'GIFT_SEND' => LedgerKind.giftExpense,
       'AGENT_INCOME' => LedgerKind.agentIncome,
       'SUPER_AGENT_INCOME' => LedgerKind.superAgentIncome,
