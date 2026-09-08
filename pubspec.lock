@@ -119,6 +119,13 @@ packages:
       relative: true
     source: path
     version: "0.1.0"
+  first_party_room_audio:
+    dependency: "direct main"
+    description:
+      path: "packages/first_party_room_audio"
+      relative: true
+    source: path
+    version: "0.1.0"
   flutter:
     dependency: "direct main"
     description: flutter

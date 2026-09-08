@@ -59,6 +59,7 @@ import 'package:voice_social_app/features/room/domain/room_operations_models.dar
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_audio_service.dart';
+import 'package:voice_social_app/features/room/infrastructure/native_room_background_audio.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 import 'package:voice_social_app/features/room/pk/data/backend_room_pk_repository.dart';
@@ -97,10 +98,11 @@ class AppDependencies {
     required this.roomLifecycleRepository,
     required this.roomPkRepository,
     required this.rtcAdapter,
+    required NativeRoomBackgroundAudio? backgroundAudio,
     required this.realtimeGateway,
     required this.roomAudioService,
     required this.externalUrlOpener,
-  });
+  }) : _backgroundAudio = backgroundAudio;
 
   factory AppDependencies.fromEnvironment() {
     final AppEnvironment environment = AppEnvironment.fromDefines();
@@ -408,6 +410,10 @@ class AppDependencies {
     final RoomPkRepository roomPkRepository = environment.isLive
         ? BackendRoomPkRepository(apiClient: apiClient, routes: routes)
         : MockRoomPkRepository();
+    final NativeRoomBackgroundAudio? backgroundAudio =
+        environment.isLive && rtcTokenRepository != null
+        ? NativeRoomBackgroundAudio.forCurrentPlatform()
+        : null;
     final RtcAdapter rtcAdapter = environment.isLive
         ? rtcTokenRepository == null
               ? const SnapshotOnlyRtcAdapter()
@@ -423,6 +429,7 @@ class AppDependencies {
                     );
                   },
                   microphonePermissionAdapter: nativePermissionAdapter,
+                  backgroundAudioPort: backgroundAudio,
                 )
         : MockRtcAdapter();
     final RoomRealtimeGateway realtimeGateway = environment.isLive
@@ -474,6 +481,7 @@ class AppDependencies {
       roomLifecycleRepository: roomLifecycleRepository,
       roomPkRepository: roomPkRepository,
       rtcAdapter: rtcAdapter,
+      backgroundAudio: backgroundAudio,
       realtimeGateway: realtimeGateway,
       roomAudioService: roomAudioService,
       externalUrlOpener: externalUrlOpener,
@@ -506,6 +514,8 @@ class AppDependencies {
   final RoomLifecycleRepository roomLifecycleRepository;
   final RoomPkRepository roomPkRepository;
   final RtcAdapter rtcAdapter;
+  final NativeRoomBackgroundAudio? _backgroundAudio;
+  Future<void>? _rtcRuntimeRelease;
   final RoomRealtimeGateway realtimeGateway;
   final RoomAudioService roomAudioService;
   final ExternalUrlOpener externalUrlOpener;
@@ -542,6 +552,7 @@ class AppDependencies {
       repository.leaseBinding.clear(repository.leaseBinding.generation);
     }
     authController.dispose();
+    unawaited(_rtcRuntimeRelease ??= _releaseRtcRuntime());
     imSessionCoordinator.dispose();
     unawaited(tencentImAvChatRoomCoordinator.dispose());
     final AppleIapPurchaseCoordinator? appleCoordinator =
@@ -554,6 +565,25 @@ class AppDependencies {
       unawaited(adapter.dispose());
     } else if (adapter is FakeImSessionAdapter) {
       unawaited(adapter.dispose());
+    }
+  }
+
+  Future<void> _releaseRtcRuntime() async {
+    var unconfirmed = false;
+    try {
+      final rtc = rtcAdapter;
+      if (rtc is AgoraRtcAdapter) await rtc.release();
+    } catch (_) {
+      unconfirmed = true;
+    }
+    try {
+      await _backgroundAudio?.dispose();
+    } catch (_) {
+      unconfirmed = true;
+    }
+    if (unconfirmed) {
+      // No native error text, credentials or identifiers are logged.
+      debugPrint('RTC_RUNTIME_SHUTDOWN_UNCONFIRMED');
     }
   }
 

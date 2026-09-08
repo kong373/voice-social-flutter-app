@@ -106,6 +106,20 @@ void main() {
       expect(project, isNot(contains('DEVELOPMENT_TEAM =')));
     });
 
+    test('declares only audio background execution for joined voice rooms', () {
+      final info = File('ios/Runner/Info.plist').readAsStringSync();
+      final modes = RegExp(
+        r'<key>UIBackgroundModes</key>\s*<array>([\s\S]*?)</array>',
+      ).firstMatch(info);
+      expect(modes, isNotNull);
+      expect(
+        RegExp(
+          r'<string>(.*?)</string>',
+        ).allMatches(modes!.group(1)!).map((match) => match.group(1)).toList(),
+        ['audio'],
+      );
+    });
+
     test('declares truthful permission purposes without provider claims', () {
       final String info = File('ios/Runner/Info.plist').readAsStringSync();
       expect(info, contains('<key>NSMicrophoneUsageDescription</key>'));

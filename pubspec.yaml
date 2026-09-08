@@ -11,6 +11,8 @@ dependencies:
   crypto: 3.0.7
   first_party_native_permissions:
     path: packages/first_party_native_permissions
+  first_party_room_audio:
+    path: packages/first_party_room_audio
   flutter:
     sdk: flutter
   flutter_secure_storage: ^10.3.1
