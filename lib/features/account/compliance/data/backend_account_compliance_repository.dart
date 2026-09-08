@@ -202,7 +202,11 @@ class BackendAccountComplianceRepository
     for (int pageNum = 1; pageNum <= maxPages; pageNum++) {
       final response = await _apiClient.get(
         _routes.accountSessions,
-        query: <String, String>{'pageNum': '$pageNum', 'pageSize': '$pageSize'},
+        query: <String, String>{
+          'pageNum': '$pageNum',
+          'pageSize': '$pageSize',
+          'scope': 'active',
+        },
       );
       final data = _requireMap(response.data, '设备会话');
       final list = _requireList(data['list'], '设备会话 list');
@@ -257,6 +261,12 @@ class BackendAccountComplianceRepository
           throw const ApiException(
             kind: ApiFailureKind.protocol,
             message: '设备会话完整列表数量与 total 不一致',
+          );
+        }
+        if (sessions.where((session) => session.isCurrent).length > 1) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '设备会话包含多个当前登录，请重试',
           );
         }
         return sessions;
@@ -1011,9 +1021,25 @@ class BackendAccountComplianceRepository
           message: '设备会话第 ${index + 1} 项缺少有效 active 布尔值',
         );
       }
-      final bool active = rawActive;
-      final bool isCurrent =
-          currentDeviceId.isNotEmpty && deviceId == currentDeviceId;
+      if (!rawActive) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '有效设备会话响应包含已失效记录，请重试',
+        );
+      }
+      final Object? rawCurrent = item['current'];
+      if (rawCurrent is! bool ||
+          (rawCurrent &&
+              (currentDeviceId.isEmpty || deviceId != currentDeviceId))) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '设备会话缺少有效的当前登录标识',
+        );
+      }
+      // The backend binds current to the authenticated token family. An
+      // installation may have several independent login families, so a
+      // matching deviceId alone must not mark every one as current.
+      final bool isCurrent = rawCurrent;
       sessions.add(
         DeviceSession(
           id: sessionId,
@@ -1023,7 +1049,7 @@ class BackendAccountComplianceRepository
           isCurrent: isCurrent,
           // Fail closed when the session manager has no device id. In
           // particular, never expose the current session as revocable.
-          canRevoke: active && currentDeviceId.isNotEmpty && !isCurrent,
+          canRevoke: currentDeviceId.isNotEmpty && !isCurrent,
         ),
       );
     }

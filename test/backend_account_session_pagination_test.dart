@@ -19,6 +19,7 @@ Map<String, Object?> page(int number, {int total = 21}) {
           'sessionId': 'session-$i',
           'deviceId': 'device-$i',
           'active': true,
+          'current': i == 0,
           'createdAt': '2026-09-01T00:00:00Z',
           'lastUsedAt': '',
         },
@@ -105,8 +106,8 @@ void main() {
     expect(snapshot.sessions.last.canRevoke, isTrue);
     expect(snapshot.accountUsable, isFalse);
     expect(queries, [
-      {'pageNum': '1', 'pageSize': '20'},
-      {'pageNum': '2', 'pageSize': '20'},
+      {'pageNum': '1', 'pageSize': '20', 'scope': 'active'},
+      {'pageNum': '2', 'pageSize': '20', 'scope': 'active'},
     ]);
   });
 
@@ -230,16 +231,57 @@ void main() {
     });
   }
 
-  test('accepts legacy complete list including revoked history', () async {
-    final data = page(1, total: 2);
-    for (final key in ['pageNum', 'pageSize', 'pages', 'hasMore']) {
-      data.remove(key);
-    }
-    ((data['list']! as List).last as Map)['active'] = false;
-    final snapshot = await fetch((r) => contract.reply(r, data: data));
-    expect(snapshot.sessions, hasLength(2));
-    expect(snapshot.sessions.last.canRevoke, isFalse);
-  });
+  test(
+    'active query rejects revoked history instead of counting it as a device',
+    () async {
+      final data = page(1, total: 2);
+      for (final key in ['pageNum', 'pageSize', 'pages', 'hasMore']) {
+        data.remove(key);
+      }
+      ((data['list']! as List).last as Map)['active'] = false;
+      await expectLater(
+        fetch((r) => contract.reply(r, data: data)),
+        protocolError,
+      );
+    },
+  );
+
+  test(
+    'current session uses family authority, not a shared device ID',
+    () async {
+      final data = page(1, total: 2);
+      ((data['list']! as List).last as Map)['deviceId'] = 'device-0';
+      final snapshot = await fetch((r) => contract.reply(r, data: data));
+      expect(snapshot.sessions, hasLength(2));
+      expect(snapshot.sessions.first.isCurrent, isTrue);
+      expect(snapshot.sessions.first.canRevoke, isFalse);
+      expect(snapshot.sessions.last.isCurrent, isFalse);
+      expect(snapshot.sessions.last.canRevoke, isTrue);
+    },
+  );
+
+  for (final malformed in ['missing', 'string', 'wrong device', 'duplicate']) {
+    test('rejects $malformed current-session authority', () async {
+      final data = page(1, total: 2);
+      final first = (data['list']! as List).first as Map;
+      final last = (data['list']! as List).last as Map;
+      switch (malformed) {
+        case 'missing':
+          first.remove('current');
+        case 'string':
+          first['current'] = 'true';
+        case 'wrong device':
+          first['deviceId'] = 'another-device';
+        case 'duplicate':
+          last['deviceId'] = 'device-0';
+          last['current'] = true;
+      }
+      await expectLater(
+        fetch((r) => contract.reply(r, data: data)),
+        protocolError,
+      );
+    });
+  }
 
   test('userId mismatch fails before requesting sessions', () async {
     var calls = 0;

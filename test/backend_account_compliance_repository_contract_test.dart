@@ -256,6 +256,7 @@ void main() {
                     'sessionId': currentSessionId,
                     'deviceId': 'pixel-9',
                     'active': true,
+                    'current': true,
                     'createdAt': '2026-08-22T08:00:00Z',
                     // A fresh backend session has not been refreshed yet and
                     // therefore serializes its nullable last-used time as an
@@ -267,6 +268,7 @@ void main() {
                     'sessionId': oldSessionId,
                     'deviceId': 'iphone',
                     'active': true,
+                    'current': false,
                     'lastUsedAt': '2026-08-20T08:00:00Z',
                   },
                 ],
@@ -428,6 +430,7 @@ void main() {
                     'sessionId': currentSessionId,
                     'deviceId': 'pixel-9',
                     'active': true,
+                    'current': true,
                     // No service timestamp: the client must not invent one.
                   },
                 ],
@@ -528,6 +531,7 @@ void main() {
           final Map<String, Object?> session = <String, Object?>{
             'sessionId': currentSessionId,
             'deviceId': 'pixel-9',
+            'current': true,
             'lastUsedAt': '2026-08-22T08:00:00Z',
           };
           if (includeActive) {

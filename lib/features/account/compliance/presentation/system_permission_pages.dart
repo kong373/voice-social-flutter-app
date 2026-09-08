@@ -458,6 +458,8 @@ class DeviceSessionsPage extends StatefulWidget {
 class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
   AccountComplianceSnapshot? _snapshot;
   String? _error;
+  bool _loading = false;
+  String? _revokingSessionId;
 
   @override
   void didChangeDependencies() {
@@ -468,8 +470,12 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
   }
 
   Future<void> _load() async {
+    if (_loading) return;
     if (mounted) {
-      setState(() => _error = null);
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
     }
     try {
       final scope = AppDependencyScope.of(context);
@@ -491,10 +497,14 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
       if (mounted) {
         setState(() => _error = _messageFor(error));
       }
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _revoke(DeviceSession session) async {
+    if (!session.canRevoke || _revokingSessionId != null || _loading) return;
+    setState(() => _revokingSessionId = session.id);
     try {
       await AppDependencyScope.of(
         context,
@@ -510,6 +520,8 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
           onRetry: () => _revoke(session),
         );
       }
+    } finally {
+      if (mounted) setState(() => _revokingSessionId = null);
     }
   }
 
@@ -520,7 +532,16 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
       context,
     ).accountComplianceRepository.supportsDeviceSessionManagement;
     return SocialPageScaffold(
-      appBar: AppBar(title: const Text('登录设备与会话')),
+      appBar: AppBar(
+        title: const Text('登录设备与会话'),
+        actions: <Widget>[
+          IconButton(
+            tooltip: '刷新登录会话',
+            onPressed: _loading || _revokingSessionId != null ? null : _load,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
+      ),
       body: snapshot == null
           ? _error == null
                 ? const Center(child: CircularProgressIndicator())
@@ -528,10 +549,12 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
               children: <Widget>[
+                if (_error != null)
+                  AccountComplianceError(message: _error!, onRetry: _load),
                 AccountStatusHero(
                   icon: Icons.devices_other_rounded,
                   title: '${snapshot.sessions.length} 个登录会话',
-                  description: '仅保留你认识的设备；移除后该设备需要重新验证身份。',
+                  description: '仅展示有效登录。移除后该次登录立即失效，需要重新验证身份。',
                   tone: const Color(0xFF5D84E8),
                   badge: '会话安全',
                 ),
@@ -567,14 +590,23 @@ class _DeviceSessionsPageState extends State<DeviceSessionsPage> {
                               : const Color(0xFF5D84E8),
                           trailing: snapshot.sessions[index].isCurrent
                               ? const AccountStatusPill(
-                                  label: '当前设备',
+                                  label: '当前登录',
                                   color: AppColors.success,
                                 )
                               : TextButton(
-                                  onPressed: snapshot.sessions[index].canRevoke
+                                  onPressed:
+                                      snapshot.sessions[index].canRevoke &&
+                                          _revokingSessionId == null &&
+                                          !_loading &&
+                                          _error == null
                                       ? () => _revoke(snapshot.sessions[index])
                                       : null,
-                                  child: const Text('移除'),
+                                  child: Text(
+                                    _revokingSessionId ==
+                                            snapshot.sessions[index].id
+                                        ? '移除中…'
+                                        : '移除',
+                                  ),
                                 ),
                           showDivider: index != snapshot.sessions.length - 1,
                         ),

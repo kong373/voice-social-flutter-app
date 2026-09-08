@@ -378,6 +378,7 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
                       const SizedBox(height: 10),
                       TextField(
                         controller: _contentController,
+                        onChanged: (_) => setState(() {}),
                         minLines: 5,
                         maxLines: 8,
                         maxLength: 200,
@@ -388,7 +389,9 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
                 ),
                 const SizedBox(height: 16),
                 FilledButton(
-                  onPressed: _busy ? null : _submit,
+                  onPressed: _busy || _contentController.text.trim().isEmpty
+                      ? null
+                      : _submit,
                   child: Text(_busy ? '提交中…' : '提交反馈'),
                 ),
               ],

@@ -193,8 +193,15 @@ void main() {
     (tester) async {
       final repo = _Repository();
       await mount(tester, repo);
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, '提交反馈'))
+            .onPressed,
+        isNull,
+      );
       await tester.enterText(find.widgetWithText(TextField, '问题主题'), '新的反馈');
       await tester.enterText(find.widgetWithText(TextField, '问题描述'), '请检查这个问题');
+      await tester.pump();
       tester.testTextInput.hide();
       await tester.ensureVisible(find.text('提交反馈'));
       await tester.tap(find.text('提交反馈'));
@@ -203,6 +210,12 @@ void main() {
       expect(find.byType(SupportTicketPage), findsOneWidget);
       await tester.pageBack();
       await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, '提交反馈'))
+            .onPressed,
+        isNull,
+      );
       expect(
         tester
             .widget<TextField>(find.widgetWithText(TextField, '问题主题'))

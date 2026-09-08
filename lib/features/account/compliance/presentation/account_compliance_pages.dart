@@ -137,7 +137,7 @@ class _AccountComplianceHubPageState extends State<AccountComplianceHubPage> {
                         _Entry(
                           icon: Icons.devices_other_rounded,
                           title: '登录设备与会话',
-                          subtitle: '${snapshot.sessions.length} 个已知会话',
+                          subtitle: '${snapshot.sessions.length} 个有效登录',
                           tone: const Color(0xFF5D84E8),
                           onTap: () => _open(
                             DeviceSessionsPage(
