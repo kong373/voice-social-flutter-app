@@ -146,7 +146,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
         'lib/features/account/compliance/presentation/system_permission_pages.dart',
     userEntry: '我的 → 账号与安全 → 登录设备与会话',
     requiredStates: _repositoryStates,
-    vendorBoundary: '原生设备会话驱动未接入',
+    vendorBoundary: '第一方有效登录列表与会话整组撤销；不依赖厂商 SDK',
     builder: (_, __) => const DeviceSessionsPage(
       account: '13800138000',
       currentVersion: 5,
