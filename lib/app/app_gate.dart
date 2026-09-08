@@ -50,7 +50,14 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
       environment: widget.dependencies.environment,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _controller.initialize();
+      if (!mounted) return;
+      if (_controller.stage == AuthFlowStage.initializing) {
+        _controller.initialize();
+      } else {
+        // A replaced Navigator must consume the current auth result, never
+        // restore credentials again or erase the session-expiry explanation.
+        _handleAuthChanged();
+      }
     });
   }
 

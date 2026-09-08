@@ -140,9 +140,9 @@ class AuthController extends ChangeNotifier {
     _sendingCode = true;
     _errorMessage = null;
     _lastSmsChallenge = null;
+    final int operationGeneration = _sessionGeneration;
     notifyListeners();
     try {
-      final int operationGeneration = _sessionGeneration;
       final ClientDevice device = await _deviceIdentityProvider.load();
       final SmsChallenge challenge = await _repository.sendSmsCode(
         phone: phone.trim(),
@@ -161,7 +161,7 @@ class AuthController extends ChangeNotifier {
       );
       return true;
     } catch (error) {
-      _setError(error);
+      if (operationGeneration == _sessionGeneration) _setError(error);
       return false;
     } finally {
       _sendingCode = false;
@@ -217,7 +217,7 @@ class AuthController extends ChangeNotifier {
       _stage = AuthFlowStage.signedIn;
       return true;
     } catch (error) {
-      _setError(error);
+      if (operationGeneration == _sessionGeneration) _setError(error);
       return false;
     } finally {
       _busy = false;
@@ -260,7 +260,7 @@ class AuthController extends ChangeNotifier {
       _stage = AuthFlowStage.signedIn;
       return true;
     } catch (error) {
-      _setError(error);
+      if (operationGeneration == _sessionGeneration) _setError(error);
       return false;
     } finally {
       _busy = false;
@@ -311,7 +311,7 @@ class AuthController extends ChangeNotifier {
       try {
         await _sessionManager.clear();
         _stage = AuthFlowStage.signedOut;
-        _errorMessage = '刷新会话已失效，请重新登录';
+        _errorMessage = '登录已失效，请重新登录';
         _signOutRecovery = false;
       } catch (clearError) {
         _stage = AuthFlowStage.recoveryRequired;
@@ -388,6 +388,8 @@ class AuthController extends ChangeNotifier {
       }
       _errorMessage = refreshOutcomeAmbiguous
           ? '刷新结果无法确认，为保护账号已清除本地会话，请重新登录'
+          : _isCredentialFailure(error)
+          ? '登录已失效，请重新登录'
           : _messageFor(error, fallback: '操作失败，请稍后重试');
       return false;
     } finally {

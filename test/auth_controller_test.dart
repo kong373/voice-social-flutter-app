@@ -11,6 +11,34 @@ import 'package:voice_social_app/features/account/data/mock_auth_repository.dart
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 
 void main() {
+  test('late login rejection cannot overwrite logout state', () async {
+    final manager = AuthSessionManager(MemoryKeyValueStore());
+    final repository = _DelayedLoginRepository();
+    final controller = AuthController(
+      repository: repository,
+      sessionManager: manager,
+      deviceIdentityProvider: DeviceIdentityProvider(
+        environment: AppEnvironment.mock(),
+        sessionManager: manager,
+      ),
+    );
+    addTearDown(controller.dispose);
+    final login = controller.signInWithSms(
+      phone: '13800138000',
+      smsCode: '123456',
+    );
+    await repository.started.future;
+    await controller.signOut();
+    repository.result.completeError(
+      const ApiException(
+        kind: ApiFailureKind.unauthorized,
+        message: 'REFRESH_TOKEN_REPLAYED',
+      ),
+    );
+    expect(await login, isFalse);
+    expect(controller.stage, AuthFlowStage.signedOut);
+    expect(controller.errorMessage, isNull);
+  });
   test('auth controller persists an authenticated SMS session', () async {
     final MemoryKeyValueStore store = MemoryKeyValueStore();
     final AuthSessionManager sessionManager = AuthSessionManager(store);
@@ -446,6 +474,21 @@ class _LogoutFailureAuthRepository extends MockAuthRepository {
       message: 'logout network unavailable',
     ),
   );
+}
+
+class _DelayedLoginRepository extends MockAuthRepository {
+  final started = Completer<void>();
+  final result = Completer<AuthOutcome>();
+
+  @override
+  Future<AuthOutcome> signInWithSms({
+    required String phone,
+    required String smsCode,
+    required ClientDevice device,
+  }) {
+    started.complete();
+    return result.future;
+  }
 }
 
 class _FlakyEraseStore implements KeyValueStore {

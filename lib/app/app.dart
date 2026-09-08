@@ -7,6 +7,7 @@ import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/debug/qa_console/qa_console_host.dart';
 import 'package:voice_social_app/debug/qa_console/qa_gate.dart';
 import 'package:voice_social_app/features/shell/main_shell.dart';
+import 'package:voice_social_app/features/account/application/auth_controller.dart';
 
 const bool _videoRuntimeDemoRequested = bool.fromEnvironment(
   'ENABLE_VIDEO_RUNTIME_DEMO',
@@ -30,25 +31,94 @@ class VoiceSocialApp extends StatefulWidget {
   State<VoiceSocialApp> createState() => _VoiceSocialAppState();
 }
 
+/// Owns the Navigator lifetime separately from token lifetime.
+class AuthNavigationBoundary extends StatefulWidget {
+  const AuthNavigationBoundary({
+    required this.controller,
+    required this.builder,
+    super.key,
+  });
+
+  final AuthController controller;
+  final Widget Function(GlobalKey<NavigatorState>) builder;
+
+  @override
+  State<AuthNavigationBoundary> createState() => _AuthNavigationBoundaryState();
+}
+
+class _AuthNavigationBoundaryState extends State<AuthNavigationBoundary> {
+  GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  int? _signedInUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    final controller = widget.controller;
+    _signedInUserId = controller.stage == AuthFlowStage.signedIn
+        ? controller.session?.userId
+        : null;
+    controller.addListener(_handleAuthChanged);
+  }
+
+  void _handleAuthChanged() {
+    final controller = widget.controller;
+    final int? userId = controller.stage == AuthFlowStage.signedIn
+        ? controller.session?.userId
+        : null;
+    if (_signedInUserId != null && userId != _signedInUserId) {
+      // Replace the whole route owner at the next build, including root
+      // dialogs. Do not pop during notifications or a Navigator transition.
+      // Old mounted checks then fence async route continuations, while token
+      // rotation for the same principal preserves the current route tree.
+      setState(() => _navigatorKey = GlobalKey<NavigatorState>());
+    }
+    _signedInUserId = userId;
+  }
+
+  @override
+  void didUpdateWidget(AuthNavigationBoundary oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_handleAuthChanged);
+      widget.controller.addListener(_handleAuthChanged);
+      _handleAuthChanged();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(_navigatorKey);
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleAuthChanged);
+    super.dispose();
+  }
+}
+
 class _VoiceSocialAppState extends State<VoiceSocialApp> {
   @override
   Widget build(BuildContext context) {
     return AppDependencyScope(
       dependencies: widget.dependencies,
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        title: 'Voice Social App',
-        theme: AppTheme.dark(),
-        home: shouldUseQaConsole(isLive: widget.dependencies.environment.isLive)
-            ? const QaConsoleHost()
-            : shouldUseVideoRuntimeDemo(
-                isLive: widget.dependencies.environment.isLive,
-              )
-            ? MainShell(
-                dependencies: widget.dependencies,
-                onSignOut: () async {},
-              )
-            : AppGate(dependencies: widget.dependencies),
+      child: AuthNavigationBoundary(
+        controller: widget.dependencies.authController,
+        builder: (navigatorKey) => MaterialApp(
+          navigatorKey: navigatorKey,
+          debugShowCheckedModeBanner: false,
+          title: 'Voice Social App',
+          theme: AppTheme.dark(),
+          home:
+              shouldUseQaConsole(isLive: widget.dependencies.environment.isLive)
+              ? const QaConsoleHost()
+              : shouldUseVideoRuntimeDemo(
+                  isLive: widget.dependencies.environment.isLive,
+                )
+              ? MainShell(
+                  dependencies: widget.dependencies,
+                  onSignOut: () async {},
+                )
+              : AppGate(dependencies: widget.dependencies),
+        ),
       ),
     );
   }
