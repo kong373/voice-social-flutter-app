@@ -1242,19 +1242,35 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Future<void> _showGiftSheet() async {
-    final List<GiftTarget> targets = _controller.seats
-        .where(
-          (MicSeat seat) =>
-              seat.isOccupied &&
-              seat.userId != null &&
-              seat.userName != null &&
-              seat.userId != _controller.currentUserId,
-        )
-        .map(
-          (MicSeat seat) =>
-              GiftTarget(userId: seat.userId!, name: seat.userName!),
-        )
-        .toList(growable: false);
+    final controller = _controller;
+    final sessionId = controller.snapshot?.sessionId;
+    bool sameSession() =>
+        mounted &&
+        identical(controller, _controller) &&
+        controller.snapshot != null &&
+        controller.snapshot?.sessionId == sessionId &&
+        (controller.status == RoomSessionStatus.joined ||
+            controller.status == RoomSessionStatus.reconnecting);
+    bool hasAuthority() =>
+        sameSession() &&
+        controller.status == RoomSessionStatus.joined &&
+        controller.allows(RoomCapability.sendGift);
+
+    List<GiftTarget> currentTargets() => !sameSession()
+        ? const <GiftTarget>[]
+        : controller.seats
+              .where(
+                (seat) =>
+                    seat.isOccupied &&
+                    seat.userId != null &&
+                    seat.userName != null &&
+                    seat.userId != controller.currentUserId,
+              )
+              .map(
+                (seat) =>
+                    GiftTarget(userId: seat.userId!, name: seat.userName!),
+              )
+              .toList(growable: false);
     final String account =
         AppDependencyScope.of(context).sessionManager.session?.mobile ?? '';
     GiftSendRequest? sentRequest;
@@ -1264,33 +1280,44 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
       isScrollControlled: true,
       backgroundColor: const Color(0xFF13142C),
       barrierColor: Colors.black.withValues(alpha: 0.4),
-      builder: (BuildContext context) => FractionallySizedBox(
-        heightFactor: 0.58,
-        child: GiftSheet(
-          account: account,
-          targets: targets,
-          balance: _controller.giftBalance,
-          onSend: (GiftSendRequest request) async {
-            final bool sent = await _controller.sendGift(
-              giftId: request.gift.id.toString(),
-              giftName: request.gift.name,
-              receiverUserId: request.target.userId,
-              targetName: request.target.name,
-              quantity: request.quantity,
-            );
-            if (sent) {
-              sentRequest = request;
-            }
-            return sent;
-          },
-          onRechargeReturn: () async {
-            await _controller.reconnect();
-            return _controller.giftBalance;
-          },
+      builder: (BuildContext context) => AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) => FractionallySizedBox(
+          heightFactor: 0.58,
+          child: GiftSheet(
+            account: account,
+            targets: currentTargets(),
+            balance: controller.giftBalance,
+            sendingAllowed: hasAuthority(),
+            onSend: (GiftSendRequest request) async {
+              if (!hasAuthority() ||
+                  !currentTargets().any(
+                    (target) => target.userId == request.target.userId,
+                  )) {
+                return false;
+              }
+              final bool sent = await controller.sendGift(
+                giftId: request.gift.id.toString(),
+                giftName: request.gift.name,
+                receiverUserId: request.target.userId,
+                targetName: request.target.name,
+                quantity: request.quantity,
+              );
+              if (sent) {
+                sentRequest = request;
+              }
+              return sent;
+            },
+            onRechargeReturn: () async {
+              if (!hasAuthority()) return null;
+              await controller.reconnect();
+              return hasAuthority() ? controller.giftBalance : null;
+            },
+          ),
         ),
       ),
     );
-    if (sent == true && mounted) {
+    if (sent == true && hasAuthority()) {
       _giftTimer?.cancel();
       setState(() {
         _giftCelebrationGiftName = sentRequest?.gift.name;

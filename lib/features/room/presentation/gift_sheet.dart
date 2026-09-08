@@ -33,6 +33,7 @@ class GiftSheet extends StatefulWidget {
     required this.targets,
     required this.onSend,
     required this.onRechargeReturn,
+    this.sendingAllowed = true,
     super.key,
   });
 
@@ -41,6 +42,7 @@ class GiftSheet extends StatefulWidget {
   final List<GiftTarget> targets;
   final Future<bool> Function(GiftSendRequest request) onSend;
   final Future<int?> Function() onRechargeReturn;
+  final bool sendingAllowed;
 
   @override
   State<GiftSheet> createState() => _GiftSheetState();
@@ -63,6 +65,20 @@ class _GiftSheetState extends State<GiftSheet> {
     super.initState();
     _selectedTarget = widget.targets.firstOrNull;
     _balance = widget.balance;
+  }
+
+  @override
+  void didUpdateWidget(covariant GiftSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final int? selectedId = oldWidget.account == widget.account
+        ? _selectedTarget?.userId
+        : null;
+    // Keep the user's choice by identity, never by seat/list position. A new
+    // arrival must not silently replace someone who left while this is open.
+    _selectedTarget = widget.targets
+        .where((target) => target.userId == selectedId)
+        .firstOrNull;
+    if (oldWidget.balance != widget.balance) _balance = widget.balance;
   }
 
   @override
@@ -443,6 +459,7 @@ class _GiftSheetState extends State<GiftSheet> {
             Semantics(
               button: true,
               enabled:
+                  widget.sendingAllowed &&
                   !_submitting &&
                   _balanceMessage == null &&
                   _selectedTarget != null &&
@@ -450,7 +467,8 @@ class _GiftSheetState extends State<GiftSheet> {
               label: '赠送礼物',
               child: Material(
                 color:
-                    _submitting ||
+                    !widget.sendingAllowed ||
+                        _submitting ||
                         _balanceMessage != null ||
                         _selectedTarget == null ||
                         _selectedGift == null
@@ -459,7 +477,8 @@ class _GiftSheetState extends State<GiftSheet> {
                 borderRadius: BorderRadius.circular(999),
                 child: InkWell(
                   onTap:
-                      _submitting ||
+                      !widget.sendingAllowed ||
+                          _submitting ||
                           _balanceMessage != null ||
                           _selectedTarget == null ||
                           _selectedGift == null
@@ -501,7 +520,21 @@ class _GiftSheetState extends State<GiftSheet> {
   );
 
   Future<void> _submit(int total) async {
-    if (_balanceMessage != null) return;
+    final GiftCatalogItem? gift = _selectedGift;
+    final GiftTarget? target = _selectedTarget;
+    if (!widget.sendingAllowed ||
+        _submitting ||
+        _balanceMessage != null ||
+        gift == null ||
+        target == null ||
+        !widget.targets.any((value) => value.userId == target.userId)) {
+      return;
+    }
+    final request = GiftSendRequest(
+      gift: gift,
+      target: target,
+      quantity: _quantity,
+    );
     final int? balance = _balance;
     if (balance != null && total > balance) {
       final bool? recharge = await showDialog<bool>(
@@ -535,13 +568,7 @@ class _GiftSheetState extends State<GiftSheet> {
     }
     setState(() => _submitting = true);
     try {
-      final bool sent = await widget.onSend(
-        GiftSendRequest(
-          gift: _selectedGift!,
-          target: _selectedTarget!,
-          quantity: _quantity,
-        ),
-      );
+      final bool sent = await widget.onSend(request);
       if (!mounted) return;
       if (sent) {
         // A successful transfer does not authorize the client to derive a new
