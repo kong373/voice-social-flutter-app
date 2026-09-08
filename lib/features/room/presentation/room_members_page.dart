@@ -12,6 +12,7 @@ import 'package:voice_social_app/features/room/application/room_controller.dart'
 import 'package:voice_social_app/features/room/data/backend_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
+import 'package:voice_social_app/features/room/domain/room_permission_policy.dart';
 import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_authority_display.dart';
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
@@ -106,7 +107,12 @@ class _RoomMembersPageState extends State<RoomMembersPage>
   bool _hasMore = false;
 
   bool get _canManage {
-    final role = widget.controller?.role ?? widget.currentRole;
+    final controller = widget.controller;
+    if (controller != null) {
+      return !_invalidIdentity &&
+          controller.allows(RoomCapability.manageMembers);
+    }
+    final role = widget.currentRole;
     return !_invalidIdentity &&
         (role == RoomRole.owner ||
             role == RoomRole.moderator ||
@@ -328,6 +334,9 @@ class _RoomMembersPageState extends State<RoomMembersPage>
 
   @override
   Widget build(BuildContext context) {
+    final roomCode = widget.roomCode?.trim().isNotEmpty == true
+        ? widget.roomCode
+        : (_dependencies!.environment.isLive ? null : widget.roomId);
     return RoomPageScaffold(
       appBar: roomOxygenAppBar(
         title: '在线成员与听众席',
@@ -347,7 +356,7 @@ class _RoomMembersPageState extends State<RoomMembersPage>
             child: RoomOxygenContextBar(
               title: roomAuthorityTitle(widget.roomTitle),
               subtitle:
-                  '${widget.roomCode?.trim().isNotEmpty == true ? '房间号 ${widget.roomCode}' : '房间号不可用'} · ${_invalidIdentity ? '请重新进入成员页' : '${_members.length} 人在线'}',
+                  '${roomCode != null ? '房间号 $roomCode' : '房间号不可用'} · ${_invalidIdentity ? '请重新进入成员页' : '${_members.length} 人在线'}',
               seed: widget.roomId,
               status: _invalidIdentity ? '已失效' : (_canManage ? '可管理' : '在线'),
               statusColor: _invalidIdentity

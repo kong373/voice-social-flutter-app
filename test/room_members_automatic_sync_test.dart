@@ -15,12 +15,26 @@ import 'package:voice_social_app/features/room/presentation/room_members_page.da
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
+import 'package:voice_social_app/features/room/domain/room_permission_policy.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 import 'room_lease_controller_test.dart' as lease_fixture;
 
 class _AuthorityRepository extends lease_fixture.Repo
     implements RoomAuthorityRepository {
+  RoomRole role = RoomRole.listener;
+  @override
+  Future<RoomSnapshot> enterRoom({
+    required String roomId,
+    required String? password,
+    required RoomEntrySource source,
+    required int currentUserId,
+  }) async => (await super.enterRoom(
+    roomId: roomId,
+    password: password,
+    source: source,
+    currentUserId: currentUserId,
+  )).copyWith(role: role);
   bool memberActive = true;
   int version = 0;
   @override
@@ -42,19 +56,23 @@ class _AuthorityRepository extends lease_fixture.Repo
 }
 
 class _Dependencies extends Fake implements AppDependencies {
+  _Dependencies({this.live = true});
+  final bool live;
   final backing = AppDependencies.mock();
   @override
   final _Repository roomOperationsRepository = _Repository();
   @override
-  AppEnvironment get environment => const AppEnvironment(
-    backendMode: BackendMode.live,
-    apiBaseUrl: 'http://localhost/',
-    clientType: 'test',
-    clientInnerVersion: '1',
-    oauthClientId: '',
-    realtimeEndpoint: '',
-    allowInsecureHttp: true,
-  );
+  AppEnvironment get environment => !live
+      ? AppEnvironment.mock()
+      : const AppEnvironment(
+          backendMode: BackendMode.live,
+          apiBaseUrl: 'http://localhost/',
+          clientType: 'test',
+          clientInnerVersion: '1',
+          oauthClientId: '',
+          realtimeEndpoint: '',
+          allowInsecureHttp: true,
+        );
   @override
   AuthSessionManager get sessionManager => backing.sessionManager;
 }
@@ -152,6 +170,86 @@ Future<void> _open(WidgetTester tester, _Dependencies deps) async {
 }
 
 void main() {
+  for (final live in [false, true]) {
+    testWidgets('missing room code fallback live=$live', (tester) async {
+      final deps = _Dependencies(live: live);
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: deps,
+          child: const MaterialApp(
+            home: RoomMembersPage(
+              roomId: '9527',
+              currentUserId: 1,
+              currentRole: RoomRole.owner,
+              seats: [],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final bar = tester.widget<RoomOxygenContextBar>(
+        find.byType(RoomOxygenContextBar),
+      );
+      expect(bar.subtitle, startsWith(live ? '房间号不可用' : '房间号 9527'));
+      if (!live) expect(bar.status, '可管理');
+      await tester.pumpWidget(const SizedBox());
+      deps.backing.dispose();
+    });
+  }
+  testWidgets('reconnecting owner follows controller manageMembers authority', (
+    tester,
+  ) async {
+    final deps = _Dependencies();
+    final repo = _AuthorityRepository()..role = RoomRole.owner;
+    final controller = RoomController(
+      roomId: 'room',
+      title: '',
+      currentUserId: 1,
+      accessToken: '',
+      repository: repo,
+      rtcAdapter: MockRtcAdapter(),
+      realtimeGateway: SnapshotOnlyRoomRealtimeGateway(),
+    );
+    await controller.join();
+    expect(controller.allows(RoomCapability.manageMembers), isTrue);
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: deps,
+        child: MaterialApp(
+          home: RoomMembersPage(
+            roomId: 'room',
+            currentUserId: 1,
+            currentRole: RoomRole.owner,
+            seats: const [],
+            controller: controller,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.tune_rounded), findsOneWidget);
+    final pending = Completer<RoomSnapshot>();
+    repo.pendingReconnect = pending;
+    final reconnecting = controller.reconnect();
+    await tester.pump();
+    expect(controller.role, RoomRole.owner);
+    expect(controller.status, RoomSessionStatus.reconnecting);
+    expect(controller.allows(RoomCapability.manageMembers), isFalse);
+    expect(find.byIcon(Icons.tune_rounded), findsNothing);
+    expect(find.text('可管理'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    pending.complete(
+      await repo.enterRoom(
+        roomId: 'room',
+        password: null,
+        source: RoomEntrySource.home,
+        currentUserId: 1,
+      ),
+    );
+    await reconnecting;
+    deps.backing.dispose();
+  });
   for (final ending in ['projection', 'resumeExpiry', 'backgroundDeadline']) {
     testWidgets(
       'actual controller authority ends with unchanged binding ending=$ending',
