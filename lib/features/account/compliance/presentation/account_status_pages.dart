@@ -152,11 +152,13 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
   AppealCase? _appeal;
   String? _error;
   bool _busy = false;
+  bool _querying = false;
+  int _queryGeneration = 0;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_appeal == null) {
+    if (_appeal == null && !_querying) {
       _query();
     }
   }
@@ -168,31 +170,41 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
   }
 
   Future<void> _query() async {
+    final int generation = ++_queryGeneration;
+    final String reasonType = _reasonType;
     if (mounted) {
       setState(() {
-        _appeal = null;
+        _querying = true;
         _error = null;
       });
     }
     try {
       final AppealCase value = await AppDependencyScope.of(context)
           .accountComplianceRepository
-          .queryAppeal(account: widget.account, reasonType: _reasonType);
-      if (mounted) {
+          .queryAppeal(account: widget.account, reasonType: reasonType);
+      if (mounted && generation == _queryGeneration) {
         setState(() {
           _appeal = value;
           _error = null;
         });
       }
     } catch (error) {
-      if (mounted) {
-        setState(() => _error = _messageFor(error));
+      if (mounted && generation == _queryGeneration) {
+        setState(() {
+          _appeal = null;
+          _error = _messageFor(error);
+        });
+      }
+    } finally {
+      if (mounted && generation == _queryGeneration) {
+        setState(() => _querying = false);
       }
     }
   }
 
   Future<void> _submit() async {
-    if (_busy || _explanationController.text.trim().length < 10) {
+    if (_busy || _querying || _appeal?.canSubmit != true) return;
+    if (_explanationController.text.trim().length < 10) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('申诉说明至少填写 10 个字')));
@@ -242,16 +254,25 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
               children: <Widget>[
                 AccountStatusHero(
                   icon: Icons.fact_check_outlined,
-                  title: _appealStateLabel(appeal.state),
+                  title: appeal.canSubmit
+                      ? '可提交申诉'
+                      : appeal.hasRecord
+                      ? _appealStateLabel(appeal.state)
+                      : '无可申诉处罚',
                   description: appeal.processText,
                   tone: appeal.state == AppealState.approved
                       ? AppColors.success
                       : appeal.state == AppealState.rejected
                       ? AppColors.error
                       : AccountOxygenColors.violet,
-                  badge: appeal.state == AppealState.none ? '可提交' : '平台进度',
+                  badge: appeal.canSubmit
+                      ? '可提交'
+                      : appeal.hasRecord
+                      ? '平台进度'
+                      : '暂无处罚',
                 ),
                 const SizedBox(height: 18),
+                if (_querying) const LinearProgressIndicator(),
                 const AccountSectionLabel(text: '申诉类型与说明'),
                 AccountSheet(
                   padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
@@ -272,21 +293,25 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
                             ),
                           ],
                           selected: <String>{_reasonType},
-                          onSelectionChanged: (Set<String> value) {
-                            setState(() => _reasonType = value.first);
-                            _query();
-                          },
+                          onSelectionChanged: _busy
+                              ? null
+                              : (Set<String> value) {
+                                  setState(() => _reasonType = value.first);
+                                  _query();
+                                },
                         ),
                       ),
                       const SizedBox(height: 14),
-                      Text(
-                        '处罚原因：${appeal.reason.isEmpty ? '待平台返回' : appeal.reason}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      if (appeal.state == AppealState.none) ...<Widget>[
+                      if (appeal.reason.isNotEmpty)
+                        Text(
+                          '处罚原因：${appeal.reason}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      if (appeal.canSubmit) ...<Widget>[
                         const SizedBox(height: 14),
                         TextField(
                           controller: _explanationController,
+                          onChanged: (_) => setState(() {}),
                           minLines: 5,
                           maxLines: 8,
                           maxLength: 500,
@@ -298,7 +323,11 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
                         AccountPrimaryAction(
                           label: '提交申诉',
                           busy: _busy,
-                          onPressed: _submit,
+                          onPressed:
+                              _querying ||
+                                  _explanationController.text.trim().length < 10
+                              ? null
+                              : _submit,
                         ),
                       ],
                     ],
@@ -309,6 +338,17 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
                   AccountNoticeStrip(
                     icon: Icons.schedule_rounded,
                     text: appeal.resultText,
+                    tone: AccountOxygenColors.cyan,
+                  ),
+                ],
+                if (appeal.previousAppeal
+                    case final AppealCase previous) ...<Widget>[
+                  const SizedBox(height: 14),
+                  const AccountSectionLabel(text: '历史处罚申诉'),
+                  AccountNoticeStrip(
+                    icon: Icons.history,
+                    text:
+                        '${previous.processText}\n${previous.reason}\n${previous.resultText}',
                     tone: AccountOxygenColors.cyan,
                   ),
                 ],
@@ -1006,10 +1046,11 @@ class _YouthModePageState extends State<YouthModePage> {
 }
 
 String _appealStateLabel(AppealState state) => switch (state) {
-  AppealState.none => '可提交申诉',
+  AppealState.none => '暂无申诉记录',
   AppealState.pending => '申诉审核中',
   AppealState.approved => '申诉已通过',
   AppealState.rejected => '申诉未通过',
+  AppealState.cancelled => '申诉已取消',
 };
 
 String _messageFor(Object error) =>

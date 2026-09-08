@@ -569,13 +569,20 @@ class BackendAccountComplianceRepository
   }) async {
     final Map<String, Object?> current = await _appealInfo();
     final Map<String, Object?> penalty = _asMap(current['penalty']);
+    final String penaltyId = _eligiblePenaltyId(penalty);
+    if (penaltyId.isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '无可申诉处罚',
+      );
+    }
     final ApiResponse response = await _apiClient.post(
       _routes.submitAppeal,
       headers: <String, String>{
         'X-Request-Id': normalizeAccountComplianceRequestId(requestId),
       },
       body: <String, Object?>{
-        'penaltyId': _string(penalty['penaltyId']),
+        'penaltyId': penaltyId,
         'reason': reason.isEmpty ? explanation : reason,
         'evidence': <String, Object?>{
           'explanation': explanation,
@@ -922,14 +929,25 @@ class BackendAccountComplianceRepository
       '申诉信息 penalty',
       allowEmpty: true,
     );
-    if (appeal.isEmpty) {
+    final String penaltyId = _eligiblePenaltyId(penalty);
+    final Object? appealPenaltyId = appeal['penaltyId'];
+    final bool previousPenalty =
+        penaltyId.isNotEmpty &&
+        appealPenaltyId is String &&
+        appealPenaltyId.trim().isNotEmpty &&
+        appealPenaltyId.trim() != penaltyId;
+    if (appeal.isEmpty || previousPenalty) {
       return AppealCase(
         account: account,
         nickname: '当前用户',
         reason: _string(penalty['reason']),
         reasonType: _string(penalty['type'], fallback: reasonType),
         state: AppealState.none,
-        processText: '尚未提交申诉',
+        eligiblePenaltyId: penaltyId,
+        previousAppeal: previousPenalty
+            ? _parseAppeal(appeal, account: account, reasonType: reasonType)
+            : null,
+        processText: penaltyId.isEmpty ? '当前没有可申诉的有效处罚' : '尚未提交申诉',
         resultText: '',
       );
     }
@@ -941,19 +959,24 @@ class BackendAccountComplianceRepository
     );
   }
 
+  static String _eligiblePenaltyId(Map<String, Object?> penalty) {
+    final Object? id = penalty['penaltyId'];
+    return id is String ? id.trim() : '';
+  }
+
   static AppealCase _parseAppeal(
     Map<String, Object?> data, {
     required String account,
     required String reasonType,
     Map<String, Object?>? penalty,
   }) {
-    _requiredString(data, 'appealId', '申诉记录');
+    final String appealId = _requiredString(data, 'appealId', '申诉记录');
     final String status = _requiredString(data, 'status', '申诉记录').toUpperCase();
     final AppealState state = switch (status) {
       'APPROVED' => AppealState.approved,
       'REJECTED' => AppealState.rejected,
       'SUBMITTED' || 'REVIEWING' || 'PENDING' => AppealState.pending,
-      'CANCELLED' => AppealState.none,
+      'CANCELLED' => AppealState.cancelled,
       _ => throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '申诉记录包含未知状态',
@@ -964,6 +987,7 @@ class BackendAccountComplianceRepository
     return AppealCase(
       account: account,
       nickname: '当前用户',
+      appealId: appealId,
       reason: _string(data['reason'] ?? penalty?['reason'] ?? data['punish']),
       reasonType: _string(
         data['reasonType'] ?? penalty?['type'],
@@ -1184,6 +1208,7 @@ class BackendAccountComplianceRepository
     AppealState.pending => '平台审核中',
     AppealState.approved => '申诉已通过',
     AppealState.rejected => '申诉未通过',
+    AppealState.cancelled => '申诉已取消',
     AppealState.none => '暂无申诉记录',
   };
 

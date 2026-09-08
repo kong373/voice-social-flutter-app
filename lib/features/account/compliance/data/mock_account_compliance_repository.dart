@@ -161,6 +161,7 @@ class MockAccountComplianceRepository implements AccountComplianceRepository {
           account: account,
           nickname: '晚星',
           reason: reasonType == '3' ? '公屏违规内容' : '账号安全策略命中',
+          eligiblePenaltyId: 'mock-penalty-$reasonType',
           reasonType: reasonType,
           state: AppealState.none,
           processText: '尚未提交申诉',

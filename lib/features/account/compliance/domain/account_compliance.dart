@@ -2,7 +2,7 @@ enum VerificationState { unverified, pending, verified, rejected, unavailable }
 
 enum RestrictionKind { none, account, device, chat }
 
-enum AppealState { none, pending, approved, rejected }
+enum AppealState { none, pending, approved, rejected, cancelled }
 
 enum PermissionKind { microphone, camera, notifications, photos }
 
@@ -102,6 +102,9 @@ class AppealCase {
     required this.state,
     required this.processText,
     required this.resultText,
+    this.eligiblePenaltyId = '',
+    this.appealId = '',
+    this.previousAppeal,
   });
 
   final String account;
@@ -111,6 +114,14 @@ class AppealCase {
   final AppealState state;
   final String processText;
   final String resultText;
+
+  /// Only the current penalty returned by the backend grants eligibility.
+  final String eligiblePenaltyId;
+  final String appealId;
+  final AppealCase? previousAppeal;
+
+  bool get hasRecord => appealId.isNotEmpty || state != AppealState.none;
+  bool get canSubmit => eligiblePenaltyId.trim().isNotEmpty && !hasRecord;
 }
 
 class CancellationEligibility {
