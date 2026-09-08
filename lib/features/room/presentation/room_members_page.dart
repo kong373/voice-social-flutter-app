@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
+import 'package:voice_social_app/features/room/data/backend_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
@@ -22,6 +26,7 @@ class RoomMembersPage extends StatefulWidget {
     required this.currentRole,
     required this.seats,
     this.roomTitle,
+    this.roomCode,
     super.key,
   });
 
@@ -30,12 +35,41 @@ class RoomMembersPage extends StatefulWidget {
   final RoomRole currentRole;
   final List<MicSeat> seats;
   final String? roomTitle;
+  final String? roomCode;
 
   @override
   State<RoomMembersPage> createState() => _RoomMembersPageState();
 }
 
-class _RoomMembersPageState extends State<RoomMembersPage> {
+class _RoomMembersPageState extends State<RoomMembersPage>
+    with WidgetsBindingObserver {
+  AppDependencies? _dependencies;
+  Timer? _timer;
+  bool _foreground = true;
+  bool _visible = true;
+  bool _invalidIdentity = false;
+  bool _reading = false;
+  bool _pending = false;
+  int _generation = 0;
+  int? _identityGeneration;
+  int? _leaseGeneration;
+  bool _checkLease() {
+    final repository = _repositoryInstance;
+    if (repository is BackendRoomOperationsRepository &&
+        repository.leaseBinding.generation != _leaseGeneration) {
+      _invalidate();
+      return false;
+    }
+    return true;
+  }
+
+  ModalRoute<dynamic>? _route;
+  bool get _active =>
+      mounted &&
+      _foreground &&
+      _visible &&
+      (_route?.isCurrent ?? true) &&
+      !_invalidIdentity;
   RoomOperationsRepository? _repositoryInstance;
   RoomOperationsRepository get _repository => _repositoryInstance!;
   final List<RoomMember> _members = <RoomMember>[];
@@ -52,67 +86,159 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
       widget.currentRole == RoomRole.platformModerator;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final state = WidgetsBinding.instance.lifecycleState;
+    _foreground = state == null || state == AppLifecycleState.resumed;
+  }
+
+  void _pause() {
+    _timer?.cancel();
+    _generation++;
+    _pending = false;
+  }
+
+  void _identityChanged() {
+    if (_dependencies!.sessionManager.identityGeneration == _identityGeneration)
+      return;
+    _invalidate();
+  }
+
+  void _invalidate() {
+    _pause();
+    setState(() {
+      _invalidIdentity = true;
+      _members.clear();
+      _loading = false;
+      _loadingMore = false;
+      _hasMore = false;
+      _error = '登录或房间状态已改变，请重新进入成员页。';
+    });
+  }
+
+  @override
+  void didUpdateWidget(RoomMembersPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.roomId != widget.roomId ||
+        oldWidget.currentUserId != widget.currentUserId) {
+      _pause();
+      _members.clear();
+      _page = 1;
+      _hasMore = false;
+      _loading = true;
+      _load(reset: true);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    _pause();
+    if (_repositoryInstance != null) _load(reset: true);
+  }
+
+  @override
+  void dispose() {
+    _pause();
+    _dependencies?.sessionManager.removeListener(_identityChanged);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_repositoryInstance != null) {
-      return;
+    final dependencies = AppDependencyScope.of(context);
+    _route = ModalRoute.of(context);
+    final visible = ModalRoute.isCurrentOf(context) ?? true;
+    if (_dependencies == null) {
+      _dependencies = dependencies;
+      _repositoryInstance = dependencies.roomOperationsRepository;
+      final repository = _repositoryInstance;
+      if (repository is BackendRoomOperationsRepository) {
+        _leaseGeneration = repository.leaseBinding.generation;
+      }
+      _identityGeneration = dependencies.sessionManager.identityGeneration;
+      dependencies.sessionManager.addListener(_identityChanged);
+      _visible = visible;
+      _load(reset: true);
+    } else if (!identical(_dependencies, dependencies)) {
+      _invalidate();
+    } else if (_visible != visible) {
+      _visible = visible;
+      _pause();
+      _load(reset: true);
     }
-    _repositoryInstance = AppDependencyScope.of(
-      context,
-    ).roomOperationsRepository;
-    _load(reset: true);
   }
 
   Future<void> _load({required bool reset}) async {
-    if (reset) {
-      setState(() {
-        _loading = true;
-        _error = null;
-        _page = 1;
-      });
-    } else {
-      if (_loadingMore || !_hasMore) {
-        return;
-      }
-      setState(() => _loadingMore = true);
+    if (!_active || !_checkLease()) return;
+    if (_reading) {
+      if (reset) _pending = true;
+      return;
     }
-
+    if (!reset && (!_hasMore || _loading)) return;
+    _timer?.cancel();
+    _reading = true;
     try {
-      final int requestedPage = reset ? 1 : _page + 1;
-      final RoomMemberPage page = await _repository.fetchOnlineMembers(
-        roomId: widget.roomId,
-        page: requestedPage,
-      );
-      final List<RoomMember> enriched = _withSeatPresence(page.items);
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        if (reset) {
-          _members
-            ..clear()
-            ..addAll(enriched);
-        } else {
-          _appendUnique(enriched);
+      do {
+        _pending = false;
+        final generation = _generation;
+        final roomId = widget.roomId;
+        final targetPage = reset ? _page : _page + 1;
+        setState(() => _loadingMore = !reset);
+        try {
+          // Re-read the loaded prefix atomically so pagination never retains
+          // departed members or mixes an old tail with a new first page.
+          final refreshed = <RoomMember>[];
+          RoomMemberPage? last;
+          for (
+            var number = reset ? 1 : targetPage;
+            number <= targetPage;
+            number++
+          ) {
+            final page = await _repository.fetchOnlineMembers(
+              roomId: roomId,
+              page: number,
+            );
+            if (!_active || generation != _generation || !_checkLease()) break;
+            refreshed.addAll(_withSeatPresence(page.items));
+            last = page;
+            if (!page.hasMore) break;
+          }
+          if (_active && generation == _generation && last != null) {
+            setState(() {
+              if (reset) _members.clear();
+              _appendUnique(refreshed);
+              _page = last!.page;
+              _hasMore = last.hasMore;
+              _loading = false;
+              _loadingMore = false;
+              _error = null;
+            });
+          }
+        } catch (error) {
+          if (_active && generation == _generation && _checkLease()) {
+            setState(() {
+              _error = error.toString();
+              _loading = false;
+              _loadingMore = false;
+            });
+          }
         }
-        _page = page.page;
-        _hasMore = page.hasMore;
-        _loading = false;
-        _loadingMore = false;
-      });
-    } catch (error) {
-      if (!mounted) {
-        return;
+        reset = true;
+      } while (_pending && _active);
+    } finally {
+      _reading = false;
+      if (_active && _dependencies!.environment.isLive) {
+        _timer = Timer(const Duration(seconds: 2), () => _load(reset: true));
       }
-      setState(() {
-        _error = error.toString();
-        _loading = false;
-        _loadingMore = false;
-      });
     }
   }
 
   List<RoomMember> _withSeatPresence(List<RoomMember> members) {
+    if (_dependencies!.environment.isLive) return members;
     final Map<int, MicSeat> seatsByUser = <int, MicSeat>{
       for (final MicSeat seat in widget.seats)
         if (seat.userId != null) seat.userId!: seat,
@@ -175,13 +301,19 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: RoomOxygenContextBar(
               title: roomAuthorityTitle(widget.roomTitle),
-              subtitle: '房间号 ${widget.roomId} · ${_members.length} 人在线',
+              subtitle:
+                  '${widget.roomCode?.trim().isNotEmpty == true ? '房间号 ${widget.roomCode}' : '房间号不可用'} · ${_members.length} 人在线',
               seed: widget.roomId,
               status: _canManage ? '可管理' : '在线',
               statusColor: _canManage ? RoomColors.primary : RoomColors.success,
             ),
           ),
           _buildFilters(),
+          if (_error != null && _members.isNotEmpty)
+            const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text('成员更新失败，显示上次结果，正在重试'),
+            ),
           Expanded(child: _buildBody()),
         ],
       ),
@@ -226,8 +358,8 @@ class _RoomMembersPageState extends State<RoomMembersPage> {
     if (_error != null && _members.isEmpty) {
       return _MembersMessage(
         icon: Icons.cloud_off_rounded,
-        title: '成员列表加载失败',
-        message: '保留当前房间上下文，请稍后重试。',
+        title: _invalidIdentity ? '成员页已失效' : '成员列表加载失败',
+        message: _invalidIdentity ? _error! : '保留当前房间上下文，请稍后重试。',
         actionLabel: '重新加载',
         onAction: () => _load(reset: true),
       );
