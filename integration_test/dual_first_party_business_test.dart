@@ -145,9 +145,24 @@ void main() {
       );
 
       final publicText = config.message(role, 'public');
+      final publicActionWatch = Stopwatch()..start();
+      void tracePublic(String step) {
+        // Fixed QA facts only, never request bodies, credentials or errors.
+        debugPrint(
+          'DUAL_PUBLIC_TRACE::$role::$step::'
+          'elapsedMs=${publicActionWatch.elapsedMilliseconds}::'
+          'joined=${controller.status == RoomSessionStatus.joined}::'
+          'canSend=${controller.canSendPublicMessage}::'
+          'errorPresent=${controller.errorMessage != null}::'
+          'ownVisible=${controller.messages.any((m) => m.content == publicText)}',
+        );
+      }
+
+      tracePublic('before_focus');
       // Focusing changes the room dock into the composer. Wait for that
       // replacement before typing, then use its visible send callback.
       await _tap(tester, find.byKey(const Key('video-room-composer')));
+      tracePublic('after_focus');
       await _until(
         tester,
         () => find.byTooltip('发送').hitTestable().evaluate().length == 1,
@@ -157,6 +172,7 @@ void main() {
         find.byKey(const Key('video-room-composer')),
         publicText,
       );
+      tracePublic('after_input');
       expect(
         tester
             .widget<TextField>(find.byKey(const Key('video-room-composer')))
@@ -164,16 +180,27 @@ void main() {
             .text,
         publicText,
       );
+      expect(
+        tester.widget<IconButton>(find.byTooltip('发送')).onPressed != null,
+        isTrue,
+        reason: 'Public send must be enabled before the real UI tap.',
+      );
+      tracePublic('before_send');
       await _tap(tester, find.byTooltip('发送'));
+      tracePublic('after_send');
       FocusManager.instance.primaryFocus?.unfocus();
       // Unfocus unregisters the test input connection on a live device.
       // Do not call TestTextInput.hide() after that connection has closed.
       await tester.pump(const Duration(milliseconds: 300));
-      await _until(
-        tester,
-        () => controller.messages.any((m) => m.content == publicText),
-        'own public send',
-      );
+      await _until(tester, () {
+        if (controller.errorMessage != null ||
+            controller.status != RoomSessionStatus.joined) {
+          tracePublic('send_rejected');
+          throw TestFailure('Public send rejected; see fixed QA facts.');
+        }
+        return controller.messages.any((m) => m.content == publicText);
+      }, 'own public send');
+      tracePublic('send_committed');
       await _barrier(tester, relay, config, 'public-sent');
       final peerPublic = config.message(config.peerRole, 'public');
       // Both users have committed a message and stay in the same room. This
