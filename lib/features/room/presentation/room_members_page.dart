@@ -550,6 +550,7 @@ class _RoomMembersPageState extends State<RoomMembersPage>
                                 builder: (BuildContext context) =>
                                     RoomManagementPage(
                                       roomId: widget.roomId,
+                                      roomCode: widget.roomCode,
                                       currentUserId: widget.currentUserId,
                                       currentRole: widget.currentRole,
                                       seats: widget.seats,

@@ -1320,6 +1320,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
       MaterialPageRoute<void>(
         builder: (BuildContext context) => RoomManagementPage(
           roomId: snapshot.roomId,
+          roomCode: snapshot.roomCode,
           currentUserId: _controller.currentUserId,
           currentRole: snapshot.role,
           seats: snapshot.seats,

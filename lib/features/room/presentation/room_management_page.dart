@@ -19,6 +19,7 @@ class RoomManagementPage extends StatelessWidget {
     required this.currentUserId,
     required this.currentRole,
     required this.seats,
+    this.roomCode,
     this.roomTitle,
     this.initialMemberId,
     this.coordinationMode,
@@ -30,6 +31,7 @@ class RoomManagementPage extends StatelessWidget {
   final int currentUserId;
   final RoomRole currentRole;
   final List<MicSeat> seats;
+  final String? roomCode;
   final String? roomTitle;
   final int? initialMemberId;
   final MicCoordinationMode? coordinationMode;
@@ -348,7 +350,8 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: RoomOxygenContextBar(
                 title: roomAuthorityTitle(configuration.roomTitle),
-                subtitle: '房间号 ${configuration.roomId} · 权威状态管理',
+                subtitle:
+                    '房间号 ${configuration.roomCode ?? configuration.roomId} · 权威状态管理',
                 seed: configuration.roomId,
                 status: _isOwner ? '房主' : '房管',
                 statusColor: _isOwner ? RoomColors.gold : RoomColors.primary,
@@ -503,80 +506,95 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   }
 
   Widget _buildSeats() {
-    return GridView.builder(
+    return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        mainAxisExtent: 154,
-      ),
-      itemCount: _seats.length,
+      itemCount: (_seats.length + 1) ~/ 2,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (BuildContext context, int index) {
-        final MicSeat seat = _seats[index];
-        final bool locked = seat.state == MicSeatState.locked;
-        final bool muted =
-            seat.state == MicSeatState.mutedAvailable ||
-            seat.state == MicSeatState.occupiedMuted;
-        return RoomGlassCard(
-          padding: const EdgeInsets.all(12),
-          radius: 16,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        final int first = index * 2;
+        // Action chips may wrap to two rows, especially with larger text.
+        // Let each pair size to its content instead of clipping fixed-height
+        // grid cells. No intrinsic layout or font-size reduction is needed.
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(child: _buildSeatCard(context, _seats[first])),
+            const SizedBox(width: 10),
+            Expanded(
+              child: first + 1 < _seats.length
+                  ? _buildSeatCard(context, _seats[first + 1])
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSeatCard(BuildContext context, MicSeat seat) {
+    final bool locked = seat.state == MicSeatState.locked;
+    final bool muted =
+        seat.state == MicSeatState.mutedAvailable ||
+        seat.state == MicSeatState.occupiedMuted;
+    return RoomGlassCard(
+      padding: const EdgeInsets.all(12),
+      radius: 16,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
             children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Text(
-                    '${seat.number} 号麦',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const Spacer(),
-                  if (_busySeatNumber == seat.number)
-                    const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                ],
+              Expanded(
+                child: Text(
+                  '${seat.number} 号麦',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                seat.userName ?? _seatStateLabel(seat),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
+              if (_busySeatNumber == seat.number)
+                const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            seat.userName ?? _seatStateLabel(seat),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 4,
+            children: <Widget>[
+              ActionChip(
+                avatar: Icon(
+                  locked ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
+                  size: 16,
+                ),
+                label: Text(locked ? '解锁' : '锁定'),
+                onPressed: _busySeatNumber == null
+                    ? () => _setSeatLocked(seat, !locked)
+                    : null,
               ),
-              const Spacer(),
-              Wrap(
-                spacing: 4,
-                children: <Widget>[
-                  ActionChip(
-                    avatar: Icon(
-                      locked
-                          ? Icons.lock_open_rounded
-                          : Icons.lock_outline_rounded,
-                      size: 16,
-                    ),
-                    label: Text(locked ? '解锁' : '锁定'),
-                    onPressed: _busySeatNumber == null
-                        ? () => _setSeatLocked(seat, !locked)
-                        : null,
-                  ),
-                  ActionChip(
-                    avatar: Icon(
-                      muted ? Icons.mic_rounded : Icons.mic_off_rounded,
-                      size: 16,
-                    ),
-                    label: Text(muted ? '开麦' : '闭麦'),
-                    onPressed: locked || _busySeatNumber != null
-                        ? null
-                        : () => _setSeatMuted(seat, !muted),
-                  ),
-                ],
+              ActionChip(
+                avatar: Icon(
+                  muted ? Icons.mic_rounded : Icons.mic_off_rounded,
+                  size: 16,
+                ),
+                label: Text(muted ? '开麦' : '闭麦'),
+                onPressed: locked || _busySeatNumber != null
+                    ? null
+                    : () => _setSeatMuted(seat, !muted),
               ),
             ],
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 
