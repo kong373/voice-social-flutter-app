@@ -147,16 +147,18 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
                             children: <Widget>[
                               Text(
                                 '当前礼物币余额',
-                                style: Theme.of(context).textTheme.bodySmall,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: SocialColors.textSecondary,
+                                    ),
                               ),
                               const SizedBox(height: 2),
                               Text(
                                 _wallet?.giftCoinBalance == null
                                     ? '以服务端为准'
                                     : '${_wallet!.giftCoinBalance}',
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.headlineSmall,
+                                style: Theme.of(context).textTheme.headlineSmall
+                                    ?.copyWith(color: SocialColors.textPrimary),
                               ),
                             ],
                           ),
@@ -271,7 +273,7 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
                     )
                   else
                     const _CommerceInfoBanner(
-                      text: '正式支付尚未接入。当前仅展示服务端商品和礼物币档位，不能选择支付渠道或提交充值订单。',
+                      text: '当前充值暂不可用，可以查看商品和礼物币档位。请稍后再试。',
                     ),
                   const SizedBox(height: 12),
                   const _CommerceInfoBanner(
@@ -482,9 +484,7 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
                 ),
               ),
           ] else
-            const _CommerceInfoBanner(
-              text: '正式支付尚未接入。当前仅展示订单摘要，不能选择支付渠道或提交充值订单。',
-            ),
+            const _CommerceInfoBanner(text: '当前支付暂不可用，可以查看订单摘要。请稍后再试。'),
           if (paymentAvailable) ...<Widget>[
             const SizedBox(height: 18),
             FilledButton(
@@ -757,7 +757,8 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
                             '进入房间后选择麦上用户送礼',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: SocialColors.textSecondary),
                           ),
                         ),
                         const _CommercePill(label: '房间内送出'),

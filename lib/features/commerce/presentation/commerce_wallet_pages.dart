@@ -114,7 +114,7 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
                       : '退款申请',
                   subtitle: _repository.refundScope == RefundScope.order
                       ? '请从充值订单详情选择可退款订单'
-                      : '当前后端为账户级历史退款流程，不冒充逐订单退款',
+                      : '查看账户退款申请和处理记录',
                   onTap: () => _repository.refundScope == RefundScope.order
                       ? _open(const OrdersPage())
                       : _open(RefundListPage(account: widget.account)),
@@ -133,8 +133,7 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
                 ),
                 const SizedBox(height: 18),
                 const _CommerceInfoBanner(
-                  text:
-                      '微信支付、支付宝和 Apple IAP 尚在申请。Android 只保留微信与支付宝，iOS 只保留 Apple IAP；支付结果不由客户端自行判定。',
+                  text: '可用商品和支付方式以充值页为准，到账状态可在充值订单中查询。',
                 ),
               ],
             ),

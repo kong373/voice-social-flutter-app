@@ -378,10 +378,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Text(
-            '收款账户（服务端脱敏列表）',
-            style: TextStyle(fontWeight: FontWeight.w800),
-          ),
+          const Text('收款账户', style: TextStyle(fontWeight: FontWeight.w800)),
           if (selectable.isEmpty)
             const Padding(
               padding: EdgeInsets.only(top: 4),
@@ -494,7 +491,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                             decoration: InputDecoration(
                               labelText: '提现金额',
                               helperText: _quote == null
-                                  ? '输入金额后计算服务端报价'
+                                  ? '输入金额后计算手续费和预计到账金额'
                                   : '最低 ¥${_quote!.minimumAmount.toStringAsFixed(0)} · 手续费 ${_quote!.feeRateText}',
                             ),
                           ),

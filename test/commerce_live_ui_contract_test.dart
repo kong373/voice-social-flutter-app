@@ -63,7 +63,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.text('计算到账金额'), findsOneWidget);
-    expect(find.text('输入金额后计算服务端报价'), findsOneWidget);
+    expect(find.text('输入金额后计算手续费和预计到账金额'), findsOneWidget);
     await tester.enterText(find.byType(TextField), '100');
     await tester.tap(find.text('计算到账金额'));
     await tester.pumpAndSettle();
