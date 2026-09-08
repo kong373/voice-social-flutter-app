@@ -94,16 +94,20 @@ class _EarningsPageState extends State<EarningsPage> {
                                 children: <Widget>[
                                   Text(
                                     entry.title,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleSmall,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(
+                                          color: SocialColors.textPrimary,
+                                        ),
                                   ),
                                   Text(
                                     '${entry.businessName} · ${_formatDateTime(entry.createdAt)}',
                                     maxLines: 2,
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: SocialColors.textSecondary,
+                                        ),
                                   ),
                                 ],
                               ),
