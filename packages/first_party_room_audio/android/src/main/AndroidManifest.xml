@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <application>
+        <service android:name="com.kong373.first_party_room_audio.RoomAudioService"
+            android:exported="false" android:stopWithTask="true"
+            android:foregroundServiceType="mediaPlayback|microphone" />
+    </application>
+</manifest>
