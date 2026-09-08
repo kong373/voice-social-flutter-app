@@ -137,6 +137,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   bool _foregroundReadInFlight = false;
   bool _foregroundReadPending = false;
   bool _foreground = true;
+  StreamSubscription<void>? _backgroundAudioSubscription;
   bool _authorityKnown = false;
   bool _authoritySyncDegraded = false;
   int _authorityGeneration = 0;
@@ -644,14 +645,20 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   void setForeground(bool foreground) {
     if (_disposed || _foreground == foreground) return;
     _foreground = foreground;
+    if (foreground && _lease != null && !_leaseUnexpired) {
+      _endAuthoritySession('房间会话已到期，请重新进入房间');
+      return;
+    }
+    final rtc = _rtcAdapter;
+    if (rtc is AgoraRtcAdapter && _ownsRtcTransport(_transportLeaseId)) {
+      rtc.setForeground(foreground);
+    }
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
     if (foreground && _lease != null) {
-      if (!_leaseUnexpired) {
-        _endAuthoritySession('房间会话已到期，请重新进入房间');
-        return;
-      }
       unawaited(_renewRoomLease());
+    } else {
+      _scheduleHeartbeat();
     }
     _stopAuthoritySync();
     if (_canSyncAuthority) unawaited(refreshRoomAuthority());
@@ -718,15 +725,31 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   void _scheduleHeartbeat() {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
-    if (_lease == null ||
-        !_foreground ||
-        !_isJoinedEpoch(_sessionEpoch) ||
-        _repository is! RoomLeaseRepository)
-      return;
+    if (!_canAttemptHeartbeat || _repository is! RoomLeaseRepository) return;
     _heartbeatTimer = Timer(const Duration(seconds: 20), () {
       _heartbeatTimer = null;
       unawaited(_renewRoomLease());
     });
+  }
+
+  // Native activity is only an admission condition for a real authenticated
+  // POST, never a source of server/client lease time. Snapshot-only has no
+  // background exception even if an injected transport exposes a capability.
+  bool get _canAttemptHeartbeat {
+    if (_lease == null || !_isJoinedEpoch(_sessionEpoch)) return false;
+    if (_foreground) return true;
+    final rtc = _rtcAdapter;
+    return _snapshot?.isSnapshotOnly == false &&
+        _rtcConnected &&
+        _ownsRtcTransport(_transportLeaseId) &&
+        rtc is AgoraRtcAdapter &&
+        rtc.hasBackgroundAudioLease;
+  }
+
+  void _onBackgroundAudioChanged() {
+    if (!_disposed && !_foreground && _ownsRtcTransport(_transportLeaseId)) {
+      _scheduleHeartbeat();
+    }
   }
 
   Future<void> _renewRoomLease() async {
@@ -735,15 +758,13 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     final RoomSessionLease? lease = _lease;
-    if (lease == null ||
-        !_foreground ||
-        _disposed ||
-        _status != RoomSessionStatus.joined)
+    if (lease == null || _disposed || _status != RoomSessionStatus.joined)
       return;
     if (!_leaseUnexpired) {
       _endAuthoritySession('房间会话已到期，请重新进入房间');
       return;
     }
+    if (!_canAttemptHeartbeat) return;
     if (_leaseFlight != null || _repository is! RoomLeaseRepository) return;
     if (lease.sequence >= 9007199254740991) {
       _endAuthoritySession('房间租约序号已耗尽，请重新进入房间');
@@ -752,12 +773,26 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     final int epoch = _sessionEpoch;
     final Object flight = Object();
     _leaseFlight = flight;
-    final Duration started = _leaseElapsed;
+    final Object? transportLease = _transportLeaseId;
     bool ownsFlight() =>
         identical(_leaseFlight, flight) &&
         _isCurrent(epoch) &&
         _lease?.sessionId == lease.sessionId;
     try {
+      if (!_foreground) {
+        final rtc = _rtcAdapter;
+        if (rtc is! AgoraRtcAdapter ||
+            !await rtc.confirmBackgroundAudioActive())
+          return;
+        // Await may cross logout, ownership transfer, a native stop or the
+        // exact deadline. Recheck all fences before creating/sending a POST.
+        if (!ownsFlight() ||
+            !_canAttemptHeartbeat ||
+            !_ownsRtcTransport(transportLease))
+          return;
+      }
+      if (!ownsFlight() || !_isJoinedEpoch(epoch)) return;
+      final Duration started = _leaseElapsed;
       final String requestId = _leaseRequestId ??= _newRequestId('room-lease');
       final RoomSessionLease renewed =
           await (_repository as RoomLeaseRepository).renewRoomLease(
@@ -2296,6 +2331,13 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     _transportLeaseId = lease;
     _rtcTransportOwners[_rtcAdapter] = lease;
     _realtimeTransportOwners[_realtimeGateway] = lease;
+    final rtc = _rtcAdapter;
+    if (rtc is AgoraRtcAdapter) {
+      rtc.setForeground(_foreground);
+      _backgroundAudioSubscription ??= rtc.backgroundAudioChanges.listen(
+        (_) => _onBackgroundAudioChanged(),
+      );
+    }
     return lease;
   }
 
@@ -2871,6 +2913,8 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     _stopAuthoritySync();
     _sessionChanges?.removeListener(_onSessionChanged);
     _lifecycleBinding?.removeObserver(this);
+    unawaited(_backgroundAudioSubscription?.cancel());
+    _backgroundAudioSubscription = null;
     _invalidateTencentImReadinessPoll();
     _rtcAudioAuthorityGeneration += 1;
     _micQueueEpoch += 1;
