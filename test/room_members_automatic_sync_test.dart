@@ -12,6 +12,7 @@ import 'package:voice_social_app/features/room/data/mock_room_operations_reposit
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/presentation/room_members_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
 class _Dependencies extends Fake implements AppDependencies {
   final backing = AppDependencies.mock();
@@ -124,6 +125,43 @@ Future<void> _open(WidgetTester tester, _Dependencies deps) async {
 }
 
 void main() {
+  testWidgets(
+    'same-user access rotation preserves identity and member polling',
+    (tester) async {
+      final deps = _Dependencies();
+      AuthSession session(String token) => AuthSession(
+        accessToken: token,
+        tokenType: 'Bearer',
+        expiresAt: DateTime(2030),
+        userId: 1,
+        mobile: '',
+        roles: '',
+      );
+      await deps.sessionManager.save(session('before'));
+      await _open(tester, deps);
+      final generation = deps.sessionManager.identityGeneration;
+      final repo = deps.roomOperationsRepository;
+      final pending = Completer<RoomMemberPage>();
+      repo.pending = pending;
+      await tester.pump(const Duration(seconds: 2));
+      final reads = repo.reads;
+      await deps.sessionManager.save(session('after'));
+      await tester.pump();
+      expect(deps.sessionManager.session!.accessToken, 'after');
+      expect(deps.sessionManager.identityGeneration, generation);
+      expect(find.text('远端成员'), findsOneWidget);
+      expect(find.text('成员页已失效'), findsNothing);
+      pending.complete(
+        const RoomMemberPage(items: [], page: 1, total: 0, pages: 1),
+      );
+      await tester.pump();
+      expect(find.text('远端成员'), findsNothing);
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+      expect(repo.reads, reads + 1);
+      expect(find.text('远端成员'), findsOneWidget);
+    },
+  );
   testWidgets('lease change rejects old room response and stops polling', (
     tester,
   ) async {
@@ -158,6 +196,14 @@ void main() {
     final reads = repo.reads.reads;
     await tester.pump(const Duration(seconds: 10));
     expect(repo.reads.reads, reads);
+    final bar = tester.widget<RoomOxygenContextBar>(
+      find.byType(RoomOxygenContextBar),
+    );
+    expect(bar.status, '已失效');
+    expect(bar.subtitle, isNot(contains('人在线')));
+    expect(find.text('重新加载'), findsNothing);
+    expect(find.byTooltip('刷新'), findsNothing);
+    expect(find.textContaining('请重新进入成员页'), findsWidgets);
     await tester.pumpWidget(const SizedBox());
     base.backing.dispose();
   });

@@ -288,11 +288,12 @@ class _RoomMembersPageState extends State<RoomMembersPage>
       appBar: roomOxygenAppBar(
         title: '在线成员与听众席',
         actions: <Widget>[
-          IconButton(
-            tooltip: '刷新',
-            onPressed: () => _load(reset: true),
-            icon: const Icon(Icons.refresh_rounded),
-          ),
+          if (!_invalidIdentity)
+            IconButton(
+              tooltip: '刷新',
+              onPressed: () => _load(reset: true),
+              icon: const Icon(Icons.refresh_rounded),
+            ),
         ],
       ),
       body: Column(
@@ -302,13 +303,15 @@ class _RoomMembersPageState extends State<RoomMembersPage>
             child: RoomOxygenContextBar(
               title: roomAuthorityTitle(widget.roomTitle),
               subtitle:
-                  '${widget.roomCode?.trim().isNotEmpty == true ? '房间号 ${widget.roomCode}' : '房间号不可用'} · ${_members.length} 人在线',
+                  '${widget.roomCode?.trim().isNotEmpty == true ? '房间号 ${widget.roomCode}' : '房间号不可用'} · ${_invalidIdentity ? '请重新进入成员页' : '${_members.length} 人在线'}',
               seed: widget.roomId,
-              status: _canManage ? '可管理' : '在线',
-              statusColor: _canManage ? RoomColors.primary : RoomColors.success,
+              status: _invalidIdentity ? '已失效' : (_canManage ? '可管理' : '在线'),
+              statusColor: _invalidIdentity
+                  ? RoomColors.textSecondary
+                  : (_canManage ? RoomColors.primary : RoomColors.success),
             ),
           ),
-          _buildFilters(),
+          if (!_invalidIdentity) _buildFilters(),
           if (_error != null && _members.isNotEmpty)
             const Padding(
               padding: EdgeInsets.all(8),
@@ -360,8 +363,8 @@ class _RoomMembersPageState extends State<RoomMembersPage>
         icon: Icons.cloud_off_rounded,
         title: _invalidIdentity ? '成员页已失效' : '成员列表加载失败',
         message: _invalidIdentity ? _error! : '保留当前房间上下文，请稍后重试。',
-        actionLabel: '重新加载',
-        onAction: () => _load(reset: true),
+        actionLabel: _invalidIdentity ? null : '重新加载',
+        onAction: _invalidIdentity ? null : () => _load(reset: true),
       );
     }
     final List<RoomMember> members = _visibleMembers;
