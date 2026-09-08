@@ -31,11 +31,13 @@ class BackendRoomRepository
     RtcTokenRepository? rtcTokenRepository,
     DateTime Function()? now,
     RoomLeaseBinding? leaseBinding,
+    Future<bool> Function()? prepareAccessSession,
   }) : _apiClient = apiClient,
        _routes = routes,
        _seatAdapter = seatAdapter,
        _rtcTokenRepository = rtcTokenRepository,
        _now = now ?? DateTime.now,
+       _prepareAccessSession = prepareAccessSession,
        leaseBinding = leaseBinding ?? RoomLeaseBinding();
 
   final ApiClient _apiClient;
@@ -44,6 +46,7 @@ class BackendRoomRepository
   final RtcTokenRepository? _rtcTokenRepository;
   final DateTime Function() _now;
   final RoomLeaseBinding leaseBinding;
+  final Future<bool> Function()? _prepareAccessSession;
   final RoomWriteGuard _leaseWriteGuard = RoomWriteGuard(scope: 'room-lease');
   final RoomWriteGuard _writeGuard = RoomWriteGuard(scope: 'room-session');
   int? get _activeCurrentUserId => leaseBinding.current?.userId;
@@ -53,6 +56,26 @@ class BackendRoomRepository
   TencentImAvChatRoomSession? _lastTencentImRoomSession;
 
   static const int _publicMessagesPageSize = 50;
+
+  Future<void> _prepareStrictPost(int generation) async {
+    leaseBinding.check(generation);
+    bool prepared;
+    try {
+      prepared = await (_prepareAccessSession?.call() ?? Future.value(true));
+    } catch (_) {
+      leaseBinding.check(generation);
+      rethrow;
+    }
+    leaseBinding.check(generation);
+    if (!prepared) {
+      // No business request was sent. Preserve the lease and retry identity;
+      // only a changed binding may terminate the authority session here.
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '登录会话准备失败，请稍后重试',
+      );
+    }
+  }
 
   @override
   Future<RoomSessionLease> renewRoomLease({
@@ -92,6 +115,7 @@ class BackendRoomRepository
       intent: 'heartbeat:$generation:$roomId:$sessionId:$sequence',
       requestId: requestId,
       action: (headers) async {
+        await _prepareStrictPost(generation);
         leaseBinding.check(generation);
         final response = await _apiClient.postWithoutUnauthorizedRecovery(
           _routes.heartbeatRoom,
@@ -148,6 +172,8 @@ class BackendRoomRepository
   }) async {
     final generation = leaseBinding.generation;
     final membership = leaseBinding.require(body['roomId'] as String?);
+    await _prepareStrictPost(generation);
+    leaseBinding.check(generation);
     final response = await _apiClient.postWithoutUnauthorizedRecovery(
       path,
       headers: headers,
@@ -445,6 +471,8 @@ class BackendRoomRepository
         if (normalizedPassword != null && normalizedPassword.isNotEmpty) {
           body['password'] = normalizedPassword;
         }
+        await _prepareStrictPost(generation);
+        leaseBinding.check(generation);
         final ApiResponse response = await _apiClient
             .postWithoutUnauthorizedRecovery(
               _routes.enterRoom,
@@ -499,6 +527,7 @@ class BackendRoomRepository
     return _writeGuard.run<RoomSnapshot>(
       intent: 'reconnect:$generation:$normalizedRoomId:$currentUserId',
       action: (Map<String, String> headers) async {
+        await _prepareStrictPost(generation);
         leaseBinding.check(generation);
         final ApiResponse response = await _apiClient
             .postWithoutUnauthorizedRecovery(
@@ -754,6 +783,7 @@ class BackendRoomRepository
     await _writeGuard.run<void>(
       intent: 'exit:$generation:$normalizedRoomId',
       action: (Map<String, String> headers) async {
+        await _prepareStrictPost(generation);
         leaseBinding.check(generation);
         final ApiResponse response = await _apiClient
             .postWithoutUnauthorizedRecovery(

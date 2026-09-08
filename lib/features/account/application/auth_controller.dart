@@ -268,6 +268,22 @@ class AuthController extends ChangeNotifier {
     }
   }
 
+  /// Prepares credentials before a strict request without replaying that request.
+  Future<bool> ensureFreshAccessSession() {
+    final Future<bool>? active = _refreshInFlight;
+    if (active != null) return active;
+    final AuthSession? current = session;
+    if (current == null || _signOutInFlight != null) {
+      return Future<bool>.value(false);
+    }
+    if (current.expiresAt.isAfter(
+      DateTime.now().add(const Duration(seconds: 60)),
+    )) {
+      return Future<bool>.value(true);
+    }
+    return refreshSession();
+  }
+
   /// Rotates the refresh token once for every concurrent wave of 401s.
   Future<bool> refreshSession() {
     final Future<bool>? active = _refreshInFlight;

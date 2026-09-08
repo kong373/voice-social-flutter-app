@@ -1213,6 +1213,23 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     }
   }
 
+  Future<void> _leaveMic() async {
+    final controller = _controller;
+    final session = AppDependencyScope.of(context).sessionManager;
+    final identityGeneration = session.identityGeneration;
+    final completed = await controller.leaveMic();
+    if (!mounted ||
+        completed ||
+        !identical(controller, _controller) ||
+        session.identityGeneration != identityGeneration ||
+        session.session?.userId != controller.currentUserId) {
+      return;
+    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('下麦未完成，请稍后重试')));
+  }
+
   Future<void> _showMoreSheet() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -1263,7 +1280,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
               _minimize();
               return;
             case 'leaveMic':
-              _controller.leaveMic();
+              unawaited(_leaveMic());
               return;
             case 'leaveRoom':
               _confirmEnd();

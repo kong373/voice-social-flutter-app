@@ -654,6 +654,8 @@ class Harness {
     Future<Map<String, Object?>> Function(HttpRequest, Map<String, Object?>)
     reply, {
     RoomLeaseBinding? binding,
+    Future<bool> Function()? prepareAccessSession,
+    String? Function()? authorizationProvider,
   }) async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((request) async {
@@ -672,11 +674,16 @@ class Harness {
       baseUri: Uri.parse('http://127.0.0.1:${server.port}'),
       clientType: 'ANDROID',
       clientInnerVersion: '1',
-      authorizationProvider: () => 'Bearer contract-test',
+      authorizationProvider:
+          authorizationProvider ?? () => 'Bearer contract-test',
     );
     return Harness(
       server,
-      BackendRoomRepository(apiClient: client, leaseBinding: binding),
+      BackendRoomRepository(
+        apiClient: client,
+        leaseBinding: binding,
+        prepareAccessSession: prepareAccessSession,
+      ),
       client,
     );
   }

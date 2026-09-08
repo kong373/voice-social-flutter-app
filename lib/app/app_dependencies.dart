@@ -386,12 +386,15 @@ class AppDependencies {
     final roomLeaseBinding = RoomLeaseBinding(
       authenticationGeneration: () => sessionManager.identityGeneration,
     );
+    late final AuthController authController;
     final RoomRepository roomRepository = environment.isLive
         ? BackendRoomRepository(
             apiClient: apiClient,
             routes: routes,
             rtcTokenRepository: rtcTokenRepository,
             leaseBinding: roomLeaseBinding,
+            prepareAccessSession: () =>
+                authController.ensureFreshAccessSession(),
             now: currentTime,
           )
         : MockRoomRepository();
@@ -443,7 +446,7 @@ class AppDependencies {
           environment: environment,
           sessionManager: sessionManager,
         );
-    final AuthController authController = AuthController(
+    authController = AuthController(
       repository: authRepository,
       sessionManager: sessionManager,
       deviceIdentityProvider: deviceIdentityProvider,
