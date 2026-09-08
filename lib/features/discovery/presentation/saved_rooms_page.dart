@@ -5,6 +5,7 @@ import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
+import 'package:voice_social_app/features/room/presentation/create_room_page.dart';
 import 'package:voice_social_app/features/room/presentation/edit_room_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
 
@@ -25,6 +26,7 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
   bool _loading = true;
   String? _error;
   String? _busyRoomId;
+  bool _openingCreateRoom = false;
   int _loadGeneration = 0;
 
   @override
@@ -104,6 +106,18 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
               ],
             ),
           ),
+          if (_section == _SavedRoomSection.owned)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _openingCreateRoom ? null : _createRoom,
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('创建房间'),
+                ),
+              ),
+            ),
           Expanded(child: _buildBody()),
         ],
       ),
@@ -191,6 +205,27 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
     } finally {
       if (mounted) {
         setState(() => _busyRoomId = null);
+      }
+    }
+  }
+
+  Future<void> _createRoom() async {
+    if (_openingCreateRoom) {
+      return;
+    }
+    setState(() => _openingCreateRoom = true);
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (BuildContext context) => const CreateRoomPage(),
+        ),
+      );
+      if (mounted) {
+        await _load();
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _openingCreateRoom = false);
       }
     }
   }
