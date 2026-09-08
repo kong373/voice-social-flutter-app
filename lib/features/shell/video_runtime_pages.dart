@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
+import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -16,6 +17,7 @@ import 'package:voice_social_app/features/discovery/dynamic/presentation/dynamic
 import 'package:voice_social_app/features/discovery/presentation/global_search_page.dart';
 import 'package:voice_social_app/features/discovery/presentation/saved_rooms_page.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
+import 'package:voice_social_app/features/room/presentation/create_room_page.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 import 'package:voice_social_app/features/social/presentation/public_user_id_label.dart';
@@ -171,6 +173,15 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
   void _openSearch() => Navigator.of(context).push<void>(
     MaterialPageRoute<void>(
       builder: (BuildContext context) => const GlobalSearchPage(),
+    ),
+  );
+
+  void _openCreateRoom() => Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => AppDependencyScope(
+        dependencies: widget.dependencies,
+        child: const CreateRoomPage(),
+      ),
     ),
   );
 
@@ -373,6 +384,16 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
         ).textTheme.headlineSmall?.copyWith(fontSize: 26, letterSpacing: -0.5),
       ),
       const Spacer(),
+      TextButton(
+        key: const Key('home-create-room'),
+        style: TextButton.styleFrom(
+          minimumSize: const Size(64, 36),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        onPressed: _openCreateRoom,
+        child: const Text('创建房间'),
+      ),
+      const SizedBox(width: 7),
       _RoundHeaderButton(
         icon: Icons.emoji_events_outlined,
         tooltip: '榜单',
