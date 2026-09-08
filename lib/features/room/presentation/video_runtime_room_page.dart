@@ -53,6 +53,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   bool _allowPop = false;
   String? _presentedError;
   String? _lastMessageIdentity;
+  bool _joinStatusOpen = false;
 
   RoomController get _controller => widget.controller;
 
@@ -244,20 +245,58 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     );
   }
 
-  void _openJoinRequestStatus() {
-    final String? pendingRoomId = _controller.pendingJoinRequestRoomId;
-    if (pendingRoomId == null) {
+  Future<void> _openJoinRequestStatus() async {
+    final controller = _controller;
+    final String? pendingRoomId = controller.pendingJoinRequestRoomId;
+    final requestId = controller.pendingJoinRequestId;
+    if (pendingRoomId == null || _joinStatusOpen) {
       return;
     }
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomJoinRequestStatusPage(
-          roomId: pendingRoomId,
-          joinRequestId: _controller.pendingJoinRequestId,
-          roomTitle: _controller.displayTitle,
+    final session = AppDependencyScope.of(context).sessionManager;
+    final identityGeneration = session.identityGeneration;
+    final parentRoute = ModalRoute.of(context);
+    bool pendingChanged = false;
+    void checkPending() {
+      if (controller.pendingJoinRequestRoomId != pendingRoomId ||
+          controller.pendingJoinRequestId != requestId ||
+          controller.status != RoomSessionStatus.failed) {
+        pendingChanged = true;
+      }
+    }
+
+    controller.addListener(checkPending);
+    _joinStatusOpen = true;
+    RoomJoinRequestContinue? result;
+    try {
+      result = await Navigator.of(context).push<RoomJoinRequestContinue>(
+        MaterialPageRoute<RoomJoinRequestContinue>(
+          builder: (BuildContext context) => RoomJoinRequestStatusPage(
+            roomId: pendingRoomId,
+            joinRequestId: requestId,
+            roomTitle: controller.displayTitle,
+            allowContinue: true,
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      controller.removeListener(checkPending);
+      _joinStatusOpen = false;
+    }
+    if (!mounted ||
+        result == null ||
+        pendingChanged ||
+        !identical(controller, _controller) ||
+        parentRoute?.isCurrent != true ||
+        _ending ||
+        session.identityGeneration != identityGeneration ||
+        session.session?.userId != controller.currentUserId ||
+        controller.status != RoomSessionStatus.failed ||
+        controller.pendingJoinRequestRoomId != pendingRoomId ||
+        controller.pendingJoinRequestId != requestId ||
+        result.roomId != pendingRoomId ||
+        (requestId != null && result.joinRequestId != requestId))
+      return;
+    await controller.join(source: widget.entrySource);
   }
 
   Widget _roomContent() {

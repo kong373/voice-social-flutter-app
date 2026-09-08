@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
@@ -7,17 +10,21 @@ import 'package:voice_social_app/features/room/domain/room_operations_models.dar
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
-/// Applicant-side status and cancellation surface for approval-only rooms.
-///
-/// All displayed state comes from the authenticated first-party status
-/// endpoint. The page never infers success from a cancel response; it reads
-/// the status again before showing the resulting state.
+/// An explicit request to retry normal server-authoritative room entry.
+class RoomJoinRequestContinue {
+  const RoomJoinRequestContinue(this.roomId, this.joinRequestId);
+  final String roomId;
+  final String joinRequestId;
+}
+
+/// Applicant status comes only from GET, including after cancellation.
 class RoomJoinRequestStatusPage extends StatefulWidget {
   const RoomJoinRequestStatusPage({
     required this.roomId,
     this.joinRequestId,
     this.roomTitle,
     this.repositoryOverride,
+    this.allowContinue = false,
     super.key,
   });
 
@@ -25,13 +32,22 @@ class RoomJoinRequestStatusPage extends StatefulWidget {
   final String? joinRequestId;
   final String? roomTitle;
   final RoomJoinRequestRepository? repositoryOverride;
+  final bool allowContinue;
 
   @override
   State<RoomJoinRequestStatusPage> createState() =>
       _RoomJoinRequestStatusPageState();
 }
 
-class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
+class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage>
+    with WidgetsBindingObserver {
+  Timer? _timer;
+  AuthSessionManager? _auth;
+  int? _userId;
+  bool _foreground = true;
+  bool _visible = false;
+  bool _reading = false;
+  bool _pending = false;
   RoomJoinRequestRepository? _repository;
   RoomJoinRequestApplicantStatus? _status;
   String? _error;
@@ -39,26 +55,104 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
   bool _busy = false;
   int _operationEpoch = 0;
 
+  bool get _active =>
+      mounted && _foreground && _visible && (_auth == null || _userId != null);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final state = WidgetsBinding.instance.lifecycleState;
+    _foreground = state == null || state == AppLifecycleState.resumed;
+  }
+
+  void _invalidate({bool clear = false}) {
+    _timer?.cancel();
+    _operationEpoch++;
+    _pending = true;
+    if (clear) {
+      _status = null;
+      _error = null;
+      _loading = true;
+    }
+  }
+
+  void _authChanged() {
+    final userId = _auth?.session?.userId;
+    if (userId == _userId) return;
+    setState(() {
+      _userId = userId;
+      _invalidate(clear: true);
+    });
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(RoomJoinRequestStatusPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.roomId != widget.roomId ||
+        oldWidget.joinRequestId != widget.joinRequestId ||
+        oldWidget.repositoryOverride != widget.repositoryOverride) {
+      _repository =
+          widget.repositoryOverride ??
+          AppDependencyScope.of(
+            context,
+          ).roomOperationsRepository.roomJoinRequestCapability;
+      _invalidate(clear: true);
+      _load();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    _invalidate();
+    _load(showLoading: false);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _operationEpoch++;
+    _auth?.removeListener(_authChanged);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_repository != null) {
-      return;
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<AppDependencyScope>();
+    final auth = scope?.dependencies.sessionManager;
+    final repository =
+        widget.repositoryOverride ??
+        scope?.dependencies.roomOperationsRepository.roomJoinRequestCapability;
+    final visible = ModalRoute.isCurrentOf(context) ?? true;
+    if (_auth != auth || _repository != repository) {
+      _auth?.removeListener(_authChanged);
+      _auth = auth;
+      _auth?.addListener(_authChanged);
+      _userId = auth?.session?.userId;
+      _repository = repository;
+      _invalidate(clear: true);
     }
-    _repository = widget.repositoryOverride;
-    if (_repository == null) {
-      _repository = AppDependencyScope.of(
-        context,
-      ).roomOperationsRepository.roomJoinRequestCapability;
+    if (_visible != visible) {
+      _visible = visible;
+      _invalidate();
     }
-    _load();
+    if (_pending) _load(showLoading: _status == null);
   }
 
   Future<void> _load({bool showLoading = true}) async {
     final RoomJoinRequestRepository? repository = _repository;
-    if (_busy) {
+    if (!_active) return;
+    if (_busy || _reading) {
+      _pending = true;
       return;
     }
+    _timer?.cancel();
+    _pending = false;
     if (repository == null) {
       setState(() {
         _loading = false;
@@ -67,20 +161,24 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
       return;
     }
     final int operationEpoch = ++_operationEpoch;
-    if (showLoading && mounted) {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
-    }
+    _reading = true;
+    setState(() {
+      _loading = showLoading;
+      if (showLoading) _error = null;
+    });
     try {
       final RoomJoinRequestApplicantStatus value = await repository
           .fetchJoinRequestStatus(
             roomId: widget.roomId,
             joinRequestId: widget.joinRequestId,
           );
-      if (!mounted || operationEpoch != _operationEpoch) {
+      if (!_active || operationEpoch != _operationEpoch) {
         return;
+      }
+      if (value.roomId != widget.roomId ||
+          (widget.joinRequestId != null &&
+              value.joinRequestId != widget.joinRequestId)) {
+        throw StateError('入房申请状态与当前申请不匹配');
       }
       setState(() {
         _status = value;
@@ -88,13 +186,31 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
         _error = null;
       });
     } catch (error) {
-      if (!mounted || operationEpoch != _operationEpoch) {
+      if (!_active || operationEpoch != _operationEpoch) {
         return;
       }
       setState(() {
         _loading = false;
         _error = _messageFor(error);
       });
+    } finally {
+      _reading = false;
+      if (mounted) {
+        setState(() => _loading = false);
+        _schedule();
+      }
+    }
+  }
+
+  void _schedule() {
+    if (!_active || _busy || _reading) return;
+    if (_pending) {
+      unawaited(_load(showLoading: _status == null));
+    } else {
+      _timer = Timer(
+        const Duration(seconds: 2),
+        () => _load(showLoading: false),
+      );
     }
   }
 
@@ -103,12 +219,15 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
     final RoomJoinRequestApplicantStatus? current = _status;
     if (repository == null ||
         current == null ||
+        !_active ||
+        _reading ||
         _busy ||
         _loading ||
         !current.canCancel) {
       return;
     }
     final int operationEpoch = ++_operationEpoch;
+    _timer?.cancel();
     setState(() {
       _busy = true;
       _error = null;
@@ -118,6 +237,7 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
         roomId: current.roomId,
         joinRequestId: current.joinRequestId,
       );
+      if (!_active || operationEpoch != _operationEpoch) return;
       // A successful mutation is not enough to paint CANCELLED. The GET is
       // authoritative and also covers a durable replay response.
       final RoomJoinRequestApplicantStatus latest = await repository
@@ -125,8 +245,12 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
             roomId: current.roomId,
             joinRequestId: current.joinRequestId,
           );
-      if (!mounted || operationEpoch != _operationEpoch) {
+      if (!_active || operationEpoch != _operationEpoch) {
         return;
+      }
+      if (latest.roomId != current.roomId ||
+          latest.joinRequestId != current.joinRequestId) {
+        throw StateError('入房申请状态与当前申请不匹配');
       }
       setState(() {
         _status = latest;
@@ -137,13 +261,18 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
         _showMessage('入房申请已撤回');
       }
     } catch (error) {
-      if (!mounted || operationEpoch != _operationEpoch) {
+      if (!_active || operationEpoch != _operationEpoch) {
         return;
       }
       setState(() {
         _busy = false;
         _error = _messageFor(error);
       });
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+        _schedule();
+      }
     }
   }
 
@@ -240,6 +369,40 @@ class _RoomJoinRequestStatusPageState extends State<RoomJoinRequestStatusPage> {
           Text(status.message!, style: Theme.of(context).textTheme.bodyMedium),
         ],
         const SizedBox(height: 18),
+        if (widget.allowContinue &&
+            status.status == RoomJoinRequestStatus.approved &&
+            status.roomState == 'OPEN' &&
+            !status.banned &&
+            status.roomId == widget.roomId &&
+            (widget.joinRequestId == null ||
+                status.joinRequestId == widget.joinRequestId))
+          FilledButton(
+            onPressed:
+                !_active ||
+                    _reading ||
+                    _busy ||
+                    _loading ||
+                    _error != null ||
+                    _pending
+                ? null
+                : () {
+                    if (!_active ||
+                        _reading ||
+                        _busy ||
+                        _loading ||
+                        _pending ||
+                        _error != null ||
+                        !identical(_status, status))
+                      return;
+                    Navigator.of(context).pop(
+                      RoomJoinRequestContinue(
+                        status.roomId,
+                        status.joinRequestId,
+                      ),
+                    );
+                  },
+            child: const Text('继续进入'),
+          ),
         if (status.isPending && status.canCancel)
           SizedBox(
             width: double.infinity,
