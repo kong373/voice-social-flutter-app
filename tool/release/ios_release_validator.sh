@@ -651,6 +651,18 @@ validate_profile() {
   require_regular_file "$decoded_profile" profile_decode_empty
   plist_lint "$decoded_profile" profile_invalid
 
+  # App Store submission profiles must omit both device-distribution keys.
+  # Enumerate keys from normalized XML: empty arrays, false booleans and
+  # malformed value types are still present, never equivalent to absence.
+  local profile_keys profile_xml
+  profile_xml="$(mktemp "$TMP_ROOT/profile-keys.XXXXXX")" ||
+    fail temporary_file_unavailable
+  profile_keys="$(plist_top_level_keys "$decoded_profile" "$profile_xml")" ||
+    fail profile_invalid
+  if printf '%s\n' "$profile_keys" | grep -Eq '^(ProvisionedDevices|ProvisionsAllDevices)$'; then
+    fail profile_not_app_store
+  fi
+
   profile_entitlements="$(mktemp "$TMP_ROOT/profile-entitlements.XXXXXX" 2>/dev/null)" ||
     fail temporary_file_unavailable
   write_profile_entitlements "$decoded_profile" "$profile_entitlements" ||
@@ -1278,6 +1290,17 @@ PLIST
   self_test_run_case invalid "$profile_valid" fail codesign_invalid
   self_test_run_case adhoc "$profile_valid" fail ad_hoc_signing_not_allowed
   self_test_run_case debug "$profile_valid" fail debug_signing_not_allowed
+
+  local distribution_profile="$fixture_root/distribution-profile.plist"
+  local field value
+  for field in ProvisionedDevices ProvisionsAllDevices; do
+    for value in '<array><string>fixture-device</string></array>' '<array/>' '<true/>' '<false/>' '<string>false</string>' '<integer>0</integer>' '<dict/>'; do
+      cp -- "$profile_valid" "$distribution_profile"
+      "$plutil_bin" -insert "$field" -xml "$value" "$distribution_profile" >/dev/null 2>&1 ||
+        fail self_test_distribution_profile_setup_failed
+      self_test_run_case valid "$distribution_profile" fail profile_not_app_store
+    done
+  done
 
   local changed_payload="$fixture_root/changed-payload"
   local changed_ipa="$fixture_root/changed-code.ipa"

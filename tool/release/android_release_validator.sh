@@ -271,12 +271,14 @@ validate_aab() {
   # `-certs` only includes signer certificate details together with verbose
   # entry output. Without `-verbose`, a debug-signed bundle can look like a
   # valid JAR while hiding the signer subject from the check below.
-  # Android app-signing/upload keys are normally self-signed. `-strict` turns
-  # the expected PKIX trust-chain warning into exit 4 even when every AAB entry
-  # is cryptographically verified. Require JAR signature metadata above, then
-  # use jarsigner's normal cryptographic verification here.
-  "$jarsigner_bin" -verify -verbose -certs "$aab" >"$signature_file" 2>&1 ||
-    fail 'aab_signature_invalid'
+  # Oracle jarsigner strict warnings are ORed bits: 16 means unsigned entries;
+  # 4 includes the expected PKIX warning for self-signed Android upload keys.
+  # Do not parse localized warning text or reject the expected bit 4 alone.
+  local signature_status=0
+  "$jarsigner_bin" -verify -verbose -certs -strict "$aab" >"$signature_file" 2>&1 ||
+    signature_status=$?
+  (( (signature_status & 16) == 0 )) || fail 'aab_unsigned_entries'
+  (( (signature_status & ~4) == 0 )) || fail 'aab_signature_invalid'
   if contains_debug_certificate "$signature_file"; then
     fail 'aab_uses_debug_certificate'
   fi
@@ -284,6 +286,46 @@ validate_aab() {
   trap - RETURN
   rm -f "$entry_file" "$signature_file" "$manifest_file"
 }
+
+self_test_signed_entries() (
+  local fixture strict_status=0
+  fixture="$(mktemp -d)"
+  trap 'rm -rf -- "$fixture"' EXIT
+  # Include validator scratch reports in fixture cleanup on negative cases.
+  export TMPDIR="$fixture"
+  mkdir -p "$fixture/base/manifest"
+  printf 'fixture\n' >"$fixture/BundleConfig.pb"
+  printf 'fixture\n' >"$fixture/base/manifest/AndroidManifest.xml"
+  (cd "$fixture" && zip -q candidate.aab BundleConfig.pb base/manifest/AndroidManifest.xml)
+  keytool -genkeypair -alias fixture -keyalg RSA -keysize 2048 -validity 3650 \
+    -dname 'CN=Temporary Fixture' -keystore "$fixture/test.p12" \
+    -storepass fixture-only -keypass fixture-only >"$fixture/tools.log" 2>&1 ||
+    fail self_test_keytool_failed
+  jarsigner -keystore "$fixture/test.p12" -storepass fixture-only \
+    "$fixture/candidate.aab" fixture >>"$fixture/tools.log" 2>&1 ||
+    fail self_test_signing_failed
+  jarsigner -verify -strict "$fixture/candidate.aab" >"$fixture/tools.log" 2>&1 || strict_status=$?
+  ((strict_status == 4)) || fail self_test_expected_pkix_status
+  printf '#!/bin/sh\nprintf '\''<manifest package="com.kong373.voice_social_app"/>\\n'\''\n' >"$fixture/bundletool"
+  chmod 700 "$fixture/bundletool"
+  export BUNDLETOOL_BIN="$fixture/bundletool"
+  (validate_aab "$fixture/candidate.aab") >"$fixture/result" 2>&1 ||
+    fail self_test_self_signed_bundle_rejected
+  printf 'unsigned addition\n' >"$fixture/added.txt"
+  (cd "$fixture" && zip -q candidate.aab added.txt)
+  strict_status=0
+  jarsigner -verify -strict "$fixture/candidate.aab" >"$fixture/tools.log" 2>&1 || strict_status=$?
+  ((strict_status == 20)) || fail self_test_expected_combined_status
+  strict_status=0
+  jarsigner -verify -strict -keystore "$fixture/test.p12" -storepass fixture-only \
+    "$fixture/candidate.aab" >"$fixture/tools.log" 2>&1 || strict_status=$?
+  ((strict_status == 16)) || fail self_test_expected_unsigned_status
+  if (validate_aab "$fixture/candidate.aab") >"$fixture/result" 2>&1; then
+    fail self_test_unsigned_entry_accepted
+  fi
+  grep -Fxq 'android-release-validation=FAIL reason=aab_unsigned_entries' "$fixture/result" ||
+    fail self_test_unsigned_entry_reason
+)
 
 self_test() {
   local safe_entries forbidden_entries safe_file forbidden_file
@@ -352,6 +394,7 @@ NativeAlipayIsolationActivity.class"
   fi
   rm -f "$safe_file" "$forbidden_file" "$safe_certificate" "$debug_certificate" \
     "$safe_manifest" "$debug_manifest" "$forbidden_manifest"
+  self_test_signed_entries
   printf 'android-release-validator=self-test-PASS\n'
 }
 

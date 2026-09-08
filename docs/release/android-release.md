@@ -104,6 +104,16 @@ the debug keystore or a debug APK.
 
 For deterministic tooling self-tests:
 
+The AAB signature gate uses the [Oracle jarsigner strict exit-code bits](https://docs.oracle.com/en/java/javase/24/docs/specs/man/jarsigner.html):
+bit 16 rejects unsigned entries, including combined status 20 (16 + 4).
+Status 0 or 4 is accepted; bit 4 includes the expected PKIX warning for normal
+self-signed Android upload certificates. Other bits fail closed. Bit 4 also
+groups other certificate warnings, so this is not a certificate-policy audit.
+No localized warning text is parsed. The validator self-test requires JDK
+`keytool`/`jarsigner` and `zip`, creates a disposable test identity, signs an
+AAB-like ZIP, then verifies that adding an unsigned entry is rejected. All
+fixture keys and captured tool output are deleted on exit; no release keys are used.
+
 ```bash
 python3 tool/release/android_release_config_validator.py --self-test
 tool/release/android_release_validator.sh --self-test

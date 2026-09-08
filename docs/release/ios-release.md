@@ -1,4 +1,4 @@
-# iOS Release Candidate archive gate
+# iOS App Store Release Candidate archive gate
 
 `tool/release/ios_release_validator.sh` is a read-only acceptance gate for an
 explicit `.xcarchive`. It does not build, sign, publish, or access App Store
@@ -27,6 +27,14 @@ The archive gate checks the root `Info.plist`, exactly one app under
 architecture, a strict and valid recursive code signature, and a distribution
 identity (`Apple Distribution` or the legacy `iPhone Distribution` form).
 Ad-hoc and development/debug signatures are rejected.
+
+The target is App Store submission (including TestFlight), not Ad Hoc or
+Enterprise distribution. Per [Apple TN3125](https://developer.apple.com/documentation/technotes/tn3125-inside-code-signing-provisioning-profiles),
+the profile must omit `ProvisionedDevices` and `ProvisionsAllDevices` entirely.
+Presence is rejected regardless of value type, including empty arrays, boolean
+false, strings, integers, or dictionaries. A Distribution authority alone does
+not establish this profile class. The offline self-test exercises these cases
+while retaining all existing signing, identity, entitlement and expiry checks.
 
 The embedded profile is decoded with `security cms -D` into a temporary file,
 then linted and checked for application identifier, team identifier,

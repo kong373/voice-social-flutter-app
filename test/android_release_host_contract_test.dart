@@ -262,13 +262,16 @@ void main() {
       expect(releaseValidator.existsSync(), isTrue);
       expect(releaseBuild.existsSync(), isTrue);
       expect(releaseConfigValidator.existsSync(), isTrue);
+      final ProcessResult selfTest = Process.runSync('bash', <String>[
+        releaseValidator.path,
+        '--self-test',
+      ], workingDirectory: root.path);
+      expect(selfTest.exitCode, 0, reason: selfTest.stderr.toString());
       expect(
-        Process.runSync('bash', <String>[
-          releaseValidator.path,
-          '--self-test',
-        ], workingDirectory: root.path).exitCode,
-        0,
+        selfTest.stdout.toString().trim(),
+        'android-release-validator=self-test-PASS',
       );
+      expect(selfTest.stderr.toString(), isEmpty);
       expect(
         Process.runSync('bash', <String>[
           releaseBuild.path,
