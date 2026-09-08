@@ -181,7 +181,14 @@ void main() {
         publicText,
       );
       expect(
-        tester.widget<IconButton>(find.byTooltip('发送')).onPressed != null,
+        tester
+                .widget<IconButton>(
+                  find.byWidgetPredicate(
+                    (widget) => widget is IconButton && widget.tooltip == '发送',
+                  ),
+                )
+                .onPressed !=
+            null,
         isTrue,
         reason: 'Public send must be enabled before the real UI tap.',
       );
