@@ -437,65 +437,122 @@ void main() {
               (widget) => widget is IconButton && widget.tooltip == '发送消息',
             )
             .hitTestable();
-        await _until(
-          tester,
-          () =>
-              composer.evaluate().length == 1 &&
-              tester.widget<TextField>(composer).enabled != false &&
-              tester.widget<TextField>(composer).controller!.text.isEmpty &&
-              sendButton.evaluate().length == 1 &&
-              tester.widget<IconButton>(sendButton).onPressed != null,
-          'private composer ready $index',
+        final privateWatch = Stopwatch()..start();
+        void tracePrivate(String marker) {
+          // Only fixed markers and allowlisted facts; diagnostics must never
+          // replace the original failure, including during route disposal.
+          try {
+            final fields = composer.evaluate().toList();
+            final buttons = sendButton.evaluate().toList();
+            final field = fields.length == 1
+                ? fields.single.widget as TextField
+                : null;
+            final button = buttons.length == 1
+                ? buttons.single.widget as IconButton
+                : null;
+            debugPrint(
+              'DUAL_PRIVATE_TRACE::$role::$marker::index=$index::'
+              'elapsedMs=${privateWatch.elapsedMilliseconds}::'
+              'lifecycle=${binding.lifecycleState?.name}::'
+              'routeCurrent=${fields.length == 1 && ModalRoute.of(fields.single)?.isCurrent == true}::'
+              'identityMatches=${dependencies.sessionManager.session?.userId == config.session.userId}::'
+              'composerEnabled=${field != null && field.enabled != false}::'
+              'inputMatchesExpected=${field?.controller?.text == privateText}::'
+              'inputEmpty=${field?.controller?.text.isEmpty == true}::'
+              'sendEnabled=${button?.onPressed != null}::'
+              'ownVisible=${find.text(privateText, findRichText: false).hitTestable().evaluate().any((element) => element.widget is Text)}::'
+              'peerVisible=${find.text(peerPrivate).hitTestable().evaluate().length == 1}',
+            );
+          } catch (_) {
+            // Never print exception text or sensitive UI values.
+          }
+        }
+
+        final observer = _PrivateLifecycleObserver(
+          () => tracePrivate('lifecycle_changed'),
         );
-        // Sending temporarily disables the field and closes its native input
-        // connection. A real user taps it again; enterText alone may retain
-        // the test binding's cached EditableText and never reconnect it.
-        await _tap(tester, composer);
-        await _until(
-          tester,
-          () => tester
-              .widget<EditableText>(
-                find.descendant(
-                  of: composer,
-                  matching: find.byType(EditableText),
-                ),
-              )
-              .focusNode
-              .hasFocus,
-          'private input focus $index',
-        );
-        await tester.enterText(composer, privateText);
-        expect(
-          tester.widget<TextField>(composer).controller!.text,
-          privateText,
-        );
-        await _barrier(tester, relay, config, 'private-ready-$index');
-        expect(
-          tester.widget<TextField>(composer).controller!.text,
-          privateText,
-        );
-        expect(tester.widget<IconButton>(sendButton).onPressed, isNotNull);
-        await _tap(tester, sendButton);
-        await _until(
-          tester,
-          () =>
-              find
-                  .text(privateText, findRichText: false)
-                  .hitTestable()
-                  .evaluate()
-                  .any((element) => element.widget is Text) &&
-              tester.widget<TextField>(composer).controller!.text.isEmpty &&
-              tester.widget<IconButton>(sendButton).onPressed != null,
-          'private UI send $index',
-        );
-        await _until(
-          tester,
-          () => find.text(peerPrivate).hitTestable().evaluate().length == 1,
-          'private automatic receive without navigation $index',
-          timeout: const Duration(seconds: 5),
-        );
-        expect(find.text(peerPrivate).hitTestable(), findsOneWidget);
-        await _barrier(tester, relay, config, 'private-received-$index');
+        binding.addObserver(observer);
+        var roundCompleted = false;
+        try {
+          await _until(
+            tester,
+            () =>
+                composer.evaluate().length == 1 &&
+                tester.widget<TextField>(composer).enabled != false &&
+                tester.widget<TextField>(composer).controller!.text.isEmpty &&
+                sendButton.evaluate().length == 1 &&
+                tester.widget<IconButton>(sendButton).onPressed != null,
+            'private composer ready $index',
+          );
+          // Sending temporarily disables the field and closes its native input
+          // connection. A real user taps it again; enterText alone may retain
+          // the test binding's cached EditableText and never reconnect it.
+          await _tap(tester, composer);
+          await _until(
+            tester,
+            () => tester
+                .widget<EditableText>(
+                  find.descendant(
+                    of: composer,
+                    matching: find.byType(EditableText),
+                  ),
+                )
+                .focusNode
+                .hasFocus,
+            'private input focus $index',
+          );
+          await tester.enterText(composer, privateText);
+          expect(
+            tester.widget<TextField>(composer).controller!.text,
+            privateText,
+          );
+          await _barrier(tester, relay, config, 'private-ready-$index');
+          tracePrivate('ready_barrier_return');
+          expect(
+            tester.widget<TextField>(composer).controller!.text,
+            privateText,
+          );
+          expect(tester.widget<IconButton>(sendButton).onPressed, isNotNull);
+          tracePrivate('send_tap_wait');
+          await _tap(
+            tester,
+            sendButton,
+            diagnostic: (before) =>
+                tracePrivate(before ? 'before_send_tap' : 'after_send_tap'),
+          );
+          tracePrivate('send_wait');
+          await _until(
+            tester,
+            () =>
+                find
+                    .text(privateText, findRichText: false)
+                    .hitTestable()
+                    .evaluate()
+                    .any((element) => element.widget is Text) &&
+                tester.widget<TextField>(composer).controller!.text.isEmpty &&
+                tester.widget<IconButton>(sendButton).onPressed != null,
+            'private UI send $index',
+            onTimeout: () => tracePrivate('send_timeout'),
+          );
+          tracePrivate('send_success');
+          tracePrivate('receive_wait');
+          await _until(
+            tester,
+            () => find.text(peerPrivate).hitTestable().evaluate().length == 1,
+            'private automatic receive without navigation $index',
+            timeout: const Duration(seconds: 5),
+            onTimeout: () => tracePrivate('receive_timeout'),
+          );
+          tracePrivate('receive_success');
+          expect(find.text(peerPrivate).hitTestable(), findsOneWidget);
+          await _barrier(tester, relay, config, 'private-received-$index');
+          tracePrivate('received_barrier_return');
+          roundCompleted = true;
+        } finally {
+          if (!roundCompleted) tracePrivate('private_failed');
+          binding.removeObserver(observer);
+          privateWatch.stop();
+        }
       }
       final conversation =
           (await dependencies.messageRepository.fetchConversations())
@@ -568,16 +625,23 @@ Future<void> _until(
   bool Function() condition,
   String stage, {
   Duration timeout = const Duration(seconds: 30),
+  VoidCallback? onTimeout,
 }) async {
   final deadline = DateTime.now().add(timeout);
   while (!condition()) {
-    if (DateTime.now().isAfter(deadline))
+    if (DateTime.now().isAfter(deadline)) {
+      onTimeout?.call();
       throw TestFailure('Timed out: $stage');
+    }
     await tester.pump(const Duration(milliseconds: 100));
   }
 }
 
-Future<void> _tap(WidgetTester tester, Finder finder) async {
+Future<void> _tap(
+  WidgetTester tester,
+  Finder finder, {
+  void Function(bool before)? diagnostic,
+}) async {
   await _until(tester, () => finder.evaluate().isNotEmpty, 'UI control');
   // A modal seat picker repeats the labels on the room underneath it. Only
   // the unobscured target is actionable; never scroll/click a covered match.
@@ -591,8 +655,19 @@ Future<void> _tap(WidgetTester tester, Finder finder) async {
     () => finder.hitTestable().evaluate().length == 1,
     'one unobscured UI control',
   );
+  diagnostic?.call(true);
   await tester.tap(finder.hitTestable());
+  diagnostic?.call(false);
   await tester.pump(const Duration(milliseconds: 300));
+}
+
+class _PrivateLifecycleObserver with WidgetsBindingObserver {
+  _PrivateLifecycleObserver(this.onChange);
+
+  final VoidCallback onChange;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) => onChange();
 }
 
 Future<void> _barrier(
