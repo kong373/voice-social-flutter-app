@@ -328,6 +328,8 @@ class AppDependencies {
             ? BackendDynamicRepository(
                 apiClient: apiClient,
                 routes: routes,
+                identityGeneration: () => sessionManager.identityGeneration,
+                commentIdentityChanges: sessionManager,
                 currentUserIdProvider: () =>
                     sessionManager.session?.userId ?? 0,
               )

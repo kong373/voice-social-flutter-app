@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import '../domain/comment_mutations.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
@@ -5,16 +7,28 @@ import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_model
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_request_id.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_repository.dart';
 
-class BackendDynamicRepository implements DynamicRepository {
+class BackendDynamicRepository
+    with CommentMutationJournal
+    implements DynamicRepository {
   static const int _maxPageSize = 50;
 
   BackendDynamicRepository({
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
     required int Function() currentUserIdProvider,
+    int Function()? identityGeneration,
+    this.commentIdentityChanges,
   }) : _apiClient = apiClient,
        _routes = routes,
-       _currentUserIdProvider = currentUserIdProvider;
+       _currentUserIdProvider = currentUserIdProvider,
+       _identityGeneration = identityGeneration ?? (() => 0);
+
+  final int Function() _identityGeneration;
+  @override
+  final Listenable? commentIdentityChanges;
+  @override
+  (int, int) get commentIdentity =>
+      (_currentUserIdProvider(), _identityGeneration());
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
@@ -97,6 +111,8 @@ class BackendDynamicRepository implements DynamicRepository {
     int page = 1,
     int pageSize = 30,
   }) async {
+    final identity = commentIdentity;
+    requireCommentIdentity(identity);
     _validatePageRequest(page: page, pageSize: pageSize);
     final String normalizedId = dynamicId.trim();
     if (normalizedId.isEmpty) {
@@ -114,6 +130,7 @@ class BackendDynamicRepository implements DynamicRepository {
       },
     );
     final Map<String, Object?> pageData = _pageData(response.data);
+    requireCommentIdentity(identity);
     final List<Map<String, Object?>> rawItems = _items(pageData);
     final bool hasMore = _hasMore(
       pageData,
@@ -122,7 +139,15 @@ class BackendDynamicRepository implements DynamicRepository {
       count: rawItems.length,
     );
     final List<DynamicComment> items = rawItems
-        .map((Map<String, Object?> item) => _commentFromMap(normalizedId, item))
+        .map((Map<String, Object?> item) {
+          final comment = _commentFromMap(normalizedId, item);
+          if (comment.status != 'PUBLISHED')
+            throw const ApiException(
+              kind: ApiFailureKind.protocol,
+              message: '评论列表包含不可见评论',
+            );
+          return comment;
+        })
         .toList(growable: false);
     return PagedResult<DynamicComment>(
       items: items,
@@ -193,27 +218,92 @@ class BackendDynamicRepository implements DynamicRepository {
         message: '评论内容需为 1～200 个字',
       );
     }
-    final ApiResponse response = await _apiClient.post(
-      _routes.dynamicComment,
-      headers: _requestHeaders(requestId),
-      body: <String, Object?>{
+    return commentMutation<DynamicComment>(
+      'add',
+      <String, Object?>{
         'dynamicId': _numericId(normalizedId),
         'content': value,
         if (replyToUserId != null) 'replyToUserId': replyToUserId,
         if (replyToCommentId != null) 'parentCommentId': replyToCommentId,
       },
+      requestId,
+      (command, identity) async {
+        final ApiResponse response = await _apiClient.postBoundToIdentity(
+          _routes.dynamicComment,
+          requireIdentity: () => requireCommentIdentity(identity),
+          headers: _requestHeaders(command.requestId),
+          body: command.body,
+        );
+        requireCommentIdentity(identity);
+        final Map<String, Object?> data = _asMap(response.data);
+        if (data.isEmpty) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '服务端未返回评论详情',
+          );
+        }
+        // A comment changes the authoritative server-side count. Invalidate the
+        // local entry instead of manufacturing a local comment/count.
+        final comment = _commentFromMap(normalizedId, data);
+        if (comment.author.userId != identity.$1 ||
+            comment.replyToCommentId !=
+                _optionalString(command.body['parentCommentId']) ||
+            (comment.status == 'PUBLISHED' && comment.content != value)) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '评论响应与原请求不匹配',
+          );
+        }
+        _postCache.remove(normalizedId);
+        return comment;
+      },
     );
-    final Map<String, Object?> data = _asMap(response.data);
-    if (data.isEmpty) {
+  }
+
+  @override
+  Future<CommentDeletion> deleteComment({
+    required String dynamicId,
+    required String commentId,
+    String? requestId,
+  }) {
+    if (dynamicId.trim().isEmpty ||
+        commentId.trim().isEmpty ||
+        dynamicId.length > 36 ||
+        commentId.length > 36) {
       throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '服务端未返回评论详情',
+        kind: ApiFailureKind.validation,
+        message: '评论目标无效',
       );
     }
-    // A comment changes the authoritative server-side count. Invalidate the
-    // local entry instead of manufacturing a local comment/count.
-    _postCache.remove(normalizedId);
-    return _commentFromMap(normalizedId, data);
+    return commentMutation<CommentDeletion>(
+      'delete',
+      {'dynamicId': dynamicId.trim(), 'commentId': commentId.trim()},
+      requestId,
+      (command, identity) async {
+        final response = await _apiClient.postBoundToIdentity(
+          _routes.dynamicCommentDelete,
+          requireIdentity: () => requireCommentIdentity(identity),
+          headers: _requestHeaders(command.requestId),
+          body: command.body,
+        );
+        requireCommentIdentity(identity);
+        final data = _requireMap(response.data, '评论删除');
+        if (data['dynamicId'] != command.body['dynamicId'] ||
+            data['commentId'] != command.body['commentId'] ||
+            data['status'] != 'DELETED' ||
+            data['deleted'] != true ||
+            data['canDelete'] != false ||
+            data['canReply'] != false) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '评论删除响应不匹配',
+          );
+        }
+        final count = _requiredNonNegativeInt(data['commentCount'], '评论计数');
+        _postCache.remove(dynamicId.trim());
+        return CommentDeletion(dynamicId.trim(), commentId.trim(), count);
+      },
+    );
   }
 
   @override
@@ -480,10 +570,62 @@ class BackendDynamicRepository implements DynamicRepository {
     String dynamicId,
     Map<String, Object?> item,
   ) {
+    final status = _requiredString(item['status'], field: '评论状态');
+    final deleted = _requiredBool(item['deleted'], '评论删除状态');
+    final canDelete = item.containsKey('canDelete')
+        ? _requiredBool(item['canDelete'], '评论删除能力')
+        : false;
+    final canReply = item.containsKey('canReply')
+        ? _requiredBool(item['canReply'], '评论回复能力')
+        : false;
+    final parentStatus = _requiredString(
+      item['parentCommentStatus'],
+      field: '父评论状态',
+    );
+    final parentId = _optionalString(item['parentCommentId']);
+    final unavailable = _requiredBool(
+      item['parentCommentUnavailable'],
+      '父评论可用状态',
+    );
+    final placeholder = item['parentCommentPlaceholder'];
+    final expectedPlaceholder = switch (parentStatus) {
+      'DELETED' => '该评论已删除',
+      'HIDDEN' || 'UNAVAILABLE' => '该评论暂不可见',
+      _ => '',
+    };
+    if (!['PUBLISHED', 'DELETED', 'HIDDEN'].contains(status) ||
+        deleted != (status == 'DELETED') ||
+        (deleted && canDelete) ||
+        (status != 'PUBLISHED' && (canReply || item['content'] != '')) ||
+        ![
+          'NONE',
+          'PUBLISHED',
+          'DELETED',
+          'HIDDEN',
+          'UNAVAILABLE',
+        ].contains(parentStatus) ||
+        unavailable != !['NONE', 'PUBLISHED'].contains(parentStatus) ||
+        placeholder != expectedPlaceholder ||
+        (parentStatus == 'NONE' && parentId != null) ||
+        (!['NONE', 'UNAVAILABLE'].contains(parentStatus) && parentId == null)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '评论可见性响应无效',
+      );
+    }
     final String id = _requiredServerId(
       item['id'] ?? item['commentId'],
       field: '评论编号',
     );
+    if ((item.containsKey('commentId') &&
+            _requiredServerId(item['commentId'], field: '评论编号') != id) ||
+        (item.containsKey('dynamicId') &&
+            item['dynamicId'].toString() != dynamicId)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '评论归属或编号不一致',
+      );
+    }
     final int userId = _requiredPositiveInt(item['userId'], '评论 userId');
     final String nickname = _requiredString(
       item['nickName'] ?? item['nickname'],
@@ -505,7 +647,14 @@ class BackendDynamicRepository implements DynamicRepository {
         nickname: nickname,
         avatarUrl: _optionalString(item['avatarUrl'] ?? item['headImgUrl']),
       ),
-      content: _requiredString(item['content'], field: '评论 content'),
+      content: status == 'PUBLISHED'
+          ? _requiredString(item['content'], field: '评论 content')
+          : '',
+      status: status,
+      canDelete: canDelete,
+      canReply: canReply,
+      parentCommentStatus: parentStatus,
+      parentCommentPlaceholder: expectedPlaceholder,
       createdAt: _requiredServiceTime(item, field: '评论创建时间'),
       replyToUserId: _asInt(item['replyToUserId']),
       replyToNickname: _optionalString(item['replyToNickname']),

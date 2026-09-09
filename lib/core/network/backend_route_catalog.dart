@@ -115,6 +115,7 @@ class BackendRouteCatalog {
     this.dynamicDelete = '/app-mini-api/mini/v1/dynamic/delete',
     this.dynamicLike = '/app-mini-api/mini/v1/dynamic/like',
     this.dynamicComment = '/app-mini-api/mini/v1/dynamic/comment',
+    this.dynamicCommentDelete = '/app-mini-api/mini/v1/dynamic/comment/delete',
     this.dynamicComments = '/app-mini-api/mini/v1/dynamic/comment/list',
     this.charmRanking = '/app-api/rankinglist/charmrank',
     this.wealthRanking = '/app-api/rankinglist/wealthrank',
@@ -319,6 +320,7 @@ class BackendRouteCatalog {
   final String dynamicDelete;
   final String dynamicLike;
   final String dynamicComment;
+  final String dynamicCommentDelete;
   final String dynamicComments;
   final String charmRanking;
   final String wealthRanking;

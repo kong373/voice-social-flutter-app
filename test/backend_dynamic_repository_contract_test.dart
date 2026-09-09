@@ -110,6 +110,7 @@ void main() {
               'records': <Object?>[
                 <String, Object?>{
                   'commentId': 'c-1',
+                  ..._s14Capabilities(parent: true),
                   'userId': 10002,
                   'nickName': '南风',
                   'content': '可以呀',
@@ -120,6 +121,7 @@ void main() {
               'list': <Object?>[
                 <String, Object?>{
                   'commentId': 'c-1',
+                  ..._s14Capabilities(parent: true),
                   'userId': 10002,
                   'nickName': '南风',
                   'content': '可以呀',
@@ -164,6 +166,7 @@ void main() {
             request,
             data: <String, Object?>{
               'commentId': 'c-2',
+              ..._s14Capabilities(parent: true),
               'userId': 10001,
               'nickName': '晚星',
               'content': '收到',
@@ -528,11 +531,17 @@ void main() {
       final int index = call++;
       final Map<String, Object?> data = index == 0
           ? <String, Object?>{
+              ..._s14Capabilities(),
+              'userId': 10001,
+              'nickName': '评论者',
               'content': '缺少评论编号',
               'createdAt': '2026-08-22T09:00:00Z',
             }
           : <String, Object?>{
               'commentId': 'comment-1',
+              ..._s14Capabilities(),
+              'userId': 10001,
+              'nickName': '评论者',
               'content': '缺少服务时间',
               'createdAt': 'not-a-time',
             };
@@ -549,11 +558,17 @@ void main() {
       await expectLater(
         repository.addComment(dynamicId: '42', content: '评论'),
         throwsA(
-          isA<ApiException>().having(
-            (ApiException error) => error.kind,
-            'kind',
-            ApiFailureKind.protocol,
-          ),
+          isA<ApiException>()
+              .having(
+                (e) => e.message,
+                'specific invalid field',
+                contains(index == 0 ? '编号' : '时间'),
+              )
+              .having(
+                (ApiException error) => error.kind,
+                'kind',
+                ApiFailureKind.protocol,
+              ),
         ),
       );
     }
@@ -682,6 +697,7 @@ void main() {
             request,
             data: <String, Object?>{
               'commentId': 'comment-1',
+              ..._s14Capabilities(),
               'userId': 10001,
               'nickName': '晚星',
               'content': '同一条评论',
@@ -1383,6 +1399,16 @@ void main() {
     },
   );
 }
+
+Map<String, Object?> _s14Capabilities({bool parent = false}) => {
+  'status': 'PUBLISHED',
+  'deleted': false,
+  'canReply': true,
+  'canDelete': true,
+  'parentCommentStatus': parent ? 'PUBLISHED' : 'NONE',
+  'parentCommentUnavailable': false,
+  'parentCommentPlaceholder': '',
+};
 
 Map<String, Object?> _dynamicPagePayload() => <String, Object?>{
   'current': 1,

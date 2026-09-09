@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
+import '../domain/comment_mutations.dart';
 
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_models.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_repository.dart';
 
-class MockDynamicRepository implements DynamicRepository {
+class MockDynamicRepository
+    with CommentMutationJournal
+    implements DynamicRepository {
   MockDynamicRepository()
     : _posts = <DynamicPost>[
         const DynamicPost(
@@ -65,6 +69,83 @@ class MockDynamicRepository implements DynamicRepository {
   final Map<String, List<DynamicComment>> _comments;
   int _postSequence = 2000;
   int _commentSequence = 100;
+  final Set<String> _deletedComments = {};
+  final Map<(int, String), DynamicComment> _commentReceipts = {};
+  @override
+  (int, int) get commentIdentity => (10001, 0);
+  @override
+  Listenable? get commentIdentityChanges => null;
+
+  DynamicComment _projectComment(DynamicComment comment) {
+    final deleted = _deletedComments.contains(comment.id);
+    final parentDeleted = _deletedComments.contains(comment.replyToCommentId);
+    final actor = commentIdentity.$1;
+    return DynamicComment(
+      id: comment.id,
+      dynamicId: comment.dynamicId,
+      author: comment.author,
+      content: deleted ? '' : comment.content,
+      createdAt: comment.createdAt,
+      replyToCommentId: comment.replyToCommentId,
+      replyToUserId: comment.replyToUserId,
+      replyToNickname: parentDeleted ? null : comment.replyToNickname,
+      status: deleted ? 'DELETED' : 'PUBLISHED',
+      canReply: !deleted && actor > 0,
+      canDelete:
+          !deleted &&
+          actor > 0 &&
+          (comment.author.userId == actor ||
+              _requirePost(comment.dynamicId).author.userId == actor),
+      parentCommentStatus: parentDeleted
+          ? 'DELETED'
+          : comment.replyToCommentId == null
+          ? 'NONE'
+          : 'PUBLISHED',
+      parentCommentPlaceholder: parentDeleted ? '该评论已删除' : '',
+    );
+  }
+
+  @override
+  Future<CommentDeletion> deleteComment({
+    required String dynamicId,
+    required String commentId,
+    String? requestId,
+  }) => commentMutation<CommentDeletion>(
+    'delete',
+    {'dynamicId': dynamicId, 'commentId': commentId},
+    requestId,
+    (command, identity) async {
+      await _delay();
+      requireCommentIdentity(identity);
+      final post = _requirePost(dynamicId);
+      final targets = (_comments[dynamicId] ?? []).where(
+        (c) => c.id == commentId,
+      );
+      if (targets.isEmpty)
+        throw const ApiException(
+          kind: ApiFailureKind.business,
+          code: 40452,
+          httpStatus: 404,
+          message: '评论不存在',
+        );
+      final target = targets.first;
+      if (target.author.userId != identity.$1 &&
+          post.author.userId != identity.$1)
+        throw const ApiException(
+          kind: ApiFailureKind.forbidden,
+          code: 40352,
+          message: '不能删除他人评论',
+        );
+      _deletedComments.add(commentId);
+      final count = (_comments[dynamicId] ?? [])
+          .where((c) => !_deletedComments.contains(c.id))
+          .length;
+      _posts[_posts.indexWhere((p) => p.id == dynamicId)] = post.copyWith(
+        commentCount: count,
+      );
+      return CommentDeletion(dynamicId, commentId, count);
+    },
+  );
 
   @override
   bool get supportsImagePublishing => false;
@@ -107,7 +188,9 @@ class MockDynamicRepository implements DynamicRepository {
     await _delay();
     _requirePost(dynamicId);
     final List<DynamicComment> values = List<DynamicComment>.of(
-      _comments[dynamicId] ?? const <DynamicComment>[],
+      (_comments[dynamicId] ?? const <DynamicComment>[])
+          .where((c) => !_deletedComments.contains(c.id))
+          .map(_projectComment),
     );
     final int start = ((page - 1) * pageSize).clamp(0, values.length).toInt();
     final int end = (start + pageSize).clamp(0, values.length).toInt();
@@ -153,50 +236,78 @@ class MockDynamicRepository implements DynamicRepository {
     String? replyToCommentId,
     String? requestId,
   }) async {
-    await _delay();
-    final String normalized = content.trim();
-    if (normalized.isEmpty || normalized.length > 200) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '评论内容需为 1～200 个字',
-      );
-    }
-    final int postIndex = _posts.indexWhere(
-      (DynamicPost post) => post.id == dynamicId,
-    );
-    if (postIndex < 0) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '动态已删除或不可用',
-      );
-    }
-    String? replyName;
-    if (replyToCommentId != null) {
-      for (final DynamicComment comment
-          in _comments[dynamicId] ?? const <DynamicComment>[]) {
-        if (comment.id == replyToCommentId) {
-          replyName = comment.author.nickname;
-          break;
+    return commentMutation<DynamicComment>(
+      'add',
+      {
+        'dynamicId': dynamicId,
+        'content': content.trim(),
+        if (replyToUserId != null) 'replyToUserId': replyToUserId,
+        if (replyToCommentId != null) 'parentCommentId': replyToCommentId,
+      },
+      requestId,
+      (command, identity) async {
+        await _delay();
+        requireCommentIdentity(identity);
+        final receipt = _commentReceipts[(identity.$1, command.requestId)];
+        if (replyToCommentId != null &&
+            !(_comments[dynamicId] ?? []).any(
+              (c) =>
+                  c.id == replyToCommentId && !_deletedComments.contains(c.id),
+            )) {
+          throw const ApiException(
+            kind: ApiFailureKind.business,
+            code: 40452,
+            httpStatus: 404,
+            message: '回复目标不可用',
+          );
         }
-      }
-    }
-    final DynamicComment comment = DynamicComment(
-      id: 'comment-${_commentSequence++}',
-      dynamicId: dynamicId,
-      author: const DynamicAuthor(userId: 10001, nickname: '我'),
-      content: normalized,
-      createdAt: '刚刚',
-      replyToUserId: replyToUserId,
-      replyToNickname: replyName,
-      replyToCommentId: replyToCommentId,
+        if (receipt != null) return _projectComment(receipt);
+        final String normalized = content.trim();
+        if (normalized.isEmpty || normalized.length > 200) {
+          throw const ApiException(
+            kind: ApiFailureKind.validation,
+            message: '评论内容需为 1～200 个字',
+          );
+        }
+        final int postIndex = _posts.indexWhere(
+          (DynamicPost post) => post.id == dynamicId,
+        );
+        if (postIndex < 0) {
+          throw const ApiException(
+            kind: ApiFailureKind.validation,
+            message: '动态已删除或不可用',
+          );
+        }
+        String? replyName;
+        if (replyToCommentId != null) {
+          for (final DynamicComment comment
+              in _comments[dynamicId] ?? const <DynamicComment>[]) {
+            if (comment.id == replyToCommentId) {
+              replyName = comment.author.nickname;
+              break;
+            }
+          }
+        }
+        final DynamicComment comment = DynamicComment(
+          id: 'comment-${_commentSequence++}',
+          dynamicId: dynamicId,
+          author: DynamicAuthor(userId: identity.$1, nickname: '我'),
+          content: normalized,
+          createdAt: '刚刚',
+          replyToUserId: replyToUserId,
+          replyToNickname: replyName,
+          replyToCommentId: replyToCommentId,
+        );
+        _comments
+            .putIfAbsent(dynamicId, () => <DynamicComment>[])
+            .insert(0, comment);
+        _posts[postIndex] = _posts[postIndex].copyWith(
+          commentCount: _posts[postIndex].commentCount + 1,
+        );
+        _commentReceipts[(identity.$1, command.requestId)] = comment;
+        return _projectComment(comment);
+      },
     );
-    _comments
-        .putIfAbsent(dynamicId, () => <DynamicComment>[])
-        .insert(0, comment);
-    _posts[postIndex] = _posts[postIndex].copyWith(
-      commentCount: _posts[postIndex].commentCount + 1,
-    );
-    return comment;
   }
 
   @override

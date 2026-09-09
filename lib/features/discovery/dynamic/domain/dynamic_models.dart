@@ -95,6 +95,11 @@ class DynamicComment {
     this.replyToUserId,
     this.replyToNickname,
     this.replyToCommentId,
+    this.status = 'PUBLISHED',
+    this.canDelete = false,
+    this.canReply = false,
+    this.parentCommentStatus = 'NONE',
+    this.parentCommentPlaceholder = '',
   });
 
   final String id;
@@ -105,6 +110,21 @@ class DynamicComment {
   final int? replyToUserId;
   final String? replyToNickname;
   final String? replyToCommentId;
+  final String status;
+  final bool canDelete;
+  final bool canReply;
+  final String parentCommentStatus;
+  final String parentCommentPlaceholder;
+  bool get deleted => status == 'DELETED';
+  bool get parentCommentUnavailable =>
+      !const ['NONE', 'PUBLISHED'].contains(parentCommentStatus);
+}
+
+class CommentDeletion {
+  const CommentDeletion(this.dynamicId, this.commentId, this.commentCount);
+  final String dynamicId;
+  final String commentId;
+  final int commentCount;
 }
 
 class PagedResult<T> {

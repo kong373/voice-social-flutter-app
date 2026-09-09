@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../domain/comment_mutations.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
@@ -422,6 +423,64 @@ class DynamicDetailPage extends StatefulWidget {
 }
 
 class _DynamicDetailPageState extends State<DynamicDetailPage> {
+  CommentActions? _observedActions;
+  (int, int)? _observedIdentity;
+  BuildContext? _commentDialog;
+  bool _commentDeleting = false;
+  bool _commentConfirming = false;
+  CommentActions? get _actions =>
+      _repository is CommentActions ? _repository as CommentActions : null;
+  PendingCommentMutation? get _pendingMutation =>
+      _actions?.pendingCommentMutation;
+  bool get _commentFrozen =>
+      _submitting ||
+      _commentDeleting ||
+      _commentConfirming ||
+      _pendingMutation != null;
+
+  void _restoreCommentDraft() {
+    final pending = _pendingMutation;
+    if (pending?.kind == 'add' && pending?.dynamicId == widget.postId) {
+      _commentController.text = pending!.body['content'] as String;
+    }
+  }
+
+  void _onCommentIdentity() {
+    final identity = _actions?.commentIdentity;
+    if (!mounted || identity == _observedIdentity) return;
+    _observedIdentity = identity;
+    final dialog = _commentDialog;
+    if (dialog != null &&
+        dialog.mounted &&
+        ModalRoute.of(dialog)?.isCurrent == true)
+      Navigator.of(dialog).pop(false);
+    _loadRequestId++;
+    _commentRequestId++;
+    _likeRequestId++;
+    setState(() {
+      _post = null;
+      _comments.clear();
+      _replyingTo = null;
+      _commentController.clear();
+      _pendingCommentIntent = null;
+      _pendingLikeIntent = null;
+      _submitting = false;
+      _commentDeleting = false;
+      _commentConfirming = false;
+      _likeInFlight = false;
+      _error = null;
+      _restoreCommentDraft();
+    });
+    if (identity != null && identity.$1 > 0) {
+      _load();
+    } else {
+      setState(() {
+        _loading = false;
+        _error = '请登录后查看评论';
+      });
+    }
+  }
+
   final TextEditingController _commentController = TextEditingController();
   DynamicPost? _post;
   final List<DynamicComment> _comments = <DynamicComment>[];
@@ -445,6 +504,15 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (!identical(_observedActions, _actions)) {
+      _observedActions?.commentIdentityChanges?.removeListener(
+        _onCommentIdentity,
+      );
+      _observedActions = _actions;
+      _observedIdentity = _actions?.commentIdentity;
+      _observedActions?.commentIdentityChanges?.addListener(_onCommentIdentity);
+      _restoreCommentDraft();
+    }
     if (_post == null && _loading) {
       _load();
     }
@@ -452,6 +520,9 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
 
   @override
   void dispose() {
+    _observedActions?.commentIdentityChanges?.removeListener(
+      _onCommentIdentity,
+    );
     _commentController.dispose();
     super.dispose();
   }
@@ -491,10 +562,16 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
   }
 
   Future<void> _submitComment() async {
-    if (_submitting) {
+    final pending = _pendingMutation;
+    if (_submitting ||
+        _commentDeleting ||
+        _commentConfirming ||
+        (pending != null &&
+            (pending.kind != 'add' || pending.dynamicId != widget.postId))) {
       return;
     }
-    final String content = _commentController.text.trim();
+    final String content =
+        pending?.body['content'] as String? ?? _commentController.text.trim();
     if (content.isEmpty) {
       return;
     }
@@ -507,9 +584,12 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
       await _repository.addComment(
         dynamicId: widget.postId,
         content: content,
-        replyToUserId: _replyingTo?.author.userId,
-        replyToCommentId: _replyingTo?.id,
-        requestId: intent.requestId,
+        replyToUserId:
+            pending?.body['replyToUserId'] as int? ??
+            _replyingTo?.author.userId,
+        replyToCommentId:
+            pending?.body['parentCommentId'] as String? ?? _replyingTo?.id,
+        requestId: pending?.requestId ?? intent.requestId,
       );
       if (!mounted ||
           loadRequestId != _loadRequestId ||
@@ -566,6 +646,69 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
       if (mounted && requestId == _commentRequestId) {
         setState(() => _submitting = false);
       }
+    }
+  }
+
+  Future<void> _deleteComment(DynamicComment? comment) async {
+    final actions = _actions;
+    final pending = _pendingMutation;
+    if (actions == null ||
+        _submitting ||
+        _commentDeleting ||
+        _commentConfirming ||
+        (pending != null &&
+            (pending.kind != 'delete' || pending.dynamicId != widget.postId)))
+      return;
+    if (pending == null && (comment == null || !comment.canDelete)) return;
+    final identity = actions.commentIdentity;
+    final target = pending?.body['commentId'] as String? ?? comment!.id;
+    if (pending == null) {
+      setState(() => _commentConfirming = true);
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialog) {
+          _commentDialog = dialog;
+          return AlertDialog(
+            title: const Text('删除这条评论？'),
+            content: const Text('仅删除该评论，已有回复会保留。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialog, false),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialog, true),
+                child: const Text('确认删除评论'),
+              ),
+            ],
+          );
+        },
+      );
+      _commentDialog = null;
+      if (!mounted || identity != actions.commentIdentity) return;
+      setState(() => _commentConfirming = false);
+      if (confirmed != true) return;
+    }
+    setState(() => _commentDeleting = true);
+    bool persisted = false;
+    try {
+      await actions.deleteComment(
+        dynamicId: widget.postId,
+        commentId: target,
+        requestId: pending?.requestId,
+      );
+      if (!mounted || identity != actions.commentIdentity) return;
+      persisted = true;
+      _replyingTo = null;
+      await _load();
+    } catch (error) {
+      if (mounted && identity == actions.commentIdentity) {
+        _showOperationError(error);
+        if (_pendingMutation == null && !persisted) await _load();
+      }
+    } finally {
+      if (mounted && identity == actions.commentIdentity)
+        setState(() => _commentDeleting = false);
     }
   }
 
@@ -748,15 +891,25 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
                           for (final DynamicComment comment in _comments)
                             _CommentTile(
                               comment: comment,
-                              onReply: () => setState(() {
-                                _replyingTo = comment;
-                                _commentController.selection =
-                                    TextSelection.fromPosition(
-                                      TextPosition(
-                                        offset: _commentController.text.length,
-                                      ),
-                                    );
-                              }),
+                              onDelete:
+                                  comment.canDelete &&
+                                      !_commentFrozen &&
+                                      _actions != null
+                                  ? () => _deleteComment(comment)
+                                  : null,
+                              onReply: !comment.canReply || _commentFrozen
+                                  ? null
+                                  : () => setState(() {
+                                      _replyingTo = comment;
+                                      _commentController.selection =
+                                          TextSelection.fromPosition(
+                                            TextPosition(
+                                              offset: _commentController
+                                                  .text
+                                                  .length,
+                                            ),
+                                          );
+                                    }),
                             ),
                       ],
                     ),
@@ -771,6 +924,21 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
+                          if (_pendingMutation != null)
+                            Column(
+                              children: [
+                                const Text('评论操作结果未确认，原请求已保留。请先处理原操作。'),
+                                if (_pendingMutation!.dynamicId ==
+                                        widget.postId &&
+                                    _pendingMutation!.kind == 'delete')
+                                  TextButton(
+                                    onPressed: _commentDeleting
+                                        ? null
+                                        : () => _deleteComment(null),
+                                    child: const Text('重试原删除'),
+                                  ),
+                              ],
+                            ),
                           if (_replyingTo != null)
                             Row(
                               children: <Widget>[
@@ -784,8 +952,10 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
                                 ),
                                 IconButton(
                                   tooltip: '取消回复',
-                                  onPressed: () =>
-                                      setState(() => _replyingTo = null),
+                                  onPressed: _commentFrozen
+                                      ? null
+                                      : () =>
+                                            setState(() => _replyingTo = null),
                                   icon: const Icon(
                                     Icons.close_rounded,
                                     size: 18,
@@ -798,6 +968,7 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
                               Expanded(
                                 child: TextField(
                                   controller: _commentController,
+                                  enabled: !_commentFrozen,
                                   minLines: 1,
                                   maxLines: 4,
                                   maxLength: 200,
@@ -812,7 +983,16 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
                               const SizedBox(width: 8),
                               IconButton.filled(
                                 tooltip: '发送评论',
-                                onPressed: _submitting ? null : _submitComment,
+                                onPressed:
+                                    _submitting ||
+                                        _commentDeleting ||
+                                        _commentConfirming ||
+                                        (_pendingMutation != null &&
+                                            (_pendingMutation!.kind != 'add' ||
+                                                _pendingMutation!.dynamicId !=
+                                                    widget.postId))
+                                    ? null
+                                    : _submitComment,
                                 icon: _submitting
                                     ? const SizedBox.square(
                                         dimension: 18,
@@ -1457,10 +1637,15 @@ class _ImageEvidence extends StatelessWidget {
 }
 
 class _CommentTile extends StatelessWidget {
-  const _CommentTile({required this.comment, required this.onReply});
+  const _CommentTile({
+    required this.comment,
+    required this.onReply,
+    this.onDelete,
+  });
 
   final DynamicComment comment;
-  final VoidCallback onReply;
+  final VoidCallback? onReply;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -1480,12 +1665,38 @@ class _CommentTile extends StatelessWidget {
             ),
           ],
         ),
-        subtitle: Text(
-          comment.replyToNickname == null
-              ? comment.content
-              : '回复 ${comment.replyToNickname}：${comment.content}',
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (comment.parentCommentPlaceholder.isNotEmpty)
+              Text(comment.parentCommentPlaceholder),
+            Text(
+              comment.status != 'PUBLISHED'
+                  ? ''
+                  : comment.replyToNickname == null ||
+                        comment.parentCommentPlaceholder.isNotEmpty
+                  ? comment.content
+                  : '回复 ${comment.replyToNickname}：${comment.content}',
+            ),
+          ],
         ),
-        trailing: const Icon(Icons.reply_rounded, size: 18),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (comment.canReply)
+              IconButton(
+                tooltip: '回复评论',
+                onPressed: onReply,
+                icon: const Icon(Icons.reply_rounded, size: 18),
+              ),
+            if (comment.canDelete)
+              IconButton(
+                tooltip: '删除评论',
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline, size: 18),
+              ),
+          ],
+        ),
       ),
     );
   }
