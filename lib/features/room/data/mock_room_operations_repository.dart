@@ -80,6 +80,7 @@ class MockRoomOperationsRepository
   ];
 
   final List<MicAccessRequest> _requests = <MicAccessRequest>[];
+  int _nextMicRequestId = 0;
   final List<RoomJoinRequest> _joinRequests = <RoomJoinRequest>[];
   final Map<String, RoomJoinRequestApplicantStatus> _applicantStatuses =
       <String, RoomJoinRequestApplicantStatus>{};
@@ -292,8 +293,10 @@ class MockRoomOperationsRepository
   }
 
   @override
-  Future<List<MicAccessRequest>> fetchMicRequests(String roomId) async =>
-      List<MicAccessRequest>.unmodifiable(_requests);
+  Future<List<MicAccessRequest>> fetchMicRequests(String roomId) async {
+    _expireMicRequests();
+    return List<MicAccessRequest>.unmodifiable(_requests);
+  }
 
   @override
   Future<RoomJoinRequestPage> fetchJoinRequests({
@@ -504,11 +507,30 @@ class MockRoomOperationsRepository
     required int userId,
     required int seatNumber,
   }) async {
-    _requests.removeWhere(
+    _expireMicRequests();
+    if (_requests.any(
       (MicAccessRequest request) =>
+          request.roomId == roomId &&
           request.member.userId == userId &&
           request.status == MicRequestStatus.pending,
-    );
+    )) {
+      return;
+    }
+    final DateTime now = DateTime.now();
+    if (_requests.any(
+      (MicAccessRequest request) =>
+          request.roomId == roomId &&
+          request.member.userId == userId &&
+          request.isRequest &&
+          request.status == MicRequestStatus.rejected &&
+          request.resolvedAt != null &&
+          now.difference(request.resolvedAt!) < const Duration(minutes: 1),
+    )) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '上麦申请被拒绝后，请等待1分钟再申请',
+      );
+    }
     RoomMember? member;
     for (final RoomMember item in _members) {
       if (item.userId == userId) {
@@ -524,12 +546,13 @@ class MockRoomOperationsRepository
     );
     _requests.add(
       MicAccessRequest(
-        id: 'request-$userId-$seatNumber',
+        id: 'request-$userId-$seatNumber-${++_nextMicRequestId}',
         roomId: roomId,
         member: member,
         seatNumber: seatNumber,
         status: MicRequestStatus.pending,
-        createdAt: DateTime.now(),
+        createdAt: now,
+        expiresAt: now.add(const Duration(minutes: 1)),
         type: MicRequestType.request,
         requestedByUserId: userId,
         subjectUserId: userId,
@@ -540,10 +563,11 @@ class MockRoomOperationsRepository
 
   @override
   Future<void> cancelMicRequest({required String requestId}) async {
+    _expireMicRequests();
     final int index = _requests.indexWhere(
       (MicAccessRequest request) => request.id == requestId,
     );
-    if (index < 0) {
+    if (index < 0 || !_requests[index].isPending) {
       throw const ApiException(
         kind: ApiFailureKind.business,
         message: '申请已失效，请刷新状态',
@@ -557,6 +581,8 @@ class MockRoomOperationsRepository
       seatNumber: request.seatNumber,
       status: MicRequestStatus.cancelled,
       createdAt: request.createdAt,
+      expiresAt: request.expiresAt,
+      resolvedAt: DateTime.now(),
       type: request.type,
       requestedByUserId: request.requestedByUserId,
       subjectUserId: request.subjectUserId,
@@ -569,10 +595,11 @@ class MockRoomOperationsRepository
     required String requestId,
     required bool accepted,
   }) async {
+    _expireMicRequests();
     final int index = _requests.indexWhere(
       (MicAccessRequest request) => request.id == requestId,
     );
-    if (index < 0) {
+    if (index < 0 || !_requests[index].isPending) {
       throw const ApiException(
         kind: ApiFailureKind.business,
         message: '申请已失效，请刷新列表',
@@ -586,6 +613,8 @@ class MockRoomOperationsRepository
       seatNumber: request.seatNumber,
       status: accepted ? MicRequestStatus.accepted : MicRequestStatus.rejected,
       createdAt: request.createdAt,
+      expiresAt: request.expiresAt,
+      resolvedAt: DateTime.now(),
       type: request.type,
       requestedByUserId: request.requestedByUserId,
       subjectUserId: request.subjectUserId,
@@ -620,6 +649,32 @@ class MockRoomOperationsRepository
         targetAction: MicRequestTargetAction.accept,
       ),
     );
+  }
+
+  void _expireMicRequests() {
+    final DateTime now = DateTime.now();
+    for (int index = 0; index < _requests.length; index++) {
+      final MicAccessRequest request = _requests[index];
+      if (!request.isPending ||
+          request.expiresAt == null ||
+          request.expiresAt!.isAfter(now)) {
+        continue;
+      }
+      _requests[index] = MicAccessRequest(
+        id: request.id,
+        roomId: request.roomId,
+        member: request.member,
+        seatNumber: request.seatNumber,
+        status: MicRequestStatus.expired,
+        createdAt: request.createdAt,
+        expiresAt: request.expiresAt,
+        resolvedAt: request.expiresAt,
+        type: request.type,
+        requestedByUserId: request.requestedByUserId,
+        subjectUserId: request.subjectUserId,
+        targetAction: MicRequestTargetAction.none,
+      );
+    }
   }
 
   void _replaceMember(

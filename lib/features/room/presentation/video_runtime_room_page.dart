@@ -1141,6 +1141,8 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
               '你正在等待 ${pending!.seatNumber} 号麦审批',
               style: Theme.of(context).textTheme.titleMedium,
             ),
+            const SizedBox(height: 6),
+            const Text('申请提交后 1 分钟失效，处理结果以服务端为准。'),
             const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
@@ -1168,6 +1170,8 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                 '最近状态：${_micRequestStatusLabel(latest.status)}',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
+              if (latest.status == MicRequestStatus.rejected)
+                const Text('申请被拒绝后，需等待 1 分钟再申请。'),
               const SizedBox(height: 8),
             ],
             if (available.isEmpty)
