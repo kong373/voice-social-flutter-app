@@ -201,43 +201,40 @@ void main() {
     },
   );
 
-  test(
-    'authoritative room mute immediately stops audio and does not republish on unmute',
-    () async {
-      final _RoleAwareRoomRepository repository = _RoleAwareRoomRepository();
-      final _TrackingRtcAdapter rtc = _TrackingRtcAdapter();
-      final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
-      final RoomController controller = _controller(
-        repository: repository,
-        rtc: rtc,
-        realtime: realtime,
-      );
-      addTearDown(() async {
-        controller.dispose();
-        await realtime.dispose();
-      });
+  test('public text mute does not change audio publication', () async {
+    final _RoleAwareRoomRepository repository = _RoleAwareRoomRepository();
+    final _TrackingRtcAdapter rtc = _TrackingRtcAdapter();
+    final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
+    final RoomController controller = _controller(
+      repository: repository,
+      rtc: rtc,
+      realtime: realtime,
+    );
+    addTearDown(() async {
+      controller.dispose();
+      await realtime.dispose();
+    });
 
-      await controller.join();
-      expect(await controller.requestMic(4), isTrue);
-      realtime.emit(
-        const RoomRealtimeEvent(
-          code: RoomRealtimeEventCodes.mutedInRoom,
-          payload: <String, Object?>{},
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
-      expect(rtc.audioStates, <bool>[true, false]);
+    await controller.join();
+    expect(await controller.requestMic(4), isTrue);
+    realtime.emit(
+      const RoomRealtimeEvent(
+        code: RoomRealtimeEventCodes.mutedInRoom,
+        payload: <String, Object?>{},
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(rtc.audioStates, <bool>[true]);
 
-      realtime.emit(
-        const RoomRealtimeEvent(
-          code: RoomRealtimeEventCodes.unmutedInRoom,
-          payload: <String, Object?>{},
-        ),
-      );
-      await Future<void>.delayed(Duration.zero);
-      expect(rtc.audioStates, <bool>[true, false]);
-    },
-  );
+    realtime.emit(
+      const RoomRealtimeEvent(
+        code: RoomRealtimeEventCodes.unmutedInRoom,
+        payload: <String, Object?>{},
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(rtc.audioStates, <bool>[true]);
+  });
 
   test(
     'authoritative mute arriving during local unmute keeps native audio disabled',
@@ -258,29 +255,29 @@ void main() {
       await controller.join();
       expect(await controller.requestMic(4), isTrue);
       expect(await controller.toggleMicrophone(), isTrue);
-      expect(rtc.audioStates, <bool>[true, false]);
+      expect(rtc.audioStates, <bool>[true, false, false]);
 
       final Completer<void> pendingEnable = Completer<void>();
       rtc.pendingEnable = pendingEnable;
       final Future<bool> unmute = controller.toggleMicrophone();
       for (
         int attempt = 0;
-        attempt < 3 && rtc.audioStates.length < 3;
+        attempt < 3 && rtc.audioStates.length < 4;
         attempt += 1
       ) {
         await Future<void>.delayed(Duration.zero);
       }
-      expect(rtc.audioStates, <bool>[true, false, true]);
+      expect(rtc.audioStates, <bool>[true, false, false, true]);
 
       realtime.emit(
         const RoomRealtimeEvent(
-          code: RoomRealtimeEventCodes.mutedInRoom,
+          code: RoomRealtimeEventCodes.closeMic,
           payload: <String, Object?>{},
         ),
       );
-      expect(controller.mutedInRoom, isTrue);
+      expect(controller.mutedInRoom, isFalse);
       pendingEnable.complete();
-      expect(await unmute, isTrue);
+      expect(await unmute, isFalse);
       for (int attempt = 0; attempt < 3 && rtc.audioStates.last; attempt += 1) {
         await Future<void>.delayed(Duration.zero);
       }
@@ -290,8 +287,11 @@ void main() {
         true,
         true,
       ]);
-      expect(controller.mutedInRoom, isTrue);
-      expect(controller.snapshot?.seats.single.state, MicSeatState.occupied);
+      expect(controller.mutedInRoom, isFalse);
+      expect(
+        controller.snapshot?.seats.single.state,
+        MicSeatState.occupiedMuted,
+      );
     },
   );
 
@@ -360,6 +360,7 @@ class _RoleAwareRoomRepository extends MockRoomRepository {
   // Ordinary members retain the approval fixture below.
   RoomRole get memberRole => RoomRole.moderator;
   bool _onMic = false;
+  bool _selfMuted = false;
 
   @override
   Future<RoomSnapshot> enterRoom({
@@ -383,7 +384,9 @@ class _RoleAwareRoomRepository extends MockRoomRepository {
   Future<void> setSelfMicrophoneMuted({
     required int backendMicIndex,
     required bool muted,
-  }) async {}
+  }) async {
+    _selfMuted = muted;
+  }
 
   @override
   Future<RoomSnapshot> reconnectRoom({
@@ -404,7 +407,17 @@ class _RoleAwareRoomRepository extends MockRoomRepository {
         MicSeat(
           number: 4,
           backendIndex: 4,
-          state: onMic ? MicSeatState.occupied : MicSeatState.available,
+          state: onMic
+              ? (_selfMuted
+                    ? MicSeatState.occupiedMuted
+                    : MicSeatState.occupied)
+              : MicSeatState.available,
+          audioMute: RoomAudioMuteState(
+            selfMuted: _selfMuted,
+            forcedMuted: false,
+            legacyMuted: false,
+          ),
+          occupantJoinedAt: onMic ? '2026-09-09T00:00:00Z' : null,
           userId: onMic ? 10001 : null,
           userName: onMic ? '我' : null,
           userRole: memberRole,

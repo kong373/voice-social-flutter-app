@@ -1121,6 +1121,33 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Future<void> _showMicSheet() async {
+    final controller = _controller;
+    final pending = controller.pendingMicPlacementSeat;
+    if (pending != null) {
+      final retry = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('上麦操作待确认'),
+          content: Text('保留原 $pending 号麦操作，重试不会更换请求意图。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('重试原操作'),
+            ),
+          ],
+        ),
+      );
+      if (retry == true &&
+          mounted &&
+          identical(controller, _controller) &&
+          controller.isEntryIdentityCurrent)
+        await controller.requestMic(pending);
+      return;
+    }
     if (_controller.micCoordinationMode == MicCoordinationMode.approval) {
       await _showApprovalMicSheet();
       return;
@@ -1158,7 +1185,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                     InkWell(
                       onTap: () async {
                         Navigator.of(sheetContext).pop();
-                        await _controller.requestMic(seat.number);
+                        if (mounted &&
+                            identical(controller, _controller) &&
+                            controller.isEntryIdentityCurrent)
+                          await controller.requestMic(seat.number);
                       },
                       borderRadius: BorderRadius.circular(18),
                       child: Container(
@@ -1178,8 +1208,11 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Future<void> _showApprovalMicSheet() async {
-    await _controller.refreshMicRequests();
-    if (!mounted) {
+    final controller = _controller;
+    await controller.refreshMicRequests();
+    if (!mounted ||
+        !identical(controller, _controller) ||
+        !controller.isEntryIdentityCurrent) {
       return;
     }
     await showModalBottomSheet<void>(
@@ -1191,32 +1224,40 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
       ),
       backgroundColor: const Color(0xFF14152E),
       builder: (BuildContext sheetContext) => ListenableBuilder(
-        listenable: _controller,
-        builder: (BuildContext context, Widget? child) =>
-            SingleChildScrollView(child: _buildApprovalMicSheet(sheetContext)),
+        listenable: controller,
+        builder: (BuildContext context, Widget? child) => SingleChildScrollView(
+          child: _buildApprovalMicSheet(sheetContext, controller),
+        ),
       ),
     );
   }
 
-  Widget _buildApprovalMicSheet(BuildContext sheetContext) {
+  Widget _buildApprovalMicSheet(
+    BuildContext sheetContext,
+    RoomController controller,
+  ) {
+    if (!mounted ||
+        !identical(controller, _controller) ||
+        !controller.isEntryIdentityCurrent)
+      return const SizedBox.shrink();
     // The queue endpoint is room-scoped.  A member-facing sheet may only
     // expose records whose target is the authenticated member; manager tools
     // handle the full REQUEST queue separately.  Without this filter a room
     // owner could see another member's pending REQUEST and receive a 403 when
     // pressing the applicant-only cancel action.
-    final List<MicAccessRequest> requests = _controller.micRequests
+    final List<MicAccessRequest> requests = controller.micRequests
         .where(
           (MicAccessRequest request) =>
               request.isRequest &&
-              request.subjectUserId == _controller.currentUserId,
+              request.subjectUserId == controller.currentUserId,
         )
         .toList(growable: false);
     final MicAccessRequest? pending = requests
         .where((MicAccessRequest request) => request.isPending)
         .firstOrNull;
-    final List<MicSeat> available = _controller.seats
+    final List<MicSeat> available = controller.seats
         .where(
-          (MicSeat seat) => seat.isAvailable && seat.canUse(_controller.role),
+          (MicSeat seat) => seat.isAvailable && seat.canUse(controller.role),
         )
         .toList(growable: false);
     final MicAccessRequest? latest = requests.isEmpty ? null : requests.first;
@@ -1228,7 +1269,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         children: <Widget>[
           Text('审批上麦', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 6),
-          const Text('只有服务端确认第一方麦位后才会显示麦上状态；RTC 仍未连接。'),
+          const Text('服务端确认上麦后，需麦克风授权和音频连接成功才会发声。'),
           const SizedBox(height: 14),
           if (pending?.isRequest == true) ...<Widget>[
             Text(
@@ -1242,13 +1283,20 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
               width: double.infinity,
               child: OutlinedButton.icon(
                 key: const Key('approval-mic-request-cancel'),
-                onPressed: _controller.micRequestPending
+                onPressed: controller.micRequestPending
                     ? null
                     : () async {
                         Navigator.of(sheetContext).pop();
-                        final bool cancelled = await _controller
+                        if (!mounted ||
+                            !identical(controller, _controller) ||
+                            !controller.isEntryIdentityCurrent)
+                          return;
+                        final bool cancelled = await controller
                             .cancelMicRequest(pending.id);
-                        if (mounted && cancelled) {
+                        if (mounted &&
+                            identical(controller, _controller) &&
+                            controller.isEntryIdentityCurrent &&
+                            cancelled) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('已撤回上麦申请')),
                           );
@@ -1285,13 +1333,20 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                   for (final MicSeat seat in available)
                     FilledButton.tonal(
                       key: Key('approval-mic-seat-${seat.number}'),
-                      onPressed: _controller.micRequestPending
+                      onPressed: controller.micRequestPending
                           ? null
                           : () async {
                               Navigator.of(sheetContext).pop();
-                              final bool submitted = await _controller
+                              if (!mounted ||
+                                  !identical(controller, _controller) ||
+                                  !controller.isEntryIdentityCurrent)
+                                return;
+                              final bool submitted = await controller
                                   .requestMic(seat.number);
-                              if (mounted && submitted) {
+                              if (mounted &&
+                                  identical(controller, _controller) &&
+                                  controller.isEntryIdentityCurrent &&
+                                  submitted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text('申请已提交，等待房主或房管审批'),

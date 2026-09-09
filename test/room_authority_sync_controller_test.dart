@@ -67,7 +67,6 @@ void main() {
     );
     await h.controller.join();
     await h.controller.toggleMicrophone();
-    await h.controller.toggleMicrophone();
     expect(h.rtc.audioEnabled, isTrue);
     h.repo.state = h.repo.state.copyWith(
       seats: [_seat(1).copyWith(isOnline: false)],
@@ -144,8 +143,8 @@ void main() {
       );
       await h.controller.join();
       await h.controller.toggleMicrophone();
-      await h.controller.toggleMicrophone();
       expect(h.rtc.audioEnabled, isTrue);
+      final rtcReconnects = h.rtc.reconnects;
       final slowHistory = Completer<List<RoomMessage>>();
       h.repo.nextHistory = slowHistory;
       final reading = h.controller.refreshRoomAuthority();
@@ -155,13 +154,16 @@ void main() {
       try {
         await tester.pump(_interval);
         expect(h.controller.mutedInRoom, isTrue);
-        expect(h.rtc.audioEnabled, isFalse);
+        expect(
+          h.rtc.audioEnabled,
+          isTrue,
+        ); // Public-text mute is not audio mute.
         final enables = h.rtc.enables;
         h.repo.muted = false;
         await tester.pump(_interval);
         expect(h.controller.mutedInRoom, isFalse);
         expect(h.rtc.enables, enables);
-        expect(h.rtc.reconnects, 0);
+        expect(h.rtc.reconnects, rtcReconnects);
       } finally {
         slowHistory.complete([]);
         await reading;
@@ -224,7 +226,7 @@ void main() {
   });
 
   _roomTest(
-    'mute and seat revocation stop audio; later grant never auto-publishes',
+    'audio restriction and revocation stop publication; an unproven legacy grant stays silent',
     (tester) async {
       final h = _Harness();
       h.repo.state = h.repo.state.copyWith(
@@ -242,14 +244,24 @@ void main() {
       addTearDown(h.dispose);
       await h.controller.join();
       expect(h.rtc.enables, 0);
-      await h.controller.toggleMicrophone(); // Explicit mute.
       await h.controller.toggleMicrophone(); // Explicit unmute.
       expect(h.rtc.audioEnabled, isTrue);
-      h.repo.muted = true;
+      final reconnects = h.rtc.reconnects;
+      h.repo.state = h.repo.state.copyWith(
+        seats: [
+          _seat(1).copyWith(
+            state: MicSeatState.occupiedMuted,
+            audioMute: const RoomAudioMuteState(
+              selfMuted: false,
+              forcedMuted: true,
+              legacyMuted: false,
+            ),
+          ),
+        ],
+      );
       await tester.pump(_interval);
       expect(h.rtc.audioEnabled, isFalse);
       final enables = h.rtc.enables;
-      h.repo.muted = false;
       h.repo.state = h.repo.state.copyWith(
         seats: [_seat(null)],
         role: RoomRole.listener,
@@ -261,7 +273,7 @@ void main() {
       );
       await tester.pump(_interval);
       expect(h.rtc.enables, enables);
-      expect(h.rtc.reconnects, 0);
+      expect(h.rtc.reconnects, reconnects);
     },
   );
 
@@ -432,6 +444,11 @@ MicSeat _seat(int? userId) => MicSeat(
   state: userId == null ? MicSeatState.available : MicSeatState.occupied,
   userId: userId,
   userName: userId == null ? null : 'User',
+  audioMute: const RoomAudioMuteState(
+    selfMuted: false,
+    forcedMuted: false,
+    legacyMuted: false,
+  ),
 );
 RoomMessage _message(String id) => RoomMessage(
   roomId: 'room-1',
@@ -581,6 +598,11 @@ class _Repository extends MockRoomRepository
       seats: [
         state.seats.single.copyWith(
           state: muted ? MicSeatState.occupiedMuted : MicSeatState.occupied,
+          audioMute: RoomAudioMuteState(
+            selfMuted: muted,
+            forcedMuted: false,
+            legacyMuted: false,
+          ),
         ),
       ],
     );

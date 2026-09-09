@@ -171,6 +171,11 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   RoomSessionStatus _status = RoomSessionStatus.idle;
   StreamSubscription<RoomRealtimeEvent>? _realtimeSubscription;
   bool _micRequestPending = false;
+  Future<bool>? _micToggleFlight;
+  (int, bool)? _pendingMicToggle;
+  (int, int, bool)? _pendingMicPlacement;
+  bool _micPlacementCommitted = false;
+  bool _suppressAutomaticGrant = false;
   bool _micQueueLoading = false;
   final List<MicAccessRequest> _micRequests = <MicAccessRequest>[];
   int _micQueueEpoch = 0;
@@ -216,6 +221,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   RoomRole get role => _snapshot?.role ?? RoomRole.listener;
   int? get giftBalance => _snapshot?.giftBalance;
   bool get micRequestPending => _micRequestPending;
+  int? get pendingMicPlacementSeat => _pendingMicPlacement?.$1;
   bool get micQueueLoading => _micQueueLoading;
   List<MicAccessRequest> get micRequests =>
       List<MicAccessRequest>.unmodifiable(_micRequests);
@@ -263,8 +269,15 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
 
   bool get micMuted {
     final MicSeat? seat = _ownSeat();
-    return seat?.state == MicSeatState.occupiedMuted;
+    return seat != null &&
+        seat.isOccupied &&
+        (!_transportPublishing || seat.state == MicSeatState.occupiedMuted);
   }
+
+  bool get _transportPublishing =>
+      _rtcPublicationActive &&
+      (_rtcAdapter is! RtcPublicationState ||
+          (_rtcAdapter as RtcPublicationState).localAudioEnabled);
 
   bool allows(RoomCapability capability) {
     final RoomSnapshot? snapshot = _snapshot;
@@ -318,6 +331,11 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     _pendingJoinRequestRoomId = null;
     _pendingJoinRequestId = null;
     _mutedInRoom = false;
+    _pendingMicPlacement = null;
+    _micPlacementCommitted = false;
+    _pendingMicToggle = null;
+    _micToggleFlight = null;
+    _suppressAutomaticGrant = false;
     _rtcAudioRequested = false;
     _rtcConnected = false;
     _status = RoomSessionStatus.joining;
@@ -663,6 +681,12 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   void setForeground(bool foreground) {
     if (_disposed || _foreground == foreground) return;
     _foreground = foreground;
+    // Background continuation may keep already-published audio, but must not
+    // finish a pending foreground grant/unmute and start a new microphone.
+    if (!foreground && !_transportPublishing) {
+      _rtcAudioAuthorityGeneration += 1;
+      _rtcAudioRequested = false;
+    }
     if (foreground && _lease != null && !_leaseUnexpired) {
       _endAuthoritySession('房间会话已到期，请重新进入房间');
       return;
@@ -966,8 +990,8 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       _authorityKnown = true;
       _authoritySyncDegraded = false;
       _mutedInRoom = projection.roomMuted;
-      // A GET projection never grants a new RTC token, reconnects a provider,
-      // or turns on the microphone. Preserve the established transport.
+      // A read alone never resumes audio. A newly observed occupancy grant
+      // may create one foreground publication attempt with a fresh token.
       final RoomSnapshot next = projection.snapshot.copyWith(
         roomLease: _lease ?? previous.roomLease,
         rtc: previous.rtc,
@@ -975,13 +999,37 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         giftBalance: projection.snapshot.giftBalance ?? previous.giftBalance,
       );
       _roomSnapshot = next;
-      if (_mutedInRoom ||
-          !_snapshotAllowsRtcPublication(next) ||
-          next.role == RoomRole.listener ||
-          next.role == RoomRole.guest) {
+      final automaticGrant =
+          !_suppressAutomaticGrant && _isNewMicGrant(previous, next);
+      if (_seatInSnapshot(next)?.isOccupied == true)
+        _suppressAutomaticGrant = false;
+      if (!_seatPermitsAudio(next)) {
         _rtcAudioAuthorityGeneration += 1;
         _rtcAudioRequested = false;
         await _disableRtcPublication();
+      } else if (_foreground && !previous.isSnapshotOnly && automaticGrant) {
+        final audioGeneration = _rtcAudioAuthorityGeneration;
+        try {
+          final fresh = await _repository.reconnectRoom(
+            roomId: roomId,
+            currentUserId: _currentUserId,
+          );
+          if (!_authorityReadIsCurrent(epoch, generation) ||
+              audioGeneration != _rtcAudioAuthorityGeneration ||
+              !_foreground)
+            return;
+          if (!_sameGrant(next, fresh)) return;
+          await _reconcileAuthoritativeRtc(previous, fresh, freshGrant: true);
+          if (!_authorityReadIsCurrent(epoch, generation) ||
+              audioGeneration != _rtcAudioAuthorityGeneration)
+            return;
+          _roomSnapshot = fresh.copyWith(roomLease: _lease ?? fresh.roomLease);
+        } catch (error) {
+          if (!_authorityReadIsCurrent(epoch, generation)) return;
+          _rtcAudioRequested = false;
+          await _disableRtcPublication();
+          _errorMessage = _messageFor(error, fallback: '已上麦，麦克风未开启，请手动重试');
+        }
       }
       if (!_authorityReadIsCurrent(epoch, generation)) return;
       _notify();
@@ -1229,24 +1277,39 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       return false;
     }
     final int sessionEpoch = _sessionEpoch;
+    final int audioGeneration = _rtcAudioAuthorityGeneration;
+    final retained = _pendingMicPlacement;
+    if (retained != null && retained.$1 != seatNumber) {
+      _errorMessage = '原上麦操作结果待确认，请重试原麦位';
+      _notify();
+      return false;
+    }
     final MicSeat? seat = _seatByNumber(seatNumber);
-    if (seat == null || !seat.isAvailable || !seat.canUse(role)) {
+    if (retained == null &&
+        (seat == null || !seat.isAvailable || !seat.canUse(role))) {
       _errorMessage = '麦位状态已变化，请重新选择';
       _notify();
       return false;
     }
+    final placement =
+        retained ??
+        (
+          seatNumber,
+          seat!.backendIndex,
+          micCoordinationMode == MicCoordinationMode.approval,
+        );
+    _pendingMicPlacement = placement;
     if (micCoordinationMode == MicCoordinationMode.approval) {
       _invalidateMicQueueReads();
     }
     _micRequestPending = true;
     _errorMessage = null;
     _notify();
-    bool serverMicMutationCommitted = false;
-    final RoomSnapshot? previousSnapshot = _snapshot;
+    bool snapshotConfirmed = false;
     final bool moving = isOnMic;
     _beginAuthorityMutation();
     try {
-      if (micCoordinationMode == MicCoordinationMode.approval) {
+      if (placement.$3) {
         final RoomOperationsRepository? operations = _roomOperationsRepository;
         if (operations == null) {
           throw const ApiException(
@@ -1257,8 +1320,9 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         await operations.submitMicRequest(
           roomId: roomId,
           userId: _currentUserId,
-          seatNumber: seat.backendIndex,
+          seatNumber: placement.$2,
         );
+        if (_isJoinedEpoch(sessionEpoch)) _pendingMicPlacement = null;
         if (!_isJoinedEpoch(sessionEpoch)) {
           return false;
         }
@@ -1281,8 +1345,11 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
           message: '房间未返回权威上麦协调能力',
         );
       }
-      await _repository.requestMic(seat.backendIndex);
-      serverMicMutationCommitted = true;
+      _suppressAutomaticGrant = true;
+      if (!_micPlacementCommitted) {
+        await _repository.requestMic(placement.$2);
+        if (_isJoinedEpoch(sessionEpoch)) _micPlacementCommitted = true;
+      }
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
@@ -1293,19 +1360,29 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
+      if (audioGeneration != _rtcAudioAuthorityGeneration) return false;
+      _snapshot = refreshed;
+      snapshotConfirmed = true;
+      _suppressAutomaticGrant = false;
+      _pendingMicPlacement = null;
+      _micPlacementCommitted = false;
       if (!refreshed.seats.any(
-        (MicSeat item) => item.userId == _currentUserId && item.isOccupied,
+        (MicSeat item) =>
+            item.userId == _currentUserId &&
+            item.isOccupied &&
+            item.backendIndex == placement.$2,
       )) {
         throw const ApiException(
           kind: ApiFailureKind.business,
           message: '麦位状态尚未确认，请刷新后重试',
         );
       }
-      final int authorityGeneration = _rtcAudioAuthorityGeneration;
+      final int authorityGeneration = audioGeneration;
       final bool publishAudio =
           (!moving || _rtcAudioRequested) &&
           _snapshotAllowsRtcPublication(refreshed);
       await _reconcileRtcForSnapshot(refreshed, publishAudio: publishAudio);
+      if (!_isJoinedEpoch(sessionEpoch)) return false;
       // A successful first-party seat mutation may still return a
       // snapshot-only projection when the token/readiness endpoint is
       // unavailable. Keep the server seat result, but never retain a local
@@ -1313,15 +1390,16 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       _rtcAudioRequested =
           authorityGeneration == _rtcAudioAuthorityGeneration &&
           publishAudio &&
+          _transportPublishing &&
           _snapshotAllowsRtcPublication(refreshed);
       if (!_rtcAudioRequested && publishAudio) {
         await _disableRtcPublication();
       }
-      if (!_isJoinedEpoch(sessionEpoch)) {
+      if (!_isJoinedEpoch(sessionEpoch) ||
+          audioGeneration != _rtcAudioAuthorityGeneration) {
         return false;
       }
       _snapshot = refreshed;
-      serverMicMutationCommitted = false;
       if (allowsSyntheticPublicMessages) {
         _messages.add(
           RoomMessage(
@@ -1336,12 +1414,14 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       if (!_isJoinedEpoch(sessionEpoch)) {
         return false;
       }
-      if (serverMicMutationCommitted) {
-        await _rollbackMicMutation(
-          sessionEpoch: sessionEpoch,
-          fallbackSnapshot: previousSnapshot,
-        );
+      if (snapshotConfirmed ||
+          (!_micPlacementCommitted && !_unknownMicResult(error))) {
+        _pendingMicPlacement = null;
+        _micPlacementCommitted = false;
+        _suppressAutomaticGrant = false;
       }
+      _rtcAudioRequested = false;
+      await _disableRtcPublication();
       _errorMessage = _messageFor(error, fallback: '申请上麦失败');
       return false;
     } finally {
@@ -1518,111 +1598,105 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<bool> toggleMicrophone() {
+    if (_pendingMicPlacement != null) return Future.value(false);
+    final flight = _micToggleFlight;
+    if (flight != null) return flight;
     if (!allows(RoomCapability.toggleMicrophone) ||
-        _status != RoomSessionStatus.joined ||
-        _mutedInRoom) {
-      return Future<bool>.value(false);
-    }
-    return _withRtcAudioMutex<bool>(_toggleMicrophoneLocked);
+        !_isJoinedEpoch(_sessionEpoch))
+      return Future.value(false);
+    final operation = _toggleMicrophone();
+    _micToggleFlight = operation;
+    operation.then<void>((_) {
+      if (identical(_micToggleFlight, operation)) _micToggleFlight = null;
+    });
+    return operation;
   }
 
-  Future<bool> _toggleMicrophoneLocked() async {
-    if (!allows(RoomCapability.toggleMicrophone) ||
-        _status != RoomSessionStatus.joined ||
-        _mutedInRoom) {
+  Future<bool> _toggleMicrophone() async {
+    final ownSeat = _ownSeat();
+    if (ownSeat == null || !ownSeat.isOccupied || !ownSeat.isOnline)
+      return false;
+    final epoch = _sessionEpoch;
+    final audioGeneration = _rtcAudioAuthorityGeneration;
+    final pending =
+        _pendingMicToggle ?? (ownSeat.backendIndex, _transportPublishing);
+    final nextMuted = pending.$2;
+    final audio = ownSeat.audioMute;
+    if (!nextMuted &&
+        (audio == null ||
+            audio.forcedMuted ||
+            (audio.legacyMuted && role != RoomRole.owner))) {
+      _errorMessage = audio == null ? '麦克风状态待同步' : '当前有管理静音限制，不能自行开麦';
+      _notify();
       return false;
     }
-    final int sessionEpoch = _sessionEpoch;
-    final MicSeat? ownSeat = _ownSeat();
-    if (ownSeat == null) {
-      return false;
-    }
-    final bool nextMuted = !micMuted;
-    final int authorityGeneration = _rtcAudioAuthorityGeneration;
-    bool serverMicMutationCommitted = false;
+    _pendingMicToggle = pending;
     _beginAuthorityMutation();
+    _rtcAudioRequested = false;
+    bool confirmed = false;
     try {
+      // A local close is safe immediately, even if the server result is unknown.
+      if (nextMuted) await _disableRtcPublication();
+      if (!_isJoinedEpoch(epoch) ||
+          audioGeneration != _rtcAudioAuthorityGeneration)
+        return false;
       await _repository.setSelfMicrophoneMuted(
-        backendMicIndex: ownSeat.backendIndex,
+        backendMicIndex: pending.$1,
         muted: nextMuted,
       );
-      serverMicMutationCommitted = true;
-      if (!_isJoinedEpoch(sessionEpoch)) {
+      confirmed = true;
+      if (!_isJoinedEpoch(epoch)) return false;
+      _pendingMicToggle = null;
+      if (!_isJoinedEpoch(epoch) ||
+          audioGeneration != _rtcAudioAuthorityGeneration)
+        return false;
+      final fresh = await _repository.reconnectRoom(
+        roomId: roomId,
+        currentUserId: _currentUserId,
+      );
+      if (!_isJoinedEpoch(epoch) ||
+          audioGeneration != _rtcAudioAuthorityGeneration)
+        return false;
+      final publish = !nextMuted && _snapshotAllowsRtcPublication(fresh);
+      await _reconcileRtcForSnapshot(fresh, publishAudio: publish);
+      if (!_isJoinedEpoch(epoch) ||
+          audioGeneration != _rtcAudioAuthorityGeneration)
+        return false;
+      _snapshot = fresh;
+      _rtcAudioRequested = publish && _transportPublishing;
+      if (!nextMuted && !_rtcAudioRequested) {
+        _errorMessage = '麦克风尚未开启，请确认权限和房间状态后重试';
+        _notify();
         return false;
       }
-      final bool publishAudio =
-          !nextMuted &&
-          authorityGeneration == _rtcAudioAuthorityGeneration &&
-          _snapshotAllowsRtcTogglePublication();
-      await _rtcAdapter.setLocalAudioEnabled(publishAudio);
-      _rtcPublicationActive = publishAudio;
-      final bool authorityStillCurrent =
-          authorityGeneration == _rtcAudioAuthorityGeneration &&
-          _isJoinedEpoch(sessionEpoch) &&
-          !_mutedInRoom &&
-          (!publishAudio || _snapshotAllowsRtcTogglePublication());
-      if (!authorityStillCurrent && _rtcPublicationActive) {
-        await _rtcAdapter.setLocalAudioEnabled(false);
-        _rtcPublicationActive = false;
-      }
-      _rtcAudioRequested = authorityStillCurrent && publishAudio;
-      if (!_isJoinedEpoch(sessionEpoch)) {
-        return false;
-      }
-      final RoomSnapshot? snapshot = _snapshot;
-      if (snapshot != null) {
-        final List<MicSeat> updated = <MicSeat>[
-          for (final MicSeat seat in snapshot.seats)
-            if (seat.number == ownSeat.number)
-              seat.copyWith(
-                state: nextMuted
-                    ? MicSeatState.occupiedMuted
-                    : MicSeatState.occupied,
-              )
-            else
-              seat,
-        ];
-        _snapshot = snapshot.copyWith(seats: updated);
-      }
-      serverMicMutationCommitted = false;
+      _errorMessage = null;
       _notify();
       return true;
     } catch (error) {
-      if (!_isJoinedEpoch(sessionEpoch)) {
-        return false;
-      }
-      if (serverMicMutationCommitted) {
-        try {
-          await _repository.setSelfMicrophoneMuted(
-            backendMicIndex: ownSeat.backendIndex,
-            muted: !nextMuted,
-          );
-        } catch (_) {
-          // Preserve the original error while keeping the rollback best effort.
-        }
-        final bool restoreAudio =
-            nextMuted &&
-            authorityGeneration == _rtcAudioAuthorityGeneration &&
-            !_mutedInRoom &&
-            _snapshotAllowsRtcTogglePublication();
-        try {
-          await _rtcAdapter.setLocalAudioEnabled(restoreAudio);
-          _rtcPublicationActive = restoreAudio;
-          _rtcAudioRequested = restoreAudio;
-        } catch (_) {
-          // Keep the transport muted if permission or provider state prevents
-          // restoring the previous publication state.
-          _rtcPublicationActive = false;
-          _rtcAudioRequested = false;
-        }
-      }
-      _errorMessage = _messageFor(error, fallback: '麦克风状态更新失败');
+      if (!_isJoinedEpoch(epoch)) return false;
+      if (confirmed || !_unknownMicResult(error)) _pendingMicToggle = null;
+      _rtcAudioRequested = false;
+      await _disableRtcPublication();
+      if (!_isJoinedEpoch(epoch)) return false;
+      _errorMessage = _messageFor(error, fallback: '麦克风未开启，请重试');
       _notify();
       return false;
     } finally {
-      _endAuthorityMutation(sessionEpoch);
+      _endAuthorityMutation(epoch);
     }
   }
+
+  static bool _unknownMicResult(Object error) =>
+      error is! ApiException ||
+      error.code == 40901 ||
+      error.code == 40902 ||
+      (error.code != 40903 &&
+          const [
+            ApiFailureKind.network,
+            ApiFailureKind.timeout,
+            ApiFailureKind.protocol,
+            ApiFailureKind.server,
+          ].contains(error.kind));
 
   Future<bool> sendPublicMessage(String content) {
     final String normalized = content.trim();
@@ -1855,7 +1929,9 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       if (!snapshot.isSnapshotOnly) {
         _claimTransportLease();
         final bool publishAudio =
-            _rtcAudioRequested && _snapshotAllowsRtcPublication(snapshot);
+            _rtcAudioRequested &&
+            _transportPublishing &&
+            _snapshotAllowsRtcPublication(snapshot);
         if (!publishAudio && _rtcAudioRequested) {
           // A reconnect response is authoritative. If the member lost the
           // seat, was muted, or was downgraded to audience, stop publication
@@ -1913,6 +1989,9 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
       _errorMessage = _messageFor(error, fallback: '房间恢复失败，请重试');
+      _rtcAudioRequested = false;
+      await _disableRtcPublication();
+      if (!_isCurrent(sessionEpoch)) return;
       _realtimeDegraded = true;
       _status = _snapshot == null
           ? RoomSessionStatus.failed
@@ -2119,8 +2198,6 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         return;
       case RoomRealtimeEventCodes.mutedInRoom:
         _mutedInRoom = true;
-        _rtcAudioRequested = false;
-        unawaited(_disableRtcPublication());
         _messages.add(
           const RoomMessage(
             sender: '系统',
@@ -2171,6 +2248,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     _refreshingFromEvent = true;
+    final audioGeneration = _rtcAudioAuthorityGeneration;
     final RoomSnapshot? previous = _snapshot;
     try {
       final RoomSnapshot refreshed = await _repository.reconnectRoom(
@@ -2182,7 +2260,17 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       }
       Object? rtcError;
       try {
-        await _reconcileAuthoritativeRtc(previous, refreshed);
+        if (audioGeneration != _rtcAudioAuthorityGeneration) return;
+        await _reconcileAuthoritativeRtc(
+          previous,
+          refreshed,
+          freshGrant:
+              !_suppressAutomaticGrant &&
+              _foreground &&
+              _isNewMicGrant(previous, refreshed),
+        );
+        if (_seatInSnapshot(refreshed)?.isOccupied == true)
+          _suppressAutomaticGrant = false;
       } catch (_) {
         // The HTTP snapshot remains authoritative even when the provider
         // transport cannot apply it. Publication is fail-closed and the next
@@ -2362,7 +2450,8 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     required bool publishAudio,
     bool forceReconnect = true,
   }) async {
-    if (_disposed) {
+    final transportLease = _transportLeaseId;
+    if (_disposed || !_ownsRtcTransport(transportLease)) {
       return;
     }
     if (_lease != null &&
@@ -2371,7 +2460,10 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     if (snapshot.isSnapshotOnly) {
-      await _withRtcAudioMutex<void>(_rtcAdapter.leave);
+      await _withRtcAudioMutex<void>(() async {
+        if (_ownsRtcTransport(transportLease)) await _rtcAdapter.leave();
+      });
+      if (!_ownsRtcTransport(transportLease)) return;
       _rtcConnected = false;
       _rtcPublicationActive = false;
       _rtcAudioRequested = false;
@@ -2383,12 +2475,15 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         // Keep reconnect and the subsequent publication update in the same
         // serialized operation. Otherwise a local toggle could run between
         // them and be silently replaced by a stale role/token transition.
-        if (_disposed || authorityGeneration != _rtcAudioAuthorityGeneration) {
+        if (_disposed ||
+            !_ownsRtcTransport(transportLease) ||
+            authorityGeneration != _rtcAudioAuthorityGeneration) {
           return;
         }
         if (forceReconnect || !_rtcConnected) {
           await _rtcAdapter.reconnect(snapshot.rtc);
           if (_disposed ||
+              !_ownsRtcTransport(transportLease) ||
               authorityGeneration != _rtcAudioAuthorityGeneration) {
             return;
           }
@@ -2403,7 +2498,14 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
             authorityGeneration == _rtcAudioAuthorityGeneration &&
             _snapshotAllowsRtcPublication(snapshot);
         await _rtcAdapter.setLocalAudioEnabled(effectivePublishAudio);
+        if (!_ownsRtcTransport(transportLease)) return;
         _rtcPublicationActive = effectivePublishAudio;
+        if (effectivePublishAudio && !_transportPublishing) {
+          throw const RtcAdapterException(
+            failure: RtcAdapterFailure.mute,
+            message: 'SDK 未确认麦克风开启',
+          );
+        }
         if (effectivePublishAudio &&
             (_disposed ||
                 authorityGeneration != _rtcAudioAuthorityGeneration ||
@@ -2413,19 +2515,32 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         }
       });
     } catch (_) {
-      _rtcConnected = false;
-      _rtcPublicationActive = false;
+      // The provider may have changed native publication before throwing.
+      // Clear it while this controller still owns the transport, regardless
+      // of local connection flags. Never clean up a replacement session.
+      if (_ownsRtcTransport(transportLease)) {
+        await _disableRtcPublication(force: true);
+        if (_ownsRtcTransport(transportLease)) {
+          _rtcConnected = false;
+          _rtcPublicationActive = false;
+        }
+      }
       rethrow;
     }
   }
 
   Future<void> _reconcileAuthoritativeRtc(
     RoomSnapshot? previous,
-    RoomSnapshot refreshed,
-  ) async {
+    RoomSnapshot refreshed, {
+    bool freshGrant = false,
+  }) async {
+    final epoch = _sessionEpoch;
+    final audioGeneration = _rtcAudioAuthorityGeneration;
     final bool wasAudioRequested = _rtcAudioRequested;
     final bool mayPublish = _snapshotAllowsRtcPublication(refreshed);
-    final bool shouldPublish = _rtcAudioRequested && mayPublish;
+    final bool shouldPublish =
+        ((_rtcAudioRequested && _transportPublishing) || freshGrant) &&
+        mayPublish;
     if (!mayPublish && wasAudioRequested) {
       // This is intentionally done before applying a replacement role/token.
       // A stale publisher must never remain live while a seat revoke or mute
@@ -2467,13 +2582,21 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       publishAudio: shouldPublish,
       forceReconnect: needsReconnect,
     );
+    if (!_isCurrent(epoch) || audioGeneration != _rtcAudioAuthorityGeneration)
+      return;
+    _rtcAudioRequested = shouldPublish && _transportPublishing;
   }
 
   bool _snapshotAllowsRtcPublication(RoomSnapshot snapshot) {
     if (!_sameIdentity ||
         !_leaseUnexpired ||
         snapshot.isSnapshotOnly ||
-        _mutedInRoom) {
+        snapshot.roomId != roomId ||
+        snapshot.rtc.userId != _currentUserId ||
+        snapshot.rtc.token.isEmpty ||
+        (snapshot.rtc.expiresAt != null &&
+            !snapshot.rtc.expiresAt!.isAfter(DateTime.now())) ||
+        !_seatPermitsAudio(snapshot)) {
       return false;
     }
     final MicSeat? ownSeat = _seatInSnapshot(snapshot);
@@ -2489,33 +2612,38 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     };
   }
 
-  /// Checks the stable authority needed for a local mic toggle. The seat's
-  /// occupied-muted bit is intentionally ignored here because the next local
-  /// unmute operation is the action that changes that bit; all realtime
-  /// authority changes invalidate the captured generation before publication.
-  bool _snapshotAllowsRtcTogglePublication() {
-    final RoomSnapshot? snapshot = _snapshot;
-    if (!_sameIdentity ||
-        !_leaseUnexpired ||
-        snapshot == null ||
-        snapshot.isSnapshotOnly ||
-        _mutedInRoom) {
-      return false;
-    }
-    final MicSeat? ownSeat = _ownSeat();
-    if (ownSeat == null || !ownSeat.isOccupied || !ownSeat.isOnline) {
-      return false;
-    }
-    return switch (snapshot.rtc.role.trim().toLowerCase()) {
-      'broadcaster' || 'publisher' || 'host' || 'speaker' || 'anchor' => true,
-      _ => false,
-    };
+  bool _seatPermitsAudio(RoomSnapshot snapshot) {
+    final seat = _seatInSnapshot(snapshot);
+    return seat != null &&
+        seat.isOccupied &&
+        seat.isOnline &&
+        seat.state != MicSeatState.occupiedMuted &&
+        seat.audioMute != null &&
+        !seat.audioMute!.effectiveMuted;
+  }
+
+  bool _isNewMicGrant(RoomSnapshot? previous, RoomSnapshot next) {
+    final seat = _seatInSnapshot(next);
+    return previous != null &&
+        previous.sessionId == next.sessionId &&
+        _seatInSnapshot(previous)?.isOccupied != true &&
+        seat?.isOccupied == true &&
+        seat!.occupantJoinedAt != null &&
+        DateTime.tryParse(seat.occupantJoinedAt!) != null;
+  }
+
+  bool _sameGrant(RoomSnapshot expected, RoomSnapshot next) {
+    final before = _seatInSnapshot(expected), after = _seatInSnapshot(next);
+    return expected.roomId == next.roomId &&
+        expected.sessionId == next.sessionId &&
+        before?.isOccupied == true &&
+        after?.isOccupied == true &&
+        before!.number == after!.number &&
+        before.occupantJoinedAt == after.occupantJoinedAt;
   }
 
   bool _isRtcAuthorityEvent(int code) {
     return switch (code) {
-      RoomRealtimeEventCodes.mutedInRoom ||
-      RoomRealtimeEventCodes.unmutedInRoom ||
       RoomRealtimeEventCodes.putOnMic ||
       RoomRealtimeEventCodes.takeDownMic ||
       RoomRealtimeEventCodes.closeMic ||
@@ -2535,9 +2663,11 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     return null;
   }
 
-  Future<void> _disableRtcPublication() async {
+  Future<void> _disableRtcPublication({bool force = false}) async {
+    final transportLease = _transportLeaseId;
     await _withRtcAudioMutex<void>(() async {
-      if (!_rtcConnected && !_rtcPublicationActive) {
+      if (!_ownsRtcTransport(transportLease) ||
+          (!force && !_rtcConnected && !_rtcPublicationActive)) {
         return;
       }
       try {
@@ -2546,7 +2676,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         // If a provider refuses the mute operation during a role revoke, leave
         // the channel so publication is still fail-closed.
         try {
-          await _rtcAdapter.leave();
+          if (_ownsRtcTransport(transportLease)) await _rtcAdapter.leave();
         } catch (_) {
           // Preserve the authority refresh result; the next action retries.
         }
@@ -2574,42 +2704,6 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     });
     _rtcAudioTail = ready.then<void>((_) => release.future);
     return result;
-  }
-
-  Future<void> _rollbackMicMutation({
-    required int sessionEpoch,
-    required RoomSnapshot? fallbackSnapshot,
-  }) async {
-    try {
-      await _repository.leaveMic();
-    } catch (_) {
-      // Preserve the original failure; the authority rollback is best effort.
-    }
-    if (!_isJoinedEpoch(sessionEpoch)) {
-      return;
-    }
-    try {
-      final RoomSnapshot restored = await _repository.reconnectRoom(
-        roomId: roomId,
-        currentUserId: _currentUserId,
-      );
-      if (!_isJoinedEpoch(sessionEpoch)) {
-        return;
-      }
-      await _reconcileRtcForSnapshot(restored, publishAudio: false);
-      if (_isJoinedEpoch(sessionEpoch)) {
-        _snapshot = restored;
-      }
-    } catch (_) {
-      try {
-        await _rtcAdapter.leave();
-      } catch (_) {
-        // Keep rollback best effort and retain the original failure.
-      }
-      if (_isJoinedEpoch(sessionEpoch) && fallbackSnapshot != null) {
-        _snapshot = fallbackSnapshot;
-      }
-    }
   }
 
   void _notify() {

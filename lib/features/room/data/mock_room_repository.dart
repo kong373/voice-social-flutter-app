@@ -180,76 +180,90 @@ class MockRoomRepository implements RoomRepository, GiftCommandRepository {
       topic: configuration?.topicContent ?? '今晚话题：最近让你觉得被治愈的一件小事',
       ownerId: configuration != null ? currentUserId : 20001,
       role: configuration != null ? RoomRole.owner : _entryRole,
-      seats: <MicSeat>[
-        MicSeat(
-          number: 1,
-          backendIndex: 1,
-          state: MicSeatState.occupied,
-          userId: configuration != null ? currentUserId : 20001,
-          userName: '房主 · 鹿屿',
-          avatarUrl: 'assets/runtime/avatar-copper.png',
-          isSpeaking: true,
-          userRole: RoomRole.owner,
-        ),
-        const MicSeat(
-          number: 2,
-          backendIndex: 2,
-          state: MicSeatState.occupiedMuted,
-          userId: 20002,
-          userName: '南风',
-          avatarUrl: 'assets/runtime/avatar-rose.png',
-        ),
-        const MicSeat(
-          number: 3,
-          backendIndex: 3,
-          state: MicSeatState.occupied,
-          userId: 20003,
-          userName: '晚星',
-          avatarUrl: 'assets/runtime/avatar-copper.png',
-        ),
-        const MicSeat(
-          number: 4,
-          backendIndex: 4,
-          state: MicSeatState.available,
-        ),
-        const MicSeat(
-          number: 5,
-          backendIndex: 5,
-          state: MicSeatState.occupied,
-          userId: 20005,
-          userName: 'Twinkle',
-          avatarUrl: 'assets/runtime/avatar-copper.png',
-        ),
-        const MicSeat(
-          number: 6,
-          backendIndex: 6,
-          state: MicSeatState.occupied,
-          userId: 20006,
-          userName: '蓝沙',
-          avatarUrl: 'assets/runtime/avatar-rose.png',
-        ),
-        const MicSeat(
-          number: 7,
-          backendIndex: 7,
-          state: MicSeatState.occupiedMuted,
-          userId: 20007,
-          userName: '真理',
-          avatarUrl: 'assets/runtime/avatar-copper.png',
-        ),
-        const MicSeat(
-          number: 8,
-          backendIndex: 8,
-          state: MicSeatState.occupied,
-          userId: 20008,
-          userName: '暖光',
-          avatarUrl: 'assets/runtime/avatar-rose.png',
-        ),
-        const MicSeat(
-          number: 9,
-          backendIndex: 9,
-          state: MicSeatState.available,
-        ),
-      ],
+      seats:
+          <MicSeat>[
+                MicSeat(
+                  number: 1,
+                  backendIndex: 1,
+                  state: MicSeatState.occupied,
+                  userId: configuration != null ? currentUserId : 20001,
+                  userName: '房主 · 鹿屿',
+                  avatarUrl: 'assets/runtime/avatar-copper.png',
+                  isSpeaking: true,
+                  userRole: RoomRole.owner,
+                ),
+                const MicSeat(
+                  number: 2,
+                  backendIndex: 2,
+                  state: MicSeatState.occupiedMuted,
+                  userId: 20002,
+                  userName: '南风',
+                  avatarUrl: 'assets/runtime/avatar-rose.png',
+                ),
+                const MicSeat(
+                  number: 3,
+                  backendIndex: 3,
+                  state: MicSeatState.occupied,
+                  userId: 20003,
+                  userName: '晚星',
+                  avatarUrl: 'assets/runtime/avatar-copper.png',
+                ),
+                const MicSeat(
+                  number: 4,
+                  backendIndex: 4,
+                  state: MicSeatState.available,
+                ),
+                const MicSeat(
+                  number: 5,
+                  backendIndex: 5,
+                  state: MicSeatState.occupied,
+                  userId: 20005,
+                  userName: 'Twinkle',
+                  avatarUrl: 'assets/runtime/avatar-copper.png',
+                ),
+                const MicSeat(
+                  number: 6,
+                  backendIndex: 6,
+                  state: MicSeatState.occupied,
+                  userId: 20006,
+                  userName: '蓝沙',
+                  avatarUrl: 'assets/runtime/avatar-rose.png',
+                ),
+                const MicSeat(
+                  number: 7,
+                  backendIndex: 7,
+                  state: MicSeatState.occupiedMuted,
+                  userId: 20007,
+                  userName: '真理',
+                  avatarUrl: 'assets/runtime/avatar-copper.png',
+                ),
+                const MicSeat(
+                  number: 8,
+                  backendIndex: 8,
+                  state: MicSeatState.occupied,
+                  userId: 20008,
+                  userName: '暖光',
+                  avatarUrl: 'assets/runtime/avatar-rose.png',
+                ),
+                const MicSeat(
+                  number: 9,
+                  backendIndex: 9,
+                  state: MicSeatState.available,
+                ),
+              ]
+              .map(
+                (seat) => seat.copyWith(
+                  audioMute: RoomAudioMuteState(
+                    selfMuted: false,
+                    forcedMuted: false,
+                    legacyMuted: seat.state == MicSeatState.occupiedMuted,
+                  ),
+                  occupantJoinedAt: seat.isOccupied
+                      ? '2026-09-09T00:00:00Z'
+                      : null,
+                ),
+              )
+              .toList(),
       rtc: RtcCredentials(
         solution: RtcSolution.agora,
         token: 'mock-rtc-token',
@@ -272,7 +286,24 @@ class MockRoomRepository implements RoomRepository, GiftCommandRepository {
     required int currentUserId,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 300));
-    return _requireSnapshot();
+    final snapshot = _requireSnapshot();
+    final ownSeat = snapshot.seats
+        .where((s) => s.userId == snapshot.rtc.userId && s.isOccupied)
+        .firstOrNull;
+    return snapshot.copyWith(
+      rtc: RtcCredentials(
+        solution: RtcSolution.agora,
+        provider: 'agora',
+        appId: 'mock-public-app',
+        token: 'mock-rtc-token',
+        channelId: roomId,
+        userId: currentUserId,
+        role: ownSeat != null && ownSeat.audioMute?.effectiveMuted == false
+            ? 'broadcaster'
+            : 'audience',
+        expiresAt: DateTime.utc(2035),
+      ),
+    );
   }
 
   @override
@@ -317,6 +348,14 @@ class MockRoomRepository implements RoomRepository, GiftCommandRepository {
           ]
           ..[index] = snapshot.seats[index].copyWith(
             state: previousSeat?.state ?? MicSeatState.occupied,
+            audioMute:
+                previousSeat?.audioMute ??
+                const RoomAudioMuteState(
+                  selfMuted: false,
+                  forcedMuted: false,
+                  legacyMuted: false,
+                ),
+            occupantJoinedAt: DateTime.now().toUtc().toIso8601String(),
             userId: snapshot.rtc.userId,
             userName: '我',
             userRole:
@@ -372,9 +411,27 @@ class MockRoomRepository implements RoomRepository, GiftCommandRepository {
     if (index < 0) {
       return;
     }
+    final previous = snapshot.seats[index].audioMute;
+    if (previous == null ||
+        (!muted &&
+            (previous.forcedMuted ||
+                (previous.legacyMuted && snapshot.role != RoomRole.owner)))) {
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        message: '管理静音限制尚未解除',
+      );
+    }
+    final audio = RoomAudioMuteState(
+      selfMuted: muted,
+      forcedMuted: previous.forcedMuted,
+      legacyMuted: muted && previous.legacyMuted,
+    );
     final List<MicSeat> seats = List<MicSeat>.of(snapshot.seats)
       ..[index] = snapshot.seats[index].copyWith(
-        state: muted ? MicSeatState.occupiedMuted : MicSeatState.occupied,
+        state: audio.effectiveMuted
+            ? MicSeatState.occupiedMuted
+            : MicSeatState.occupied,
+        audioMute: audio,
       );
     _snapshot = snapshot.copyWith(seats: seats);
   }

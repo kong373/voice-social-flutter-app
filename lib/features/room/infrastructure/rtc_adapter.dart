@@ -18,6 +18,12 @@ abstract interface class RtcAdapter {
 }
 
 typedef RtcCredentialsProvider = Future<RtcCredentials> Function(String roomId);
+
+/// Publication acknowledgement, separate from the server seat's mute bit.
+abstract interface class RtcPublicationState {
+  bool get localAudioEnabled;
+}
+
 typedef AgoraRtcEngineFactory = RtcEngine Function();
 
 /// Provider-neutral lifecycle events emitted by [AgoraRtcAdapter].
@@ -89,7 +95,7 @@ class RtcAdapterException implements Exception {
 /// server-issued [RtcCredentials] value. It never reads a provider signing
 /// secret. Tests and host integrations can inject an engine and a token
 /// provider; the default factory is the official Agora engine factory.
-class AgoraRtcAdapter implements RtcAdapter {
+class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
   static const Duration _defaultJoinTimeout = Duration(seconds: 15);
   static const Duration _defaultLeaveTimeout = Duration(seconds: 10);
   static const Duration _defaultRenewTimeout = Duration(seconds: 10);
@@ -1975,12 +1981,14 @@ class _RtcSessionIdentity {
   int get hashCode => Object.hash(provider, appId, channelId, uid, role);
 }
 
-class MockRtcAdapter implements RtcAdapter {
+class MockRtcAdapter implements RtcAdapter, RtcPublicationState {
   bool _joined = false;
   bool _audioEnabled = false;
 
   bool get joined => _joined;
   bool get audioEnabled => _audioEnabled;
+  @override
+  bool get localAudioEnabled => _audioEnabled;
 
   @override
   Future<void> join(RtcCredentials credentials) {

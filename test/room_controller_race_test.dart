@@ -135,7 +135,7 @@ void main() {
       controller.dispose();
       repository.muteGate.complete();
       expect(await microphone, isFalse);
-      expect(controller.micMuted, isFalse);
+      expect(controller.micMuted, isTrue);
 
       final _RaceRepository chatRepository = _RaceRepository();
       final _RaceRealtimeGateway chatRealtime = _RaceRealtimeGateway();
@@ -406,6 +406,8 @@ void main() {
       final Future<bool> firstToggle = firstController.toggleMicrophone();
       await firstRepository.muteStarted.future;
       firstRepository.muteGate.complete();
+      await firstRepository.reconnectStarted.future;
+      firstRepository.reconnectGate.complete(_snapshot(occupiedOwnSeat: true));
       await rtc.audioStarted.future;
 
       // dispose queues leave behind the blocked microphone operation while
@@ -541,6 +543,11 @@ RoomSnapshot _snapshot({required bool occupiedOwnSeat}) {
         userId: occupiedOwnSeat ? 10001 : null,
         userName: occupiedOwnSeat ? '我' : null,
         userRole: occupiedOwnSeat ? RoomRole.speaker : RoomRole.listener,
+        audioMute: const RoomAudioMuteState(
+          selfMuted: false,
+          forcedMuted: false,
+          legacyMuted: false,
+        ),
       ),
     ],
     rtc: const RtcCredentials(
