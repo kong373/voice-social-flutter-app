@@ -155,7 +155,6 @@ class BackendPlatformRoomRepository implements PlatformRoomRepository {
           ).hasMatch(row['roomId'] as String) ||
           !seen.add(row['roomId'] as String) ||
           row['roomCode'] is! String ||
-          (row['roomCode'] as String).isEmpty ||
           row['roomName'] is! String ||
           (row['roomName'] as String).isEmpty ||
           row['ownerUserId'] is! int ||

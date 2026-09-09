@@ -173,7 +173,7 @@ class _PlatformRoomsPageState extends State<PlatformRoomsPage>
                 ListTile(
                   title: Text(room.roomName),
                   subtitle: Text(
-                    '${room.roomCode} · ${room.status == 'CLOSED' ? '已关闭' : '开放中'}',
+                    '${room.roomCode.isEmpty ? 'ID ${room.roomId}' : room.roomCode} · ${room.status == 'CLOSED' ? '已关闭' : '开放中'}',
                   ),
                   onTap: () async {
                     final identity = _repository!.identity;

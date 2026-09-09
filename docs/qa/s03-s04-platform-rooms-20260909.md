@@ -68,3 +68,13 @@ git diff --check
 ```
 
 独立追加 commit，parent560d00d，不 amend。Backend 实际联调/DB/设备/厂商/部署仍 NOT_RUN。
+
+## 再追加：legacy NULL room_code 的空串 DTO
+
+Backend directory 将历史 NULL room_code 安全序列化为空串。Flutter 只移除空串拒绝条件，仍要求 roomCode 是 String；模型原样保留空串，不填造 code。目录仅在展示时使用 `ID <roomId>`，请求目标仍为真实 roomId。生产修改限 `platform_room_repository.dart`、`platform_rooms_page.dart`；对应两个既有专属测试文件各加一例。
+
+- RED `15602` exit 1：空 code 导致整页 parser 失败，页面也未显示 ID 回退标识（2 项真实失败）。
+- GREEN `17189` exit 0：platform_room_repository、platform_room_widget、platform_staff_none_contract、platform_staff_room 四类 74 PASS，含 NONE 与 legacy 空 code。
+- analyze `2165` exit 0：No issues found；`git diff --check` exit 0。
+
+追加在 NONE 修复 `880b65289a16108ff5f12b13f2742db9ba015234` 之后，不 amend。仍未运行 Backend/DB/设备/厂商测试，未部署。

@@ -15,6 +15,37 @@ import 'package:voice_social_app/features/room/presentation/video_runtime_room_p
 
 void main() {
   testWidgets(
+    'legacy empty roomCode displays explicit roomId, not a fabricated code',
+    (tester) async {
+      final repository = _Repository();
+      addTearDown(repository.notifier.dispose);
+      repository.read = () async => const PlatformRoomPageResult(
+        [
+          PlatformRoom(
+            roomId: '22222222-2222-4222-8222-222222222222',
+            roomCode: '',
+            roomName: 'Legacy closed room',
+            ownerUserId: 42,
+            status: 'CLOSED',
+            version: 7,
+            accessMode: 'PASSWORD',
+          ),
+        ],
+        1,
+        false,
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: PlatformRoomsPage(repository: repository)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Legacy closed room'), findsOneWidget);
+      expect(
+        find.text('ID 22222222-2222-4222-8222-222222222222 · 已关闭'),
+        findsOneWidget,
+      );
+    },
+  );
+  testWidgets(
     'staff closed runtime exposes only reopen and exit, no owner editor or transport',
     (tester) async {
       final dependencies = AppDependencies.mock();

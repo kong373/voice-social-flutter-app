@@ -79,6 +79,36 @@ void main() {
     await server.close(force: true);
   });
   test(
+    'legacy empty roomCode preserves the record and whole directory page',
+    () async {
+      final legacy = row()..['roomCode'] = '';
+      final ordinary = row()
+        ..['roomId'] = '22222222-2222-4222-8222-222222222222';
+      final data = page()
+        ..addAll({
+          'list': [legacy, ordinary],
+          'records': [legacy, ordinary],
+          'total': 2,
+        });
+      handle = (request) async {
+        request.response.write(
+          jsonEncode({
+            'code': 200,
+            'data': request.uri.path.endsWith('/authority')
+                ? {'platformStaff': true}
+                : data,
+          }),
+        );
+        await request.response.close();
+      };
+      final result = await repository.list();
+      expect(result.rooms, hasLength(2));
+      expect(result.rooms.first.roomCode, '');
+      expect(result.rooms.first.roomId, roomId);
+      expect(result.rooms.last.roomCode, '123456');
+    },
+  );
+  test(
     'strict authority, paged directory and exact lifecycle contract',
     () async {
       expect(await repository.authority(), isTrue);
