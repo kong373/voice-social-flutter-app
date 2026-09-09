@@ -351,12 +351,14 @@ class _NotificationDetailPageState extends State<NotificationDetailPage> {
                         Text(
                           notification.title,
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleLarge,
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(color: SocialColors.textPrimary),
                         ),
                         const SizedBox(height: 5),
                         Text(
                           _formatMessageTime(notification.createdAt, now),
-                          style: Theme.of(context).textTheme.bodySmall,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: SocialColors.textSecondary),
                         ),
                         const SizedBox(height: 16),
                         Text(notification.summary, textAlign: TextAlign.center),

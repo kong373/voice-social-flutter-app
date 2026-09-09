@@ -738,7 +738,8 @@ class _DynamicDetailPageState extends State<DynamicDetailPage> {
                         const SizedBox(height: 20),
                         Text(
                           '评论 ${post.commentCount}',
-                          style: Theme.of(context).textTheme.titleMedium,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(color: SocialColors.textPrimary),
                         ),
                         const SizedBox(height: 10),
                         if (_comments.isEmpty)
