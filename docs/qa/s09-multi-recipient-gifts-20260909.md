@@ -115,3 +115,40 @@ git diff --check
 用临时、干净、detached 的精确 c7814475 基线单独运行这两项，**89875 / exit 1，同样两处、相同差值**；临时 worktree 已回收，主树未动。未放宽布局断言、未 Disabled/skip、未把它们计入 PASS。这两项布局夹具需要主线在九麦布局范围核对。第一个旧用例后续“单次成功自动关闭并显示单人 overlay”也不再代表本批逐人结果页，新的结果行为由 `gift_sheet_independent_results_test.dart` 覆盖；旧文件尚未修改。
 
 已有 recharge-null/错误余额/返回不自动赠送、权限撤销、目标变化、controller lease/race、旧 Backend 严格回执和提现 UI 用例继续运行，没有为通过本批删除旧断言。未运行 Flutter 全量；Backend 联调、DB、实际设备、RTC/IM/支付厂商均 **NOT_RUN**。本批没有占用 DB slot，没有部署或 push。
+
+## 9d71b97 后追加：成功动画 P1
+
+主审确认原 coordinator 分支绕过 `widget.onSend`，且结果页不再 `pop(true)`，导致旧 room-page 关闭后 overlay 无法触发。逐人结算正确并不代表保留了原展示反馈；本追加修复这个产品回归，不改原提交。
+
+只改三个生产文件：`gift_send_models.dart` 的只读 `GiftSuccessFeedback`、`gift_send_coordinator.dart` 的成功通知和去重、`gift_sheet.dart` 的通知消费及面板内演出。新增 `test/gift_success_feedback_test.dart`，更新本文档。没有改 RoomController / video_runtime_room_page、Backend、API transport、送礼 HTTP body、pending 存储格式或权限。
+
+展示流程：
+
+- POST 或原回执 GET 通过既有严格 parser 与 `command.validateReceipt` 后，先保存真实 succeeded/transferId，再检查原 identity generation，才排入通知。
+- 通知按 `(actorId, roomId, transferId)` 去重，并携带原身份代际；消费不查询、不 POST、不调用旧 `sendGift`。
+- GiftSheet 仅消费当前账号代际和当前 room 的通知；复用既有 `gift-celebration-banner.png`，淡入/缩放后每位成功收礼人展示 3 秒，逐人播放。结果页仍保留，不以整批 bool 代替部分成功。
+- unknown、HTTP 拒绝、字段错配以及旧身份晚回执均不播放。原未知项由当前身份明确 GET 且严格匹配成功后，可以反馈一次；随后查询、重建弹层、重复 transferId 不重播。
+- 换房立即撤掉正在显示的旧房反馈，不消费其他房间队列；换账号/ABA 清掉旧代际展示队列。未决经济命令仍按原规则保留，不为动画清 key 或补发。
+- 展示队列只在 App 内存存在，不从磁盘 terminal 状态合成“新成功”。未消费队列可在同身份同房间重新打开面板时消费；已经消费的通知不会因弹层重建再次播放。实际设备/进程恢复仍 NOT_RUN。
+
+本轮遵循 TDD 和安全审查的验证边界，只跑本缺陷相称的差异回归，**没有重跑前 172 项**。
+
+| 本轮验证 | 真实结果 |
+| --- | --- |
+| 完整 wire fixture 在精确 9d71b97 临时树复现：断言先确认两笔 succeeded、每人仅 1 POST、legacyCalls=0，然后动画缺失 | **56411 / exit 1，1 个预期 RED**；不是目录/钱包缺字段导致的失败 |
+| 修复后第一项 live App/HTTP 正向动画用例 | **74662 / exit 0，1 PASS** |
+| 新动画文件 5 + coordinator 9 + 既有逐人结果 widget 4 | **29640 / exit 0，18 PASS** |
+| 补充验证动画 opacity 从小于 1 到 1；新动画 5 + 目标变化 10 + 充值返回 6 | **49801 / exit 0，21 PASS**；与上一批重叠 5，不重复累加，共 **34 个独立用例** |
+| 最终全项目 analyze | **30673 / exit 0，No issues found** |
+
+新五项用例通过真实 live `AppDependencies → RoomController.coordinator → GiftSheet → BackendRoomRepository → ApiClient → loopback HttpServer`，没有替换 gift repository；从已入房 lease fixture 开始，不启动 JOIN/RTC/IM。逐笔断言 POST 次数和不同 key，禁止调用 legacy onSend。覆盖两位成功顺序动画、部分成功/503 未知/400 拒绝/错误 GET、换房、换号 ABA、晚 A 成功后新 GET 恢复，以及重复 transferId。测试资源显式关闭，仅本地模拟 HTTP，不是 Backend 联调或实际送礼。
+
+早期测试夹具有 HttpOverrides 类型、目录/钱包/receipt 必需字段、fakeAsync 时钟及 HTTP 清理问题，修正前的失败没有当作有效产品 RED 或 PASS；有效基线证据是上述 56411。临时 RED worktree 已删除并回收，主树未动。
+
+```sh
+/Users/kongzheng/Documents/ny/.tooling/flutter-3.44.7/bin/flutter test --no-pub --reporter expanded test/gift_success_feedback_test.dart test/gift_send_coordinator_test.dart test/gift_sheet_independent_results_test.dart
+/Users/kongzheng/Documents/ny/.tooling/flutter-3.44.7/bin/flutter test --no-pub --reporter expanded test/gift_success_feedback_test.dart test/gift_sheet_live_targets_test.dart test/gift_sheet_recharge_balance_test.dart
+/Users/kongzheng/Documents/ny/.tooling/flutter-3.44.7/bin/flutter analyze --no-pub
+```
+
+两项 `video_runtime_ui_test.dart` 旧布局失败仍原样保留，本轮没有修改/运行它们，没有放宽 golden；原“单人成功自动关闭弹层”不作为新多人的展示契约，已由上述面板内逐人动画恢复用户成功反馈。无 DB/设备/vendor/部署/push。

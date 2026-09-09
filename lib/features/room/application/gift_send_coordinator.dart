@@ -28,6 +28,8 @@ class GiftSendCoordinator extends ChangeNotifier {
   final String Function() _newKey;
   final Map<int, GiftSendPlan?> _plans = {};
   final Map<(int?, int), Future<void>> _running = {};
+  final List<GiftSuccessFeedback> _feedback = [];
+  final Set<(int, String, String)> _announcedTransfers = {};
   Future<void> _storageTail = Future.value();
   bool _disposed = false;
   String? error;
@@ -36,7 +38,41 @@ class GiftSendCoordinator extends ChangeNotifier {
   String _key(int actor) => 'room.gift-journal.v1.$storageScope.$actor';
   void _changed() {
     error = null;
+    _feedback.removeWhere(
+      (event) => !isCurrentFeedback(event, event.command.roomId),
+    );
     _notify();
+  }
+
+  bool isCurrentFeedback(GiftSuccessFeedback event, String? roomId) =>
+      !_disposed &&
+      _identity() == (event.command.actorId, event.identityGeneration) &&
+      event.command.roomId == roomId;
+
+  /// Consuming feedback does not query, retry, or alter an economic command.
+  GiftSuccessFeedback? takeSuccessFeedback(String roomId) {
+    final index = _feedback.indexWhere(
+      (event) => isCurrentFeedback(event, roomId),
+    );
+    return index < 0 ? null : _feedback.removeAt(index);
+  }
+
+  void _announceSuccess(GiftSendEntry entry, (int?, int) identity) {
+    _require(identity);
+    final transferId = entry.transferId!;
+    if (_announcedTransfers.add((
+      entry.command.actorId,
+      entry.command.roomId,
+      transferId,
+    ))) {
+      _feedback.add(
+        GiftSuccessFeedback(
+          command: entry.command,
+          transferId: transferId,
+          identityGeneration: identity.$2,
+        ),
+      );
+    }
   }
 
   void _notify() {
@@ -213,6 +249,7 @@ class GiftSendCoordinator extends ChangeNotifier {
       entry.state = GiftSendState.succeeded;
       entry.transferId = receipt.transferId;
       await _save(plan);
+      _announceSuccess(entry, identity);
     } catch (failure) {
       _require(identity);
       // After an ambiguous attempt, a later auth/lease/validation rejection
@@ -250,6 +287,7 @@ class GiftSendCoordinator extends ChangeNotifier {
       entry.state = GiftSendState.succeeded;
       entry.transferId = receipt.transferId;
       await _save(plan);
+      _announceSuccess(entry, identity);
       _notify();
       return true;
     } catch (_) {

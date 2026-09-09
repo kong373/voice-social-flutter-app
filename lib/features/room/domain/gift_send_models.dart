@@ -5,6 +5,19 @@ import 'room_models.dart';
 
 enum GiftSendState { queued, unknown, succeeded, rejected, notSent }
 
+/// Presentation only: emitted from a freshly validated, saved success receipt.
+/// Not reconstructed from a stored terminal status and never a write command.
+class GiftSuccessFeedback {
+  const GiftSuccessFeedback({
+    required this.command,
+    required this.transferId,
+    required this.identityGeneration,
+  });
+  final GiftSendCommand command;
+  final String transferId;
+  final int identityGeneration;
+}
+
 /// One economic write. Transport/session fields are frozen too; no token is
 /// stored, and a restored command is never rebound to another room lease.
 class GiftSendCommand {

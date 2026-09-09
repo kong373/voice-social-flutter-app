@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../application/gift_send_coordinator.dart';
 import '../domain/gift_send_models.dart';
@@ -64,6 +66,7 @@ class _GiftSheetState extends State<GiftSheet>
       AppDependencyScope.of(context).commerceRepository;
   @override
   void clearCommerceIdentity() {
+    _clearFeedback();
     _balance = null;
     _balanceMessage = '身份已切换，请重新进入房间';
     _catalog = null;
@@ -81,6 +84,8 @@ class _GiftSheetState extends State<GiftSheet>
   GiftCatalogItem? _selectedGift;
   final Set<int> _selectedTargets = {};
   GiftSendCoordinator? _coordinator;
+  GiftSuccessFeedback? _feedback;
+  Timer? _feedbackTimer;
   GiftCatalogCategory _category = GiftCatalogCategory.popular;
   int _quantity = 1;
   GiftCoinAmount? _balance;
@@ -102,6 +107,8 @@ class _GiftSheetState extends State<GiftSheet>
   @override
   void didUpdateWidget(covariant GiftSheet oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.roomId != widget.roomId) _clearFeedback();
+    _bindCoordinator();
     if (oldWidget.account != widget.account) _selectedTargets.clear();
     // Keep the user's choice by identity, never by seat/list position. A new
     // arrival must not silently replace someone who left while this is open.
@@ -112,21 +119,54 @@ class _GiftSheetState extends State<GiftSheet>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _bindCoordinator();
+    if (_catalog == null && _loading) _loadCatalog();
+  }
+
+  void _bindCoordinator() {
     if (!identical(_coordinator, widget.coordinator)) {
+      _clearFeedback();
       _coordinator?.removeListener(_giftChanged);
       _coordinator = widget.coordinator;
       _coordinator?.addListener(_giftChanged);
       _coordinator?.restore();
     }
-    if (_catalog == null && _loading) _loadCatalog();
+    _nextFeedback();
   }
 
   void _giftChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {
+      if (_feedback != null &&
+          _coordinator?.isCurrentFeedback(_feedback!, widget.roomId) != true) {
+        _clearFeedback();
+      }
+      _nextFeedback();
+    });
+  }
+
+  void _clearFeedback() {
+    _feedbackTimer?.cancel();
+    _feedbackTimer = null;
+    _feedback = null;
+  }
+
+  void _nextFeedback() {
+    if (_feedback != null || widget.roomId == null) return;
+    _feedback = _coordinator?.takeSuccessFeedback(widget.roomId!);
+    if (_feedback == null) return;
+    _feedbackTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      setState(() {
+        _clearFeedback();
+        _nextFeedback();
+      });
+    });
   }
 
   @override
   void dispose() {
+    _clearFeedback();
     _coordinator?.removeListener(_giftChanged);
     super.dispose();
   }
@@ -224,6 +264,7 @@ class _GiftSheetState extends State<GiftSheet>
             const SizedBox(height: 8),
             if (_coordinator?.plan == null) _categoryTabs(),
             const SizedBox(height: 3),
+            if (_feedback != null) _successFeedback(),
             if (_coordinator?.error != null)
               Text(
                 _coordinator!.error!,
@@ -792,6 +833,79 @@ class _GiftSheetState extends State<GiftSheet>
           style: TextStyle(color: Colors.white54),
         ),
       ],
+    );
+  }
+
+  Widget _successFeedback() {
+    final event = _feedback!;
+    final giftName =
+        _catalog
+            ?.where((g) => g.id == event.command.giftId)
+            .firstOrNull
+            ?.name ??
+        '礼物';
+    final targetName =
+        widget.targets
+            .where((t) => t.userId == event.command.receiverUserId)
+            .firstOrNull
+            ?.name ??
+        '用户 ${event.command.receiverUserId}';
+    return TweenAnimationBuilder<double>(
+      key: ValueKey((
+        event.command.actorId,
+        event.command.roomId,
+        event.transferId,
+      )),
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) => Opacity(
+        opacity: value,
+        child: Transform.scale(scale: 0.9 + 0.1 * value, child: child),
+      ),
+      child: Semantics(
+        liveRegion: true,
+        child: Container(
+          key: const Key('gift-success-feedback'),
+          height: 84,
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            image: const DecorationImage(
+              image: AssetImage('assets/runtime/gift-celebration-banner.png'),
+              fit: BoxFit.cover,
+              colorFilter: ColorFilter.mode(
+                Color(0x4421124D),
+                BlendMode.darken,
+              ),
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '$giftName ×${event.command.quantity} 已送达',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Text(
+                '送给 $targetName',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
