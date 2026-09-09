@@ -65,6 +65,13 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     with WidgetsBindingObserver {
   RoomManagementPage get configuration => widget.configuration;
   Timer? _queueTimer;
+  Timer? _joinQueueTimer;
+  bool _joinQueueReading = false;
+  bool _joinQueuePending = false;
+  bool _joinQueueKnown = false;
+  bool _joinQueueWriting = false;
+  final Set<String> _joinAwaitingConfirmation = <String>{};
+  String? _joinQueueError;
   bool _foreground = true;
   bool _routeVisible = false;
   bool _queueReading = false;
@@ -132,11 +139,17 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   bool get _canSyncQueue =>
       mounted && _foreground && _routeVisible && _supportsMicRequests;
 
+  bool get _canSyncJoinQueue =>
+      mounted && _foreground && _routeVisible && _joinRequestRepository != null;
+
   void _pauseQueueSync() {
     _queueTimer?.cancel();
     _queueTimer = null;
     _queueGeneration++;
     _queuePending = false;
+    _joinQueueTimer?.cancel();
+    _joinQueueTimer = null;
+    _joinQueuePending = false;
   }
 
   @override
@@ -153,9 +166,14 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     super.dispose();
   }
 
-  // The page has no shared RoomController. Keep this read lane queue-only,
-  // single-flight and visible-only; a write invalidates any older response.
+  // Explicit page events wake both lanes; each timer drives only its own lane.
   Future<void> _refreshQueue() async {
+    unawaited(_refreshJoinQueue());
+    await _refreshMicQueue();
+  }
+
+  // Single-flight and visible-only; a write invalidates any older response.
+  Future<void> _refreshMicQueue() async {
     if (!_canSyncQueue) return;
     _queuePending = true;
     if (_queueReading || _busyMicRequestId != null) return;
@@ -188,7 +206,60 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     } finally {
       _queueReading = false;
       if (_canSyncQueue && _busyMicRequestId == null) {
-        _queueTimer = Timer(const Duration(seconds: 2), _refreshQueue);
+        _queueTimer = Timer(const Duration(seconds: 2), _refreshMicQueue);
+      }
+    }
+  }
+
+  // Independent of mic mode/latency, but shares the visibility/write fence.
+  Future<void> _refreshJoinQueue() async {
+    if (!_canSyncJoinQueue) return;
+    _joinQueuePending = true;
+    if (_joinQueueReading || _joinQueueWriting || _busyMicRequestId != null) {
+      return;
+    }
+    _joinQueueTimer?.cancel();
+    _joinQueueReading = true;
+    try {
+      do {
+        _joinQueuePending = false;
+        final generation = _queueGeneration;
+        try {
+          final page = await _joinRequestRepository!.fetchJoinRequests(
+            roomId: configuration.roomId,
+            page: 1,
+            pageSize: 50,
+          );
+          if (!_canSyncJoinQueue || generation != _queueGeneration) continue;
+          setState(() {
+            // Neither an error, absence from this page nor another PENDING
+            // response confirms a successful review's authoritative outcome.
+            for (final request in page.items) {
+              if (!request.isPending) {
+                _joinAwaitingConfirmation.remove(request.id);
+              }
+            }
+            _joinRequests
+              ..clear()
+              ..addAll(page.items);
+            _joinQueueKnown = true;
+            _joinQueueError = null;
+          });
+        } catch (error) {
+          if (_canSyncJoinQueue && generation == _queueGeneration) {
+            setState(() => _joinQueueError = _messageFor(error));
+          }
+        }
+      } while (_joinQueuePending &&
+          _canSyncJoinQueue &&
+          !_joinQueueWriting &&
+          _busyMicRequestId == null);
+    } finally {
+      _joinQueueReading = false;
+      if (_canSyncJoinQueue &&
+          !_joinQueueWriting &&
+          _busyMicRequestId == null) {
+        _joinQueueTimer = Timer(const Duration(seconds: 2), _refreshJoinQueue);
       }
     }
   }
@@ -210,15 +281,6 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         _repository.fetchMutedUsers(configuration.roomId),
         _repository.fetchManagers(configuration.roomId),
       ];
-      if (_joinRequestRepository != null) {
-        futures.add(
-          _joinRequestRepository!.fetchJoinRequests(
-            roomId: configuration.roomId,
-            page: 1,
-            pageSize: 50,
-          ),
-        );
-      }
       if (_banRepository != null) {
         futures.add(
           _banRepository!.fetchBannedUsers(
@@ -232,14 +294,9 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       final RoomMemberPage page = results[0] as RoomMemberPage;
       final List<RoomMember> muted = results[1] as List<RoomMember>;
       final List<RoomMember> managers = results[2] as List<RoomMember>;
-      int resultIndex = 3;
-      final RoomJoinRequestPage? joinRequestPage =
-          _joinRequestRepository == null
-          ? null
-          : results[resultIndex++] as RoomJoinRequestPage;
       final RoomBannedUserPage? bannedUserPage = _banRepository == null
           ? null
-          : results[resultIndex] as RoomBannedUserPage;
+          : results[3] as RoomBannedUserPage;
       final Set<int> mutedIds = muted
           .map((RoomMember member) => member.userId)
           .toSet();
@@ -303,9 +360,6 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         _members
           ..clear()
           ..addAll(members);
-        _joinRequests
-          ..clear()
-          ..addAll(joinRequestPage?.items ?? const <RoomJoinRequest>[]);
         _bannedUsers
           ..clear()
           ..addAll(bannedUserPage?.items ?? const <RoomBannedUser>[]);
@@ -395,7 +449,9 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
             ButtonSegment<_ManagementSection>(
               value: _ManagementSection.joinRequests,
               label: Text(
-                '入房申请 ${_joinRequests.where((RoomJoinRequest item) => item.isPending).length}',
+                _joinQueueKnown
+                    ? '入房申请 ${_joinRequests.where((RoomJoinRequest item) => item.isPending).length}'
+                    : '入房申请',
               ),
               icon: const Icon(Icons.how_to_reg_outlined),
             ),
@@ -420,7 +476,8 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     }
     final error =
         _error ??
-        (_section == _ManagementSection.requests ? _queueError : null);
+        (_section == _ManagementSection.requests ? _queueError : null) ??
+        (_section == _ManagementSection.joinRequests ? _joinQueueError : null);
     if (error != null) {
       return Center(
         child: Padding(
@@ -653,6 +710,9 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   }
 
   Widget _buildJoinRequests() {
+    if (!_joinQueueKnown) {
+      return const Center(child: CircularProgressIndicator());
+    }
     final List<RoomJoinRequest> visible =
         List<RoomJoinRequest>.of(_joinRequests)
           ..sort((RoomJoinRequest left, RoomJoinRequest right) {
@@ -673,7 +733,9 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (BuildContext context, int index) {
         final RoomJoinRequest request = visible[index];
-        final bool busy = _busyUserId == request.member.userId;
+        final bool busy =
+            _busyUserId == request.member.userId ||
+            _joinAwaitingConfirmation.contains(request.id);
         return RoomGlassCard(
           padding: EdgeInsets.zero,
           radius: 16,
@@ -702,11 +764,15 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
                     spacing: 4,
                     children: <Widget>[
                       TextButton(
-                        onPressed: () => _resolveJoinRequest(request, false),
+                        onPressed: _joinQueueWriting
+                            ? null
+                            : () => _resolveJoinRequest(request, false),
                         child: const Text('拒绝'),
                       ),
                       FilledButton.tonal(
-                        onPressed: () => _resolveJoinRequest(request, true),
+                        onPressed: _joinQueueWriting
+                            ? null
+                            : () => _resolveJoinRequest(request, true),
                         child: const Text('同意'),
                       ),
                     ],
@@ -1117,15 +1183,23 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     bool approved,
   ) async {
     final RoomJoinRequestRepository? repository = _joinRequestRepository;
-    if (repository == null || !request.isPending) {
+    if (repository == null ||
+        !request.isPending ||
+        _joinQueueWriting ||
+        _joinAwaitingConfirmation.contains(request.id)) {
       return;
     }
-    setState(() => _busyUserId = request.member.userId);
+    _pauseQueueSync();
+    setState(() {
+      _joinQueueWriting = true;
+      _busyUserId = request.member.userId;
+    });
     try {
       await repository.resolveJoinRequest(
         joinRequestId: request.id,
         approved: approved,
       );
+      _joinAwaitingConfirmation.add(request.id);
       _changed = true;
       if (!mounted) {
         return;
@@ -1138,7 +1212,11 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       }
     } finally {
       if (mounted) {
-        setState(() => _busyUserId = null);
+        setState(() {
+          _busyUserId = null;
+          _joinQueueWriting = false;
+        });
+        unawaited(_refreshQueue());
       }
     }
   }
