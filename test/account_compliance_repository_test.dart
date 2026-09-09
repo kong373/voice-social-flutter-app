@@ -5,6 +5,42 @@ import 'package:voice_social_app/features/account/compliance/domain/account_comp
 
 void main() {
   test(
+    'youth mode requires its configured PIN and cannot replace it while enabled',
+    () async {
+      final repository = MockAccountComplianceRepository();
+      Future<AccountComplianceSnapshot> snapshot() => repository.fetchSnapshot(
+        account: '13800138000',
+        currentVersion: 3,
+        platformType: 1,
+      );
+      await snapshot();
+      expect(await repository.setYouthMode(enabled: true, pin: '2468'), isTrue);
+      for (final enabled in <bool>[false, true]) {
+        await expectLater(
+          repository.setYouthMode(enabled: enabled, pin: '1357'),
+          throwsA(isA<ApiException>().having((e) => e.code, 'code', 40321)),
+        );
+        expect((await snapshot()).youthModeEnabled, isTrue);
+      }
+      expect(await repository.setYouthMode(enabled: true, pin: '2468'), isTrue);
+      expect(
+        await repository.setYouthMode(enabled: false, pin: '2468'),
+        isFalse,
+      );
+      expect((await snapshot()).youthModeEnabled, isFalse);
+      expect(await repository.setYouthMode(enabled: true, pin: '1357'), isTrue);
+      await expectLater(
+        repository.setYouthMode(enabled: false, pin: '2468'),
+        throwsA(isA<ApiException>().having((e) => e.code, 'code', 40321)),
+      );
+      expect(
+        await repository.setYouthMode(enabled: false, pin: '1357'),
+        isFalse,
+      );
+    },
+  );
+
+  test(
     'account compliance mock preserves authoritative account changes',
     () async {
       final MockAccountComplianceRepository repository =

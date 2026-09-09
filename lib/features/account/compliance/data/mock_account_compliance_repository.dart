@@ -4,6 +4,7 @@ import 'package:voice_social_app/features/account/compliance/domain/account_comp
 class MockAccountComplianceRepository implements AccountComplianceRepository {
   AccountComplianceSnapshot? _snapshot;
   AppealCase? _appeal;
+  String? _youthPin;
 
   @override
   bool get supportsDeviceSessionManagement => true;
@@ -280,7 +281,17 @@ class MockAccountComplianceRepository implements AccountComplianceRepository {
         message: '请输入 4 位数字密码',
       );
     }
-    _snapshot = _requireSnapshot().copyWith(youthModeEnabled: enabled);
+    final snapshot = _requireSnapshot();
+    if (snapshot.youthModeEnabled && pin != _youthPin) {
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        code: 40321,
+        httpStatus: 403,
+        message: '青少年模式密码错误',
+      );
+    }
+    _youthPin = enabled ? pin : null;
+    _snapshot = snapshot.copyWith(youthModeEnabled: enabled);
     return enabled;
   }
 
