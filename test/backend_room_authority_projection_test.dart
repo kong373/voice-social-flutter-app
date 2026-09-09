@@ -46,6 +46,40 @@ final Matcher _protocol = throwsA(
 );
 
 void main() {
+  test('S05 retains offline occupant and rejects malformed online', () async {
+    final data = _fixture();
+    final seatWire = (data['seats'] as List).first as Map<String, Object?>;
+    seatWire.addAll({'online': false, 'speaking': true});
+    final api = _Api(data);
+    final repository = BackendRoomRepository(
+      apiClient: api,
+      rtcTokenRepository: _Tokens(),
+    );
+    final projection = await repository.fetchRoomAuthority(
+      roomId: 'room-1',
+      currentUserId: 42,
+    );
+    final seat = projection.snapshot.seats.singleWhere((s) => s.userId == 42);
+    expect(seat.isOccupied, isTrue);
+    expect(seat.isAvailable, isFalse);
+    expect(seat.isOnline, isFalse);
+    expect(seat.isSpeaking, isFalse);
+    seatWire['online'] = true;
+    final reconnected = await repository.fetchRoomAuthority(
+      roomId: 'room-1',
+      currentUserId: 42,
+    );
+    final restored = reconnected.snapshot.seats.where((s) => s.userId == 42);
+    expect(restored, hasLength(1));
+    expect(restored.single.isOnline, isTrue);
+    expect(restored.single.isSpeaking, isTrue);
+    expect(restored.single.backendIndex, seat.backendIndex);
+    seatWire['online'] = 'false';
+    await expectLater(
+      repository.fetchRoomAuthority(roomId: 'room-1', currentUserId: 42),
+      _protocol,
+    );
+  });
   test(
     'one authenticated GET projects full authority without activating room',
     () async {

@@ -31,6 +31,41 @@ void _roomTest(String name, Future<void> Function(WidgetTester) body) {
 }
 
 void main() {
+  _roomTest('S05 offline authority retains seat and revokes publication', (
+    tester,
+  ) async {
+    final h = _Harness();
+    h.repo.state = h.repo.state.copyWith(
+      transportMode: RoomTransportMode.interactive,
+      role: RoomRole.speaker,
+      seats: [_seat(1)],
+      rtc: const RtcCredentials(
+        solution: RtcSolution.agora,
+        token: 'fixture',
+        channelId: 'room-1',
+        userId: 1,
+        role: 'broadcaster',
+      ),
+    );
+    await h.controller.join();
+    await h.controller.toggleMicrophone();
+    await h.controller.toggleMicrophone();
+    expect(h.rtc.audioEnabled, isTrue);
+    h.repo.state = h.repo.state.copyWith(
+      seats: [_seat(1).copyWith(isOnline: false)],
+    );
+    await tester.pump(_interval);
+    expect(h.controller.seats.single.isOccupied, isTrue);
+    expect(h.controller.seats.single.isOnline, isFalse);
+    expect(h.rtc.audioEnabled, isFalse);
+    await h.controller.toggleMicrophone();
+    expect(h.rtc.audioEnabled, isFalse);
+    expect(h.controller.seats.single.isOnline, isFalse);
+    h.repo.state = h.repo.state.copyWith(seats: [_seat(1)]);
+    await tester.pump(_interval);
+    expect(h.controller.seats.where((s) => s.userId == 1), hasLength(1));
+    expect(h.controller.seats.single.isOnline, isTrue);
+  });
   _roomTest('disposed pending join checks durable identity generation', (
     tester,
   ) async {

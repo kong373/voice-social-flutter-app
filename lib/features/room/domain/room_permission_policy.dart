@@ -33,9 +33,7 @@ class RoomPermissionPolicy {
       final RoomRole snapshotRole = snapshot.role;
       final bool signedIn = snapshotRole != RoomRole.guest;
       final bool canManage =
-          snapshotRole == RoomRole.owner ||
-          snapshotRole == RoomRole.moderator ||
-          snapshotRole == RoomRole.platformModerator;
+          snapshotRole == RoomRole.owner || snapshotRole == RoomRole.moderator;
       return switch (capability) {
         RoomCapability.sendPublicMessage =>
           signedIn && snapshot.publicScreenEnabled,
@@ -53,10 +51,7 @@ class RoomPermissionPolicy {
 
     final RoomRole role = snapshot.role;
     final bool signedIn = role != RoomRole.guest;
-    final bool canManage =
-        role == RoomRole.owner ||
-        role == RoomRole.moderator ||
-        role == RoomRole.platformModerator;
+    final bool canManage = role == RoomRole.owner || role == RoomRole.moderator;
 
     return switch (capability) {
       RoomCapability.sendPublicMessage =>

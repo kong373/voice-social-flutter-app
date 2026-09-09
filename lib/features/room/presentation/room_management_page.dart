@@ -95,9 +95,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
 
   bool get _isOwner => configuration.currentRole == RoomRole.owner;
   bool get _canManage =>
-      _isOwner ||
-      configuration.currentRole == RoomRole.moderator ||
-      configuration.currentRole == RoomRole.platformModerator;
+      _isOwner || configuration.currentRole == RoomRole.moderator;
   bool get _supportsMicRequests => _canManage;
 
   bool _canGovern(RoomMember member) =>
@@ -270,9 +268,10 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       };
       // Member pagination cannot prove seat occupancy or empty-seat locks.
       // Offline previews without authority retain their supplied seat snapshot.
-      final List<MicSeat> reconciledSeats = List.of(
-        projection?.snapshot.seats ?? _seats,
-      );
+      final List<MicSeat> reconciledSeats = [
+        for (final seat in projection?.snapshot.seats ?? _seats)
+          seat.copyWith(userRole: roles[seat.userId] ?? seat.userRole),
+      ];
       final List<RoomMember> members = <RoomMember>[
         for (final RoomMember member in page.items)
           member.copyWith(
@@ -520,6 +519,15 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   }
 
   Widget _buildSeatCard(BuildContext context, MicSeat seat) {
+    final RoomMember? occupant = seat.isOccupied && seat.userId != null
+        ? RoomMember(
+            userId: seat.userId!,
+            name: seat.userName ?? '用户 ${seat.userId}',
+            role: seat.userRole,
+            presence: RoomMemberPresence.onMic,
+            seatNumber: seat.number,
+          )
+        : null;
     final bool locked = seat.state == MicSeatState.locked;
     final bool muted =
         seat.state == MicSeatState.mutedAvailable ||
@@ -556,9 +564,24 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 12),
+          if (seat.isOccupied && !seat.isOnline) const Text('离线 · 占位保留'),
           Wrap(
             spacing: 4,
             children: <Widget>[
+              if (occupant != null && _canGovern(occupant)) ...[
+                ActionChip(
+                  label: const Text('移下麦位'),
+                  onPressed: _busyUserId == null
+                      ? () => _takeOffMic(occupant)
+                      : null,
+                ),
+                ActionChip(
+                  label: const Text('移出房间'),
+                  onPressed: _busyUserId == null
+                      ? () => _kickMember(occupant)
+                      : null,
+                ),
+              ],
               ActionChip(
                 avatar: Icon(
                   locked ? Icons.lock_open_rounded : Icons.lock_outline_rounded,

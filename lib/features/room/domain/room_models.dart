@@ -152,6 +152,7 @@ class MicSeat {
     this.userName,
     this.avatarUrl,
     this.isSpeaking = false,
+    this.isOnline = true,
     this.userRole = RoomRole.listener,
   });
 
@@ -162,6 +163,9 @@ class MicSeat {
   final String? userName;
   final String? avatarUrl;
   final bool isSpeaking;
+
+  /// Server seat presence; occupancy survives a disconnected lease.
+  final bool isOnline;
   final RoomRole userRole;
 
   bool get isAvailable => state == MicSeatState.available;
@@ -179,6 +183,7 @@ class MicSeat {
     String? avatarUrl,
     bool clearAvatarUrl = false,
     bool? isSpeaking,
+    bool? isOnline,
     RoomRole? userRole,
   }) {
     return MicSeat(
@@ -188,7 +193,9 @@ class MicSeat {
       userId: clearUserId ? null : userId ?? this.userId,
       userName: clearUserName ? null : userName ?? this.userName,
       avatarUrl: clearAvatarUrl ? null : avatarUrl ?? this.avatarUrl,
-      isSpeaking: isSpeaking ?? this.isSpeaking,
+      isSpeaking:
+          (isOnline ?? this.isOnline) && (isSpeaking ?? this.isSpeaking),
+      isOnline: isOnline ?? this.isOnline,
       userRole: userRole ?? this.userRole,
     );
   }

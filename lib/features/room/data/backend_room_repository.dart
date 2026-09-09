@@ -759,6 +759,8 @@ class BackendRoomRepository
           BackendMicSeat(
             index: _asInt(raw['index']) ?? -1,
             status: _seatStatus(raw),
+            isOnline: _seatOnline(raw),
+            isSpeaking: raw['speaking'] == true,
             userId: _asInt(raw['userId']),
             userName: _nonEmptyString(raw['userName'] ?? raw['nickname']),
             avatarUrl: _safeAvatarUrl(raw['avatarUrl'] ?? raw['headImageUrl']),
@@ -1827,6 +1829,18 @@ class BackendRoomRepository
       );
     }
     return userId;
+  }
+
+  static bool _seatOnline(Map<String, Object?> raw) {
+    // Legacy payloads omit this field. An explicit presence must be a bool;
+    // malformed authority cannot silently become online.
+    if (!raw.containsKey('online')) return true;
+    final value = raw['online'];
+    if (value is bool) return value;
+    throw const ApiException(
+      kind: ApiFailureKind.protocol,
+      message: '麦位 online 必须为布尔值',
+    );
   }
 
   static int _seatStatus(Map<String, Object?> raw) {

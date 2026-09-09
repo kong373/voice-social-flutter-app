@@ -2087,8 +2087,8 @@ class _VideoMicSeat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool occupied = seat.isOccupied && seat.userName != null;
-    final bool speaking = seat.isSpeaking;
+    final bool occupied = seat.isOccupied;
+    final bool speaking = seat.isOnline && seat.isSpeaking;
     final bool dense = MediaQuery.textScalerOf(context).scale(1) > 1.15;
     final double seatSize = dense ? 44 : 56;
     final Color ring = speaking
@@ -2189,7 +2189,11 @@ class _VideoMicSeat extends StatelessWidget {
           ),
           SizedBox(height: dense ? 0 : 2),
           Text(
-            speaking ? '正在说话' : _stateLabel(seat.state),
+            occupied && !seat.isOnline
+                ? '离线 · 占位保留'
+                : speaking
+                ? '正在说话'
+                : _stateLabel(seat.state),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(

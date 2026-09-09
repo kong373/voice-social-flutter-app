@@ -9,6 +9,8 @@ class BackendMicSeat {
     this.userName,
     this.avatarUrl,
     this.userRoleCode,
+    this.isOnline = true,
+    this.isSpeaking = false,
   });
 
   final int index;
@@ -17,6 +19,8 @@ class BackendMicSeat {
   final String? userName;
   final String? avatarUrl;
   final int? userRoleCode;
+  final bool isOnline;
+  final bool isSpeaking;
 
   bool get isOccupied => status == 3 || status == 4;
 }
@@ -81,6 +85,8 @@ class FixedEightSeatAdapter {
       userName: backend.userName,
       avatarUrl: backend.avatarUrl,
       userRole: _roleFromBackend(backend.userRoleCode),
+      isOnline: backend.isOccupied && backend.isOnline,
+      isSpeaking: backend.isOccupied && backend.isOnline && backend.isSpeaking,
     );
   }
 

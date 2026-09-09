@@ -8,6 +8,134 @@ import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
 
 void main() {
+  testWidgets('S05 absent seat role uses complete offline manager roster', (
+    tester,
+  ) async {
+    final repo = _Repository()..role = RoomRole.moderator;
+    repo.extraManagers = const [
+      RoomMember(
+        userId: 999,
+        name: '离线房管',
+        role: RoomRole.moderator,
+        presence: RoomMemberPresence.onMic,
+        seatNumber: 4,
+      ),
+    ];
+    repo.seats = const [
+      MicSeat(
+        number: 4,
+        backendIndex: 0,
+        state: MicSeatState.occupied,
+        userId: 999,
+        userName: '离线房管',
+        isOnline: false,
+      ),
+    ];
+    await _open(tester, repo);
+    await tester.tap(find.text('麦位管理'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ActionChip, '移下麦位'), findsNothing);
+    expect(find.widgetWithText(ActionChip, '移出房间'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+  testWidgets('S05 failed offline kick retains authority seat', (tester) async {
+    final repo = _Repository();
+    repo.seats = const [
+      MicSeat(
+        number: 4,
+        backendIndex: 0,
+        state: MicSeatState.occupied,
+        userId: 999,
+        userName: '离线成员',
+        isOnline: false,
+      ),
+    ];
+    await _open(tester, repo);
+    await tester.tap(find.text('麦位管理'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ActionChip, '移出房间'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认移出并限制'));
+    await tester.pumpAndSettle();
+    expect(repo.kicked, 999);
+    expect(find.text('离线成员'), findsOneWidget);
+    expect(find.text('离线 · 占位保留'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+  for (final targetRole in [RoomRole.owner, RoomRole.moderator]) {
+    testWidgets('S05 manager cannot govern offline $targetRole', (
+      tester,
+    ) async {
+      final repo = _Repository()..role = RoomRole.moderator;
+      repo.seats = [
+        MicSeat(
+          number: 4,
+          backendIndex: 0,
+          state: MicSeatState.occupied,
+          userId: 999,
+          userName: '离线管理',
+          userRole: targetRole,
+          isOnline: false,
+        ),
+      ];
+      await _open(tester, repo);
+      await tester.tap(find.text('麦位管理'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ActionChip, '移下麦位'), findsNothing);
+      expect(find.widgetWithText(ActionChip, '移出房间'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+  for (final role in [
+    RoomRole.owner,
+    RoomRole.moderator,
+    RoomRole.listener,
+    RoomRole.platformModerator,
+  ]) {
+    testWidgets('S05 offline seat governance as $role', (tester) async {
+      final repo = _Repository()..role = role;
+      repo.seats = const [
+        MicSeat(
+          number: 4,
+          backendIndex: 0,
+          state: MicSeatState.occupied,
+          userId: 999,
+          userName: '离线成员',
+          isOnline: false,
+        ),
+      ];
+      await _open(tester, repo);
+      await tester.tap(find.text('麦位管理'));
+      await tester.pumpAndSettle();
+      expect(find.text('离线成员'), findsOneWidget);
+      expect(find.text('离线 · 占位保留'), findsOneWidget);
+      final allowed = role == RoomRole.owner || role == RoomRole.moderator;
+      expect(
+        find.widgetWithText(ActionChip, '移下麦位'),
+        allowed ? findsOneWidget : findsNothing,
+      );
+      expect(
+        find.widgetWithText(ActionChip, '移出房间'),
+        allowed ? findsOneWidget : findsNothing,
+      );
+      if (allowed) {
+        await tester.tap(find.widgetWithText(ActionChip, '移下麦位'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('确认移下麦'));
+        await tester.pumpAndSettle();
+        expect(repo.removed, (999, 0));
+        expect(find.text('离线成员'), findsNothing);
+      } else {
+        expect(repo.removed, isNull);
+        for (final chip in tester.widgetList<ActionChip>(
+          find.byType(ActionChip),
+        )) {
+          expect(chip.onPressed, isNull);
+        }
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
   testWidgets(
     'assignment refreshes auto-locked seats and excludes them from the next picker',
     (tester) async {
@@ -105,7 +233,7 @@ Future<void> _open(WidgetTester tester, _Repository repo) async {
       home: RoomManagementPage(
         roomId: '9527',
         currentUserId: 20001,
-        currentRole: RoomRole.owner,
+        currentRole: repo.role,
         seats: List.of(repo.seats),
         repositoryOverride: repo,
         authorityRepositoryOverride: repo,
@@ -119,6 +247,47 @@ class _Repository extends MockRoomOperationsRepository
     implements RoomAuthorityRepository {
   int reads = 0;
   bool failRead = false;
+  RoomRole role = RoomRole.owner;
+  (int, int)? removed;
+  int? kicked;
+  List<RoomMember> extraManagers = [];
+
+  @override
+  Future<List<RoomMember>> fetchManagers(String roomId) async => [
+    ...await super.fetchManagers(roomId),
+    ...extraManagers,
+  ];
+
+  @override
+  Future<void> kickUser({required String roomId, required int userId}) async {
+    kicked = userId;
+    throw const ApiException(
+      kind: ApiFailureKind.business,
+      code: 40936,
+      message: 'ROOM_SESSION_EXPIRED',
+    );
+  }
+
+  @override
+  Future<void> takeUserOffMic({
+    required String roomId,
+    required int userId,
+    required int backendMicIndex,
+  }) async {
+    removed = (userId, backendMicIndex);
+    seats = [
+      for (final seat in seats)
+        if (seat.userId == userId)
+          MicSeat(
+            number: seat.number,
+            backendIndex: seat.backendIndex,
+            state: MicSeatState.available,
+          )
+        else
+          seat,
+    ];
+  }
+
   List<MicSeat> seats = const [
     MicSeat(number: 4, backendIndex: 4, state: MicSeatState.available),
     MicSeat(number: 5, backendIndex: 5, state: MicSeatState.available),
@@ -142,7 +311,7 @@ class _Repository extends MockRoomOperationsRepository
         title: '房间',
         topic: '',
         ownerId: currentUserId,
-        role: RoomRole.owner,
+        role: role,
         seats: List.of(seats),
         rtc: const RtcCredentials(token: '', channelId: ''),
         publicScreenEnabled: false,

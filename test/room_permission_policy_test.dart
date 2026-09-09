@@ -32,6 +32,19 @@ void main() {
     onlineCount: 1,
   );
 
+  for (final mode in RoomTransportMode.values) {
+    test('platform staff cannot govern retained seats in $mode', () {
+      expect(
+        policy.allows(
+          snapshot: snapshot(RoomRole.platformModerator, transportMode: mode),
+          capability: RoomCapability.manageMembers,
+          isOnMic: false,
+        ),
+        isFalse,
+      );
+    });
+  }
+
   test('listener can socialize but cannot manage the room', () {
     final RoomSnapshot room = snapshot(RoomRole.listener);
     expect(

@@ -2532,6 +2532,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     final MicSeat? ownSeat = _seatInSnapshot(snapshot);
     if (ownSeat == null ||
         !ownSeat.isOccupied ||
+        !ownSeat.isOnline ||
         ownSeat.state == MicSeatState.occupiedMuted) {
       return false;
     }
@@ -2555,7 +2556,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       return false;
     }
     final MicSeat? ownSeat = _ownSeat();
-    if (ownSeat == null || !ownSeat.isOccupied) {
+    if (ownSeat == null || !ownSeat.isOccupied || !ownSeat.isOnline) {
       return false;
     }
     return switch (snapshot.rtc.role.trim().toLowerCase()) {
