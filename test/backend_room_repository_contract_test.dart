@@ -66,6 +66,11 @@ void main() {
               <String, Object?>{
                 'index': 1,
                 'occupied': true,
+                'muted': false,
+                'selfMuted': false,
+                'forcedMuted': false,
+                'legacyMuted': false,
+                'joinedAt': '2026-09-09T10:00:00Z',
                 'userId': 10001,
                 'userName': '晚星',
                 'avatarUrl': 'https://cdn.example/u.png',
@@ -101,6 +106,12 @@ void main() {
       expect(snapshot.isSnapshotOnly, isTrue);
       expect(snapshot.seats, hasLength(9));
       expect(snapshot.seats[0].state, MicSeatState.occupied);
+      expect(snapshot.seats[0].audioMute?.selfMuted, isFalse);
+      expect(snapshot.seats[0].audioMute?.forcedMuted, isFalse);
+      expect(snapshot.seats[0].audioMute?.legacyMuted, isFalse);
+      expect(snapshot.seats[0].audioMute?.version, isNull);
+      expect(snapshot.seats[0].occupantJoinedAt, '2026-09-09T10:00:00Z');
+      expect(snapshot.seats[1].audioMute, isNull);
       expect(snapshot.seats[0].userId, 10001);
       expect(snapshot.seats[0].avatarUrl, 'https://cdn.example/u.png');
       expect(snapshot.seats[0].userRole, RoomRole.owner);
@@ -558,6 +569,10 @@ void main() {
                 'seatNumber': 4,
                 'userId': 10001,
                 'occupied': true,
+                'selfMuted': false,
+                'forcedMuted': false,
+                'legacyMuted': false,
+                'version': 1,
                 'muted': false,
               },
             );
@@ -590,6 +605,10 @@ void main() {
                 'userId': 10001,
                 'muted': true,
                 'occupied': true,
+                'selfMuted': true,
+                'forcedMuted': false,
+                'legacyMuted': false,
+                'version': 1,
               },
             );
           case '/app-room-api/room/com/v1/roomScreenChat':
@@ -2300,6 +2319,10 @@ void main() {
                 'userId': 10001,
                 'muted': true,
                 'occupied': true,
+                'selfMuted': true,
+                'forcedMuted': false,
+                'legacyMuted': false,
+                'version': 1,
               },
             );
           default:
@@ -2427,6 +2450,10 @@ void main() {
                 'userId': 10001,
                 'muted': false,
                 'occupied': true,
+                'selfMuted': false,
+                'forcedMuted': false,
+                'legacyMuted': false,
+                'version': 1,
               },
             );
           case '/app-room-api/room/com/v1/exitRoom':
@@ -2570,6 +2597,10 @@ void main() {
                 'userId': 10001,
                 'muted': true,
                 'occupied': true,
+                'selfMuted': true,
+                'forcedMuted': false,
+                'legacyMuted': false,
+                'version': 1,
               },
             );
           default:

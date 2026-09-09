@@ -13,6 +13,54 @@ import 'package:voice_social_app/features/room/domain/room_operations_models.dar
 
 void main() {
   test(
+    'manager removes forced audio mute without clearing personal or text mute',
+    () async {
+      final server = await _RunningServer.start((request) {
+        if (request.path == '/app-api/micBase/openMike') {
+          expect(request.body, {
+            'roomId': '9527',
+            'seatNumber': 4,
+            'userId': 10001,
+            'muted': false,
+            'sessionId': roomLeaseSessionId,
+          });
+          return const _Reply(
+            data: {
+              'roomId': '9527',
+              'seatNumber': 4,
+              'userId': 10001,
+              'muted': true,
+              'selfMuted': true,
+              'forcedMuted': false,
+              'legacyMuted': false,
+              'version': 4,
+            },
+          );
+        }
+        return _Reply(
+          data: _memberPage(
+            current: 1,
+            pageSize: 20,
+            total: 1,
+            pages: 1,
+            items: [
+              {..._memberRecord(10001), 'seatNumber': 4, 'muted': true},
+            ],
+          ),
+        );
+      });
+      addTearDown(server.close);
+      final repo = BackendRoomOperationsRepository(
+        apiClient: server.client,
+        leaseBinding: admittedRoomFixture(userId: 20001),
+      );
+      final members = await repo.fetchOnlineMembers(roomId: '9527', page: 1);
+      expect(members.items.single.isMuted, isTrue);
+      await repo.setSeatMuted(roomId: '9527', backendMicIndex: 4, muted: false);
+      expect(server.requests.last.path, '/app-api/micBase/openMike');
+    },
+  );
+  test(
     'resolve unknown result binds decision version and alternate seat to one key',
     () async {
       var loseResponse = true;
@@ -169,6 +217,11 @@ void main() {
             'userId': 10002,
             'seatNumber': 9,
             'occupied': true,
+            'selfMuted': false,
+            'forcedMuted': false,
+            'legacyMuted': false,
+            'version': 1,
+            'muted': false,
           },
         ),
       );
@@ -254,6 +307,11 @@ void main() {
           'userId': 10002,
           'seatNumber': 7,
           'occupied': true,
+          'selfMuted': false,
+          'forcedMuted': false,
+          'legacyMuted': false,
+          'version': 1,
+          'muted': false,
         },
       ),
     );
@@ -301,6 +359,11 @@ void main() {
             'userId': 10002,
             'seatNumber': 7,
             'occupied': true,
+            'selfMuted': false,
+            'forcedMuted': false,
+            'legacyMuted': false,
+            'version': 1,
+            'muted': false,
           },
         ),
       );
@@ -333,6 +396,11 @@ void main() {
             'userId': 10002,
             'seatNumber': 7,
             'occupied': true,
+            'selfMuted': false,
+            'forcedMuted': false,
+            'legacyMuted': false,
+            'version': 1,
+            'muted': false,
             ...invalid,
           },
         ),
@@ -628,6 +696,10 @@ void main() {
                 'userId': 10001,
                 'muted': false,
                 'occupied': true,
+                'selfMuted': false,
+                'forcedMuted': false,
+                'legacyMuted': false,
+                'version': 1,
               },
             );
           case '/app-api/micBase/closedMike':
@@ -646,6 +718,10 @@ void main() {
                 'userId': 10001,
                 'muted': true,
                 'occupied': true,
+                'selfMuted': true,
+                'forcedMuted': false,
+                'legacyMuted': false,
+                'version': 1,
               },
             );
           default:
@@ -1060,6 +1136,10 @@ void main() {
             'userId': body['userId'],
             'muted': body['muted'],
             'occupied': true,
+            'selfMuted': body['userId'] == 10001 && body['muted'] == true,
+            'forcedMuted': body['userId'] != 10001 && body['muted'] == true,
+            'legacyMuted': false,
+            'version': 1,
           },
         );
       }

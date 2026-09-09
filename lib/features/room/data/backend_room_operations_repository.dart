@@ -86,17 +86,34 @@ class BackendRoomOperationsRepository
     final membership = requiresMembership
         ? leaseBinding.require(body['roomId'] as String?)
         : leaseBinding.current;
-    final response = await _apiClient.postWithoutUnauthorizedRecovery(
-      path,
-      headers: headers,
-      body: {
-        ...body,
-        if (!isRead &&
-            membership != null &&
-            (body['roomId'] == null || body['roomId'] == membership.roomId))
-          'sessionId': membership.lease.sessionId,
-      },
-    );
+    final payload = {
+      ...body,
+      if (!isRead &&
+          membership != null &&
+          (body['roomId'] == null || body['roomId'] == membership.roomId))
+        'sessionId': membership.lease.sessionId,
+    };
+    final isMicWrite =
+        !isRead &&
+        (path.startsWith('/app-api/mic') ||
+            path.startsWith('/app-mini-api/mini/v1/rooms/mic-requests'));
+    final response = isMicWrite
+        ? await _apiClient.postBoundToIdentity(
+            path,
+            headers: headers,
+            body: payload,
+            requireIdentity: () {
+              leaseBinding.check(generation);
+              if (membership != null &&
+                  leaseBinding.current?.lease.sessionId != payload['sessionId'])
+                throw RoomLeaseBinding.stale();
+            },
+          )
+        : await _apiClient.postWithoutUnauthorizedRecovery(
+            path,
+            headers: headers,
+            body: payload,
+          );
     leaseBinding.check(generation);
     return response;
   }
@@ -728,7 +745,7 @@ class BackendRoomOperationsRepository
       );
     }
     await _runWrite<void>(
-      intent: 'assign-mic:$id:$userId:$backendMicIndex',
+      intent: 'assign-mic:$id:$userId',
       fingerprint: 'ROOM_ASSIGN_MIC|$id|$userId|$backendMicIndex',
       action: (headers) async {
         final response = await _post(
@@ -749,6 +766,7 @@ class BackendRoomOperationsRepository
             message: '安排上麦响应与请求不一致',
           );
         }
+        RoomAudioMuteState.parse(data);
       },
     );
   }
@@ -837,7 +855,8 @@ class BackendRoomOperationsRepository
       );
     }
     await _runWrite<void>(
-      intent: 'seat-mute:$roomId:$backendMicIndex:$userId:$muted',
+      intent: 'seat-mute:$roomId:$userId',
+      fingerprint: 'seat-mute:$roomId:$backendMicIndex:$userId:$muted',
       action: (Map<String, String> headers) async {
         final ApiResponse response = await _post(
           muted ? _routes.closeMic : _routes.openMic,
@@ -857,7 +876,10 @@ class BackendRoomOperationsRepository
         _assertRoom(data, roomId, operation: '麦位闭麦');
         _assertSeat(data, backendMicIndex, operation: '麦位闭麦');
         _assertUser(data, userId, operation: '麦位闭麦');
-        if (_asBool(data['muted']) != muted) {
+        final audio = RoomAudioMuteState.parse(data);
+        final isSelf = leaseBinding.require(roomId).userId == userId;
+        if ((isSelf ? audio.selfMuted : audio.forcedMuted) != muted ||
+            (!muted && !isSelf && audio.legacyMuted)) {
           throw const ApiException(
             kind: ApiFailureKind.protocol,
             message: '麦位闭麦响应与请求不一致',

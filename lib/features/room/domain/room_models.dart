@@ -1,4 +1,6 @@
 import 'package:voice_social_app/features/commerce/domain/gift_coin_precision.dart';
+import 'package:voice_social_app/features/room/domain/room_audio_mute_state.dart';
+export 'package:voice_social_app/features/room/domain/room_audio_mute_state.dart';
 
 enum RoomRole { guest, listener, speaker, moderator, owner, platformModerator }
 
@@ -156,6 +158,8 @@ class MicSeat {
     this.isSpeaking = false,
     this.isOnline = true,
     this.userRole = RoomRole.listener,
+    this.audioMute,
+    this.occupantJoinedAt,
   });
 
   final int number;
@@ -169,6 +173,8 @@ class MicSeat {
   /// Server seat presence; occupancy survives a disconnected lease.
   final bool isOnline;
   final RoomRole userRole;
+  final RoomAudioMuteState? audioMute;
+  final String? occupantJoinedAt;
 
   bool get isAvailable => state == MicSeatState.available;
 
@@ -191,6 +197,8 @@ class MicSeat {
     bool? isSpeaking,
     bool? isOnline,
     RoomRole? userRole,
+    RoomAudioMuteState? audioMute,
+    String? occupantJoinedAt,
   }) {
     return MicSeat(
       number: number,
@@ -203,6 +211,16 @@ class MicSeat {
           (isOnline ?? this.isOnline) && (isSpeaking ?? this.isSpeaking),
       isOnline: isOnline ?? this.isOnline,
       userRole: userRole ?? this.userRole,
+      audioMute:
+          audioMute ??
+          (clearUserId || (userId != null && userId != this.userId)
+              ? null
+              : this.audioMute),
+      occupantJoinedAt:
+          occupantJoinedAt ??
+          (clearUserId || (userId != null && userId != this.userId)
+              ? null
+              : this.occupantJoinedAt),
     );
   }
 }

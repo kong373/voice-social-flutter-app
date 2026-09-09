@@ -11,6 +11,8 @@ class BackendMicSeat {
     this.userRoleCode,
     this.isOnline = true,
     this.isSpeaking = false,
+    this.audioMute,
+    this.occupantJoinedAt,
   });
 
   final int index;
@@ -21,6 +23,8 @@ class BackendMicSeat {
   final int? userRoleCode;
   final bool isOnline;
   final bool isSpeaking;
+  final RoomAudioMuteState? audioMute;
+  final String? occupantJoinedAt;
 
   bool get isOccupied => status == 3 || status == 4;
 }
@@ -68,6 +72,8 @@ class FixedEightSeatAdapter {
       userRole: _roleFromBackend(backend.userRoleCode),
       isOnline: backend.isOccupied && backend.isOnline,
       isSpeaking: backend.isOccupied && backend.isOnline && backend.isSpeaking,
+      audioMute: backend.audioMute,
+      occupantJoinedAt: backend.occupantJoinedAt,
     );
   }
 

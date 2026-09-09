@@ -22,3 +22,12 @@ This batch does not yet complete the alternate-seat UI, independent audio mute c
 - RED: occupied-seat approval lacked the picker; ordinary occupied move returned false. GREEN: 53 focused tests across 6 files in batches, including queue races, exact-intent unknown retry, seat layout and leave feedback. Full analyze: no issues. Existing sync-test fixtures now explicitly provide the free target seat; the race and error assertions remain.
 
 Independent audio-reason parsing and Q07-02 publication are still the next batch.
+
+## Batch 3: audio authority wire model
+
+- `b96b05c` confirmed enter snapshots expose three strict Boolean reasons and `joinedAt`, but no seat version. Mutation receipts strictly require a nonnegative seat version. Missing legacy reasons are represented as unknown; partial or contradictory occupied-seat causes fail parsing. Empty-seat stale compatibility mute is not copied to a member.
+- Self-mute receipts validate `selfMuted`; management receipts validate `forcedMuted` and explicit legacy-hold release. Effective mute may remain true after removing a forced mute when self mute remains true. Public-text `muted` is untouched.
+- Assignment, self-up/move and audio-mute unknown intents bind destination/decision via a stable subject-scoped intent. Mic POSTs additionally check the captured identity/lease before dispatch and same-identity recovery; non-mic writes retain their existing path.
+- Focused wire/model/seat-adapter tests: 109 PASS across 4 files. Includes independent cause combinations, malformed authority, real HTTP parser and receipt preservation; old receipt fixtures gained the new explicit fields without changing their expected request bodies or business assertions.
+
+Q07-02 RTC controller and audio-control UI integration remain pending after this wire-model batch.

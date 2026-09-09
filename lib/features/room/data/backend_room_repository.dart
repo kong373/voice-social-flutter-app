@@ -178,11 +178,23 @@ class BackendRoomRepository
     final membership = leaseBinding.require(body['roomId'] as String?);
     await _prepareStrictPost(generation);
     leaseBinding.check(generation);
-    final response = await _apiClient.postWithoutUnauthorizedRecovery(
-      path,
-      headers: headers,
-      body: {...body, 'sessionId': membership.lease.sessionId},
-    );
+    final payload = {...body, 'sessionId': membership.lease.sessionId};
+    final response = path.startsWith('/app-api/mic')
+        ? await _apiClient.postBoundToIdentity(
+            path,
+            headers: headers,
+            body: payload,
+            requireIdentity: () {
+              leaseBinding.check(generation);
+              if (leaseBinding.current?.lease.sessionId != payload['sessionId'])
+                throw RoomLeaseBinding.stale();
+            },
+          )
+        : await _apiClient.postWithoutUnauthorizedRecovery(
+            path,
+            headers: headers,
+            body: payload,
+          );
     leaseBinding.check(generation);
     return response;
   }
@@ -847,6 +859,11 @@ class BackendRoomRepository
             status: _seatStatus(raw),
             isOnline: _seatOnline(raw),
             isSpeaking: raw['speaking'] == true,
+            audioMute: RoomAudioMuteState.optionalSnapshot(
+              raw,
+              occupied: _seatStatus(raw) >= 3,
+            ),
+            occupantJoinedAt: _nonEmptyString(raw['joinedAt']),
             userId: _asInt(raw['userId']),
             userName: _nonEmptyString(raw['userName'] ?? raw['nickname']),
             avatarUrl: _safeAvatarUrl(raw['avatarUrl'] ?? raw['headImageUrl']),
@@ -955,7 +972,8 @@ class BackendRoomRepository
   Future<void> requestMic(int backendMicIndex) async {
     final String roomId = _requireActiveRoom();
     await _runMemberWrite<void>(
-      intent: 'up-mic:$roomId:$backendMicIndex',
+      intent: 'up-mic:$roomId',
+      fingerprint: 'up-mic:$roomId:$backendMicIndex',
       action: (Map<String, String> headers) async {
         final ApiResponse response = await _postMember(
           _routes.userUpMic,
@@ -988,6 +1006,7 @@ class BackendRoomRepository
             message: '申请上麦响应未确认 occupied=true',
           );
         }
+        RoomAudioMuteState.parse(data);
       },
     );
   }
@@ -1027,7 +1046,8 @@ class BackendRoomRepository
     final String roomId = _requireActiveRoom();
     final int userId = _requireActiveCurrentUser();
     await _runMemberWrite<void>(
-      intent: 'self-mute:$roomId:$userId:$backendMicIndex:$muted',
+      intent: 'self-mute:$roomId:$userId',
+      fingerprint: 'self-mute:$roomId:$userId:$backendMicIndex:$muted',
       action: (Map<String, String> headers) async {
         final ApiResponse response = await _postMember(
           muted ? _routes.closeMic : _routes.openMic,
@@ -1051,7 +1071,8 @@ class BackendRoomRepository
           userId: userId,
           operation: muted ? '闭麦' : '开麦',
         );
-        if (_asBool(data['muted']) != muted) {
+        final audio = RoomAudioMuteState.parse(data);
+        if (audio.selfMuted != muted) {
           throw const ApiException(
             kind: ApiFailureKind.protocol,
             message: '闭麦响应与请求不一致',
