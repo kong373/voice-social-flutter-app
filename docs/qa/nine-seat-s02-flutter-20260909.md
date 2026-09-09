@@ -113,3 +113,8 @@ Pinned3.44.7: **38 PASS**, full analyze no issues, diff-check clean:
 ```
 
 No S05 presence mapping, Backend, golden or SDK files changed.
+# Main integration verification — 2026-09-09
+
+Integrated as `2e5685d401905e1ad81c8e896a6a92d79a7dac6c`, preserving the main-only closed-room card label while changing its open-room total to nine. Pinned Flutter 3.44.7: 13 related files, **254 PASS**, session65967 exit0; full `flutter analyze --no-pub` session31974 exit0, no issues. Parent workspace evidence: `artifacts/product/filled-decisions-20260909/s02-flutter-merged.log` and `s02-flutter-merged-analyze.log`.
+
+Backend merged ac512ed has 24 targeted tests/SpotBugs0, including the canonical owner corrections. No golden update, runtime deployment, native build or ordinary-device acceptance is claimed by these source checks.
