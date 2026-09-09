@@ -36,6 +36,8 @@ abstract interface class RoomPkRepository {
     required String battleId,
   });
 
+  /// Retired by Q21-04. Existing callers must fail without a network request
+  /// or state mutation; this is not an available gameplay operation.
   Future<RoomPkBattle> surrender({
     required String roomId,
     required String battleId,

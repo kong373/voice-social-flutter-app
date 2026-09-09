@@ -48,7 +48,7 @@ void main() {
   );
 
   test(
-    'incoming invitation and surrender stay bound to the exact battle',
+    'incoming invitation stays active when a retired surrender is attempted',
     () async {
       final MockRoomPkRepository repository = MockRoomPkRepository();
       final RoomPkInvitation? incoming = await repository
@@ -62,17 +62,22 @@ void main() {
         throwsA(isA<ApiException>()),
       );
 
-      final RoomPkBattle surrendered = await repository.surrender(
-        roomId: '880217',
-        battleId: battle.id,
-      );
-      expect(surrendered.stage, RoomPkBattleStage.completed);
-      expect(surrendered.result, RoomPkResult.surrendered);
-
+      expect(repository.supportsSurrender, isFalse);
       await expectLater(
         repository.surrender(roomId: '880217', battleId: battle.id),
-        throwsA(isA<ApiException>()),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.message,
+            'message',
+            'PK 不支持主动认输',
+          ),
+        ),
       );
+      final RoomPkBattle? retained = await repository.fetchActiveBattle(
+        roomId: '880217',
+      );
+      expect(retained!.id, battle.id);
+      expect(retained.isActive, isTrue);
     },
   );
 }

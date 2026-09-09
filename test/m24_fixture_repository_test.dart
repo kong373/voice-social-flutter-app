@@ -122,6 +122,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.byType(RoomPkBattlePage), findsOneWidget);
       expect(find.text('PK 对战与结算'), findsOneWidget);
+      expect(find.text('主动认输'), findsNothing);
+      expect(find.text('认输接口未接入'), findsNothing);
+      expect(find.textContaining('惩罚主题'), findsNothing);
 
       await tester.ensureVisible(find.text('返回房间'));
       await tester.pumpAndSettle();
@@ -152,7 +155,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.text('离开房间？'), findsOneWidget);
     expect(find.textContaining('当前房间正在 PK'), findsOneWidget);
-    expect(find.textContaining('主动结束或认输'), findsOneWidget);
+    expect(find.textContaining('离开房间不会结束 PK'), findsOneWidget);
+    expect(find.textContaining('主动结束或认输'), findsNothing);
     await _disposePage(tester);
   });
 }

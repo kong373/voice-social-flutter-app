@@ -1640,7 +1640,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
       return;
     }
     final String content = activePk?.isActive == true
-        ? '当前房间正在 PK。离开可能被服务端视为主动结束或认输；如果你在麦上，也会同时下麦并结束本次房间会话。'
+        ? '当前房间正在 PK，离开房间不会结束 PK。如果你在麦上，将同时下麦并结束本次房间会话。'
         : _controller.isOnMic
         ? '离开后将同时下麦，并结束本次房间会话。'
         : '确认结束本次收听？';

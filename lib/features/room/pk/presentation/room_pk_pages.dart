@@ -382,8 +382,8 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
                     controller: _punishmentController,
                     maxLength: 20,
                     decoration: const InputDecoration(
-                      labelText: '惩罚主题',
-                      hintText: '双方都能理解、可正常完成的轻量惩罚',
+                      labelText: '对战主题',
+                      hintText: '填写本场对战主题，不设置奖励或惩罚',
                       prefixIcon: Icon(Icons.flag_outlined),
                     ),
                   ),
@@ -524,51 +524,6 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
     }
   }
 
-  Future<void> _surrender() async {
-    if (!_repository.supportsSurrender) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('当前服务端未确认普通房 PK 主动认输接口')));
-      return;
-    }
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: const Text('确认认输？'),
-        content: const Text('确认后本场 PK 立即结束，并按主动认输记录结果。'),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('继续对战'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('确认认输'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) {
-      return;
-    }
-    try {
-      final RoomPkBattle value = await _repository.surrender(
-        roomId: widget.roomId,
-        battleId: _battle.id,
-      );
-      if (mounted) {
-        setState(() => _battle = value);
-        _timer?.cancel();
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final RoomPkSide current = _battle.currentSide;
@@ -638,8 +593,8 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
           _PkInfoCard(
             icon: Icons.flag_outlined,
             text: _battle.punishmentTheme.isEmpty
-                ? '本场未设置惩罚主题'
-                : '惩罚主题：${_battle.punishmentTheme}',
+                ? '本场未设置对战主题'
+                : '对战主题：${_battle.punishmentTheme}',
           ),
           if (_error != null) ...<Widget>[
             const SizedBox(height: 10),
@@ -655,19 +610,12 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
           const SizedBox(height: 24),
           if (_battle.stage == RoomPkBattleStage.completed)
             _ResultCard(battle: _battle)
-          else ...<Widget>[
-            OutlinedButton.icon(
-              onPressed: _surrender,
-              icon: const Icon(Icons.flag_rounded),
-              label: Text(_repository.supportsSurrender ? '主动认输' : '认输接口未接入'),
-            ),
-            const SizedBox(height: 8),
+          else
             Text(
-              '返回房间不会结束 PK；只有服务端结算或明确认输才会结束本场。',
+              '返回房间不会结束 PK，结果以服务端结算为准。',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall,
             ),
-          ],
         ],
       ),
     );

@@ -16,7 +16,7 @@ class MockRoomPkRepository implements RoomPkRepository {
           roomName: '下班后的松弛时刻',
           onlineUsers: 24,
         ),
-        punishmentTheme: '输的一方分享今天最想放下的事',
+        punishmentTheme: '分享今天最开心的事',
         durationMinutes: 5,
         status: RoomPkInvitationStatus.pending,
         createdAt: DateTime.now(),
@@ -58,7 +58,7 @@ class MockRoomPkRepository implements RoomPkRepository {
   bool get supportsRealtimeInvitations => false;
 
   @override
-  bool get supportsSurrender => true;
+  bool get supportsSurrender => false;
 
   void seedBattleForQa(RoomPkBattle battle) {
     _battle = battle;
@@ -317,24 +317,11 @@ class MockRoomPkRepository implements RoomPkRepository {
     required String roomId,
     required String battleId,
   }) async {
-    await _delay();
-    final RoomPkBattle? current = _battle;
-    if (current == null ||
-        current.id != battleId ||
-        current.currentRoomId != roomId ||
-        !current.isActive) {
-      throw const ApiException(
-        kind: ApiFailureKind.conflict,
-        message: 'PK 状态已变化，无法认输',
-      );
-    }
-    _battle = current.copyWith(
-      remainingSeconds: 0,
-      stage: RoomPkBattleStage.completed,
-      result: RoomPkResult.surrendered,
-      updatedAt: DateTime.now(),
+    throw const ApiException(
+      kind: ApiFailureKind.business,
+      message: 'PK 不支持主动认输',
+      httpStatus: 410,
     );
-    return _battle!;
   }
 
   @override

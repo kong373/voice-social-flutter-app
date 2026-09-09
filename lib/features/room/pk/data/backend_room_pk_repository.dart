@@ -24,7 +24,6 @@ class BackendRoomPkRepository implements RoomPkRepository {
       '/app-api/activityPk/acceptRoomPkInvitation';
   static const String _rejectPath =
       '/app-api/activityPk/rejectRoomPkInvitation';
-  static const String _surrenderPath = '/app-api/activityPk/surrenderRoomPk';
   static const String _endPath = '/app-api/activityPk/endRoomPk';
   static const String _processPath = '/app-api/activityPk/queryRoomPkProcess';
   static const String _historyPath = '/app-api/activityPk/queryRoomPkHistory';
@@ -50,7 +49,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
   bool get supportsRealtimeInvitations => false;
 
   @override
-  bool get supportsSurrender => true;
+  bool get supportsSurrender => false;
 
   @override
   Future<List<RoomPkOpponent>> fetchHotOpponents({
@@ -362,13 +361,15 @@ class BackendRoomPkRepository implements RoomPkRepository {
   Future<RoomPkBattle> surrender({
     required String roomId,
     required String battleId,
-  }) async => _finishBattle(
-    roomId: roomId,
-    battleId: battleId,
-    operation: 'surrender',
-    path: _surrenderPath,
-    expectedStatus: 'SURRENDERED',
-  );
+  }) async {
+    // Keep stale callers fail-closed without sending the retired write route.
+    // Historical SURRENDERED projections remain readable.
+    throw const ApiException(
+      kind: ApiFailureKind.business,
+      message: 'PK 不支持主动认输',
+      httpStatus: 410,
+    );
+  }
 
   @override
   Future<RoomPkBattle> end({

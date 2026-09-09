@@ -125,10 +125,7 @@ void main() {
             });
             return _Reply(data: _invitationProjection(status: 'REJECTED'));
           case '/app-api/activityPk/surrenderRoomPk':
-            expect(request.method, 'POST');
-            expect(request.query, isEmpty);
-            expect(request.body, <String, Object?>{'battleId': _battleId});
-            return _Reply(data: _battleProjection(status: 'SURRENDERED'));
+            fail('Retired PK surrender must not send any HTTP request');
           case '/app-api/activityPk/endRoomPk':
             expect(request.method, 'POST');
             expect(request.query, isEmpty);
@@ -257,9 +254,16 @@ void main() {
         )).id,
         _battleId,
       );
-      expect(
-        await repository.surrender(roomId: _roomId, battleId: _battleId),
-        isA<RoomPkBattle>(),
+      expect(repository.supportsSurrender, isFalse);
+      await expectLater(
+        repository.surrender(roomId: _roomId, battleId: _battleId),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.message,
+            'message',
+            'PK 不支持主动认输',
+          ),
+        ),
       );
       expect(
         await repository.end(roomId: _roomId, battleId: _battleId),
