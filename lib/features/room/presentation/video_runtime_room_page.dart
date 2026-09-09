@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:voice_social_app/features/room/presentation/edit_room_page.dart';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
@@ -18,7 +17,6 @@ import 'package:voice_social_app/features/room/presentation/room_diagnostics_pag
 import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_members_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_recovery_page.dart';
-import 'package:voice_social_app/features/room/presentation/room_share_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_topic_page.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
@@ -1357,9 +1355,6 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
             case 'members':
               _openMembers();
               return;
-            case 'share':
-              _openShare();
-              return;
             case 'topic':
               _openTopic();
               return;
@@ -1377,12 +1372,6 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
               return;
             case 'report':
               _openReport();
-              return;
-            case 'copy':
-              Clipboard.setData(ClipboardData(text: _controller.roomCode));
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('房间号已复制')));
               return;
             case 'minimize':
               _minimize();
@@ -1434,22 +1423,6 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           seats: snapshot.seats,
           roomTitle: snapshot.title,
           coordinationMode: MicCoordinationMode.approval,
-        ),
-      ),
-    );
-  }
-
-  void _openShare() {
-    final RoomSnapshot? snapshot = _controller.snapshot;
-    if (snapshot == null) {
-      return;
-    }
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomSharePage(
-          roomId: snapshot.roomId,
-          roomCode: snapshot.roomCode,
-          roomTitle: snapshot.title,
         ),
       ),
     );
@@ -2670,11 +2643,9 @@ class _RoomToolsSheetState extends State<_RoomToolsSheet> {
           '房管',
         ),
       const _ToolItem('members', Icons.groups_2_outlined, '成员'),
-      const _ToolItem('share', Icons.ios_share_rounded, '分享'),
       const _ToolItem('topic', Icons.campaign_outlined, '公告'),
       if (widget.canPk)
         const _ToolItem('pk', Icons.sports_kabaddi_rounded, '房间 PK'),
-      const _ToolItem('copy', Icons.copy_rounded, '复制房间号'),
       const _ToolItem('report', Icons.report_outlined, '举报房间'),
     ];
     final List<_ToolItem> tools = <_ToolItem>[

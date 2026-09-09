@@ -26,12 +26,11 @@ parse_refund_scope() {
 }
 REFUND_SCOPE="$(parse_refund_scope)" || exit 64
 readonly REFUND_SCOPE
-SCOPED_SUCCESS='PASS'
-[[ "$REFUND_SCOPE" != deferred ]] || SCOPED_SUCCESS='PASS_WITH_EXEMPTIONS'
+SCOPED_SUCCESS='PASS_WITH_PRODUCT_REMOVALS'
 readonly SCOPED_SUCCESS
 
 # Validate profile evidence independently of the acceptance marker. No refund
-# operation (including a preexisting result) can count as completed in deferred.
+# operation (including a preexisting result) can count as completed: Q15-06.
 validate_refund_profile() {
   python3 - "$1" "$REFUND_SCOPE" "$SCOPED_SUCCESS" <<'PY'
 import re
@@ -44,44 +43,19 @@ def markers(name):
     return re.findall(r"(?:^|\s)" + name + r"::([^\s]+)", text)
 expected = [
     "commerce.refund.result", "commerce.refund.retry", "commerce.refund.submit"
-] if scope == "deferred" else []
+]
 if markers("M4_REFUND_SCOPE") != [scope]:
     raise SystemExit(1)
 if markers("M4_ACCEPTANCE") != [success]:
     raise SystemExit(1)
-if sorted(markers("M4_EXEMPT_NOT_COMPLETED")) != expected:
+if sorted(markers("M4_REMOVED_BY_PRODUCT")) != expected:
     raise SystemExit(1)
 if markers("M4_RELEASE_READINESS") != ["NOT_RELEASE_READY"]:
     raise SystemExit(1)
-if scope == "strict":
-    routes = markers("M4_ROUTE_STATUS")
-    for capability, outcomes in {
-        "commerce.refund.submit": [("POST", "success"), ("GET", "already_authoritative")],
-        "commerce.refund.result": [("GET", "success")],
-    }.items():
-        observed = [route for route in routes if route.split("::")[0] == capability]
-        if not observed or any(
-            not any(re.fullmatch(
-                re.escape(capability) + "::" + method + r"::[^:]+::2[0-9]{2}::" + state,
-                route,
-            ) for method, state in outcomes)
-            for route in observed
-        ):
-            raise SystemExit(1)
-    if "refund_submit_result_recovered_without_provider" not in markers("M4_AUTHORITY_INVARIANT"):
-        raise SystemExit(1)
-if scope == "deferred":
-    if any(route.split("::")[0] in expected for route in markers("M4_ROUTE_STATUS")):
-        raise SystemExit(1)
-    for capability in ["commerce.refund.eligibility", "commerce.refund.records"]:
-        if not any(re.fullmatch(re.escape(capability) + r"::GET::[^:]+::2[0-9]{2}::success", route)
-                   for route in markers("M4_ROUTE_STATUS")):
-            raise SystemExit(1)
-    invariants = markers("M4_AUTHORITY_INVARIANT")
-    for required in ["refund_deferred_authoritative_denial_confirmed",
-                     "refund_records_page_reachable_without_submission"]:
-        if required not in invariants:
-            raise SystemExit(1)
+if any(route.split("::")[0] in expected for route in markers("M4_ROUTE_STATUS")):
+    raise SystemExit(1)
+if "app_refund_entry_absent" not in markers("M4_AUTHORITY_INVARIANT"):
+    raise SystemExit(1)
 PY
 }
 
@@ -281,7 +255,7 @@ validate_log_evidence() {
   [[ "$acceptance_count" -eq 1 ]] || return 1
   validate_refund_profile "$log" || return 1
   [[ -f "$dir/exempt-not-completed.txt" ]] || return 1
-  diff -u "$dir/exempt-not-completed.txt" <(grep -oE 'M4_EXEMPT_NOT_COMPLETED::[^[:space:]]+' "$log" || true) >/dev/null || return 1
+  diff -u "$dir/exempt-not-completed.txt" <(grep -oE 'M4_REMOVED_BY_PRODUCT::[^[:space:]]+' "$log" || true) >/dev/null || return 1
   [[ "$provider_count" -eq 1 && "$provider_nonzero" -eq 0 ]] || return 1
   [[ "$bad_status" -eq 0 ]] || return 1
   [[ "$backend_port_count" -eq 1 && "$backend_port_expected_count" -eq 1 ]] || return 1
@@ -347,8 +321,7 @@ validate_avd() {
 validate_avd AVD-A
 validate_avd AVD-B
 
-conclusion='ANDROID_EMULATOR_PASS'
-[[ "$REFUND_SCOPE" != deferred ]] || conclusion='ANDROID_EMULATOR_PASS_WITH_EXEMPTIONS'
+conclusion='ANDROID_EMULATOR_PASS_WITH_PRODUCT_REMOVALS'
 if ((${#reasons[@]} > 0)) || ((${#avd_results[@]} != 2)); then
   conclusion='ANDROID_EMULATOR_FAIL'
 fi
@@ -363,9 +336,9 @@ payload = {
     "conclusion": conclusion,
     "refund_scope": refund_scope,
     "release_readiness": "NOT_RELEASE_READY",
-    "EXEMPT_NOT_COMPLETED": [
+    "REMOVED_BY_PRODUCT": [
         "commerce.refund.result", "commerce.refund.retry", "commerce.refund.submit"
-    ] if refund_scope == "deferred" else [],
+    ],
     "tested_git_sha": flutter_sha,
     "backend_sha": backend_sha,
     "android_host_source_sha256": android_host_source_sha256,
@@ -393,9 +366,7 @@ PY
   printf 'M4 authoritative live AVD aggregate\n'
   printf 'conclusion=%s\n' "$conclusion"
   printf 'refund_scope=%s\nrelease_readiness=NOT_RELEASE_READY\n' "$REFUND_SCOPE"
-  if [[ "$REFUND_SCOPE" == deferred ]]; then
-    printf 'EXEMPT_NOT_COMPLETED=%s\n' commerce.refund.result commerce.refund.retry commerce.refund.submit
-  fi
+  printf 'REMOVED_BY_PRODUCT=%s\n' commerce.refund.result commerce.refund.retry commerce.refund.submit
   printf 'run_id=%s\nfixture_id=%s\nfixture_status=%s\n' "$EXPECTED_RUN_ID" "$EXPECTED_FIXTURE_ID" "$EXPECTED_FIXTURE_STATUS"
   printf 'backend_port=%s\n' "$EXPECTED_BACKEND_PORT"
   printf 'tested_git_sha=%s\nbackend_sha=%s\n' "$EXPECTED_FLUTTER_SHA" "$EXPECTED_BACKEND_SHA"

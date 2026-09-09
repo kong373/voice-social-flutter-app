@@ -45,9 +45,6 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
     );
   }
 
-  CommerceRepository get _repository =>
-      AppDependencyScope.of(context).commerceRepository;
-
   @override
   Widget build(BuildContext context) {
     return _CommerceScaffold(
@@ -106,18 +103,6 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
                   title: '充值订单',
                   subtitle: '查询订单并以服务端结果为准进行补单核验',
                   onTap: () => _open(const OrdersPage()),
-                ),
-                _CommerceEntry(
-                  icon: Icons.assignment_return_outlined,
-                  title: _repository.refundScope == RefundScope.order
-                      ? '订单退款'
-                      : '退款申请',
-                  subtitle: _repository.refundScope == RefundScope.order
-                      ? '请从充值订单详情选择可退款订单'
-                      : '查看账户退款申请和处理记录',
-                  onTap: () => _repository.refundScope == RefundScope.order
-                      ? _open(const OrdersPage())
-                      : _open(RefundListPage(account: widget.account)),
                 ),
                 _CommerceEntry(
                   icon: Icons.trending_up_rounded,

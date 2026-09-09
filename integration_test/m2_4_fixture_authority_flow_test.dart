@@ -74,20 +74,7 @@ void main() {
         'P1-M24-EMU-009-CM-006-authoritative-order-$qaAvdId',
       );
 
-      await _pumpAuthorityPage(
-        tester,
-        dependencies,
-        RefundResultPage(application: qaRefundApplication(dependencies)),
-      );
-      await tester.tap(find.byTooltip('刷新'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('退款申请不存在'), findsNothing);
-      expect(find.text('QA-REFUND-001'), findsOneWidget);
-      await captureQaScreenshot(
-        tester,
-        binding,
-        'P1-M24-EMU-009-CM-008-authoritative-refund-$qaAvdId',
-      );
+      // CM-008 authoritative-refund positive: REMOVED_BY_PRODUCT Q15-06.
 
       await _pumpAuthorityPage(
         tester,

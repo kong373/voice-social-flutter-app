@@ -30,43 +30,23 @@ import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'm2_4_test_support.dart';
 import 'm4_commerce_ui_support.dart';
 
-/// Release-only scope; the default M4 mutation contract remains strict.
+/// Legacy runner profile accepted for compatibility; neither permits App refunds.
 class M4RefundScope {
-  M4RefundScope(String value) : deferred = value == 'deferred' {
+  M4RefundScope(this.value) {
     if (value != 'strict' && value != 'deferred') {
       throw ArgumentError('QA_M4_REFUND_SCOPE must be strict or deferred');
     }
   }
 
-  final bool deferred;
-  String get value => deferred ? 'deferred' : 'strict';
-  String get success => deferred ? 'PASS_WITH_EXEMPTIONS' : 'PASS';
-  Set<String> get exemptions => deferred
-      ? <String>{
-          'commerce.refund.submit',
-          'commerce.refund.result',
-          'commerce.refund.retry',
-        }
-      : <String>{};
-
-  Set<String> requiredCapabilities(Set<String> strict) =>
-      strict.difference(exemptions);
-
-  Future<bool> runRefund(
-    RefundEligibility eligibility,
-    Future<void> Function() strictOperation,
-  ) async {
-    if (!deferred) {
-      await strictOperation();
-      return false;
-    }
-    if (eligibility.allowed || eligibility.message.trim().isEmpty) {
-      throw TestFailure(
-        'Deferred refund requires an authoritative denial with a reason.',
-      );
-    }
-    return true;
-  }
+  final String value;
+  String get success => 'PASS_WITH_PRODUCT_REMOVALS';
+  Set<String> get removed => <String>{
+    'commerce.refund.submit',
+    'commerce.refund.result',
+    'commerce.refund.retry',
+  };
+  Set<String> requiredCapabilities(Set<String> active) =>
+      active.difference(removed);
 }
 
 final M4RefundScope _refundScope = M4RefundScope(
@@ -1955,138 +1935,7 @@ String _m4RequestId(String scope) {
   return 'm4-$avd-$scope-${DateTime.now().microsecondsSinceEpoch}';
 }
 
-Future<void> _runRefundMutation(
-  AppDependencies dependencies,
-  _M4Evidence evidence, {
-  required BackendRouteCatalog routes,
-  required PaymentOrder order,
-  required RefundEligibility eligibility,
-}) async {
-  if (await _refundScope.runRefund(
-    eligibility,
-    () => _runStrictRefundMutation(
-      dependencies,
-      evidence,
-      routes: routes,
-      order: order,
-      eligibility: eligibility,
-    ),
-  )) {
-    evidence.invariant('refund_deferred_authoritative_denial_confirmed');
-  }
-}
-
-Future<void> _runStrictRefundMutation(
-  AppDependencies dependencies,
-  _M4Evidence evidence, {
-  required BackendRouteCatalog routes,
-  required PaymentOrder order,
-  required RefundEligibility eligibility,
-}) async {
-  String? existingApplicationId = eligibility.existingApplicationId?.trim();
-  RefundApplication? application;
-
-  if (eligibility.allowed) {
-    evidence.requireCapability('commerce.refund.submit');
-    application = await _probe<RefundApplication>(
-      evidence,
-      capability: 'commerce.refund.submit',
-      method: 'POST',
-      route: routes.refundApplication,
-      operation: () => dependencies.commerceRepository.submitRefund(
-        RefundRequest(
-          account: order.orderNo,
-          realName: '',
-          age: 0,
-          amount: order.amount,
-          reason: 'M4 first-party review',
-          receivingAccount: '',
-          receivingName: '',
-          guardianName: '',
-          guardianPhone: '',
-        ),
-      ),
-      requiredSuccess: true,
-    );
-    if (application == null ||
-        application.id.trim().isEmpty ||
-        application.account != order.orderNo ||
-        application.status == RefundStatus.unavailable) {
-      throw TestFailure(
-        'Refund submission did not return an authoritative application.',
-      );
-    }
-    existingApplicationId = application.id;
-  } else if (existingApplicationId == null || existingApplicationId.isEmpty) {
-    evidence.local(
-      'commerce.refund.submit',
-      routes.refundApplication,
-      'refund_not_eligible_authoritative',
-    );
-    evidence.local(
-      'commerce.refund.result',
-      routes.refundResult,
-      'refund_result_not_attempted_without_application',
-    );
-    return;
-  } else {
-    // An earlier AVD may already have submitted this order. Preserve that
-    // server state explicitly; do not issue a second application.
-    evidence.preexisting('commerce.refund.submit', routes.refundResult);
-  }
-
-  final String? applicationId = existingApplicationId;
-  if (applicationId == null || applicationId.isEmpty) {
-    throw TestFailure('Refund application identity was lost before recovery.');
-  }
-  evidence.requireCapability('commerce.refund.result');
-  final RefundApplication? recovered = await _probe<RefundApplication>(
-    evidence,
-    capability: 'commerce.refund.result',
-    method: 'GET',
-    route: routes.refundResult,
-    operation: () => dependencies.commerceRepository.fetchRefundResult(
-      applicationId,
-      expectedOrderNo: order.orderNo,
-    ),
-    requiredSuccess: true,
-  );
-  if (recovered == null ||
-      recovered.id != applicationId ||
-      recovered.account != order.orderNo ||
-      recovered.status == RefundStatus.unavailable) {
-    throw TestFailure('Refund result did not match the authoritative order.');
-  }
-  application = recovered;
-  if (application.status == RefundStatus.rejected) {
-    evidence.requireCapability('commerce.refund.retry');
-    final RefundApplication? retried = await _probe<RefundApplication>(
-      evidence,
-      capability: 'commerce.refund.retry',
-      method: 'POST',
-      route: routes.refundRepeat,
-      operation: () => dependencies.commerceRepository.resubmitRefund(
-        applicationId,
-        expectedOrderNo: order.orderNo,
-      ),
-      requiredSuccess: true,
-    );
-    if (retried == null ||
-        retried.id != applicationId ||
-        retried.account != order.orderNo ||
-        retried.status == RefundStatus.rejected) {
-      throw TestFailure('Refund retry did not return a new review state.');
-    }
-    evidence.invariant('refund_retry_authority_confirmed');
-  } else {
-    evidence.local(
-      'commerce.refund.retry',
-      routes.refundRepeat,
-      'retry_not_required_authoritative_state',
-    );
-  }
-  evidence.invariant('refund_submit_result_recovered_without_provider');
-}
+// REMOVED_BY_PRODUCT Q15-06: App refund submission/result/retry scenario.
 
 class _OwnedModeRooms {
   const _OwnedModeRooms({required this.direct, required this.approval});
@@ -2347,37 +2196,15 @@ Future<void> _runCommerceFlow(
       pageSize: 20,
     ),
   );
-  final CommercePage<PaymentOrder>? orders =
-      await _probe<CommercePage<PaymentOrder>>(
-        evidence,
-        capability: 'commerce.orders',
-        method: 'POST',
-        route: routes.paymentOrders,
-        operation: () =>
-            dependencies.commerceRepository.fetchOrders(page: 1, pageSize: 20),
-      );
-  final PaymentOrder? firstOrder = orders == null || orders.items.isEmpty
-      ? null
-      : orders.items.first;
-  RefundEligibility? refundEligibility;
-  if (firstOrder == null) {
-    evidence.local(
-      'commerce.refund.eligibility',
-      '/commerce/refund-eligibility',
-      'no_authoritative_order_available',
-    );
-  } else {
-    refundEligibility = await _probe<RefundEligibility>(
-      evidence,
-      capability: 'commerce.refund.eligibility',
-      method: 'GET',
-      route: routes.refundCheck,
-      operation: () => dependencies.commerceRepository.checkRefundEligibility(
-        firstOrder.orderNo,
-      ),
-      requiredSuccess: true,
-    );
-  }
+  await _probe<CommercePage<PaymentOrder>>(
+    evidence,
+    capability: 'commerce.orders',
+    method: 'POST',
+    route: routes.paymentOrders,
+    operation: () =>
+        dependencies.commerceRepository.fetchOrders(page: 1, pageSize: 20),
+  );
+  // Q15-06: retain historical reads; no eligibility or refund writes.
   await _probe(
     evidence,
     capability: 'commerce.refund.records',
@@ -2431,26 +2258,7 @@ Future<void> _runCommerceFlow(
     operation: () => dependencies.commerceCatalogRepository.fetchDecorations(),
   );
 
-  if (firstOrder != null && refundEligibility != null) {
-    await _runRefundMutation(
-      dependencies,
-      evidence,
-      routes: routes,
-      order: firstOrder,
-      eligibility: refundEligibility,
-    );
-  } else {
-    evidence.local(
-      'commerce.refund.submit',
-      routes.refundApplication,
-      'no_authoritative_order_available',
-    );
-    evidence.local(
-      'commerce.refund.result',
-      routes.refundResult,
-      'refund_submit_not_attempted_without_order',
-    );
-  }
+  // REMOVED_BY_PRODUCT: refund mutation is not PASS or an exemption.
 
   final PayoutAccountSelection? payoutAccounts =
       await _probe<PayoutAccountSelection>(
@@ -2665,38 +2473,9 @@ Future<void> _runCommerceFlow(
       );
     }
 
-    final Finder refund = find.text('订单退款');
-    if (refund.evaluate().isNotEmpty) {
-      await tester.ensureVisible(refund);
-      await tester.tap(refund.hitTestable());
-      await _waitFor(
-        tester,
-        () =>
-            find.text('退款申请列表').evaluate().isNotEmpty ||
-            find.text('订单退款').evaluate().isNotEmpty ||
-            find.text('订单列表').evaluate().isNotEmpty ||
-            find.textContaining('失败').evaluate().isNotEmpty,
-        description: 'refund records or explicit blocked state',
-      );
-      if (_refundScope.deferred &&
-          find.textContaining('失败').evaluate().isNotEmpty) {
-        throw TestFailure('Deferred refund page read failed.');
-      }
-      evidence.invariant('refund_records_page_reachable_without_submission');
-      await captureQaScreenshot(
-        tester,
-        evidence.binding,
-        'm4-${qaAvdId.toLowerCase()}-15-refund',
-      );
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-    } else {
-      evidence.local(
-        'commerce.refund.ui',
-        '/commerce/refund',
-        'ui_entry_unavailable',
-      );
-    }
+    expect(find.text('订单退款'), findsNothing);
+    expect(find.text('退款申请'), findsNothing);
+    evidence.invariant('app_refund_entry_absent');
 
     final Finder withdrawal = find.text('结算与提现');
     if (withdrawal.evaluate().isNotEmpty) {
@@ -3164,8 +2943,6 @@ class _M4Evidence {
     'commerce.gift.receipt',
     'commerce.withdraw.apply',
     'commerce.withdraw.result',
-    'commerce.refund.submit',
-    'commerce.refund.result',
   };
 
   static const Set<String> _baseRequiredCapabilities = <String>{
@@ -3219,14 +2996,11 @@ class _M4Evidence {
 
   final Set<String> _requiredCapabilities = <String>{
     ..._refundScope.requiredCapabilities(_baseRequiredCapabilities),
-    if (_refundScope.deferred) 'commerce.refund.eligibility',
   };
   final Set<String> _preexistingCapabilities = <String>{};
 
   static Set<String> get _requiredInvariants => <String>{
-    if (_refundScope.deferred) 'refund_deferred_authoritative_denial_confirmed',
-    if (_refundScope.deferred)
-      'refund_records_page_reachable_without_submission',
+    'app_refund_entry_absent',
     'authoritative_backend_target_10_0_2_2_$_backendPortValue',
     'development_otp_consumed_in_memory_only',
     'vendor_readiness_observed_without_client_provider',
@@ -3250,8 +3024,10 @@ class _M4Evidence {
   };
 
   void requireCapability(String capability) {
-    if (_refundScope.exemptions.contains(capability)) {
-      throw TestFailure('Deferred refund operation attempted: $capability');
+    if (_refundScope.removed.contains(capability)) {
+      throw TestFailure(
+        'REMOVED_BY_PRODUCT refund operation attempted: $capability',
+      );
     }
     _requiredCapabilities.add(capability);
   }
@@ -3283,8 +3059,8 @@ class _M4Evidence {
     final String marker =
         'M4_ROUTE_STATUS::$safeCapability::$method::$route::$status::$safeState';
     _routes.add(marker);
-    if (_refundScope.exemptions.contains(capability)) {
-      _violations.add('$capability:deferred_operation_attempted');
+    if (_refundScope.removed.contains(capability)) {
+      _violations.add('$capability:removed_product_operation_attempted');
     }
     if (status < 200 || status >= 600) {
       _violations.add('$safeCapability:invalid_http_status');
@@ -3411,7 +3187,7 @@ class _M4Evidence {
       'providerCallEvidence': 'none',
       'secretsInClient': false,
       'refund_scope': _refundScope.value,
-      'exempt_not_completed': _refundScope.exemptions.toList()..sort(),
+      'REMOVED_BY_PRODUCT': _refundScope.removed.toList()..sort(),
       'release_readiness': 'NOT_RELEASE_READY',
       'acceptance': pass ? _refundScope.success : 'FAIL',
       'result': pass ? _refundScope.success : 'FAIL',
@@ -3424,8 +3200,8 @@ class _M4Evidence {
     debugPrint('M4_ROUTE_MARKERS::${uniqueRoutes.length}');
     debugPrint('M4_SECRETS_IN_CLIENT::0');
     debugPrint('M4_REFUND_SCOPE::${_refundScope.value}');
-    for (final String capability in _refundScope.exemptions.toList()..sort()) {
-      debugPrint('M4_EXEMPT_NOT_COMPLETED::$capability');
+    for (final String capability in _refundScope.removed.toList()..sort()) {
+      debugPrint('M4_REMOVED_BY_PRODUCT::$capability');
     }
     debugPrint('M4_RELEASE_READINESS::NOT_RELEASE_READY');
     debugPrint('M4_ACCEPTANCE::${pass ? _refundScope.success : 'FAIL'}');

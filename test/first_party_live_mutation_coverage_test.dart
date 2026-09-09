@@ -124,141 +124,68 @@ void main() {
     },
   );
 
-  test(
-    'withdrawal, refund submit/result/retry preserve first-party authority',
-    () async {
-      int refundApplyCalls = 0;
-      int refundRepeatCalls = 0;
-      final _TestServer server = await _TestServer.start((_Request request) {
-        switch (request.path) {
-          case '/app-mini-api/mini/v1/withdrawal/accounts':
-            return _Reply.ok(<String, Object?>{
-              'list': <Object?>[
-                <String, Object?>{
-                  'payoutAccountId': 'payout-1',
-                  'accountType': 'BANK_CARD',
-                  'accountMasked': '****1234',
-                  'holderNameMasked': '晚*',
-                  'status': 'VERIFIED',
-                  'selectable': true,
-                },
-              ],
-              'total': 1,
-              'selectedPayoutAccountId': 'payout-1',
-              'selectionRequired': false,
-              'providerInvocation': false,
-            });
-          case '/app-mini-api/mini/v1/withdrawal/apply':
-            expect(request.method, 'POST');
-            expect(request.body, <String, Object?>{
-              'amountMinor': 1234,
-              'payoutAccountId': 'payout-1',
-            });
-            expect(request.requestId, isNotEmpty);
-            return _Reply.ok(<String, Object?>{
-              'withdrawalId': 'withdrawal-1',
-              'payoutAccountId': 'payout-1',
-              'amountMinor': 1234,
-              'feeMinor': 25,
-              'netAmountMinor': 1209,
-              'status': 'SUBMITTED',
-              'payoutStatus': 'MANUAL_REVIEW_PENDING',
-              'providerInvocation': false,
-              'holderNameMasked': '晚*',
-              'accountMasked': '****1234',
-              'submittedAt': '2030-08-25T00:00:00Z',
-              'resultMessage': '',
-            });
-          case '/app-api/refund/check':
-            return _Reply.ok(<String, Object?>{
-              'orderNo': 'order-1',
-              'eligible': true,
-              'reason': 'ELIGIBLE',
-              'amountMinor': 100,
-              'giftCoinAmount': 10,
-              'providerStatus': 'VENDOR_BLOCKED',
-            });
-          case '/app-api/refund/application':
-            refundApplyCalls += 1;
-            if (refundApplyCalls == 1) {
-              return const _Reply(
-                statusCode: 503,
-                code: 503,
-                message: 'lost',
-                data: null,
-              );
-            }
-            return _Reply.ok(_refundMap(status: 'SUBMITTED'));
-          case '/app-api/refund/result':
-            return _Reply.ok(
-              _refundMap(
-                status: refundRepeatCalls == 0 ? 'REJECTED' : 'RESUBMITTED',
-              ),
-            );
-          case '/app-api/refund/repeat':
-            refundRepeatCalls += 1;
-            expect(request.method, 'POST');
-            expect(request.body, <String, Object?>{
-              'refundId': 'refund-1',
-              'reason': '重复充值',
-            });
-            return _Reply.ok(_refundMap(status: 'RESUBMITTED'));
-          default:
-            return _Reply.ok(<String, Object?>{});
-        }
-      });
-      addTearDown(server.close);
-      final BackendCommerceRepository repository = BackendCommerceRepository(
-        apiClient: server.client,
-      );
+  test('withdrawal preserves first-party authority', () async {
+    final _TestServer server = await _TestServer.start((_Request request) {
+      switch (request.path) {
+        case '/app-mini-api/mini/v1/withdrawal/accounts':
+          return _Reply.ok(<String, Object?>{
+            'list': <Object?>[
+              <String, Object?>{
+                'payoutAccountId': 'payout-1',
+                'accountType': 'BANK_CARD',
+                'accountMasked': '****1234',
+                'holderNameMasked': '晚*',
+                'status': 'VERIFIED',
+                'selectable': true,
+              },
+            ],
+            'total': 1,
+            'selectedPayoutAccountId': 'payout-1',
+            'selectionRequired': false,
+            'providerInvocation': false,
+          });
+        case '/app-mini-api/mini/v1/withdrawal/apply':
+          expect(request.method, 'POST');
+          expect(request.body, <String, Object?>{
+            'amountMinor': 1234,
+            'payoutAccountId': 'payout-1',
+          });
+          expect(request.requestId, isNotEmpty);
+          return _Reply.ok(<String, Object?>{
+            'withdrawalId': 'withdrawal-1',
+            'payoutAccountId': 'payout-1',
+            'amountMinor': 1234,
+            'feeMinor': 25,
+            'netAmountMinor': 1209,
+            'status': 'SUBMITTED',
+            'payoutStatus': 'MANUAL_REVIEW_PENDING',
+            'providerInvocation': false,
+            'holderNameMasked': '晚*',
+            'accountMasked': '****1234',
+            'submittedAt': '2030-08-25T00:00:00Z',
+            'resultMessage': '',
+          });
+        default:
+          return _Reply.ok(<String, Object?>{});
+      }
+    });
+    addTearDown(server.close);
+    final BackendCommerceRepository repository = BackendCommerceRepository(
+      apiClient: server.client,
+    );
 
-      final PayoutAccountSelection accounts = await repository
-          .fetchPayoutAccounts();
-      expect(accounts.selectedPayoutAccountId, 'payout-1');
-      final WithdrawalRecord withdrawal = await repository.applyWithdrawal(
-        amount: 12.34,
-        payoutAccountId: 'payout-1',
-      );
-      expect(withdrawal.id, 'withdrawal-1');
-      expect(withdrawal.receivedAmount, 12.09);
+    final PayoutAccountSelection accounts = await repository
+        .fetchPayoutAccounts();
+    expect(accounts.selectedPayoutAccountId, 'payout-1');
+    final WithdrawalRecord withdrawal = await repository.applyWithdrawal(
+      amount: 12.34,
+      payoutAccountId: 'payout-1',
+    );
+    expect(withdrawal.id, 'withdrawal-1');
+    expect(withdrawal.receivedAmount, 12.09);
 
-      final RefundRequest refundRequest = const RefundRequest(
-        account: 'order-1',
-        realName: '晚星',
-        age: 25,
-        amount: 1,
-        reason: '重复充值',
-        receivingAccount: 'masked',
-        receivingName: '晚*',
-        guardianName: '',
-        guardianPhone: '',
-      );
-      await expectLater(
-        repository.submitRefund(refundRequest),
-        throwsA(isA<ApiException>()),
-      );
-      final RefundApplication submitted = await repository.submitRefund(
-        refundRequest,
-      );
-      expect(submitted.id, 'refund-1');
-      expect(submitted.status, RefundStatus.reviewing);
-      final RefundApplication rejected = await repository.fetchRefundResult(
-        'refund-1',
-      );
-      expect(rejected.status, RefundStatus.rejected);
-      final RefundApplication retried = await repository.resubmitRefund(
-        'refund-1',
-      );
-      expect(retried.status, RefundStatus.resubmitted);
-      expect(refundApplyCalls, 2);
-      expect(refundRepeatCalls, 1);
-      final List<_Request> refundWrites = server.requests
-          .where((_Request item) => item.path == '/app-api/refund/application')
-          .toList();
-      expect(refundWrites, hasLength(2));
-      expect(refundWrites[0].requestId, refundWrites[1].requestId);
-    },
-  );
+    // REMOVED_BY_PRODUCT Q15-06: refund submit/result/retry mutation segment.
+  });
 
   test(
     'room gift send and receipt recovery retain request authority',
@@ -751,7 +678,7 @@ void main() {
     },
   );
 
-  test('all 64 manifest entries build through the QA wiring catalog', () {
+  test('all 61 manifest entries build through the QA wiring catalog', () {
     final AppDependencies dependencies = AppDependencies.mock();
     const QaScenario scenario = QaScenario(
       role: QaRole.registeredUser,
@@ -759,8 +686,8 @@ void main() {
       mockScenario: QaMockScenario.defaultData,
       network: QaNetworkScenario.normal,
     );
-    expect(appPageManifest, hasLength(64));
-    expect(qaPageCatalog, hasLength(64));
+    expect(appPageManifest, hasLength(61));
+    expect(qaPageCatalog, hasLength(61));
     expect(
       qaPageCatalog.map((QaPageEntry entry) => entry.id).toList(),
       appPageManifest.map((AppPageDefinition page) => page.id).toList(),
@@ -780,25 +707,6 @@ void main() {
     }
   });
 }
-
-Map<String, Object?> _refundMap({required String status}) => <String, Object?>{
-  'refundId': 'refund-1',
-  'orderNo': 'order-1',
-  'amountMinor': 100,
-  'reason': '重复充值',
-  'status': status,
-  'resultMessage': status == 'REJECTED' ? '资料不足' : '',
-  'submittedAt': '2030-08-25T00:00:00Z',
-  'providerStatus': switch (status) {
-    'SUBMITTED' || 'RESUBMITTED' => 'SUBMITTED',
-    'APPROVED' => 'APPROVED',
-    'COMPLETED' => 'REFUNDED',
-    'REJECTED' => 'REJECTED',
-    'CANCELLED' || 'CANCELED' => 'CANCELLED',
-    _ => 'VENDOR_BLOCKED',
-  },
-  'completed': status == 'COMPLETED',
-};
 
 Map<String, Object?> _giftMap({String? requestId}) => <String, Object?>{
   'success': true,

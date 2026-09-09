@@ -166,59 +166,9 @@ void main() {
       await _pageBackTo(tester, find.byType(OrdersPage));
       await _pageBackTo(tester, find.byType(CommerceHubPage));
 
-      // Refund is an explicitly account-scoped legacy flow. Exercise either
-      // the existing result (138 fixture) or a real application (other test
-      // accounts), then verify the repository result for the exact account.
-      await _scrollToAndTap(tester, find.text('退款申请'));
-      await pumpUntilVisible(tester, find.byType(RefundListPage));
-      final List<RefundApplication> refunds = await dependencies
-          .commerceRepository
-          .fetchRefundApplications(account);
-      RefundApplication refund;
-      if (refunds.isEmpty) {
-        expect(find.text('暂无正在处理的退款申请'), findsOneWidget);
-        await tester.tap(find.text('申请退款'));
-        await pumpUntilVisible(tester, find.byType(RefundApplicationPage));
-        expect(find.text('当前账号可以提交账户退款申请。'), findsOneWidget);
-        await _enterFormText(tester, '账号使用人姓名', 'FLOW 验收用户');
-        await _enterFormText(tester, '年龄', '26');
-        await _enterFormText(tester, '申请退款金额', '30');
-        await _enterFormText(tester, '退款原因', 'FLOW-012 账户退款流程验收');
-        FocusManager.instance.primaryFocus?.unfocus();
-        await _scrollToAndTap(tester, find.text('提交退款申请'));
-        expect(find.text('确认提交退款申请？'), findsOneWidget);
-        expect(
-          find.text('申请账号：$account\n申请金额：¥30.00\n提交后将进入人工审核。'),
-          findsOneWidget,
-        );
-        await tester.tap(find.text('确认提交'));
-        await pumpUntilVisible(tester, find.byType(RefundResultPage));
-        refund = tester
-            .widget<RefundResultPage>(find.byType(RefundResultPage))
-            .application;
-      } else {
-        expect(refunds, hasLength(1));
-        refund = refunds.single;
-        expect(find.text('${refund.statusText} · ¥30.00'), findsOneWidget);
-        await tester.tap(find.textContaining('申请编号 ${refund.id}'));
-        await pumpUntilVisible(tester, find.byType(RefundResultPage));
-      }
-      final RefundApplication authoritativeRefund = await dependencies
-          .commerceRepository
-          .fetchRefundResult(refund.id);
-      expect(authoritativeRefund.account, account);
-      expect(authoritativeRefund.amount, 30);
-      expect(authoritativeRefund.status, RefundStatus.reviewing);
-      expect(authoritativeRefund.statusText, '审核中');
-      expect(find.text('审核中'), findsOneWidget);
-      expect(find.text(refund.id), findsOneWidget);
-      await _captureFlowStep(
-        tester,
-        binding,
-        'FLOW-012-06-refund-result-$qaAvdId',
-      );
-      await _pageBackTo(tester, find.byType(RefundListPage));
-      await _pageBackTo(tester, find.byType(CommerceHubPage));
+      // FLOW-012-06 (CM-007/CM-008): REMOVED_BY_PRODUCT Q15-06.
+      expect(find.text('退款申请'), findsNothing);
+      expect(find.text('订单退款'), findsNothing);
 
       // Earnings must use the same server wallet and income ledger.
       await _scrollToAndTap(tester, find.text('主播收益'));

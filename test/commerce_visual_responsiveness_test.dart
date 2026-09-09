@@ -72,14 +72,7 @@ final List<_CommerceTestPage> _commercePages = <_CommerceTestPage>[
     (AppDependencies dependencies) =>
         OrderDetailPage(order: qaPaymentOrder(dependencies)),
   ),
-  _CommerceTestPage(
-    'CM-007',
-    (_) => const RefundListPage(account: '13800138000'),
-  ),
-  _CommerceTestPage(
-    'CM-008',
-    (_) => const RefundApplicationPage(account: '13800138000'),
-  ),
+  // CM-007/CM-008: REMOVED_BY_PRODUCT Q15-06, not rendered or counted.
   _CommerceTestPage('CM-009', (_) => const GiftCatalogPage()),
   _CommerceTestPage('CM-010', (_) => const DecorationPage()),
   _CommerceTestPage('CM-011', (_) => const EarningsPage()),

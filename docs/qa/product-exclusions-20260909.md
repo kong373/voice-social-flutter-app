@@ -1,6 +1,6 @@
 # 2026-09-09 产品删除范围与交接
 
-本轮基于 `1e58d0f787b06e77eace967b9b1d972e69420615`，独立 worktree `/Users/kongzheng/Documents/ny/.worktrees/flutter-product-exclusions-20260909`，分支 `codex/flutter-product-exclusions-20260909`。仅本地提交，不 push/merge。下面是当前产品范围；旧 69 页文档/截图不作为本轮 PASS。
+本轮基于 `1e58d0f787b06e77eace967b9b1d972e69420615`，独立 worktree `/Users/kongzheng/Documents/ny/.worktrees/flutter-product-exclusions-20260909`，分支 `codex/flutter-product-exclusions-20260909`。仅本地提交，不 push/merge。下面记录第一批范围；后续 Q10-04/Q15-06 已将有效页从 64 调整至 61，见 [第二批交接](product-share-refund-exclusions-20260909.md)。旧 69 页文档/截图不作为本轮 PASS。
 
 ## 决策与页面
 

@@ -66,7 +66,6 @@ const List<AppPageDefinition> appPageManifest = <AppPageDefinition>[
   AppPageDefinition(id: 'RM-006', name: '在线成员与听众席', area: ProductArea.room),
   AppPageDefinition(id: 'RM-007', name: '房主管理与处罚', area: ProductArea.room),
   AppPageDefinition(id: 'RM-008', name: '房间公告编辑', area: ProductArea.room),
-  AppPageDefinition(id: 'RM-009', name: '房间分享', area: ProductArea.room),
   AppPageDefinition(id: 'RM-010', name: '音频路由与麦克风控制', area: ProductArea.room),
   AppPageDefinition(id: 'RM-011', name: '弱网重连与会话恢复', area: ProductArea.room),
   AppPageDefinition(id: 'RM-012', name: '房间质量诊断', area: ProductArea.room),
@@ -84,8 +83,6 @@ const List<AppPageDefinition> appPageManifest = <AppPageDefinition>[
   AppPageDefinition(id: 'CM-004', name: '支付返回与结果', area: ProductArea.commerce),
   AppPageDefinition(id: 'CM-005', name: '订单列表', area: ProductArea.commerce),
   AppPageDefinition(id: 'CM-006', name: '订单详情与补单', area: ProductArea.commerce),
-  AppPageDefinition(id: 'CM-007', name: '退款申请列表', area: ProductArea.commerce),
-  AppPageDefinition(id: 'CM-008', name: '退款申请与结果', area: ProductArea.commerce),
   AppPageDefinition(
     id: 'CM-009',
     name: '礼物目录与赠送面板',
@@ -103,9 +100,12 @@ const List<AppPageDefinition> appPageManifest = <AppPageDefinition>[
   AppPageDefinition(id: 'SC-003', name: '邀请与渠道归属', area: ProductArea.community),
 ];
 
-/// Product decisions Q16-02 and Q23-01 through Q23-06, 2026-09-09.
+/// Product decisions Q10-04, Q15-06, Q16-02 and Q23-01 through Q23-06.
 const Map<String, String> removedProductPages = <String, String>{
   'US-005': 'REMOVED_BY_PRODUCT',
+  'RM-009': 'REMOVED_BY_PRODUCT',
+  'CM-007': 'REMOVED_BY_PRODUCT',
+  'CM-008': 'REMOVED_BY_PRODUCT',
   'SC-004': 'REMOVED_BY_PRODUCT',
   'SC-005': 'REMOVED_BY_PRODUCT',
   'SC-006': 'REMOVED_BY_PRODUCT',

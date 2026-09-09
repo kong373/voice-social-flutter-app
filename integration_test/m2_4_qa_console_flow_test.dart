@@ -21,12 +21,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('M2.4 QA Console'), findsOneWidget);
-      expect(find.text('64 / 64'), findsOneWidget);
+      expect(find.text('61 / 61'), findsOneWidget);
       expect(find.textContaining('BackendMode: mock'), findsOneWidget);
 
       await tester.tap(find.widgetWithText(FilterChip, 'AC'));
       await tester.pumpAndSettle();
-      expect(find.text('12 / 64'), findsOneWidget);
+      expect(find.text('12 / 61'), findsOneWidget);
 
       final Finder search = find.byKey(
         const ValueKey<String>('qa-page-search'),
@@ -34,7 +34,7 @@ void main() {
       await tester.tap(search);
       await tester.enterText(search, 'AC-004');
       await tester.pumpAndSettle();
-      expect(find.text('1 / 64'), findsOneWidget);
+      expect(find.text('1 / 61'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey<String>('qa-entry-AC-004')));
       await tester.pumpAndSettle();
@@ -63,7 +63,7 @@ void main() {
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(find.text('M2.4 QA Console'), findsOneWidget);
-      expect(find.text('1 / 64'), findsOneWidget);
+      expect(find.text('1 / 61'), findsOneWidget);
 
       await tester.tap(find.byTooltip('重置 Mock 数据'));
       await tester.pump();

@@ -40,20 +40,20 @@ void main() {
 
     if (qaConsoleEnabled) {
       expect(find.text('M2.4 QA Console'), findsOneWidget);
-      expect(find.text('64 / 64'), findsOneWidget);
+      expect(find.text('61 / 61'), findsOneWidget);
       expect(find.textContaining('BackendMode: mock'), findsOneWidget);
       expect(find.text('同意并继续'), findsNothing);
 
       await tester.tap(find.widgetWithText(FilterChip, 'AC'));
       await tester.pumpAndSettle();
-      expect(find.text('12 / 64'), findsOneWidget);
+      expect(find.text('12 / 61'), findsOneWidget);
 
       await tester.enterText(
         find.byKey(const ValueKey<String>('qa-page-search')),
         'AC-004',
       );
       await tester.pumpAndSettle();
-      expect(find.text('1 / 64'), findsOneWidget);
+      expect(find.text('1 / 61'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey<String>('qa-entry-AC-004')));
       await tester.pumpAndSettle();
@@ -73,7 +73,7 @@ void main() {
       await tester.tap(find.byTooltip('一键回到 QA 目录'));
       await tester.pumpAndSettle();
       expect(find.text('M2.4 QA Console'), findsOneWidget);
-      expect(find.text('1 / 64'), findsOneWidget);
+      expect(find.text('1 / 61'), findsOneWidget);
 
       await tester.tap(find.byTooltip('重置 Mock 数据'));
       await tester.pumpAndSettle();

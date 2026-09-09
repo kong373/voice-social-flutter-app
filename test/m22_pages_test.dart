@@ -85,7 +85,7 @@ void main() {
 
       expect(find.text('钱包与流水'), findsOneWidget);
       expect(find.text('充值订单'), findsOneWidget);
-      expect(find.text('退款申请'), findsOneWidget);
+      expect(find.text('退款申请'), findsNothing);
       expect(find.text('主播收益'), findsOneWidget);
 
       final Finder withdrawalEntry = find.text('结算与提现');

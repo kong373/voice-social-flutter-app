@@ -1,21 +1,15 @@
 part of 'commerce_pages.dart';
 
 class _CommerceScaffold extends StatelessWidget {
-  const _CommerceScaffold({
-    required this.body,
-    this.appBar,
-    this.floatingActionButton,
-  });
+  const _CommerceScaffold({required this.body, this.appBar});
 
   final PreferredSizeWidget? appBar;
   final Widget body;
-  final Widget? floatingActionButton;
 
   @override
   Widget build(BuildContext context) {
     return SocialPageScaffold(
       appBar: appBar,
-      floatingActionButton: floatingActionButton,
       body: Stack(
         fit: StackFit.expand,
         children: <Widget>[
@@ -648,15 +642,6 @@ String _orderStatusLabel(PaymentOrderStatus status) => switch (status) {
   PaymentOrderStatus.failed => '支付失败',
   PaymentOrderStatus.canceled => '已取消',
   PaymentOrderStatus.unknown => '状态待核验',
-};
-
-IconData _refundIcon(RefundStatus status) => switch (status) {
-  RefundStatus.approved => Icons.check_circle_rounded,
-  RefundStatus.completed => Icons.task_alt_rounded,
-  RefundStatus.rejected => Icons.cancel_rounded,
-  RefundStatus.reviewing ||
-  RefundStatus.resubmitted => Icons.hourglass_top_rounded,
-  RefundStatus.unavailable => Icons.block_rounded,
 };
 
 String _formatDateTime(DateTime value) {

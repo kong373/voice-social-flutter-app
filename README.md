@@ -6,7 +6,7 @@
 
 Clean-room Flutter client for the authorized reconstruction of a Chinese voice-social product.
 
-The current product denominator is **64 active Page IDs**, with five original IDs permanently recorded as `REMOVED_BY_PRODUCT`. Product scope, authorized backend behavior, authorized APK evidence, and the new Flutter design system are kept separate so retired capabilities cannot leak into the app.
+The current product denominator is **61 active Page IDs**, with eight original IDs permanently recorded as `REMOVED_BY_PRODUCT`. See [the sharing/refund scope update](docs/qa/product-share-refund-exclusions-20260909.md). Product scope, authorized backend behavior, authorized APK evidence, and the new Flutter design system are kept separate so retired capabilities cannot leak into the app.
 
 ## Historical checkpoint — F3/M4 first-party live integration
 

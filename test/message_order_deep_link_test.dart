@@ -41,6 +41,16 @@ void main() {
       expect(find.byType(OrderDetailPage), findsOneWidget);
       expect(find.text(orderNo), findsOneWidget);
       expect(find.text('订单列表'), findsNothing);
+      // Q15-06: historical order notifications must not resurrect refunds.
+      expect(find.text('申请退款'), findsNothing);
+      expect(find.text('退款申请'), findsNothing);
+      expect(find.text('重新提交'), findsNothing);
+      await tester.ensureVisible(find.text('刷新并补单核验'));
+      await tester.tap(find.text('刷新并补单核验'));
+      await tester.pumpAndSettle();
+      expect(find.byType(OrderDetailPage), findsOneWidget);
+      expect(find.text(orderNo), findsOneWidget);
+      expect(find.text('申请退款'), findsNothing);
     },
   );
 

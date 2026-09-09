@@ -123,7 +123,6 @@ class MockCommerceRepository implements CommerceRepository {
       selectable: true,
     ),
   ];
-  int _refundSequence = 2;
   int _withdrawalSequence = 2;
   double _cashBalance = 1288.50;
   double _frozenBalance = 200;
@@ -279,38 +278,10 @@ class MockCommerceRepository implements CommerceRepository {
     );
   }
 
+  /// Q15-06: App refund writes are permanently retired; history stays readable.
   @override
   Future<RefundApplication> submitRefund(RefundRequest request) async {
-    if (request.account.trim().isEmpty ||
-        request.realName.trim().isEmpty ||
-        request.amount <= 0 ||
-        request.reason.trim().length < 5) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '请完整填写账号、姓名、金额和退款原因',
-      );
-    }
-    final RefundEligibility eligibility = await checkRefundEligibility(
-      request.account,
-    );
-    if (!eligibility.allowed) {
-      throw ApiException(
-        kind: ApiFailureKind.conflict,
-        message: eligibility.message,
-      );
-    }
-    final String id = 'refund-${_refundSequence++}';
-    final RefundApplication application = RefundApplication(
-      id: id,
-      account: request.account.trim(),
-      amount: request.amount,
-      status: RefundStatus.reviewing,
-      statusText: '审核中',
-      rejectedReason: '',
-      createdAt: _currentTime,
-    );
-    _refunds[id] = application;
-    return application;
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
   }
 
   @override
@@ -339,23 +310,7 @@ class MockCommerceRepository implements CommerceRepository {
     String applicationId, {
     String? expectedOrderNo,
   }) async {
-    final RefundApplication application = await fetchRefundResult(
-      applicationId,
-      expectedOrderNo: expectedOrderNo,
-    );
-    if (application.status != RefundStatus.rejected) {
-      throw const ApiException(
-        kind: ApiFailureKind.business,
-        message: '只有被拒绝的退款申请可以重新提交',
-      );
-    }
-    final RefundApplication updated = application.copyWith(
-      status: RefundStatus.resubmitted,
-      statusText: '已重新提交',
-      rejectedReason: '',
-    );
-    _refunds[applicationId] = updated;
-    return updated;
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
   }
 
   @override

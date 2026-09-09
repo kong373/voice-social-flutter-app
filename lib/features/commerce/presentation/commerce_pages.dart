@@ -13,6 +13,5 @@ import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 part 'commerce_wallet_pages.dart';
 part 'commerce_catalog_pages.dart';
 part 'commerce_order_pages.dart';
-part 'commerce_refund_pages.dart';
 part 'commerce_earnings_pages.dart';
 part 'commerce_widgets.dart';

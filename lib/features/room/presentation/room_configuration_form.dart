@@ -195,7 +195,7 @@ class RoomConfigurationForm extends StatelessWidget {
                   value: showInHall,
                   onChanged: enabled ? onShowInHallChanged : null,
                   title: const Text('在首页房间发现中展示'),
-                  subtitle: const Text('关闭后仍可通过房间号、收藏和分享进入'),
+                  subtitle: const Text('关闭后仍可通过房间号和收藏进入'),
                 ),
                 const Divider(height: 1, indent: 52),
                 if (supportsAutoLockMic)

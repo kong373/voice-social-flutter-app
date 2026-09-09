@@ -13,15 +13,6 @@ class BackendCommerceRepository implements CommerceRepository {
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
-  final Map<String, Future<RefundApplication>> _pendingRefundSubmissions =
-      <String, Future<RefundApplication>>{};
-  final Map<String, Future<RefundApplication>> _pendingRefundRetries =
-      <String, Future<RefundApplication>>{};
-  final Map<String, String> _retainedRefundSubmissionRequestIds =
-      <String, String>{};
-  final Map<String, String> _retainedRefundRetryRequestIds = <String, String>{};
-  final Set<String> _refundSubmissionWritesStarted = <String>{};
-  final Set<String> _refundRetryWritesStarted = <String>{};
   Future<PayoutAccountSelection>? _payoutAccountsInFlight;
   bool _payoutAccountsEndpointAvailable = false;
   final Map<String, Future<WithdrawalRecord>> _pendingWithdrawalApplications =
@@ -675,96 +666,10 @@ class BackendCommerceRepository implements CommerceRepository {
     );
   }
 
+  /// Q15-06: App refund writes are permanently retired; history stays readable.
   @override
   Future<RefundApplication> submitRefund(RefundRequest request) async {
-    final String orderNo = request.account.trim();
-    final String reason = request.reason.trim();
-    if (orderNo.isEmpty || reason.isEmpty) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '充值订单和退款原因不能为空',
-      );
-    }
-    final String intentKey = _refundSubmissionIntentKey(
-      orderNo: orderNo,
-      reason: reason,
-    );
-    final Future<RefundApplication>? pending =
-        _pendingRefundSubmissions[intentKey];
-    if (pending != null) {
-      return pending;
-    }
-    final String requestId = _retainedRefundSubmissionRequestIds.putIfAbsent(
-      intentKey,
-      () => normalizeCommerceRefundRequestId(newCommerceRefundRequestId()),
-    );
-    final bool replayingRetainedWrite = _refundSubmissionWritesStarted.contains(
-      intentKey,
-    );
-    late final Future<RefundApplication> future;
-    future =
-        _submitRefundOnce(
-          orderNo,
-          reason,
-          requestId,
-          intentKey: intentKey,
-          replayingRetainedWrite: replayingRetainedWrite,
-        ).then<RefundApplication>(
-          (RefundApplication value) {
-            if (identical(_pendingRefundSubmissions[intentKey], future)) {
-              _pendingRefundSubmissions.remove(intentKey);
-            }
-            _retainedRefundSubmissionRequestIds.remove(intentKey);
-            _refundSubmissionWritesStarted.remove(intentKey);
-            return value;
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            if (identical(_pendingRefundSubmissions[intentKey], future)) {
-              _pendingRefundSubmissions.remove(intentKey);
-            }
-            if (!shouldRetainCommerceRefundRequest(error)) {
-              _retainedRefundSubmissionRequestIds.remove(intentKey);
-              _refundSubmissionWritesStarted.remove(intentKey);
-            }
-            Error.throwWithStackTrace(error, stackTrace);
-          },
-        );
-    _pendingRefundSubmissions[intentKey] = future;
-    return future;
-  }
-
-  Future<RefundApplication> _submitRefundOnce(
-    String orderNo,
-    String reason,
-    String requestId, {
-    required String intentKey,
-    required bool replayingRetainedWrite,
-  }) async {
-    if (!replayingRetainedWrite) {
-      final RefundEligibility eligibility = await checkRefundEligibility(
-        orderNo,
-      );
-      if (!eligibility.allowed) {
-        throw ApiException(
-          kind: ApiFailureKind.conflict,
-          message: eligibility.message,
-        );
-      }
-    }
-    // The eligibility check is only a precondition for a new write. Once the
-    // POST has started, a later attempt is an idempotent replay and must not
-    // be blocked by the now-mutated order eligibility state.
-    _refundSubmissionWritesStarted.add(intentKey);
-    final ApiResponse response = await _apiClient.post(
-      _routes.refundApplication,
-      headers: <String, String>{'X-Request-Id': requestId},
-      body: <String, Object?>{'orderNo': orderNo, 'reason': reason},
-    );
-    return _refundFromMap(
-      _asMap(response.data),
-      currency: LedgerCurrency.cashCny,
-      expectedOrderNo: orderNo,
-    );
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
   }
 
   @override
@@ -797,119 +702,8 @@ class BackendCommerceRepository implements CommerceRepository {
     String applicationId, {
     String? expectedOrderNo,
   }) async {
-    final String refundId = applicationId.trim();
-    final String? orderNo = _optionalExpectedOrderNo(expectedOrderNo);
-    if (refundId.isEmpty) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '退款申请编号不能为空',
-      );
-    }
-    final String intentKey = _refundRetryIntentKey(refundId: refundId);
-    final Future<RefundApplication>? pending = _pendingRefundRetries[intentKey];
-    if (pending != null) {
-      return pending.then(
-        (RefundApplication value) =>
-            _validateExpectedRefundOrder(value, expectedOrderNo: orderNo),
-      );
-    }
-    final String requestId = _retainedRefundRetryRequestIds.putIfAbsent(
-      intentKey,
-      () => normalizeCommerceRefundRequestId(newCommerceRefundRequestId()),
-    );
-    final bool replayingRetainedWrite = _refundRetryWritesStarted.contains(
-      intentKey,
-    );
-    late final Future<RefundApplication> future;
-    future =
-        _resubmitRefundOnce(
-          refundId,
-          requestId,
-          expectedOrderNo: orderNo,
-          intentKey: intentKey,
-          replayingRetainedWrite: replayingRetainedWrite,
-        ).then<RefundApplication>(
-          (RefundApplication value) {
-            if (identical(_pendingRefundRetries[intentKey], future)) {
-              _pendingRefundRetries.remove(intentKey);
-            }
-            _retainedRefundRetryRequestIds.remove(intentKey);
-            _refundRetryWritesStarted.remove(intentKey);
-            return value;
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            if (identical(_pendingRefundRetries[intentKey], future)) {
-              _pendingRefundRetries.remove(intentKey);
-            }
-            if (!shouldRetainCommerceRefundRequest(error)) {
-              _retainedRefundRetryRequestIds.remove(intentKey);
-              _refundRetryWritesStarted.remove(intentKey);
-            }
-            Error.throwWithStackTrace(error, stackTrace);
-          },
-        );
-    _pendingRefundRetries[intentKey] = future;
-    return future;
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
   }
-
-  Future<RefundApplication> _resubmitRefundOnce(
-    String refundId,
-    String requestId, {
-    String? expectedOrderNo,
-    required String intentKey,
-    required bool replayingRetainedWrite,
-  }) async {
-    final ApiResponse currentResponse = await _apiClient.get(
-      _routes.refundResult,
-      query: <String, String>{'refundId': refundId},
-    );
-    final Map<String, Object?> current = _asMap(currentResponse.data);
-    final RefundApplication currentApplication = _refundFromMap(
-      current,
-      currency: LedgerCurrency.cashCny,
-      expectedRefundId: refundId,
-      expectedOrderNo: expectedOrderNo,
-    );
-    if (currentApplication.status != RefundStatus.rejected) {
-      if (replayingRetainedWrite &&
-          _refundRetryAppliedStatus(currentApplication.status)) {
-        // A previous repeat POST may have committed before its response was
-        // lost. Treat a server-confirmed submitted/terminal state as the
-        // idempotent reconciliation result instead of issuing a second POST
-        // or rejecting it on the pre-write REJECTED gate.
-        return currentApplication;
-      }
-      throw const ApiException(
-        kind: ApiFailureKind.conflict,
-        message: '只有已拒绝的退款申请可以重新提交',
-      );
-    }
-    final String reason = _string(current['reason']);
-    if (reason.isEmpty) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '退款结果未返回原申请原因，无法安全重新提交',
-      );
-    }
-    _refundRetryWritesStarted.add(intentKey);
-    final ApiResponse response = await _apiClient.post(
-      _routes.refundRepeat,
-      headers: <String, String>{'X-Request-Id': requestId},
-      body: <String, Object?>{'refundId': refundId, 'reason': reason},
-    );
-    return _refundFromMap(
-      _asMap(response.data),
-      currency: LedgerCurrency.cashCny,
-      expectedRefundId: refundId,
-      expectedOrderNo: expectedOrderNo,
-    );
-  }
-
-  static bool _refundRetryAppliedStatus(RefundStatus status) =>
-      status == RefundStatus.reviewing ||
-      status == RefundStatus.resubmitted ||
-      status == RefundStatus.approved ||
-      status == RefundStatus.completed;
 
   @override
   Future<List<RefundApplication>> fetchRefundApplications(
@@ -1427,17 +1221,6 @@ class BackendCommerceRepository implements CommerceRepository {
     );
   }
 
-  static String _refundSubmissionIntentKey({
-    required String orderNo,
-    required String reason,
-  }) {
-    return 'refund:${commerceRefundIntentDigest(scope: 'refund-submit', fields: <String>[orderNo, reason])}';
-  }
-
-  static String _refundRetryIntentKey({required String refundId}) {
-    return 'refund-retry:${commerceRefundIntentDigest(scope: 'refund-retry', fields: <String>[refundId])}';
-  }
-
   static String? _optionalExpectedOrderNo(String? value) {
     final String? normalized = value?.trim();
     if (normalized != null && normalized.isEmpty) {
@@ -1447,19 +1230,6 @@ class BackendCommerceRepository implements CommerceRepository {
       );
     }
     return normalized;
-  }
-
-  static RefundApplication _validateExpectedRefundOrder(
-    RefundApplication application, {
-    required String? expectedOrderNo,
-  }) {
-    if (expectedOrderNo != null && application.account != expectedOrderNo) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '退款结果与选中订单不一致',
-      );
-    }
-    return application;
   }
 
   static LedgerDirection? _ledgerDirection(Object? value) {

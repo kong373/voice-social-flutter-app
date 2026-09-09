@@ -31,7 +31,6 @@ import 'package:voice_social_app/features/room/presentation/room_management_page
 import 'package:voice_social_app/features/room/presentation/room_members_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_recovery_page.dart';
-import 'package:voice_social_app/features/room/presentation/room_share_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_topic_page.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
@@ -561,20 +560,6 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
     ),
   ),
   QaPageEntry(
-    id: 'RM-009',
-    name: '房间分享',
-    area: ProductArea.room,
-    widgetClass: 'RoomSharePage',
-    sourcePath: 'lib/features/room/presentation/room_share_page.dart',
-    userEntry: 'RM-004 → 分享',
-    vendorBoundary: '原生渠道分享适配器未接入；复制邀请可验收',
-    builder: (_, __) => const RoomSharePage(
-      roomId: '880217',
-      roomCode: '880217',
-      roomTitle: '深夜温柔陪伴',
-    ),
-  ),
-  QaPageEntry(
     id: 'RM-010',
     name: '音频路由与麦克风控制',
     area: ProductArea.room,
@@ -838,29 +823,6 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
     ],
     builder: (AppDependencies dependencies, _) =>
         OrderDetailPage(order: qaPaymentOrder(dependencies)),
-  ),
-  QaPageEntry(
-    id: 'CM-007',
-    name: '退款申请列表',
-    area: ProductArea.commerce,
-    widgetClass: 'RefundListPage',
-    sourcePath: 'lib/features/commerce/presentation/commerce_refund_pages.dart',
-    userEntry: '钱包、订单与收益 → 退款申请',
-    requiredStates: _repositoryStates,
-    builder: (_, __) => const RefundListPage(account: '13800138000'),
-  ),
-  QaPageEntry(
-    id: 'CM-008',
-    name: '退款申请与结果',
-    area: ProductArea.commerce,
-    widgetClass: 'RefundApplicationPage / RefundResultPage',
-    sourcePath: 'lib/features/commerce/presentation/commerce_refund_pages.dart',
-    userEntry: '退款申请列表 → 新申请/历史结果',
-    requiredStates: _formStates,
-    builder: (AppDependencies dependencies, QaScenario scenario) =>
-        scenario.state == QaPageState.success
-        ? RefundResultPage(application: qaRefundApplication(dependencies))
-        : const RefundApplicationPage(account: '13800138000'),
   ),
   QaPageEntry(
     id: 'CM-009',
