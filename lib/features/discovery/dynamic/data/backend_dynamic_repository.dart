@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'ranking_contract.dart';
 import '../domain/comment_mutations.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -9,7 +10,7 @@ import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_repos
 
 class BackendDynamicRepository
     with CommentMutationJournal
-    implements DynamicRepository {
+    implements DynamicRepository, RankingIdentity {
   static const int _maxPageSize = 50;
 
   BackendDynamicRepository({
@@ -402,89 +403,58 @@ class BackendDynamicRepository
   }
 
   @override
+  (int, int) get rankingIdentity => commentIdentity;
+  @override
+  Listenable? get rankingIdentityChanges => commentIdentityChanges;
+
+  @override
   Future<RankingSnapshot> fetchRanking({
     required RankingBoard board,
     required RankingPeriod period,
+    int page = 1,
+    int pageSize = 20,
   }) async {
-    if (board == RankingBoard.room) {
-      final ApiResponse response = await _apiClient.post(
-        _routes.roomRanking,
-        body: <String, Object?>{'rankType': period.roomBackendValue},
-      );
-      final Map<String, Object?> data = _rankingPage(
-        response.data,
-        expectedMetric: 'ROOM_CONTRIBUTION',
-      );
-      final List<Map<String, Object?>> raw = _rankingItems(data);
-      final List<RankingEntry> entries = <RankingEntry>[];
-      for (final Map<String, Object?> item in raw) {
-        final int rank = _requiredPositiveInt(item['rank'], '房间榜 rank');
-        final String roomId = _requiredString(
-          item['roomId'],
-          field: '房间榜 roomId',
-        );
-        final String name = _requiredString(
-          item['roomName'],
-          field: '房间榜 roomName',
-        );
-        entries.add(
-          RankingEntry(
-            rank: rank,
-            roomId: roomId,
-            name: name,
-            avatarUrl: _optionalString(item['roomHeadImgUrl']),
-            value: _requiredNonNegativeNum(item['score'], '房间榜 score'),
-            subtitle: _optionalString(item['metric']) ?? '',
-          ),
-        );
-      }
-      return RankingSnapshot(
-        board: board,
-        period: period,
-        entries: entries,
-        countdownSeconds: _optionalNonNegativeInt(data['countdown']) ?? 0,
+    _validatePageRequest(page: page, pageSize: pageSize);
+    if (page > 2147483647 || (page - 1) * pageSize > 2147483647) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '排行榜分页超出范围',
       );
     }
+    final identity = rankingIdentity;
+    void requireIdentity() {
+      if (identity.$1 <= 0 || identity != rankingIdentity) {
+        throw const ApiException(
+          kind: ApiFailureKind.unauthorized,
+          message: '登录身份已变化，请重新读取排行榜',
+        );
+      }
+    }
 
-    final String route = switch (board) {
+    requireIdentity();
+    final route = switch (board) {
       RankingBoard.charm => _routes.charmRanking,
       RankingBoard.wealth => _routes.wealthRanking,
       RankingBoard.contribution => _routes.contributionRanking,
-      RankingBoard.room => throw StateError('handled above'),
+      RankingBoard.room => _routes.roomRanking,
     };
-    final ApiResponse response = await _apiClient.post(
+    final response = await _apiClient.postBoundToIdentity(
       route,
-      body: <String, Object?>{'theType': period.userBackendValue},
+      requireIdentity: requireIdentity,
+      body: {
+        'pageNum': page,
+        'pageSize': pageSize,
+        if (board.isGiftValue) 'period': period.backendValue,
+      },
     );
-    final Map<String, Object?> data = _rankingPage(
+    requireIdentity();
+    return parseRanking(
       response.data,
-      expectedMetric: board.name.toUpperCase(),
-    );
-    final List<Map<String, Object?>> raw = _rankingItems(data);
-    final List<RankingEntry> entries = <RankingEntry>[];
-    for (final Map<String, Object?> item in raw) {
-      entries.add(_userRank(item));
-    }
-    final Map<String, Object?> self = data.containsKey('selfRank')
-        ? _requireMap(data['selfRank'], '排行榜 selfRank', allowEmpty: true)
-        : const <String, Object?>{};
-    return RankingSnapshot(
       board: board,
       period: period,
-      entries: entries,
-      countdownSeconds: _optionalNonNegativeInt(data['countdown']) ?? 0,
-      selfEntry: self.isEmpty ? null : _userRank(self),
-    );
-  }
-
-  static RankingEntry _userRank(Map<String, Object?> item) {
-    return RankingEntry(
-      rank: _requiredPositiveInt(item['rank'], '用户榜 rank'),
-      userId: _requiredPositiveInt(item['userId'], '用户榜 userId'),
-      name: _requiredString(item['nickName'], field: '用户榜 nickName'),
-      avatarUrl: _optionalString(item['userHeadImg'] ?? item['headImgUrl']),
-      value: _requiredNonNegativeNum(item['score'], '用户榜 score'),
-      subtitle: _optionalString(item['metric']) ?? '',
+      page: page,
+      pageSize: pageSize,
+      viewerUserId: identity.$1,
     );
   }
 
@@ -664,72 +634,6 @@ class BackendDynamicRepository
     );
   }
 
-  static Map<String, Object?> _rankingPage(
-    Object? value, {
-    required String expectedMetric,
-  }) {
-    final Map<String, Object?> data = _requireMap(value, '排行榜响应');
-    if (data['serverAuthoritative'] != true) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '排行榜响应不是服务端权威数据',
-      );
-    }
-    final String metric = _requiredString(data['metric'], field: '排行榜 metric');
-    if (metric != expectedMetric) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '排行榜 metric 与请求榜单不一致',
-      );
-    }
-    final int current = _requiredPositiveInt(data['current'], '排行榜 current');
-    final int pageSize = _requiredPositiveInt(data['pageSize'], '排行榜 pageSize');
-    final int total = _requiredNonNegativeInt(data['total'], '排行榜 total');
-    final int pages = _requiredNonNegativeInt(data['pages'], '排行榜 pages');
-    const int requestedPage = 1;
-    const int requestedPageSize = 20;
-    final int expectedPages = total == 0
-        ? 0
-        : (total / requestedPageSize).ceil();
-    if (current != requestedPage ||
-        pageSize != requestedPageSize ||
-        pages != expectedPages) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '排行榜分页元数据与请求或 total 不一致',
-      );
-    }
-    return data;
-  }
-
-  static List<Map<String, Object?>> _rankingItems(Map<String, Object?> data) {
-    final List<Map<String, Object?>> records = _asMapList(
-      data['records'],
-      field: '排行榜 records',
-      required: true,
-    );
-    final List<Map<String, Object?>> list = _asMapList(
-      data['list'],
-      field: '排行榜 list',
-      required: true,
-    );
-    if (!_deepEqual(records, list)) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '排行榜 records 与 list 不一致',
-      );
-    }
-    final int total = _requiredNonNegativeInt(data['total'], '排行榜 total');
-    final int expectedCount = total == 0 ? 0 : total.clamp(0, 20).toInt();
-    if (records.length != expectedCount) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '排行榜当前页条目数与 total 不一致',
-      );
-    }
-    return records;
-  }
-
   static Map<String, Object?> _pageData(Object? data) {
     final Map<String, Object?> map = _requireMap(data, '动态分页');
     _items(map);
@@ -863,23 +767,6 @@ class BackendDynamicRepository
 
   static int _requiredNonNegativeInt(Object? value, String field) {
     if (value is! int || value < 0) {
-      throw ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '$field 缺失或无效',
-      );
-    }
-    return value;
-  }
-
-  static int? _optionalNonNegativeInt(Object? value) {
-    if (value == null) {
-      return null;
-    }
-    return _requiredNonNegativeInt(value, '排行榜 countdown');
-  }
-
-  static num _requiredNonNegativeNum(Object? value, String field) {
-    if (value is! num || value < 0) {
       throw ApiException(
         kind: ApiFailureKind.protocol,
         message: '$field 缺失或无效',

@@ -1,4 +1,10 @@
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_models.dart';
+import 'package:flutter/foundation.dart';
+
+abstract interface class RankingIdentity {
+  (int, int) get rankingIdentity;
+  Listenable? get rankingIdentityChanges;
+}
 
 abstract interface class DynamicRepository {
   bool get supportsImagePublishing;
@@ -41,5 +47,7 @@ abstract interface class DynamicRepository {
   Future<RankingSnapshot> fetchRanking({
     required RankingBoard board,
     required RankingPeriod period,
+    int page = 1,
+    int pageSize = 20,
   });
 }

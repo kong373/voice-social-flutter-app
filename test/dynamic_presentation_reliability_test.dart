@@ -498,6 +498,8 @@ class _ControlledDynamicRepository implements DynamicRepository {
   Future<RankingSnapshot> fetchRanking({
     required RankingBoard board,
     required RankingPeriod period,
+    int page = 1,
+    int pageSize = 20,
   }) async {
     return RankingSnapshot(
       board: board,

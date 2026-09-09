@@ -158,6 +158,9 @@ class PublishDynamicRequest {
 enum RankingBoard { charm, wealth, contribution, room }
 
 extension RankingBoardLabel on RankingBoard {
+  bool get isGiftValue => this != RankingBoard.contribution;
+  String get metric =>
+      this == RankingBoard.room ? 'ROOM_CONTRIBUTION' : name.toUpperCase();
   String get label => switch (this) {
     RankingBoard.charm => '魅力榜',
     RankingBoard.wealth => '财富榜',
@@ -175,37 +178,44 @@ extension RankingPeriodValue on RankingPeriod {
     RankingPeriod.month => '月榜',
   };
 
-  int get userBackendValue => switch (this) {
-    RankingPeriod.day => 1,
-    RankingPeriod.week => 2,
-    RankingPeriod.month => 3,
-  };
-
-  int get roomBackendValue => switch (this) {
-    RankingPeriod.day => 1,
-    RankingPeriod.week => 2,
-    RankingPeriod.month => 3,
-  };
+  String get backendValue => name.toUpperCase();
 }
 
 class RankingEntry {
   const RankingEntry({
     required this.rank,
     required this.name,
-    required this.value,
+    this.value,
+    this.giftValueFen,
+    this.firstReachedAt,
+    this.firstReachedTransferId,
+    this.isCurrentUser = false,
     this.userId,
     this.roomId,
     this.avatarUrl,
     this.subtitle = '',
-  });
+  }) : assert((value == null) != (giftValueFen == null));
 
   final int rank;
   final int? userId;
   final String? roomId;
   final String name;
   final String? avatarUrl;
-  final num value;
+
+  /// Legacy contribution only. Gift rankings never pass through num/double.
+  final num? value;
+  final BigInt? giftValueFen;
+  final DateTime? firstReachedAt;
+  final String? firstReachedTransferId;
+  final bool isCurrentUser;
   final String subtitle;
+
+  String get displayValue {
+    final fen = giftValueFen;
+    if (fen == null) return value.toString();
+    final hundred = BigInt.from(100);
+    return '${fen ~/ hundred}.${(fen % hundred).toString().padLeft(2, '0')} 元';
+  }
 }
 
 class RankingSnapshot {
@@ -213,13 +223,32 @@ class RankingSnapshot {
     required this.board,
     required this.period,
     required this.entries,
-    this.countdownSeconds = 0,
+    this.page = 1,
+    this.pageSize = 20,
+    this.total = 0,
+    this.pages = 0,
+    this.startInclusive,
+    this.endExclusive,
+    this.serverNow,
+    this.excludedUnvaluedTransfers = 0,
+    this.serverAuthoritative = false,
     this.selfEntry,
   });
 
   final RankingBoard board;
-  final RankingPeriod period;
+
+  /// Contribution is cumulative and has no period.
+  final RankingPeriod? period;
   final List<RankingEntry> entries;
-  final int countdownSeconds;
+  final int page;
+  final int pageSize;
+  final int total;
+  final int pages;
+  final DateTime? startInclusive;
+  final DateTime? endExclusive;
+  final DateTime? serverNow;
+  final int excludedUnvaluedTransfers;
+  final bool serverAuthoritative;
+  bool get hasMore => page < pages;
   final RankingEntry? selfEntry;
 }

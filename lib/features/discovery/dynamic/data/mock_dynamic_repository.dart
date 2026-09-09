@@ -8,7 +8,7 @@ import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_repos
 
 class MockDynamicRepository
     with CommentMutationJournal
-    implements DynamicRepository {
+    implements DynamicRepository, RankingIdentity {
   MockDynamicRepository()
     : _posts = <DynamicPost>[
         const DynamicPost(
@@ -360,51 +360,51 @@ class MockDynamicRepository
   }
 
   @override
+  (int, int) get rankingIdentity => commentIdentity;
+  @override
+  Listenable? get rankingIdentityChanges => commentIdentityChanges;
+
+  @override
   Future<RankingSnapshot> fetchRanking({
     required RankingBoard board,
     required RankingPeriod period,
+    int page = 1,
+    int pageSize = 20,
   }) async {
     await _delay();
-    final bool room = board == RankingBoard.room;
+    if (page < 1 || pageSize < 1 || pageSize > 50) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '分页参数无效',
+      );
+    }
+    final room = board == RankingBoard.room;
+    // Explicit sample data, never a server-authoritative or live ranking.
+    final all = List.generate(
+      3,
+      (i) => RankingEntry(
+        rank: i + 1,
+        userId: room ? null : 20001 + i,
+        roomId: room ? ['880217', '660318', '520906'][i] : null,
+        name: room
+            ? ['深夜温柔陪伴', '下班后的松弛时刻', '安静音乐电台'][i]
+            : ['晚星', '南风', '阿岚'][i],
+        value: board.isGiftValue ? null : [128900, 96300, 81500][i],
+        giftValueFen: board.isGiftValue
+            ? BigInt.from([128900, 96300, 81500][i])
+            : null,
+        subtitle: '演示数据',
+      ),
+    );
     return RankingSnapshot(
       board: board,
-      period: period,
-      countdownSeconds: 2 * 60 * 60 + 16 * 60,
-      entries: <RankingEntry>[
-        RankingEntry(
-          rank: 1,
-          userId: room ? null : 20001,
-          roomId: room ? '880217' : null,
-          name: room ? '深夜温柔陪伴' : '晚星',
-          value: room ? 9860 : 128900,
-          subtitle: room ? '5/9 麦 · 36 人在线' : board.label,
-        ),
-        RankingEntry(
-          rank: 2,
-          userId: room ? null : 20002,
-          roomId: room ? '660318' : null,
-          name: room ? '下班后的松弛时刻' : '南风',
-          value: room ? 8420 : 96300,
-          subtitle: room ? '3/9 麦 · 24 人在线' : board.label,
-        ),
-        RankingEntry(
-          rank: 3,
-          userId: room ? null : 20003,
-          roomId: room ? '520906' : null,
-          name: room ? '安静音乐电台' : '阿岚',
-          value: room ? 7310 : 81500,
-          subtitle: room ? '2/9 麦 · 18 人在线' : board.label,
-        ),
-      ],
-      selfEntry: room
-          ? null
-          : const RankingEntry(
-              rank: 27,
-              userId: 10001,
-              name: '我',
-              value: 2680,
-              subtitle: '距上一名还差 320',
-            ),
+      period: board.isGiftValue ? period : null,
+      entries: all.skip((page - 1) * pageSize).take(pageSize).toList(),
+      page: page,
+      pageSize: pageSize,
+      total: all.length,
+      pages: (all.length + pageSize - 1) ~/ pageSize,
+      serverAuthoritative: false,
     );
   }
 

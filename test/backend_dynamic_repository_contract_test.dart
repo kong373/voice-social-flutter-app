@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'contract_test_auth.dart';
+import 's16_ranking_fixtures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -278,64 +279,23 @@ void main() {
       }
       if (request.uri.path == '/app-api/rankinglist/charmrank') {
         expect(request.method, 'POST');
-        expect(body, <String, Object?>{'theType': 2});
+        expect(body, {'pageNum': 1, 'pageSize': 20, 'period': 'WEEK'});
         return _reply(
           request,
-          data: <String, Object?>{
-            'records': <Object?>[
-              <String, Object?>{
-                'rank': 1,
-                'userId': 20001,
-                'nickName': '南风',
-                'score': 99,
-              },
-            ],
-            'list': <Object?>[
-              <String, Object?>{
-                'rank': 1,
-                'userId': 20001,
-                'nickName': '南风',
-                'score': 99,
-              },
-            ],
-            'current': 1,
-            'pageSize': 20,
-            'total': 1,
-            'pages': 1,
-            'metric': 'CHARM',
-            'serverAuthoritative': true,
-          },
+          data: rankingWire(
+            period: RankingPeriod.week,
+            userId: 20001,
+            name: '南风',
+            score: '99',
+          ),
         );
       }
       if (request.uri.path == '/app-api/dfrank/queryRoomDfRank') {
         expect(request.method, 'POST');
-        expect(body, <String, Object?>{'rankType': 1});
+        expect(body, {'pageNum': 1, 'pageSize': 20, 'period': 'DAY'});
         return _reply(
           request,
-          data: <String, Object?>{
-            'list': <Object?>[
-              <String, Object?>{
-                'rank': 1,
-                'roomId': 'room-1',
-                'roomName': '夜航',
-                'score': 88,
-              },
-            ],
-            'records': <Object?>[
-              <String, Object?>{
-                'rank': 1,
-                'roomId': 'room-1',
-                'roomName': '夜航',
-                'score': 88,
-              },
-            ],
-            'current': 1,
-            'pageSize': 20,
-            'total': 1,
-            'pages': 1,
-            'metric': 'ROOM_CONTRIBUTION',
-            'serverAuthoritative': true,
-          },
+          data: rankingWire(board: RankingBoard.room, name: '夜航', score: '88'),
         );
       }
       return _reply(request, status: 404, code: 404, message: 'not found');
@@ -365,14 +325,14 @@ void main() {
     );
     expect(users.entries.single.userId, 20001);
     expect(users.entries.single.rank, 1);
-    expect(users.entries.single.value, 99);
+    expect(users.entries.single.giftValueFen, BigInt.from(99));
     final RankingSnapshot rooms = await repository.fetchRanking(
       board: RankingBoard.room,
       period: RankingPeriod.day,
     );
-    expect(rooms.entries.single.roomId, 'room-1');
+    expect(rooms.entries.single.roomId, s16RoomId);
     expect(rooms.entries.single.rank, 1);
-    expect(rooms.entries.single.value, 88);
+    expect(rooms.entries.single.giftValueFen, BigInt.from(88));
   });
 
   test('media publishing remains explicitly vendor blocked', () async {
@@ -1279,7 +1239,8 @@ void main() {
       ];
       for (final Map<String, Object?> payload in payloads) {
         final HttpServer server = await _startServer(
-          (HttpRequest request, Object? body) => _reply(request, data: payload),
+          (HttpRequest request, Object? body) =>
+              _reply(request, data: {...rankingWire(total: 0), ...payload}),
         );
         final BackendDynamicRepository repository = BackendDynamicRepository(
           apiClient: _client(server),

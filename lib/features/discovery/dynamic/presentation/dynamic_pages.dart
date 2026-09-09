@@ -1213,48 +1213,113 @@ class RankingPage extends StatefulWidget {
 }
 
 class _RankingPageState extends State<RankingPage> {
+  final _scrollController = ScrollController();
   RankingBoard _board = RankingBoard.charm;
   RankingPeriod _period = RankingPeriod.day;
+  int _page = 1;
   RankingSnapshot? _snapshot;
   String? _error;
   bool _loading = true;
   int _loadRequestId = 0;
-
-  DynamicRepository get _repository =>
-      widget.repository ?? AppDependencyScope.of(context).dynamicRepository;
+  DynamicRepository? _repositoryInstance;
+  RankingIdentity? _identity;
+  (int, int)? _observedIdentity;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_snapshot == null && _loading) {
-      _load();
-    }
+    _bind();
+  }
+
+  @override
+  void didUpdateWidget(covariant RankingPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _bind();
+  }
+
+  void _bind() {
+    final repository =
+        widget.repository ?? AppDependencyScope.of(context).dynamicRepository;
+    if (identical(repository, _repositoryInstance)) return;
+    _identity?.rankingIdentityChanges?.removeListener(_identityChanged);
+    _repositoryInstance = repository;
+    _identity = repository is RankingIdentity
+        ? repository as RankingIdentity
+        : null;
+    _observedIdentity = _identity?.rankingIdentity;
+    _identity?.rankingIdentityChanges?.addListener(_identityChanged);
+    _page = 1;
+    _load();
+  }
+
+  void _identityChanged() {
+    final next = _identity?.rankingIdentity;
+    if (!mounted || next == _observedIdentity) return;
+    _observedIdentity = next;
+    _page = 1;
+    _load();
+  }
+
+  @override
+  void dispose() {
+    ++_loadRequestId;
+    _identity?.rankingIdentityChanges?.removeListener(_identityChanged);
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
-    final int requestId = ++_loadRequestId;
+    final requestId = ++_loadRequestId;
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    final identity = _identity?.rankingIdentity;
+    final board = _board, period = _period;
+    final page = _page;
+    bool current() =>
+        mounted &&
+        requestId == _loadRequestId &&
+        identity == _identity?.rankingIdentity;
     setState(() {
       _loading = true;
       _error = null;
+      _snapshot = null;
     });
     try {
-      final RankingSnapshot value = await _repository.fetchRanking(
-        board: _board,
-        period: _period,
-      );
-      if (mounted && requestId == _loadRequestId) {
-        setState(() {
-          _snapshot = value;
-          _loading = false;
-        });
+      if (identity != null && identity.$1 <= 0) {
+        throw const ApiException(
+          kind: ApiFailureKind.unauthorized,
+          message: '请登录后查看排行榜',
+        );
       }
+      final value = await _repositoryInstance!.fetchRanking(
+        board: board,
+        period: period,
+        page: page,
+      );
+      if (!current()) return;
+      if (value.board != board ||
+          value.period != (board.isGiftValue ? period : null) ||
+          value.page != page ||
+          value.pageSize != 20 ||
+          value.entries.any(
+            (entry) => board.isGiftValue
+                ? entry.giftValueFen == null
+                : entry.giftValueFen != null,
+          )) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '排行榜响应与当前选择不一致',
+        );
+      }
+      setState(() {
+        _snapshot = value;
+        _loading = false;
+      });
     } catch (error) {
-      if (mounted && requestId == _loadRequestId) {
+      if (current())
         setState(() {
           _loading = false;
           _error = _messageFor(error);
         });
-      }
     }
   }
 
@@ -1262,41 +1327,50 @@ class _RankingPageState extends State<RankingPage> {
     if (entry.roomId != null) {
       Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
-          builder: (BuildContext context) =>
-              RoomDeepLinkPage(input: entry.roomId!),
+          builder: (_) => RoomDeepLinkPage(input: entry.roomId!),
         ),
       );
     } else if (entry.userId != null) {
       Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
-          builder: (BuildContext context) =>
-              PublicProfilePage(userId: entry.userId!),
+          builder: (_) => PublicProfilePage(userId: entry.userId!),
         ),
       );
     }
   }
 
+  String _beijing(DateTime value) {
+    final date = value.toUtc().add(const Duration(hours: 8));
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${date.year}-${two(date.month)}-${two(date.day)} ${two(date.hour)}:${two(date.minute)}';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final snapshot = _snapshot;
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('排行榜')),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-          children: <Widget>[
+          children: [
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: <Widget>[
-                  for (final RankingBoard board
-                      in RankingBoard.values) ...<Widget>[
+                children: [
+                  for (final board in RankingBoard.values) ...[
                     SocialPill(
                       label: board.label,
                       active: _board == board,
                       onTap: () {
                         if (_board == board) return;
-                        setState(() => _board = board);
+                        setState(() {
+                          _board = board;
+                          _page = 1;
+                        });
                         _load();
                       },
                     ),
@@ -1306,26 +1380,31 @@ class _RankingPageState extends State<RankingPage> {
               ),
             ),
             const SizedBox(height: 10),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: <Widget>[
-                  for (final RankingPeriod period
-                      in RankingPeriod.values) ...<Widget>[
-                    SocialPill(
-                      label: period.label,
-                      active: _period == period,
-                      onTap: () {
-                        if (_period == period) return;
-                        setState(() => _period = period);
-                        _load();
-                      },
-                    ),
-                    const SizedBox(width: 8),
+            if (_board.isGiftValue)
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final period in RankingPeriod.values) ...[
+                      SocialPill(
+                        label: period.label,
+                        active: _period == period,
+                        onTap: () {
+                          if (_period == period) return;
+                          setState(() {
+                            _period = period;
+                            _page = 1;
+                          });
+                          _load();
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                   ],
-                ],
-              ),
-            ),
+                ),
+              )
+            else
+              const Text('累计贡献 · 保留原贡献分口径'),
             const SizedBox(height: 18),
             if (_loading)
               const Padding(
@@ -1334,61 +1413,67 @@ class _RankingPageState extends State<RankingPage> {
               )
             else if (_error != null)
               _FeedError(message: _error!, onRetry: _load)
-            else if (_snapshot == null || _snapshot!.entries.isEmpty)
-              const _InfoPanel(
-                icon: Icons.leaderboard_outlined,
-                text: '当前榜单暂无有效数据。',
-              )
-            else ...<Widget>[
-              if (_snapshot!.countdownSeconds > 0)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 9,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: <Color>[Color(0xFFE9E5FF), Color(0xFFFFEAF2)],
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      const Icon(
-                        Icons.auto_awesome_rounded,
-                        color: SocialColors.primary,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 7),
-                      Expanded(
-                        child: Text(
-                          '${_board.label} · 本期剩余 ${_duration(_snapshot!.countdownSeconds)}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                    ],
-                  ),
+            else if (snapshot != null) ...[
+              if (!snapshot.serverAuthoritative)
+                const Text('演示数据 · 非实时榜单', key: ValueKey('ranking-demo'))
+              else if (snapshot.startInclusive != null &&
+                  snapshot.endExclusive != null) ...[
+                Text(
+                  '北京时间 ${_beijing(snapshot.startInclusive!)} 至 ${_beijing(snapshot.endExclusive!)}（不含）',
+                  key: const ValueKey('ranking-window'),
                 ),
-              for (final RankingEntry entry in _snapshot!.entries)
+                Text('服务端更新：${_beijing(snapshot.serverNow!)} · 礼物总价值（人民币）'),
+                const Text('同分先达到者优先 · 无奖励'),
+                if (snapshot.excludedUnvaluedTransfers > 0)
+                  Text(
+                    '本期有 ${snapshot.excludedUnvaluedTransfers} 条历史礼物记录不可估值，未计入榜分',
+                  ),
+              ],
+              const SizedBox(height: 12),
+              if (snapshot.entries.isEmpty)
+                const _InfoPanel(
+                  icon: Icons.leaderboard_outlined,
+                  text: '当前榜单暂无有效数据。',
+                ),
+              for (final entry in snapshot.entries)
                 _RankingEntryCard(
                   entry: entry,
-                  valueLabel: _compact(entry.value),
+                  valueLabel: entry.displayValue,
+                  emphasized: entry.isCurrentUser,
                   onTap: () => _open(entry),
                 ),
-              if (_snapshot!.selfEntry != null) ...<Widget>[
-                const Divider(height: 28),
-                Text('我的排名', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 10),
-                _RankingEntryCard(
-                  entry: _snapshot!.selfEntry!,
-                  valueLabel: _compact(_snapshot!.selfEntry!.value),
-                  emphasized: true,
-                  onTap: () => _open(_snapshot!.selfEntry!),
-                ),
-              ],
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  TextButton(
+                    key: const ValueKey('ranking-previous'),
+                    onPressed: snapshot.page > 1
+                        ? () {
+                            _page = snapshot.page - 1;
+                            _load();
+                          }
+                        : null,
+                    child: const Text('上一页'),
+                  ),
+                  Flexible(
+                    child: Text(
+                      '第 ${snapshot.page} 页 / 共 ${snapshot.pages} 页 · ${snapshot.total} 项',
+                      key: const ValueKey('ranking-pagination'),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  TextButton(
+                    key: const ValueKey('ranking-next'),
+                    onPressed: snapshot.hasMore
+                        ? () {
+                            _page = snapshot.page + 1;
+                            _load();
+                          }
+                        : null,
+                    child: const Text('下一页'),
+                  ),
+                ],
+              ),
             ],
           ],
         ),
@@ -1470,18 +1555,21 @@ class _RankingEntryCard extends StatelessWidget {
                 ],
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                valueLabel,
-                style: TextStyle(
-                  color: accent,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
+            Flexible(
+              flex: 2,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  valueLabel,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ),
@@ -1831,17 +1919,4 @@ void _showOperationError(BuildContext context, Object error) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(_messageFor(error))));
-}
-
-String _compact(num value) {
-  if (value >= 10000) {
-    return '${(value / 10000).toStringAsFixed(value % 10000 == 0 ? 0 : 1)}万';
-  }
-  return value.toString();
-}
-
-String _duration(int seconds) {
-  final int hours = seconds ~/ 3600;
-  final int minutes = (seconds % 3600) ~/ 60;
-  return hours > 0 ? '$hours 小时 $minutes 分' : '$minutes 分钟';
 }
