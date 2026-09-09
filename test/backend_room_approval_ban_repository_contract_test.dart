@@ -5,10 +5,80 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/data/backend_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 
 void main() {
+  test(
+    'rejecting an application is a successful authoritative review',
+    () async {
+      final server = await _ContractServer.start((request) {
+        expect(
+          request.uri.path,
+          '/app-mini-api/mini/v1/rooms/join-requests/resolve',
+        );
+        expect(request.method, 'POST');
+        expect(request.body?['joinRequestId'], 'join-request-rejected');
+        expect(request.body?['approved'], false);
+        expect(request.headers.value('X-Request-Id'), isNotEmpty);
+        return const _Response(
+          data: {
+            'joinRequestId': 'join-request-rejected',
+            'status': 'REJECTED',
+          },
+        );
+      });
+      addTearDown(server.close);
+      final repository = BackendRoomOperationsRepository(
+        leaseBinding: admittedRoomFixture(roomId: 'room-9527'),
+        apiClient: server.client,
+      );
+      await repository.resolveJoinRequest(
+        joinRequestId: 'join-request-rejected',
+        approved: false,
+      );
+      expect(server.requests, hasLength(1));
+    },
+  );
+
+  final invalidReviewResponses = <String, Map<String, Object?>>{
+    'explicit failure': {
+      'joinRequestId': 'review-1',
+      'status': 'REJECTED',
+      'success': false,
+    },
+    'malformed success': {
+      'joinRequestId': 'review-1',
+      'status': 'REJECTED',
+      'success': 'true',
+    },
+    'wrong identity': {'joinRequestId': 'other-request', 'status': 'REJECTED'},
+    'wrong outcome': {'joinRequestId': 'review-1', 'status': 'APPROVED'},
+    'failed status': {'joinRequestId': 'review-1', 'status': 'FAILED'},
+    'missing outcome': {'joinRequestId': 'review-1'},
+  };
+  for (final entry in invalidReviewResponses.entries) {
+    test('reject review still refuses ${entry.key}', () async {
+      final server = await _ContractServer.start(
+        (_) => _Response(data: entry.value),
+      );
+      addTearDown(server.close);
+      final repository = BackendRoomOperationsRepository(
+        leaseBinding: admittedRoomFixture(roomId: 'room-9527'),
+        apiClient: server.client,
+      );
+      await expectLater(
+        repository.resolveJoinRequest(
+          joinRequestId: 'review-1',
+          approved: false,
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      expect(server.requests, hasLength(1));
+    });
+  }
+
   test(
     'approval and ban capabilities preserve first-party HTTP contracts',
     () async {

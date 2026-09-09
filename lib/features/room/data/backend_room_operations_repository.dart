@@ -442,7 +442,9 @@ class BackendRoomOperationsRepository
             'approved': approved,
           },
         );
-        final Map<String, Object?> data = _requiredMutationMap(
+        // REJECTED is the successful outcome of denying an application, not
+        // an unsuccessful mutation. Validate this operation's exact outcome.
+        final Map<String, Object?> data = _requiredResponseMap(
           response,
           operation: approved ? '同意入房申请' : '拒绝入房申请',
           requiredFields: <String>['joinRequestId', 'status'],
