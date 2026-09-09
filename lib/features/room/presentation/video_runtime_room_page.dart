@@ -309,13 +309,13 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                 ),
                 const SizedBox(height: 18),
                 Text(
-                  approvalPending ? '申请已提交，等待审核' : '暂时无法进入房间',
+                  approvalPending ? '入房申请已提交' : '暂时无法进入房间',
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 10),
                 Text(
                   approvalPending
-                      ? '房主或房管处理后，你可以再次尝试进入。'
+                      ? '请查看当前申请状态；审核通过后可继续进入。'
                       : (_controller.errorMessage ?? '请检查网络后重试。'),
                 ),
                 const SizedBox(height: 22),
