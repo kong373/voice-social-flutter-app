@@ -191,6 +191,23 @@ class ApiClient {
     allowUnauthorizedRecovery: false,
   );
 
+  /// Captures authorization before opening the connection and checks the
+  /// caller's account generation before sending or recovering a 401.
+  /// Same-identity refresh may retry; a changed identity must throw.
+  Future<ApiResponse> postBoundToIdentity(
+    String path, {
+    required void Function() requireIdentity,
+    Map<String, String>? headers,
+    Map<String, Object?>? body,
+  }) => _request(
+    method: 'POST',
+    path: path,
+    authenticated: true,
+    headers: headers,
+    body: body,
+    requireIdentity: requireIdentity,
+  );
+
   Future<ApiResponse> _request({
     required String method,
     required String path,
@@ -200,7 +217,9 @@ class ApiClient {
     Map<String, Object?>? body,
     bool allowUnauthorizedRecovery = true,
     String? requestId,
+    void Function()? requireIdentity,
   }) async {
+    requireIdentity?.call();
     if (!_baseUri.hasScheme || _baseUri.host.isEmpty) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
@@ -217,13 +236,19 @@ class ApiClient {
     // Session-bound provider/financial requests may not adopt a different
     // principal while the asynchronous connection is being established.
     final String? boundAuthorization =
-        authenticated && !allowUnauthorizedRecovery
+        authenticated && (!allowUnauthorizedRecovery || requireIdentity != null)
         ? _authorizationProvider()
         : null;
     try {
       final HttpClientRequest request = await _httpClient
           .openUrl(method, uri)
           .timeout(timeout);
+      try {
+        requireIdentity?.call();
+      } catch (_) {
+        request.abort();
+        rethrow;
+      }
       var requestRecoveryGeneration = _unauthorizedRecoveryGeneration;
       request.headers
         ..set(HttpHeaders.acceptHeader, 'application/json')
@@ -237,7 +262,8 @@ class ApiClient {
 
       if (authenticated) {
         requestRecoveryGeneration = _unauthorizedRecoveryGeneration;
-        final String? authorization = allowUnauthorizedRecovery
+        final String? authorization =
+            allowUnauthorizedRecovery && requireIdentity == null
             ? _authorizationProvider()
             : boundAuthorization;
         if (authorization == null || authorization.isEmpty) {
@@ -251,6 +277,7 @@ class ApiClient {
         request.headers.set(HttpHeaders.authorizationHeader, authorization);
       }
 
+      requireIdentity?.call();
       if (body != null) {
         request.write(jsonEncode(body));
       }
@@ -298,6 +325,7 @@ class ApiClient {
       if (authenticated &&
           allowUnauthorizedRecovery &&
           kind == ApiFailureKind.unauthorized) {
+        requireIdentity?.call();
         if (_unauthorizedRecoveryGeneration > requestRecoveryGeneration) {
           return _request(
             method: method,
@@ -308,10 +336,12 @@ class ApiClient {
             body: body,
             allowUnauthorizedRecovery: false,
             requestId: stableRequestId,
+            requireIdentity: requireIdentity,
           );
         }
         if (_unauthorizedRecovery != null) {
           final bool recovered = await _recoverUnauthorized();
+          requireIdentity?.call();
           if (recovered) {
             return _request(
               method: method,
@@ -322,6 +352,7 @@ class ApiClient {
               body: body,
               allowUnauthorizedRecovery: false,
               requestId: stableRequestId,
+              requireIdentity: requireIdentity,
             );
           }
         }

@@ -1032,8 +1032,9 @@ class BackendCommerceRepository implements CommerceRepository {
     }
     _withdrawalWritesStarted.add(intentKey);
     _requireIdentity(identity);
-    final ApiResponse response = await _apiClient.post(
+    final ApiResponse response = await _apiClient.postBoundToIdentity(
       _routes.withdrawalApply,
+      requireIdentity: () => _requireIdentity(identity),
       headers: <String, String>{'X-Request-Id': requestId},
       body: <String, Object?>{
         'amountMinor': amountMinor,

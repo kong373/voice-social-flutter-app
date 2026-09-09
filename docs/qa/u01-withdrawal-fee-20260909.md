@@ -37,6 +37,18 @@
 
 ## P1 账号隔离追加修复
 
+### 发送身份与401恢复补丁（87466ed之后）
+
+87466ed仅限制仓储/页面异步交付，普通ApiClient.post仍可能在openUrl之后读取B token；因此该提交不能独立视作P1完整修复。本补丁新增窄用途 `ApiClient.postBoundToIdentity` 并仅接入提现apply。原 `postWithoutUnauthorizedRecovery` 虽提前捕获token，但完全关闭401恢复，不能满足同身份正常刷新重试，因此不直接复用。
+
+绑定调用在任何await前检查调用方身份代际并捕获Authorization；openUrl完成后再次校验，身份变化则abort尚未发送的request；写body前再检查。401恢复前、恢复await后、每次递归重试前及重试openUrl后均检查原代际。同身份允许采用刷新后的token，原request id/body不变；跨身份抛protocol错误，仓储原账号未知key/payload不删除。普通get/post和其他请求的策略未更改。
+
+新增 `test/api_client_identity_bound_test.dart` 用可变化的真实Authorization和委托HttpClient延迟openUrl，而非仅延迟响应：初次连接切B零请求；401响应前切B不调用恢复；恢复期间切B不重试；同身份A-old→A-new刷新两次请求key/body严格相同；刷新成功后重试连接期间切B不发送第二次请求。
+
+最终 `flutter analyze --no-pub` handle33695 exit0，No issues found；此前52201有一个测试空Map类型推断warning，已显式类型修正。
+
+固定Flutter3.44.7。RED handle3075 exit1：上述前三项真实失败（原post错误返回成功），同身份刷新对照1PASS；51495是缺少clientType夹具参数导致的编译失败，不算产品RED。GREEN handle20905 exit0：`flutter test --no-pub test/api_client_identity_bound_test.dart test/api_client_test.dart test/backend_commerce_repository_contract_test.dart test/commerce_live_ui_contract_test.dart --reporter expanded`，77PASS（含A返回原key/raw body及页面隔离回归）。补充重试连接切身份后，专属测试handle2539 exit0，5PASS。最终analyze及git diff --check通过。未执行DB、设备、部署或主树操作。
+
 AppDependencies 将现有 AuthSessionManager 的 userId、identityGeneration 和通知接入 commerce；不改变认证与刷新语义。未决申请及原 key 按账号保存，in-flight Future 按账号和代际隔离。退出后不可见，B 不能获取 A 的内容或 Future；A 回来复用原 key 和逐字相同的 HTTP payload，不因旧请求晚到成功或错误清掉 A 的未知状态。恢复仍只覆盖同一 repository 生命周期，不增加磁盘持久化。
 
 提现页面在身份切换时清理可见金额、账户、报价及历史并关闭确认弹窗；各异步完成点核对代际，旧成功不能显示为 B 成功。同代际通知不清理正在填写的内容。账户预检 Future 与可用标识同样按身份代际隔离。
