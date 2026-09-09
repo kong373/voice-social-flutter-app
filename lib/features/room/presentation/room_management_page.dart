@@ -8,6 +8,7 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
+import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_authority_display.dart';
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
@@ -24,6 +25,7 @@ class RoomManagementPage extends StatelessWidget {
     this.initialMemberId,
     this.coordinationMode,
     this.repositoryOverride,
+    this.authorityRepositoryOverride,
     super.key,
   });
 
@@ -36,6 +38,7 @@ class RoomManagementPage extends StatelessWidget {
   final int? initialMemberId;
   final MicCoordinationMode? coordinationMode;
   final RoomOperationsRepository? repositoryOverride;
+  final RoomAuthorityRepository? authorityRepositoryOverride;
 
   @override
   Widget build(BuildContext context) => _RoomManagementSession(
@@ -45,6 +48,7 @@ class RoomManagementPage extends StatelessWidget {
       currentRole,
       coordinationMode,
       repositoryOverride,
+      authorityRepositoryOverride,
     )),
     configuration: this,
   );
@@ -75,6 +79,8 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   RoomOperationsRepository? _repositoryInstance;
   RoomOperationsRepository get _repository => _repositoryInstance!;
   RoomBanRepository? _banRepository;
+  RoomAuthorityRepository? _authorityRepository;
+  int _loadGeneration = 0;
   final List<RoomMember> _members = <RoomMember>[];
   final List<MicAccessRequest> _requests = <MicAccessRequest>[];
   final List<RoomBannedUser> _bannedUsers = <RoomBannedUser>[];
@@ -125,6 +131,14 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         configuration.repositoryOverride ??
         AppDependencyScope.of(context).roomOperationsRepository;
     _banRepository = _repositoryInstance!.roomBanCapability;
+    final roomRepository =
+        configuration.authorityRepositoryOverride ??
+        (configuration.repositoryOverride == null
+            ? AppDependencyScope.of(context).roomRepository
+            : null);
+    if (roomRepository is RoomAuthorityRepository) {
+      _authorityRepository = roomRepository;
+    }
     _load();
   }
 
@@ -194,6 +208,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   }
 
   Future<void> _load() async {
+    final generation = ++_loadGeneration;
     unawaited(_refreshQueue());
     setState(() {
       _loading = true;
@@ -219,7 +234,28 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
           ),
         );
       }
+      final authority = _authorityRepository;
+      if (authority != null) {
+        futures.add(
+          authority.fetchRoomAuthority(
+            roomId: configuration.roomId,
+            currentUserId: configuration.currentUserId,
+          ),
+        );
+      }
       final List<Object> results = await Future.wait<Object>(futures);
+      if (!mounted || generation != _loadGeneration) return;
+      final projection = authority == null
+          ? null
+          : results.last as RoomAuthorityProjection;
+      if (projection != null &&
+          (projection.snapshot.roomId != configuration.roomId ||
+              projection.viewerUserId != configuration.currentUserId)) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '麦位权威响应与当前房间不一致',
+        );
+      }
       final RoomMemberPage page = results[0] as RoomMemberPage;
       final List<RoomMember> muted = results[1] as List<RoomMember>;
       final List<RoomMember> managers = results[2] as List<RoomMember>;
@@ -232,34 +268,11 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       final Map<int, RoomRole> roles = <int, RoomRole>{
         for (final RoomMember manager in managers) manager.userId: manager.role,
       };
-      final Map<int, RoomMember> onMicBySeat = <int, RoomMember>{
-        for (final RoomMember member in page.items)
-          if (member.isOnMic && member.seatNumber != null)
-            member.seatNumber!: member,
-      };
-      final List<MicSeat> reconciledSeats = <MicSeat>[
-        for (final MicSeat seat in _seats)
-          if (onMicBySeat[seat.number] case final RoomMember member)
-            seat.copyWith(
-              state: member.isMuted
-                  ? MicSeatState.occupiedMuted
-                  : MicSeatState.occupied,
-              userId: member.userId,
-              userName: member.name,
-              userRole: roles[member.userId] ?? member.role,
-            )
-          else if (seat.isOccupied)
-            seat.copyWith(
-              state: MicSeatState.available,
-              clearUserId: true,
-              clearUserName: true,
-              clearAvatarUrl: true,
-              isSpeaking: false,
-              userRole: RoomRole.listener,
-            )
-          else
-            seat,
-      ];
+      // Member pagination cannot prove seat occupancy or empty-seat locks.
+      // Offline previews without authority retain their supplied seat snapshot.
+      final List<MicSeat> reconciledSeats = List.of(
+        projection?.snapshot.seats ?? _seats,
+      );
       final List<RoomMember> members = <RoomMember>[
         for (final RoomMember member in page.items)
           member.copyWith(
@@ -296,7 +309,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!mounted || generation != _loadGeneration) {
         return;
       }
       setState(() {
@@ -655,8 +668,8 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         final bool busy = _busyUserId == member.userId;
         final String reason = banned.reason?.trim() ?? '';
         final String expiry = banned.expiresAt == null
-            ? '10 分钟禁入，到期时间待刷新'
-            : '禁入 10 分钟 · 截至 ${_formatDateTime(banned.expiresAt!)}';
+            ? '无期限'
+            : '限制至 ${_formatDateTime(banned.expiresAt!)}';
         return RoomGlassCard(
           padding: EdgeInsets.zero,
           radius: 16,
@@ -962,6 +975,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         _changed = true;
       });
       _showMessage(locked ? '麦位已锁定' : '麦位已解锁');
+      if (_authorityRepository != null) await _load();
     } catch (error) {
       if (mounted) {
         _showMessage(_messageFor(error));
@@ -1003,6 +1017,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         _changed = true;
       });
       _showMessage(muted ? '麦位已闭麦' : '麦位已开麦');
+      if (_authorityRepository != null) await _load();
     } catch (error) {
       if (mounted) {
         _showMessage(_messageFor(error));
