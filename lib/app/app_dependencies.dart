@@ -348,6 +348,9 @@ class AppDependencies {
       commerceRepository = BackendCommerceRepository(
         apiClient: apiClient,
         routes: routes,
+        currentUserId: () => sessionManager.session?.userId.toString(),
+        identityGeneration: () => sessionManager.identityGeneration,
+        withdrawalIdentityChanges: sessionManager,
       );
       commerceCatalogRepository = BackendCommerceCatalogRepository(
         apiClient: apiClient,

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
@@ -8,13 +9,37 @@ class BackendCommerceRepository implements CommerceRepository {
   BackendCommerceRepository({
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
+    String? Function()? currentUserId,
+    int Function()? identityGeneration,
+    this.withdrawalIdentityChanges,
   }) : _apiClient = apiClient,
+       _currentUserId = currentUserId ?? (() => 'standalone'),
+       _identityGeneration = identityGeneration ?? (() => 0),
        _routes = routes;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
-  Future<PayoutAccountSelection>? _payoutAccountsInFlight;
-  bool _payoutAccountsEndpointAvailable = false;
+  final String? Function() _currentUserId;
+  final int Function() _identityGeneration;
+  @override
+  final Listenable? withdrawalIdentityChanges;
+  @override
+  (String?, int) get withdrawalIdentity =>
+      (_currentUserId(), _identityGeneration());
+  void _requireIdentity((String?, int) identity) {
+    if (identity.$1 == null || identity != withdrawalIdentity) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '登录身份已切换，旧提现结果不再交付当前页面',
+      );
+    }
+  }
+
+  final Map<(String?, int), Future<PayoutAccountSelection>>
+  _payoutAccountsInFlight = {};
+  final Set<(String?, int)> _availablePayoutIdentities = {};
+  bool get _payoutAccountsEndpointAvailable =>
+      _availablePayoutIdentities.contains(withdrawalIdentity);
   final Map<String, Future<WithdrawalRecord>> _pendingWithdrawalApplications =
       <String, Future<WithdrawalRecord>>{};
   final Map<String, String> _retainedWithdrawalRequestIds = <String, String>{};
@@ -522,22 +547,28 @@ class BackendCommerceRepository implements CommerceRepository {
 
   @override
   Future<PayoutAccountSelection> fetchPayoutAccounts() {
-    final Future<PayoutAccountSelection>? inFlight = _payoutAccountsInFlight;
+    final identity = withdrawalIdentity;
+    _requireIdentity(identity);
+    final Future<PayoutAccountSelection>? inFlight =
+        _payoutAccountsInFlight[identity];
     if (inFlight != null) {
       return inFlight;
     }
     late final Future<PayoutAccountSelection> future;
-    future = _fetchPayoutAccounts().whenComplete(() {
-      if (identical(_payoutAccountsInFlight, future)) {
-        _payoutAccountsInFlight = null;
+    future = _fetchPayoutAccounts(identity).whenComplete(() {
+      if (identical(_payoutAccountsInFlight[identity], future)) {
+        _payoutAccountsInFlight.remove(identity);
       }
     });
-    _payoutAccountsInFlight = future;
+    _payoutAccountsInFlight[identity] = future;
     return future;
   }
 
-  Future<PayoutAccountSelection> _fetchPayoutAccounts() async {
+  Future<PayoutAccountSelection> _fetchPayoutAccounts(
+    (String?, int) identity,
+  ) async {
     final ApiResponse response = await _apiClient.get(_routes.payoutAccounts);
+    _requireIdentity(identity);
     final Map<String, Object?> data = _asMap(response.data);
     final List<Object?> rawAccounts = _requiredList(data, field: '收款账户列表');
     final int total = _requiredNonNegativeIntField(
@@ -658,7 +689,7 @@ class BackendCommerceRepository implements CommerceRepository {
         message: '收款账户 selectionRequired 与选择结果不一致',
       );
     }
-    _payoutAccountsEndpointAvailable = true;
+    _availablePayoutIdentities.add(identity);
     return PayoutAccountSelection(
       accounts: List<PayoutAccount>.unmodifiable(accounts),
       selectedPayoutAccountId: resolvedSelected,
@@ -789,6 +820,8 @@ class BackendCommerceRepository implements CommerceRepository {
 
   @override
   Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount}) async {
+    final identity = withdrawalIdentity;
+    _requireIdentity(identity);
     final int amountMinor = WithdrawalAmountPolicy.minorUnits(amount);
     final ApiResponse response = await _apiClient.get(
       _routes.withdrawalFeeRate,
@@ -796,6 +829,7 @@ class BackendCommerceRepository implements CommerceRepository {
     );
     final Map<String, Object?> data = _asMap(response.data);
     final int requestedMinor = amountMinor;
+    _requireIdentity(identity);
     final Object? version = data['feePolicyVersion'];
     if (version is! int ||
         version < 0 ||
@@ -873,9 +907,10 @@ class BackendCommerceRepository implements CommerceRepository {
     return quote;
   }
 
-  ConfirmedWithdrawal? _pendingWithdrawal;
+  final Map<String, ConfirmedWithdrawal> _pendingWithdrawals = {};
   @override
-  ConfirmedWithdrawal? get pendingWithdrawal => _pendingWithdrawal;
+  ConfirmedWithdrawal? get pendingWithdrawal =>
+      _pendingWithdrawals[_currentUserId()];
 
   @override
   Future<WithdrawalRecord> applyWithdrawal({
@@ -885,11 +920,14 @@ class BackendCommerceRepository implements CommerceRepository {
   }) async {
     final int amountMinor = WithdrawalAmountPolicy.minorUnits(amount);
     confirmedQuote.validateFor(amount);
+    final identity = withdrawalIdentity;
+    _requireIdentity(identity);
+    final user = identity.$1!;
     final int expectedFeeMinor = (confirmedQuote.feeAmount * 100).round();
     final int expectedNetAmountMinor = (confirmedQuote.receivedAmount * 100)
         .round();
     final String accountId = payoutAccountId?.trim() ?? '';
-    final unresolved = _pendingWithdrawal;
+    final unresolved = _pendingWithdrawals[user];
     if (unresolved != null &&
         (unresolved.amount != amount ||
             unresolved.payoutAccountId != accountId ||
@@ -910,9 +948,10 @@ class BackendCommerceRepository implements CommerceRepository {
       );
     }
     final String intentKey =
-        'withdrawal:${commerceRefundIntentDigest(scope: 'withdrawal-apply', fields: <String>['$amountMinor', accountId, '${confirmedQuote.feePolicyVersion}', '$expectedFeeMinor', '$expectedNetAmountMinor'])}';
+        'withdrawal:${commerceRefundIntentDigest(scope: 'withdrawal-apply', fields: <String>[user, '$amountMinor', accountId, '${confirmedQuote.feePolicyVersion}', '$expectedFeeMinor', '$expectedNetAmountMinor'])}';
+    final futureKey = '${identity.$2}:$intentKey';
     final Future<WithdrawalRecord>? pending =
-        _pendingWithdrawalApplications[intentKey];
+        _pendingWithdrawalApplications[futureKey];
     if (pending != null) {
       return pending;
     }
@@ -926,7 +965,7 @@ class BackendCommerceRepository implements CommerceRepository {
       intentKey,
     );
     late final Future<WithdrawalRecord> future;
-    _pendingWithdrawal = ConfirmedWithdrawal(
+    _pendingWithdrawals[user] = ConfirmedWithdrawal(
       amount: amount,
       payoutAccountId: accountId,
       quote: confirmedQuote,
@@ -939,29 +978,32 @@ class BackendCommerceRepository implements CommerceRepository {
           intentKey: intentKey,
           replayingRetainedWrite: replayingRetainedWrite,
           confirmedQuote: confirmedQuote,
+          identity: identity,
         ).then<WithdrawalRecord>(
           (WithdrawalRecord value) {
-            if (identical(_pendingWithdrawalApplications[intentKey], future)) {
-              _pendingWithdrawalApplications.remove(intentKey);
+            if (identical(_pendingWithdrawalApplications[futureKey], future)) {
+              _pendingWithdrawalApplications.remove(futureKey);
             }
+            _requireIdentity(identity);
             _retainedWithdrawalRequestIds.remove(intentKey);
             _withdrawalWritesStarted.remove(intentKey);
-            _pendingWithdrawal = null;
+            _pendingWithdrawals.remove(user);
             return value;
           },
           onError: (Object error, StackTrace stackTrace) {
-            if (identical(_pendingWithdrawalApplications[intentKey], future)) {
-              _pendingWithdrawalApplications.remove(intentKey);
+            if (identical(_pendingWithdrawalApplications[futureKey], future)) {
+              _pendingWithdrawalApplications.remove(futureKey);
             }
-            if (!_shouldRetainWithdrawalRequest(error)) {
-              _pendingWithdrawal = null;
+            if (identity == withdrawalIdentity &&
+                !_shouldRetainWithdrawalRequest(error)) {
+              _pendingWithdrawals.remove(user);
               _retainedWithdrawalRequestIds.remove(intentKey);
               _withdrawalWritesStarted.remove(intentKey);
             }
             Error.throwWithStackTrace(error, stackTrace);
           },
         );
-    _pendingWithdrawalApplications[intentKey] = future;
+    _pendingWithdrawalApplications[futureKey] = future;
     return future;
   }
 
@@ -972,9 +1014,11 @@ class BackendCommerceRepository implements CommerceRepository {
     required String intentKey,
     required bool replayingRetainedWrite,
     required WithdrawalQuote confirmedQuote,
+    required (String?, int) identity,
   }) async {
     if (!replayingRetainedWrite) {
       final PayoutAccountSelection selection = await fetchPayoutAccounts();
+      _requireIdentity(identity);
       final PayoutAccount? account = _findPayoutAccount(
         selection.accounts,
         payoutAccountId,
@@ -987,11 +1031,7 @@ class BackendCommerceRepository implements CommerceRepository {
       }
     }
     _withdrawalWritesStarted.add(intentKey);
-    _pendingWithdrawal = ConfirmedWithdrawal(
-      amount: amountMinor / 100,
-      payoutAccountId: payoutAccountId,
-      quote: confirmedQuote,
-    );
+    _requireIdentity(identity);
     final ApiResponse response = await _apiClient.post(
       _routes.withdrawalApply,
       headers: <String, String>{'X-Request-Id': requestId},
@@ -1005,6 +1045,7 @@ class BackendCommerceRepository implements CommerceRepository {
     );
     final Map<String, Object?> data = _asMap(response.data);
     final bool providerInvocation = _requiredBool(data, 'providerInvocation');
+    _requireIdentity(identity);
     if (providerInvocation) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,

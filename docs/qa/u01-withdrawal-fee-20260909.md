@@ -34,3 +34,13 @@
 最终handle59800 exit0：79/79 PASS。analyze83837 exit0：No issues found。git diff --check通过。
 
 中间失败如实记录：10932有5个失败（旧payload断言、无效金额测试helper溢出、弹窗spinner未停止）；2045剩1个UI假对象未启用账户picker。修正后8313 UI7PASS、35510整批79PASS；后续整数bps模型收紧及未决picker提示改动以最终59800/83837重新验证。未执行全量、真实提现或Backend门禁。
+
+## P1 账号隔离追加修复
+
+AppDependencies 将现有 AuthSessionManager 的 userId、identityGeneration 和通知接入 commerce；不改变认证与刷新语义。未决申请及原 key 按账号保存，in-flight Future 按账号和代际隔离。退出后不可见，B 不能获取 A 的内容或 Future；A 回来复用原 key 和逐字相同的 HTTP payload，不因旧请求晚到成功或错误清掉 A 的未知状态。恢复仍只覆盖同一 repository 生命周期，不增加磁盘持久化。
+
+提现页面在身份切换时清理可见金额、账户、报价及历史并关闭确认弹窗；各异步完成点核对代际，旧成功不能显示为 B 成功。同代际通知不清理正在填写的内容。账户预检 Future 与可用标识同样按身份代际隔离。
+
+TDD：backend_commerce_repository_contract_test 的 `U01 identity switch isolates pending futures and restores A exact retry` 在 handle84419 exit1 真实复现退出后 pending 非空；实现后21117 exit0，1PASS。测试断言 A/B 请求不同 key、A 恢复原 key/raw body、旧 A Future 返回身份失效而非成功。新增 UI `U01 account switch hides A intent and ignores late A success` 独立模拟晚到成功，断言 B 页面空金额且无成功提示、回 A 恢复101及禁编辑，并验证同代际通知保留输入。
+
+固定 Flutter3.44.7，沿用上方五文件命令：handle58945 exit0，81PASS。最后同代际通知边界补充后，单独 `flutter test --no-pub test/commerce_live_ui_contract_test.dart --reporter expanded` handle93301 exit0，9PASS。过程中7228/1439因新增断言误放到旧 spy 导致编译/分析失败，已移到正确身份 spy；不计为产品 RED。此前86607仅两个 mounted lint，已显式守卫。最终 `flutter analyze --no-pub` handle17400 exit0，No issues found。未运行 DB、设备、Backend/Admin 或部署。

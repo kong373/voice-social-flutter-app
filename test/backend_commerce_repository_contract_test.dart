@@ -12,6 +12,91 @@ import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 
 void main() {
   test(
+    'U01 identity switch isolates pending futures and restores A exact retry',
+    () async {
+      String? user = 'A';
+      var generation = 1;
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var posts = 0;
+      final harness = await _Harness.start(
+        (request) async {
+          if (request.path.endsWith('/accounts'))
+            return _Response.ok({
+              'list': [
+                {
+                  'payoutAccountId': 'shared-test-account',
+                  'accountType': 'BANK_REFERENCE',
+                  'accountMasked': '****8001',
+                  'holderNameMasked': 'U*',
+                  'status': 'VERIFIED',
+                  'selectable': true,
+                },
+              ],
+              'total': 1,
+              'selectedPayoutAccountId': 'shared-test-account',
+              'selectionRequired': false,
+              'providerInvocation': false,
+            });
+          final index = ++posts;
+          if (index == 1) {
+            started.complete();
+            await release.future;
+          }
+          return _Response.ok({
+            'withdrawalId': 'receipt-$index',
+            'payoutAccountId': 'shared-test-account',
+            'amountMinor': 10000,
+            'feeMinor': 100,
+            'netAmountMinor': 9900,
+            'status': 'SUBMITTED',
+            'payoutStatus': 'MANUAL_REVIEW_PENDING',
+            'providerInvocation': false,
+            'submittedAt': '2026-09-09T10:00:00Z',
+            'accountMasked': '****8001',
+            'holderNameMasked': 'U*',
+          });
+        },
+        currentUserId: () => user,
+        identityGeneration: () => generation,
+      );
+      addTearDown(harness.close);
+      Future<Object> submit() => harness.repository
+          .applyWithdrawal(
+            amount: 100,
+            confirmedQuote: _confirmedQuote(100),
+            payoutAccountId: 'shared-test-account',
+          )
+          .then<Object>((value) => value, onError: (Object error) => error);
+      final a = submit();
+      await started.future;
+      user = null;
+      generation++;
+      final loggedOut = harness.repository.pendingWithdrawal;
+      user = 'B';
+      generation++;
+      final bPending = harness.repository.pendingWithdrawal;
+      final b = submit();
+      release.complete();
+      final aResult = await a;
+      final bResult = await b;
+      expect(loggedOut, isNull);
+      expect(bPending, isNull);
+      expect(aResult, isA<ApiException>());
+      expect(bResult, isA<WithdrawalRecord>());
+      expect((bResult as WithdrawalRecord).id, 'receipt-2');
+      user = 'A';
+      generation++;
+      expect(harness.repository.pendingWithdrawal, isNotNull);
+      expect(await submit(), isA<WithdrawalRecord>());
+      final writes = harness.requests.where((r) => r.method == 'POST').toList();
+      expect(writes, hasLength(3));
+      expect(writes[0].requestId, writes[2].requestId);
+      expect(writes[0].rawBody, writes[2].rawBody);
+      expect(writes[0].requestId, isNot(writes[1].requestId));
+    },
+  );
+  test(
     'U01 quote requires integer policy and exact CEILING_FEN amounts',
     () async {
       var payload = <String, Object?>{
@@ -2759,32 +2844,45 @@ void main() {
 }
 
 class _Harness {
-  _Harness._(this.server, this.requests)
-    : repository = BackendCommerceRepository(
-        apiClient: ApiClient(
-          baseUri: Uri.parse(
-            'http://${server.address.address}:${server.port}/',
-          ),
-          clientType: 'Android',
-          clientInnerVersion: '6',
-          authorizationProvider: () => 'Bearer contract-test',
-        ),
-        routes: const BackendRouteCatalog(),
-      );
+  _Harness._(
+    this.server,
+    this.requests, {
+    String? Function()? currentUserId,
+    int Function()? identityGeneration,
+  }) : repository = BackendCommerceRepository(
+         apiClient: ApiClient(
+           baseUri: Uri.parse(
+             'http://${server.address.address}:${server.port}/',
+           ),
+           clientType: 'Android',
+           clientInnerVersion: '6',
+           authorizationProvider: () => 'Bearer contract-test',
+         ),
+         routes: const BackendRouteCatalog(),
+         currentUserId: currentUserId,
+         identityGeneration: identityGeneration,
+       );
 
   final HttpServer server;
   final List<RequestRecord> requests;
   final BackendCommerceRepository repository;
 
   static Future<_Harness> start(
-    FutureOr<_Response> Function(RequestRecord) handler,
-  ) async {
+    FutureOr<_Response> Function(RequestRecord) handler, {
+    String? Function()? currentUserId,
+    int Function()? identityGeneration,
+  }) async {
     final HttpServer server = await HttpServer.bind(
       InternetAddress.loopbackIPv4,
       0,
     );
     final List<RequestRecord> requests = <RequestRecord>[];
-    final _Harness harness = _Harness._(server, requests);
+    final _Harness harness = _Harness._(
+      server,
+      requests,
+      currentUserId: currentUserId,
+      identityGeneration: identityGeneration,
+    );
     server.listen((HttpRequest request) async {
       final String rawBody = await utf8.decoder.bind(request).join();
       final Object? decodedBody = rawBody.trim().isEmpty

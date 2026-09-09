@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
@@ -5,6 +6,10 @@ import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 class MockCommerceRepository implements CommerceRepository {
   @override
   ConfirmedWithdrawal? get pendingWithdrawal => null;
+  @override
+  (String?, int) get withdrawalIdentity => ('mock', 0);
+  @override
+  Listenable? get withdrawalIdentityChanges => null;
   int _feeBasisPoints = 0;
   int _feePolicyVersion = 0;
 

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 
 enum LedgerDirection { income, expense }
@@ -530,6 +531,8 @@ abstract interface class CommerceRepository {
   Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount});
 
   ConfirmedWithdrawal? get pendingWithdrawal;
+  (String?, int) get withdrawalIdentity;
+  Listenable? get withdrawalIdentityChanges;
 
   Future<WithdrawalRecord> applyWithdrawal({
     required double amount,

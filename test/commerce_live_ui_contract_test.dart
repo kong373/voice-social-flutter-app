@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
@@ -9,6 +11,58 @@ import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 import 'package:voice_social_app/features/commerce/presentation/commerce_pages.dart';
 
 void main() {
+  testWidgets('U01 account switch hides A intent and ignores late A success', (
+    tester,
+  ) async {
+    final repository = _IdentityWithdrawalSpy();
+    await tester.pumpWidget(
+      MaterialApp(home: WithdrawalPage(repository: repository)),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '101');
+    repository.changes.notifyListeners();
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      '101',
+    );
+    await tester.ensureVisible(find.text('计算到账金额'));
+    await tester.tap(find.text('计算到账金额'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('申请提现'));
+    await tester.tap(find.text('申请提现'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认提现'));
+    await tester.pump();
+    expect(repository.pendingWithdrawal?.amount, 101);
+    repository.switchTo(null);
+    await tester.pump();
+    repository.switchTo('B');
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
+    expect(repository.pendingWithdrawal, isNull);
+    repository.release.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('提现申请已提交'), findsNothing);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      isEmpty,
+    );
+    repository.switchTo('A');
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      '101',
+    );
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+    expect(repository.pendingWithdrawal?.amount, 101);
+    await tester.pumpWidget(const SizedBox());
+    repository.changes.dispose();
+  });
+
   testWidgets(
     'U01 page recreation restores unresolved confirmed intent without new quote',
     (tester) async {
@@ -267,6 +321,45 @@ void main() {
   );
 
   // REMOVED_BY_PRODUCT Q15-06: remaining refund form/result/retry positives.
+}
+
+class _IdentityWithdrawalSpy extends MockCommerceRepository {
+  final changes = ChangeNotifier();
+  final release = Completer<void>();
+  String? user = 'A';
+  int generation = 0;
+  ConfirmedWithdrawal? pendingA;
+  @override
+  (String?, int) get withdrawalIdentity => (user, generation);
+  @override
+  ChangeNotifier get withdrawalIdentityChanges => changes;
+  @override
+  ConfirmedWithdrawal? get pendingWithdrawal => user == 'A' ? pendingA : null;
+  void switchTo(String? next) {
+    user = next;
+    generation++;
+    changes.notifyListeners();
+  }
+
+  @override
+  Future<WithdrawalRecord> applyWithdrawal({
+    required double amount,
+    required WithdrawalQuote confirmedQuote,
+    String? payoutAccountId,
+  }) async {
+    pendingA = ConfirmedWithdrawal(
+      amount: amount,
+      payoutAccountId: payoutAccountId!,
+      quote: confirmedQuote,
+    );
+    final receipt = (await fetchWithdrawalRecords(
+      page: 1,
+      pageSize: 20,
+    )).items.first;
+    await release.future;
+    // Deliberately deliver an old success to verify the page's independent guard.
+    return receipt;
+  }
 }
 
 class _ResumeWithdrawalSpy extends MockCommerceRepository {
