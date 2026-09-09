@@ -1,3 +1,5 @@
+import 'package:voice_social_app/features/commerce/domain/gift_coin_precision.dart';
+
 enum RoomRole { guest, listener, speaker, moderator, owner, platformModerator }
 
 enum RoomSessionStatus {
@@ -416,6 +418,8 @@ class GiftReceipt {
     this.status,
     this.requestId,
     this.creatorIncomeMinor,
+    this.creatorIncomeCurrency,
+    this.coinPrecision,
     this.charmValue,
     this.reconciled,
     this.createdAt,
@@ -437,6 +441,10 @@ class GiftReceipt {
   final String? status;
   final String? requestId;
   final int? creatorIncomeMinor;
+
+  /// Null on historical receipts is unknown, never presumed to be cash.
+  final String? creatorIncomeCurrency;
+  final GiftCoinBalance? coinPrecision;
   final int? charmValue;
   final bool? reconciled;
   final DateTime? createdAt;

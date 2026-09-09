@@ -4,6 +4,10 @@ import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catal
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 
 class MockCommerceRepository implements CommerceRepository {
+  // Explicit demo identity; role loss never rewrites imported cash history.
+  IncomeRole incomeRole = IncomeRole.anchor;
+  GiftCoinAmount giftCoins = const GiftCoinAmount.whole(1680);
+  final Set<String> _creditedRechargeOrders = {'MOCK202608150001'};
   @override
   ConfirmedWithdrawal? get pendingWithdrawal => null;
   @override
@@ -117,7 +121,8 @@ class MockCommerceRepository implements CommerceRepository {
            direction: LedgerDirection.expense,
            kind: LedgerKind.giftExpense,
            title: '赠送普通礼物',
-           amount: 12,
+           amount: null,
+           coinAmount: const GiftCoinAmount.whole(12),
            createdAt: seedNow.subtract(const Duration(hours: 5)),
            relatedUserName: '南风',
            businessName: '晚安星光',
@@ -199,6 +204,14 @@ class MockCommerceRepository implements CommerceRepository {
   }
 
   void syncRechargeOrder(RechargeOrder order) {
+    if (order.state == RechargeOrderState.succeeded &&
+        _creditedRechargeOrders.add(order.orderNo)) {
+      giftCoins = GiftCoinAmount.fromTenths(
+        (giftCoins.tenths +
+                BigInt.from(order.product.totalGiftCoins) * BigInt.from(10))
+            .toString(),
+      );
+    }
     seedPaymentOrderForQa(
       PaymentOrder(
         orderNo: order.orderNo,
@@ -226,6 +239,15 @@ class MockCommerceRepository implements CommerceRepository {
   @override
   Future<WalletSummary> fetchWalletSummary() async => WalletSummary(
     giftCoinBalance: 1680,
+    coinPrecision: GiftCoinBalance(
+      available: giftCoins,
+      frozen: const GiftCoinAmount.whole(0),
+    ),
+    incomeCapability: IncomeCapability(
+      incomeRole,
+      incomeRole != IncomeRole.ordinary,
+      incomeRole != IncomeRole.ordinary,
+    ),
     cashBalance: _cashBalance,
     frozenBalance: _frozenBalance,
     totalEarnings: 5688.80,
@@ -256,7 +278,8 @@ class MockCommerceRepository implements CommerceRepository {
           direction: LedgerDirection.income,
           kind: LedgerKind.recharge,
           title: '充值到账',
-          amount: 300,
+          amount: null,
+          coinAmount: const GiftCoinAmount.whole(300),
           createdAt: _currentTime.subtract(const Duration(hours: 1)),
           relatedUserName: '',
           businessName: '礼物币充值',
@@ -410,6 +433,12 @@ class MockCommerceRepository implements CommerceRepository {
     String? payoutAccountId,
   }) async {
     final WalletSummary wallet = await fetchWalletSummary();
+    if (!wallet.canWithdraw) {
+      throw const ApiException(
+        kind: ApiFailureKind.forbidden,
+        message: '当前身份不支持新提现申请，历史记录仍可查看',
+      );
+    }
     final WithdrawalQuote quote = confirmedQuote;
     quote.validateFor(amount);
     if (quote.feePolicyVersion != _feePolicyVersion ||

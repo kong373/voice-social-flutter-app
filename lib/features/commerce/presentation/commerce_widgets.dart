@@ -160,7 +160,7 @@ class _CommerceAssetOrb extends StatelessWidget {
 class _GiftBalanceBanner extends StatelessWidget {
   const _GiftBalanceBanner({required this.balance});
 
-  final int? balance;
+  final String? balance;
 
   @override
   Widget build(BuildContext context) {
@@ -305,14 +305,17 @@ class _WalletSummaryCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: <Widget>[
-                Text(
-                  wallet.giftCoinBalance == null
-                      ? '读取中'
-                      : '${wallet.giftCoinBalance}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w900,
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      wallet.giftCoinText,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 30,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 7),
@@ -326,6 +329,11 @@ class _WalletSummaryCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
+            if (wallet.coinPrecision != null)
+              Text(
+                '冻结礼物币 ${wallet.coinPrecision!.frozen.text}',
+                style: const TextStyle(color: Colors.white70),
+              ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
@@ -335,7 +343,7 @@ class _WalletSummaryCard extends StatelessWidget {
               child: Row(
                 children: <Widget>[
                   _SummaryMetric(
-                    label: '可提现',
+                    label: wallet.canWithdraw ? '可提现' : '历史现金',
                     value: '¥${wallet.cashBalance.toStringAsFixed(2)}',
                     onDark: true,
                   ),
@@ -654,8 +662,8 @@ String _formatDateTime(DateTime value) {
 String _ledgerAmountText(LedgerEntry entry) {
   final String sign = entry.direction == LedgerDirection.income ? '+' : '-';
   return switch (entry.currency) {
-    LedgerCurrency.giftCoin => '$sign${entry.amount.toStringAsFixed(0)} 礼物币',
-    LedgerCurrency.cashCny => '$sign¥${entry.amount.toStringAsFixed(2)}',
+    LedgerCurrency.giftCoin => '$sign${entry.coinAmount?.text ?? '—'} 礼物币',
+    LedgerCurrency.cashCny => '$sign¥${entry.amount!.toStringAsFixed(2)}',
   };
 }
 

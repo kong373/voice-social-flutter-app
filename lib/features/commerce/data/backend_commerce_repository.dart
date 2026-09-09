@@ -30,7 +30,7 @@ class BackendCommerceRepository implements CommerceRepository {
     if (identity.$1 == null || identity != withdrawalIdentity) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
-        message: '登录身份已切换，旧提现结果不再交付当前页面',
+        message: '登录身份已切换，旧资金请求结果不再交付当前页面',
       );
     }
   }
@@ -98,20 +98,26 @@ class BackendCommerceRepository implements CommerceRepository {
 
   @override
   Future<WalletSummary> fetchWalletSummary() async {
+    final identity = withdrawalIdentity;
+    _requireIdentity(identity);
     final ApiResponse ncoinResponse = await _apiClient.get(
       _routes.ncoinBalance,
     );
+    _requireIdentity(identity);
     final ApiResponse walletResponse = await _apiClient.get(
       _routes.walletOverview,
     );
+    _requireIdentity(identity);
     final Map<String, Object?> ncoin = _asMap(ncoinResponse.data);
+    final precise = GiftCoinBalance.parse(ncoin);
     final Map<String, Object?> wallet = _asMap(walletResponse.data);
     final Map<String, Object?> card = _asMap(wallet['defaultBankCard']);
     return WalletSummary(
-      giftCoinBalance: _requiredNonNegativeInt(ncoin, <String>[
-        'integer',
-        'value',
-      ], field: '礼物币余额'),
+      // Compatibility only; all display paths use coinPrecision. Never narrow
+      // the authoritative BigInt amount to a machine integer.
+      giftCoinBalance: ncoin['integer'] is int ? ncoin['integer'] as int : null,
+      coinPrecision: precise,
+      incomeCapability: IncomeCapability.parse(wallet),
       cashBalance: _requiredNonNegativeDouble(wallet, 'balance'),
       frozenBalance: _requiredNonNegativeDouble(wallet, 'frozenBalance'),
       totalEarnings: _requiredNonNegativeDouble(wallet, 'totalEarnings'),
@@ -159,6 +165,8 @@ class BackendCommerceRepository implements CommerceRepository {
     required int page,
     required int pageSize,
   }) async {
+    final identity = withdrawalIdentity;
+    _requireIdentity(identity);
     _validatePageArguments(page: page, pageSize: pageSize);
     const int backendPageSize = 100;
     final List<LedgerEntry> matching = <LedgerEntry>[];
@@ -177,7 +185,11 @@ class BackendCommerceRepository implements CommerceRepository {
           'pageSize': '$backendPageSize',
         },
       );
+      _requireIdentity(identity);
       final Map<String, Object?> data = _asMap(response.data);
+      if (currency == LedgerCurrency.giftCoin) {
+        GiftCoinBalance.parse(data['coinPrecision']);
+      }
       final LedgerCurrency responseCurrency = _requiredCurrency(
         data,
         field: '流水币种',
@@ -261,7 +273,8 @@ class BackendCommerceRepository implements CommerceRepository {
     required LedgerDirection direction,
   }) {
     final String businessType = _string(raw['businessType']).toUpperCase();
-    if (_retiredLedgerSubtypes.contains(businessType)) {
+    if (businessType == 'COIN_PRECISION_CARRY' ||
+        _retiredLedgerSubtypes.contains(businessType)) {
       return null;
     }
     final LedgerDirection? entryDirection = _ledgerDirection(raw['type']);
@@ -273,7 +286,12 @@ class BackendCommerceRepository implements CommerceRepository {
     }
     if (entryDirection != direction) return null;
     final String id = _requiredString(raw, 'transactionId', field: '流水 ID');
-    _validateOptionalCurrency(raw, currency, field: '流水币种');
+    final coinAmount = currency == LedgerCurrency.giftCoin
+        ? GiftCoinAmount.ledger(raw)
+        : null;
+    if (coinAmount == null) {
+      _validateOptionalCurrency(raw, currency, field: '流水币种');
+    }
     final int amountMinor = _requiredInt(raw, <String>[
       'amountMinor',
     ], field: '流水金额');
@@ -297,8 +315,9 @@ class BackendCommerceRepository implements CommerceRepository {
         fallback: direction == LedgerDirection.income ? '收入' : '支出',
       ),
       amount: currency == LedgerCurrency.giftCoin
-          ? amountMinor.toDouble()
+          ? null
           : _minorToMajor(amountMinor),
+      coinAmount: coinAmount,
       createdAt: createdAt,
       relatedUserName: _string(raw['counterpartyUserId']),
       businessName: _string(raw['businessId']),
@@ -874,10 +893,15 @@ class BackendCommerceRepository implements CommerceRepository {
       'settlementMode',
       field: '提现结算模式',
     );
-    if (settlementMode != 'FIRST_PARTY_REVIEW_PROVIDER_BLOCKED') {
+    if ((settlementMode != 'FIRST_PARTY_REVIEW_PROVIDER_BLOCKED' &&
+            settlementMode != 'MANUAL_FINANCE') ||
+        (data.containsKey('providerInvocation') &&
+            data['providerInvocation'] != false) ||
+        (settlementMode == 'MANUAL_FINANCE' &&
+            data['providerInvocation'] != false)) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
-        message: '提现结算模式未保持第一方人工审核与厂商关闭状态',
+        message: '提现结算模式不是财务人工审核处理',
       );
     }
     if (feeMinor < 0 || netMinor < 0 || minimumMinor < 0 || basisPoints < 0) {
@@ -1017,6 +1041,16 @@ class BackendCommerceRepository implements CommerceRepository {
     required (String?, int) identity,
   }) async {
     if (!replayingRetainedWrite) {
+      // Unknown commands retain their original key/payload for server recovery.
+      // Only a new application requires today's income identity.
+      final overview = await _apiClient.get(_routes.walletOverview);
+      _requireIdentity(identity);
+      if (!IncomeCapability.parse(_asMap(overview.data)).canWithdraw) {
+        throw const ApiException(
+          kind: ApiFailureKind.forbidden,
+          message: '当前身份不支持新提现申请，历史记录仍可查看',
+        );
+      }
       final PayoutAccountSelection selection = await fetchPayoutAccounts();
       _requireIdentity(identity);
       final PayoutAccount? account = _findPayoutAccount(

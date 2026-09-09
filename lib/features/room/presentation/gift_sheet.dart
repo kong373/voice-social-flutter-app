@@ -6,6 +6,7 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 import 'package:voice_social_app/features/commerce/presentation/commerce_pages.dart';
+import 'package:voice_social_app/features/commerce/presentation/commerce_identity_fence.dart';
 
 class GiftTarget {
   const GiftTarget({required this.userId, required this.name});
@@ -48,13 +49,32 @@ class GiftSheet extends StatefulWidget {
   State<GiftSheet> createState() => _GiftSheetState();
 }
 
-class _GiftSheetState extends State<GiftSheet> {
+class _GiftSheetState extends State<GiftSheet>
+    with CommerceIdentityFence<GiftSheet> {
+  @override
+  CommerceRepository get commerceIdentityRepository =>
+      AppDependencyScope.of(context).commerceRepository;
+  @override
+  void clearCommerceIdentity() {
+    _balance = null;
+    _balanceMessage = '身份已切换，请重新进入房间';
+    _catalog = null;
+    _selectedGift = null;
+    _selectedTarget = null;
+    _submitting = false;
+    _loading = false;
+    _error = '身份已切换，请重新进入房间';
+  }
+
+  @override
+  Future<void> reloadCommerceIdentity() async {}
+
   List<GiftCatalogItem>? _catalog;
   GiftCatalogItem? _selectedGift;
   GiftTarget? _selectedTarget;
   GiftCatalogCategory _category = GiftCatalogCategory.popular;
   int _quantity = 1;
-  int? _balance;
+  GiftCoinAmount? _balance;
   bool _loading = true;
   bool _submitting = false;
   String? _error;
@@ -64,7 +84,9 @@ class _GiftSheetState extends State<GiftSheet> {
   void initState() {
     super.initState();
     _selectedTarget = widget.targets.firstOrNull;
-    _balance = widget.balance;
+    _balance = widget.balance == null
+        ? null
+        : GiftCoinAmount.whole(widget.balance!);
   }
 
   @override
@@ -78,7 +100,7 @@ class _GiftSheetState extends State<GiftSheet> {
     _selectedTarget = widget.targets
         .where((target) => target.userId == selectedId)
         .firstOrNull;
-    if (oldWidget.balance != widget.balance) _balance = widget.balance;
+    // Whole-coin room snapshots cannot overwrite a precise wallet read.
   }
 
   @override
@@ -88,15 +110,20 @@ class _GiftSheetState extends State<GiftSheet> {
   }
 
   Future<void> _loadCatalog() async {
+    final ticket = beginCommerceRead();
     try {
       final List<GiftCatalogItem> values = await AppDependencyScope.of(
         context,
       ).commerceCatalogRepository.fetchGiftCatalog();
-      if (!mounted) return;
+      if (!acceptsCommerceRead(ticket)) return;
+      final precise = await _readAuthoritativeBalance();
+      if (!acceptsCommerceRead(ticket)) return;
       final List<GiftCatalogItem> enabled = values
           .where((GiftCatalogItem item) => item.enabled)
           .toList(growable: false);
       setState(() {
+        _balance = precise;
+        _balanceMessage = precise == null ? '余额待刷新' : null;
         _catalog = enabled;
         _selectedGift = enabled.firstOrNull;
         if (_selectedGift != null) _category = _selectedGift!.category;
@@ -104,7 +131,7 @@ class _GiftSheetState extends State<GiftSheet> {
         _error = null;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!acceptsCommerceRead(ticket)) return;
       setState(() {
         _loading = false;
         _error = error is ApiException ? error.message : '礼物目录加载失败';
@@ -401,28 +428,39 @@ class _GiftSheetState extends State<GiftSheet> {
                   const SizedBox(width: 5),
                   Flexible(
                     child: Text(
-                      _balanceMessage ??
-                          (_balance == null ? '余额以服务端为准' : '${_balance!}'),
+                      _balanceMessage ?? (_balance?.text ?? '余额以服务端为准'),
                       maxLines: 1,
                       overflow: TextOverflow.fade,
                       softWrap: false,
                       style: const TextStyle(color: Colors.white, fontSize: 12),
                     ),
                   ),
+                  IconButton(
+                    tooltip: '刷新余额',
+                    onPressed: _submitting ? null : _refreshBalance,
+                    icon: const Icon(
+                      Icons.refresh_rounded,
+                      size: 18,
+                      color: Colors.white70,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                  ),
                   Semantics(
                     button: true,
                     label: '充值',
                     child: InkWell(
                       onTap: () async {
+                        final ticket = beginCommerceRead();
                         await Navigator.of(context).push<void>(
                           MaterialPageRoute<void>(
                             builder: (BuildContext context) =>
                                 const RechargeCatalogPage(),
                           ),
                         );
-                        if (!mounted) return;
-                        final int? refreshed = await widget.onRechargeReturn();
-                        if (mounted) {
+                        if (!acceptsCommerceRead(ticket)) return;
+                        await widget.onRechargeReturn();
+                        final refreshed = await _readAuthoritativeBalance();
+                        if (acceptsCommerceRead(ticket)) {
                           setState(() {
                             _balance = refreshed;
                             if (refreshed != null) _balanceMessage = null;
@@ -520,6 +558,7 @@ class _GiftSheetState extends State<GiftSheet> {
   );
 
   Future<void> _submit(int total) async {
+    final ticket = beginCommerceRead();
     final GiftCatalogItem? gift = _selectedGift;
     final GiftTarget? target = _selectedTarget;
     if (!widget.sendingAllowed ||
@@ -535,8 +574,8 @@ class _GiftSheetState extends State<GiftSheet> {
       target: target,
       quantity: _quantity,
     );
-    final int? balance = _balance;
-    if (balance != null && total > balance) {
+    final balance = _balance;
+    if (balance != null && !balance.coversWholeCoins(total)) {
       final bool? recharge = await showDialog<bool>(
         context: context,
         builder: (BuildContext dialogContext) => AlertDialog(
@@ -554,29 +593,30 @@ class _GiftSheetState extends State<GiftSheet> {
           ],
         ),
       );
-      if (recharge == true && mounted) {
+      if (mounted && recharge == true && acceptsCommerceRead(ticket)) {
         await Navigator.of(context).push<void>(
           MaterialPageRoute<void>(
             builder: (BuildContext context) => const RechargeCatalogPage(),
           ),
         );
-        if (!mounted) return;
-        final int? refreshed = await widget.onRechargeReturn();
-        if (mounted) setState(() => _balance = refreshed);
+        if (!acceptsCommerceRead(ticket)) return;
+        await widget.onRechargeReturn();
+        final refreshed = await _readAuthoritativeBalance();
+        if (acceptsCommerceRead(ticket)) setState(() => _balance = refreshed);
       }
       return;
     }
     setState(() => _submitting = true);
     try {
       final bool sent = await widget.onSend(request);
-      if (!mounted) return;
+      if (!mounted || !acceptsCommerceRead(ticket)) return;
       if (sent) {
         // A successful transfer does not authorize the client to derive a new
         // wallet balance from the old one. Read the first-party wallet after
         // the transfer; if that read is unavailable, keep the amount hidden
         // and leave an explicit pending-refresh state instead.
-        final int? authoritativeBalance = await _readAuthoritativeBalance();
-        if (!mounted) return;
+        final authoritativeBalance = await _readAuthoritativeBalance();
+        if (!mounted || !acceptsCommerceRead(ticket)) return;
         if (authoritativeBalance == null) {
           setState(() => _balanceMessage = '已送出，余额待刷新');
           return;
@@ -592,16 +632,26 @@ class _GiftSheetState extends State<GiftSheet> {
         ).showSnackBar(const SnackBar(content: Text('赠送失败，请检查余额或网络后重试')));
       }
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      if (acceptsCommerceRead(ticket)) setState(() => _submitting = false);
     }
   }
 
-  Future<int?> _readAuthoritativeBalance() async {
+  Future<void> _refreshBalance() async {
+    final ticket = beginCommerceRead();
+    final balance = await _readAuthoritativeBalance();
+    if (!acceptsCommerceRead(ticket)) return;
+    setState(() {
+      _balance = balance;
+      _balanceMessage = balance == null ? '余额待刷新，请重试' : null;
+    });
+  }
+
+  Future<GiftCoinAmount?> _readAuthoritativeBalance() async {
     try {
       final WalletSummary wallet = await AppDependencyScope.of(
         context,
       ).commerceRepository.fetchWalletSummary();
-      return wallet.giftCoinBalance;
+      return wallet.giftCoins;
     } catch (_) {
       return null;
     }

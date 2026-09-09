@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'gift_coin_precision.dart';
+export 'gift_coin_precision.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 
 enum LedgerDirection { income, expense }
@@ -120,6 +122,47 @@ class PayoutAccountSelection {
   }
 }
 
+enum IncomeRole { ordinary, anchor, guildChair }
+
+class IncomeCapability {
+  const IncomeCapability(this.role, this.incomeEligible, this.canWithdraw);
+  const IncomeCapability.unavailable()
+    : role = null,
+      incomeEligible = false,
+      canWithdraw = false;
+  factory IncomeCapability.parse(Map<String, Object?> data) {
+    if (![
+      'incomeRole',
+      'incomeEligible',
+      'canWithdraw',
+    ].any(data.containsKey)) {
+      return const IncomeCapability.unavailable();
+    }
+    final role = switch (data['incomeRole']) {
+      'ORDINARY' => IncomeRole.ordinary,
+      'ANCHOR' => IncomeRole.anchor,
+      'GUILD_CHAIR' => IncomeRole.guildChair,
+      _ => null,
+    };
+    final eligible = data['incomeEligible'];
+    final withdraw = data['canWithdraw'];
+    if (role == null ||
+        eligible is! bool ||
+        withdraw is! bool ||
+        eligible != (role != IncomeRole.ordinary) ||
+        withdraw != eligible) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '收益身份能力响应不一致，请刷新后重试',
+      );
+    }
+    return IncomeCapability(role, eligible, withdraw);
+  }
+  final IncomeRole? role;
+  final bool incomeEligible;
+  final bool canWithdraw;
+}
+
 class WalletSummary {
   const WalletSummary({
     required this.giftCoinBalance,
@@ -132,9 +175,19 @@ class WalletSummary {
     required this.bankCard,
     required this.agentEarnings,
     required this.superAgentEarnings,
+    this.coinPrecision,
+    this.incomeCapability = const IncomeCapability.unavailable(),
   });
 
   final int? giftCoinBalance;
+  final GiftCoinBalance? coinPrecision;
+  final IncomeCapability incomeCapability;
+  GiftCoinAmount? get giftCoins =>
+      coinPrecision?.available ??
+      (giftCoinBalance == null ? null : GiftCoinAmount.whole(giftCoinBalance!));
+  String get giftCoinText => giftCoins?.text ?? '—';
+  bool get incomeEligible => incomeCapability.incomeEligible;
+  bool get canWithdraw => incomeCapability.canWithdraw;
   final double cashBalance;
   final double frozenBalance;
   final double totalEarnings;
@@ -161,13 +214,17 @@ class LedgerEntry {
     required this.businessName,
     required this.rawSubtype,
     this.currency = LedgerCurrency.giftCoin,
+    this.coinAmount,
   });
 
   final String id;
   final LedgerDirection direction;
   final LedgerKind kind;
   final String title;
-  final double amount;
+
+  /// Cash only on live responses. Coin rows use coinAmount without doubles.
+  final double? amount;
+  final GiftCoinAmount? coinAmount;
   final DateTime createdAt;
   final String relatedUserName;
   final String businessName;

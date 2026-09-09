@@ -1,4 +1,5 @@
 import 'package:voice_social_app/core/network/api_client.dart';
+import 'package:voice_social_app/features/commerce/domain/gift_coin_precision.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/room/domain/fixed_eight_seat_adapter.dart';
@@ -1383,6 +1384,15 @@ class BackendRoomRepository
       data['creatorIncomeMinor'],
       field: '礼物创作者收益',
     );
+    final Object? creatorIncomeCurrency = data['creatorIncomeCurrency'];
+    if (creatorIncomeCurrency != null &&
+        creatorIncomeCurrency != 'CASH_CNY' &&
+        creatorIncomeCurrency != 'GIFT_COIN_TENTH') {
+      throw invalidCoinPrecision;
+    }
+    final preciseBalance = data.containsKey('coinPrecision')
+        ? GiftCoinBalance.parse(data['coinPrecision'])
+        : null;
     final int? charmValue = _optionalNonNegativeInt(
       data['charmValue'],
       field: '礼物魅力值',
@@ -1572,6 +1582,8 @@ class BackendRoomRepository
       status: status,
       requestId: responseRequestId,
       creatorIncomeMinor: creatorIncomeMinor,
+      creatorIncomeCurrency: creatorIncomeCurrency as String?,
+      coinPrecision: preciseBalance,
       charmValue: charmValue,
       reconciled: reconciled,
       createdAt: createdAt,

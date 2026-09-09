@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
+import 'package:voice_social_app/features/commerce/data/mock_commerce_repository.dart';
+import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/data/mock_room_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
@@ -24,6 +26,21 @@ bool _sendEnabled(WidgetTester tester) =>
     tester.widget<Semantics>(_send).properties.enabled == true;
 
 void main() {
+  testWidgets('S07 gift balance shows tenths but whole price is not repriced', (
+    tester,
+  ) async {
+    final h = _SheetHarness([_alice]);
+    addTearDown(h.dispose);
+    (h.dependencies.commerceRepository as MockCommerceRepository).giftCoins =
+        GiftCoinAmount.fromTenths('5');
+    await h.mount(tester);
+    expect(find.text('0.5'), findsOneWidget);
+    await tester.tap(_send);
+    await tester.pumpAndSettle();
+    expect(find.text('礼物币不足'), findsOneWidget);
+    expect(h.requests, isEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets('removed recipient is not replaced or submitted accidentally', (
     tester,
   ) async {

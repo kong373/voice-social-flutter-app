@@ -9,6 +9,7 @@ import 'package:voice_social_app/features/account/compliance/domain/account_comp
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_repository.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
+import 'commerce_identity_fence.dart';
 
 part 'commerce_wallet_pages.dart';
 part 'commerce_catalog_pages.dart';

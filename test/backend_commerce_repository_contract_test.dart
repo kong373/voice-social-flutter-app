@@ -12,6 +12,65 @@ import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 
 void main() {
   test(
+    'S07 malformed precision cannot fall back to whole coin integer',
+    () async {
+      final harness = await _Harness.start(
+        (request) => _Response.ok(
+          request.path.endsWith('/ncoin')
+              ? {
+                  'integer': 100,
+                  'currency': 'GIFT_COIN',
+                  'precisionVersion': 'GIFT_COIN_TENTHS_V1',
+                  'scale': 100,
+                  'availableTenths': '1148',
+                  'frozenTenths': '0',
+                }
+              : {
+                  'balance': '100.00',
+                  'frozenBalance': '0.00',
+                  'totalEarnings': '0.00',
+                  'yesterdayEarnings': '0.00',
+                  'totalWithdraw': '0.00',
+                  'isRealName': 0,
+                  'defaultBankCard': <String, Object?>{},
+                  'agentEarningsStatus': 'UNAVAILABLE',
+                  'superAgentEarningsStatus': 'UNAVAILABLE',
+                  'agentEarnings': null,
+                  'superAgentEarnings': null,
+                },
+        ),
+      );
+      addTearDown(harness.close);
+      await expectLater(
+        harness.repository.fetchWalletSummary(),
+        throwsA(isA<ApiException>()),
+      );
+    },
+  );
+
+  test(
+    'S08 truthful manual finance quote is usable without provider invocation',
+    () async {
+      final harness = await _Harness.start(
+        (_) => const _Response.ok({
+          'amountMinor': 10100,
+          'feeMinor': 51,
+          'netAmountMinor': 10049,
+          'minimumAmountMinor': 10000,
+          'feeRateBasisPoints': 50,
+          'feePolicyVersion': 7,
+          'rounding': 'CEILING_FEN',
+          'settlementMode': 'MANUAL_FINANCE',
+          'providerInvocation': false,
+        }),
+      );
+      addTearDown(harness.close);
+      final quote = await harness.repository.fetchWithdrawalQuote(amount: 101);
+      expect(quote.feeAmount, .51);
+      expect(quote.receivedAmount, 100.49);
+    },
+  );
+  test(
     'U01 identity switch isolates pending futures and restores A exact retry',
     () async {
       String? user = 'A';
@@ -21,6 +80,8 @@ void main() {
       var posts = 0;
       final harness = await _Harness.start(
         (request) async {
+          if (request.path.endsWith('/wallet/overview'))
+            return _incomeAuthorityFixture;
           if (request.path.endsWith('/accounts'))
             return _Response.ok({
               'list': [
@@ -142,6 +203,8 @@ void main() {
     () async {
       var writes = 0;
       final harness = await _Harness.start((request) {
+        if (request.path.endsWith('/wallet/overview'))
+          return _incomeAuthorityFixture;
         if (request.path.endsWith('/withdrawal/accounts'))
           return _Response.ok({
             'list': [
@@ -279,7 +342,7 @@ void main() {
     'guild gift share stays cash income and retains its own label',
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {
-        return _Response.ok(<String, Object?>{
+        return _Response.coinLedger(<String, Object?>{
           'currency': 'CASH_CNY',
           'list': <Object?>[
             <String, Object?>{
@@ -322,11 +385,11 @@ void main() {
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {
         return switch (request.path) {
-          '/app-economy-api/ncoin' => _Response.ok(<String, Object?>{
-            'integer': 321,
+          '/app-economy-api/ncoin' => _Response.coinLedger(<String, Object?>{
+            ..._coinFixture(321),
           }),
           '/app-mini-api/mini/v1/wallet/overview' =>
-            _Response.ok(<String, Object?>{
+            _Response.coinLedger(<String, Object?>{
               'balance': 12.5,
               'frozenBalance': 1.25,
               'totalEarnings': 88,
@@ -337,8 +400,8 @@ void main() {
               'agentEarnings': 5,
               'superAgentEarnings': 6,
             }),
-          '/app-mini-api/mini/v1/wallet/account-details' => _Response.ok(
-            <String, Object?>{
+          '/app-mini-api/mini/v1/wallet/account-details' =>
+            _Response.coinLedger(<String, Object?>{
               'currency': request.query['currency'],
               'list': <Object?>[
                 <String, Object?>{
@@ -382,9 +445,8 @@ void main() {
               'pageSize': 100,
               'total': 4,
               'pages': 1,
-            },
-          ),
-          _ => _Response.ok(<String, Object?>{}),
+            }),
+          _ => _Response.coinLedger(<String, Object?>{}),
         };
       });
       addTearDown(harness.close);
@@ -403,7 +465,7 @@ void main() {
       expect(income.items, hasLength(1));
       expect(income.items.single.id, '00000000-0000-0000-0000-000000009001');
       expect(income.items.single.kind, LedgerKind.recharge);
-      expect(income.items.single.amount, 66);
+      expect(income.items.single.coinAmount!.text, '66');
       expect(income.items.single.relatedUserName, '2002');
       expect(income.pageSize, 10);
       expect(income.hasMore, isFalse);
@@ -434,7 +496,7 @@ void main() {
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {
         final int backendPage = int.parse(request.query['pageNum']!);
-        return _Response.ok(<String, Object?>{
+        return _Response.coinLedger(<String, Object?>{
           'currency': 'GIFT_COIN',
           'list': List<Object?>.generate(
             backendPage == 1 ? 100 : 1,
@@ -470,7 +532,7 @@ void main() {
 
       expect(expense.items, hasLength(1));
       expect(expense.items.single.id, 'ledger-2');
-      expect(expense.items.single.amount, 12);
+      expect(expense.items.single.coinAmount!.text, '12');
       expect(expense.total, 1);
       expect(expense.hasMore, isFalse);
       expect(
@@ -484,7 +546,7 @@ void main() {
 
   test('ledger rejects an underfilled non-final authoritative page', () async {
     final _Harness harness = await _Harness.start((RequestRecord request) {
-      return _Response.ok(<String, Object?>{
+      return _Response.coinLedger(<String, Object?>{
         'currency': 'GIFT_COIN',
         'list': <Object?>[
           <String, Object?>{
@@ -531,7 +593,7 @@ void main() {
   test('b709 commerce DTOs use endpoint currency invariants', () async {
     final _Harness harness = await _Harness.start((RequestRecord request) {
       return switch (request.path) {
-        '/app-mini-api/mini/v1/wallet/account-details' => _Response.ok(
+        '/app-mini-api/mini/v1/wallet/account-details' => _Response.coinLedger(
           <String, Object?>{
             'currency': 'GIFT_COIN',
             'list': <Object?>[
@@ -550,22 +612,24 @@ void main() {
             'pages': 1,
           },
         ),
-        '/app-economy-api/pay/getOrders' => _Response.ok(<String, Object?>{
-          'list': <Object?>[
-            <String, Object?>{
-              'orderNo': 'order-b709',
-              'amount': 1,
-              'ncoin': 10,
-              'payType': 'WECHAT',
-              'status': 'PENDING',
-              'createDate': '2026-08-22T10:00:00Z',
-            },
-          ],
-          'current': 1,
-          'pageSize': 20,
-          'total': 1,
-        }),
-        '/app-api/refund/check' => _Response.ok(<String, Object?>{
+        '/app-economy-api/pay/getOrders' => _Response.coinLedger(
+          <String, Object?>{
+            'list': <Object?>[
+              <String, Object?>{
+                'orderNo': 'order-b709',
+                'amount': 1,
+                'ncoin': 10,
+                'payType': 'WECHAT',
+                'status': 'PENDING',
+                'createDate': '2026-08-22T10:00:00Z',
+              },
+            ],
+            'current': 1,
+            'pageSize': 20,
+            'total': 1,
+          },
+        ),
+        '/app-api/refund/check' => _Response.coinLedger(<String, Object?>{
           'orderNo': 'order-b709',
           'eligible': true,
           'reason': 'ELIGIBLE',
@@ -573,7 +637,7 @@ void main() {
           'giftCoinAmount': 10,
           'providerStatus': 'VENDOR_BLOCKED',
         }),
-        '/app-api/refund/result' => _Response.ok(<String, Object?>{
+        '/app-api/refund/result' => _Response.coinLedger(<String, Object?>{
           'refundId': 'refund-b709',
           'orderNo': 'order-b709',
           'amountMinor': 100,
@@ -585,7 +649,7 @@ void main() {
           'completed': false,
         }),
         '/app-mini-api/mini/v1/withdrawal/fee-rate' =>
-          _Response.ok(<String, Object?>{
+          _Response.coinLedger(<String, Object?>{
             'amountMinor': 10000,
             'feeMinor': 100,
             'netAmountMinor': 9900,
@@ -594,7 +658,7 @@ void main() {
             'minimumAmountMinor': 10000,
             'settlementMode': 'FIRST_PARTY_REVIEW_PROVIDER_BLOCKED',
           }),
-        '/app-mini-api/mini/v1/withdrawal/records' => _Response.ok(
+        '/app-mini-api/mini/v1/withdrawal/records' => _Response.coinLedger(
           <String, Object?>{
             'list': <Object?>[
               <String, Object?>{
@@ -613,7 +677,7 @@ void main() {
             'pages': 1,
           },
         ),
-        _ => _Response.ok(<String, Object?>{}),
+        _ => _Response.coinLedger(<String, Object?>{}),
       };
     });
     addTearDown(harness.close);
@@ -976,6 +1040,8 @@ void main() {
     () async {
       const String withdrawalId = '00000000-0000-0000-0000-000000006001';
       final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/wallet/overview'))
+          return _incomeAuthorityFixture;
         return switch (request.path) {
           '/app-mini-api/mini/v1/withdrawal/fee-rate' =>
             _Response.ok(<String, Object?>{
@@ -1183,6 +1249,8 @@ void main() {
       const String pendingId = '00000000-0000-0000-0000-00000000a002';
       int applyCalls = 0;
       final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/wallet/overview'))
+          return _incomeAuthorityFixture;
         return switch (request.path) {
           '/app-mini-api/mini/v1/withdrawal/accounts' => _Response.ok(
             <String, Object?>{
@@ -1272,6 +1340,8 @@ void main() {
       int applyCalls = 0;
       int accountReads = 0;
       final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/wallet/overview'))
+          return _incomeAuthorityFixture;
         if (request.path.endsWith('/withdrawal/accounts')) {
           accountReads += 1;
           final String id = accountReads == 1
@@ -1379,6 +1449,8 @@ void main() {
     () async {
       const String accountId = '00000000-0000-0000-0000-00000000a151';
       final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/wallet/overview'))
+          return _incomeAuthorityFixture;
         if (request.path.endsWith('/withdrawal/accounts')) {
           return _Response.ok(<String, Object?>{
             'list': <Object?>[
@@ -1432,6 +1504,8 @@ void main() {
       final List<String> requestIds = <String>[];
       int applyCalls = 0;
       final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/wallet/overview'))
+          return _incomeAuthorityFixture;
         if (request.path.endsWith('/withdrawal/accounts')) {
           return _Response.ok(<String, Object?>{
             'list': <Object?>[
@@ -1496,6 +1570,8 @@ void main() {
       final List<String> requestIds = <String>[];
       int applyCalls = 0;
       final _Harness harness = await _Harness.start((RequestRecord request) {
+        if (request.path.endsWith('/wallet/overview'))
+          return _incomeAuthorityFixture;
         if (request.path.endsWith('/withdrawal/accounts')) {
           return _Response.ok(<String, Object?>{
             'list': <Object?>[
@@ -1579,6 +1655,8 @@ void main() {
       () async {
         const String accountId = '00000000-0000-0000-0000-00000000a301';
         final _Harness harness = await _Harness.start((RequestRecord request) {
+          if (request.path.endsWith('/wallet/overview'))
+            return _incomeAuthorityFixture;
           if (request.path.endsWith('/withdrawal/accounts')) {
             return _Response.ok(<String, Object?>{
               'list': <Object?>[
@@ -1930,7 +2008,7 @@ void main() {
       final _Harness missing = await _Harness.start((RequestRecord request) {
         return switch (request.path) {
           '/app-economy-api/ncoin' => _Response.ok(<String, Object?>{
-            'integer': 0,
+            ..._coinFixture(0),
           }),
           '/app-mini-api/mini/v1/wallet/overview' =>
             _Response.ok(<String, Object?>{
@@ -1961,7 +2039,7 @@ void main() {
       final _Harness zero = await _Harness.start((RequestRecord request) {
         return switch (request.path) {
           '/app-economy-api/ncoin' => _Response.ok(<String, Object?>{
-            'integer': 0,
+            ..._coinFixture(0),
           }),
           '/app-mini-api/mini/v1/wallet/overview' =>
             _Response.ok(<String, Object?>{
@@ -1991,7 +2069,7 @@ void main() {
       final _Harness harness = await _Harness.start((RequestRecord request) {
         return switch (request.path) {
           '/app-economy-api/ncoin' => _Response.ok(<String, Object?>{
-            'integer': 0,
+            ..._coinFixture(0),
           }),
           '/app-mini-api/mini/v1/wallet/overview' => _Response.ok(
             <String, Object?>{
@@ -2034,7 +2112,7 @@ void main() {
     'ledger rejects missing currency, ID, amount, and time authority',
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {
-        return _Response.ok(<String, Object?>{
+        return _Response.coinLedger(<String, Object?>{
           'list': <Object?>[
             <String, Object?>{
               'type': 'CREDIT',
@@ -2109,7 +2187,7 @@ void main() {
     'all commerce page reads reject returned page or page size drift',
     () async {
       final _Harness orderHarness = await _Harness.start(
-        (RequestRecord request) => _Response.ok(<String, Object?>{
+        (RequestRecord request) => _Response.coinLedger(<String, Object?>{
           'list': const <Object?>[],
           'current': 2,
           'pageSize': 20,
@@ -2129,7 +2207,7 @@ void main() {
       );
 
       final _Harness ledgerHarness = await _Harness.start(
-        (RequestRecord request) => _Response.ok(<String, Object?>{
+        (RequestRecord request) => _Response.coinLedger(<String, Object?>{
           'currency': 'GIFT_COIN',
           'list': const <Object?>[],
           'pageNum': 1,
@@ -2150,7 +2228,7 @@ void main() {
       );
 
       final _Harness withdrawalHarness = await _Harness.start(
-        (RequestRecord request) => _Response.ok(<String, Object?>{
+        (RequestRecord request) => _Response.coinLedger(<String, Object?>{
           'list': const <Object?>[],
           'current': 1,
           'pageSize': 99,
@@ -2198,7 +2276,7 @@ void main() {
       }
 
       await expectLedgerFailure(
-        response: (int page) => _Response.ok(<String, Object?>{
+        response: (int page) => _Response.coinLedger(<String, Object?>{
           'currency': 'GIFT_COIN',
           'list': <Object?>[
             <String, Object?>{
@@ -2217,7 +2295,7 @@ void main() {
       );
 
       await expectLedgerFailure(
-        response: (int page) => _Response.ok(<String, Object?>{
+        response: (int page) => _Response.coinLedger(<String, Object?>{
           'currency': 'GIFT_COIN',
           'list': <Object?>[
             <String, Object?>{
@@ -2236,7 +2314,7 @@ void main() {
       );
 
       await expectLedgerFailure(
-        response: (int page) => _Response.ok(<String, Object?>{
+        response: (int page) => _Response.coinLedger(<String, Object?>{
           'currency': 'GIFT_COIN',
           'list': <Object?>[
             <String, Object?>{
@@ -2255,7 +2333,7 @@ void main() {
       );
 
       await expectLedgerFailure(
-        response: (int page) => _Response.ok(<String, Object?>{
+        response: (int page) => _Response.coinLedger(<String, Object?>{
           'currency': 'GIFT_COIN',
           'list': const <Object?>[],
           'pageNum': 1,
@@ -2413,7 +2491,7 @@ void main() {
         RequestRecord request,
       ) {
         final int page = int.parse(request.query['pageNum']!);
-        return _Response.ok(<String, Object?>{
+        return _Response.coinLedger(<String, Object?>{
           'currency': 'GIFT_COIN',
           'list': List<Object?>.generate(100, (int index) {
             return <String, Object?>{
@@ -2448,7 +2526,7 @@ void main() {
       ) {
         final int page =
             (request.body! as Map<String, Object?>)['pageNum']! as int;
-        return _Response.ok(<String, Object?>{
+        return _Response.coinLedger(<String, Object?>{
           'list': <Object?>[
             <String, Object?>{
               'orderNo': 'duplicate-order-id',
@@ -2475,7 +2553,7 @@ void main() {
         RequestRecord request,
       ) {
         final int page = int.parse(request.query['pageNum']!);
-        return _Response.ok(<String, Object?>{
+        return _Response.coinLedger(<String, Object?>{
           'list': List<Object?>.generate(100, (int index) {
             return <String, Object?>{
               'withdrawalId': index == 0
@@ -2952,6 +3030,29 @@ class _Response {
       message = 'OK',
       data = data;
 
+  factory _Response.coinLedger(Object? raw) {
+    if (raw is! Map || raw['currency'] != 'GIFT_COIN') return _Response.ok(raw);
+    // Frozen pre-S07 whole-coin fixtures gain the new wire fields. Original
+    // amountMinor, directions, malformed values and pagination stay unchanged.
+    final data = Map<String, Object?>.from(raw);
+    data['coinPrecision'] = _coinFixture(0);
+    for (final alias in ['list', 'records']) {
+      if (data[alias] is! List) continue;
+      data[alias] = (data[alias] as List).map((row) {
+        if (row is! Map || row['amountMinor'] is! int) return row;
+        return <String, Object?>{
+          'currency': 'GIFT_COIN',
+          'scale': 10,
+          'precisionVersion': 'GIFT_COIN_TENTHS_V1',
+          'amountTenths':
+              '${BigInt.from(row['amountMinor'] as int) * BigInt.from(10)}',
+          ...Map<String, Object?>.from(row),
+        };
+      }).toList();
+    }
+    return _Response.ok(data);
+  }
+
   final int statusCode;
   final int code;
   final String message;
@@ -2973,3 +3074,19 @@ WithdrawalQuote _confirmedQuote(double amount) {
     minimumAmount: 100,
   );
 }
+
+Map<String, Object?> _coinFixture(int whole) => {
+  'integer': whole,
+  'value': whole,
+  'currency': 'GIFT_COIN',
+  'precisionVersion': 'GIFT_COIN_TENTHS_V1',
+  'scale': 10,
+  'availableTenths': '${BigInt.from(whole) * BigInt.from(10)}',
+  'frozenTenths': '0',
+};
+
+const _incomeAuthorityFixture = _Response.ok({
+  'incomeRole': 'ANCHOR',
+  'incomeEligible': true,
+  'canWithdraw': true,
+});

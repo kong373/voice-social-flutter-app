@@ -1,15 +1,30 @@
 part of 'commerce_pages.dart';
 
 class CommerceHubPage extends StatefulWidget {
-  const CommerceHubPage({required this.account, super.key});
+  const CommerceHubPage({required this.account, this.repository, super.key});
 
   final String account;
+  @visibleForTesting
+  final CommerceRepository? repository;
 
   @override
   State<CommerceHubPage> createState() => _CommerceHubPageState();
 }
 
-class _CommerceHubPageState extends State<CommerceHubPage> {
+class _CommerceHubPageState extends State<CommerceHubPage>
+    with CommerceIdentityFence<CommerceHubPage> {
+  @override
+  CommerceRepository get commerceIdentityRepository =>
+      widget.repository ?? AppDependencyScope.of(context).commerceRepository;
+  @override
+  void clearCommerceIdentity() {
+    _wallet = null;
+    _error = '请登录后查看钱包';
+  }
+
+  @override
+  Future<void> reloadCommerceIdentity() => _load();
+
   WalletSummary? _wallet;
   String? _error;
 
@@ -22,18 +37,22 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
   }
 
   Future<void> _load() async {
+    setState(() {
+      _wallet = null;
+      _error = null;
+    });
+    final ticket = beginCommerceRead();
     try {
-      final WalletSummary wallet = await AppDependencyScope.of(
-        context,
-      ).commerceRepository.fetchWalletSummary();
-      if (mounted) {
+      final WalletSummary wallet = await commerceIdentityRepository
+          .fetchWalletSummary();
+      if (acceptsCommerceRead(ticket)) {
         setState(() {
           _wallet = wallet;
           _error = null;
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (acceptsCommerceRead(ticket)) {
         setState(() => _error = _messageFor(error));
       }
     }
@@ -96,7 +115,7 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
                   icon: Icons.receipt_long_outlined,
                   title: '钱包与流水',
                   subtitle: '查看礼物币、现金收益和收支明细',
-                  onTap: () => _open(const WalletPage()),
+                  onTap: () => _open(WalletPage(repository: widget.repository)),
                 ),
                 _CommerceEntry(
                   icon: Icons.shopping_bag_outlined,
@@ -104,17 +123,22 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
                   subtitle: '查询订单并以服务端结果为准进行补单核验',
                   onTap: () => _open(const OrdersPage()),
                 ),
-                _CommerceEntry(
-                  icon: Icons.trending_up_rounded,
-                  title: '主播收益',
-                  subtitle: '累计收益、昨日收益和收入明细',
-                  onTap: () => _open(const EarningsPage()),
-                ),
+                if (_wallet!.incomeEligible)
+                  _CommerceEntry(
+                    icon: Icons.trending_up_rounded,
+                    title: '主播收益',
+                    subtitle: '累计收益、昨日收益和收入明细',
+                    onTap: () =>
+                        _open(EarningsPage(repository: widget.repository)),
+                  ),
                 _CommerceEntry(
                   icon: Icons.account_balance_outlined,
-                  title: '结算与提现',
-                  subtitle: '手续费、银行卡、提现申请和处理记录',
-                  onTap: () => _open(const WithdrawalPage()),
+                  title: _wallet!.canWithdraw ? '结算与提现' : '历史提现记录',
+                  subtitle: _wallet!.canWithdraw
+                      ? '财务人工审核、收款账户和提现记录'
+                      : '查看历史记录或恢复原未决申请',
+                  onTap: () =>
+                      _open(WithdrawalPage(repository: widget.repository)),
                 ),
                 const SizedBox(height: 18),
                 const _CommerceInfoBanner(
@@ -127,13 +151,29 @@ class _CommerceHubPageState extends State<CommerceHubPage> {
 }
 
 class WalletPage extends StatefulWidget {
-  const WalletPage({super.key});
+  const WalletPage({this.repository, super.key});
+  @visibleForTesting
+  final CommerceRepository? repository;
 
   @override
   State<WalletPage> createState() => _WalletPageState();
 }
 
-class _WalletPageState extends State<WalletPage> {
+class _WalletPageState extends State<WalletPage>
+    with CommerceIdentityFence<WalletPage> {
+  @override
+  CommerceRepository get commerceIdentityRepository => _repository;
+  @override
+  void clearCommerceIdentity() {
+    _wallet = null;
+    _entries = null;
+    _loading = false;
+    _error = '请登录后查看钱包';
+  }
+
+  @override
+  Future<void> reloadCommerceIdentity() => _load();
+
   LedgerDirection _direction = LedgerDirection.income;
   WalletSummary? _wallet;
   List<LedgerEntry>? _entries;
@@ -141,7 +181,7 @@ class _WalletPageState extends State<WalletPage> {
   String? _error;
 
   CommerceRepository get _repository =>
-      AppDependencyScope.of(context).commerceRepository;
+      widget.repository ?? AppDependencyScope.of(context).commerceRepository;
 
   @override
   void didChangeDependencies() {
@@ -154,8 +194,11 @@ class _WalletPageState extends State<WalletPage> {
   Future<void> _load() async {
     setState(() {
       _loading = true;
+      _wallet = null;
+      _entries = null;
       _error = null;
     });
+    final ticket = beginCommerceRead();
     try {
       final List<Object> results = await Future.wait<Object>(<Future<Object>>[
         _repository.fetchWalletSummary(),
@@ -169,7 +212,7 @@ class _WalletPageState extends State<WalletPage> {
       final WalletSummary wallet = results[0] as WalletSummary;
       final CommercePage<LedgerEntry> page =
           results[1] as CommercePage<LedgerEntry>;
-      if (mounted) {
+      if (acceptsCommerceRead(ticket)) {
         setState(() {
           _wallet = wallet;
           _entries = page.items;
@@ -177,7 +220,7 @@ class _WalletPageState extends State<WalletPage> {
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (acceptsCommerceRead(ticket)) {
         setState(() {
           _loading = false;
           _error = _messageFor(error);
@@ -284,13 +327,16 @@ class _WalletPageState extends State<WalletPage> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  _ledgerAmountText(entry),
-                  style: TextStyle(
-                    color: entry.direction == LedgerDirection.income
-                        ? AppColors.success
-                        : AppColors.textPrimary,
-                    fontWeight: FontWeight.w800,
+                Flexible(
+                  child: Text(
+                    _ledgerAmountText(entry),
+                    textAlign: TextAlign.end,
+                    style: TextStyle(
+                      color: entry.direction == LedgerDirection.income
+                          ? AppColors.success
+                          : AppColors.textPrimary,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ],

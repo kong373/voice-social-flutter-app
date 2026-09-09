@@ -713,6 +713,7 @@ void main() {
       const String transferId = '00000000-0000-0000-0000-00000000b001';
       const String requestId = 'f3b2-gift-request-001';
       int reads = 0;
+      Map<String, Object?> receiptPrecision = {};
       final _RunningServer server = await _RunningServer.start((
         _CapturedRequest request,
       ) {
@@ -743,6 +744,7 @@ void main() {
             'source': 'WALLET',
             'giftCoinCost': 20,
             'creatorIncomeMinor': 10,
+            ...receiptPrecision,
             'charmValue': 20,
             'deliveryMode': 'FIRST_PARTY_LEDGER_COMMITTED',
             'providerInvocation': false,
@@ -772,6 +774,8 @@ void main() {
       expect(byTransfer.requestId, requestId);
       expect(byTransfer.reconciled, isTrue);
       expect(byTransfer.creatorIncomeMinor, 10);
+      expect(byTransfer.creatorIncomeCurrency, isNull);
+      expect(byTransfer.coinPrecision, isNull);
       expect(byTransfer.charmValue, 20);
 
       final GiftReceipt byRequest = await repository.fetchGiftReceipt(
@@ -780,6 +784,41 @@ void main() {
       );
       expect(byRequest.transferId, transferId);
       expect(reads, 2);
+      receiptPrecision = {
+        'creatorIncomeCurrency': 'GIFT_COIN_TENTH',
+        'coinPrecision': {
+          'currency': 'GIFT_COIN',
+          'precisionVersion': 'GIFT_COIN_TENTHS_V1',
+          'scale': 10,
+          'availableTenths': '1148',
+          'frozenTenths': '0',
+          'integer': 100,
+        },
+      };
+      final fractional = await repository.fetchGiftReceipt(
+        requestId: requestId,
+      );
+      expect(fractional.coinPrecision!.available.text, '114.8');
+      expect(fractional.creatorIncomeCurrency, 'GIFT_COIN_TENTH');
+      expect(fractional.creatorIncomeMinor, 10);
+      receiptPrecision['creatorIncomeCurrency'] = 'CASH_CNY';
+      expect(
+        (await repository.fetchGiftReceipt(
+          requestId: requestId,
+        )).creatorIncomeCurrency,
+        'CASH_CNY',
+      );
+      receiptPrecision['creatorIncomeCurrency'] = 'GIFT_COIN';
+      await expectLater(
+        repository.fetchGiftReceipt(requestId: requestId),
+        throwsA(isA<ApiException>()),
+      );
+      receiptPrecision['creatorIncomeCurrency'] = null;
+      receiptPrecision['coinPrecision'] = {'currency': 'GIFT_COIN', 'scale': 1};
+      await expectLater(
+        repository.fetchGiftReceipt(requestId: requestId),
+        throwsA(isA<ApiException>()),
+      );
     },
   );
 

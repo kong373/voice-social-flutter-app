@@ -1,13 +1,29 @@
 part of 'commerce_pages.dart';
 
 class EarningsPage extends StatefulWidget {
-  const EarningsPage({super.key});
+  const EarningsPage({this.repository, super.key});
+  @visibleForTesting
+  final CommerceRepository? repository;
 
   @override
   State<EarningsPage> createState() => _EarningsPageState();
 }
 
-class _EarningsPageState extends State<EarningsPage> {
+class _EarningsPageState extends State<EarningsPage>
+    with CommerceIdentityFence<EarningsPage> {
+  @override
+  CommerceRepository get commerceIdentityRepository =>
+      widget.repository ?? AppDependencyScope.of(context).commerceRepository;
+  @override
+  void clearCommerceIdentity() {
+    _wallet = null;
+    _income = null;
+    _error = '请登录后查看收益';
+  }
+
+  @override
+  Future<void> reloadCommerceIdentity() => _load();
+
   WalletSummary? _wallet;
   List<LedgerEntry>? _income;
   String? _error;
@@ -21,10 +37,14 @@ class _EarningsPageState extends State<EarningsPage> {
   }
 
   Future<void> _load() async {
+    setState(() {
+      _wallet = null;
+      _income = null;
+      _error = null;
+    });
+    final ticket = beginCommerceRead();
     try {
-      final CommerceRepository repository = AppDependencyScope.of(
-        context,
-      ).commerceRepository;
+      final CommerceRepository repository = commerceIdentityRepository;
       final List<Object> values = await Future.wait<Object>(<Future<Object>>[
         repository.fetchWalletSummary(),
         repository.fetchLedger(
@@ -34,7 +54,7 @@ class _EarningsPageState extends State<EarningsPage> {
           pageSize: 50,
         ),
       ]);
-      if (mounted) {
+      if (acceptsCommerceRead(ticket)) {
         setState(() {
           _wallet = values[0] as WalletSummary;
           _income = (values[1] as CommercePage<LedgerEntry>).items;
@@ -42,7 +62,7 @@ class _EarningsPageState extends State<EarningsPage> {
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (acceptsCommerceRead(ticket)) {
         setState(() => _error = _messageFor(error));
       }
     }
@@ -56,6 +76,8 @@ class _EarningsPageState extends State<EarningsPage> {
           ? _error == null
                 ? const Center(child: CircularProgressIndicator())
                 : _CommerceErrorState(message: _error!, onRetry: _load)
+          : !_wallet!.incomeEligible
+          ? const Center(child: Text('当前身份没有现金收益入口'))
           : ListView(
               padding: const EdgeInsets.all(16),
               children: <Widget>[
@@ -210,10 +232,13 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   }
 
   bool get _canApplyWithdrawal =>
-      _repository.supportsWithdrawalApplication &&
-      (_repository.pendingWithdrawal != null || _selectedPayoutAccount != null);
+      _repository.pendingWithdrawal != null ||
+      (_wallet?.canWithdraw == true &&
+          _repository.supportsWithdrawalApplication &&
+          _selectedPayoutAccount != null);
 
   String get _withdrawalBlockerMessage {
+    if (_wallet?.canWithdraw != true) return '当前身份不支持新提现申请；历史记录和原未决申请仍可恢复。';
     final String? unavailable = _payoutAccountsUnavailableMessage;
     if (unavailable != null) {
       return '$unavailable；提现申请已安全禁用，报价和历史记录仍可查看。';
@@ -266,7 +291,10 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       if (!_ownsIdentity(identity)) return;
       PayoutAccountSelection? payoutSelection;
       try {
-        payoutSelection = await _repository.fetchPayoutAccounts();
+        if ((values[0] as WalletSummary).canWithdraw &&
+            _repository.pendingWithdrawal == null) {
+          payoutSelection = await _repository.fetchPayoutAccounts();
+        }
       } on ApiException catch (error) {
         if (error.kind != ApiFailureKind.configuration &&
             error.kind != ApiFailureKind.forbidden) {
@@ -305,7 +333,10 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
 
   Future<void> _loadQuote() async {
     final identity = _repository.withdrawalIdentity;
-    if (_submitting || _repository.pendingWithdrawal != null) return;
+    if (_submitting ||
+        _repository.pendingWithdrawal != null ||
+        _wallet?.canWithdraw != true)
+      return;
     final double? amount = _enteredAmount;
     if (!_isLegalAmount(amount)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -557,7 +588,8 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                   children: <Widget>[
                     _CommerceStatusCard(
                       icon: Icons.account_balance_outlined,
-                      title: '可提现 ¥${_wallet!.cashBalance.toStringAsFixed(2)}',
+                      title:
+                          '${_wallet!.canWithdraw ? '可提现' : '历史现金余额'} ¥${_wallet!.cashBalance.toStringAsFixed(2)}',
                       description: _wallet!.bankCard == null
                           ? '尚未绑定银行卡'
                           : '${_wallet!.bankCard!.accountType} ${_wallet!.bankCard!.maskedAccount}',
@@ -567,7 +599,8 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                       const _CommerceInfoBanner(
                         text: '提交提现前必须完成实名认证并绑定银行卡。缺少条件时客户端会阻止提交。',
                       ),
-                    if (!_repository.supportsWithdrawalApplication ||
+                    if (!_wallet!.canWithdraw ||
+                        !_repository.supportsWithdrawalApplication ||
                         _payoutSelection == null ||
                         _payoutSelection!
                             .selectableAccounts
@@ -575,104 +608,108 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                       const SizedBox(height: 10),
                       _CommerceInfoBanner(text: _withdrawalBlockerMessage),
                     ],
-                    if (_payoutSelection != null &&
+                    if (_wallet!.canWithdraw &&
+                        _payoutSelection != null &&
                         _repository.supportsPayoutAccountSelection &&
                         _repository.supportsWithdrawalApplication) ...<Widget>[
                       const SizedBox(height: 10),
                       _buildPayoutAccountPicker(),
                     ],
                     const SizedBox(height: 14),
-                    _CommercePanel(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          const _CommerceSectionTitle(title: '提现申请'),
-                          const _CommerceInfoBanner(
-                            text:
-                                '最低提现 100 元，仅支持整元，余额零头保留。按北京时间自然日每天可提交一次；驳回后次日重新申请。',
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            enabled:
-                                !_submitting &&
-                                _repository.pendingWithdrawal == null,
-                            controller: _amountController,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            onChanged: (_) {
-                              if (_quote != null || _quoteError != null) {
-                                setState(() {
-                                  _quote = null;
-                                  _quotedAmount = null;
-                                  _quoteError = null;
-                                });
-                              }
-                            },
-                            decoration: InputDecoration(
-                              labelText: '提现金额',
-                              helperText: _quote == null
-                                  ? '输入整元金额后计算手续费和预计到账金额'
-                                  : '最低 ¥${(_quote!.minimumAmount < 100 ? 100 : _quote!.minimumAmount).toStringAsFixed(0)} · 手续费 ${_quote!.feeRateText}',
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          OutlinedButton.icon(
-                            onPressed:
-                                _quoteLoading ||
-                                    _submitting ||
-                                    _repository.pendingWithdrawal != null
-                                ? null
-                                : _loadQuote,
-                            icon: _quoteLoading
-                                ? const SizedBox.square(
-                                    dimension: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Icon(Icons.calculate_outlined),
-                            label: const Text('计算到账金额'),
-                          ),
-                          if (_quoteError != null) ...<Widget>[
-                            const SizedBox(height: 8),
-                            _CommerceInfoBanner(text: _quoteError!),
-                          ],
-                          if (_hasCurrentQuote) ...<Widget>[
-                            const SizedBox(height: 8),
-                            _CommerceInfoBanner(
+                    if (_wallet!.canWithdraw ||
+                        _repository.pendingWithdrawal != null)
+                      _CommercePanel(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            const _CommerceSectionTitle(title: '提现申请'),
+                            const _CommerceInfoBanner(
                               text:
-                                  '服务端报价：手续费 ¥${_quote!.feeFor(_quotedAmount!).toStringAsFixed(2)} · 预计到账 ¥${_quote!.receivedFor(_quotedAmount!).toStringAsFixed(2)}',
+                                  '财务人工审核处理，不自动打款。最低提现 100 元，仅支持整元，余额零头保留。按北京时间自然日每天可提交一次；驳回后次日重新申请。',
                             ),
-                          ],
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton(
+                            const SizedBox(height: 12),
+                            TextField(
+                              enabled:
+                                  !_submitting &&
+                                  _repository.pendingWithdrawal == null,
+                              controller: _amountController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              onChanged: (_) {
+                                if (_quote != null || _quoteError != null) {
+                                  setState(() {
+                                    _quote = null;
+                                    _quotedAmount = null;
+                                    _quoteError = null;
+                                  });
+                                }
+                              },
+                              decoration: InputDecoration(
+                                labelText: '提现金额',
+                                helperText: _quote == null
+                                    ? '输入整元金额后计算手续费和预计到账金额'
+                                    : '最低 ¥${(_quote!.minimumAmount < 100 ? 100 : _quote!.minimumAmount).toStringAsFixed(0)} · 手续费 ${_quote!.feeRateText}',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
                               onPressed:
-                                  (_repository.pendingWithdrawal != null ||
-                                          (_canApplyWithdrawal &&
-                                              _wallet!.realNameVerified &&
-                                              _wallet!.bankCard != null &&
-                                              _wallet!.cashBalance >=
-                                                  WithdrawalAmountPolicy
-                                                      .minimum)) &&
-                                      !_submitting
-                                  ? _apply
-                                  : null,
-                              child: _submitting && !_confirming
+                                  _quoteLoading ||
+                                      _submitting ||
+                                      _repository.pendingWithdrawal != null
+                                  ? null
+                                  : _loadQuote,
+                              icon: _quoteLoading
                                   ? const SizedBox.square(
-                                      dimension: 20,
+                                      dimension: 18,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
                                       ),
                                     )
-                                  : const Text('申请提现'),
+                                  : const Icon(Icons.calculate_outlined),
+                              label: const Text('计算到账金额'),
                             ),
-                          ),
-                        ],
+                            if (_quoteError != null) ...<Widget>[
+                              const SizedBox(height: 8),
+                              _CommerceInfoBanner(text: _quoteError!),
+                            ],
+                            if (_hasCurrentQuote) ...<Widget>[
+                              const SizedBox(height: 8),
+                              _CommerceInfoBanner(
+                                text:
+                                    '服务端报价：手续费 ¥${_quote!.feeFor(_quotedAmount!).toStringAsFixed(2)} · 预计到账 ¥${_quote!.receivedFor(_quotedAmount!).toStringAsFixed(2)}',
+                              ),
+                            ],
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton(
+                                onPressed:
+                                    (_repository.pendingWithdrawal != null ||
+                                            (_canApplyWithdrawal &&
+                                                _wallet!.realNameVerified &&
+                                                _wallet!.bankCard != null &&
+                                                _wallet!.cashBalance >=
+                                                    WithdrawalAmountPolicy
+                                                        .minimum)) &&
+                                        !_submitting
+                                    ? _apply
+                                    : null,
+                                child: _submitting && !_confirming
+                                    ? const SizedBox.square(
+                                        dimension: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Text('申请提现'),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                     const SizedBox(height: 24),
                     const _CommerceSectionTitle(title: '提现记录'),
                     const SizedBox(height: 8),

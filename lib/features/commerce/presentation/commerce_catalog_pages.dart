@@ -7,7 +7,24 @@ class RechargeCatalogPage extends StatefulWidget {
   State<RechargeCatalogPage> createState() => _RechargeCatalogPageState();
 }
 
-class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
+class _RechargeCatalogPageState extends State<RechargeCatalogPage>
+    with CommerceIdentityFence<RechargeCatalogPage> {
+  @override
+  CommerceRepository get commerceIdentityRepository =>
+      AppDependencyScope.of(context).commerceRepository;
+  @override
+  void clearCommerceIdentity() {
+    _wallet = null;
+    _products = null;
+    _selected = null;
+    _compliance = null;
+    _loading = false;
+    _error = '请登录后充值';
+  }
+
+  @override
+  Future<void> reloadCommerceIdentity() => _load();
+
   List<RechargeProduct>? _products;
   RechargeProduct? _selected;
   WalletSummary? _wallet;
@@ -47,6 +64,7 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
     final int currentVersion =
         int.tryParse(dependencies.environment.clientInnerVersion) ?? 1;
     final int platformType = _platform == ClientStorePlatform.ios ? 2 : 1;
+    final ticket = beginCommerceRead();
     try {
       final List<Object> result = await Future.wait<Object>(<Future<Object>>[
         _repository.fetchRechargeProducts(platform: _platform),
@@ -58,7 +76,7 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
           platformType: platformType,
         ),
       ]);
-      if (!mounted) {
+      if (!acceptsCommerceRead(ticket)) {
         return;
       }
       final List<RechargeProduct> products = result[0] as List<RechargeProduct>;
@@ -76,7 +94,7 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
         _loading = false;
       });
     } catch (error) {
-      if (mounted) {
+      if (acceptsCommerceRead(ticket)) {
         setState(() {
           _loading = false;
           _error = _messageFor(error);
@@ -91,11 +109,12 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
     if (product == null || compliance == null) {
       return;
     }
+    final ticket = beginCommerceRead();
     final RechargeEligibility eligibility = await _repository
         .checkRechargeEligibility(
           youthModeEnabled: compliance.youthModeEnabled,
         );
-    if (!mounted) {
+    if (!mounted || !acceptsCommerceRead(ticket)) {
       return;
     }
     if (!eligibility.allowed) {
@@ -113,7 +132,7 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
         ),
       ),
     );
-    if (mounted) {
+    if (mounted && acceptsCommerceRead(ticket)) {
       await _load();
     }
   }
@@ -154,9 +173,7 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                _wallet?.giftCoinBalance == null
-                                    ? '以服务端为准'
-                                    : '${_wallet!.giftCoinBalance}',
+                                _wallet?.giftCoinText ?? '以服务端为准',
                                 style: Theme.of(context).textTheme.headlineSmall
                                     ?.copyWith(color: SocialColors.textPrimary),
                               ),
@@ -666,7 +683,22 @@ class GiftCatalogPage extends StatefulWidget {
   State<GiftCatalogPage> createState() => _GiftCatalogPageState();
 }
 
-class _GiftCatalogPageState extends State<GiftCatalogPage> {
+class _GiftCatalogPageState extends State<GiftCatalogPage>
+    with CommerceIdentityFence<GiftCatalogPage> {
+  @override
+  CommerceRepository get commerceIdentityRepository =>
+      AppDependencyScope.of(context).commerceRepository;
+  @override
+  void clearCommerceIdentity() {
+    _wallet = null;
+    _gifts = null;
+    _loading = false;
+    _error = '请登录后查看礼物';
+  }
+
+  @override
+  Future<void> reloadCommerceIdentity() => _load();
+
   List<GiftCatalogItem>? _gifts;
   WalletSummary? _wallet;
   GiftCatalogCategory _category = GiftCatalogCategory.popular;
@@ -687,6 +719,7 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
       _error = null;
     });
     final AppDependencies dependencies = AppDependencyScope.of(context);
+    final ticket = beginCommerceRead();
     try {
       final List<Object> result = await Future.wait<Object>(<Future<Object>>[
         if (widget.initialGifts == null)
@@ -695,7 +728,7 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
           Future<List<GiftCatalogItem>>.value(widget.initialGifts),
         dependencies.commerceRepository.fetchWalletSummary(),
       ]);
-      if (mounted) {
+      if (acceptsCommerceRead(ticket)) {
         setState(() {
           _gifts = result[0] as List<GiftCatalogItem>;
           _wallet = result[1] as WalletSummary;
@@ -703,7 +736,7 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (acceptsCommerceRead(ticket)) {
         setState(() {
           _loading = false;
           _error = _messageFor(error);
@@ -730,7 +763,7 @@ class _GiftCatalogPageState extends State<GiftCatalogPage> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                 children: <Widget>[
-                  _GiftBalanceBanner(balance: _wallet?.giftCoinBalance),
+                  _GiftBalanceBanner(balance: _wallet?.giftCoinText),
                   const SizedBox(height: 12),
                   _CommercePanel(
                     padding: const EdgeInsets.symmetric(

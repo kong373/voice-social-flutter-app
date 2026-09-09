@@ -2,8 +2,38 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/commerce/data/mock_commerce_repository.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
+import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 
 void main() {
+  test(
+    'S07 recharge keeps fractional remainder and credits old whole units once',
+    () async {
+      final repository = MockCommerceRepository()
+        ..giftCoins = GiftCoinAmount.fromTenths('5');
+      final order = RechargeOrder(
+        orderNo: 'precise-recharge',
+        account: 'demo',
+        product: const RechargeProduct(
+          id: 'old-whole',
+          giftCoins: 100,
+          priceCny: 10,
+        ),
+        channel: PaymentChannelType.alipay,
+        state: RechargeOrderState.succeeded,
+        createdAt: DateTime.utc(2026, 9, 9),
+      );
+      repository.syncRechargeOrder(order);
+      repository.syncRechargeOrder(order);
+      expect((await repository.fetchWalletSummary()).giftCoinText, '100.5');
+      expect(
+        (await repository.fetchOrders(
+          page: 1,
+          pageSize: 10,
+        )).items.first.giftCoinAmount,
+        100,
+      );
+    },
+  );
   test(
     'youth mode locks foreground features without deleting recovery data',
     () {
@@ -59,7 +89,8 @@ void main() {
       page: 1,
       pageSize: 10,
     )).items.first;
-    expect(giftCoin.amount, 300);
+    expect(giftCoin.coinAmount!.text, '300');
+    expect(giftCoin.amount, isNull);
     expect(cash.amount, 68);
     expect(repository.supportsPaymentChannelInvocation, isFalse);
     expect(repository.refundScope, RefundScope.accountLegacy);

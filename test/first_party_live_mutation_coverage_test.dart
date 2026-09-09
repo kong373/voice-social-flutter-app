@@ -127,6 +127,12 @@ void main() {
   test('withdrawal preserves first-party authority', () async {
     final _TestServer server = await _TestServer.start((_Request request) {
       switch (request.path) {
+        case '/app-mini-api/mini/v1/wallet/overview':
+          return _Reply.ok(<String, Object?>{
+            'incomeRole': 'ANCHOR',
+            'incomeEligible': true,
+            'canWithdraw': true,
+          });
         case '/app-mini-api/mini/v1/withdrawal/accounts':
           return _Reply.ok(<String, Object?>{
             'list': <Object?>[
