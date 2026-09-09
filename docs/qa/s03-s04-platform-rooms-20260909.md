@@ -48,3 +48,23 @@ git diff --check
 ```
 
 后端实际联调、DB、设备/音频/厂商验收、全仓测试、部署全部 NOT_RUN。主流程需在集成 Backend 冻结 DTO 后进行真实绑定/撤销/权限与设备验收；此提交不宣称已上线。
+
+## 追加修复：首次 staff 闭房 memberRole=NONE
+
+主审确认 Backend 在首次访问 CLOSED 时没有 room_member 行，因此 enter 与 roomContext 合法返回 `memberRole=NONE`。560d00d 的 MEMBER/MANAGER 白名单拒绝该真实契约，原 49 PASS 不能证明首次访问场景可用。
+
+本次只修改 `lib/features/room/data/backend_room_repository.dart`：NONE 仅在 `_isStaffClosedAccess` 完整校验通过时可接受，保持原 viewer/owner、state/status、平台授权、无 session/lease、无 provider/公屏/礼物约束。OPEN 的平台角色白名单不增加 NONE；不改 Backend，不造 MEMBER/成员行，不改 owner 原闭房规则。
+
+新增 `test/platform_staff_none_contract_test.dart`，通过真实 loopback HTTP JSON 覆盖首次 NONE enter+GET 刷新、无治理/lease/RTC/IM、无显式/补偿 exit，19 类矛盾字段在 enter/context 双路径拒绝，以及合法 OPEN lease 下 NONE 拒绝、MEMBER 接受。原测试不删、不替换断言。
+
+- RED `94250` exit 1：`NONE closed staff enters and refreshes` 预期 joined 实际 failed。
+- GREEN `53599` exit 0：新增专属 23 PASS。
+- `68758` exit 0：下列 8 类 212 PASS；不是与前批结果累加的总数。
+- analyze `75034` exit 0：No issues found。`git diff --check` exit 0。
+
+```sh
+/Users/kongzheng/Documents/ny/.tooling/flutter-3.44.7/bin/flutter test --no-pub test/platform_staff_none_contract_test.dart test/platform_staff_room_test.dart test/platform_room_repository_test.dart test/platform_room_widget_test.dart test/room_closed_owner_rules_test.dart test/room_closed_owner_view_test.dart test/backend_room_authority_projection_test.dart test/backend_room_repository_contract_test.dart
+/Users/kongzheng/Documents/ny/.tooling/flutter-3.44.7/bin/flutter analyze --no-pub
+```
+
+独立追加 commit，parent560d00d，不 amend。Backend 实际联调/DB/设备/厂商/部署仍 NOT_RUN。

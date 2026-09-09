@@ -719,7 +719,7 @@ class BackendRoomRepository
         data['ownerUserId'] is! int ||
         (data['ownerUserId'] as int) <= 0 ||
         data['ownerUserId'] == userId ||
-        !const ['MEMBER', 'MANAGER'].contains(data['memberRole']) ||
+        !const ['NONE', 'MEMBER', 'MANAGER'].contains(data['memberRole']) ||
         data['realtimeMode'] != 'HTTP_STATE_ONLY' ||
         data['publicScreenEnabled'] != false ||
         data['giftCatalogAvailable'] != false ||
@@ -807,13 +807,17 @@ class BackendRoomRepository
         message: '房间生命周期授权矛盾',
       );
     }
+    // First-time CLOSED inspection has no room_member row. NONE is valid
+    // only after the complete no-session/no-provider staff view validation.
+    final bool staffClosedAccess = _isStaffClosedAccess(data, currentUserId);
     if (data['platformStaff'] == true &&
         (data['viewerUserId'] != currentUserId ||
-            !const [
-              'OWNER',
-              'MANAGER',
-              'MEMBER',
-            ].contains(data['memberRole']) ||
+            (!const [
+                  'OWNER',
+                  'MANAGER',
+                  'MEMBER',
+                ].contains(data['memberRole']) &&
+                !(data['memberRole'] == 'NONE' && staffClosedAccess)) ||
             (data['memberRole'] == 'OWNER' && ownerId != currentUserId) ||
             data['canControlRoomLifecycle'] != true ||
             data['version'] is! int ||
@@ -853,7 +857,7 @@ class BackendRoomRepository
       ownerClosedAccess: _isOwnerClosedAccess(data, currentUserId),
       platformStaff: data['platformStaff'] == true,
       closedRoomAccess:
-          _isStaffClosedAccess(data, currentUserId) ||
+          staffClosedAccess ||
           (data['closedRoomAccess'] == true &&
               _isOwnerClosedAccess(data, currentUserId)),
       canControlRoomLifecycle: data['canControlRoomLifecycle'] == true,
