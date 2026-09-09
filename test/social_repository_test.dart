@@ -1,8 +1,58 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/social/data/mock_social_repository.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 
 void main() {
+  test(
+    'nickname allowance resets at Beijing midnight rather than after 24 hours',
+    () async {
+      DateTime now = DateTime.utc(2026, 9, 9, 15, 59, 59);
+      final MockSocialRepository repository = MockSocialRepository(
+        now: () => now,
+      );
+      Future<SocialProfile> save(String name) => repository.updateMyProfile(
+        nickname: name,
+        signature: '',
+        sex: 2,
+        birthday: '',
+        city: '',
+      );
+      await save('午夜前');
+      await expectLater(save('当天第二次'), throwsA(isA<ApiException>()));
+      now = DateTime.utc(2026, 9, 9, 16);
+      expect((await save('午夜后')).user.name, '午夜后');
+      await expectLater(save('次日第二次'), throwsA(isA<ApiException>()));
+    },
+  );
+
+  test(
+    'nickname can change once daily without blocking other profile edits',
+    () async {
+      final MockSocialRepository repository = MockSocialRepository();
+      Future<SocialProfile> save(String name, String signature) =>
+          repository.updateMyProfile(
+            nickname: name,
+            signature: signature,
+            sex: 2,
+            birthday: '2000-06-18',
+            city: '武汉',
+          );
+
+      await save(' 晚星 ', '只改签名，不消耗昵称次数');
+      await save('新晚星', '第一次改名');
+      await expectLater(
+        save('第二个昵称', '此签名也不能被写入'),
+        throwsA(isA<ApiException>().having((e) => e.code, 'code', 40929)),
+      );
+      final SocialProfile preserved = await repository.fetchMyProfile();
+      expect(preserved.user.name, '新晚星');
+      expect(preserved.user.signature, '第一次改名');
+      final SocialProfile sameName = await save(' 新晚星 ', '允许继续改签名');
+      expect(sameName.user.signature, '允许继续改签名');
+    },
+  );
+
   test(
     'social relations remain scoped to the selected user and action',
     () async {

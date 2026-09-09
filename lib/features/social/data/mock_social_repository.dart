@@ -4,8 +4,9 @@ import 'package:voice_social_app/features/social/domain/social_models.dart';
 class MockSocialRepository
     with RemovedFriendRequestOperations
     implements SocialRepository {
-  MockSocialRepository()
-    : _users = <int, SocialUser>{
+  MockSocialRepository({DateTime Function()? now})
+    : _now = now ?? DateTime.now,
+      _users = <int, SocialUser>{
         10001: const SocialUser(
           userId: 10001,
           name: '晚星',
@@ -77,6 +78,8 @@ class MockSocialRepository
       };
 
   final Map<int, SocialUser> _users;
+  final DateTime Function() _now;
+  DateTime? _lastNicknameChangeDay;
   final Map<String, SupportTicket> _tickets = <String, SupportTicket>{};
   PrivacySettings _privacy = const PrivacySettings(
     onlyFollowedCanFollow: false,
@@ -146,6 +149,22 @@ class MockSocialRepository
         message: '请选择有效性别',
       );
     }
+    final bool nicknameChanged = normalizedName != _users[10001]!.name;
+    final DateTime beijingTime = _now().toUtc().add(const Duration(hours: 8));
+    final DateTime businessDay = DateTime.utc(
+      beijingTime.year,
+      beijingTime.month,
+      beijingTime.day,
+    );
+    if (nicknameChanged && _lastNicknameChangeDay == businessDay) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        code: 40929,
+        httpStatus: 409,
+        message: '昵称每天只能修改一次，请在北京时间次日再试',
+      );
+    }
+    if (nicknameChanged) _lastNicknameChangeDay = businessDay;
     _users[10001] = _users[10001]!.copyWith(
       name: normalizedName,
       signature: normalizedSignature,

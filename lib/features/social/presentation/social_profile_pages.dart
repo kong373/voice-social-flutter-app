@@ -444,7 +444,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   TextFormField(
                     controller: _nameController,
                     maxLength: 64,
-                    decoration: const InputDecoration(labelText: '昵称'),
+                    decoration: const InputDecoration(
+                      labelText: '昵称',
+                      helperText: '每天可修改一次（北京时间）',
+                    ),
                     validator: (String? value) =>
                         value == null || value.trim().isEmpty ? '请输入昵称' : null,
                   ),

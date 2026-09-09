@@ -11,6 +11,44 @@ import 'package:voice_social_app/features/social/domain/social_models.dart';
 
 void main() {
   test(
+    'profile daily nickname rejection preserves the authoritative error',
+    () async {
+      int requests = 0;
+      final server = await _startServer((request, body) async {
+        requests++;
+        expect(request.method, 'PATCH');
+        expect(request.uri.path, '/app-api/user/updateUserByUserId');
+        await _reply(
+          request,
+          status: 409,
+          code: 40929,
+          message: '昵称每天只能修改一次，请在北京时间次日再试',
+        );
+      });
+      addTearDown(() => server.close(force: true));
+      final repository = BackendSocialRepository(
+        apiClient: _client(server),
+        currentUserIdProvider: () => 10001,
+      );
+      await expectLater(
+        repository.updateMyProfile(
+          nickname: '第二次改名',
+          signature: '',
+          sex: 2,
+          birthday: '',
+          city: '',
+        ),
+        throwsA(
+          isA<ApiException>()
+              .having((e) => e.code, 'code', 40929)
+              .having((e) => e.message, 'message', '昵称每天只能修改一次，请在北京时间次日再试'),
+        ),
+      );
+      expect(requests, 1);
+    },
+  );
+
+  test(
     'support detail exposes authoritative staff timeline and closed state',
     () async {
       final server = await _startServer((request, body) async {
