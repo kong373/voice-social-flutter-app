@@ -50,6 +50,25 @@ class ImSessionCoordinator extends ChangeNotifier {
   int _generation = 0;
   bool _providerOffline = false;
   bool _disposed = false;
+  bool _accessBlocked = false;
+  Future<void>? _accessCleanup;
+
+  /// App access gates suspend renewal/provider events without ending HTTP auth.
+  Future<void> setAccessBlocked(bool blocked) {
+    if (_disposed || _accessBlocked == blocked) {
+      return _accessCleanup ?? Future<void>.value();
+    }
+    _accessBlocked = blocked;
+    if (!blocked) return _accessCleanup ?? Future<void>.value();
+    _ensureFlight = null;
+    _ensureFlightUserId = null;
+    late final Future<void> cleanup;
+    cleanup = logout().catchError((Object _) {}).whenComplete(() {
+      if (identical(_accessCleanup, cleanup)) _accessCleanup = null;
+    });
+    _accessCleanup = cleanup;
+    return cleanup;
+  }
 
   ImSessionAdapter get adapter => _adapter;
 
@@ -78,6 +97,16 @@ class ImSessionCoordinator extends ChangeNotifier {
   /// authenticated first-party session.
   Future<void> ensureAuthenticated(AuthSession session) {
     _ensureNotDisposed();
+    if (_accessBlocked) return Future<void>.value();
+    final cleanup = _accessCleanup;
+    if (cleanup != null) {
+      final generation = _generation;
+      return cleanup.then((_) {
+        if (!_disposed && !_accessBlocked && generation == _generation) {
+          return ensureAuthenticated(session);
+        }
+      });
+    }
     final String userId = ImSessionCredentials.userIdForPlatformUserId(
       session.userId,
     );

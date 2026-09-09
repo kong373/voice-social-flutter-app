@@ -9,6 +9,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/app/app_gate.dart';
+import 'package:voice_social_app/app/app.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/debug/qa_console/qa_fixtures.dart';
 
@@ -75,16 +76,7 @@ Future<AppDependencies> launchAndAuthenticate(WidgetTester tester) async {
   // still enter through the real consent/login/session gate. Mount AppGate
   // explicitly so ENABLE_QA_CONSOLE=true does not replace the business root
   // under test with QaConsoleHost.
-  await tester.pumpWidget(
-    AppDependencyScope(
-      dependencies: dependencies,
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.dark(),
-        home: AppGate(dependencies: dependencies),
-      ),
-    ),
-  );
+  await tester.pumpWidget(_FlowAuthRoot(dependencies: dependencies));
   await tester.pumpAndSettle();
 
   await acceptConsentIfVisible(tester);
@@ -110,6 +102,47 @@ Future<AppDependencies> launchAndAuthenticate(WidgetTester tester) async {
   }
   expect(find.text('此刻适合你的房间'), findsOneWidget);
   return dependencies;
+}
+
+/// Exercise production route disposal while bypassing only the debug console.
+class _FlowAuthRoot extends StatefulWidget {
+  const _FlowAuthRoot({required this.dependencies});
+  final AppDependencies dependencies;
+
+  @override
+  State<_FlowAuthRoot> createState() => _FlowAuthRootState();
+}
+
+class _FlowAuthRootState extends State<_FlowAuthRoot> {
+  final _gateKey = GlobalKey();
+  int _revision = 0;
+
+  @override
+  Widget build(BuildContext context) => AppDependencyScope(
+    dependencies: widget.dependencies,
+    child: AuthNavigationBoundary(
+      controller: widget.dependencies.authController,
+      navigationRevision: _revision,
+      builder: (key) => MaterialApp(
+        navigatorKey: key,
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.dark(),
+        home: AppGate(
+          key: _gateKey,
+          dependencies: widget.dependencies,
+          onAccessBlocked: () {
+            if (mounted) setState(() => _revision++);
+          },
+        ),
+      ),
+    ),
+  );
+
+  @override
+  void dispose() {
+    widget.dependencies.dispose();
+    super.dispose();
+  }
 }
 
 /// Accepts the current versioned app-owned agreement in an integration run.

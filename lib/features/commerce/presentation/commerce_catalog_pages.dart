@@ -174,7 +174,7 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage> {
                   const SizedBox(height: 12),
                   if (_compliance?.youthModeEnabled == true)
                     const _CommerceInfoBanner(
-                      text: '青少年模式已开启，只限制创建新的充值订单；进房、消息、社交、钱包查询和其他正常功能不受影响。',
+                      text: '青少年模式已开启，请先使用自己设置的 4 位密码解锁后再操作 App。',
                     ),
                   const SizedBox(height: 18),
                   const _CommerceSectionTitle(title: '选择充值档位'),

@@ -200,47 +200,34 @@ void main() {
       );
       _dismissKeyboard();
       await _scrollToAndTap(tester, find.text('开启青少年模式'));
-      expect(find.text('青少年模式已开启'), findsOneWidget);
-      await _pageBackTo(tester, find.text('账号与安全'));
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      await pumpUntilVisible(tester, find.text('账号与安全'));
-
-      // The recharge page reads the same compliance repository. Its primary
-      // action must be disabled while wallet queries remain available.
-      await _scrollToAndTap(tester, find.text('钱包、订单与收益'), scrollDelta: -180);
-      await pumpUntilVisible(tester, find.text('钱包与商业化'));
-      await _scrollToAndTap(tester, find.text('充值商品目录'));
-      await pumpUntilVisible(
-        tester,
-        find.text('青少年模式已开启，只限制创建新的充值订单；进房、消息、社交、钱包查询和其他正常功能不受影响。'),
-      );
-      await _scrollToFinder(tester, find.text('选择支付方式'));
-      final FilledButton rechargeButton = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, '选择支付方式'),
-      );
-      expect(rechargeButton.onPressed, isNull);
-
-      await _pageBackTo(tester, find.text('钱包与商业化'));
-      await _scrollToAndTap(tester, find.text('钱包与流水'), scrollDelta: -180);
-      await pumpUntilVisible(tester, find.text('普通礼物收益'));
-      expect(find.text('礼物币余额'), findsOneWidget);
-      expect(find.text('收入'), findsOneWidget);
-      expect(find.text('普通礼物收益'), findsOneWidget);
-
-      // Re-open the blocked recharge surface so the single FLOW-011 capture
-      // records the restriction after all "other functions" assertions ran.
-      await _pageBackTo(tester, find.text('钱包与商业化'));
-      await _scrollToAndTap(tester, find.text('充值商品目录'));
-      await pumpUntilVisible(
-        tester,
-        find.text('青少年模式已开启，只限制创建新的充值订单；进房、消息、社交、钱包查询和其他正常功能不受影响。'),
-      );
+      // REMOVED_BY_PRODUCT S20/Q02-04: navigating other features while locked.
+      // The settings route is replaced, not popped; unlock with the own PIN.
+      await pumpUntilVisible(tester, find.text('青少年模式已锁定'));
+      expect(find.text('首页'), findsNothing);
+      await tester.enterText(find.byKey(const Key('youth-unlock-pin')), '1111');
+      _dismissKeyboard();
+      await _scrollToAndTap(tester, find.text('解锁青少年模式'));
+      expect(find.text('青少年模式已锁定'), findsOneWidget);
       await captureQaScreenshot(
         tester,
         binding,
         'FLOW-011-account-compliance-boundaries-$qaAvdId',
       );
+      await tester.enterText(find.byKey(const Key('youth-unlock-pin')), '1234');
+      _dismissKeyboard();
+      await _scrollToAndTap(tester, find.text('解锁青少年模式'));
+      await pumpUntilVisible(tester, find.text('我的'));
+      await tester.tap(find.text('我的'));
+      await tester.pumpAndSettle();
+
+      // Financial history remains available after authoritative unlock.
+      await _scrollToAndTap(tester, find.text('钱包、订单与收益'), scrollDelta: -180);
+      await pumpUntilVisible(tester, find.text('钱包与商业化'));
+      await _scrollToAndTap(tester, find.text('钱包与流水'), scrollDelta: -180);
+      await pumpUntilVisible(tester, find.text('普通礼物收益'));
+      expect(find.text('礼物币余额'), findsOneWidget);
+      expect(find.text('收入'), findsOneWidget);
+      expect(find.text('普通礼物收益'), findsOneWidget);
     },
   );
 }

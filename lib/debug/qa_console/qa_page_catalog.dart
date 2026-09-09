@@ -224,7 +224,7 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
     widgetClass: 'YouthModePage',
     sourcePath:
         'lib/features/account/compliance/presentation/account_status_pages.dart',
-    userEntry: '我的 → 账号与安全 → 青少年模式',
+    userEntry: '我的 → 账号与安全 → 青少年模式；开启后全局固定锁定页',
     requiredStates: const <QaPageState>[
       QaPageState.normal,
       QaPageState.restricted,

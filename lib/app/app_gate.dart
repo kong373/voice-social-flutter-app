@@ -13,6 +13,7 @@ import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/account/presentation/account_oxygen_components.dart';
 import 'package:voice_social_app/features/account/presentation/account_access_gate_page.dart';
 import 'package:voice_social_app/features/account/presentation/consent_page.dart';
+import 'package:voice_social_app/features/account/compliance/presentation/youth_mode_lock_page.dart';
 import 'package:voice_social_app/features/account/presentation/login_page.dart';
 import 'package:voice_social_app/features/account/presentation/registration_page.dart';
 import 'package:voice_social_app/features/shell/main_shell.dart';
@@ -42,11 +43,16 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
   bool _appleRecoveryInFlight = false;
   int _appleRecoveryAttempts = 0;
   Timer? _appleRecoveryRetry;
+  int _preflightGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.dependencies.setProtectedAccessBlocked(true);
+    widget.dependencies.complianceRevision.addListener(
+      _handleComplianceChanged,
+    );
     _controller = widget.dependencies.authController
       ..addListener(_handleAuthChanged);
     _liveReadinessService = LiveBackendReadinessService(
@@ -67,6 +73,9 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.dependencies.complianceRevision.removeListener(
+      _handleComplianceChanged,
+    );
     _appleRecoveryRetry?.cancel();
     _controller.removeListener(_handleAuthChanged);
     super.dispose();
@@ -75,11 +84,30 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _startLivePreflightIfNeeded(force: true, preserveVerified: true);
       _appleIapRecoverySession = null;
       _appleRecoveryAttempts = 0;
       _appleRecoveryRetry?.cancel();
       unawaited(_attemptAppleRecovery());
     }
+  }
+
+  void _handleComplianceChanged() {
+    if (!mounted || _controller.stage != AuthFlowStage.signedIn) return;
+    final enabled = widget.dependencies.youthModeResult;
+    if (enabled == true && _liveCompliance != null) {
+      setState(
+        () =>
+            _liveCompliance = _liveCompliance!.copyWith(youthModeEnabled: true),
+      );
+    }
+    if (enabled != false) {
+      widget.dependencies.setProtectedAccessBlocked(true);
+      widget.onAccessBlocked?.call();
+    }
+    // A successful disable still requires a fresh status before exposing the
+    // shell. On failure an already known lock remains visible.
+    _startLivePreflightIfNeeded(force: true, preserveVerified: enabled != null);
   }
 
   Future<void> _attemptAppleRecovery() async {
@@ -132,6 +160,7 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
         _liveCompliance = null;
         _livePreflightError = null;
         _versionDeferred = false;
+        widget.dependencies.setProtectedAccessBlocked(true);
       }
       _preflightSession = null;
     }
@@ -169,11 +198,15 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
     _livePreflightError = null;
     _versionDeferred = false;
     _preflightSession = null;
+    _preflightGeneration++;
+    widget.dependencies.setProtectedAccessBlocked(true);
   }
 
-  void _startLivePreflightIfNeeded({bool force = false}) {
-    if (!widget.dependencies.environment.isLive ||
-        _controller.stage != AuthFlowStage.signedIn) {
+  void _startLivePreflightIfNeeded({
+    bool force = false,
+    bool preserveVerified = false,
+  }) {
+    if (_controller.stage != AuthFlowStage.signedIn) {
       return;
     }
     final AuthSession? session = _controller.session;
@@ -181,9 +214,9 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
       return;
     }
     if (force) {
-      _liveCompliance = null;
+      if (!preserveVerified) _liveCompliance = null;
       _livePreflightError = null;
-      _versionDeferred = false;
+      if (!preserveVerified) _versionDeferred = false;
       _preflightSession = null;
     }
     if ((_livePreflight != null && identical(_preflightSession, session)) ||
@@ -191,7 +224,10 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
       return;
     }
     _preflightSession = session;
-    final Future<void> request = _runLivePreflight(session);
+    final Future<void> request = _runLivePreflight(
+      session,
+      ++_preflightGeneration,
+    );
     _livePreflight = request;
     unawaited(
       request.whenComplete(() {
@@ -208,7 +244,7 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _runLivePreflight(AuthSession session) async {
+  Future<void> _runLivePreflight(AuthSession session, int generation) async {
     try {
       final AccountComplianceSnapshot snapshot = await widget
           .dependencies
@@ -221,7 +257,8 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
           );
       if (!mounted ||
           _controller.stage != AuthFlowStage.signedIn ||
-          !identical(_controller.session, session)) {
+          !identical(_controller.session, session) ||
+          generation != _preflightGeneration) {
         return;
       }
       setState(() {
@@ -240,11 +277,12 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
     } catch (error) {
       if (!mounted ||
           _controller.stage != AuthFlowStage.signedIn ||
-          !identical(_controller.session, session)) {
+          !identical(_controller.session, session) ||
+          generation != _preflightGeneration) {
         return;
       }
       setState(() {
-        _liveCompliance = null;
+        if (_liveCompliance?.youthModeEnabled != true) _liveCompliance = null;
         _livePreflightError = error is ApiException
             ? error.message
             : '账号状态检查失败，请重试。';
@@ -256,19 +294,22 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
   bool get _liveEntryBlocked {
     final snapshot = _liveCompliance;
     if (snapshot == null) return true;
-    return snapshot.restriction.isRestricted ||
+    return snapshot.youthModeEnabled ||
+        snapshot.restriction.isRestricted ||
         !snapshot.accountUsable ||
         (snapshot.versionInfo.hasUpdate &&
-            (snapshot.versionInfo.forceUpdate || !_versionDeferred));
+            (snapshot.versionInfo.forceUpdate ||
+                (widget.dependencies.environment.isLive && !_versionDeferred)));
   }
 
   void _revealBlockingLiveGate(AuthSession checkedSession) {
     if (!mounted ||
         _controller.stage != AuthFlowStage.signedIn ||
-        !identical(_controller.session, checkedSession) ||
-        !_liveEntryBlocked) {
+        !identical(_controller.session, checkedSession)) {
       return;
     }
+    widget.dependencies.setProtectedAccessBlocked(_liveEntryBlocked);
+    if (!_liveEntryBlocked) return;
     // Keep this checked gate state via its stable key, but replace the route
     // owner in the same next build. Old pages/dialogs are disposed without a
     // pop-animation window in which a delayed request could push again.
@@ -303,7 +344,10 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
     }
     final VersionUpdateInfo versionInfo = snapshot.versionInfo;
     if (versionInfo.hasUpdate &&
-        (versionInfo.forceUpdate || !_versionDeferred)) {
+        (versionInfo.forceUpdate ||
+            (!snapshot.youthModeEnabled &&
+                widget.dependencies.environment.isLive &&
+                !_versionDeferred))) {
       return AppVersionGatePage(
         key: const Key('live-version-policy'),
         info: versionInfo,
@@ -313,9 +357,20 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
         },
         onLater: versionInfo.forceUpdate
             ? null
-            : () => setState(() => _versionDeferred = true),
+            : () {
+                setState(() => _versionDeferred = true);
+                _revealBlockingLiveGate(session);
+              },
         onSignOut: _controller.signOut,
         openPackageUrl: widget.dependencies.externalUrlOpener.open,
+      );
+    }
+    if (snapshot.youthModeEnabled) {
+      return YouthModeLockPage(
+        key: const Key('youth-mode-lock'),
+        onUnlock: (pin) =>
+            widget.dependencies.changeYouthMode(enabled: false, pin: pin),
+        statusMessage: _livePreflightError,
       );
     }
     return MainShell(
@@ -352,13 +407,7 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
         onRetry: _controller.retrySessionRecovery,
         onSignOut: _controller.discardSessionAndSignOut,
       ),
-      AuthFlowStage.signedIn =>
-        widget.dependencies.environment.isLive
-            ? _buildLiveEntryGate()
-            : MainShell(
-                dependencies: widget.dependencies,
-                onSignOut: _controller.signOut,
-              ),
+      AuthFlowStage.signedIn => _buildLiveEntryGate(),
     };
   }
 }

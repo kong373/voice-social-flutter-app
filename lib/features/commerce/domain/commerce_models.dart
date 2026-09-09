@@ -384,7 +384,10 @@ class YouthModeCommercePolicy {
   bool canCreateRechargeOrder({required bool youthModeEnabled}) =>
       !youthModeEnabled;
 
-  bool canUseNonRechargeFeature({required bool youthModeEnabled}) => true;
+  // Foreground business access only. Durable settled-order recovery remains
+  // a separate background reconciliation responsibility.
+  bool canUseNonRechargeFeature({required bool youthModeEnabled}) =>
+      !youthModeEnabled;
 
   String rechargeRestrictionReason({required bool youthModeEnabled}) =>
       youthModeEnabled ? '青少年模式已开启，暂不能创建新的充值订单' : '';

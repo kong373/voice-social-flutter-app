@@ -10,6 +10,7 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
 import 'package:voice_social_app/features/account/compliance/presentation/account_compliance_error.dart';
 import 'package:voice_social_app/features/account/presentation/account_oxygen_components.dart';
+import 'package:voice_social_app/features/account/compliance/presentation/youth_mode_lock_page.dart';
 
 class AccountRestrictionPage extends StatefulWidget {
   const AccountRestrictionPage({
@@ -955,14 +956,12 @@ class _YouthModePageState extends State<YouthModePage> {
     }
     setState(() => _busy = true);
     try {
-      await AppDependencyScope.of(
-        context,
-      ).accountComplianceRepository.setYouthMode(
+      await AppDependencyScope.of(context).changeYouthMode(
         enabled: !_snapshot!.youthModeEnabled,
         pin: _pinController.text,
       );
-      _pinController.clear();
       if (mounted) {
+        _pinController.clear();
         await _load();
       }
     } catch (error) {
@@ -983,6 +982,16 @@ class _YouthModePageState extends State<YouthModePage> {
   @override
   Widget build(BuildContext context) {
     final AccountComplianceSnapshot? snapshot = _snapshot;
+    if (snapshot?.youthModeEnabled == true) {
+      return YouthModeLockPage(
+        onUnlock: (pin) async {
+          await AppDependencyScope.of(
+            context,
+          ).changeYouthMode(enabled: false, pin: pin);
+          if (mounted) await _load();
+        },
+      );
+    }
     return SocialPageScaffold(
       appBar: AppBar(title: const Text('青少年模式')),
       body: snapshot == null
@@ -996,7 +1005,7 @@ class _YouthModePageState extends State<YouthModePage> {
                 AccountStatusHero(
                   icon: Icons.child_care_rounded,
                   title: snapshot.youthModeEnabled ? '青少年模式已开启' : '青少年模式未开启',
-                  description: '只限制创建新的充值订单，不影响进房、消息和社交。',
+                  description: '设置 4 位数字密码后进入锁定页面，解锁前无法使用 App 其他功能。',
                   tone: snapshot.youthModeEnabled
                       ? AppColors.success
                       : const Color(0xFF5D84E8),
@@ -1005,7 +1014,7 @@ class _YouthModePageState extends State<YouthModePage> {
                 const SizedBox(height: 14),
                 const AccountNoticeStrip(
                   icon: Icons.info_outline_rounded,
-                  text: '钱包查询、订单查询、退款、进房、消息和其他正常社交能力不被禁用。',
+                  text: '请牢记自己设置的密码。没有忘记密码或找回入口。',
                   tone: AccountOxygenColors.cyan,
                 ),
                 const SizedBox(height: 18),

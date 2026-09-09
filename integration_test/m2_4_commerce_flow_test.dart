@@ -330,7 +330,9 @@ void main() {
     },
   );
 
-  testWidgets('youth mode blocks only creation of a new recharge order', (
+  // REMOVED_BY_PRODUCT (S20/Q02-04): other foreground features remain usable
+  // while youth mode is enabled. Keep the independent recharge guard below.
+  testWidgets('recharge guard remains fail closed under global youth lock', (
     WidgetTester tester,
   ) async {
     await pumpQaPage(
@@ -347,9 +349,6 @@ void main() {
     await tester.tap(find.text('确认提交'));
     await tester.pumpAndSettle();
     expect(find.text('青少年模式已开启，暂不能创建新的充值订单'), findsOneWidget);
-
-    await pumpQaPage(tester, const WalletPage());
-    expect(find.text('礼物币余额'), findsWidgets);
   });
 
   testWidgets('ordinary gift catalog excludes all retired commerce features', (

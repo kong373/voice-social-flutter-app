@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/core/storage/key_value_store.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
@@ -523,6 +524,95 @@ class AppDependencies {
   final RoomAudioService roomAudioService;
   final ExternalUrlOpener externalUrlOpener;
 
+  final ValueNotifier<int> complianceRevision = ValueNotifier<int>(0);
+  bool? _youthModeResult;
+  int? _youthResultIdentity;
+  bool _disposed = false;
+  bool _protectedAccessBlocked = false;
+  final List<WeakReference<RoomController>> _roomControllers = [];
+
+  bool? get youthModeResult =>
+      _youthResultIdentity == sessionManager.identityGeneration
+      ? _youthModeResult
+      : null;
+
+  /// Only a matching first-party result may release the youth lock. No PIN
+  /// is retained here; stale responses never notify a different identity.
+  Future<void> changeYouthMode({
+    required bool enabled,
+    required String pin,
+  }) async {
+    if (_disposed || sessionManager.session == null)
+      throw StateError('登录状态已变化');
+    if (!RegExp(r'^[0-9]{4}$').hasMatch(pin)) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '请输入 4 位数字密码',
+      );
+    }
+    final identity = sessionManager.identityGeneration;
+    final userId = sessionManager.session?.userId;
+    bool current() =>
+        !_disposed &&
+        identity == sessionManager.identityGeneration &&
+        userId == sessionManager.session?.userId;
+    try {
+      final result = await accountComplianceRepository.setYouthMode(
+        enabled: enabled,
+        pin: pin,
+      );
+      if (!current()) throw StateError('登录状态已变化');
+      if (result != enabled) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '青少年模式状态未确认，请重试',
+        );
+      }
+      _youthModeResult = result;
+      _youthResultIdentity = identity;
+      complianceRevision.value++;
+    } catch (_) {
+      // An enable response may be lost after a committed write. Recheck the
+      // gate before returning to business; failed unlocks keep the lock.
+      if (enabled && current()) {
+        _youthModeResult = null;
+        _youthResultIdentity = identity;
+        complianceRevision.value++;
+      }
+      rethrow;
+    }
+  }
+
+  void setProtectedAccessBlocked(bool blocked) {
+    if (_disposed || _protectedAccessBlocked == blocked) return;
+    _protectedAccessBlocked = blocked;
+    final cleanup = imSessionCoordinator.setAccessBlocked(blocked);
+    if (blocked) {
+      for (final reference in _roomControllers) {
+        reference.target?.dispose();
+      }
+      _roomControllers.clear();
+      unawaited(
+        tencentImAvChatRoomCoordinator.leave().catchError((Object _) {}),
+      );
+    } else {
+      final identity = sessionManager.identityGeneration;
+      unawaited(
+        cleanup
+            .then((_) async {
+              final session = sessionManager.session;
+              if (!_disposed &&
+                  !_protectedAccessBlocked &&
+                  session != null &&
+                  identity == sessionManager.identityGeneration) {
+                await imSessionCoordinator.ensureAuthenticated(session);
+              }
+            })
+            .catchError((Object _) {}),
+      );
+    }
+  }
+
   /// Replays StoreKit's durable unfinished queue only after first-party
   /// authentication is active. Failures remain recoverable and must not block
   /// the signed-in app shell.
@@ -550,6 +640,13 @@ class AppDependencies {
   /// alive after a widget test would make Flutter report a pending timer even
   /// though the visible tree has been disposed.
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    complianceRevision.dispose();
+    for (final reference in _roomControllers) {
+      reference.target?.dispose();
+    }
+    _roomControllers.clear();
     final repository = roomRepository;
     if (repository is BackendRoomRepository) {
       repository.leaseBinding.clear(repository.leaseBinding.generation);
@@ -594,11 +691,12 @@ class AppDependencies {
     required String roomId,
     required String title,
   }) {
+    if (_protectedAccessBlocked) throw StateError('App 当前已锁定，不能创建房间会话');
     final session = sessionManager.session;
     if (session == null && environment.isLive) {
       throw StateError('用户未登录，不能创建房间会话');
     }
-    return RoomController(
+    final controller = RoomController(
       roomId: roomId,
       title: title,
       currentUserId: session?.userId ?? 10001,
@@ -618,5 +716,8 @@ class AppDependencies {
           : null,
       lifecycleBinding: WidgetsBinding.instance,
     );
+    _roomControllers.removeWhere((reference) => reference.target == null);
+    _roomControllers.add(WeakReference(controller));
+    return controller;
   }
 }

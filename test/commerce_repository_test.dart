@@ -4,17 +4,21 @@ import 'package:voice_social_app/features/commerce/data/mock_commerce_repository
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 
 void main() {
-  test('youth mode only blocks creation of new recharge orders', () {
-    const YouthModeCommercePolicy policy = YouthModeCommercePolicy();
+  test(
+    'youth mode locks foreground features without deleting recovery data',
+    () {
+      const YouthModeCommercePolicy policy = YouthModeCommercePolicy();
 
-    expect(policy.canCreateRechargeOrder(youthModeEnabled: true), isFalse);
-    expect(policy.canCreateRechargeOrder(youthModeEnabled: false), isTrue);
-    expect(policy.canUseNonRechargeFeature(youthModeEnabled: true), isTrue);
-    expect(
-      policy.rechargeRestrictionReason(youthModeEnabled: true),
-      contains('不能创建新的充值订单'),
-    );
-  });
+      expect(policy.canCreateRechargeOrder(youthModeEnabled: true), isFalse);
+      expect(policy.canCreateRechargeOrder(youthModeEnabled: false), isTrue);
+      expect(policy.canUseNonRechargeFeature(youthModeEnabled: true), isFalse);
+      expect(policy.canUseNonRechargeFeature(youthModeEnabled: false), isTrue);
+      expect(
+        policy.rechargeRestrictionReason(youthModeEnabled: true),
+        contains('不能创建新的充值订单'),
+      );
+    },
+  );
 
   test('wallet ledger excludes retired game and gift subtypes', () async {
     final MockCommerceRepository repository = MockCommerceRepository();
