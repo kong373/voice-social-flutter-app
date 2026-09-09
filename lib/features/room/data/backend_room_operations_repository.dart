@@ -721,7 +721,7 @@ class BackendRoomOperationsRepository
     required int backendMicIndex,
   }) async {
     final id = _requiredIdentifier(roomId, '房间 ID');
-    if (userId <= 0 || backendMicIndex < 1 || backendMicIndex > 8) {
+    if (userId <= 0 || backendMicIndex < 1 || backendMicIndex > 9) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
         message: '安排上麦参数无效',
@@ -945,7 +945,7 @@ class BackendRoomOperationsRepository
     required int seatNumber,
   }) async {
     final String normalizedRoomId = _requiredIdentifier(roomId, '房间 ID');
-    if (userId <= 0 || seatNumber < 1 || seatNumber > 8) {
+    if (userId <= 0 || seatNumber < 2 || seatNumber > 9) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
         message: '上麦申请成员或麦位无效',
@@ -1136,7 +1136,7 @@ class BackendRoomOperationsRepository
     required int seatNumber,
   }) async {
     final String normalizedRoomId = _requiredIdentifier(roomId, '房间 ID');
-    if (userId <= 0 || seatNumber < 1 || seatNumber > 8) {
+    if (userId <= 0 || seatNumber < 1 || seatNumber > 9) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
         message: '邀请成员或麦位无效',
@@ -1277,10 +1277,10 @@ class BackendRoomOperationsRepository
       );
     }
     final int seatNumber = _requiredStrictInt(data, 'seatNumber');
-    if (seatNumber < 1 || seatNumber > 8) {
+    if (seatNumber < 1 || seatNumber > 9) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
-        message: '上麦申请 seatNumber 超出 1 至 8',
+        message: '上麦申请 seatNumber 超出 1 至 9',
       );
     }
     final String statusValue = _requiredStrictString(data, 'status');
@@ -1369,7 +1369,7 @@ class BackendRoomOperationsRepository
     };
     final int memberSeatNumber = _requiredStrictInt(memberData, 'seatNumber');
     if (memberSeatNumber < 0 ||
-        memberSeatNumber > 8 ||
+        memberSeatNumber > 9 ||
         (presence == RoomMemberPresence.onMic && memberSeatNumber < 1) ||
         (presence == RoomMemberPresence.listener && memberSeatNumber != 0)) {
       throw const ApiException(

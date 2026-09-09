@@ -12,6 +12,37 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 
 void main() {
+  test(
+    'S02 rejects special-seat applications before HTTP and accepts ninth assignment',
+    () async {
+      final server = await _RunningServer.start(
+        (request) => const _Reply(
+          data: {
+            'roomId': '9527',
+            'userId': 10002,
+            'seatNumber': 9,
+            'occupied': true,
+          },
+        ),
+      );
+      addTearDown(server.close);
+      final repo = BackendRoomOperationsRepository(
+        apiClient: server.client,
+        leaseBinding: admittedRoomFixture(userId: 10002),
+      );
+      await expectLater(
+        repo.submitMicRequest(roomId: '9527', userId: 10002, seatNumber: 1),
+        throwsA(isA<ApiException>()),
+      );
+      expect(server.requests, isEmpty);
+      await repo.assignUserToMic(
+        roomId: '9527',
+        userId: 10002,
+        backendMicIndex: 9,
+      );
+      expect(server.requests.single.body, containsPair('seatNumber', 9));
+    },
+  );
   test('role kick unban require actor lease before sending', () async {
     final server = await _RunningServer.start((_) => const _Reply());
     addTearDown(server.close);

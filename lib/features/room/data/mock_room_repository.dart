@@ -111,6 +111,11 @@ class MockRoomRepository implements RoomRepository {
           userName: '暖光',
           avatarUrl: 'assets/runtime/avatar-rose.png',
         ),
+        const MicSeat(
+          number: 9,
+          backendIndex: 9,
+          state: MicSeatState.available,
+        ),
       ],
       rtc: RtcCredentials(
         solution: RtcSolution.agora,
@@ -149,7 +154,9 @@ class MockRoomRepository implements RoomRepository {
     final RoomSnapshot snapshot = _requireSnapshot();
     final int index = snapshot.seats.indexWhere(
       (MicSeat seat) =>
-          seat.backendIndex == backendMicIndex && seat.isAvailable,
+          seat.backendIndex == backendMicIndex &&
+          seat.isAvailable &&
+          seat.canUse(snapshot.role),
     );
     if (index < 0) {
       throw const ApiException(

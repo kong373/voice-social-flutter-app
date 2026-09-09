@@ -58,7 +58,7 @@ void main() {
   });
 
   test(
-    'manager keeps eight seats and supports the direct mic core flow',
+    'manager keeps nine seats and supports the direct mic core flow',
     () async {
       final MockRtcAdapter rtc = MockRtcAdapter();
       final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
@@ -77,12 +77,12 @@ void main() {
         await realtime.dispose();
       });
 
-      expect(controller.seats, hasLength(8));
+      expect(controller.seats, hasLength(9));
       expect(controller.status, RoomSessionStatus.idle);
 
       await controller.join();
       expect(controller.status, RoomSessionStatus.joined);
-      expect(controller.seats, hasLength(8));
+      expect(controller.seats, hasLength(9));
       expect(controller.role, RoomRole.moderator);
       expect(rtc.joined, isTrue);
 

@@ -137,7 +137,7 @@ void main() {
     );
     await enter(harness.repository);
     final pending = expectLater(
-      operations.submitMicRequest(roomId: '9527', userId: 10002, seatNumber: 1),
+      operations.submitMicRequest(roomId: '9527', userId: 10002, seatNumber: 2),
       throwsA(isA<ApiException>()),
     );
     await started.future;
@@ -483,7 +483,7 @@ void main() {
       topic: const RoomTopic(title: '', content: 'new', version: 1),
     );
     await expectLater(
-      operations.submitMicRequest(roomId: '9527', userId: 10002, seatNumber: 1),
+      operations.submitMicRequest(roomId: '9527', userId: 10002, seatNumber: 2),
       throwsA(isA<ApiException>()),
     );
   });

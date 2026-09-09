@@ -543,7 +543,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
             children: <Widget>[
               Expanded(
                 child: Text(
-                  '${seat.number} 号麦',
+                  seat.isSpecial ? '1 号特殊麦 · 房主/房管' : '${seat.number} 号麦',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium,
@@ -890,7 +890,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
 
   Future<void> _assignToMic(RoomMember member) async {
     final List<MicSeat> available = _seats
-        .where((MicSeat seat) => seat.isAvailable)
+        .where((MicSeat seat) => seat.isAvailable && seat.canUse(member.role))
         .toList(growable: false);
     if (available.isEmpty) {
       _showMessage('当前没有可安排的空麦位');

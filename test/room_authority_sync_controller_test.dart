@@ -31,6 +31,24 @@ void _roomTest(String name, Future<void> Function(WidgetTester) body) {
 }
 
 void main() {
+  for (final role in [
+    RoomRole.owner,
+    RoomRole.moderator,
+    RoomRole.listener,
+    RoomRole.platformModerator,
+  ]) {
+    _roomTest('S02 special seat accepts only owner and room moderator $role', (
+      tester,
+    ) async {
+      final h = _Harness();
+      h.repo.state = h.repo.state.copyWith(role: role);
+      await h.controller.join();
+      final permitted = role == RoomRole.owner || role == RoomRole.moderator;
+      expect(await h.controller.requestMic(1), permitted);
+      expect(h.repo.writes, permitted ? 1 : 0);
+      if (!permitted) expect(h.controller.micRequests, isEmpty);
+    });
+  }
   _roomTest('S05 offline authority retains seat and revokes publication', (
     tester,
   ) async {

@@ -14,6 +14,55 @@ import 'package:voice_social_app/features/room/infrastructure/room_realtime_gate
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
 void main() {
+  testWidgets(
+    'S02 nine-seat stage and ordinary picker preserve ninth, exclude first',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(375, 667));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final realtime = MockRoomRealtimeGateway();
+      final controller = RoomController(
+        roomId: '9527',
+        title: '九麦',
+        currentUserId: 10001,
+        accessToken: 'test',
+        repository: _NineEmptySeatsRepository(),
+        rtcAdapter: const SnapshotOnlyRtcAdapter(),
+        realtimeGateway: realtime,
+        roomOperationsRepository: MockRoomOperationsRepository(),
+      );
+      addTearDown(() async {
+        controller.dispose();
+        await realtime.dispose();
+      });
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: AppDependencies.mock(),
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: VideoRuntimeRoomPage(controller: controller),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('1 号特殊麦 · '), findsOneWidget);
+      await tester.drag(
+        find.byKey(const Key('video-room-seat-grid')),
+        const Offset(0, -160),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('9 号麦').hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('上麦'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('approval-mic-seat-1')), findsNothing);
+      expect(find.byKey(const Key('approval-mic-seat-9')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('approval-mic-seat-9')));
+      await tester.pumpAndSettle();
+      expect(controller.micRequests.single.seatNumber, 9);
+      expect(controller.isOnMic, isFalse);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
   final ValueVariant<Size> viewports = ValueVariant<Size>(<Size>{
     const Size(800, 600),
     const Size(375, 667),
@@ -277,6 +326,33 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+}
+
+class _NineEmptySeatsRepository extends MockRoomRepository {
+  @override
+  Future<RoomSnapshot> enterRoom({
+    required String roomId,
+    required String? password,
+    required RoomEntrySource source,
+    required int currentUserId,
+  }) async {
+    final snapshot = await super.enterRoom(
+      roomId: roomId,
+      password: password,
+      source: source,
+      currentUserId: currentUserId,
+    );
+    return snapshot.copyWith(
+      seats: [
+        for (var number = 1; number <= 9; number++)
+          MicSeat(
+            number: number,
+            backendIndex: number,
+            state: MicSeatState.available,
+          ),
+      ],
+    );
+  }
 }
 
 class _TrackedMicQueueRepository extends MockRoomOperationsRepository {

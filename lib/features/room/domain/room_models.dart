@@ -170,6 +170,10 @@ class MicSeat {
 
   bool get isAvailable => state == MicSeatState.available;
 
+  bool get isSpecial => number == 1;
+  bool canUse(RoomRole role) =>
+      !isSpecial || role == RoomRole.owner || role == RoomRole.moderator;
+
   bool get isOccupied =>
       state == MicSeatState.occupied || state == MicSeatState.occupiedMuted;
 

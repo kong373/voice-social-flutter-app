@@ -272,7 +272,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   static final List<MicSeat> _emptySeats = <MicSeat>[
-    for (int index = 1; index <= 8; index += 1)
+    for (int index = 1; index <= 9; index += 1)
       MicSeat(
         number: index,
         backendIndex: index,
@@ -1209,7 +1209,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     }
     final int sessionEpoch = _sessionEpoch;
     final MicSeat? seat = _seatByNumber(seatNumber);
-    if (seat == null || !seat.isAvailable) {
+    if (seat == null || !seat.isAvailable || !seat.canUse(role)) {
       _errorMessage = '麦位状态已变化，请重新选择';
       _notify();
       return false;

@@ -401,31 +401,53 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                   child: LayoutBuilder(
                     builder: (BuildContext context, BoxConstraints constraints) {
                       // Keep messages and sending usable on short screens when
-                      // the keyboard is visible. All eight seats remain
+                      // the keyboard is visible. All nine seats remain
                       // reachable by scrolling instead of squeezing the feed.
-                      final double preferredSeatHeight = composing ? 176 : 218;
+                      final double preferredSeatHeight = composing ? 176 : 330;
                       final double seatHeight = (constraints.maxHeight - 96)
                           .clamp(0.0, preferredSeatHeight);
                       return Column(
                         children: <Widget>[
                           SizedBox(
                             height: seatHeight,
-                            child: GridView.builder(
+                            child: CustomScrollView(
                               key: const Key('video-room-seat-grid'),
-                              padding: const EdgeInsets.fromLTRB(12, 7, 12, 0),
-                              physics: composing || seatHeight < 218
-                                  ? const ClampingScrollPhysics()
-                                  : const NeverScrollableScrollPhysics(),
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                              slivers: [
+                                SliverToBoxAdapter(
+                                  child: Center(
+                                    child: SizedBox(
+                                      width: 160,
+                                      height: 115,
+                                      child: _VideoMicSeat(
+                                        seat: _controller.seats.firstWhere(
+                                          (s) => s.number == 1,
+                                          orElse: () => const MicSeat(
+                                            number: 1,
+                                            backendIndex: 1,
+                                            state: MicSeatState.available,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                SliverPadding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                  sliver: SliverGrid.count(
                                     crossAxisCount: 4,
                                     mainAxisSpacing: 5,
                                     crossAxisSpacing: 6,
                                     childAspectRatio: 0.88,
+                                    children: [
+                                      for (final seat in _controller.seats)
+                                        if (!seat.isSpecial)
+                                          _VideoMicSeat(seat: seat),
+                                    ],
                                   ),
-                              itemCount: _controller.seats.length,
-                              itemBuilder: (BuildContext context, int index) =>
-                                  _VideoMicSeat(seat: _controller.seats[index]),
+                                ),
+                              ],
                             ),
                           ),
                           Expanded(child: _publicScreen()),
@@ -979,7 +1001,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
       return;
     }
     final List<MicSeat> available = _controller.seats
-        .where((MicSeat seat) => seat.isAvailable)
+        .where(
+          (MicSeat seat) => seat.isAvailable && seat.canUse(_controller.role),
+        )
         .toList(growable: false);
     await showModalBottomSheet<void>(
       context: context,
@@ -1065,7 +1089,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         .where((MicAccessRequest request) => request.isPending)
         .firstOrNull;
     final List<MicSeat> available = _controller.seats
-        .where((MicSeat seat) => seat.isAvailable)
+        .where(
+          (MicSeat seat) => seat.isAvailable && seat.canUse(_controller.role),
+        )
         .toList(growable: false);
     final MicAccessRequest? latest = requests.isEmpty ? null : requests.first;
     return Padding(
@@ -2090,8 +2116,14 @@ class _VideoMicSeat extends StatelessWidget {
     final bool occupied = seat.isOccupied;
     final bool speaking = seat.isOnline && seat.isSpeaking;
     final bool dense = MediaQuery.textScalerOf(context).scale(1) > 1.15;
-    final double seatSize = dense ? 44 : 56;
-    final Color ring = speaking
+    final double seatSize = seat.isSpecial
+        ? (dense ? 56 : 70)
+        : dense
+        ? 44
+        : 56;
+    final Color ring = seat.isSpecial
+        ? RoomColors.gold
+        : speaking
         ? RoomColors.success
         : occupied
         ? RoomColors.primary
@@ -2178,7 +2210,9 @@ class _VideoMicSeat extends StatelessWidget {
           ),
           SizedBox(height: dense ? 2 : 5),
           Text(
-            seat.userName ?? '${seat.number} 号麦',
+            seat.isSpecial
+                ? '1 号特殊麦 · ${seat.userName ?? '房主/房管'}'
+                : seat.userName ?? '${seat.number} 号麦',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(

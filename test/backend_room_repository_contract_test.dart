@@ -67,7 +67,7 @@ void main() {
       expect(snapshot.rtc.solution, RtcSolution.unknown);
       expect(snapshot.rtc.token, isEmpty);
       expect(snapshot.isSnapshotOnly, isTrue);
-      expect(snapshot.seats, hasLength(8));
+      expect(snapshot.seats, hasLength(9));
       expect(snapshot.seats[0].state, MicSeatState.occupied);
       expect(snapshot.seats[0].userId, 10001);
       expect(snapshot.seats[0].avatarUrl, 'https://cdn.example/u.png');

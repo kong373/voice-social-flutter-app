@@ -156,7 +156,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
                 ] else ...<Widget>[
                   const RoomOxygenNotice(
                     icon: Icons.meeting_room_outlined,
-                    title: '创建固定 8 麦房',
+                    title: '创建 1+8 九麦房',
                     message: '填写基本信息后直接进入房间，不会创建重复个人房。',
                   ),
                   const SizedBox(height: 18),

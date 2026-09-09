@@ -8,6 +8,27 @@ import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
 
 void main() {
+  testWidgets(
+    'S02 arranging ordinary member excludes first and accepts ninth',
+    (tester) async {
+      final repo = _Repository();
+      repo.seats = const [
+        MicSeat(number: 1, backendIndex: 1, state: MicSeatState.available),
+        MicSeat(number: 9, backendIndex: 9, state: MicSeatState.available),
+      ];
+      await _open(tester, repo);
+      await tester.tap(find.text('阿岚'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('安排上麦'));
+      await tester.pumpAndSettle();
+      expect(find.text('1 号麦'), findsNothing);
+      expect(find.text('9 号麦'), findsOneWidget);
+      await tester.tap(find.text('9 号麦'));
+      await tester.pumpAndSettle();
+      expect(repo.seats.singleWhere((s) => s.isOccupied).backendIndex, 9);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
   testWidgets('S05 absent seat role uses complete offline manager roster', (
     tester,
   ) async {

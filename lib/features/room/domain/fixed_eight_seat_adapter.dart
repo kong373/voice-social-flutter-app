@@ -29,48 +29,29 @@ class FixedEightSeatAdapter {
   const FixedEightSeatAdapter();
 
   List<MicSeat> adapt(List<BackendMicSeat> backendSeats) {
-    final Map<int, BackendMicSeat> regular = <int, BackendMicSeat>{
-      for (final BackendMicSeat seat in backendSeats)
-        if (seat.index >= 1 && seat.index <= 8) seat.index: seat,
-    };
-    final BackendMicSeat? ownerSeat = _findSeat(backendSeats, 0);
-
-    final List<MicSeat> result = <MicSeat>[
-      for (int uiIndex = 1; uiIndex <= 8; uiIndex += 1)
+    // Keep the public class name for source compatibility. Canonical S02 is
+    // 1..9; an explicit zero identifies the old 0..8 wire contract only.
+    final bool legacy = backendSeats.any((seat) => seat.index == 0);
+    final Map<int, BackendMicSeat> regular = {};
+    for (final seat in backendSeats) {
+      final number = seat.index + (legacy ? 1 : 0);
+      if (number < 1 || number > 9 || regular.containsKey(number)) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '麦位编号重复或混用了新旧九麦契约',
+        );
+      }
+      regular[number] = seat;
+    }
+    return List<MicSeat>.unmodifiable([
+      for (int uiIndex = 1; uiIndex <= 9; uiIndex += 1)
         _toUiSeat(
           uiIndex: uiIndex,
           backend:
-              regular[uiIndex] ?? BackendMicSeat(index: uiIndex, status: 0),
+              regular[uiIndex] ??
+              BackendMicSeat(index: uiIndex - (legacy ? 1 : 0), status: 0),
         ),
-    ];
-
-    if (ownerSeat == null || !ownerSeat.isOccupied) {
-      return List<MicSeat>.unmodifiable(result);
-    }
-
-    final int availableIndex = result.indexWhere(
-      (MicSeat seat) => seat.state == MicSeatState.available,
-    );
-    if (availableIndex < 0) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '后端同时返回了 9 个占用麦位，无法安全映射为固定 8 麦',
-      );
-    }
-    result[availableIndex] = _toUiSeat(
-      uiIndex: result[availableIndex].number,
-      backend: ownerSeat,
-    );
-    return List<MicSeat>.unmodifiable(result);
-  }
-
-  static BackendMicSeat? _findSeat(List<BackendMicSeat> seats, int index) {
-    for (final BackendMicSeat seat in seats) {
-      if (seat.index == index) {
-        return seat;
-      }
-    }
-    return null;
+    ]);
   }
 
   static MicSeat _toUiSeat({

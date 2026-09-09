@@ -52,7 +52,7 @@ class RoomConfigurationForm extends StatelessWidget {
         children: <Widget>[
           RoomOxygenSection(
             title: '房间基础信息',
-            subtitle: '普通固定 8 麦房，一次只完成创建或保存。',
+            subtitle: '1 号房主/房管特殊麦 + 8 个普通麦位。',
             icon: Icons.meeting_room_outlined,
             child: Column(
               children: <Widget>[

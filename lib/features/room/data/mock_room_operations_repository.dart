@@ -232,8 +232,8 @@ class MockRoomOperationsRepository
     required int userId,
     required int backendMicIndex,
   }) async {
-    if (backendMicIndex < 1 ||
-        backendMicIndex > 8 ||
+    if (backendMicIndex < 2 ||
+        backendMicIndex > 9 ||
         _members.any((member) => member.seatNumber == backendMicIndex)) {
       throw const ApiException(
         kind: ApiFailureKind.conflict,
@@ -507,6 +507,12 @@ class MockRoomOperationsRepository
     required int userId,
     required int seatNumber,
   }) async {
+    if (seatNumber < 2 || seatNumber > 9) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '普通上麦申请仅可选择2至9号麦',
+      );
+    }
     _expireMicRequests();
     if (_requests.any(
       (MicAccessRequest request) =>
@@ -635,6 +641,16 @@ class MockRoomOperationsRepository
         message: '成员已经离开房间',
       ),
     );
+    if (seatNumber < 1 ||
+        seatNumber > 9 ||
+        (seatNumber == 1 &&
+            member.role != RoomRole.owner &&
+            member.role != RoomRole.moderator)) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '1号麦仅限房主或房管',
+      );
+    }
     _requests.add(
       MicAccessRequest(
         id: 'invite-$userId-$seatNumber',

@@ -6,36 +6,54 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 void main() {
   const FixedEightSeatAdapter adapter = FixedEightSeatAdapter();
 
-  test(
-    'maps backend seat zero into a free slot while keeping eight UI seats',
-    () {
-      final List<MicSeat> result = adapter.adapt(const <BackendMicSeat>[
+  test('maps explicit legacy zero-based seats without losing identities', () {
+    final List<MicSeat> result = adapter.adapt(const <BackendMicSeat>[
+      BackendMicSeat(
+        index: 0,
+        status: 3,
+        userId: 9,
+        userName: '房主',
+        userRoleCode: 3,
+      ),
+      BackendMicSeat(index: 1, status: 3, userId: 1, userName: '一号麦'),
+      BackendMicSeat(index: 2, status: 1),
+    ]);
+
+    expect(result, hasLength(9));
+    expect(result.first.backendIndex, 0);
+    expect(result[1].backendIndex, 1);
+    expect(
+      result.where((MicSeat seat) => seat.backendIndex == 0),
+      hasLength(1),
+    );
+    expect(
+      result.singleWhere((MicSeat seat) => seat.backendIndex == 0).userRole,
+      RoomRole.owner,
+    );
+  });
+
+  test('S02 preserves all nine occupied canonical seats and offline ninth', () {
+    final result = adapter.adapt([
+      for (int index = 1; index <= 9; index++)
         BackendMicSeat(
-          index: 0,
+          index: index,
           status: 3,
-          userId: 9,
-          userName: '房主',
-          userRoleCode: 3,
+          userId: index,
+          isOnline: index != 9,
         ),
-        BackendMicSeat(index: 1, status: 3, userId: 1, userName: '一号麦'),
-        BackendMicSeat(index: 2, status: 1),
-      ]);
+    ]);
+    expect(result, hasLength(9));
+    expect(
+      result.map((s) => s.backendIndex),
+      orderedEquals([1, 2, 3, 4, 5, 6, 7, 8, 9]),
+    );
+    expect(result.last.isOccupied, isTrue);
+    expect(result.last.isOnline, isFalse);
+  });
 
-      expect(result, hasLength(8));
-      expect(
-        result.where((MicSeat seat) => seat.backendIndex == 0),
-        hasLength(1),
-      );
-      expect(
-        result.singleWhere((MicSeat seat) => seat.backendIndex == 0).userRole,
-        RoomRole.owner,
-      );
-    },
-  );
-
-  test('rejects an impossible nine-occupied-seat response', () {
+  test('rejects mixed legacy zero and canonical ninth seat', () {
     final List<BackendMicSeat> seats = <BackendMicSeat>[
-      for (int index = 0; index <= 8; index += 1)
+      for (int index = 0; index <= 9; index += 1)
         BackendMicSeat(
           index: index,
           status: 3,
