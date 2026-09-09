@@ -41,3 +41,20 @@ Q07-02 RTC controller and audio-control UI integration remain pending after this
 - Genuine RED: the new reconnect-SDK-failure test observed native audio still enabled after local connection flags had been cleared; cleanup now uses a forced, ownership-bound disable. The first new publication test run had a fixture compilation error (`giftBalance` absent), so that run is not claimed as a behavioral RED.
 - Latest focused controller/publication/race/background batch: **55 PASS** across `room_mic_publication_policy_test.dart` (16), `room_controller_race_test.dart`, `room_controller_test.dart`, `room_background_lease_controller_test.dart`. Authority/race/lease/background batch: **78 PASS**. Existing Agora adapter tests also passed, including real adapter code with fake engine/permission ports. Final transition/role/layout batch: **27 PASS**. Batches overlap and are not summed as distinct tests.
 - Full `flutter analyze --no-pub`: **0 issues**. Flutter/Dart use `/Users/kongzheng/fvm/versions/3.44.7/bin/`. No device, real permission prompt, vendor call, Backend or database run; these results are not real-device publication evidence.
+
+## Batch 5: reason-specific management controls and original-target retries
+
+- Seat cards show personal, management and historical audio holds separately. `强制静音` / `解除管理静音` change management authority only. Empty seats, missing reason authority and ungovernable targets are disabled. Live cards are updated from a fresh authority read; clearing management mute never claims that the other person's device is now publishing.
+- Direct arrangement and management mute retain the original member/seat/decision after unknown results and expose explicit retry buttons. A new optional `targetUserId` on the internal `setSeatMuted` Dart method lets the UI bind its observed occupant; the HTTP body remains the existing `userId`/`seatNumber` contract. A subsequent member-list read cannot retarget the original retry to a replacement occupant. Old callers without the optional target retain the existing loaded-projection lookup.
+- Account/lease generation fencing remains on reads, dialogs and all mic POSTs. The submitted REQUEST intent is subject-scoped so changing requested seat while its result is unknown cannot mint an unrelated second operation.
+- RED: management audio changed Mock public-text mute; the UI lacked independent reason labels and an explicit original-audio retry. GREEN: **46 PASS** (`room_management_audio_policy_test.dart`: 6, `backend_room_operations_repository_contract_test.dart`: 40), including actual HTTP parser/body/key checks after occupant replacement. An initial arrangement-widget fixture required scrolling to the member; that setup failure is not a business RED.
+- Related UI/queue/management regression batch: **30 PASS** across `room_management_review_fixes_test.dart`, `room_operations_pages_test.dart`, `room_mic_queue_ui_test.dart`. Eight small-screen/text-scale seat-layout cases passed in the final 27-test transition/role/layout batch. No skipped or weakened historical authority assertions. Final full analyze: **0 issues**; format and `git diff --check` clean.
+
+## Handoff scope
+
+Implementation worktree: `/Users/kongzheng/Documents/ny/.worktrees/flutter-room-mic-policy-20260909`.
+Branch: `codex/room-mic-policy-ui-20260909`, base `dd66c076263f10f860225ac4b794dfcd84f559b1`.
+
+Production changes are restricted to mic DTOs/repositories/seat adapter, room permission/controller mic paths, Dart RTC publication acknowledgement, management mic controls and the room mic picker/tools entry. No gift/entry/manager-profile/media logic, native plugin, Backend or dependency changes. Retained `APPROVAL` compatibility fixtures only test that entry mode does not grant mic authority; no retired entry approval UI is restored.
+
+The five implementation batches complete this local Flutter scope. Main review/cherry-pick and device/vendor acceptance are not claimed complete. No push performed.

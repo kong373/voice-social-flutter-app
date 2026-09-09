@@ -13,6 +13,72 @@ import 'package:voice_social_app/features/room/domain/room_operations_models.dar
 
 void main() {
   test(
+    'audio retry binds original member even after another occupant is loaded',
+    () async {
+      var loseReply = true;
+      var occupant = 10001;
+      final server = await _RunningServer.start((request) {
+        if (request.path == '/app-api/micBase/closedMike') {
+          if (loseReply) return const _Reply(data: null);
+          return const _Reply(
+            data: {
+              'roomId': '9527',
+              'seatNumber': 4,
+              'userId': 10001,
+              'muted': true,
+              'selfMuted': false,
+              'forcedMuted': true,
+              'legacyMuted': false,
+              'version': 2,
+            },
+          );
+        }
+        return _Reply(
+          data: _memberPage(
+            current: 1,
+            pageSize: 20,
+            total: 1,
+            pages: 1,
+            items: [
+              {..._memberRecord(occupant), 'seatNumber': 4},
+            ],
+          ),
+        );
+      });
+      addTearDown(server.close);
+      final repo = BackendRoomOperationsRepository(
+        apiClient: server.client,
+        leaseBinding: admittedRoomFixture(userId: 20001),
+      );
+      await repo.fetchOnlineMembers(roomId: '9527', page: 1);
+      await expectLater(
+        repo.setSeatMuted(
+          roomId: '9527',
+          backendMicIndex: 4,
+          muted: true,
+          targetUserId: 10001,
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      occupant = 10002;
+      loseReply = false;
+      await repo.fetchOnlineMembers(roomId: '9527', page: 1);
+      await repo.setSeatMuted(
+        roomId: '9527',
+        backendMicIndex: 4,
+        muted: true,
+        targetUserId: 10001,
+      );
+      final writes = server.requests
+          .where((r) => r.path == '/app-api/micBase/closedMike')
+          .toList();
+      expect(writes, hasLength(2));
+      expect(writes[0].requestId, writes[1].requestId);
+      expect(writes[0].body, writes[1].body);
+      expect((writes[1].body as Map)['userId'], 10001);
+    },
+  );
+  test(
     'manager removes forced audio mute without clearing personal or text mute',
     () async {
       final server = await _RunningServer.start((request) {

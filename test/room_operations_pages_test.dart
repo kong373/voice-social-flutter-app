@@ -511,6 +511,7 @@ class _ConflictRoomTopicRepository implements RoomOperationsRepository {
     required String roomId,
     required int backendMicIndex,
     required bool muted,
+    int? targetUserId,
   }) async => throw UnimplementedError();
 
   @override

@@ -845,9 +845,13 @@ class BackendRoomOperationsRepository
     required String roomId,
     required int backendMicIndex,
     required bool muted,
+    int? targetUserId,
   }) async {
     _syncGeneration();
-    final int? userId = _seatOccupantsByRoom[roomId]?[backendMicIndex];
+    // A UI action/retry binds the observed member, not whoever later occupies
+    // the seat. Legacy callers may still use the loaded member projection.
+    final int? userId =
+        targetUserId ?? _seatOccupantsByRoom[roomId]?[backendMicIndex];
     if (userId == null) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
@@ -974,7 +978,7 @@ class BackendRoomOperationsRepository
       );
     }
     await _runWrite<void>(
-      intent: 'mic-request-submit:$normalizedRoomId:$userId:$seatNumber',
+      intent: 'mic-request-submit:$normalizedRoomId:$userId',
       fingerprint:
           'ROOM_MIC_REQUEST_SUBMIT|$normalizedRoomId|$userId|$seatNumber',
       action: (Map<String, String> headers) async {

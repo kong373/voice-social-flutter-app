@@ -290,13 +290,10 @@ class MockRoomOperationsRepository
     required String roomId,
     required int backendMicIndex,
     required bool muted,
+    int? targetUserId,
   }) async {
-    final int index = _members.indexWhere(
-      (RoomMember member) => member.seatNumber == backendMicIndex,
-    );
-    if (index >= 0) {
-      _members[index] = _members[index].copyWith(isMuted: muted);
-    }
+    // Seat audio is projected by the room/seat authority, not this member
+    // list. RoomMember.isMuted is public-text mute and must remain unchanged.
   }
 
   @override

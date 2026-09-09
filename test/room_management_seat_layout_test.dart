@@ -69,7 +69,7 @@ void main() {
         );
         final mute = find.descendant(
           of: emptyCard,
-          matching: find.widgetWithText(ActionChip, '闭麦'),
+          matching: find.widgetWithText(ActionChip, '强制静音'),
         );
         final card = find
             .ancestor(of: lock, matching: find.byType(RoomGlassCard))

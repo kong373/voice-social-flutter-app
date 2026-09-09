@@ -49,6 +49,7 @@ abstract interface class RoomOperationsRepository {
     required String roomId,
     required int backendMicIndex,
     required bool muted,
+    int? targetUserId,
   });
 
   Future<List<MicAccessRequest>> fetchMicRequests(String roomId);

@@ -96,6 +96,8 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   String? _busyMicRequestId;
   bool _selectingMicTarget = false;
   (MicAccessRequest, bool, int?)? _pendingMicDecision;
+  (RoomMember, MicSeat)? _pendingAssignment;
+  (MicSeat, bool)? _pendingAudioDecision;
   AuthSessionManager? _session;
   int? _identity;
   int? _leaseGeneration;
@@ -186,6 +188,8 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       _requests.clear();
       _seats = [];
       _pendingMicDecision = null;
+      _pendingAssignment = null;
+      _pendingAudioDecision = null;
       _authoritativeRole = RoomRole.guest;
       _loading = false;
       _error = '账号或房间会话已变化，请退出后重新打开';
@@ -405,6 +409,23 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
               ),
             ),
             _buildSectionPicker(),
+            if (_pendingAssignment != null)
+              TextButton(
+                onPressed: _currentSession && _busyUserId == null
+                    ? _retryAssignment
+                    : null,
+                child: const Text('重试原安排'),
+              ),
+            if (_pendingAudioDecision != null)
+              TextButton(
+                onPressed: _currentSession && _busySeatNumber == null
+                    ? () => _setSeatMuted(
+                        _pendingAudioDecision!.$1,
+                        _pendingAudioDecision!.$2,
+                      )
+                    : null,
+                child: const Text('重试原静音操作'),
+              ),
             Expanded(child: _buildBody()),
           ],
         ),
@@ -581,9 +602,9 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
           )
         : null;
     final bool locked = seat.state == MicSeatState.locked;
-    final bool muted =
-        seat.state == MicSeatState.mutedAvailable ||
-        seat.state == MicSeatState.occupiedMuted;
+    final audio = seat.audioMute;
+    final bool managementMuted =
+        audio != null && (audio.forcedMuted || audio.legacyMuted);
     return RoomGlassCard(
       padding: const EdgeInsets.all(12),
       radius: 16,
@@ -617,6 +638,11 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
           ),
           const SizedBox(height: 12),
           if (seat.isOccupied && !seat.isOnline) const Text('离线 · 占位保留'),
+          if (seat.isOccupied && audio == null) const Text('音频权限待确认'),
+          if (seat.isOccupied && audio?.selfMuted == true) const Text('个人静音'),
+          if (seat.isOccupied && audio?.forcedMuted == true) const Text('管理静音'),
+          if (seat.isOccupied && audio?.legacyMuted == true)
+            const Text('历史静音限制'),
           Wrap(
             spacing: 4,
             children: <Widget>[
@@ -647,22 +673,17 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
               ),
               ActionChip(
                 avatar: Icon(
-                  muted ? Icons.mic_rounded : Icons.mic_off_rounded,
+                  managementMuted ? Icons.mic_rounded : Icons.mic_off_rounded,
                   size: 16,
                 ),
-                label: Text(muted ? '开麦' : '闭麦'),
+                label: Text(managementMuted ? '解除管理静音' : '强制静音'),
                 onPressed:
-                    !_canManage ||
-                        (seat.isOccupied &&
-                            (seat.userRole == RoomRole.owner ||
-                                (!_isOwner &&
-                                    (seat.userRole == RoomRole.moderator ||
-                                        seat.userRole ==
-                                            RoomRole.platformModerator)))) ||
-                        locked ||
+                    occupant == null ||
+                        !_canGovern(occupant) ||
+                        audio == null ||
                         _busySeatNumber != null
                     ? null
-                    : () => _setSeatMuted(seat, !muted),
+                    : () => _setSeatMuted(seat, !managementMuted),
               ),
             ],
           ),
@@ -950,6 +971,11 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   }
 
   Future<void> _assignToMic(RoomMember member) async {
+    if (!_canGovern(member) || _busyUserId != null) return;
+    if (_pendingAssignment != null) {
+      _showMessage('原安排结果待确认，请重试原安排');
+      return;
+    }
     final List<MicSeat> available = _seats
         .where((MicSeat seat) => seat.isAvailable && seat.canUse(member.role))
         .toList(growable: false);
@@ -992,20 +1018,38 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         ),
       ),
     );
-    if (seatNumber == null || !mounted) {
+    if (seatNumber == null || !_currentSession || !_canGovern(member)) {
       return;
     }
-    await _runMemberOperation(
-      member,
-      () => _repository.assignUserToMic(
+    final seat = available.firstWhere((seat) => seat.number == seatNumber);
+    _pendingAssignment = (member, seat);
+    await _retryAssignment();
+  }
+
+  Future<void> _retryAssignment() async {
+    final pending = _pendingAssignment;
+    if (pending == null || !_canGovern(pending.$1) || _busyUserId != null)
+      return;
+    setState(() => _busyUserId = pending.$1.userId);
+    try {
+      await _repository.assignUserToMic(
         roomId: configuration.roomId,
-        userId: member.userId,
-        backendMicIndex: _seats
-            .firstWhere((seat) => seat.number == seatNumber)
-            .backendIndex,
-      ),
-      successMessage: '已安排 ${member.name} 上麦',
-    );
+        userId: pending.$1.userId,
+        backendMicIndex: pending.$2.backendIndex,
+      );
+      if (!_currentSession) return;
+      _pendingAssignment = null;
+      _changed = true;
+      _showMessage('已安排 ${pending.$1.name} 上麦');
+      await _load();
+    } catch (error) {
+      if (_currentSession) {
+        if (!_unknownMicResult(error)) _pendingAssignment = null;
+        _showMessage(_messageFor(error));
+      }
+    } finally {
+      if (mounted) setState(() => _busyUserId = null);
+    }
   }
 
   Future<void> _runMemberOperation(
@@ -1072,38 +1116,60 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   }
 
   Future<void> _setSeatMuted(MicSeat seat, bool muted) async {
+    if (!_currentSession ||
+        !_canManage ||
+        _busySeatNumber != null ||
+        !seat.isOccupied ||
+        seat.audioMute == null)
+      return;
+    final retained = _pendingAudioDecision;
+    if (retained != null &&
+        (retained.$1.userId != seat.userId ||
+            retained.$1.backendIndex != seat.backendIndex ||
+            retained.$2 != muted)) {
+      _showMessage('原静音操作结果待确认，请重试原操作');
+      return;
+    }
+    _pendingAudioDecision = (seat, muted);
     setState(() => _busySeatNumber = seat.number);
     try {
       await _repository.setSeatMuted(
         roomId: configuration.roomId,
         backendMicIndex: seat.backendIndex,
         muted: muted,
+        targetUserId: seat.userId,
       );
-      if (!mounted) {
+      if (!_currentSession) {
         return;
       }
+      _pendingAudioDecision = null;
       setState(() {
-        _seats = <MicSeat>[
-          for (final MicSeat item in _seats)
-            if (item.number == seat.number)
-              item.copyWith(
-                state: item.isOccupied
-                    ? (muted
-                          ? MicSeatState.occupiedMuted
-                          : MicSeatState.occupied)
-                    : (muted
-                          ? MicSeatState.mutedAvailable
-                          : MicSeatState.available),
-              )
-            else
-              item,
-        ];
+        // Live state comes only from a fresh authority read. The offline
+        // preview applies the same reason-specific change, never a fake open.
+        if (_authorityRepository == null)
+          _seats = <MicSeat>[
+            for (final MicSeat item in _seats)
+              if (item.number == seat.number && item.userId == seat.userId)
+                item.copyWith(
+                  audioMute: RoomAudioMuteState(
+                    selfMuted: item.audioMute!.selfMuted,
+                    forcedMuted: muted,
+                    legacyMuted: muted && item.audioMute!.legacyMuted,
+                  ),
+                  state: item.audioMute!.selfMuted || muted
+                      ? MicSeatState.occupiedMuted
+                      : MicSeatState.occupied,
+                )
+              else
+                item,
+          ];
         _changed = true;
       });
-      _showMessage(muted ? '麦位已闭麦' : '麦位已开麦');
       if (_authorityRepository != null) await _load();
+      if (_currentSession) _showMessage(muted ? '管理静音已设置' : '管理静音已解除；个人静音保持不变');
     } catch (error) {
-      if (mounted) {
+      if (_currentSession) {
+        if (!_unknownMicResult(error)) _pendingAudioDecision = null;
         _showMessage(_messageFor(error));
       }
     } finally {
