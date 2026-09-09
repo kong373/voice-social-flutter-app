@@ -137,7 +137,7 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
     }
     final String punishment = _punishmentController.text.trim();
     if (punishment.isEmpty || punishment.length > 20) {
-      _showMessage('惩罚主题需为 1～20 个字');
+      _showMessage('对战主题需为 1～20 个字');
       return;
     }
     final int inviterUserId =

@@ -174,7 +174,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
       expectedInvitationId: invitationId,
       direction: RoomPkInvitationDirection.incoming,
       opponent: opponent,
-      punishmentTheme: _requiredText(projection['punishmentTheme'], '惩罚主题'),
+      punishmentTheme: _requiredText(projection['punishmentTheme'], '对战主题'),
       durationMinutes: _requiredInt(projection['durationMinutes'], 'PK 时长'),
     );
   }
@@ -199,7 +199,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
     if (punishment.isEmpty || punishment.length > 20) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
-        message: '惩罚主题需为 1～20 个字',
+        message: '对战主题需为 1～20 个字',
       );
     }
     if (!const <int>{5, 10, 15}.contains(durationMinutes)) {
@@ -515,7 +515,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
     final DateTime? resolvedAt = _optionalDate(data['resolvedAt'], '处理时间');
     final String authoritativePunishment = _requiredText(
       data['punishmentTheme'],
-      '惩罚主题',
+      '对战主题',
     );
     final int authoritativeDuration = _requiredInt(
       data['durationMinutes'],
@@ -532,7 +532,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
         !const <int>{5, 10, 15}.contains(authoritativeDuration)) {
       throw const ApiException(
         kind: ApiFailureKind.conflict,
-        message: 'PK 邀请响应的惩罚主题或时长已变化',
+        message: 'PK 邀请响应的对战主题或时长已变化',
       );
     }
     return RoomPkInvitation(
@@ -648,7 +648,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
     }
     final String punishmentTheme = _requiredText(
       data['punishmentTheme'],
-      '惩罚主题',
+      '对战主题',
     );
     final int durationMinutes = _requiredInt(data['durationMinutes'], 'PK 时长');
     if (!const <int>{5, 10, 15}.contains(durationMinutes)) {

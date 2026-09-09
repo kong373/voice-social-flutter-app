@@ -137,7 +137,7 @@ class MockRoomPkRepository implements RoomPkRepository {
     if (punishment.isEmpty || punishment.length > 20) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
-        message: '惩罚主题需为 1～20 个字',
+        message: '对战主题需为 1～20 个字',
       );
     }
     if (!const <int>{5, 10, 15}.contains(durationMinutes)) {
