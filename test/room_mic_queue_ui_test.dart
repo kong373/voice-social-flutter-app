@@ -236,15 +236,15 @@ void main() {
   );
 
   testWidgets(
-    'explicit DIRECT room mode overrides a repository approval response from another room',
+    'legacy DIRECT mode cannot hide current-room member mic requests from the owner',
     (WidgetTester tester) async {
-      final MockRoomOperationsRepository repository =
-          MockRoomOperationsRepository();
+      final _TrackedMicQueueRepository repository =
+          _TrackedMicQueueRepository();
       repository.seedMicRequestForQa(
         _request(
-          id: 'stale-approval-request',
+          id: 'current-room-mic-request',
           userId: 20005,
-          name: '上一间房的申请',
+          name: '当前房间申请人',
           seatNumber: 4,
         ),
       );
@@ -265,11 +265,28 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('上麦申请'), findsNothing);
+      expect(repository.lastMicQueueRoomId, 'direct-room');
+      expect(find.text('上麦申请 1'), findsOneWidget);
       expect(find.text('成员治理'), findsOneWidget);
-      expect(find.text('上一间房的申请'), findsNothing);
+      await tester.tap(find.text('上麦申请 1'));
+      await tester.pumpAndSettle();
+      expect(find.text('当前房间申请人'), findsOneWidget);
+      expect(find.text('同意'), findsOneWidget);
+      expect(find.text('拒绝'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+}
+
+class _TrackedMicQueueRepository extends MockRoomOperationsRepository {
+  String? lastMicQueueRoomId;
+
+  @override
+  Future<List<MicAccessRequest>> fetchMicRequests(String roomId) async {
+    lastMicQueueRoomId = roomId;
+    return super.fetchMicRequests(roomId);
+  }
 }
 
 MicAccessRequest _request({

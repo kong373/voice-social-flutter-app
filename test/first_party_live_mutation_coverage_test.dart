@@ -405,6 +405,9 @@ void main() {
               'roomId': 'room-1',
               'userId': 20002,
               'kicked': true,
+              'banned': true,
+              'banMinutes': 10,
+              'expiresAt': '2030-08-25T00:10:00Z',
             });
           case '/app-api/micBase/closedMike':
             expect(request.body, <String, Object?>{
