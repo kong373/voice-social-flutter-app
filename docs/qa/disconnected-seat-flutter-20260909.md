@@ -78,3 +78,17 @@ is verified, actual offline kick end-to-end is not claimed. Flutter3.44.7 rerun 
 - docs/qa/disconnected-seat-flutter-20260909.md
 
 No PK, youth, nickname, withdrawal, Backend, runner or golden file edits.
+
+## Main integration verification — 2026-09-09
+
+Integrated as `59cd921a57fe7eb64b4182e5063760dabfc8b952`.
+The main checkout used the verified absolute SDK
+`/Users/kongzheng/fvm/versions/3.44.7/bin/flutter` (Flutter 3.44.7 / Dart 3.12.2):
+13 related test files, **307 PASS**, process 85416 exit 0;
+`flutter analyze --no-pub`: **No issues found**, process 96540 log complete.
+Candidate-target formatter checked 11 Dart files, 0 changes.
+Evidence logs: `artifacts/product/filled-decisions-20260909/s05-flutter-merged-3447.log`
+and `s05-flutter-merged-analyze.log` in the parent workspace.
+These results supersede only the earlier missing pinned-SDK verification;
+the worker 3.44.8 evidence remains accurately labelled above.
+No golden update, native rebuild or ordinary-device acceptance is claimed.
