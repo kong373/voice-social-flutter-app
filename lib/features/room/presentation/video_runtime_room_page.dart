@@ -1495,10 +1495,19 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
       builder: (BuildContext sheetContext) => _RoomToolsSheet(
         canPk: _controller.allows(RoomCapability.startPk),
         canManage: _controller.allows(RoomCapability.manageMembers),
+        canEditProfile: _controller.allows(RoomCapability.editRoom),
         isOnMic: _controller.isOnMic,
         onAction: (String action) {
           Navigator.of(sheetContext).pop();
           switch (action) {
+            case 'profile':
+              if (!_controller.allows(RoomCapability.editRoom)) return;
+              Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => EditRoomPage(roomId: _controller.roomId),
+                ),
+              );
+              return;
             case 'management':
               _openManagement();
               return;
@@ -2766,12 +2775,14 @@ class _RoomToolsSheet extends StatefulWidget {
   const _RoomToolsSheet({
     required this.canPk,
     required this.canManage,
+    required this.canEditProfile,
     required this.isOnMic,
     required this.onAction,
   });
 
   final bool canPk;
   final bool canManage;
+  final bool canEditProfile;
   final bool isOnMic;
   final void Function(String action) onAction;
 
@@ -2785,6 +2796,8 @@ class _RoomToolsSheetState extends State<_RoomToolsSheet> {
   @override
   Widget build(BuildContext context) {
     final List<_ToolItem> interactions = <_ToolItem>[
+      if (widget.canEditProfile)
+        const _ToolItem('profile', Icons.edit_outlined, '房间资料'),
       if (widget.canManage)
         const _ToolItem(
           'management',

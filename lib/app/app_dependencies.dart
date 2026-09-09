@@ -396,7 +396,11 @@ class AppDependencies {
     );
     late final AuthController authController;
     final RoomLifecycleRepository roomLifecycleRepository = environment.isLive
-        ? BackendRoomLifecycleRepository(apiClient: apiClient, routes: routes)
+        ? BackendRoomLifecycleRepository(
+            apiClient: apiClient,
+            routes: routes,
+            leaseBinding: roomLeaseBinding,
+          )
         : MockRoomLifecycleRepository();
     final RoomRepository roomRepository = environment.isLive
         ? BackendRoomRepository(

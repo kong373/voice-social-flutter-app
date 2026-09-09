@@ -4,7 +4,8 @@ import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/data/backend_room_lifecycle_repository.dart'
-    show RoomReopenRepository;
+    show RoomReopenRepository, BackendRoomLifecycleRepository;
+import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
@@ -45,6 +46,12 @@ class _EditRoomPageState extends State<EditRoomPage> {
   bool _saving = false;
   bool _closing = false;
   String? _error;
+  int _epoch = 0;
+  int? _editGeneration;
+  AuthSessionManager? _session;
+  int? _identity;
+  bool _identityInvalidated = false;
+  RoomConfiguration? _pendingSave;
 
   @override
   void didChangeDependencies() {
@@ -55,11 +62,70 @@ class _EditRoomPageState extends State<EditRoomPage> {
     _repositoryInstance =
         widget.repositoryOverride ??
         AppDependencyScope.of(context).roomLifecycleRepository;
+    _session = context
+        .dependOnInheritedWidgetOfExactType<AppDependencyScope>()
+        ?.dependencies
+        .sessionManager;
+    _identity = _session?.identityGeneration;
+    _session?.addListener(_onIdentityChanged);
+    _load();
+  }
+
+  void _onIdentityChanged() {
+    if (_session?.identityGeneration == _identity) return;
+    _identityInvalidated = true;
+    _invalidateEditor();
+  }
+
+  void _invalidateEditor() {
+    if (!mounted) return;
+    _epoch++;
+    _passwordController.clear();
+    setState(() {
+      _room = null;
+      _conflictReview = null;
+      _pendingSave = null;
+      _loading = _saving = _closing = false;
+      _error = '账号或房间会话已变化，请退出后重新打开编辑页';
+    });
+  }
+
+  bool _current(int epoch) {
+    if (!mounted || epoch != _epoch) return false;
+    final repository = _repository;
+    if (_identityInvalidated ||
+        _session?.identityGeneration != _identity ||
+        (repository is BackendRoomLifecycleRepository &&
+            repository.editGeneration != _editGeneration)) {
+      _invalidateEditor();
+      return false;
+    }
+    return true;
+  }
+
+  @override
+  void didUpdateWidget(covariant EditRoomPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.roomId == widget.roomId &&
+        oldWidget.repositoryOverride == widget.repositoryOverride)
+      return;
+    _epoch++;
+    _room = null;
+    _pendingSave = null;
+    _conflictReview = null;
+    _passwordController.clear();
+    _repositoryInstance =
+        widget.repositoryOverride ??
+        AppDependencyScope.of(context).roomLifecycleRepository;
     _load();
   }
 
   @override
   void dispose() {
+    _epoch++;
+    _session?.removeListener(_onIdentityChanged);
+    _pendingSave = null;
+    _passwordController.clear();
     _titleController.dispose();
     _topicTitleController.dispose();
     _topicContentController.dispose();
@@ -69,13 +135,20 @@ class _EditRoomPageState extends State<EditRoomPage> {
   }
 
   Future<void> _load() async {
+    if (_identityInvalidated || _pendingSave != null) return;
+    final epoch = ++_epoch;
+    final repository = _repository;
+    _editGeneration = repository is BackendRoomLifecycleRepository
+        ? repository.editGeneration
+        : null;
     setState(() {
       _loading = true;
+      _room = null;
       _error = null;
     });
     try {
       final RoomConfiguration room = await _repository.fetchRoom(widget.roomId);
-      if (!mounted) {
+      if (!_current(epoch)) {
         return;
       }
       setState(() {
@@ -83,7 +156,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) {
+      if (!_current(epoch)) {
         return;
       }
       setState(() {
@@ -97,11 +170,18 @@ class _EditRoomPageState extends State<EditRoomPage> {
   Widget build(BuildContext context) {
     return RoomPageScaffold(
       appBar: roomOxygenAppBar(
-        title: '编辑与关闭房间',
+        title: '编辑房间资料',
         actions: <Widget>[
           IconButton(
             tooltip: '刷新权威状态',
-            onPressed: _loading || _saving || _closing ? null : _load,
+            onPressed:
+                _loading ||
+                    _saving ||
+                    _closing ||
+                    _pendingSave != null ||
+                    _identityInvalidated
+                ? null
+                : _load,
             icon: const Icon(Icons.refresh_rounded),
           ),
         ],
@@ -125,7 +205,8 @@ class _EditRoomPageState extends State<EditRoomPage> {
             const SizedBox(height: 18),
             Text(_error ?? '房间信息不可用', textAlign: TextAlign.center),
             const SizedBox(height: 20),
-            FilledButton.tonal(onPressed: _load, child: const Text('重新加载')),
+            if (!_identityInvalidated)
+              FilledButton.tonal(onPressed: _load, child: const Text('重新加载')),
           ],
         ),
       ),
@@ -186,8 +267,11 @@ class _EditRoomPageState extends State<EditRoomPage> {
                       _capabilities.supportsApprovalAccessMode,
                   supportsTopicTitle: _capabilities.supportsTopicTitle,
                   supportsAutoLockMic: _capabilities.supportsAutoLockMic,
-                  enabled: enabled,
+                  canControlLifecycle: room.canControlLifecycle,
+                  enabled: enabled && _pendingSave == null,
                   onAccessModeChanged: (RoomAccessMode value) {
+                    if (value != RoomAccessMode.password)
+                      _passwordController.clear();
                     setState(() => _accessMode = value);
                   },
                   onShowInHallChanged: (bool value) {
@@ -204,7 +288,9 @@ class _EditRoomPageState extends State<EditRoomPage> {
                     message: '保存配置后仍保持关闭，仅房主可进入。重新开放使用已保存设置，请先保存需要修改的内容。',
                   ),
                 if (!room.isOpen) const SizedBox(height: 18),
-                if (!room.isOpen && _repository is RoomReopenRepository)
+                if (room.canControlLifecycle &&
+                    !room.isOpen &&
+                    _repository is RoomReopenRepository)
                   OutlinedButton.icon(
                     key: const Key('edit-room-reopen-button'),
                     onPressed:
@@ -214,46 +300,47 @@ class _EditRoomPageState extends State<EditRoomPage> {
                     icon: const Icon(Icons.power_settings_new_rounded),
                     label: const Text('重新开放并进入房间'),
                   ),
-                RoomOxygenSection(
-                  title: '关闭房间',
-                  subtitle: '关闭会结束当前会话，但不会删除账号或房间配置。',
-                  icon: Icons.power_settings_new_rounded,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      const RoomOxygenNotice(
-                        icon: Icons.warning_amber_rounded,
-                        message: '关闭后用户无法继续进入，当前成员会结束本次房间会话。',
-                        accent: RoomColors.error,
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          key: const Key('edit-room-close-button'),
-                          onPressed: enabled && room.isOpen
-                              ? _confirmClose
-                              : null,
-                          icon: _closing
-                              ? const SizedBox.square(
-                                  dimension: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.power_settings_new_rounded),
-                          label: Text(
-                            room.isOpen
-                                ? _conflictReview != null
-                                      ? '重新确认后关闭'
-                                      : '关闭房间'
-                                : '房间已关闭',
+                if (room.canControlLifecycle)
+                  RoomOxygenSection(
+                    title: '关闭房间',
+                    subtitle: '关闭会结束当前会话，但不会删除账号或房间配置。',
+                    icon: Icons.power_settings_new_rounded,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const RoomOxygenNotice(
+                          icon: Icons.warning_amber_rounded,
+                          message: '关闭后用户无法继续进入，当前成员会结束本次房间会话。',
+                          accent: RoomColors.error,
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            key: const Key('edit-room-close-button'),
+                            onPressed: enabled && room.isOpen
+                                ? _confirmClose
+                                : null,
+                            icon: _closing
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.power_settings_new_rounded),
+                            label: Text(
+                              room.isOpen
+                                  ? _conflictReview != null
+                                        ? '重新确认后关闭'
+                                        : '关闭房间'
+                                  : '房间已关闭',
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -272,7 +359,13 @@ class _EditRoomPageState extends State<EditRoomPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.save_outlined),
-                label: Text(_conflictReview != null ? '重新确认后提交' : '保存房间设置'),
+                label: Text(
+                  _pendingSave != null
+                      ? '重试原保存请求'
+                      : _conflictReview != null
+                      ? '重新确认后提交'
+                      : '保存房间设置',
+                ),
               ),
             ),
           ),
@@ -282,6 +375,8 @@ class _EditRoomPageState extends State<EditRoomPage> {
   }
 
   Future<void> _save() async {
+    final epoch = _epoch;
+    if (!_current(epoch) || _room == null || _saving || _closing) return;
     final RoomConfiguration current = _room!;
     if (_accessMode == RoomAccessMode.approval) {
       setState(() {
@@ -289,51 +384,77 @@ class _EditRoomPageState extends State<EditRoomPage> {
       });
       return;
     }
-    if (!(_formKey.currentState?.validate() ?? false)) {
+    if (_pendingSave == null && !(_formKey.currentState?.validate() ?? false)) {
       return;
     }
     setState(() {
       _saving = true;
       _error = null;
     });
-    final RoomConfiguration configuration = current.copyWith(
-      title: _titleController.text.trim(),
-      topicTitle: _capabilities.supportsTopicTitle
-          ? _topicTitleController.text.trim()
-          : '',
-      topicContent: _topicContentController.text.trim(),
-      welcomeMessage: _welcomeController.text.trim(),
-      accessMode: _accessMode,
-      password: _accessMode == RoomAccessMode.password
-          ? _passwordController.text
-          : '',
-      passwordConfigured: current.passwordConfigured,
-      showInHall: _showInHall,
-      autoLockMic: _capabilities.supportsAutoLockMic ? _autoLockMic : false,
-      availability: current.availability,
-    );
+    final RoomConfiguration configuration =
+        _pendingSave ??
+        current.copyWith(
+          title: _titleController.text.trim(),
+          topicTitle: _capabilities.supportsTopicTitle
+              ? _topicTitleController.text.trim()
+              : '',
+          topicContent: _topicContentController.text.trim(),
+          welcomeMessage: _welcomeController.text.trim(),
+          accessMode: _accessMode,
+          password: _accessMode == RoomAccessMode.password
+              ? _passwordController.text
+              : '',
+          passwordConfigured: current.passwordConfigured,
+          showInHall: _showInHall,
+          autoLockMic: _capabilities.supportsAutoLockMic ? _autoLockMic : false,
+          availability: current.availability,
+        );
+    _pendingSave = configuration;
     try {
       await _repository.saveRoom(configuration);
-      if (!mounted) {
-        return;
-      }
-      Navigator.of(context).pop(true);
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      if (_isVersionConflict(error)) {
-        await _recoverFromConflict(draft: configuration);
+      if (!mounted || !_current(epoch)) {
         return;
       }
       setState(() {
         _saving = false;
-        _error = _messageFor(error, fallback: '房间保存失败，请重试');
+        _pendingSave = null;
+        _passwordController.clear();
+      });
+      if (ModalRoute.of(context)?.isCurrent == true)
+        Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!_current(epoch)) {
+        return;
+      }
+      if (_isVersionConflict(error)) {
+        _pendingSave = null;
+        await _recoverFromConflict(draft: configuration);
+        return;
+      }
+      if (error is ApiException &&
+          (error.code == 40936 ||
+              error.code == 40937 ||
+              error.kind == ApiFailureKind.unauthorized ||
+              error.kind == ApiFailureKind.forbidden)) {
+        _invalidateEditor();
+        return;
+      }
+      setState(() {
+        _saving = false;
+        if (!_isAmbiguous(error)) _pendingSave = null;
+        _error = _pendingSave != null
+            ? '保存结果尚未确认，可重试原请求；不会改用新的房间会话'
+            : _messageFor(error, fallback: '房间保存失败，请重试');
       });
     }
   }
 
   Future<void> _reopen() async {
+    final epoch = _epoch;
+    if (!_current(epoch) ||
+        _room?.canControlLifecycle != true ||
+        _pendingSave != null)
+      return;
     final room = _room!;
     if (room.version == null) {
       setState(() => _error = '请刷新房间状态后重试');
@@ -348,7 +469,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
         widget.roomId,
         expectedVersion: room.version!,
       );
-      if (!mounted) return;
+      if (!mounted || !_current(epoch)) return;
       // A new RoomPage performs normal enter and acquires a fresh lease.
       Navigator.of(context).pushReplacement<void, bool>(
         MaterialPageRoute<void>(
@@ -357,7 +478,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
         result: true,
       );
     } catch (error) {
-      if (!mounted) return;
+      if (!_current(epoch)) return;
       setState(() {
         _saving = false;
         _error = _messageFor(error, fallback: '重新开放失败，请刷新后重试');
@@ -366,6 +487,11 @@ class _EditRoomPageState extends State<EditRoomPage> {
   }
 
   Future<void> _confirmClose() async {
+    final epoch = _epoch;
+    if (!_current(epoch) ||
+        _room?.canControlLifecycle != true ||
+        _pendingSave != null)
+      return;
     final RoomConfiguration room = _room!;
     final bool? confirmed = await showDialog<bool>(
       context: context,
@@ -384,7 +510,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) {
+    if (confirmed != true || !mounted || !_current(epoch)) {
       return;
     }
     setState(() {
@@ -393,12 +519,12 @@ class _EditRoomPageState extends State<EditRoomPage> {
     });
     try {
       await _repository.closeRoom(widget.roomId, expectedVersion: room.version);
-      if (!mounted) {
+      if (!mounted || !_current(epoch)) {
         return;
       }
       Navigator.of(context).pop(true);
     } catch (error) {
-      if (!mounted) {
+      if (!_current(epoch)) {
         return;
       }
       if (_isVersionConflict(error)) {
@@ -423,11 +549,12 @@ class _EditRoomPageState extends State<EditRoomPage> {
     required RoomConfiguration draft,
     bool closeRequiresConfirmation = false,
   }) async {
+    final epoch = _epoch;
     try {
       final RoomConfiguration authoritative = await _repository.fetchRoom(
         widget.roomId,
       );
-      if (!mounted) {
+      if (!_current(epoch)) {
         return;
       }
       setState(() {
@@ -442,7 +569,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
         );
       });
     } catch (error) {
-      if (!mounted) {
+      if (!_current(epoch)) {
         return;
       }
       setState(() {
@@ -501,6 +628,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
   }
 
   void _loadAuthoritativeRoom() {
+    if (!_current(_epoch)) return;
     final RoomConfiguration? authoritative = _conflictReview?.authoritative;
     if (authoritative == null) {
       return;
@@ -512,8 +640,18 @@ class _EditRoomPageState extends State<EditRoomPage> {
   }
 
   static bool _isVersionConflict(Object error) =>
-      error is ApiException &&
-      (error.code == 40945 || error.kind == ApiFailureKind.conflict);
+      error is ApiException && error.code == 40945;
+
+  static bool _isAmbiguous(Object error) =>
+      error is! ApiException ||
+      error.code == 40901 ||
+      error.code == 40902 ||
+      {
+        ApiFailureKind.network,
+        ApiFailureKind.timeout,
+        ApiFailureKind.server,
+        ApiFailureKind.protocol,
+      }.contains(error.kind);
 }
 
 class _RoomConflictReview {

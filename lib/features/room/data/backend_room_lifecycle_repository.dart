@@ -6,6 +6,7 @@ import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/data/room_write_guard.dart';
+import 'package:voice_social_app/features/room/data/room_lease_binding.dart';
 import 'package:voice_social_app/features/room/domain/room_intent_digest.dart';
 
 abstract interface class RoomReopenRepository {
@@ -20,11 +21,28 @@ class BackendRoomLifecycleRepository
   BackendRoomLifecycleRepository({
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
+    RoomLeaseBinding? leaseBinding,
   }) : _apiClient = apiClient,
+       leaseBinding = leaseBinding ?? RoomLeaseBinding(),
        _routes = routes;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
+  final RoomLeaseBinding leaseBinding;
+
+  int get editGeneration => leaseBinding.generation;
+
+  void requireEditCurrent(RoomConfiguration configuration) {
+    final generation = configuration.editGeneration;
+    if (generation == null) throw RoomLeaseBinding.stale();
+    leaseBinding.check(generation);
+    if (!configuration.canControlLifecycle &&
+        (configuration.editSessionId == null ||
+            leaseBinding.require(configuration.roomId).lease.sessionId !=
+                configuration.editSessionId))
+      throw RoomLeaseBinding.stale();
+  }
+
   final RoomWriteGuard _writeGuard = RoomWriteGuard(scope: 'room-lifecycle');
 
   @override
@@ -78,11 +96,28 @@ class BackendRoomLifecycleRepository
 
   @override
   Future<RoomConfiguration?> fetchOwnedRoom() async {
+    final generation = editGeneration;
     final List<Map<String, Object?>> rooms = await _fetchOwnedRows();
+    leaseBinding.check(generation);
     if (rooms.isEmpty) {
       return null;
     }
     return _configurationFromOwnerRow(rooms.first);
+  }
+
+  Future<RoomConfiguration> _fetchOwnedRoomById(String roomId) async {
+    final generation = editGeneration;
+    final rooms = await _fetchOwnedRows();
+    leaseBinding.check(generation);
+    for (final row in rooms) {
+      if (_requiredExactNonEmptyString(row, 'roomId') == roomId) {
+        return _configurationFromOwnerRow(row);
+      }
+    }
+    throw const ApiException(
+      kind: ApiFailureKind.forbidden,
+      message: '房间不属于当前账号',
+    );
   }
 
   @override
@@ -94,26 +129,60 @@ class BackendRoomLifecycleRepository
         message: '房间 ID 不能为空',
       );
     }
-    final List<Map<String, Object?>> rooms = await _fetchOwnedRows();
-    Map<String, Object?>? ownerRow;
-    for (final Map<String, Object?> candidate in rooms) {
-      if (_roomIdFrom(candidate) == normalizedRoomId) {
-        ownerRow = candidate;
-        break;
-      }
-    }
-    if (ownerRow == null) {
+    final generation = editGeneration;
+    final entry = leaseBinding.current;
+    final originalSessionId = entry?.roomId == normalizedRoomId
+        ? entry?.lease.sessionId
+        : null;
+    final response = await _apiClient.get(
+      _routes.editableRoomProfile,
+      query: {'roomId': normalizedRoomId},
+    );
+    leaseBinding.check(generation);
+    final data = _asMap(response.data);
+    final id = _requiredExactNonEmptyString(data, 'roomId');
+    final owner = _requiredBool(data, 'canControlLifecycle');
+    final status = _ownerAvailability(
+      _requiredExactNonEmptyString(data, 'status'),
+    );
+    final access = _requiredExactNonEmptyString(data, 'accessMode');
+    final configured = _requiredBool(data, 'passwordConfigured');
+    if (id != normalizedRoomId ||
+        !{'PUBLIC', 'PASSWORD'}.contains(access) ||
+        (!owner && status != RoomAvailability.open)) {
       throw const ApiException(
-        kind: ApiFailureKind.business,
-        message: '房间不存在、已失效或不属于当前账号',
+        kind: ApiFailureKind.protocol,
+        message: '房间编辑权限或配置响应无效',
       );
     }
-    return _configurationFromOwnerRow(ownerRow);
+    final session = owner ? null : leaseBinding.require(id).lease.sessionId;
+    if (!owner && (originalSessionId == null || originalSessionId != session)) {
+      throw RoomLeaseBinding.stale();
+    }
+    return RoomConfiguration(
+      roomId: id,
+      roomCode: _requiredExactNonEmptyString(data, 'roomCode'),
+      title: _requiredExactNonEmptyString(data, 'roomName'),
+      topicContent: _requiredStringField(data, 'topic'),
+      topicTitle: _requiredStringField(data, 'topicTitle'),
+      welcomeMessage: _requiredStringField(data, 'welcomeText'),
+      accessMode: _roomAccessMode(access),
+      password: '',
+      passwordConfigured: configured,
+      showInHall: _requiredBool(data, 'hallVisible'),
+      autoLockMic: _requiredBool(data, 'autoLockMic'),
+      availability: status,
+      version: _requiredNonNegativeInt(data, 'version'),
+      canControlLifecycle: owner,
+      editGeneration: generation,
+      editSessionId: session,
+    );
   }
 
   Future<RoomConfiguration> _configurationFromOwnerRow(
     Map<String, Object?> ownerRow,
   ) async {
+    final generation = editGeneration;
     final String id = _requiredOwnerText(ownerRow, 'roomId');
     final String accessMode = _accessMode(ownerRow);
     final String status = _requiredOwnerText(ownerRow, 'status');
@@ -124,6 +193,7 @@ class BackendRoomLifecycleRepository
       query: <String, String>{'roomId': id},
     );
     final Map<String, Object?> topic = _asMap(topicResponse.data);
+    leaseBinding.check(generation);
     final String topicRoomId = _requiredExactNonEmptyString(topic, 'roomId');
     if (topicRoomId != id) {
       throw const ApiException(
@@ -163,6 +233,8 @@ class BackendRoomLifecycleRepository
       availability: availability,
       coverUrl: _nonEmptyString(ownerRow['coverImgUrl']),
       version: version,
+      canControlLifecycle: true,
+      editGeneration: generation,
     );
   }
 
@@ -345,6 +417,7 @@ class BackendRoomLifecycleRepository
     final String? configuredRoomId = configuration.roomId?.trim();
     if (configuredRoomId != null && configuredRoomId.isNotEmpty) {
       _requireExpectedVersion(configuration.version, operation: '保存房间');
+      requireEditCurrent(configuration);
     }
     final String intent = _saveIntent(configuration);
     return _writeGuard.run<RoomLifecycleSaveResult>(
@@ -368,19 +441,24 @@ class BackendRoomLifecycleRepository
           configuration.version,
           operation: '保存房间',
         );
+        requireEditCurrent(configuration);
         // updateRoomInformation is authoritative for the complete editable
         // room configuration, including topic and welcomeText. Do not follow
         // it with the legacy setRoomTopics write: that second request could
         // partially overwrite a successful edit (especially for empty topic).
-        final ApiResponse response = await _apiClient.patch(
+        final ApiResponse response = await _apiClient.patchBoundToIdentity(
           _routes.updateRoomInformation,
+          requireIdentity: () => requireEditCurrent(configuration),
           headers: headers,
           body: <String, Object?>{
             ..._writeBody(configuration),
             'roomId': roomId,
             'expectedVersion': expectedVersion,
+            if (!configuration.canControlLifecycle)
+              'sessionId': configuration.editSessionId,
           },
         );
+        requireEditCurrent(configuration);
         RoomWriteGuard.validateMutationResponse(
           response,
           operation: '更新房间信息',
@@ -420,7 +498,11 @@ class BackendRoomLifecycleRepository
             message: '更新房间响应与请求配置不一致',
           );
         }
-        final RoomConfiguration authoritative = await fetchRoom(roomId);
+        final RoomConfiguration authoritative =
+            configuration.canControlLifecycle
+            ? await _fetchOwnedRoomById(roomId)
+            : await fetchRoom(roomId);
+        requireEditCurrent(configuration);
         if (authoritative.version != updateVersion) {
           throw const ApiException(
             kind: ApiFailureKind.conflict,
@@ -459,15 +541,18 @@ class BackendRoomLifecycleRepository
     String roomId,
     int expectedVersion,
     Map<String, String> headers,
+    int generation,
   ) async {
-    final ApiResponse response = await _apiClient.post(
+    final ApiResponse response = await _apiClient.postBoundToIdentity(
       _routes.reopenRoom,
+      requireIdentity: () => leaseBinding.check(generation),
       headers: headers,
       body: <String, Object?>{
         'roomId': roomId,
         'expectedVersion': expectedVersion,
       },
     );
+    leaseBinding.check(generation);
     RoomWriteGuard.validateMutationResponse(
       response,
       operation: '重新开放房间',
@@ -503,10 +588,11 @@ class BackendRoomLifecycleRepository
       );
     }
     _requireExpectedVersion(expectedVersion, operation: '重新开放房间');
+    final generation = editGeneration;
     await _writeGuard.run<void>(
-      intent: 'reopen:${roomId.trim()}:$expectedVersion',
+      intent: 'reopen:${roomId.trim()}:$expectedVersion:$generation',
       action: (headers) async {
-        await _reopenRoom(roomId.trim(), expectedVersion, headers);
+        await _reopenRoom(roomId.trim(), expectedVersion, headers, generation);
       },
     );
   }
@@ -524,17 +610,20 @@ class BackendRoomLifecycleRepository
       expectedVersion,
       operation: '关闭房间',
     );
+    final generation = editGeneration;
     await _writeGuard.run<void>(
-      intent: 'close:$normalizedRoomId:$version',
+      intent: 'close:$normalizedRoomId:$version:$generation',
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _apiClient.postBoundToIdentity(
           _routes.closeRoom,
+          requireIdentity: () => leaseBinding.check(generation),
           headers: headers,
           body: <String, Object?>{
             'roomId': normalizedRoomId,
             'expectedVersion': version,
           },
         );
+        leaseBinding.check(generation);
         RoomWriteGuard.validateMutationResponse(
           response,
           operation: '关闭房间',
@@ -572,6 +661,8 @@ class BackendRoomLifecycleRepository
         configuration.autoLockMic.toString(),
         configuration.availability.name,
         configuration.version?.toString() ?? 'missing',
+        configuration.editGeneration?.toString() ?? 'new',
+        configuration.editSessionId ?? 'owner',
       ],
     );
   }
@@ -852,8 +943,10 @@ class BackendRoomLifecycleRepository
       'topic': configuration.topicContent.trim(),
       'welcomeText': configuration.welcomeMessage.trim(),
       'accessMode': accessMode,
-      'hallVisible': configuration.showInHall,
-      'autoLockMic': configuration.autoLockMic,
+      if (!configuration.hasExistingRoom || configuration.canControlLifecycle)
+        'hallVisible': configuration.showInHall,
+      if (!configuration.hasExistingRoom || configuration.canControlLifecycle)
+        'autoLockMic': configuration.autoLockMic,
       if (accessMode == 'PASSWORD' && configuration.password.isNotEmpty)
         'password': configuration.password,
     };
@@ -943,12 +1036,6 @@ class BackendRoomLifecycleRepository
       ),
     };
   }
-
-  static String _roomIdFrom(Map<String, Object?> data) =>
-      _nonEmptyString(data['roomId']) ??
-      _nonEmptyString(data['roomIdStr']) ??
-      _nonEmptyString(data['id']) ??
-      '';
 
   static String _accessMode(Map<String, Object?> info) {
     final String? value = _nonEmptyString(info['accessMode']);

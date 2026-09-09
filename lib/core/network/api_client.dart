@@ -208,6 +208,21 @@ class ApiClient {
     requireIdentity: requireIdentity,
   );
 
+  /// Identity/lease-bound PATCH with the same send and refresh fences as POST.
+  Future<ApiResponse> patchBoundToIdentity(
+    String path, {
+    required void Function() requireIdentity,
+    Map<String, String>? headers,
+    Map<String, Object?>? body,
+  }) => _request(
+    method: 'PATCH',
+    path: path,
+    authenticated: true,
+    headers: headers,
+    body: body,
+    requireIdentity: requireIdentity,
+  );
+
   Future<ApiResponse> _request({
     required String method,
     required String path,

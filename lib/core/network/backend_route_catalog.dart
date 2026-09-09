@@ -51,6 +51,7 @@ class BackendRouteCatalog {
     this.lockMic = '/app-api/micBase/lockMike',
     this.unlockMic = '/app-api/micBase/unlockMike',
     this.roomTopic = '/app-api/rooms/getRoomTopics',
+    this.editableRoomProfile = '/app-api/rooms/editable-profile',
     this.updateRoomTopic = '/app-api/rooms/setRoomTopics',
     this.homeRecommendedRooms = '/app-api/rooms/v1/getRecommendRooms',
     this.globalSearch = '/app-api/es/getSearchESResult',
@@ -260,6 +261,7 @@ class BackendRouteCatalog {
   final String lockMic;
   final String unlockMic;
   final String roomTopic;
+  final String editableRoomProfile;
   final String updateRoomTopic;
   final String homeRecommendedRooms;
   final String globalSearch;

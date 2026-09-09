@@ -22,6 +22,7 @@ class RoomConfigurationForm extends StatelessWidget {
     required this.onAccessModeChanged,
     required this.onShowInHallChanged,
     required this.onAutoLockMicChanged,
+    this.canControlLifecycle = true,
     super.key,
   });
 
@@ -39,6 +40,7 @@ class RoomConfigurationForm extends StatelessWidget {
   final bool supportsTopicTitle;
   final bool supportsAutoLockMic;
   final bool enabled;
+  final bool canControlLifecycle;
   final ValueChanged<RoomAccessMode> onAccessModeChanged;
   final ValueChanged<bool> onShowInHallChanged;
   final ValueChanged<bool> onAutoLockMicChanged;
@@ -161,13 +163,22 @@ class RoomConfigurationForm extends StatelessWidget {
                     controller: passwordController,
                     enabled: enabled,
                     obscureText: true,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    enableIMEPersonalizedLearning: false,
+                    autofillHints: null,
                     maxLength: 4,
                     keyboardType: TextInputType.number,
                     inputFormatters: <TextInputFormatter>[
                       FilteringTextInputFormatter.digitsOnly,
                       LengthLimitingTextInputFormatter(4),
                     ],
-                    decoration: const InputDecoration(labelText: '4 位房间密码'),
+                    decoration: InputDecoration(
+                      labelText: '4 位房间密码',
+                      helperText: allowExistingPassword
+                          ? '留空保留原密码；选择公开房可清除密码'
+                          : null,
+                    ),
                     validator: (String? value) {
                       if (allowExistingPassword &&
                           (value == null || value.isEmpty)) {
@@ -184,35 +195,36 @@ class RoomConfigurationForm extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          RoomOxygenSection(
-            title: '房间规则',
-            subtitle: '只配置当前已确认的普通语音房能力。',
-            icon: Icons.tune_rounded,
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: <Widget>[
-                SwitchListTile.adaptive(
-                  value: showInHall,
-                  onChanged: enabled ? onShowInHallChanged : null,
-                  title: const Text('在首页房间发现中展示'),
-                  subtitle: const Text('关闭后仍可通过房间号和收藏进入'),
-                ),
-                const Divider(height: 1, indent: 52),
-                if (supportsAutoLockMic)
+          if (canControlLifecycle)
+            RoomOxygenSection(
+              title: '房间规则',
+              subtitle: '只配置当前已确认的普通语音房能力。',
+              icon: Icons.tune_rounded,
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: <Widget>[
                   SwitchListTile.adaptive(
-                    value: autoLockMic,
-                    onChanged: enabled ? onAutoLockMicChanged : null,
-                    title: const Text('进入房间时自动锁定空麦'),
-                    subtitle: const Text('房主或房管可在麦位管理中逐一解锁'),
-                  )
-                else
-                  const RoomOxygenNotice(
-                    icon: Icons.info_outline_rounded,
-                    message: '当前 development 后端暂不支持自动锁麦，已隐藏此设置。',
+                    value: showInHall,
+                    onChanged: enabled ? onShowInHallChanged : null,
+                    title: const Text('在首页房间发现中展示'),
+                    subtitle: const Text('关闭后仍可通过房间号和收藏进入'),
                   ),
-              ],
+                  const Divider(height: 1, indent: 52),
+                  if (supportsAutoLockMic)
+                    SwitchListTile.adaptive(
+                      value: autoLockMic,
+                      onChanged: enabled ? onAutoLockMicChanged : null,
+                      title: const Text('进入房间时自动锁定空麦'),
+                      subtitle: const Text('房主或房管可在麦位管理中逐一解锁'),
+                    )
+                  else
+                    const RoomOxygenNotice(
+                      icon: Icons.info_outline_rounded,
+                      message: '当前 development 后端暂不支持自动锁麦，已隐藏此设置。',
+                    ),
+                ],
+              ),
             ),
-          ),
           const SizedBox(height: 12),
           const RoomOxygenNotice(
             icon: Icons.info_outline_rounded,

@@ -87,7 +87,7 @@ void main() {
     );
   }
 
-  test('fetchRoom joins room information and topic contracts', () async {
+  test('fetchOwnedRoom joins owner and topic contracts', () async {
     final _RunningServer server = await _RunningServer.start((
       _CapturedRequest request,
     ) {
@@ -159,7 +159,7 @@ void main() {
     final BackendRoomLifecycleRepository repository =
         BackendRoomLifecycleRepository(apiClient: server.client);
 
-    final RoomConfiguration room = await repository.fetchRoom('9527');
+    final RoomConfiguration room = (await repository.fetchOwnedRoom())!;
     expect(room.roomId, '9527');
     expect(room.roomCode, 'R9527');
     expect(room.title, '夜航电台');
@@ -247,7 +247,7 @@ void main() {
       final BackendRoomLifecycleRepository repository =
           BackendRoomLifecycleRepository(apiClient: server.client);
 
-      final RoomConfiguration room = await repository.fetchRoom('9527');
+      final RoomConfiguration room = (await repository.fetchOwnedRoom())!;
 
       expect(room.availability, RoomAvailability.closed);
       expect(room.topicTitle, '保留标题');
@@ -278,6 +278,7 @@ void main() {
       await expectLater(
         repository.saveRoom(
           const RoomConfiguration(
+            editGeneration: 1,
             title: '提交房间',
             topicTitle: '',
             topicContent: '提交话题',
@@ -329,6 +330,7 @@ void main() {
       await expectLater(
         repository.saveRoom(
           const RoomConfiguration(
+            editGeneration: 1,
             title: '新房间',
             topicTitle: '',
             topicContent: '',
@@ -508,7 +510,7 @@ void main() {
         BackendRoomLifecycleRepository(apiClient: server.client);
 
     await expectLater(
-      repository.fetchRoom('9527'),
+      repository.fetchOwnedRoom(),
       throwsA(
         isA<ApiException>().having(
           (ApiException error) => error.kind,
@@ -590,7 +592,7 @@ void main() {
           BackendRoomLifecycleRepository(apiClient: server.client);
 
       await expectLater(
-        repository.fetchRoom('9527'),
+        repository.fetchOwnedRoom(),
         throwsA(
           isA<ApiException>().having(
             (ApiException error) => error.kind,
@@ -622,7 +624,7 @@ void main() {
         BackendRoomLifecycleRepository(apiClient: server.client);
 
     await expectLater(
-      repository.fetchRoom('9527'),
+      repository.fetchOwnedRoom(),
       throwsA(isA<ApiException>()),
     );
   });
@@ -643,7 +645,7 @@ void main() {
           BackendRoomLifecycleRepository(apiClient: server.client);
 
       await expectLater(
-        repository.fetchRoom('9527'),
+        repository.fetchOwnedRoom(),
         throwsA(
           isA<ApiException>()
               .having(
@@ -677,7 +679,7 @@ void main() {
           BackendRoomLifecycleRepository(apiClient: server.client);
 
       await expectLater(
-        repository.fetchRoom('9527'),
+        repository.fetchOwnedRoom(),
         throwsA(
           isA<ApiException>().having(
             (ApiException error) => error.kind,
@@ -726,7 +728,7 @@ void main() {
         BackendRoomLifecycleRepository(apiClient: server.client);
 
     await expectLater(
-      repository.fetchRoom('9527'),
+      repository.fetchOwnedRoom(),
       throwsA(
         isA<ApiException>().having(
           (ApiException error) => error.kind,
@@ -836,6 +838,7 @@ void main() {
 
       final RoomLifecycleSaveResult result = await repository.saveRoom(
         const RoomConfiguration(
+          editGeneration: 1,
           roomId: '9527',
           roomCode: 'R9527',
           title: '新房间',
@@ -1014,6 +1017,7 @@ void main() {
       final BackendRoomLifecycleRepository repository =
           BackendRoomLifecycleRepository(apiClient: server.client);
       const RoomConfiguration valid = RoomConfiguration(
+        editGeneration: 1,
         roomId: '9527',
         roomCode: 'R9527',
         title: '新房间',
@@ -1117,6 +1121,7 @@ void main() {
       await expectLater(
         repository.saveRoom(
           const RoomConfiguration(
+            editGeneration: 1,
             roomId: '9527',
             roomCode: 'R9527',
             title: '新房间',
@@ -1200,6 +1205,7 @@ void main() {
       await expectLater(
         repository.saveRoom(
           const RoomConfiguration(
+            editGeneration: 1,
             roomId: '9527',
             roomCode: 'R9527',
             title: '新房间',
@@ -1533,6 +1539,7 @@ void main() {
     final BackendRoomLifecycleRepository repository =
         BackendRoomLifecycleRepository(apiClient: server.client);
     const RoomConfiguration newRoom = RoomConfiguration(
+      editGeneration: 1,
       title: '新房间',
       topicTitle: '',
       topicContent: '',
@@ -1596,6 +1603,7 @@ void main() {
       final BackendRoomLifecycleRepository repository =
           BackendRoomLifecycleRepository(apiClient: server.client);
       const RoomConfiguration room = RoomConfiguration(
+        editGeneration: 1,
         title: '幂等房间',
         topicTitle: '',
         topicContent: '',
@@ -1627,6 +1635,7 @@ void main() {
       await expectLater(
         repository.saveRoom(
           RoomConfiguration(
+            editGeneration: 1,
             roomId: roomId,
             title: '旧房间',
             topicTitle: '',
@@ -1743,6 +1752,7 @@ void main() {
 
     final RoomLifecycleSaveResult result = await repository.saveRoom(
       const RoomConfiguration(
+        editGeneration: 1,
         roomId: '9527',
         roomCode: 'R9527',
         title: '重新开放房间',
@@ -1815,6 +1825,7 @@ void main() {
       final BackendRoomLifecycleRepository repository =
           BackendRoomLifecycleRepository(apiClient: server.client);
       const RoomConfiguration missingVersion = RoomConfiguration(
+        editGeneration: 1,
         roomId: '9527',
         roomCode: 'R9527',
         title: '现有房间',
@@ -1966,6 +1977,7 @@ void main() {
 }
 
 RoomConfiguration _newPublicRoom() => const RoomConfiguration(
+  editGeneration: 1,
   title: '新房间',
   topicTitle: '',
   topicContent: '',
@@ -1978,6 +1990,7 @@ RoomConfiguration _newPublicRoom() => const RoomConfiguration(
 );
 
 RoomConfiguration _existingPublicRoom() => const RoomConfiguration(
+  editGeneration: 1,
   roomId: '9527',
   roomCode: 'R9527',
   title: '现有房间',

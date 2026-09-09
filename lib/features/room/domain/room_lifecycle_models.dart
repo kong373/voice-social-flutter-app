@@ -38,6 +38,11 @@ class RoomConfiguration {
     // first-party room version contract. Live backend reads always populate
     // this field, and live writes reject a missing version for existing rooms.
     this.version,
+    // Legacy local fixtures describe owned rooms. Backend projections always
+    // supply this explicitly and reject a missing permission field.
+    this.canControlLifecycle = true,
+    this.editGeneration,
+    this.editSessionId,
   });
 
   final String? roomId;
@@ -57,6 +62,9 @@ class RoomConfiguration {
   final RoomAvailability availability;
   final String? coverUrl;
   final int? version;
+  final bool canControlLifecycle;
+  final int? editGeneration;
+  final String? editSessionId;
 
   bool get hasExistingRoom => roomId != null && roomId!.isNotEmpty;
   bool get isOpen => availability == RoomAvailability.open;
@@ -92,6 +100,9 @@ class RoomConfiguration {
       availability: availability ?? this.availability,
       coverUrl: coverUrl ?? this.coverUrl,
       version: version ?? this.version,
+      canControlLifecycle: canControlLifecycle,
+      editGeneration: editGeneration,
+      editSessionId: editSessionId,
     );
   }
 }

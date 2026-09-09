@@ -48,7 +48,7 @@ class RoomPermissionPolicy {
         RoomCapability.viewMembers => true,
         RoomCapability.sendGift => signedIn && snapshot.giftCatalogAvailable,
         RoomCapability.manageMembers => canManage,
-        RoomCapability.editRoom => snapshotRole == RoomRole.owner,
+        RoomCapability.editRoom => canManage,
         RoomCapability.closeRoom =>
           snapshotRole == RoomRole.owner ||
               (snapshot.platformStaff && snapshot.canControlRoomLifecycle),
@@ -69,7 +69,7 @@ class RoomPermissionPolicy {
       RoomCapability.viewMembers => true,
       RoomCapability.sendGift => signedIn && snapshot.giftCatalogAvailable,
       RoomCapability.manageMembers => canManage,
-      RoomCapability.editRoom => role == RoomRole.owner,
+      RoomCapability.editRoom => canManage,
       RoomCapability.closeRoom =>
         role == RoomRole.owner ||
             (snapshot.platformStaff && snapshot.canControlRoomLifecycle),

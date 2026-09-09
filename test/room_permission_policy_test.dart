@@ -33,6 +33,33 @@ void main() {
   );
 
   for (final mode in RoomTransportMode.values) {
+    test('manager can open profile but cannot control lifecycle in $mode', () {
+      final room = snapshot(RoomRole.moderator, transportMode: mode);
+      expect(
+        policy.allows(
+          snapshot: room,
+          capability: RoomCapability.editRoom,
+          isOnMic: false,
+        ),
+        isTrue,
+      );
+      expect(
+        policy.allows(
+          snapshot: room,
+          capability: RoomCapability.closeRoom,
+          isOnMic: false,
+        ),
+        isFalse,
+      );
+      expect(
+        policy.allows(
+          snapshot: snapshot(RoomRole.listener, transportMode: mode),
+          capability: RoomCapability.editRoom,
+          isOnMic: false,
+        ),
+        isFalse,
+      );
+    });
     test('platform staff cannot govern retained seats in $mode', () {
       expect(
         policy.allows(
