@@ -318,18 +318,6 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     final Duration enterStarted = _leaseElapsed;
     Object? transportLease;
     try {
-      // Tencent permits one AVChatRoom per user. Fence and bounded-quit any
-      // previous shared coordinator binding before this HTTP enter can be
-      // rebound to the new navigation target.
-      final TencentImAvChatRoomCoordinator? tencentCoordinator =
-          _tencentImAvChatRoomCoordinator;
-      if (tencentCoordinator != null) {
-        // `leave` fences the shared coordinator synchronously and queues a
-        // bounded provider quit. Never make first-party HTTP enter wait for a
-        // vendor operation that may be slow or unavailable; the subsequent
-        // coordinator.enter is serialized behind this cleanup.
-        unawaited(_ignoreTencentLeave(tencentCoordinator.leave()));
-      }
       final RoomSnapshot snapshot = await _repository.enterRoom(
         roomId: roomId,
         password: password,
@@ -340,6 +328,12 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       if (!_isCurrent(sessionEpoch) || _joinCancelled) {
         await _abandonEnteredRoom(snapshot, sessionEpoch: sessionEpoch);
         return;
+      }
+      // Only an actual room entry switches the shared IM binding. A closed
+      // management view has no membership and must not leave another room.
+      final tencentCoordinator = _tencentImAvChatRoomCoordinator;
+      if (!snapshot.isClosedManagementView && tencentCoordinator != null) {
+        unawaited(_ignoreTencentLeave(tencentCoordinator.leave()));
       }
       if (!snapshot.isSnapshotOnly) {
         transportLease = _claimTransportLease();
@@ -391,7 +385,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
             ),
         ]);
       _status = RoomSessionStatus.joined;
-      if (snapshot.ownerClosedAccess) {
+      if (snapshot.isClosedManagementView) {
         await refreshRoomAuthority();
         _notify();
         return;
@@ -414,7 +408,9 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     } catch (error) {
       if (!_isCurrent(sessionEpoch) || _joinCancelled) {
         final RoomSnapshot? snapshot = enteredSnapshot;
-        if (snapshot != null && _canCompensateJoin(sessionEpoch)) {
+        if (snapshot != null &&
+            !snapshot.isClosedManagementView &&
+            _canCompensateJoin(sessionEpoch)) {
           try {
             await _repository.exitRoom(snapshot.roomId);
           } catch (_) {
@@ -425,7 +421,9 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
       final RoomSnapshot? snapshot = enteredSnapshot;
-      if (snapshot != null && _canCompensateJoin(sessionEpoch)) {
+      if (snapshot != null &&
+          !snapshot.isClosedManagementView &&
+          _canCompensateJoin(sessionEpoch)) {
         try {
           await _repository.exitRoom(snapshot.roomId);
         } catch (_) {
@@ -925,8 +923,8 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         );
       }
       if (projection.version < _authorityVersion) return;
-      if (previous?.ownerClosedAccess == true) {
-        if (!projection.snapshot.ownerClosedAccess) {
+      if (previous?.isClosedManagementView == true) {
+        if (!projection.snapshot.isClosedManagementView) {
           _endAuthoritySession('房间状态已变化，请重新进入房间');
           return;
         }
@@ -969,9 +967,12 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       _notify();
     } catch (error) {
       if (!_authorityReadIsCurrent(epoch, generation)) return;
-      if (_snapshot?.ownerClosedAccess == true &&
+      if (_snapshot?.isClosedManagementView == true &&
           error is ApiException &&
-          (error.kind == ApiFailureKind.protocol || error.code == 40431)) {
+          (error.kind == ApiFailureKind.protocol ||
+              error.code == 40431 ||
+              error.httpStatus == 403 ||
+              error.httpStatus == 404)) {
         _endAuthoritySession('房间管理权限已变化，请重新进入房间');
         return;
       }
@@ -994,7 +995,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   // A slow public-history request must never block a background RTC revoke.
   // This lane is independently single-flight and foreground-only.
   void _refreshForegroundRoomData() {
-    if (_snapshot?.ownerClosedAccess == true) return;
+    if (_snapshot?.isClosedManagementView == true) return;
     if (!_canSyncAuthority || !_foreground) return;
     _foregroundReadPending = true;
     if (_foregroundReadInFlight) return;
@@ -1878,7 +1879,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   }) => fetchGiftReceipt(transferId: transferId, requestId: requestId);
 
   Future<void> reconnect() async {
-    if (_snapshot?.ownerClosedAccess == true) {
+    if (_snapshot?.isClosedManagementView == true) {
       await refreshRoomAuthority();
       return;
     }
@@ -1981,7 +1982,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<bool> leaveRoom() async {
     if (_disposed) return false;
-    if (_snapshot?.ownerClosedAccess == true) {
+    if (_snapshot?.isClosedManagementView == true) {
       _invalidateSession();
       _stopAuthoritySync();
       _status = RoomSessionStatus.left;
@@ -2273,6 +2274,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     RoomSnapshot snapshot, {
     required int sessionEpoch,
   }) async {
+    if (snapshot.isClosedManagementView) return;
     final TencentImAvChatRoomCoordinator? tencentCoordinator =
         _tencentImAvChatRoomCoordinator;
     final TencentImAvChatRoomSession? tencentSession = _tencentImSession;

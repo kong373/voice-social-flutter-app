@@ -17,6 +17,7 @@ import 'package:voice_social_app/features/discovery/presentation/global_search_p
 import 'package:voice_social_app/features/discovery/presentation/saved_rooms_page.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/room/presentation/create_room_page.dart';
+import 'package:voice_social_app/features/room/presentation/platform_rooms_page.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 import 'package:voice_social_app/features/social/presentation/public_user_id_label.dart';
@@ -1631,6 +1632,11 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
         child: CustomScrollView(
           key: const Key('video-runtime-account'),
           slivers: <Widget>[
+            SliverToBoxAdapter(
+              child: PlatformRoomsEntry(
+                repository: widget.dependencies.platformRoomRepository,
+              ),
+            ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 8, 10, 4),
               sliver: SliverToBoxAdapter(

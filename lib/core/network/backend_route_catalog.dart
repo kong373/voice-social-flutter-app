@@ -9,6 +9,8 @@ class BackendRouteCatalog {
     this.createRoom = '/app-mini-api/mini/v1/rooms',
     this.closeRoom = '/app-mini-api/mini/v1/rooms/close',
     this.reopenRoom = '/app-mini-api/mini/v1/rooms/reopen',
+    this.platformRoomAuthority = '/app-api/rooms/platform/authority',
+    this.platformRoomList = '/app-api/rooms/platform/list',
     this.queryRoomInfo = '/app-room-api/room/com/v1/queryRoomInfo',
     this.reconnectRoom = '/app-room-api/room/com/v1/reConnectRoomInfo',
     this.queryRoomOtherInfo = '/app-room-api/room/com/v1/queryRoomOtherInfo',
@@ -211,6 +213,8 @@ class BackendRouteCatalog {
   final String createRoom;
   final String closeRoom;
   final String reopenRoom;
+  final String platformRoomAuthority;
+  final String platformRoomList;
   final String queryRoomInfo;
   final String reconnectRoom;
   final String queryRoomOtherInfo;

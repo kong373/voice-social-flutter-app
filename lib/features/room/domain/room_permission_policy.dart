@@ -21,6 +21,11 @@ class RoomPermissionPolicy {
     required RoomCapability capability,
     required bool isOnMic,
   }) {
+    if (snapshot.closedRoomAccess && !snapshot.ownerClosedAccess) {
+      return snapshot.platformStaff &&
+          snapshot.canControlRoomLifecycle &&
+          capability == RoomCapability.closeRoom;
+    }
     if (snapshot.ownerClosedAccess) {
       return snapshot.role == RoomRole.owner &&
           capability == RoomCapability.editRoom;
@@ -44,7 +49,9 @@ class RoomPermissionPolicy {
         RoomCapability.sendGift => signedIn && snapshot.giftCatalogAvailable,
         RoomCapability.manageMembers => canManage,
         RoomCapability.editRoom => snapshotRole == RoomRole.owner,
-        RoomCapability.closeRoom => snapshotRole == RoomRole.owner,
+        RoomCapability.closeRoom =>
+          snapshotRole == RoomRole.owner ||
+              (snapshot.platformStaff && snapshot.canControlRoomLifecycle),
         RoomCapability.startPk => snapshotRole == RoomRole.owner,
       };
     }
@@ -63,7 +70,9 @@ class RoomPermissionPolicy {
       RoomCapability.sendGift => signedIn && snapshot.giftCatalogAvailable,
       RoomCapability.manageMembers => canManage,
       RoomCapability.editRoom => role == RoomRole.owner,
-      RoomCapability.closeRoom => role == RoomRole.owner,
+      RoomCapability.closeRoom =>
+        role == RoomRole.owner ||
+            (snapshot.platformStaff && snapshot.canControlRoomLifecycle),
       RoomCapability.startPk => role == RoomRole.owner,
     };
   }

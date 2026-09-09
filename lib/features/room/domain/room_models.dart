@@ -309,6 +309,10 @@ class RoomSnapshot {
     this.sessionId,
     this.roomLease,
     this.ownerClosedAccess = false,
+    this.platformStaff = false,
+    this.closedRoomAccess = false,
+    this.canControlRoomLifecycle = false,
+    this.version,
   });
 
   final String roomId;
@@ -331,6 +335,11 @@ class RoomSnapshot {
 
   /// Owner management access without active membership or a session lease.
   final bool ownerClosedAccess;
+  final bool platformStaff;
+  final bool closedRoomAccess;
+  final bool canControlRoomLifecycle;
+  final int? version;
+  bool get isClosedManagementView => ownerClosedAccess || closedRoomAccess;
   final int? onlineCount;
   final String? coverUrl;
   final String? backgroundUrl;
@@ -361,6 +370,10 @@ class RoomSnapshot {
     return RoomSnapshot(
       roomId: roomId,
       ownerClosedAccess: ownerClosedAccess,
+      platformStaff: platformStaff,
+      closedRoomAccess: closedRoomAccess,
+      canControlRoomLifecycle: canControlRoomLifecycle,
+      version: version,
       sessionId: sessionId ?? this.sessionId,
       roomLease: roomLease ?? this.roomLease,
       roomCode: roomCode,

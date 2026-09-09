@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:voice_social_app/features/room/presentation/edit_room_page.dart';
+import 'package:voice_social_app/features/room/presentation/platform_rooms_page.dart';
 
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
@@ -325,7 +326,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Widget _roomContent() {
-    if (_controller.snapshot?.ownerClosedAccess == true) {
+    if (_controller.snapshot?.isClosedManagementView == true) {
       return Stack(
         children: <Widget>[
           const _VideoRoomBackground(),
@@ -344,25 +345,37 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                 const Spacer(),
                 const Icon(Icons.lock_outline, size: 48),
                 const SizedBox(height: 16),
-                const Text('房间已关闭 · 房主管理视图'),
-                const Padding(
+                Text(
+                  _controller.snapshot!.ownerClosedAccess
+                      ? '房间已关闭 · 房主管理视图'
+                      : '房间已关闭 · 平台管理视图',
+                ),
+                Padding(
                   padding: EdgeInsets.all(20),
-                  child: Text('当前没有入房会话。可修改房间设置或明确重新开放；开放后需重新进入。'),
+                  child: Text(
+                    _controller.snapshot!.ownerClosedAccess
+                        ? '当前没有入房会话。可修改房间设置或明确重新开放；开放后需重新进入。'
+                        : '当前没有入房会话。仅可重新开放或退出；开放后需重新进入。',
+                  ),
                 ),
-                FilledButton(
-                  onPressed: !_controller.allows(RoomCapability.editRoom)
-                      ? null
-                      : () async {
-                          await Navigator.of(context).push<void>(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  EditRoomPage(roomId: _controller.roomId),
-                            ),
-                          );
-                          if (mounted) await _controller.refreshRoomAuthority();
-                        },
-                  child: const Text('管理房间 / 重新开放'),
-                ),
+                if (!_controller.snapshot!.ownerClosedAccess)
+                  _platformLifecycleButton(),
+                if (_controller.snapshot!.ownerClosedAccess)
+                  FilledButton(
+                    onPressed: !_controller.allows(RoomCapability.editRoom)
+                        ? null
+                        : () async {
+                            await Navigator.of(context).push<void>(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    EditRoomPage(roomId: _controller.roomId),
+                              ),
+                            );
+                            if (mounted)
+                              await _controller.refreshRoomAuthority();
+                          },
+                    child: const Text('管理房间 / 重新开放'),
+                  ),
                 TextButton(
                   onPressed: () => _confirmEnd(),
                   child: const Text('退出管理视图'),
@@ -382,6 +395,32 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     );
   }
 
+  Widget _platformLifecycleButton() {
+    final snapshot = _controller.snapshot;
+    if (snapshot == null ||
+        !snapshot.canControlRoomLifecycle ||
+        snapshot.version == null) {
+      return const SizedBox.shrink();
+    }
+    return PlatformRoomLifecycleButton(
+      repository: AppDependencyScope.of(context).platformRoomRepository,
+      roomId: snapshot.roomId,
+      version: snapshot.version!,
+      reopen: snapshot.isClosedManagementView,
+      onCompleted: () async {
+        final repository = AppDependencyScope.of(
+          context,
+        ).platformRoomRepository;
+        final identity = repository.identity;
+        await _controller.refreshRoomAuthority();
+        // Reopening never creates membership; leaving requires an explicit
+        // directory selection to enter again. Closing also ends this view.
+        if (mounted && identity == repository.identity)
+          _popRoom(VideoRoomExit.ended);
+      },
+    );
+  }
+
   Widget _roomContentBody() {
     final double keyboard = MediaQuery.viewInsetsOf(context).bottom;
     final bool composing = keyboard > 0 || _composerFocus.hasFocus;
@@ -396,6 +435,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
             child: Column(
               children: <Widget>[
                 _header(),
+                if (_controller.snapshot?.platformStaff == true &&
+                    _controller.allows(RoomCapability.closeRoom))
+                  _platformLifecycleButton(),
                 _announcement(),
                 Expanded(
                   child: LayoutBuilder(
@@ -1519,7 +1561,8 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Future<void> _showExitChoices() async {
-    if (_controller.snapshot?.ownerClosedAccess == true && !_sessionEnded) {
+    if (_controller.snapshot?.isClosedManagementView == true &&
+        !_sessionEnded) {
       await _endRoom();
       return;
     }
@@ -1605,7 +1648,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
 
   Future<RoomPkBattle?> _fetchActivePk() async {
     final RoomSnapshot? snapshot = _controller.snapshot;
-    if (snapshot == null || snapshot.ownerClosedAccess) {
+    if (snapshot == null || snapshot.isClosedManagementView) {
       return null;
     }
     try {
@@ -1619,7 +1662,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Future<void> _confirmEnd({RoomPkBattle? activePk}) async {
-    if (_controller.snapshot?.ownerClosedAccess == true) {
+    if (_controller.snapshot?.isClosedManagementView == true) {
       await _endRoom();
       return;
     }

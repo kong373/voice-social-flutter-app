@@ -48,6 +48,7 @@ import 'package:voice_social_app/features/message/data/mock_message_repository.d
 import 'package:voice_social_app/features/message/domain/message_repository.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/data/backend_room_lifecycle_repository.dart';
+import 'package:voice_social_app/features/room/data/platform_room_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_room_repository.dart';
 import 'package:voice_social_app/features/room/data/backend_rtc_token_repository.dart';
@@ -97,6 +98,7 @@ class AppDependencies {
     required this.roomRepository,
     required this.roomOperationsRepository,
     required this.roomLifecycleRepository,
+    required this.platformRoomRepository,
     required this.roomPkRepository,
     required this.rtcAdapter,
     required NativeRoomBackgroundAudio? backgroundAudio,
@@ -488,6 +490,23 @@ class AppDependencies {
       roomRepository: roomRepository,
       roomOperationsRepository: roomOperationsRepository,
       roomLifecycleRepository: roomLifecycleRepository,
+      platformRoomRepository: environment.isLive
+          ? BackendPlatformRoomRepository(
+              apiClient: apiClient,
+              routes: routes,
+              identity: () => (
+                sessionManager.session?.userId ?? 0,
+                sessionManager.identityGeneration,
+              ),
+              identityChanges: sessionManager,
+            )
+          : UnboundPlatformRoomRepository(
+              sessionManager,
+              () => (
+                sessionManager.session?.userId ?? 0,
+                sessionManager.identityGeneration,
+              ),
+            ),
       roomPkRepository: roomPkRepository,
       rtcAdapter: rtcAdapter,
       backgroundAudio: backgroundAudio,
@@ -521,6 +540,7 @@ class AppDependencies {
   final RoomRepository roomRepository;
   final RoomOperationsRepository roomOperationsRepository;
   final RoomLifecycleRepository roomLifecycleRepository;
+  final PlatformRoomRepository platformRoomRepository;
   final RoomPkRepository roomPkRepository;
   final RtcAdapter rtcAdapter;
   final NativeRoomBackgroundAudio? _backgroundAudio;

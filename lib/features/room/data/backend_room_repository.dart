@@ -499,7 +499,7 @@ class BackendRoomRepository
           snapshot,
           requestedRoomId: normalizedRoomId,
         );
-        if (snapshot.ownerClosedAccess) {
+        if (snapshot.isClosedManagementView) {
           _clearTencentImRoomSession(normalizedRoomId);
           return snapshot;
         }
@@ -655,7 +655,8 @@ class BackendRoomRepository
     final Map<String, Object?> data = _asMap(response.data);
     final String status = _nonEmptyString(data['status'])?.toUpperCase() ?? '';
     if ((status == 'CLOSED' || data['state'] == 'CLOSED') &&
-        data['ownerClosedAccess'] != true) {
+        data['ownerClosedAccess'] != true &&
+        data['closedRoomAccess'] != true) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '关房响应缺少房主管理授权',
@@ -668,7 +669,8 @@ class BackendRoomRepository
         message: '此房间暂不可进入，请联系房主调整房间设置',
       );
     }
-    if (!_isOwnerClosedAccess(data, currentUserId)) {
+    if (!_isOwnerClosedAccess(data, currentUserId) &&
+        !_isStaffClosedAccess(data, currentUserId)) {
       parseRoomLease(data['roomLease'], sessionId: data['sessionId']);
     }
     return _snapshotFromData(data, currentUserId: currentUserId);
@@ -695,6 +697,38 @@ class BackendRoomRepository
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '关房管理视图响应无效',
+      );
+    }
+    return true;
+  }
+
+  static bool _isStaffClosedAccess(Map<String, Object?> data, int userId) {
+    if (data['closedRoomAccess'] != true || data['ownerClosedAccess'] == true)
+      return false;
+    if (data['platformStaff'] != true ||
+        data['canControlRoomLifecycle'] != true ||
+        data['ownerClosedAccess'] != false ||
+        data['state'] != 'CLOSED' ||
+        data['status'] != 'CLOSED' ||
+        data['joined'] != true ||
+        data['memberActive'] != false ||
+        data['activeSession'] != false ||
+        data.containsKey('sessionId') ||
+        data.containsKey('roomLease') ||
+        data['viewerUserId'] != userId ||
+        data['ownerUserId'] is! int ||
+        (data['ownerUserId'] as int) <= 0 ||
+        data['ownerUserId'] == userId ||
+        !const ['MEMBER', 'MANAGER'].contains(data['memberRole']) ||
+        data['realtimeMode'] != 'HTTP_STATE_ONLY' ||
+        data['publicScreenEnabled'] != false ||
+        data['giftCatalogAvailable'] != false ||
+        data['rtcStatus'] != 'VENDOR_BLOCKED' ||
+        data['imStatus'] != 'VENDOR_BLOCKED' ||
+        data['providerInvocation'] != false) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '平台关房管理视图响应无效',
       );
     }
     return true;
@@ -753,6 +787,50 @@ class BackendRoomRepository
       );
     }
     final int ownerId = _ownerIdFromData(data);
+    for (final field in [
+      'platformStaff',
+      'canControlRoomLifecycle',
+      'closedRoomAccess',
+    ]) {
+      if (data.containsKey(field) && data[field] is! bool) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '房间平台能力字段无效',
+        );
+      }
+    }
+    if (data.containsKey('canControlRoomLifecycle') &&
+        data['canControlRoomLifecycle'] !=
+            (ownerId == currentUserId || data['platformStaff'] == true)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '房间生命周期授权矛盾',
+      );
+    }
+    if (data['platformStaff'] == true &&
+        (data['viewerUserId'] != currentUserId ||
+            !const [
+              'OWNER',
+              'MANAGER',
+              'MEMBER',
+            ].contains(data['memberRole']) ||
+            (data['memberRole'] == 'OWNER' && ownerId != currentUserId) ||
+            data['canControlRoomLifecycle'] != true ||
+            data['version'] is! int ||
+            (data['version'] as int) < 0)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '平台房间身份或版本矛盾',
+      );
+    }
+    if (data['ownerClosedAccess'] == true &&
+        data.containsKey('closedRoomAccess') &&
+        data['closedRoomAccess'] != true) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '房主关房授权矛盾',
+      );
+    }
     final List<BackendMicSeat> backendSeats = <BackendMicSeat>[
       for (final Object? raw in _asList(data['seats']))
         if (raw is Map<String, Object?>)
@@ -773,6 +851,15 @@ class BackendRoomRepository
     return RoomSnapshot(
       roomId: resolvedRoomId,
       ownerClosedAccess: _isOwnerClosedAccess(data, currentUserId),
+      platformStaff: data['platformStaff'] == true,
+      closedRoomAccess:
+          _isStaffClosedAccess(data, currentUserId) ||
+          (data['closedRoomAccess'] == true &&
+              _isOwnerClosedAccess(data, currentUserId)),
+      canControlRoomLifecycle: data['canControlRoomLifecycle'] == true,
+      version: data['version'] is int && (data['version'] as int) >= 0
+          ? data['version'] as int
+          : null,
       sessionId: _sessionIdFromData(data),
       roomLease: data.containsKey('roomLease')
           ? parseRoomLease(data['roomLease'], sessionId: data['sessionId'])
