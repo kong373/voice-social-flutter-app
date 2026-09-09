@@ -1,4 +1,5 @@
 import 'package:voice_social_app/core/network/api_client.dart';
+import 'package:voice_social_app/features/room/domain/gift_send_models.dart';
 import 'package:voice_social_app/features/commerce/domain/gift_coin_precision.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
@@ -22,6 +23,7 @@ class BackendRoomRepository
         RoomAuthorityRepository,
         RoomLeaseRepository,
         GiftReceiptRepository,
+        GiftCommandRepository,
         RtcTokenRepository,
         TencentImRoomSessionSource,
         TencentImRoomReadinessSource {
@@ -50,6 +52,7 @@ class BackendRoomRepository
   final Future<bool> Function()? _prepareAccessSession;
   final RoomWriteGuard _leaseWriteGuard = RoomWriteGuard(scope: 'room-lease');
   final RoomWriteGuard _writeGuard = RoomWriteGuard(scope: 'room-session');
+  final Map<String, String> _giftCommandBodies = {};
   int? get _activeCurrentUserId => leaseBinding.current?.userId;
   int? _imGeneration;
   final Map<String, TencentImAvChatRoomSession> _tencentImRoomSessions =
@@ -1180,6 +1183,101 @@ class BackendRoomRepository
 
       requestedPage += 1;
     }
+  }
+
+  @override
+  GiftSendCommand freezeGift({
+    required int actorId,
+    required String roomId,
+    required String giftId,
+    required int receiverUserId,
+    required int quantity,
+    required String requestId,
+  }) {
+    final member = leaseBinding.require(roomId);
+    if (member.userId != actorId || !_giftUuidPattern.hasMatch(giftId)) {
+      throw RoomLeaseBinding.stale();
+    }
+    return GiftSendCommand(
+      actorId: actorId,
+      roomId: roomId,
+      sessionId: member.lease.sessionId,
+      giftId: giftId,
+      receiverUserId: receiverUserId,
+      quantity: quantity,
+      requestId: requestId,
+    );
+  }
+
+  @override
+  Future<GiftReceipt> sendGiftCommand(
+    GiftSendCommand command, {
+    required void Function() requireIdentity,
+  }) async {
+    final generation = leaseBinding.generation;
+    void requireOriginal() {
+      requireIdentity();
+      leaseBinding.check(generation);
+      final member = leaseBinding.require(command.roomId);
+      if (member.userId != command.actorId ||
+          member.lease.sessionId != command.sessionId)
+        throw RoomLeaseBinding.stale();
+    }
+
+    requireOriginal();
+    if (!_giftUuidPattern.hasMatch(command.giftId)) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '礼物ID无效',
+      );
+    }
+    final fingerprint = '${command.actorId}:${command.encodedBody}';
+    final previous = _giftCommandBodies[command.requestId];
+    if (previous != null && previous != fingerprint) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        code: 40903,
+        message: '原礼物请求不能更换目标或内容',
+      );
+    }
+    _giftCommandBodies[command.requestId] = fingerprint;
+    await _prepareStrictPost(generation);
+    requireOriginal();
+    final response = await _apiClient.postBoundToIdentity(
+      _routes.sendGift,
+      requireIdentity: requireOriginal,
+      headers: {'X-Request-Id': command.requestId},
+      body: command.body,
+    );
+    requireOriginal();
+    final raw = _asMap(response.data);
+    final data = raw['receipt'] is Map<String, Object?>
+        ? raw['receipt']! as Map<String, Object?>
+        : raw;
+    final receipt = _giftReceiptFromData(
+      data,
+      roomId: command.roomId,
+      giftId: command.giftId,
+      receiverUserId: command.receiverUserId,
+      quantity: command.quantity,
+      expectedRequestId: command.requestId,
+    );
+    command.validateReceipt(receipt);
+    return receipt;
+  }
+
+  @override
+  Future<GiftReceipt> queryGiftCommand(GiftSendCommand command) async {
+    // No lease requirement: an already sent transfer remains readable after
+    // its receiver leaves the mic or its sender's original room lease expires.
+    final receipt = await fetchGiftReceipt(
+      requestId: command.requestId,
+      currentUserId: command.actorId,
+      senderUserId: command.actorId,
+      receiverUserId: command.receiverUserId,
+    );
+    command.validateReceipt(receipt, queried: true);
+    return receipt;
   }
 
   @override

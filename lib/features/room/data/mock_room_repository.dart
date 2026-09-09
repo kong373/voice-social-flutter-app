@@ -1,16 +1,139 @@
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/commerce/domain/gift_coin_precision.dart';
+import 'package:voice_social_app/features/room/domain/gift_send_models.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart';
 
-class MockRoomRepository implements RoomRepository {
-  MockRoomRepository({this.lifecycleRepository});
+class MockRoomRepository implements RoomRepository, GiftCommandRepository {
+  MockRoomRepository({
+    this.lifecycleRepository,
+    this.readGiftCoins,
+    this.writeGiftCoins,
+    this.giftUnitPrice,
+  });
   final RoomLifecycleRepository? lifecycleRepository;
+  final GiftCoinAmount Function()? readGiftCoins;
+  final void Function(GiftCoinAmount)? writeGiftCoins;
+  final Future<int?> Function(String)? giftUnitPrice;
 
   RoomSnapshot? _snapshot;
   RoomRole _entryRole = RoomRole.listener;
   List<RoomMessage> _publicMessages = const <RoomMessage>[];
+  final Map<String, (String, GiftReceipt)> _giftReceipts = {};
+
+  @override
+  GiftSendCommand freezeGift({
+    required int actorId,
+    required String roomId,
+    required String giftId,
+    required int receiverUserId,
+    required int quantity,
+    required String requestId,
+  }) => GiftSendCommand(
+    actorId: actorId,
+    requestId: requestId,
+    roomId: roomId,
+    sessionId: _requireSnapshot().sessionId ?? 'mock-$roomId',
+    giftId: giftId,
+    receiverUserId: receiverUserId,
+    quantity: quantity,
+  );
+
+  @override
+  Future<GiftReceipt> sendGiftCommand(
+    GiftSendCommand command, {
+    required void Function() requireIdentity,
+  }) async {
+    requireIdentity();
+    final unit = giftUnitPrice == null
+        ? {'101': 10, '102': 66, '103': 188}[command.giftId]
+        : await giftUnitPrice!(command.giftId);
+    requireIdentity();
+    if (unit == null || unit <= 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        httpStatus: 400,
+        message: 'Mock礼物不存在',
+      );
+    }
+    final room = _requireSnapshot();
+    if (room.roomId != command.roomId ||
+        (room.sessionId ?? 'mock-${room.roomId}') != command.sessionId ||
+        !room.seats.any(
+          (seat) => seat.isOccupied && seat.userId == command.receiverUserId,
+        )) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        httpStatus: 400,
+        message: '收礼人当前不在麦位',
+      );
+    }
+    final old = _giftReceipts[command.requestId];
+    if (old != null) {
+      if (old.$1 != command.encodedBody ||
+          old.$2.senderUserId != command.actorId) {
+        throw const ApiException(
+          kind: ApiFailureKind.conflict,
+          code: 40903,
+          message: '请求内容已变化',
+        );
+      }
+      return old.$2;
+    }
+    final total = unit * command.quantity;
+    final balance =
+        readGiftCoins?.call() ?? GiftCoinAmount.whole(room.giftBalance ?? 0);
+    if (!balance.coversWholeCoins(total))
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        httpStatus: 400,
+        message: '礼物币余额不足',
+      );
+    final remaining = GiftCoinAmount.fromTenths(
+      '${balance.tenths - BigInt.from(total) * BigInt.from(10)}',
+    );
+    final legacyRemaining = (remaining.tenths ~/ BigInt.from(10)).toInt();
+    final receipt = GiftReceipt(
+      success: true,
+      remainingBalance: legacyRemaining,
+      coinPrecision: GiftCoinBalance(
+        available: remaining,
+        frozen: const GiftCoinAmount.whole(0),
+      ),
+      transferId: 'mock-${command.requestId}',
+      roomId: command.roomId,
+      senderUserId: command.actorId,
+      receiverUserId: command.receiverUserId,
+      giftId: command.giftId,
+      quantity: command.quantity,
+      source: 'WALLET',
+      deliveryMode: 'HTTP_PERSISTED_NO_REALTIME',
+      providerInvocation: false,
+      status: 'SUCCEEDED',
+      requestId: command.requestId,
+      reconciled: true,
+    );
+    writeGiftCoins?.call(remaining);
+    _snapshot = room.copyWith(giftBalance: legacyRemaining);
+    _giftReceipts[command.requestId] = (command.encodedBody, receipt);
+    return receipt;
+  }
+
+  @override
+  Future<GiftReceipt> queryGiftCommand(GiftSendCommand command) async {
+    final receipt = _giftReceipts[command.requestId];
+    if (receipt == null)
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        code: 404,
+        httpStatus: 404,
+        message: 'Mock中尚无该礼物记录',
+      );
+    command.validateReceipt(receipt.$2, queried: true);
+    return receipt.$2;
+  }
 
   void seedEntryRoleForQa(RoomRole role) {
     _entryRole = role;

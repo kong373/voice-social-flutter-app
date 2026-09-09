@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:voice_social_app/features/room/application/gift_send_coordinator.dart';
+import 'package:voice_social_app/features/room/domain/gift_send_models.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -96,6 +98,7 @@ class AppDependencies {
     required this.appleIapPurchaseCoordinator,
     required this.messageRepository,
     required this.roomRepository,
+    required this.giftSendCoordinator,
     required this.roomOperationsRepository,
     required this.roomLifecycleRepository,
     required this.platformRoomRepository,
@@ -412,7 +415,19 @@ class AppDependencies {
                 authController.ensureFreshAccessSession(),
             now: currentTime,
           )
-        : MockRoomRepository(lifecycleRepository: roomLifecycleRepository);
+        : MockRoomRepository(
+            lifecycleRepository: roomLifecycleRepository,
+            giftUnitPrice: (id) async =>
+                (await commerceCatalogRepository.fetchGiftCatalog())
+                    .where((gift) => gift.enabled && gift.id == id)
+                    .firstOrNull
+                    ?.price,
+            readGiftCoins: () =>
+                (commerceRepository as MockCommerceRepository).giftCoins,
+            writeGiftCoins: (amount) =>
+                (commerceRepository as MockCommerceRepository).giftCoins =
+                    amount,
+          );
     final RoomOperationsRepository roomOperationsRepository = environment.isLive
         ? BackendRoomOperationsRepository(
             apiClient: apiClient,
@@ -492,6 +507,16 @@ class AppDependencies {
       appleIapPurchaseCoordinator: appleIapPurchaseCoordinator,
       messageRepository: messageRepository,
       roomRepository: roomRepository,
+      giftSendCoordinator: GiftSendCoordinator(
+        repository: roomRepository as GiftCommandRepository,
+        store: store,
+        storageScope: Uri.encodeComponent(environment.apiBaseUrl),
+        identity: () => (
+          sessionManager.session?.userId ?? (environment.isLive ? null : 10001),
+          sessionManager.identityGeneration,
+        ),
+        identityChanges: sessionManager,
+      ),
       roomOperationsRepository: roomOperationsRepository,
       roomLifecycleRepository: roomLifecycleRepository,
       platformRoomRepository: environment.isLive
@@ -542,6 +567,7 @@ class AppDependencies {
   final AppleIapPurchaseCoordinator? appleIapPurchaseCoordinator;
   final MessageRepository messageRepository;
   final RoomRepository roomRepository;
+  final GiftSendCoordinator giftSendCoordinator;
   final RoomOperationsRepository roomOperationsRepository;
   final RoomLifecycleRepository roomLifecycleRepository;
   final PlatformRoomRepository platformRoomRepository;
@@ -672,6 +698,7 @@ class AppDependencies {
     if (_disposed) return;
     _disposed = true;
     complianceRevision.dispose();
+    giftSendCoordinator.dispose();
     for (final reference in _roomControllers) {
       reference.target?.dispose();
     }
@@ -731,6 +758,7 @@ class AppDependencies {
       currentUserId: session?.userId ?? 10001,
       accessToken: session?.accessToken ?? 'mock-local-session',
       repository: roomRepository,
+      giftSendCoordinator: giftSendCoordinator,
       roomOperationsRepository: roomOperationsRepository,
       rtcAdapter: rtcAdapter,
       realtimeGateway: realtimeGateway,

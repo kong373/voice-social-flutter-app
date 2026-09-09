@@ -26,6 +26,21 @@ bool _sendEnabled(WidgetTester tester) =>
     tester.widget<Semantics>(_send).properties.enabled == true;
 
 void main() {
+  testWidgets('S09 selecting two recipients previews and submits each once', (
+    tester,
+  ) async {
+    final h = _SheetHarness([_alice, _bob]);
+    addTearDown(h.dispose);
+    await h.mount(tester);
+    await tester.tap(find.text('Bob'));
+    await tester.pump();
+    expect(find.text('赠送 · 20'), findsOneWidget);
+    await tester.tap(_send);
+    await tester.pumpAndSettle();
+    expect(h.requests.map((request) => request.target.userId), [20, 30]);
+    expect(h.requests.map((request) => request.quantity), [1, 1]);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets('S07 gift balance shows tenths but whole price is not repriced', (
     tester,
   ) async {
@@ -41,6 +56,24 @@ void main() {
     expect(h.requests, isEmpty);
     await tester.pumpWidget(const SizedBox());
   });
+  testWidgets(
+    'S09 20.1 coins covers exactly two 10-coin recipients without rounding balance',
+    (tester) async {
+      final h = _SheetHarness([_alice, _bob]);
+      addTearDown(h.dispose);
+      (h.dependencies.commerceRepository as MockCommerceRepository).giftCoins =
+          GiftCoinAmount.fromTenths('201');
+      await h.mount(tester);
+      expect(find.text('20.1'), findsOneWidget);
+      await tester.tap(find.text('Bob'));
+      await tester.pump();
+      await tester.tap(_send);
+      await tester.pumpAndSettle();
+      expect(find.text('礼物币不足'), findsNothing);
+      expect(h.requests, hasLength(2));
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
   testWidgets('removed recipient is not replaced or submitted accidentally', (
     tester,
   ) async {

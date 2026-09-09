@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../application/gift_send_coordinator.dart';
+import '../domain/gift_send_models.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
@@ -35,6 +37,9 @@ class GiftSheet extends StatefulWidget {
     required this.onSend,
     required this.onRechargeReturn,
     this.sendingAllowed = true,
+    this.coordinator,
+    this.roomId,
+    this.canSendTo,
     super.key,
   });
 
@@ -44,6 +49,9 @@ class GiftSheet extends StatefulWidget {
   final Future<bool> Function(GiftSendRequest request) onSend;
   final Future<int?> Function() onRechargeReturn;
   final bool sendingAllowed;
+  final GiftSendCoordinator? coordinator;
+  final String? roomId;
+  final bool Function(int)? canSendTo;
 
   @override
   State<GiftSheet> createState() => _GiftSheetState();
@@ -60,7 +68,7 @@ class _GiftSheetState extends State<GiftSheet>
     _balanceMessage = '身份已切换，请重新进入房间';
     _catalog = null;
     _selectedGift = null;
-    _selectedTarget = null;
+    _selectedTargets.clear();
     _submitting = false;
     _loading = false;
     _error = '身份已切换，请重新进入房间';
@@ -71,7 +79,8 @@ class _GiftSheetState extends State<GiftSheet>
 
   List<GiftCatalogItem>? _catalog;
   GiftCatalogItem? _selectedGift;
-  GiftTarget? _selectedTarget;
+  final Set<int> _selectedTargets = {};
+  GiftSendCoordinator? _coordinator;
   GiftCatalogCategory _category = GiftCatalogCategory.popular;
   int _quantity = 1;
   GiftCoinAmount? _balance;
@@ -83,7 +92,8 @@ class _GiftSheetState extends State<GiftSheet>
   @override
   void initState() {
     super.initState();
-    _selectedTarget = widget.targets.firstOrNull;
+    final first = widget.targets.firstOrNull;
+    if (first != null) _selectedTargets.add(first.userId);
     _balance = widget.balance == null
         ? null
         : GiftCoinAmount.whole(widget.balance!);
@@ -92,21 +102,33 @@ class _GiftSheetState extends State<GiftSheet>
   @override
   void didUpdateWidget(covariant GiftSheet oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final int? selectedId = oldWidget.account == widget.account
-        ? _selectedTarget?.userId
-        : null;
+    if (oldWidget.account != widget.account) _selectedTargets.clear();
     // Keep the user's choice by identity, never by seat/list position. A new
     // arrival must not silently replace someone who left while this is open.
-    _selectedTarget = widget.targets
-        .where((target) => target.userId == selectedId)
-        .firstOrNull;
+    _selectedTargets.retainAll(widget.targets.map((target) => target.userId));
     // Whole-coin room snapshots cannot overwrite a precise wallet read.
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (!identical(_coordinator, widget.coordinator)) {
+      _coordinator?.removeListener(_giftChanged);
+      _coordinator = widget.coordinator;
+      _coordinator?.addListener(_giftChanged);
+      _coordinator?.restore();
+    }
     if (_catalog == null && _loading) _loadCatalog();
+  }
+
+  void _giftChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _coordinator?.removeListener(_giftChanged);
+    super.dispose();
   }
 
   Future<void> _loadCatalog() async {
@@ -142,7 +164,11 @@ class _GiftSheetState extends State<GiftSheet>
   @override
   Widget build(BuildContext context) {
     final GiftCatalogItem? gift = _selectedGift;
-    final int total = gift == null ? 0 : gift.price * _quantity;
+    final total = gift == null
+        ? BigInt.zero
+        : BigInt.from(gift.price) *
+              BigInt.from(_quantity) *
+              BigInt.from(_selectedTargets.length);
     final List<GiftCatalogItem> visible =
         (_catalog ?? const <GiftCatalogItem>[])
             .where((GiftCatalogItem item) => item.category == _category)
@@ -181,7 +207,7 @@ class _GiftSheetState extends State<GiftSheet>
                   ),
                   Spacer(),
                   Text(
-                    '选择麦上用户',
+                    '麦上用户 · 可多选',
                     style: TextStyle(
                       color: RoomColors.textSecondary,
                       fontSize: 10,
@@ -191,14 +217,24 @@ class _GiftSheetState extends State<GiftSheet>
               ),
             ),
             const SizedBox(height: 6),
-            _targets(),
+            if (_coordinator?.plan == null) _targets(),
             const SizedBox(height: 8),
-            _GiftCampaignBanner(onTap: _showCampaignDetails),
+            if (_coordinator?.plan == null)
+              _GiftCampaignBanner(onTap: _showCampaignDetails),
             const SizedBox(height: 8),
-            _categoryTabs(),
+            if (_coordinator?.plan == null) _categoryTabs(),
             const SizedBox(height: 3),
-            Expanded(child: _giftGrid(visible)),
-            _footer(total),
+            if (_coordinator?.error != null)
+              Text(
+                _coordinator!.error!,
+                style: const TextStyle(color: Colors.orange),
+              ),
+            Expanded(
+              child: _coordinator?.plan == null
+                  ? _giftGrid(visible)
+                  : _results(),
+            ),
+            if (_coordinator?.plan == null) _footer(total),
           ],
         ),
       ),
@@ -224,11 +260,14 @@ class _GiftSheetState extends State<GiftSheet>
         separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemBuilder: (BuildContext context, int index) {
           final GiftTarget target = widget.targets[index];
-          final bool selected = target.userId == _selectedTarget?.userId;
+          final bool selected = _selectedTargets.contains(target.userId);
           return InkWell(
             onTap: _submitting
                 ? null
-                : () => setState(() => _selectedTarget = target),
+                : () => setState(() {
+                    if (!_selectedTargets.add(target.userId))
+                      _selectedTargets.remove(target.userId);
+                  }),
             borderRadius: BorderRadius.circular(99),
             child: Column(
               children: <Widget>[
@@ -402,7 +441,7 @@ class _GiftSheetState extends State<GiftSheet>
     );
   }
 
-  Widget _footer(int total) => LayoutBuilder(
+  Widget _footer(BigInt total) => LayoutBuilder(
     builder: (BuildContext context, BoxConstraints constraints) {
       final bool compact =
           constraints.maxWidth < 380 ||
@@ -449,26 +488,29 @@ class _GiftSheetState extends State<GiftSheet>
                     button: true,
                     label: '充值',
                     child: InkWell(
-                      onTap: () async {
-                        final ticket = beginCommerceRead();
-                        await Navigator.of(context).push<void>(
-                          MaterialPageRoute<void>(
-                            builder: (BuildContext context) =>
-                                const RechargeCatalogPage(),
-                          ),
-                        );
-                        if (!acceptsCommerceRead(ticket)) return;
-                        await widget.onRechargeReturn();
-                        final refreshed = await _readAuthoritativeBalance();
-                        if (acceptsCommerceRead(ticket)) {
-                          setState(() {
-                            _balance = refreshed;
-                            _balanceMessage = refreshed == null
-                                ? '余额待刷新，请重试'
-                                : null;
-                          });
-                        }
-                      },
+                      onTap: _submitting || _coordinator?.busy == true
+                          ? null
+                          : () async {
+                              final ticket = beginCommerceRead();
+                              await Navigator.of(context).push<void>(
+                                MaterialPageRoute<void>(
+                                  builder: (BuildContext context) =>
+                                      const RechargeCatalogPage(),
+                                ),
+                              );
+                              if (!acceptsCommerceRead(ticket)) return;
+                              await widget.onRechargeReturn();
+                              final refreshed =
+                                  await _readAuthoritativeBalance();
+                              if (acceptsCommerceRead(ticket)) {
+                                setState(() {
+                                  _balance = refreshed;
+                                  _balanceMessage = refreshed == null
+                                      ? '余额待刷新，请重试'
+                                      : null;
+                                });
+                              }
+                            },
                       borderRadius: BorderRadius.circular(999),
                       child: Padding(
                         padding: EdgeInsets.symmetric(
@@ -502,7 +544,7 @@ class _GiftSheetState extends State<GiftSheet>
                   widget.sendingAllowed &&
                   !_submitting &&
                   _balanceMessage == null &&
-                  _selectedTarget != null &&
+                  _selectedTargets.isNotEmpty &&
                   _selectedGift != null,
               label: '赠送礼物',
               child: Material(
@@ -510,7 +552,7 @@ class _GiftSheetState extends State<GiftSheet>
                     !widget.sendingAllowed ||
                         _submitting ||
                         _balanceMessage != null ||
-                        _selectedTarget == null ||
+                        _selectedTargets.isEmpty ||
                         _selectedGift == null
                     ? RoomColors.primary.withValues(alpha: 0.42)
                     : RoomColors.primary,
@@ -520,7 +562,7 @@ class _GiftSheetState extends State<GiftSheet>
                       !widget.sendingAllowed ||
                           _submitting ||
                           _balanceMessage != null ||
-                          _selectedTarget == null ||
+                          _selectedTargets.isEmpty ||
                           _selectedGift == null
                       ? null
                       : () => _submit(total),
@@ -559,26 +601,25 @@ class _GiftSheetState extends State<GiftSheet>
     },
   );
 
-  Future<void> _submit(int total) async {
-    final ticket = beginCommerceRead();
+  Future<void> _submit(BigInt total) async {
     final GiftCatalogItem? gift = _selectedGift;
-    final GiftTarget? target = _selectedTarget;
+    final targets = widget.targets
+        .where((t) => _selectedTargets.contains(t.userId))
+        .toList();
     if (!widget.sendingAllowed ||
         _submitting ||
         _balanceMessage != null ||
         gift == null ||
-        target == null ||
-        !widget.targets.any((value) => value.userId == target.userId)) {
+        targets.isEmpty ||
+        _coordinator?.busy == true ||
+        _coordinator?.plan != null) {
       return;
     }
-    final request = GiftSendRequest(
-      gift: gift,
-      target: target,
-      quantity: _quantity,
-    );
+    final ticket = beginCommerceRead();
+    final quantity = _quantity;
     final balance = _balance;
     if (balance == null) return;
-    if (!balance.coversWholeCoins(total)) {
+    if (balance.tenths < total * BigInt.from(10)) {
       final bool? recharge = await showDialog<bool>(
         context: context,
         builder: (BuildContext dialogContext) => AlertDialog(
@@ -616,7 +657,36 @@ class _GiftSheetState extends State<GiftSheet>
     }
     setState(() => _submitting = true);
     try {
-      final bool sent = await widget.onSend(request);
+      final coordinator = _coordinator;
+      if (coordinator != null) {
+        await coordinator.submit(
+          roomId: widget.roomId!,
+          giftId: gift.id,
+          unitCoins: gift.price,
+          quantity: quantity,
+          receivers: targets.map((t) => t.userId).toList(),
+          canSend: _canSendTo,
+        );
+        if (acceptsCommerceRead(ticket)) {
+          final authoritative = await _readAuthoritativeBalance();
+          if (acceptsCommerceRead(ticket))
+            setState(() {
+              _balance = authoritative;
+              _balanceMessage = authoritative == null ? '余额待刷新，请重试' : null;
+            });
+        }
+        return;
+      }
+      // Compatibility for existing injected single-recipient callers. Live
+      // room pages always provide the durable coordinator below.
+      var sent = true;
+      for (final target in targets) {
+        if (!acceptsCommerceRead(ticket)) return;
+        final result = await widget.onSend(
+          GiftSendRequest(gift: gift, target: target, quantity: quantity),
+        );
+        sent = result && sent;
+      }
       if (!mounted || !acceptsCommerceRead(ticket)) return;
       if (sent) {
         // A successful transfer does not authorize the client to derive a new
@@ -637,11 +707,98 @@ class _GiftSheetState extends State<GiftSheet>
       } else {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('赠送失败，请检查余额或网络后重试')));
+        ).showSnackBar(const SnackBar(content: Text('赠送结果未确认，请查询原记录')));
       }
     } finally {
       if (acceptsCommerceRead(ticket)) setState(() => _submitting = false);
     }
+  }
+
+  bool _canSendTo(int receiver) =>
+      mounted &&
+      widget.sendingAllowed &&
+      (widget.canSendTo?.call(receiver) ??
+          widget.targets.any((t) => t.userId == receiver));
+
+  Widget _results() {
+    final coordinator = _coordinator!;
+    final plan = coordinator.plan!;
+    final sameRoom = plan.command.roomId == widget.roomId;
+    final busy = coordinator.busy || _submitting;
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (busy) const LinearProgressIndicator(),
+        const Text(
+          '本次逐人结算',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        Text(
+          '计划 ${plan.totalCoins} 礼物币 · 每人 ${plan.command.quantity} 个 · 已成功 ${plan.succeeded}/${plan.entries.length}',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        if (!sameRoom)
+          const Text(
+            '原房间尚有送礼记录，可查询；不能在当前房间重发。',
+            style: TextStyle(color: Colors.orange),
+          ),
+        for (final entry in plan.entries)
+          ListTile(
+            title: Text(
+              widget.targets
+                      .where((t) => t.userId == entry.command.receiverUserId)
+                      .firstOrNull
+                      ?.name ??
+                  '用户 ${entry.command.receiverUserId}',
+              style: const TextStyle(color: Colors.white),
+            ),
+            subtitle: Text(switch (entry.state) {
+              GiftSendState.queued => '尚未发送',
+              GiftSendState.unknown => '结果未确认：保留原请求，请先查询',
+              GiftSendState.succeeded => '已送出（已确认）',
+              GiftSendState.rejected => '本笔被拒绝，未标记成功',
+              GiftSendState.notSent => '未发送：已取消或房间、麦位已变化',
+            }, style: const TextStyle(color: Colors.white70)),
+          ),
+        if (!plan.terminal) ...[
+          TextButton(
+            onPressed: busy ? null : () => _recover(false),
+            child: const Text('查询原回执'),
+          ),
+          TextButton(
+            onPressed: busy || !sameRoom || !widget.sendingAllowed
+                ? null
+                : () => _recover(true),
+            child: const Text('查询后重试未确认项 / 继续未发送项'),
+          ),
+          if (plan.entries.any((e) => e.state == GiftSendState.queued))
+            TextButton(
+              onPressed: busy ? null : coordinator.cancelUnsent,
+              child: const Text('取消尚未发送项'),
+            ),
+        ],
+        if (plan.terminal)
+          TextButton(
+            onPressed: busy
+                ? null
+                : () async {
+                    await coordinator.dismissCompleted();
+                    if (mounted) await _refreshBalance();
+                  },
+            child: const Text('完成查看，重新选择礼物'),
+          ),
+        const Text(
+          '各人独立结算；已成功者不会重发。充值返回不会自动赠送。',
+          style: TextStyle(color: Colors.white54),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _recover(bool retry) async {
+    final ticket = beginCommerceRead();
+    await _coordinator!.recover(canSend: _canSendTo, retryUnknown: retry);
+    if (acceptsCommerceRead(ticket)) await _refreshBalance();
   }
 
   Future<void> _refreshBalance() async {
@@ -684,7 +841,7 @@ class _GiftSheetState extends State<GiftSheet>
             Text('今日心意礼', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
             const Text(
-              '在当前房间选择一位麦上用户并送出礼物。余额、礼物目录与赠送结果均以仓库返回为准，不会伪造厂商支付结果。',
+              '在当前房间选择一位或多位麦上用户，各人独立结算。余额、礼物目录与赠送结果均以仓库返回为准，不会伪造厂商支付结果。',
               textAlign: TextAlign.center,
               style: TextStyle(color: RoomColors.textSecondary, height: 1.45),
             ),

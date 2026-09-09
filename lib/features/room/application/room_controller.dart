@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'gift_send_coordinator.dart';
 
 import 'package:flutter/widgets.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -15,6 +16,8 @@ import 'package:voice_social_app/features/room/infrastructure/room_realtime_gate
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
 class RoomController extends ChangeNotifier with WidgetsBindingObserver {
+  final GiftSendCoordinator? giftSendCoordinator;
+
   /// The backend IM outbox is a 30-second fixed-delay worker. Keep the
   /// default client window above two worker periods so a room entered just
   /// after a worker tick can still observe the next two attempts. Tests may
@@ -34,6 +37,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   );
 
   RoomController({
+    this.giftSendCoordinator,
     required this.roomId,
     required this.title,
     required int currentUserId,

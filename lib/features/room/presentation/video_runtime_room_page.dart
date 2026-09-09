@@ -1389,21 +1389,22 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         controller.status == RoomSessionStatus.joined &&
         controller.allows(RoomCapability.sendGift);
 
-    List<GiftTarget> currentTargets() => !sameSession()
-        ? const <GiftTarget>[]
-        : controller.seats
-              .where(
-                (seat) =>
-                    seat.isOccupied &&
-                    seat.userId != null &&
-                    seat.userName != null &&
-                    seat.userId != controller.currentUserId,
-              )
-              .map(
-                (seat) =>
-                    GiftTarget(userId: seat.userId!, name: seat.userName!),
-              )
-              .toList(growable: false);
+    List<GiftTarget> currentTargets() {
+      if (!sameSession()) return const <GiftTarget>[];
+      final seen = <int>{};
+      return controller.seats
+          .where(
+            (seat) =>
+                seat.isOccupied &&
+                seat.userId != null &&
+                seat.userName != null &&
+                seat.userId != controller.currentUserId &&
+                seen.add(seat.userId!),
+          )
+          .map((seat) => GiftTarget(userId: seat.userId!, name: seat.userName!))
+          .toList(growable: false);
+    }
+
     final String account =
         AppDependencyScope.of(context).sessionManager.session?.mobile ?? '';
     GiftSendRequest? sentRequest;
@@ -1418,6 +1419,11 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         builder: (context, _) => FractionallySizedBox(
           heightFactor: 0.58,
           child: GiftSheet(
+            coordinator: controller.giftSendCoordinator,
+            roomId: controller.roomId,
+            canSendTo: (id) =>
+                hasAuthority() &&
+                currentTargets().any((target) => target.userId == id),
             account: account,
             targets: currentTargets(),
             balance: controller.giftBalance,
