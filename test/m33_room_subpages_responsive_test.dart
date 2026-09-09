@@ -15,10 +15,10 @@ void main() {
     'RM-006',
     'RM-007',
     'RM-008',
-    'RM-009',
+    // RM-009: REMOVED_BY_PRODUCT Q10-04 (previous batch).
     'RM-010',
     'RM-011',
-    'RM-012',
+    // RM-012: REMOVED_BY_PRODUCT Q10-05; not a PASS or skipped page.
     'RM-013',
     'RM-014',
   ];

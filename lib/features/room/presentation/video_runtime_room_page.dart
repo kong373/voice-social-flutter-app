@@ -13,7 +13,6 @@ import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
 import 'package:voice_social_app/features/room/pk/presentation/room_pk_pages.dart';
 import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
 import 'package:voice_social_app/features/room/presentation/room_audio_page.dart';
-import 'package:voice_social_app/features/room/presentation/room_diagnostics_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_members_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_recovery_page.dart';
@@ -1364,9 +1363,6 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
             case 'recovery':
               _openRecovery();
               return;
-            case 'diagnostics':
-              _openDiagnostics();
-              return;
             case 'pk':
               _openPk();
               return;
@@ -1462,17 +1458,6 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (BuildContext context) => RoomRecoveryPage(
-          controller: _controller,
-          roomTitle: _controller.snapshot?.title,
-        ),
-      ),
-    );
-  }
-
-  void _openDiagnostics() {
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomDiagnosticsPage(
           controller: _controller,
           roomTitle: _controller.snapshot?.title,
         ),
@@ -2651,7 +2636,6 @@ class _RoomToolsSheetState extends State<_RoomToolsSheet> {
     final List<_ToolItem> tools = <_ToolItem>[
       const _ToolItem('audio', Icons.volume_up_outlined, '音频'),
       const _ToolItem('recovery', Icons.sync_rounded, '重新连接'),
-      const _ToolItem('diagnostics', Icons.monitor_heart_outlined, '质量诊断'),
       const _ToolItem('minimize', Icons.picture_in_picture_alt_rounded, '收起房间'),
       if (widget.isOnMic)
         const _ToolItem('leaveMic', Icons.mic_off_outlined, '主动下麦'),

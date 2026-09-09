@@ -68,7 +68,6 @@ const List<AppPageDefinition> appPageManifest = <AppPageDefinition>[
   AppPageDefinition(id: 'RM-008', name: '房间公告编辑', area: ProductArea.room),
   AppPageDefinition(id: 'RM-010', name: '音频路由与麦克风控制', area: ProductArea.room),
   AppPageDefinition(id: 'RM-011', name: '弱网重连与会话恢复', area: ProductArea.room),
-  AppPageDefinition(id: 'RM-012', name: '房间质量诊断', area: ProductArea.room),
   AppPageDefinition(id: 'RM-013', name: 'PK 邀请与准备', area: ProductArea.room),
   AppPageDefinition(id: 'RM-014', name: 'PK 对战与结算', area: ProductArea.room),
   AppPageDefinition(id: 'MS-001', name: '会话列表', area: ProductArea.message),
@@ -100,10 +99,11 @@ const List<AppPageDefinition> appPageManifest = <AppPageDefinition>[
   AppPageDefinition(id: 'SC-003', name: '邀请与渠道归属', area: ProductArea.community),
 ];
 
-/// Product decisions Q10-04, Q15-06, Q16-02 and Q23-01 through Q23-06.
+/// Product decisions Q10-04/Q10-05, Q15-06, Q16-02 and Q23-01 through Q23-06.
 const Map<String, String> removedProductPages = <String, String>{
   'US-005': 'REMOVED_BY_PRODUCT',
   'RM-009': 'REMOVED_BY_PRODUCT',
+  'RM-012': 'REMOVED_BY_PRODUCT',
   'CM-007': 'REMOVED_BY_PRODUCT',
   'CM-008': 'REMOVED_BY_PRODUCT',
   'SC-004': 'REMOVED_BY_PRODUCT',

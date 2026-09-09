@@ -26,7 +26,6 @@ import 'package:voice_social_app/features/room/presentation/create_room_page.dar
 import 'package:voice_social_app/features/room/presentation/edit_room_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_audio_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_deep_link_page.dart';
-import 'package:voice_social_app/features/room/presentation/room_diagnostics_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_members_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
@@ -598,25 +597,6 @@ final List<QaPageEntry> qaPageCatalog = <QaPageEntry>[
       dependencies: dependencies,
       childBuilder: (RoomController controller) =>
           RoomRecoveryPage(controller: controller, roomTitle: '深夜温柔陪伴'),
-    ),
-  ),
-  QaPageEntry(
-    id: 'RM-012',
-    name: '房间质量诊断',
-    area: ProductArea.room,
-    widgetClass: 'RoomDiagnosticsPage',
-    sourcePath: 'lib/features/room/presentation/room_diagnostics_page.dart',
-    userEntry: 'RM-004 → 更多 → 房间质量诊断',
-    requiredStates: const <QaPageState>[
-      QaPageState.loading,
-      QaPageState.normal,
-      QaPageState.unavailable,
-    ],
-    vendorBoundary: '真实 RTC 遥测未接入',
-    builder: (AppDependencies dependencies, _) => _QaControllerPage(
-      dependencies: dependencies,
-      childBuilder: (RoomController controller) =>
-          RoomDiagnosticsPage(controller: controller, roomTitle: '深夜温柔陪伴'),
     ),
   ),
   QaPageEntry(

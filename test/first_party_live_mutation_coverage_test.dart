@@ -678,7 +678,7 @@ void main() {
     },
   );
 
-  test('all 61 manifest entries build through the QA wiring catalog', () {
+  test('all 60 manifest entries build through the QA wiring catalog', () {
     final AppDependencies dependencies = AppDependencies.mock();
     const QaScenario scenario = QaScenario(
       role: QaRole.registeredUser,
@@ -686,8 +686,8 @@ void main() {
       mockScenario: QaMockScenario.defaultData,
       network: QaNetworkScenario.normal,
     );
-    expect(appPageManifest, hasLength(61));
-    expect(qaPageCatalog, hasLength(61));
+    expect(appPageManifest, hasLength(60));
+    expect(qaPageCatalog, hasLength(60));
     expect(
       qaPageCatalog.map((QaPageEntry entry) => entry.id).toList(),
       appPageManifest.map((AppPageDefinition page) => page.id).toList(),

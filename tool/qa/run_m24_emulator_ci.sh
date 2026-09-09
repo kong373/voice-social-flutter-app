@@ -1246,7 +1246,7 @@ exercise_qa_console_system_input() {
     sleep 1
     capture_snapshot "qa-console-system-filtered-${AVD_ID}"
     filtered_ui="$DUMP_DIR/qa-console-system-filtered-${AVD_ID}-ui.xml"
-    if ! grep -q '1 / 61' "$filtered_ui"; then
+    if ! grep -q '1 / 60' "$filtered_ui"; then
       printf 'filtered_count=FAIL\n' >>"$interaction_log"
       passed=0
     else
@@ -1302,7 +1302,7 @@ exercise_qa_console_system_input() {
         capture_snapshot "qa-console-system-back-${AVD_ID}"
         returned_ui="$DUMP_DIR/qa-console-system-back-${AVD_ID}-ui.xml"
         if ! grep -q 'M2.4 QA Console' "$returned_ui" || \
-            ! grep -q '1 / 61' "$returned_ui"; then
+            ! grep -q '1 / 60' "$returned_ui"; then
           printf 'android_system_back=FAIL\n' >>"$interaction_log"
           passed=0
         else
@@ -1344,7 +1344,7 @@ exercise_qa_console_system_input() {
     record_case \
       "M24-QA-SYSTEM-INPUT" "AC-004" "qa-smoke" \
       "Real Android keyboard, scrolling, system back, real-page route, and reset complete without a hard finding" \
-      "AC-004 filtered to 1/61, opened, returned with KEYCODE_BACK, scrolled, and reset" \
+      "AC-004 filtered to 1/60, opened, returned with KEYCODE_BACK, scrolled, and reset" \
       "PASS" "" "" \
       "$SCREENSHOT_DIR/qa-console-system-reset-${AVD_ID}.png" \
       "$VIDEO_DIR/qa-console-system-input-${AVD_ID}.mp4" \
@@ -1999,13 +1999,13 @@ run_page_coverage_shards() {
     -name "*-normal-${AVD_ID}-*-1.3x.png" -print | wc -l | tr -d ' ')"
   printf 'screenshots_1.0x=%s\nscreenshots_1.3x=%s\n' \
     "$count_one" "$count_one_three" >>"$aggregate_log"
-  if (( failures == 0 && count_one == 61 && count_one_three == 61 )); then
+  if (( failures == 0 && count_one == 60 && count_one_three == 60 )); then
     PAGE_COVERAGE_STATUS="PASS"
     INTEGRATION_RESULTS[m2_4_page_coverage_test]="PASS"
     INTEGRATION_DEFECTS[m2_4_page_coverage_test]=""
     record_case \
       "M24-PAGE-SHARDS" "" "page-coverage" \
-      "10/10 shard processes pass and emit exactly 61 screenshots per scale" \
+      "10/10 shard processes pass and emit exactly 60 screenshots per scale" \
       "failures=0; 1.0x=$count_one; 1.3x=$count_one_three" \
       "PASS" "" "" "$SCREENSHOT_DIR" "" "$aggregate_log" \
       "The default all/all mode is never used in CI."
@@ -2014,7 +2014,7 @@ run_page_coverage_shards() {
     if [[ -z "$first_defect" ]]; then
       record_defect \
         "P1" "page-coverage" \
-        "Page shard screenshot cardinality is not exactly 61 at both scales" \
+        "Page shard screenshot cardinality is not exactly 60 at both scales" \
         "Run all five shards separately for 1.0x and 1.3x." "$aggregate_log"
       first_defect="$LAST_DEFECT_ID"
     fi
@@ -2022,7 +2022,7 @@ run_page_coverage_shards() {
     INTEGRATION_DEFECTS[m2_4_page_coverage_test]="$first_defect"
     record_case \
       "M24-PAGE-SHARDS" "" "page-coverage" \
-      "10/10 shard processes pass and emit exactly 61 screenshots per scale" \
+      "10/10 shard processes pass and emit exactly 60 screenshots per scale" \
       "failures=$failures; 1.0x=$count_one; 1.3x=$count_one_three" \
       "FAIL" "P1" "$first_defect" "$SCREENSHOT_DIR" "" "$aggregate_log" \
       "No partial shard matrix is promoted to PASS."
@@ -2396,10 +2396,10 @@ generate_page_coverage() {
     } | sort -u | wc -l | tr -d ' '
   )"
   if [[ "$QA_SCOPE_VALUE" == "full" && "$INTEGRATION_SUITE_STARTED" == "1" && \
-        "$interaction_count" != "61" ]]; then
+        "$interaction_count" != "60" ]]; then
     record_defect \
       "P1" "page-coverage" \
-      "The Android catalog pass did not emit all 61 per-page interaction markers" \
+      "The Android catalog pass did not emit all 60 per-page interaction markers" \
       "Run every 1.0x shard and require real button taps, enabled field entry, and top/middle/bottom scroll probes." \
       "$PAGE_COVERAGE_FILE"
     coverage_gap_defect="$LAST_DEFECT_ID"
@@ -2619,7 +2619,7 @@ record_existing_p1_inventory() {
     "Room more menu opens the exact room report" \
     "$SCREENSHOT_DIR/P1-M24-EMU-006-room-report-${suffix}.png"
   record_existing_p1_case "M24-EMU-007" "DS/RM/SC" \
-    "Visible retired-feature deny-list remains empty across all 61 catalog pages" \
+    "Visible retired-feature deny-list remains empty across all 60 catalog pages" \
     "$LOG_DIR/m2_4_page_coverage_test.log" \
     "$SCREENSHOT_DIR/AC-001-normal-${suffix}-*-1.0x.png"
   record_existing_p1_case "M24-EMU-008" "QA Console" \

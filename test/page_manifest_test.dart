@@ -7,6 +7,7 @@ void main() {
     expect(removedProductPages.keys.toSet(), {
       'US-005',
       'RM-009',
+      'RM-012',
       'CM-007',
       'CM-008',
       'SC-004',
@@ -24,11 +25,11 @@ void main() {
     );
   });
 
-  test('61-page product scope is complete and unique', () {
-    expect(appPageManifest, hasLength(61));
+  test('60-page product scope is complete and unique', () {
+    expect(appPageManifest, hasLength(60));
     expect(
       appPageManifest.map((AppPageDefinition page) => page.id).toSet(),
-      hasLength(61),
+      hasLength(60),
     );
   });
 
@@ -37,7 +38,7 @@ void main() {
       ProductArea.account: 12,
       ProductArea.discovery: 8,
       ProductArea.social: 9,
-      ProductArea.room: 13,
+      ProductArea.room: 12,
       ProductArea.message: 6,
       ProductArea.commerce: 10,
       ProductArea.community: 3,
@@ -58,7 +59,7 @@ void main() {
       ..._ids('AC', 12),
       ..._ids('DS', 8),
       ..._ids('US', 10).where((id) => id != 'US-005'),
-      ..._ids('RM', 14).where((id) => id != 'RM-009'),
+      ..._ids('RM', 14).where((id) => id != 'RM-009' && id != 'RM-012'),
       ..._ids('MS', 6),
       ..._ids('CM', 12).where((id) => id != 'CM-007' && id != 'CM-008'),
       ..._ids('SC', 3),
@@ -71,7 +72,7 @@ void main() {
   });
 
   test('QA catalog maps every manifest page to a real implementation', () {
-    expect(qaPageCatalog, hasLength(61));
+    expect(qaPageCatalog, hasLength(60));
     expect(
       qaPageCatalog.map((entry) => entry.id).toList(),
       appPageManifest.map((AppPageDefinition page) => page.id).toList(),

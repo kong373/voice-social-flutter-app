@@ -197,7 +197,7 @@ void main() {
   );
 
   testWidgets(
-    'RM-012 room save conflict refreshes authority and waits for resubmit',
+    'RM-002 room save conflict refreshes authority and waits for resubmit',
     (WidgetTester tester) async {
       final _ConflictRoomLifecycleRepository repository =
           _ConflictRoomLifecycleRepository();
