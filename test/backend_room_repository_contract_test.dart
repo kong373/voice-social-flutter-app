@@ -9,7 +9,6 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/data/backend_room_repository.dart';
 import 'package:voice_social_app/features/im/domain/tencent_im_room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
-import 'package:voice_social_app/features/room/domain/room_repository.dart';
 
 void main() {
   test(
@@ -2188,7 +2187,7 @@ void main() {
   });
 
   test(
-    'switch to pending approval revokes the previous local binding',
+    'obsolete entry approval is rejected and revokes the previous binding',
     () async {
       int enterCalls = 0;
       final _RunningServer server = await _RunningServer.start((
@@ -2255,27 +2254,11 @@ void main() {
           currentUserId: 10001,
         ),
         throwsA(
-          isA<RoomJoinRequestPendingException>()
-              .having(
-                (ApiException error) => error.kind,
-                'kind',
-                ApiFailureKind.business,
-              )
-              .having(
-                (ApiException error) => error.message,
-                'message',
-                '申请已提交，等待审核',
-              )
-              .having(
-                (RoomJoinRequestPendingException error) => error.roomId,
-                'roomId',
-                'approval-room',
-              )
-              .having(
-                (RoomJoinRequestPendingException error) => error.joinRequestId,
-                'joinRequestId',
-                'join-request-1',
-              ),
+          isA<ApiException>().having(
+            (error) => error.kind,
+            'kind',
+            ApiFailureKind.business,
+          ),
         ),
       );
       await expectLater(

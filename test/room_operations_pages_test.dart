@@ -317,7 +317,7 @@ void main() {
     expect(wired.enabled, isFalse);
   });
 
-  testWidgets('RM-007 exposes first-party approval and ban recovery actions', (
+  testWidgets('RM-007 removes entry approval and retains ban recovery', (
     WidgetTester tester,
   ) async {
     final AppDependencies dependencies = AppDependencies.mock();
@@ -368,19 +368,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('入房申请 1'), findsOneWidget);
+    expect(find.textContaining('入房申请'), findsNothing);
     expect(find.text('房间限制 1'), findsOneWidget);
-
-    await tester.tap(find.text('入房申请 1'));
-    await tester.pumpAndSettle();
-    expect(find.text('申请用户'), findsOneWidget);
-    expect(find.text('同意'), findsOneWidget);
-    await tester.tap(find.text('同意'));
-    await tester.pumpAndSettle();
-    final RoomJoinRequestPage resolved = await repository.fetchJoinRequests(
-      roomId: '9527',
-    );
-    expect(resolved.items.single.status, RoomJoinRequestStatus.approved);
 
     await tester.drag(
       find.byType(SingleChildScrollView).first,

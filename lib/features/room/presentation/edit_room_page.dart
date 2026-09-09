@@ -3,6 +3,9 @@ import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/room/data/backend_room_lifecycle_repository.dart'
+    show RoomReopenRepository;
+import 'package:voice_social_app/features/room/presentation/room_page.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_configuration_form.dart';
@@ -131,8 +134,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
 
   Widget _buildForm() {
     final RoomConfiguration room = _room!;
-    final bool enabled =
-        !_saving && !_closing && (room.isOpen || _capabilities.supportsReopen);
+    final bool enabled = !_saving && !_closing;
     return SafeArea(
       child: Column(
         children: <Widget>[
@@ -196,13 +198,22 @@ class _EditRoomPageState extends State<EditRoomPage> {
                   },
                 ),
                 const SizedBox(height: 18),
-                if (!room.isOpen && !_capabilities.supportsReopen)
+                if (!room.isOpen)
                   const RoomOxygenNotice(
                     icon: Icons.info_outline_rounded,
-                    message: '当前 development 后端尚未提供重新开放接口，已关闭房间仅可查看。',
+                    message: '保存配置后仍保持关闭，仅房主可进入。重新开放使用已保存设置，请先保存需要修改的内容。',
                   ),
-                if (!room.isOpen && !_capabilities.supportsReopen)
-                  const SizedBox(height: 18),
+                if (!room.isOpen) const SizedBox(height: 18),
+                if (!room.isOpen && _repository is RoomReopenRepository)
+                  OutlinedButton.icon(
+                    key: const Key('edit-room-reopen-button'),
+                    onPressed:
+                        enabled && room.accessMode != RoomAccessMode.approval
+                        ? _reopen
+                        : null,
+                    icon: const Icon(Icons.power_settings_new_rounded),
+                    label: const Text('重新开放并进入房间'),
+                  ),
                 RoomOxygenSection(
                   title: '关闭房间',
                   subtitle: '关闭会结束当前会话，但不会删除账号或房间配置。',
@@ -252,7 +263,9 @@ class _EditRoomPageState extends State<EditRoomPage> {
               width: double.infinity,
               child: FilledButton.icon(
                 key: const Key('edit-room-save-button'),
-                onPressed: enabled ? _save : null,
+                onPressed: enabled && _accessMode != RoomAccessMode.approval
+                    ? _save
+                    : null,
                 icon: _saving
                     ? const SizedBox.square(
                         dimension: 18,
@@ -270,9 +283,9 @@ class _EditRoomPageState extends State<EditRoomPage> {
 
   Future<void> _save() async {
     final RoomConfiguration current = _room!;
-    if (!current.isOpen && !_capabilities.supportsReopen) {
+    if (_accessMode == RoomAccessMode.approval) {
       setState(() {
-        _error = '当前 development 后端尚未提供重新开放房间接口。';
+        _error = '请选择公开房或密码房后保存';
       });
       return;
     }
@@ -316,6 +329,38 @@ class _EditRoomPageState extends State<EditRoomPage> {
       setState(() {
         _saving = false;
         _error = _messageFor(error, fallback: '房间保存失败，请重试');
+      });
+    }
+  }
+
+  Future<void> _reopen() async {
+    final room = _room!;
+    if (room.version == null) {
+      setState(() => _error = '请刷新房间状态后重试');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await (_repository as RoomReopenRepository).reopenRoom(
+        widget.roomId,
+        expectedVersion: room.version!,
+      );
+      if (!mounted) return;
+      // A new RoomPage performs normal enter and acquires a fresh lease.
+      Navigator.of(context).pushReplacement<void, bool>(
+        MaterialPageRoute<void>(
+          builder: (_) => RoomPage(roomId: widget.roomId, title: room.title),
+        ),
+        result: true,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = _messageFor(error, fallback: '重新开放失败，请刷新后重试');
       });
     }
   }

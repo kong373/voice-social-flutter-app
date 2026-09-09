@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:voice_social_app/features/room/presentation/edit_room_page.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,7 +20,6 @@ import 'package:voice_social_app/features/room/presentation/room_members_page.da
 import 'package:voice_social_app/features/room/presentation/room_recovery_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_share_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_topic_page.dart';
-import 'package:voice_social_app/features/room/presentation/room_join_request_status_page.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
@@ -54,7 +54,6 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   String? _presentedError;
   String? _sessionEndMessage;
   String? _lastMessageIdentity;
-  bool _joinStatusOpen = false;
 
   RoomController get _controller => widget.controller;
 
@@ -286,7 +285,6 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Widget _failureState() {
-    final bool approvalPending = _controller.pendingJoinRequestRoomId != null;
     return Stack(
       children: <Widget>[
         const _VideoRoomBackground(),
@@ -309,29 +307,17 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                 ),
                 const SizedBox(height: 18),
                 Text(
-                  approvalPending ? '入房申请已提交' : '暂时无法进入房间',
+                  '暂时无法进入房间',
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  approvalPending
-                      ? '请查看当前申请状态；审核通过后可继续进入。'
-                      : (_controller.errorMessage ?? '请检查网络后重试。'),
-                ),
+                Text(_controller.errorMessage ?? '请检查网络后重试。'),
                 const SizedBox(height: 22),
-                if (approvalPending)
-                  FilledButton.icon(
-                    onPressed: _openJoinRequestStatus,
-                    icon: const Icon(Icons.assignment_turned_in_outlined),
-                    label: const Text('查看申请状态'),
-                  )
-                else
-                  FilledButton.icon(
-                    onPressed: () =>
-                        _controller.join(source: widget.entrySource),
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('重新进入'),
-                  ),
+                FilledButton.icon(
+                  onPressed: () => _controller.join(source: widget.entrySource),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('重新进入'),
+                ),
                 const Spacer(),
               ],
             ),
@@ -341,61 +327,56 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     );
   }
 
-  Future<void> _openJoinRequestStatus() async {
-    final controller = _controller;
-    final String? pendingRoomId = controller.pendingJoinRequestRoomId;
-    final requestId = controller.pendingJoinRequestId;
-    if (pendingRoomId == null || _joinStatusOpen) {
-      return;
-    }
-    final session = AppDependencyScope.of(context).sessionManager;
-    final identityGeneration = session.identityGeneration;
-    final parentRoute = ModalRoute.of(context);
-    bool pendingChanged = false;
-    void checkPending() {
-      if (controller.pendingJoinRequestRoomId != pendingRoomId ||
-          controller.pendingJoinRequestId != requestId ||
-          controller.status != RoomSessionStatus.failed) {
-        pendingChanged = true;
-      }
-    }
-
-    controller.addListener(checkPending);
-    _joinStatusOpen = true;
-    RoomJoinRequestContinue? result;
-    try {
-      result = await Navigator.of(context).push<RoomJoinRequestContinue>(
-        MaterialPageRoute<RoomJoinRequestContinue>(
-          builder: (BuildContext context) => RoomJoinRequestStatusPage(
-            roomId: pendingRoomId,
-            joinRequestId: requestId,
-            roomTitle: controller.displayTitle,
-            allowContinue: true,
-          ),
-        ),
-      );
-    } finally {
-      controller.removeListener(checkPending);
-      _joinStatusOpen = false;
-    }
-    if (!mounted ||
-        result == null ||
-        pendingChanged ||
-        !identical(controller, _controller) ||
-        parentRoute?.isCurrent != true ||
-        _ending ||
-        session.identityGeneration != identityGeneration ||
-        session.session?.userId != controller.currentUserId ||
-        controller.status != RoomSessionStatus.failed ||
-        controller.pendingJoinRequestRoomId != pendingRoomId ||
-        controller.pendingJoinRequestId != requestId ||
-        result.roomId != pendingRoomId ||
-        (requestId != null && result.joinRequestId != requestId))
-      return;
-    await controller.join(source: widget.entrySource);
-  }
-
   Widget _roomContent() {
+    if (_controller.snapshot?.ownerClosedAccess == true) {
+      return Stack(
+        children: <Widget>[
+          const _VideoRoomBackground(),
+          SafeArea(
+            child: Column(
+              children: <Widget>[
+                ListTile(
+                  title: Text(_controller.displayTitle),
+                  subtitle: Text('房间号 ${_controller.roomCode}'),
+                  trailing: IconButton(
+                    tooltip: '退出管理视图',
+                    onPressed: _endRoom,
+                    icon: const Icon(Icons.close),
+                  ),
+                ),
+                const Spacer(),
+                const Icon(Icons.lock_outline, size: 48),
+                const SizedBox(height: 16),
+                const Text('房间已关闭 · 房主管理视图'),
+                const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text('当前没有入房会话。可修改房间设置或明确重新开放；开放后需重新进入。'),
+                ),
+                FilledButton(
+                  onPressed: !_controller.allows(RoomCapability.editRoom)
+                      ? null
+                      : () async {
+                          await Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  EditRoomPage(roomId: _controller.roomId),
+                            ),
+                          );
+                          if (mounted) await _controller.refreshRoomAuthority();
+                        },
+                  child: const Text('管理房间 / 重新开放'),
+                ),
+                TextButton(
+                  onPressed: () => _confirmEnd(),
+                  child: const Text('退出管理视图'),
+                ),
+                const Spacer(),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       // Child controls win their taps; only otherwise unhandled taps dismiss.
@@ -1448,7 +1429,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           currentRole: snapshot.role,
           seats: snapshot.seats,
           roomTitle: snapshot.title,
-          coordinationMode: _controller.micCoordinationMode,
+          coordinationMode: MicCoordinationMode.approval,
         ),
       ),
     );
@@ -1550,6 +1531,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Future<void> _showExitChoices() async {
+    if (_controller.snapshot?.ownerClosedAccess == true && !_sessionEnded) {
+      await _endRoom();
+      return;
+    }
     if (_sessionEnded || _controller.status == RoomSessionStatus.failed) {
       _popRoom(VideoRoomExit.ended);
       return;
@@ -1632,7 +1617,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
 
   Future<RoomPkBattle?> _fetchActivePk() async {
     final RoomSnapshot? snapshot = _controller.snapshot;
-    if (snapshot == null) {
+    if (snapshot == null || snapshot.ownerClosedAccess) {
       return null;
     }
     try {
@@ -1646,6 +1631,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Future<void> _confirmEnd({RoomPkBattle? activePk}) async {
+    if (_controller.snapshot?.ownerClosedAccess == true) {
+      await _endRoom();
+      return;
+    }
     activePk ??= await _fetchActivePk();
     if (!mounted) {
       return;

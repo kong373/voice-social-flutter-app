@@ -8,37 +8,45 @@ import 'package:voice_social_app/features/room/infrastructure/room_realtime_gate
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
 void main() {
-  test('a late requestMic cannot restore the session after leave', () async {
-    final _RaceRepository repository = _RaceRepository();
-    final _RaceRealtimeGateway realtime = _RaceRealtimeGateway();
-    final RoomController controller = _controller(repository, realtime);
-    addTearDown(() async {
-      controller.dispose();
-      await realtime.dispose();
-    });
+  test(
+    'a late manager direct requestMic cannot restore the session after leave',
+    () async {
+      final _RaceRepository repository = _RaceRepository();
+      final _RaceRealtimeGateway realtime = _RaceRealtimeGateway();
+      final RoomController controller = _controller(repository, realtime);
+      repository._entrySnapshot = repository._entrySnapshot.copyWith(
+        role: RoomRole.moderator,
+      );
+      addTearDown(() async {
+        controller.dispose();
+        await realtime.dispose();
+      });
 
-    await controller.join();
-    final Future<bool> request = controller.requestMic(4);
-    await repository.requestMicStarted.future;
+      await controller.join();
+      final Future<bool> request = controller.requestMic(4);
+      await repository.requestMicStarted.future;
 
-    final Future<bool> leave = controller.leaveRoom();
-    repository.requestMicGate.complete();
-    repository.reconnectGate.complete(_snapshot(occupiedOwnSeat: true));
+      final Future<bool> leave = controller.leaveRoom();
+      repository.requestMicGate.complete();
+      repository.reconnectGate.complete(
+        _snapshot(occupiedOwnSeat: true).copyWith(role: RoomRole.moderator),
+      );
 
-    expect(await request, isFalse);
-    expect(await leave, isTrue);
-    expect(controller.status, RoomSessionStatus.left);
-    expect(
-      controller.messages,
-      isNot(
-        contains(
-          predicate<RoomMessage>(
-            (RoomMessage message) => message.content == '你已上 4 号麦。',
+      expect(await request, isFalse);
+      expect(await leave, isTrue);
+      expect(controller.status, RoomSessionStatus.left);
+      expect(
+        controller.messages,
+        isNot(
+          contains(
+            predicate<RoomMessage>(
+              (RoomMessage message) => message.content == '你已上 4 号麦。',
+            ),
           ),
         ),
-      ),
-    );
-  });
+      );
+    },
+  );
 
   test(
     'stale join compensation does not leave a newer session transport',

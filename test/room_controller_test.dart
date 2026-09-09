@@ -4,14 +4,61 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/data/mock_room_repository.dart';
+import 'package:voice_social_app/features/room/data/mock_room_operations_repository.dart';
+import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
+class _NoDirectMicRepository extends MockRoomRepository {
+  int directMicCalls = 0;
+  @override
+  Future<void> requestMic(int backendMicIndex) async {
+    directMicCalls++;
+    throw StateError('Ordinary members must submit a mic request');
+  }
+}
+
 void main() {
+  test('ordinary member requests mic without a direct grant', () async {
+    final repository = _NoDirectMicRepository();
+    final operations = MockRoomOperationsRepository();
+    final rtc = MockRtcAdapter();
+    final realtime = MockRoomRealtimeGateway();
+    final controller = RoomController(
+      roomId: '880217',
+      title: '公开房',
+      currentUserId: 10001,
+      accessToken: 'mock-access-token',
+      repository: repository,
+      rtcAdapter: rtc,
+      realtimeGateway: realtime,
+      roomOperationsRepository: operations,
+    );
+    addTearDown(() async {
+      controller.dispose();
+      await realtime.dispose();
+    });
+    await controller.join();
+    expect(controller.role, RoomRole.listener);
+    expect(await controller.requestMic(4), isTrue);
+    expect(repository.directMicCalls, 0);
+    expect(controller.role, RoomRole.listener);
+    expect(controller.isOnMic, isFalse);
+    expect(
+      controller.micRequests
+          .where((r) => r.member.userId == 10001)
+          .single
+          .status,
+      MicRequestStatus.pending,
+    );
+    expect(await controller.toggleMicrophone(), isFalse);
+    expect(controller.isOnMic, isFalse);
+  });
+
   test(
-    'room controller keeps eight seats and supports the core flow',
+    'manager keeps eight seats and supports the direct mic core flow',
     () async {
       final MockRtcAdapter rtc = MockRtcAdapter();
       final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
@@ -20,7 +67,8 @@ void main() {
         title: '深夜温柔陪伴',
         currentUserId: 10001,
         accessToken: 'mock-access-token',
-        repository: MockRoomRepository(),
+        repository: MockRoomRepository()
+          ..seedEntryRoleForQa(RoomRole.moderator),
         rtcAdapter: rtc,
         realtimeGateway: realtime,
       );
@@ -35,12 +83,12 @@ void main() {
       await controller.join();
       expect(controller.status, RoomSessionStatus.joined);
       expect(controller.seats, hasLength(8));
-      expect(controller.role, RoomRole.listener);
+      expect(controller.role, RoomRole.moderator);
       expect(rtc.joined, isTrue);
 
       final bool joinedMic = await controller.requestMic(4);
       expect(joinedMic, isTrue);
-      expect(controller.role, RoomRole.speaker);
+      expect(controller.role, RoomRole.moderator);
       expect(
         controller.seats
             .singleWhere((MicSeat seat) => seat.number == 4)

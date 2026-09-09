@@ -1,14 +1,17 @@
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/room/data/backend_room_lifecycle_repository.dart'
+    show RoomReopenRepository;
 import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart';
 import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
 
-class MockRoomLifecycleRepository implements RoomLifecycleRepository {
+class MockRoomLifecycleRepository
+    implements RoomLifecycleRepository, RoomReopenRepository {
   MockRoomLifecycleRepository();
 
   @override
   final RoomLifecycleCapabilities capabilities =
       const RoomLifecycleCapabilities(
-        supportsApprovalAccessMode: true,
+        supportsApprovalAccessMode: false,
         supportsTopicTitle: true,
         supportsAutoLockMic: true,
         supportsReopen: true,
@@ -60,7 +63,9 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
     _ownedRoom = configuration.copyWith(
       roomId: roomId,
       roomCode: roomCode,
-      availability: RoomAvailability.open,
+      availability: created
+          ? RoomAvailability.open
+          : configuration.availability,
       version: created
           ? (configuration.version ?? 0)
           : (configuration.version ?? 0) + 1,
@@ -144,6 +149,12 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
   }
 
   static void _validate(RoomConfiguration configuration) {
+    if (configuration.accessMode == RoomAccessMode.approval) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '请选择公开房或密码房后保存',
+      );
+    }
     final String title = configuration.title.trim();
     if (title.isEmpty || title.length > 64) {
       throw const ApiException(
@@ -174,6 +185,27 @@ class MockRoomLifecycleRepository implements RoomLifecycleRepository {
         message: '密码房需要设置 4 位数字密码',
       );
     }
+  }
+
+  @override
+  Future<void> reopenRoom(String roomId, {required int expectedVersion}) async {
+    final room = await fetchRoom(roomId);
+    if (room.version != expectedVersion || room.isOpen) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '房间状态已变化，请刷新后重试',
+      );
+    }
+    if (room.accessMode == RoomAccessMode.approval) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '请先保存公开房或密码房设置',
+      );
+    }
+    _ownedRoom = room.copyWith(
+      availability: RoomAvailability.open,
+      version: expectedVersion + 1,
+    );
   }
 
   static String _extractRoomId(String input) {

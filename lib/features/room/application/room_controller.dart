@@ -215,15 +215,10 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   List<MicAccessRequest> get micRequests =>
       List<MicAccessRequest>.unmodifiable(_micRequests);
   MicCoordinationMode get micCoordinationMode {
-    final String mode = _snapshot?.accessMode.trim().toUpperCase() ?? '';
-    if (mode == 'APPROVAL') {
-      return MicCoordinationMode.approval;
-    }
-    if (mode == 'PUBLIC' || mode == 'PASSWORD' || mode == 'DIRECT') {
+    if (role == RoomRole.owner || role == RoomRole.moderator) {
       return MicCoordinationMode.direct;
     }
-    return _roomOperationsRepository?.micCoordinationMode ??
-        MicCoordinationMode.unavailable;
+    return MicCoordinationMode.approval;
   }
 
   bool get giftSubmitting => _giftSubmitting;
@@ -396,6 +391,11 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
             ),
         ]);
       _status = RoomSessionStatus.joined;
+      if (snapshot.ownerClosedAccess) {
+        await refreshRoomAuthority();
+        _notify();
+        return;
+      }
       _startRoomLease(snapshot, enterStarted);
       if (!_isJoinedEpoch(sessionEpoch)) return;
       await _bindTencentImRoom(snapshot, sessionEpoch: sessionEpoch);
@@ -925,6 +925,18 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         );
       }
       if (projection.version < _authorityVersion) return;
+      if (previous?.ownerClosedAccess == true) {
+        if (!projection.snapshot.ownerClosedAccess) {
+          _endAuthoritySession('房间状态已变化，请重新进入房间');
+          return;
+        }
+        _authorityVersion = projection.version;
+        _authorityKnown = true;
+        _authoritySyncDegraded = false;
+        _roomSnapshot = projection.snapshot;
+        _notify();
+        return;
+      }
       if (!projection.memberActive ||
           (previous?.sessionId != null &&
               projection.snapshot.sessionId != previous!.sessionId)) {
@@ -957,6 +969,12 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       _notify();
     } catch (error) {
       if (!_authorityReadIsCurrent(epoch, generation)) return;
+      if (_snapshot?.ownerClosedAccess == true &&
+          error is ApiException &&
+          (error.kind == ApiFailureKind.protocol || error.code == 40431)) {
+        _endAuthoritySession('房间管理权限已变化，请重新进入房间');
+        return;
+      }
       if (error is ApiException && error.kind == ApiFailureKind.unauthorized) {
         _endAuthoritySession('登录状态已失效，请重新登录');
         return;
@@ -976,6 +994,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   // A slow public-history request must never block a background RTC revoke.
   // This lane is independently single-flight and foreground-only.
   void _refreshForegroundRoomData() {
+    if (_snapshot?.ownerClosedAccess == true) return;
     if (!_canSyncAuthority || !_foreground) return;
     _foregroundReadPending = true;
     if (_foregroundReadInFlight) return;
@@ -1210,7 +1229,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         if (operations == null) {
           throw const ApiException(
             kind: ApiFailureKind.configuration,
-            message: '审批房缺少上麦申请能力',
+            message: '当前环境缺少上麦申请能力',
           );
         }
         await operations.submitMicRequest(
@@ -1859,6 +1878,10 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   }) => fetchGiftReceipt(transferId: transferId, requestId: requestId);
 
   Future<void> reconnect() async {
+    if (_snapshot?.ownerClosedAccess == true) {
+      await refreshRoomAuthority();
+      return;
+    }
     if (!_sameIdentity ||
         !_leaseUnexpired ||
         _status != RoomSessionStatus.joined) {
@@ -1958,6 +1981,13 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<bool> leaveRoom() async {
     if (_disposed) return false;
+    if (_snapshot?.ownerClosedAccess == true) {
+      _invalidateSession();
+      _stopAuthoritySync();
+      _status = RoomSessionStatus.left;
+      _notify();
+      return true;
+    }
     if (!_sameIdentity) {
       _onSessionChanged();
       return false;

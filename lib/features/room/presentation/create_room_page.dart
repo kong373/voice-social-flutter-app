@@ -137,11 +137,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
                   RoomOxygenContextBar(
                     title: existing.title,
                     subtitle:
-                        '房间号 ${existing.roomCode ?? existing.roomId} · ${existing.isOpen
-                            ? '保存后直接进入'
-                            : _capabilities.supportsReopen
-                            ? '保存后重新开放'
-                            : '当前仅可查看'}',
+                        '房间号 ${existing.roomCode ?? existing.roomId} · ${existing.isOpen ? '保存后直接进入' : '保存后仍保持关闭，仅房主可进入'}',
                     seed: existing.roomId ?? existing.roomCode ?? 'owned-room',
                     status: existing.isOpen ? '已开放' : '已关闭',
                     statusColor: existing.isOpen
@@ -153,7 +149,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
                     const SizedBox(height: 12),
                     const RoomOxygenNotice(
                       icon: Icons.info_outline_rounded,
-                      message: '当前 development 后端尚未提供重新开放接口，已关闭房间仅可查看。',
+                      message: '保存配置不会重新开放房间。',
                     ),
                   ],
                   const SizedBox(height: 18),
@@ -203,11 +199,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
             child: SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
-                onPressed:
-                    _saving ||
-                        (existing != null &&
-                            !existing.isOpen &&
-                            !_capabilities.supportsReopen)
+                onPressed: _saving || _accessMode == RoomAccessMode.approval
                     ? null
                     : _save,
                 icon: _saving
@@ -231,10 +223,9 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
   }
 
   Future<void> _save() async {
-    final RoomConfiguration? existing = _existing;
-    if (existing != null && !existing.isOpen && !_capabilities.supportsReopen) {
+    if (_accessMode == RoomAccessMode.approval) {
       setState(() {
-        _error = '当前 development 后端尚未提供重新开放房间接口。';
+        _error = '请选择公开房或密码房后保存';
       });
       return;
     }
@@ -297,7 +288,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
       return '创建并进入房间';
     }
     if (!existing.isOpen) {
-      return canReopen ? '重新开放并进入房间' : '暂不支持重新开放';
+      return '保存并进入已关闭房间';
     }
     return '保存并进入房间';
   }

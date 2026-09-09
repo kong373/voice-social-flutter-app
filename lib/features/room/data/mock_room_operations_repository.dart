@@ -6,6 +6,7 @@ import 'package:voice_social_app/features/room/domain/room_operations_repository
 class MockRoomOperationsRepository
     implements
         RoomOperationsRepository,
+        RoomSeatAssignmentRepository,
         RoomJoinRequestRepository,
         RoomBanRepository {
   MockRoomOperationsRepository({
@@ -212,7 +213,45 @@ class MockRoomOperationsRepository
 
   @override
   Future<void> kickUser({required String roomId, required int userId}) async {
+    final member = _members.firstWhere((member) => member.userId == userId);
+    final now = DateTime.now();
+    _bannedUsers.add(
+      RoomBannedUser(
+        member: member,
+        bannedAt: now,
+        expiresAt: now.add(const Duration(minutes: 10)),
+      ),
+    );
     _members.removeWhere((RoomMember member) => member.userId == userId);
+  }
+
+  @override
+  Future<void> assignUserToMic({
+    required String roomId,
+    required int userId,
+    required int backendMicIndex,
+  }) async {
+    if (backendMicIndex < 1 ||
+        backendMicIndex > 8 ||
+        _members.any((member) => member.seatNumber == backendMicIndex)) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '麦位不可用，请刷新',
+      );
+    }
+    _replaceMember(userId, (member) {
+      if (member.isManager || member.isOnMic) {
+        throw const ApiException(
+          kind: ApiFailureKind.conflict,
+          message: '仅可安排普通听众上麦',
+        );
+      }
+      return member.copyWith(
+        role: RoomRole.speaker,
+        presence: RoomMemberPresence.onMic,
+        seatNumber: backendMicIndex,
+      );
+    });
   }
 
   @override
@@ -437,6 +476,16 @@ class MockRoomOperationsRepository
     required int userId,
     String? requestId,
   }) async {
+    final active = _bannedUsers
+        .where((item) => item.member.userId == userId)
+        .firstOrNull;
+    if (active?.expiresAt?.isAfter(DateTime.now()) == true) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        code: 40949,
+        message: '10 分钟禁入冷却期尚未结束，不能提前解除',
+      );
+    }
     final int before = _bannedUsers.length;
     _bannedUsers.removeWhere(
       (RoomBannedUser banned) => banned.member.userId == userId,

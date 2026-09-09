@@ -359,6 +359,9 @@ RoomController _controller({
 );
 
 class _RoleAwareRoomRepository extends MockRoomRepository {
+  // These fixtures exercise direct transport reconciliation for a manager.
+  // Ordinary members retain the approval fixture below.
+  RoomRole get memberRole => RoomRole.moderator;
   bool _onMic = false;
 
   @override
@@ -399,7 +402,7 @@ class _RoleAwareRoomRepository extends MockRoomRepository {
       title: '房间',
       topic: '',
       ownerId: 20001,
-      role: onMic ? RoomRole.speaker : RoomRole.listener,
+      role: memberRole,
       seats: <MicSeat>[
         MicSeat(
           number: 4,
@@ -407,7 +410,7 @@ class _RoleAwareRoomRepository extends MockRoomRepository {
           state: onMic ? MicSeatState.occupied : MicSeatState.available,
           userId: onMic ? 10001 : null,
           userName: onMic ? '我' : null,
-          userRole: onMic ? RoomRole.speaker : RoomRole.listener,
+          userRole: memberRole,
         ),
       ],
       rtc: _credentials(role),
@@ -418,12 +421,14 @@ class _RoleAwareRoomRepository extends MockRoomRepository {
       giftCatalogAvailable: true,
       giftBalance: 100,
       onlineCount: 1,
-      accessMode: '',
+      accessMode: 'PUBLIC',
     );
   }
 }
 
 class _ApprovalRoleAwareRoomRepository extends _RoleAwareRoomRepository {
+  @override
+  RoomRole get memberRole => RoomRole.listener;
   @override
   Future<RoomSnapshot> enterRoom({
     required String roomId,
@@ -432,9 +437,8 @@ class _ApprovalRoleAwareRoomRepository extends _RoleAwareRoomRepository {
     required int currentUserId,
   }) async => _snapshot(role: 'audience', onMic: false).copyWith(
     transportMode: RoomTransportMode.interactive,
-    // Approval mode is provided by the first-party operations capability in
-    // this test; the room snapshot itself remains provider-neutral.
-    accessMode: 'APPROVAL',
+    // Ordinary members need mic approval even in a public room.
+    accessMode: 'PUBLIC',
   );
 
   @override
@@ -444,7 +448,7 @@ class _ApprovalRoleAwareRoomRepository extends _RoleAwareRoomRepository {
   }) async => _snapshot(
     role: 'broadcaster',
     onMic: true,
-  ).copyWith(accessMode: 'APPROVAL');
+  ).copyWith(accessMode: 'PUBLIC');
 }
 
 class _RevokingRoleAwareRoomRepository extends _RoleAwareRoomRepository {

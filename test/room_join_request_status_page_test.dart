@@ -49,65 +49,93 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  for (final change in ['none', 'account', 'pending']) {
+  for (final change in ['none', 'account', 'logout']) {
     testWidgets(
-      'continue retries normal join only for original identity ($change); refusal never paints joined',
+      'live failure has no admission link and cannot bypass identity ($change)',
       (tester) async {
         final dependencies = AppDependencies.mock();
-        await dependencies.sessionManager.save(_session(10));
+        final session = dependencies.sessionManager;
+        await session.save(_session(10));
         final operations =
             dependencies.roomOperationsRepository
                 as MockRoomOperationsRepository;
         operations.seedApplicantStatusForQa(
-          _status(RoomJoinRequestStatus.pending),
+          _status(RoomJoinRequestStatus.approved),
         );
         final repository = _RefusingEntryRepository();
         final realtime = MockRoomRealtimeGateway();
         final controller = RoomController(
           roomId: 'room-9527',
-          title: '审批房',
+          title: '失败房间',
           currentUserId: 10,
           accessToken: 'test',
           repository: repository,
           rtcAdapter: const SnapshotOnlyRtcAdapter(),
           realtimeGateway: realtime,
+          sessionChanges: session,
+          activeUserId: () => session.session?.userId,
+          identityGeneration: () => session.identityGeneration,
         );
         addTearDown(() async {
           controller.dispose();
           await realtime.dispose();
           dependencies.dispose();
         });
+        final navigator = GlobalKey<NavigatorState>();
         await tester.pumpWidget(
           AppDependencyScope(
             dependencies: dependencies,
             child: MaterialApp(
-              home: VideoRuntimeRoomPage(controller: controller),
+              navigatorKey: navigator,
+              home: const Scaffold(body: Text('test home')),
             ),
+          ),
+        );
+        navigator.currentState!.push<void>(
+          MaterialPageRoute(
+            builder: (_) => VideoRuntimeRoomPage(controller: controller),
           ),
         );
         await tester.pumpAndSettle();
         expect(repository.calls, 1);
-        await tester.tap(find.text('查看申请状态'));
-        await tester.pumpAndSettle();
+        expect(find.text('暂时无法进入房间'), findsOneWidget);
+        expect(find.text('查看申请状态'), findsNothing);
+        expect(find.text('入房申请状态'), findsNothing);
         expect(find.text('继续进入'), findsNothing);
-        operations.seedApplicantStatusForQa(
-          _status(RoomJoinRequestStatus.approved),
+        expect(find.byType(RoomJoinRequestStatusPage), findsNothing);
+        await tester.pump(const Duration(seconds: 5));
+        expect(
+          repository.calls,
+          1,
+          reason: 'historical approval cannot auto-enter',
         );
-        await tester.pump(const Duration(seconds: 2));
-        await tester.pump();
-        expect(repository.calls, 1);
         if (change == 'account') {
-          await dependencies.sessionManager.save(_session(11));
-          await tester.pumpAndSettle();
-        } else if (change == 'pending') {
-          await controller.join();
-          await tester.pumpAndSettle();
+          await session.save(_session(11));
+        } else if (change == 'logout') {
+          await session.clear();
         }
-        await tester.tap(find.text('继续进入'));
         await tester.pumpAndSettle();
-        expect(repository.calls, change == 'account' ? 1 : 2);
-        expect(controller.status, RoomSessionStatus.failed);
+        if (change == 'none') {
+          await tester.tap(find.text('重新进入'));
+          await tester.pumpAndSettle();
+          expect(repository.calls, 2);
+          expect(controller.status, RoomSessionStatus.failed);
+          expect(find.text('服务端拒绝入房'), findsOneWidget);
+          await tester.tap(find.byTooltip('返回'));
+        } else {
+          expect(find.text('重新进入'), findsNothing);
+          await controller.join();
+          expect(
+            repository.calls,
+            1,
+            reason: 'old controller must reject entry',
+          );
+          await tester.tap(find.text('返回首页'));
+        }
+        await tester.pumpAndSettle();
         expect(controller.snapshot, isNull);
+        expect(find.text('test home'), findsOneWidget);
+        expect(find.byKey(const Key('video-room-composer')), findsNothing);
         await tester.pumpWidget(const SizedBox());
       },
     );

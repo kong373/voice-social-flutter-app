@@ -499,6 +499,10 @@ class BackendRoomRepository
           snapshot,
           requestedRoomId: normalizedRoomId,
         );
+        if (snapshot.ownerClosedAccess) {
+          _clearTencentImRoomSession(normalizedRoomId);
+          return snapshot;
+        }
         final RoomSnapshot transportReady = await _withRtcCredentials(
           snapshot,
           currentUserId: currentUserId,
@@ -650,15 +654,50 @@ class BackendRoomRepository
   }) {
     final Map<String, Object?> data = _asMap(response.data);
     final String status = _nonEmptyString(data['status'])?.toUpperCase() ?? '';
-    if ((data.containsKey('joined') && !_asBool(data['joined'])) ||
-        status == 'PENDING_APPROVAL') {
-      throw RoomJoinRequestPendingException(
-        roomId: _nonEmptyString(data['roomId']) ?? '',
-        joinRequestId: _nonEmptyString(data['joinRequestId']),
+    if ((status == 'CLOSED' || data['state'] == 'CLOSED') &&
+        data['ownerClosedAccess'] != true) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '关房响应缺少房主管理授权',
       );
     }
-    parseRoomLease(data['roomLease'], sessionId: data['sessionId']);
+    if ((data.containsKey('joined') && !_asBool(data['joined'])) ||
+        status == 'PENDING_APPROVAL') {
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        message: '此房间暂不可进入，请联系房主调整房间设置',
+      );
+    }
+    if (!_isOwnerClosedAccess(data, currentUserId)) {
+      parseRoomLease(data['roomLease'], sessionId: data['sessionId']);
+    }
     return _snapshotFromData(data, currentUserId: currentUserId);
+  }
+
+  static bool _isOwnerClosedAccess(Map<String, Object?> data, int userId) {
+    if (data['ownerClosedAccess'] != true) return false;
+    if (data['state'] != 'CLOSED' ||
+        data['status'] != 'CLOSED' ||
+        data['joined'] != true ||
+        data['memberActive'] != false ||
+        data['activeSession'] != false ||
+        data.containsKey('sessionId') ||
+        data.containsKey('roomLease') ||
+        data['ownerUserId'] != userId ||
+        data['viewerUserId'] != userId ||
+        data['memberRole'] != 'OWNER' ||
+        data['realtimeMode'] != 'HTTP_STATE_ONLY' ||
+        data['publicScreenEnabled'] != false ||
+        data['giftCatalogAvailable'] != false ||
+        data['rtcStatus'] != 'VENDOR_BLOCKED' ||
+        data['imStatus'] != 'VENDOR_BLOCKED' ||
+        data['providerInvocation'] != false) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '关房管理视图响应无效',
+      );
+    }
+    return true;
   }
 
   static void _assertRequestedRoomIdentity(
@@ -731,6 +770,7 @@ class BackendRoomRepository
     final String memberRole = _memberRoleFromData(data);
     return RoomSnapshot(
       roomId: resolvedRoomId,
+      ownerClosedAccess: _isOwnerClosedAccess(data, currentUserId),
       sessionId: _sessionIdFromData(data),
       roomLease: data.containsKey('roomLease')
           ? parseRoomLease(data['roomLease'], sessionId: data['sessionId'])

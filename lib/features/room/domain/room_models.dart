@@ -297,6 +297,7 @@ class RoomSnapshot {
     this.backgroundUrl,
     this.sessionId,
     this.roomLease,
+    this.ownerClosedAccess = false,
   });
 
   final String roomId;
@@ -314,10 +315,11 @@ class RoomSnapshot {
   final bool giftCatalogAvailable;
   final int? giftBalance;
 
-  /// Server-authoritative room access mode. APPROVAL is the only mode that
-  /// may use the first-party microphone queue; an empty value is unknown and
-  /// must not be guessed as direct or approval by callers.
+  /// Entry configuration only; microphone approval is determined by role.
   final String accessMode;
+
+  /// Owner management access without active membership or a session lease.
+  final bool ownerClosedAccess;
   final int? onlineCount;
   final String? coverUrl;
   final String? backgroundUrl;
@@ -347,6 +349,7 @@ class RoomSnapshot {
   }) {
     return RoomSnapshot(
       roomId: roomId,
+      ownerClosedAccess: ownerClosedAccess,
       sessionId: sessionId ?? this.sessionId,
       roomLease: roomLease ?? this.roomLease,
       roomCode: roomCode,

@@ -1540,313 +1540,154 @@ void main() {
     },
   );
 
-  test(
-    'approval room creation uses APPROVAL and does not require a password',
-    () async {
-      final _RunningServer server = await _RunningServer.start((
-        _CapturedRequest request,
-      ) {
-        expect(request.path, '/app-mini-api/mini/v1/rooms');
-        expect(request.method, 'POST');
-        expect(request.body, <String, Object?>{
-          'roomName': '审批房',
-          'topicTitle': '入房规则',
-          'topic': '先申请再进入',
-          'welcomeText': '请等待房主批准',
-          'accessMode': 'APPROVAL',
-          'hallVisible': true,
-          'autoLockMic': true,
-        });
-        return const _Reply(
-          data: <String, Object?>{
-            'roomId': 'approval-room',
-            'roomCode': '9529',
-            'roomName': '审批房',
-            'topicTitle': '入房规则',
-            'topic': '先申请再进入',
-            'welcomeText': '请等待房主批准',
-            'accessMode': 'APPROVAL',
-            'hallVisible': true,
-            'autoLockMic': true,
-            'status': 'OPEN',
-            'created': true,
-            'reused': false,
-            'rtcStatus': 'VENDOR_BLOCKED',
-            'imStatus': 'VENDOR_BLOCKED',
-            'providerInvocation': false,
-            'version': 0,
-          },
-        );
-      });
-      addTearDown(server.close);
-      final BackendRoomLifecycleRepository repository =
-          BackendRoomLifecycleRepository(apiClient: server.client);
-      final RoomLifecycleSaveResult result = await repository.saveRoom(
-        const RoomConfiguration(
-          title: '审批房',
-          topicTitle: '入房规则',
-          topicContent: '先申请再进入',
-          welcomeMessage: '请等待房主批准',
-          accessMode: RoomAccessMode.approval,
-          password: '',
-          showInHall: true,
-          autoLockMic: true,
-          availability: RoomAvailability.open,
+  test('legacy approval saves are rejected without any request', () async {
+    final server = await _RunningServer.start((request) {
+      fail('legacy approval must never be sent');
+    });
+    addTearDown(server.close);
+    final repository = BackendRoomLifecycleRepository(apiClient: server.client);
+    for (final roomId in <String?>[null, '9527']) {
+      await expectLater(
+        repository.saveRoom(
+          RoomConfiguration(
+            roomId: roomId,
+            title: '旧房间',
+            topicTitle: '',
+            topicContent: '',
+            welcomeMessage: '',
+            accessMode: RoomAccessMode.approval,
+            password: '',
+            showInHall: true,
+            autoLockMic: false,
+            availability: RoomAvailability.closed,
+            version: 4,
+          ),
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e.kind,
+            'kind',
+            ApiFailureKind.validation,
+          ),
         ),
       );
+    }
+    expect(server.requests, isEmpty);
+    expect(repository.capabilities.supportsApprovalAccessMode, isFalse);
+  });
 
-      expect(result.roomId, 'approval-room');
-      expect(repository.capabilities.supportsApprovalAccessMode, isTrue);
-      expect(repository.capabilities.supportsTopicTitle, isTrue);
-      expect(repository.capabilities.supportsAutoLockMic, isTrue);
-      expect(repository.capabilities.supportsReopen, isTrue);
-    },
-  );
+  test('explicit reopen sends only reopen with expected version', () async {
+    final server = await _RunningServer.start((request) {
+      expect(request.path, '/app-mini-api/mini/v1/rooms/reopen');
+      expect(request.method, 'POST');
+      expect(request.body, {'roomId': '9527', 'expectedVersion': 4});
+      expect(request.requestId, isNotEmpty);
+      return const _Reply(
+        data: {
+          'roomId': '9527',
+          'status': 'OPEN',
+          'reopened': true,
+          'providerInvocation': false,
+          'version': 5,
+        },
+      );
+    });
+    addTearDown(server.close);
+    final repository = BackendRoomLifecycleRepository(apiClient: server.client);
+    await repository.reopenRoom('9527', expectedVersion: 4);
+    expect(server.requests, hasLength(1));
+  });
 
-  test(
-    'closed live room reopens then persists the requested configuration',
-    () async {
-      String? reopenRequestId;
-      final _RunningServer server = await _RunningServer.start((
-        _CapturedRequest request,
-      ) {
-        switch (request.path) {
-          case '/app-mini-api/mini/v1/rooms/reopen':
-            expect(request.method, 'POST');
-            expect(request.body, <String, Object?>{
+  test('closed live room saves configuration without reopening', () async {
+    final _RunningServer server = await _RunningServer.start((
+      _CapturedRequest request,
+    ) {
+      switch (request.path) {
+        case '/app-api/rooms/updateRoomInformation':
+          expect(request.method, 'PATCH');
+          expect(request.body, <String, Object?>{
+            'roomName': '重新开放房间',
+            'topicTitle': '新标题',
+            'topic': '新内容',
+            'welcomeText': '新欢迎语',
+            'accessMode': 'PUBLIC',
+            'hallVisible': true,
+            'autoLockMic': true,
+            'roomId': '9527',
+            'expectedVersion': 4,
+          });
+          return const _Reply(
+            data: <String, Object?>{
               'roomId': '9527',
-              'expectedVersion': 4,
-            });
-            reopenRequestId = request.requestId;
-            expect(reopenRequestId, isNotEmpty);
-            return const _Reply(
-              data: <String, Object?>{
+              'topicTitle': '新标题',
+              'autoLockMic': true,
+              'status': 'CLOSED',
+              'rtcStatus': 'VENDOR_BLOCKED',
+              'imStatus': 'VENDOR_BLOCKED',
+              'providerInvocation': false,
+              'version': 5,
+            },
+          );
+        case '/app-api/rooms/getRoomSelectByUserId':
+          return _Reply(
+            data: _ownerPage(
+              row: const <String, Object?>{
                 'roomId': '9527',
-                'status': 'OPEN',
-                'reopened': true,
-                'providerInvocation': false,
-                'version': 5,
+                'roomCode': 'R9527',
+                'roomName': '重新开放房间',
+                'topic': '新内容',
+                'topicTitle': '新标题',
+                'autoLockMic': true,
+                'accessMode': 'PUBLIC',
+                'hallVisible': true,
+                'status': 'CLOSED',
               },
-            );
-          case '/app-api/rooms/updateRoomInformation':
-            expect(request.method, 'PATCH');
-            expect(request.body, <String, Object?>{
-              'roomName': '重新开放房间',
+            ),
+          );
+        case '/app-api/rooms/getRoomTopics':
+          return const _Reply(
+            data: <String, Object?>{
+              'roomId': '9527',
               'topicTitle': '新标题',
               'topic': '新内容',
               'welcomeText': '新欢迎语',
-              'accessMode': 'APPROVAL',
-              'hallVisible': true,
               'autoLockMic': true,
-              'roomId': '9527',
-              'expectedVersion': 5,
-            });
-            expect(request.requestId, reopenRequestId);
-            return const _Reply(
-              data: <String, Object?>{
-                'roomId': '9527',
-                'topicTitle': '新标题',
-                'autoLockMic': true,
-                'status': 'OPEN',
-                'rtcStatus': 'VENDOR_BLOCKED',
-                'imStatus': 'VENDOR_BLOCKED',
-                'providerInvocation': false,
-                'version': 6,
-              },
-            );
-          case '/app-api/rooms/getRoomSelectByUserId':
-            return _Reply(
-              data: _ownerPage(
-                row: const <String, Object?>{
-                  'roomId': '9527',
-                  'roomCode': 'R9527',
-                  'roomName': '重新开放房间',
-                  'topic': '新内容',
-                  'topicTitle': '新标题',
-                  'autoLockMic': true,
-                  'accessMode': 'APPROVAL',
-                  'hallVisible': true,
-                  'status': 'OPEN',
-                },
-              ),
-            );
-          case '/app-api/rooms/getRoomTopics':
-            return const _Reply(
-              data: <String, Object?>{
-                'roomId': '9527',
-                'topicTitle': '新标题',
-                'topic': '新内容',
-                'welcomeText': '新欢迎语',
-                'autoLockMic': true,
-                'canEdit': true,
-                'version': 6,
-              },
-            );
-          default:
-            fail('unexpected lifecycle route: ${request.path}');
-        }
-      });
-      addTearDown(server.close);
-      final BackendRoomLifecycleRepository repository =
-          BackendRoomLifecycleRepository(apiClient: server.client);
+              'canEdit': true,
+              'version': 5,
+            },
+          );
+        default:
+          fail('unexpected lifecycle route: ${request.path}');
+      }
+    });
+    addTearDown(server.close);
+    final BackendRoomLifecycleRepository repository =
+        BackendRoomLifecycleRepository(apiClient: server.client);
 
-      final RoomLifecycleSaveResult result = await repository.saveRoom(
-        const RoomConfiguration(
-          roomId: '9527',
-          roomCode: 'R9527',
-          title: '重新开放房间',
-          topicTitle: '新标题',
-          topicContent: '新内容',
-          welcomeMessage: '新欢迎语',
-          accessMode: RoomAccessMode.approval,
-          password: '',
-          showInHall: true,
-          autoLockMic: true,
-          availability: RoomAvailability.closed,
-          version: 4,
-        ),
-      );
-      expect(result.roomId, '9527');
-      expect(result.created, isFalse);
-      expect(
-        server.requests.map((_CapturedRequest item) => item.path),
-        <String>[
-          '/app-mini-api/mini/v1/rooms/reopen',
-          '/app-api/rooms/updateRoomInformation',
-          '/app-api/rooms/getRoomSelectByUserId',
-          '/app-api/rooms/getRoomTopics',
-        ],
-      );
-    },
-  );
-
-  test(
-    'closed live room does not overwrite after reopen committed before update failed',
-    () async {
-      int reopenCalls = 0;
-      int updateCalls = 0;
-      final _RunningServer server = await _RunningServer.start((
-        _CapturedRequest request,
-      ) {
-        switch (request.path) {
-          case '/app-mini-api/mini/v1/rooms/reopen':
-            reopenCalls += 1;
-            if (reopenCalls == 1) {
-              return const _Reply(
-                data: <String, Object?>{
-                  'roomId': '9527',
-                  'status': 'OPEN',
-                  'reopened': true,
-                  'providerInvocation': false,
-                  'version': 5,
-                },
-              );
-            }
-            return const _Reply(
-              code: 40945,
-              message: 'ROOM_VERSION_CONFLICT',
-              data: <String, Object?>{'currentVersion': 5},
-              httpStatus: 409,
-            );
-          case '/app-api/rooms/updateRoomInformation':
-            updateCalls += 1;
-            expect(request.body, containsPair('expectedVersion', 5));
-            if (updateCalls == 1) {
-              return const _Reply(
-                code: 42201,
-                message: '模拟一次可修正的资料更新失败',
-                httpStatus: 422,
-              );
-            }
-            return const _Reply(
-              data: <String, Object?>{
-                'roomId': '9527',
-                'topicTitle': '新标题',
-                'autoLockMic': true,
-                'status': 'OPEN',
-                'rtcStatus': 'VENDOR_BLOCKED',
-                'imStatus': 'VENDOR_BLOCKED',
-                'providerInvocation': false,
-                'version': 6,
-              },
-            );
-          case '/app-api/rooms/getRoomSelectByUserId':
-            return _Reply(
-              data: _ownerPage(
-                row: const <String, Object?>{
-                  'roomId': '9527',
-                  'roomCode': 'R9527',
-                  'roomName': '重新开放房间',
-                  'topic': '新内容',
-                  'topicTitle': '新标题',
-                  'autoLockMic': true,
-                  'accessMode': 'APPROVAL',
-                  'hallVisible': true,
-                  'status': 'OPEN',
-                },
-              ),
-            );
-          case '/app-api/rooms/getRoomTopics':
-            return const _Reply(
-              data: <String, Object?>{
-                'roomId': '9527',
-                'topicTitle': '新标题',
-                'topic': '新内容',
-                'welcomeText': '新欢迎语',
-                'autoLockMic': true,
-                'canEdit': true,
-                'version': 6,
-              },
-            );
-          default:
-            fail('unexpected lifecycle route: ${request.path}');
-        }
-      });
-      addTearDown(server.close);
-      final BackendRoomLifecycleRepository repository =
-          BackendRoomLifecycleRepository(apiClient: server.client);
-      const RoomConfiguration configuration = RoomConfiguration(
+    final RoomLifecycleSaveResult result = await repository.saveRoom(
+      const RoomConfiguration(
         roomId: '9527',
         roomCode: 'R9527',
         title: '重新开放房间',
         topicTitle: '新标题',
         topicContent: '新内容',
         welcomeMessage: '新欢迎语',
-        accessMode: RoomAccessMode.approval,
+        accessMode: RoomAccessMode.publicRoom,
         password: '',
         showInHall: true,
         autoLockMic: true,
         availability: RoomAvailability.closed,
         version: 4,
-      );
-
-      await expectLater(
-        repository.saveRoom(configuration),
-        throwsA(
-          isA<ApiException>().having(
-            (ApiException error) => error.code,
-            'code',
-            42201,
-          ),
-        ),
-      );
-
-      await expectLater(
-        repository.saveRoom(configuration),
-        throwsA(
-          isA<ApiException>()
-              .having((ApiException error) => error.code, 'code', 40945)
-              .having(
-                (ApiException error) => error.kind,
-                'kind',
-                ApiFailureKind.conflict,
-              ),
-        ),
-      );
-      expect(reopenCalls, 2);
-      expect(updateCalls, 1);
-    },
-  );
+      ),
+    );
+    expect(result.roomId, '9527');
+    expect(result.created, isFalse);
+    expect(server.requests.map((_CapturedRequest item) => item.path), <String>[
+      '/app-api/rooms/updateRoomInformation',
+      '/app-api/rooms/getRoomSelectByUserId',
+      '/app-api/rooms/getRoomTopics',
+    ]);
+  });
 
   test(
     'room version conflict is surfaced without an authority overwrite',

@@ -21,14 +21,14 @@ void main() {
       ),
     );
 
-    expect(find.text('审批房'), findsOneWidget);
+    expect(find.text('审批房'), findsNothing);
     expect(find.text('话题标题'), findsNothing);
     expect(find.text('进入房间时自动锁定空麦'), findsNothing);
     expect(find.text('当前 development 后端只持久化一条话题内容，话题标题暂不可用。'), findsOneWidget);
     expect(find.text('当前 development 后端暂不支持自动锁麦，已隐藏此设置。'), findsOneWidget);
   });
 
-  testWidgets('mock capability flags keep approval and optional settings', (
+  testWidgets('legacy approval is unselected and requires owner choice', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -46,7 +46,16 @@ void main() {
       ),
     );
 
-    expect(find.text('审批房'), findsOneWidget);
+    expect(find.text('审批房'), findsNothing);
+    final segments = tester.widget<SegmentedButton<RoomAccessMode>>(
+      find.byType(SegmentedButton<RoomAccessMode>),
+    );
+    expect(segments.selected, isEmpty);
+    expect(segments.segments.map((s) => s.value), [
+      RoomAccessMode.publicRoom,
+      RoomAccessMode.password,
+    ]);
+    expect(find.text('原入房审批模式已停用，请房主明确选择公开房或密码房后保存。'), findsOneWidget);
     expect(find.text('话题标题'), findsOneWidget);
     expect(find.text('进入房间时自动锁定空麦'), findsOneWidget);
     expect(find.text('当前 development 后端只持久化一条话题内容，话题标题暂不可用。'), findsNothing);

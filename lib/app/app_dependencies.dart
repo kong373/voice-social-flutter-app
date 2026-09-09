@@ -387,6 +387,9 @@ class AppDependencies {
       authenticationGeneration: () => sessionManager.identityGeneration,
     );
     late final AuthController authController;
+    final RoomLifecycleRepository roomLifecycleRepository = environment.isLive
+        ? BackendRoomLifecycleRepository(apiClient: apiClient, routes: routes)
+        : MockRoomLifecycleRepository();
     final RoomRepository roomRepository = environment.isLive
         ? BackendRoomRepository(
             apiClient: apiClient,
@@ -397,7 +400,7 @@ class AppDependencies {
                 authController.ensureFreshAccessSession(),
             now: currentTime,
           )
-        : MockRoomRepository();
+        : MockRoomRepository(lifecycleRepository: roomLifecycleRepository);
     final RoomOperationsRepository roomOperationsRepository = environment.isLive
         ? BackendRoomOperationsRepository(
             apiClient: apiClient,
@@ -405,11 +408,8 @@ class AppDependencies {
             leaseBinding: roomLeaseBinding,
           )
         : MockRoomOperationsRepository(
-            micCoordinationMode: MicCoordinationMode.direct,
+            micCoordinationMode: MicCoordinationMode.approval,
           );
-    final RoomLifecycleRepository roomLifecycleRepository = environment.isLive
-        ? BackendRoomLifecycleRepository(apiClient: apiClient, routes: routes)
-        : MockRoomLifecycleRepository();
     final RoomPkRepository roomPkRepository = environment.isLive
         ? BackendRoomPkRepository(apiClient: apiClient, routes: routes)
         : MockRoomPkRepository();

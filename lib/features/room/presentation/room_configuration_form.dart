@@ -118,7 +118,7 @@ class RoomConfigurationForm extends StatelessWidget {
           const SizedBox(height: 18),
           RoomOxygenSection(
             title: '进入方式',
-            subtitle: '公开房可直接进入；密码房需密码；审批房需房主或房管批准。',
+            subtitle: '公开房可直接进入；密码房需输入正确密码。',
             icon: Icons.door_front_door_outlined,
             child: Column(
               children: <Widget>[
@@ -137,20 +137,24 @@ class RoomConfigurationForm extends StatelessWidget {
                         icon: Icon(Icons.lock_outline_rounded),
                         label: Text('密码房'),
                       ),
-                      if (supportsApprovalAccessMode)
-                        ButtonSegment<RoomAccessMode>(
-                          value: RoomAccessMode.approval,
-                          icon: Icon(Icons.fact_check_outlined),
-                          label: Text('审批房'),
-                        ),
                     ],
-                    selected: <RoomAccessMode>{accessMode},
+                    emptySelectionAllowed:
+                        accessMode == RoomAccessMode.approval,
+                    selected: <RoomAccessMode>{
+                      if (accessMode != RoomAccessMode.approval) accessMode,
+                    },
                     onSelectionChanged: enabled
-                        ? (Set<RoomAccessMode> value) =>
-                              onAccessModeChanged(value.first)
+                        ? (Set<RoomAccessMode> value) => value.isEmpty
+                              ? null
+                              : onAccessModeChanged(value.first)
                         : null,
                   ),
                 ),
+                if (accessMode == RoomAccessMode.approval)
+                  const RoomOxygenNotice(
+                    message: '原入房审批模式已停用，请房主明确选择公开房或密码房后保存。',
+                    icon: Icons.info_outline_rounded,
+                  ),
                 if (accessMode == RoomAccessMode.password) ...<Widget>[
                   const SizedBox(height: 10),
                   TextFormField(

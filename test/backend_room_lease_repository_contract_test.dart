@@ -23,7 +23,26 @@ Map<String, Object?> lease() => {
 };
 
 void main() {
-  for (final operation in ['role', 'room mute', 'seat lock']) {
+  test('offline owner role mutation rejects missing actor lease', () async {
+    var requests = 0;
+    final harness = await Harness.start((request, body) async {
+      requests++;
+      return <String, Object?>{};
+    });
+    addTearDown(harness.close);
+    final operations = BackendRoomOperationsRepository(
+      apiClient: harness.client,
+    );
+    await expectLater(
+      operations.setUserRole(roomId: '9527', userId: 10002, manager: true),
+      throwsA(
+        isA<ApiException>().having((error) => error.code, 'stale lease', 40937),
+      ),
+    );
+    expect(requests, 0);
+  });
+
+  for (final operation in ['room mute', 'seat lock']) {
     test(
       'offline owner resource $operation keeps existing authorization',
       () async {
@@ -43,11 +62,6 @@ void main() {
           apiClient: harness.client,
         );
         await switch (operation) {
-          'role' => operations.setUserRole(
-            roomId: '9527',
-            userId: 10002,
-            manager: true,
-          ),
           'room mute' => operations.setUserMuted(
             roomId: '9527',
             userId: 10002,

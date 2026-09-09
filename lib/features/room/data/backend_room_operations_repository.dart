@@ -10,6 +10,7 @@ import 'package:voice_social_app/features/room/data/room_lease_binding.dart';
 class BackendRoomOperationsRepository
     implements
         RoomOperationsRepository,
+        RoomSeatAssignmentRepository,
         RoomJoinRequestRepository,
         RoomBanRepository {
   static const int _memberPageSize = 50;
@@ -70,6 +71,10 @@ class BackendRoomOperationsRepository
     // Applicant cancellation is deliberately available before admission.
     // Owner resource edits keep their existing offline authorization.
     final requiresMembership = <String>{
+      '/app-api/micUserBase/hugUserUpMic',
+      _routes.setRoomUserRole,
+      _routes.kickRoomUser,
+      _routes.unbanRoomUser,
       _routes.takeUserOffMic,
       _routes.closeMic,
       _routes.openMic,
@@ -688,10 +693,60 @@ class BackendRoomOperationsRepository
         );
         _assertRoom(data, roomId, operation: '移出成员');
         _assertUser(data, userId, operation: '移出成员');
-        if (!_asBool(data['kicked'])) {
+        if (data['kicked'] != true) {
           throw const ApiException(
             kind: ApiFailureKind.protocol,
             message: '移出成员响应未确认 kicked=true',
+          );
+        }
+        if (data['banned'] != true ||
+            data['banMinutes'] is! int ||
+            data['banMinutes'] != 10 ||
+            data['expiresAt'] is! String ||
+            !RegExp(r'(Z|\+00:00)$').hasMatch(data['expiresAt'] as String) ||
+            _optionalDateTime(data['expiresAt']) == null) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '移出成员响应未确认 10 分钟禁入及到期时间',
+          );
+        }
+      },
+    );
+  }
+
+  @override
+  Future<void> assignUserToMic({
+    required String roomId,
+    required int userId,
+    required int backendMicIndex,
+  }) async {
+    final id = _requiredIdentifier(roomId, '房间 ID');
+    if (userId <= 0 || backendMicIndex < 1 || backendMicIndex > 8) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '安排上麦参数无效',
+      );
+    }
+    await _runWrite<void>(
+      intent: 'assign-mic:$id:$userId:$backendMicIndex',
+      fingerprint: 'ROOM_ASSIGN_MIC|$id|$userId|$backendMicIndex',
+      action: (headers) async {
+        final response = await _post(
+          '/app-api/micUserBase/hugUserUpMic',
+          headers: headers,
+          body: {'roomId': id, 'userId': userId, 'seatNumber': backendMicIndex},
+        );
+        final data = _requiredMutationMap(
+          response,
+          operation: '安排上麦',
+          requiredFields: ['roomId', 'userId', 'seatNumber', 'occupied'],
+        );
+        _assertRoom(data, id, operation: '安排上麦');
+        _assertUser(data, userId, operation: '安排上麦');
+        if (data['seatNumber'] != backendMicIndex || data['occupied'] != true) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '安排上麦响应与请求不一致',
           );
         }
       },

@@ -8,7 +8,12 @@ import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.
 import 'package:voice_social_app/features/room/data/room_write_guard.dart';
 import 'package:voice_social_app/features/room/domain/room_intent_digest.dart';
 
-class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
+abstract interface class RoomReopenRepository {
+  Future<void> reopenRoom(String roomId, {required int expectedVersion});
+}
+
+class BackendRoomLifecycleRepository
+    implements RoomLifecycleRepository, RoomReopenRepository {
   BackendRoomLifecycleRepository({
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
@@ -22,7 +27,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
   @override
   final RoomLifecycleCapabilities capabilities =
       const RoomLifecycleCapabilities(
-        supportsApprovalAccessMode: true,
+        supportsApprovalAccessMode: false,
         supportsTopicTitle: true,
         supportsAutoLockMic: true,
         supportsReopen: true,
@@ -102,8 +107,9 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
     final String topicTitle = _requiredStringField(topic, 'topicTitle');
     final String welcomeMessage = _requiredStringField(topic, 'welcomeText');
     final bool canEdit = _requiredBool(topic, 'canEdit');
-    final bool expectedCanEdit = availability == RoomAvailability.open;
-    if (canEdit != expectedCanEdit) {
+    // The owner list establishes ownership. Older CLOSED topic projections
+    // report canEdit=false, but owner configuration updates remain allowed.
+    if (availability == RoomAvailability.open && !canEdit) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '房间话题响应 canEdit 与房间状态不一致',
@@ -330,17 +336,10 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
             requested: configuration,
           );
         }
-        int expectedVersion = _requireExpectedVersion(
+        final int expectedVersion = _requireExpectedVersion(
           configuration.version,
           operation: '保存房间',
         );
-        if (configuration.availability == RoomAvailability.closed) {
-          expectedVersion = await _ensureRoomOpenForUpdate(
-            roomId,
-            expectedVersion,
-            headers,
-          );
-        }
         // updateRoomInformation is authoritative for the complete editable
         // room configuration, including topic and welcomeText. Do not follow
         // it with the legacy setRoomTopics write: that second request could
@@ -374,7 +373,8 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
           'version',
         );
         if (_requiredExactNonEmptyString(updateData, 'roomId') != roomId ||
-            _requiredExactNonEmptyString(updateData, 'status') != 'OPEN' ||
+            _requiredExactNonEmptyString(updateData, 'status') !=
+                (configuration.isOpen ? 'OPEN' : 'CLOSED') ||
             _requiredStringField(updateData, 'topicTitle') !=
                 configuration.topicTitle.trim() ||
             _requiredBool(updateData, 'autoLockMic') !=
@@ -412,7 +412,7 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
           );
         }
         if (authoritative.autoLockMic != configuration.autoLockMic ||
-            authoritative.availability != RoomAvailability.open) {
+            authoritative.availability != configuration.availability) {
           throw const ApiException(
             kind: ApiFailureKind.business,
             message: '房间麦位或开放状态已变化，请刷新后重试',
@@ -466,30 +466,21 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
     return version;
   }
 
-  Future<int> _ensureRoomOpenForUpdate(
-    String roomId,
-    int expectedVersion,
-    Map<String, String> headers,
-  ) async {
-    try {
-      return await _reopenRoom(roomId, expectedVersion, headers);
-    } on ApiException catch (error, stackTrace) {
-      if (error.code != 40933) {
-        rethrow;
-      }
-      // A previous save can reopen successfully and then fail while updating
-      // the editable configuration. The page still carries the last closed
-      // snapshot in that case. Only treat the duplicate-open response as
-      // recovered after an authoritative read proves the room is now open.
-      final RoomConfiguration authoritative = await fetchRoom(roomId);
-      if (authoritative.availability != RoomAvailability.open) {
-        Error.throwWithStackTrace(error, stackTrace);
-      }
-      return _requireExpectedVersion(
-        authoritative.version,
-        operation: '重新开放房间',
+  @override
+  Future<void> reopenRoom(String roomId, {required int expectedVersion}) async {
+    if (roomId.trim().isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '房间 ID 不能为空',
       );
     }
+    _requireExpectedVersion(expectedVersion, operation: '重新开放房间');
+    await _writeGuard.run<void>(
+      intent: 'reopen:${roomId.trim()}:$expectedVersion',
+      action: (headers) async {
+        await _reopenRoom(roomId.trim(), expectedVersion, headers);
+      },
+    );
   }
 
   @override
@@ -628,6 +619,12 @@ class BackendRoomLifecycleRepository implements RoomLifecycleRepository {
   }
 
   static void _validate(RoomConfiguration configuration) {
+    if (configuration.accessMode == RoomAccessMode.approval) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '请选择公开房或密码房后保存',
+      );
+    }
     final String title = configuration.title.trim();
     if (title.isEmpty || title.length > 64) {
       throw const ApiException(

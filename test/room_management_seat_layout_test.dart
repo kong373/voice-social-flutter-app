@@ -54,8 +54,23 @@ void main() {
         await tester.tap(find.text('麦位管理'));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
-        final lock = find.widgetWithText(ActionChip, '锁定').first;
-        final mute = find.widgetWithText(ActionChip, '闭麦').first;
+        await tester.scrollUntilVisible(
+          find.text('4 号麦'),
+          120,
+          scrollable: find.byType(Scrollable).last,
+        );
+        final emptyCard = find.ancestor(
+          of: find.text('4 号麦'),
+          matching: find.byType(RoomGlassCard),
+        );
+        final lock = find.descendant(
+          of: emptyCard,
+          matching: find.widgetWithText(ActionChip, '锁定'),
+        );
+        final mute = find.descendant(
+          of: emptyCard,
+          matching: find.widgetWithText(ActionChip, '闭麦'),
+        );
         final card = find
             .ancestor(of: lock, matching: find.byType(RoomGlassCard))
             .first;

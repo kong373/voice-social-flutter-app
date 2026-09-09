@@ -11,7 +11,7 @@ import 'package:voice_social_app/features/room/domain/room_operations_repository
 import 'package:voice_social_app/features/room/presentation/room_authority_display.dart';
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 
-enum _ManagementSection { members, seats, requests, joinRequests, bannedUsers }
+enum _ManagementSection { members, seats, requests, bannedUsers }
 
 class RoomManagementPage extends StatelessWidget {
   const RoomManagementPage({
@@ -65,13 +65,6 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     with WidgetsBindingObserver {
   RoomManagementPage get configuration => widget.configuration;
   Timer? _queueTimer;
-  Timer? _joinQueueTimer;
-  bool _joinQueueReading = false;
-  bool _joinQueuePending = false;
-  bool _joinQueueKnown = false;
-  bool _joinQueueWriting = false;
-  final Set<String> _joinAwaitingConfirmation = <String>{};
-  String? _joinQueueError;
   bool _foreground = true;
   bool _routeVisible = false;
   bool _queueReading = false;
@@ -81,11 +74,9 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   String? _queueError;
   RoomOperationsRepository? _repositoryInstance;
   RoomOperationsRepository get _repository => _repositoryInstance!;
-  RoomJoinRequestRepository? _joinRequestRepository;
   RoomBanRepository? _banRepository;
   final List<RoomMember> _members = <RoomMember>[];
   final List<MicAccessRequest> _requests = <MicAccessRequest>[];
-  final List<RoomJoinRequest> _joinRequests = <RoomJoinRequest>[];
   final List<RoomBannedUser> _bannedUsers = <RoomBannedUser>[];
   late List<MicSeat> _seats;
   _ManagementSection _section = _ManagementSection.members;
@@ -97,15 +88,17 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   String? _busyMicRequestId;
 
   bool get _isOwner => configuration.currentRole == RoomRole.owner;
-  bool get _supportsMicRequests {
-    final MicCoordinationMode? explicitMode = configuration.coordinationMode;
-    if (explicitMode != null) {
-      // A page is scoped to one room. Never reuse a repository's last queue
-      // response when the current authoritative room says DIRECT/unknown.
-      return explicitMode == MicCoordinationMode.approval;
-    }
-    return _repository.micCoordinationMode == MicCoordinationMode.approval;
-  }
+  bool get _canManage =>
+      _isOwner ||
+      configuration.currentRole == RoomRole.moderator ||
+      configuration.currentRole == RoomRole.platformModerator;
+  bool get _supportsMicRequests => _canManage;
+
+  bool _canGovern(RoomMember member) =>
+      _canManage &&
+      member.userId != configuration.currentUserId &&
+      member.role != RoomRole.owner &&
+      (_isOwner || !member.isManager);
 
   @override
   void initState() {
@@ -131,7 +124,6 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     _repositoryInstance =
         configuration.repositoryOverride ??
         AppDependencyScope.of(context).roomOperationsRepository;
-    _joinRequestRepository = _repositoryInstance!.roomJoinRequestCapability;
     _banRepository = _repositoryInstance!.roomBanCapability;
     _load();
   }
@@ -139,17 +131,11 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   bool get _canSyncQueue =>
       mounted && _foreground && _routeVisible && _supportsMicRequests;
 
-  bool get _canSyncJoinQueue =>
-      mounted && _foreground && _routeVisible && _joinRequestRepository != null;
-
   void _pauseQueueSync() {
     _queueTimer?.cancel();
     _queueTimer = null;
     _queueGeneration++;
     _queuePending = false;
-    _joinQueueTimer?.cancel();
-    _joinQueueTimer = null;
-    _joinQueuePending = false;
   }
 
   @override
@@ -166,11 +152,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     super.dispose();
   }
 
-  // Explicit page events wake both lanes; each timer drives only its own lane.
-  Future<void> _refreshQueue() async {
-    unawaited(_refreshJoinQueue());
-    await _refreshMicQueue();
-  }
+  Future<void> _refreshQueue() => _refreshMicQueue();
 
   // Single-flight and visible-only; a write invalidates any older response.
   Future<void> _refreshMicQueue() async {
@@ -207,59 +189,6 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       _queueReading = false;
       if (_canSyncQueue && _busyMicRequestId == null) {
         _queueTimer = Timer(const Duration(seconds: 2), _refreshMicQueue);
-      }
-    }
-  }
-
-  // Independent of mic mode/latency, but shares the visibility/write fence.
-  Future<void> _refreshJoinQueue() async {
-    if (!_canSyncJoinQueue) return;
-    _joinQueuePending = true;
-    if (_joinQueueReading || _joinQueueWriting || _busyMicRequestId != null) {
-      return;
-    }
-    _joinQueueTimer?.cancel();
-    _joinQueueReading = true;
-    try {
-      do {
-        _joinQueuePending = false;
-        final generation = _queueGeneration;
-        try {
-          final page = await _joinRequestRepository!.fetchJoinRequests(
-            roomId: configuration.roomId,
-            page: 1,
-            pageSize: 50,
-          );
-          if (!_canSyncJoinQueue || generation != _queueGeneration) continue;
-          setState(() {
-            // Neither an error, absence from this page nor another PENDING
-            // response confirms a successful review's authoritative outcome.
-            for (final request in page.items) {
-              if (!request.isPending) {
-                _joinAwaitingConfirmation.remove(request.id);
-              }
-            }
-            _joinRequests
-              ..clear()
-              ..addAll(page.items);
-            _joinQueueKnown = true;
-            _joinQueueError = null;
-          });
-        } catch (error) {
-          if (_canSyncJoinQueue && generation == _queueGeneration) {
-            setState(() => _joinQueueError = _messageFor(error));
-          }
-        }
-      } while (_joinQueuePending &&
-          _canSyncJoinQueue &&
-          !_joinQueueWriting &&
-          _busyMicRequestId == null);
-    } finally {
-      _joinQueueReading = false;
-      if (_canSyncJoinQueue &&
-          !_joinQueueWriting &&
-          _busyMicRequestId == null) {
-        _joinQueueTimer = Timer(const Duration(seconds: 2), _refreshJoinQueue);
       }
     }
   }
@@ -421,7 +350,6 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
 
   Widget _buildSectionPicker() {
     final bool supportsRequests = _supportsMicRequests;
-    final bool supportsJoinRequests = _joinRequestRepository != null;
     final bool supportsBannedUsers = _banRepository != null;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -445,16 +373,6 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
               label: Text(_queueKnown ? '上麦申请 ${_requests.length}' : '上麦申请'),
               icon: const Icon(Icons.mark_unread_chat_alt_outlined),
             ),
-          if (supportsJoinRequests)
-            ButtonSegment<_ManagementSection>(
-              value: _ManagementSection.joinRequests,
-              label: Text(
-                _joinQueueKnown
-                    ? '入房申请 ${_joinRequests.where((RoomJoinRequest item) => item.isPending).length}'
-                    : '入房申请',
-              ),
-              icon: const Icon(Icons.how_to_reg_outlined),
-            ),
           if (supportsBannedUsers)
             ButtonSegment<_ManagementSection>(
               value: _ManagementSection.bannedUsers,
@@ -476,8 +394,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     }
     final error =
         _error ??
-        (_section == _ManagementSection.requests ? _queueError : null) ??
-        (_section == _ManagementSection.joinRequests ? _joinQueueError : null);
+        (_section == _ManagementSection.requests ? _queueError : null);
     if (error != null) {
       return Center(
         child: Padding(
@@ -499,7 +416,6 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       _ManagementSection.members => _buildMembers(),
       _ManagementSection.seats => _buildSeats(),
       _ManagementSection.requests => _buildRequests(),
-      _ManagementSection.joinRequests => _buildJoinRequests(),
       _ManagementSection.bannedUsers => _buildBannedUsers(),
     };
   }
@@ -522,7 +438,9 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         return RoomGlassCard(
           padding: EdgeInsets.zero,
           radius: 16,
-          onTap: _busyUserId == null ? () => _showMemberMenu(member) : null,
+          onTap: _busyUserId == null && _canGovern(member)
+              ? () => _showMemberMenu(member)
+              : null,
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 12),
             leading: RuntimeAvatar(
@@ -634,7 +552,8 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
                   size: 16,
                 ),
                 label: Text(locked ? '解锁' : '锁定'),
-                onPressed: _busySeatNumber == null
+                onPressed:
+                    _canManage && !seat.isOccupied && _busySeatNumber == null
                     ? () => _setSeatLocked(seat, !locked)
                     : null,
               ),
@@ -644,7 +563,16 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
                   size: 16,
                 ),
                 label: Text(muted ? '开麦' : '闭麦'),
-                onPressed: locked || _busySeatNumber != null
+                onPressed:
+                    !_canManage ||
+                        (seat.isOccupied &&
+                            (seat.userRole == RoomRole.owner ||
+                                (!_isOwner &&
+                                    (seat.userRole == RoomRole.moderator ||
+                                        seat.userRole ==
+                                            RoomRole.platformModerator)))) ||
+                        locked ||
+                        _busySeatNumber != null
                     ? null
                     : () => _setSeatMuted(seat, !muted),
               ),
@@ -690,95 +618,22 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
                     spacing: 6,
                     children: <Widget>[
                       TextButton(
-                        onPressed: _busyMicRequestId == null
+                        onPressed:
+                            _canGovern(request.member) &&
+                                _busyMicRequestId == null
                             ? () => _resolveRequest(request, false)
                             : null,
                         child: const Text('拒绝'),
                       ),
                       FilledButton.tonal(
-                        onPressed: _busyMicRequestId == null
+                        onPressed:
+                            _canGovern(request.member) &&
+                                _busyMicRequestId == null
                             ? () => _resolveRequest(request, true)
                             : null,
                         child: const Text('同意'),
                       ),
                     ],
-                  ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildJoinRequests() {
-    if (!_joinQueueKnown) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final List<RoomJoinRequest> visible =
-        List<RoomJoinRequest>.of(_joinRequests)
-          ..sort((RoomJoinRequest left, RoomJoinRequest right) {
-            if (left.isPending != right.isPending) {
-              return left.isPending ? -1 : 1;
-            }
-            return (right.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
-                .compareTo(
-                  left.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0),
-                );
-          });
-    if (visible.isEmpty) {
-      return const Center(child: Text('当前没有入房申请记录'));
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      itemCount: visible.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (BuildContext context, int index) {
-        final RoomJoinRequest request = visible[index];
-        final bool busy =
-            _busyUserId == request.member.userId ||
-            _joinAwaitingConfirmation.contains(request.id);
-        return RoomGlassCard(
-          padding: EdgeInsets.zero,
-          radius: 16,
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-            leading: RuntimeAvatar(
-              seed: '${request.member.userId}',
-              size: 44,
-              ringColor: RoomColors.primary.withValues(alpha: 0.78),
-            ),
-            title: Text(request.member.name),
-            subtitle: Text(
-              request.message?.trim().isNotEmpty == true
-                  ? request.message!.trim()
-                  : _joinRequestStatusLabel(request.status),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: busy
-                ? const SizedBox.square(
-                    dimension: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : request.isPending
-                ? Wrap(
-                    spacing: 4,
-                    children: <Widget>[
-                      TextButton(
-                        onPressed: _joinQueueWriting
-                            ? null
-                            : () => _resolveJoinRequest(request, false),
-                        child: const Text('拒绝'),
-                      ),
-                      FilledButton.tonal(
-                        onPressed: _joinQueueWriting
-                            ? null
-                            : () => _resolveJoinRequest(request, true),
-                        child: const Text('同意'),
-                      ),
-                    ],
-                  )
-                : _ManagementTag(
-                    label: _joinRequestStatusLabel(request.status),
                   ),
           ),
         );
@@ -800,8 +655,8 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         final bool busy = _busyUserId == member.userId;
         final String reason = banned.reason?.trim() ?? '';
         final String expiry = banned.expiresAt == null
-            ? '永久限制'
-            : '截至 ${_formatDateTime(banned.expiresAt!)}';
+            ? '10 分钟禁入，到期时间待刷新'
+            : '禁入 10 分钟 · 截至 ${_formatDateTime(banned.expiresAt!)}';
         return RoomGlassCard(
           padding: EdgeInsets.zero,
           radius: 16,
@@ -824,7 +679,9 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : TextButton(
-                    onPressed: () => _unbanUser(banned),
+                    onPressed: _canGovern(member)
+                        ? () => _unbanUser(banned)
+                        : null,
                     child: const Text('解除限制'),
                   ),
           ),
@@ -834,6 +691,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   }
 
   Future<void> _showMemberMenu(RoomMember member) async {
+    if (!_canGovern(member)) return;
     await showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
@@ -873,13 +731,13 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
                   _takeOffMic(member);
                 },
               ),
-            if (_supportsMicRequests && !member.isOnMic)
+            if (!member.isManager && !member.isOnMic)
               ListTile(
                 leading: const Icon(Icons.mic_external_on_outlined),
-                title: const Text('邀请上麦'),
+                title: const Text('安排上麦'),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
-                  _inviteToMic(member);
+                  _assignToMic(member);
                 },
               ),
             if (_isOwner && member.role != RoomRole.owner)
@@ -922,6 +780,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   }
 
   Future<void> _setManager(RoomMember member, bool manager) async {
+    if (!_isOwner || !_canGovern(member)) return;
     final bool confirmed = await _confirm(
       title: manager ? '设为房管？' : '解除房管？',
       message: manager
@@ -946,7 +805,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   Future<void> _kickMember(RoomMember member) async {
     final bool confirmed = await _confirm(
       title: '移出房间？',
-      message: '${member.name} 将立即离开当前房间，并加入房间限制列表。可在“房间限制”中解除。',
+      message: '${member.name} 将立即离开当前房间，10 分钟内不能再次进入本房间。',
       confirmLabel: '确认移出并限制',
     );
     if (!confirmed || !mounted) {
@@ -958,7 +817,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         roomId: configuration.roomId,
         userId: member.userId,
       ),
-      successMessage: '已将 ${member.name} 移出房间',
+      successMessage: '已将 ${member.name} 移出房间，禁入 10 分钟',
     );
   }
 
@@ -993,12 +852,12 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     );
   }
 
-  Future<void> _inviteToMic(RoomMember member) async {
+  Future<void> _assignToMic(RoomMember member) async {
     final List<MicSeat> available = _seats
         .where((MicSeat seat) => seat.isAvailable)
         .toList(growable: false);
     if (available.isEmpty) {
-      _showMessage('当前没有可邀请的空麦位');
+      _showMessage('当前没有可安排的空麦位');
       return;
     }
     final int? seatNumber = await showModalBottomSheet<int>(
@@ -1011,11 +870,14 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              '邀请 ${member.name} 上麦',
+              '安排 ${member.name} 上麦',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
-            Text('对方接受后才会上麦。', style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              '安排到所选麦位；发言仍需对方设备的麦克风授权。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             const SizedBox(height: 16),
             Wrap(
               spacing: 8,
@@ -1038,12 +900,14 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     }
     await _runMemberOperation(
       member,
-      () => _repository.inviteUserToMic(
+      () => _repository.assignUserToMic(
         roomId: configuration.roomId,
         userId: member.userId,
-        seatNumber: seatNumber,
+        backendMicIndex: _seats
+            .firstWhere((seat) => seat.number == seatNumber)
+            .backendIndex,
       ),
-      successMessage: '已发送上麦邀请',
+      successMessage: '已安排 ${member.name} 上麦',
     );
   }
 
@@ -1052,6 +916,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     Future<void> Function() operation, {
     required String successMessage,
   }) async {
+    if (!_canGovern(member) || _busyUserId != null) return;
     setState(() => _busyUserId = member.userId);
     try {
       await operation();
@@ -1150,7 +1015,10 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   }
 
   Future<void> _resolveRequest(MicAccessRequest request, bool accepted) async {
-    if (!request.isRequest || !request.isPending || _busyMicRequestId != null) {
+    if (!_canGovern(request.member) ||
+        !request.isRequest ||
+        !request.isPending ||
+        _busyMicRequestId != null) {
       return;
     }
     _pauseQueueSync();
@@ -1178,57 +1046,14 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     }
   }
 
-  Future<void> _resolveJoinRequest(
-    RoomJoinRequest request,
-    bool approved,
-  ) async {
-    final RoomJoinRequestRepository? repository = _joinRequestRepository;
-    if (repository == null ||
-        !request.isPending ||
-        _joinQueueWriting ||
-        _joinAwaitingConfirmation.contains(request.id)) {
-      return;
-    }
-    _pauseQueueSync();
-    setState(() {
-      _joinQueueWriting = true;
-      _busyUserId = request.member.userId;
-    });
-    try {
-      await repository.resolveJoinRequest(
-        joinRequestId: request.id,
-        approved: approved,
-      );
-      _joinAwaitingConfirmation.add(request.id);
-      _changed = true;
-      if (!mounted) {
-        return;
-      }
-      _showMessage(approved ? '已同意入房申请' : '已拒绝入房申请');
-      await _load();
-    } catch (error) {
-      if (mounted) {
-        _showMessage(_messageFor(error));
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busyUserId = null;
-          _joinQueueWriting = false;
-        });
-        unawaited(_refreshQueue());
-      }
-    }
-  }
-
   Future<void> _unbanUser(RoomBannedUser banned) async {
     final RoomBanRepository? repository = _banRepository;
-    if (repository == null) {
+    if (repository == null || !_canGovern(banned.member)) {
       return;
     }
     final bool confirmed = await _confirm(
       title: '解除房间限制？',
-      message: '解除后，${banned.member.name} 可以再次尝试进入房间。',
+      message: '踢出后的 10 分钟冷却期不能提前解除。到期后，${banned.member.name} 可以再次尝试进入房间。',
       confirmLabel: '确认解除',
     );
     if (!confirmed || !mounted) {
@@ -1283,13 +1108,14 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   static String _messageFor(Object error) {
     if (error is ApiException) {
+      if (error.code == 40949) return '10 分钟禁入冷却期尚未结束，不能提前解除';
       return error.message;
     }
     return '操作失败，请刷新后重试';
@@ -1302,15 +1128,6 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       MicSeatState.mutedAvailable => '空麦闭麦',
       MicSeatState.occupied => '麦上用户',
       MicSeatState.occupiedMuted => '麦上闭麦',
-    };
-  }
-
-  static String _joinRequestStatusLabel(RoomJoinRequestStatus status) {
-    return switch (status) {
-      RoomJoinRequestStatus.pending => '待审核',
-      RoomJoinRequestStatus.cancelled => '已撤回',
-      RoomJoinRequestStatus.approved => '已同意',
-      RoomJoinRequestStatus.rejected => '已拒绝',
     };
   }
 

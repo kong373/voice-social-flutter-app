@@ -1,9 +1,12 @@
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
+import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
+import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart';
 
 class MockRoomRepository implements RoomRepository {
-  MockRoomRepository();
+  MockRoomRepository({this.lifecycleRepository});
+  final RoomLifecycleRepository? lifecycleRepository;
 
   RoomSnapshot? _snapshot;
   RoomRole _entryRole = RoomRole.listener;
@@ -25,13 +28,25 @@ class MockRoomRepository implements RoomRepository {
     required int currentUserId,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 320));
+    final owned = await lifecycleRepository?.fetchOwnedRoom();
+    final configuration = owned?.roomId == roomId ? owned : null;
+    final closedOwner = configuration?.availability == RoomAvailability.closed;
     _snapshot = RoomSnapshot(
       roomId: roomId,
+      ownerClosedAccess: closedOwner,
+      transportMode: closedOwner
+          ? RoomTransportMode.snapshotOnly
+          : RoomTransportMode.interactive,
+      accessMode: switch (configuration?.accessMode) {
+        RoomAccessMode.password => 'PASSWORD',
+        RoomAccessMode.approval => 'APPROVAL',
+        _ => 'PUBLIC',
+      },
       roomCode: roomId,
-      title: '深夜温柔陪伴',
-      topic: '今晚话题：最近让你觉得被治愈的一件小事',
-      ownerId: 20001,
-      role: _entryRole,
+      title: configuration?.title ?? '深夜温柔陪伴',
+      topic: configuration?.topicContent ?? '今晚话题：最近让你觉得被治愈的一件小事',
+      ownerId: configuration != null ? currentUserId : 20001,
+      role: configuration != null ? RoomRole.owner : _entryRole,
       seats: <MicSeat>[
         const MicSeat(
           number: 1,
@@ -103,10 +118,10 @@ class MockRoomRepository implements RoomRepository {
         channelId: roomId,
         userId: currentUserId,
       ),
-      publicScreenEnabled: true,
+      publicScreenEnabled: !closedOwner,
       pictureMessagesAllowed: false,
       autoLockMic: false,
-      giftCatalogAvailable: true,
+      giftCatalogAvailable: !closedOwner,
       giftBalance: 1200,
       onlineCount: 36,
     );
@@ -147,9 +162,19 @@ class MockRoomRepository implements RoomRepository {
         state: MicSeatState.occupied,
         userId: snapshot.rtc.userId,
         userName: '我',
-        userRole: RoomRole.speaker,
+        userRole:
+            snapshot.role == RoomRole.owner ||
+                snapshot.role == RoomRole.moderator
+            ? snapshot.role
+            : RoomRole.speaker,
       );
-    _snapshot = snapshot.copyWith(role: RoomRole.speaker, seats: seats);
+    _snapshot = snapshot.copyWith(
+      role:
+          snapshot.role == RoomRole.owner || snapshot.role == RoomRole.moderator
+          ? snapshot.role
+          : RoomRole.speaker,
+      seats: seats,
+    );
   }
 
   @override
@@ -169,7 +194,13 @@ class MockRoomRepository implements RoomRepository {
         else
           seat,
     ];
-    _snapshot = snapshot.copyWith(role: RoomRole.listener, seats: seats);
+    _snapshot = snapshot.copyWith(
+      role:
+          snapshot.role == RoomRole.owner || snapshot.role == RoomRole.moderator
+          ? snapshot.role
+          : RoomRole.listener,
+      seats: seats,
+    );
   }
 
   @override

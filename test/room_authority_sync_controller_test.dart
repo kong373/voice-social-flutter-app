@@ -147,7 +147,7 @@ void main() {
   ) async {
     final ops = MockRoomOperationsRepository();
     final h = _Harness(operations: ops);
-    h.repo.state = h.repo.state.copyWith(accessMode: 'APPROVAL');
+    h.repo.state = h.repo.state.copyWith(accessMode: 'PUBLIC');
     addTearDown(h.dispose);
     await h.controller.join();
     ops.seedMicRequestForQa(
@@ -234,6 +234,7 @@ void main() {
     tester,
   ) async {
     final h = _Harness();
+    h.repo.state = h.repo.state.copyWith(role: RoomRole.moderator);
     addTearDown(h.dispose);
     await h.controller.join();
     final old = h.repo.projection();
@@ -514,7 +515,7 @@ class _Repository extends MockRoomRepository
   @override
   Future<void> requestMic(int backendMicIndex) async {
     writes++;
-    state = state.copyWith(seats: [_seat(1)], role: RoomRole.speaker);
+    state = state.copyWith(seats: [_seat(1)]);
   }
 
   @override

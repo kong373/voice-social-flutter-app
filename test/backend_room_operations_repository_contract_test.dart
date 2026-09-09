@@ -12,6 +12,198 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 
 void main() {
+  test('role kick unban require actor lease before sending', () async {
+    final server = await _RunningServer.start((_) => const _Reply());
+    addTearDown(server.close);
+    final repo = BackendRoomOperationsRepository(apiClient: server.client);
+    for (final operation in <Future<void> Function()>[
+      () => repo.setUserRole(roomId: '9527', userId: 10002, manager: true),
+      () => repo.kickUser(roomId: '9527', userId: 10002),
+      () => repo.unbanUser(roomId: '9527', userId: 10002),
+    ]) {
+      await expectLater(operation(), throwsA(isA<ApiException>()));
+    }
+    expect(server.requests, isEmpty);
+  });
+
+  test('unban sends actor lease and preserves cooldown denial', () async {
+    final server = await _RunningServer.start((request) {
+      expect(request.body, {
+        'roomId': '9527',
+        'userId': 10002,
+        'sessionId': roomLeaseSessionId,
+      });
+      expect(request.requestId, isNotEmpty);
+      return const _Reply(code: 40949, message: 'cooldown');
+    });
+    addTearDown(server.close);
+    final repo = BackendRoomOperationsRepository(
+      apiClient: server.client,
+      leaseBinding: admittedRoomFixture(),
+    );
+    await expectLater(
+      repo.unbanUser(roomId: '9527', userId: 10002),
+      throwsA(
+        isA<ApiException>().having((e) => e.code, 'cooldown code', 40949),
+      ),
+    );
+    expect(server.requests, hasLength(1));
+  });
+
+  test('assignment rejects a response after lease replacement', () async {
+    final received = Completer<void>();
+    final pending = Completer<_Reply>();
+    final server = await _RunningServer.start((_) {
+      received.complete();
+      return pending.future;
+    });
+    addTearDown(server.close);
+    final binding = admittedRoomFixture();
+    final repo = BackendRoomOperationsRepository(
+      apiClient: server.client,
+      leaseBinding: binding,
+    );
+    final result = expectLater(
+      repo.assignUserToMic(roomId: '9527', userId: 10002, backendMicIndex: 7),
+      throwsA(isA<ApiException>()),
+    );
+    await received.future;
+    binding.clear(binding.generation);
+    pending.complete(
+      const _Reply(
+        data: {
+          'roomId': '9527',
+          'userId': 10002,
+          'seatNumber': 7,
+          'occupied': true,
+        },
+      ),
+    );
+    await result;
+  });
+
+  test(
+    'assignment is leased idempotent and uses self-up seat response',
+    () async {
+      final pending = Completer<_Reply>();
+      final server = await _RunningServer.start((request) => pending.future);
+      addTearDown(server.close);
+      final binding = admittedRoomFixture();
+      final repository = BackendRoomOperationsRepository(
+        apiClient: server.client,
+        leaseBinding: binding,
+      );
+      final first = repository.assignUserToMic(
+        roomId: '9527',
+        userId: 10002,
+        backendMicIndex: 7,
+      );
+      final second = repository.assignUserToMic(
+        roomId: '9527',
+        userId: 10002,
+        backendMicIndex: 7,
+      );
+      while (server.requests.isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      final request = server.requests.single;
+      expect(request.method, 'POST');
+      expect(request.path, '/app-api/micUserBase/hugUserUpMic');
+      expect(request.requestId, isNotEmpty);
+      expect(request.body, {
+        'roomId': '9527',
+        'userId': 10002,
+        'seatNumber': 7,
+        'sessionId': roomLeaseSessionId,
+      });
+      pending.complete(
+        const _Reply(
+          data: {
+            'roomId': '9527',
+            'userId': 10002,
+            'seatNumber': 7,
+            'occupied': true,
+          },
+        ),
+      );
+      await Future.wait([first, second]);
+      expect(server.requests, hasLength(1));
+      binding.clear(binding.generation);
+      await expectLater(
+        repository.assignUserToMic(
+          roomId: '9527',
+          userId: 10002,
+          backendMicIndex: 7,
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      expect(server.requests, hasLength(1));
+    },
+  );
+
+  for (final invalid in <Map<String, Object?>>[
+    {'seatNumber': 8},
+    {'occupied': false},
+    {'userId': 10003},
+    {'roomId': 'other'},
+  ]) {
+    test('assignment rejects mismatched authority $invalid', () async {
+      final server = await _RunningServer.start(
+        (_) => _Reply(
+          data: {
+            'roomId': '9527',
+            'userId': 10002,
+            'seatNumber': 7,
+            'occupied': true,
+            ...invalid,
+          },
+        ),
+      );
+      addTearDown(server.close);
+      final repo = BackendRoomOperationsRepository(
+        apiClient: server.client,
+        leaseBinding: admittedRoomFixture(),
+      );
+      await expectLater(
+        repo.assignUserToMic(roomId: '9527', userId: 10002, backendMicIndex: 7),
+        throwsA(isA<ApiException>()),
+      );
+    });
+  }
+
+  for (final invalid in <Map<String, Object?>>[
+    {'banned': false},
+    {'banMinutes': 0},
+    {'banMinutes': '10'},
+    {'expiresAt': null},
+    {'expiresAt': 'invalid'},
+  ]) {
+    test('kick rejects non fixed ban response $invalid', () async {
+      final server = await _RunningServer.start(
+        (_) => _Reply(
+          data: {
+            'roomId': '9527',
+            'userId': 10002,
+            'kicked': true,
+            'banned': true,
+            'banMinutes': 10,
+            'expiresAt': '2026-09-09T10:10:00Z',
+            ...invalid,
+          },
+        ),
+      );
+      addTearDown(server.close);
+      final repo = BackendRoomOperationsRepository(
+        apiClient: server.client,
+        leaseBinding: admittedRoomFixture(),
+      );
+      await expectLater(
+        repo.kickUser(roomId: '9527', userId: 10002),
+        throwsA(isA<ApiException>()),
+      );
+    });
+  }
+
   test(
     'room operations use the documented HTTP shape and parse responses',
     () async {
@@ -191,6 +383,8 @@ void main() {
                 'userId': 10002,
                 'kicked': true,
                 'banned': true,
+                'banMinutes': 10,
+                'expiresAt': '2026-09-09T10:10:00Z',
               },
             );
           case '/app-api/micUserBase/hugUserDownMic':

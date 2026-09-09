@@ -21,6 +21,10 @@ class RoomPermissionPolicy {
     required RoomCapability capability,
     required bool isOnMic,
   }) {
+    if (snapshot.ownerClosedAccess) {
+      return snapshot.role == RoomRole.owner &&
+          capability == RoomCapability.editRoom;
+    }
     // HTTP_STATE_ONLY means only the vendor transports are unavailable. The
     // first-party room routes still own persisted chat, ordinary gifts,
     // direct self mic placement, moderation, topic edits and PK. Keep audio

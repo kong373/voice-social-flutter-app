@@ -73,7 +73,34 @@ abstract interface class RoomOperationsRepository {
   });
 }
 
-/// Optional first-party approval-room capability.
+/// Direct seat assignment uses the same backend seat index as self-up.
+abstract interface class RoomSeatAssignmentRepository {
+  Future<void> assignUserToMic({
+    required String roomId,
+    required int userId,
+    required int backendMicIndex,
+  });
+}
+
+extension RoomSeatAssignmentAccess on RoomOperationsRepository {
+  Future<void> assignUserToMic({
+    required String roomId,
+    required int userId,
+    required int backendMicIndex,
+  }) {
+    final repository = this;
+    if (repository is! RoomSeatAssignmentRepository) {
+      throw UnsupportedError('当前服务不支持安排上麦');
+    }
+    return (repository as RoomSeatAssignmentRepository).assignUserToMic(
+      roomId: roomId,
+      userId: userId,
+      backendMicIndex: backendMicIndex,
+    );
+  }
+}
+
+/// Historical approval-room capability (SUPERSEDED_SCOPE).
 ///
 /// It is deliberately not part of [RoomOperationsRepository], so legacy
 /// doubles and backends that only expose direct microphone coordination stay
