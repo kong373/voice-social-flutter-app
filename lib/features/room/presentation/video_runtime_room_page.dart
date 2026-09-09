@@ -7,6 +7,7 @@ import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
+import 'package:voice_social_app/features/room/presentation/room_password_dialog.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_permission_policy.dart';
@@ -50,6 +51,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   bool _ending = false;
   bool _allowPop = false;
   String? _presentedError;
+  bool _entryBusy = false;
+  int _entryEpoch = 0;
+  DialogRoute<String>? _passwordRoute;
   String? _sessionEndMessage;
   String? _lastMessageIdentity;
 
@@ -73,13 +77,15 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
       }
       if (_controller.status == RoomSessionStatus.idle ||
           _controller.status == RoomSessionStatus.failed) {
-        _controller.join(source: widget.entrySource);
+        unawaited(_joinRoom());
       }
     });
   }
 
   @override
   void dispose() {
+    _entryEpoch++;
+    _dismissEntryPassword();
     _giftTimer?.cancel();
     _composerFocus
       ..removeListener(_onComposerFocusChanged)
@@ -90,6 +96,75 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(covariant VideoRuntimeRoomPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller == widget.controller) return;
+    oldWidget.controller.removeListener(_onControllerChanged);
+    _controller.addListener(_onControllerChanged);
+    _entryEpoch++;
+    _entryBusy = false;
+    _dismissEntryPassword();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_joinRoom());
+    });
+  }
+
+  void _dismissEntryPassword() {
+    final route = _passwordRoute;
+    _passwordRoute = null;
+    if (route == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (route.isActive) route.navigator?.removeRoute(route);
+    });
+  }
+
+  Future<void> _joinRoom() async {
+    if (_entryBusy || !mounted || _allowPop) return;
+    final controller = _controller;
+    final int epoch = ++_entryEpoch;
+    bool current() =>
+        mounted &&
+        !_allowPop &&
+        epoch == _entryEpoch &&
+        identical(controller, _controller) &&
+        controller.isEntryIdentityCurrent;
+    if (!current()) return;
+    _entryBusy = true;
+    try {
+      // Try the server first: owner/staff and valid leases need no password.
+      if (!controller.requiresEntryPassword) {
+        await controller.join(source: widget.entrySource);
+      }
+      if (!mounted ||
+          !current() ||
+          !controller.requiresEntryPassword ||
+          ModalRoute.of(context)?.isCurrent != true)
+        return;
+      final route = DialogRoute<String>(
+        context: context,
+        builder: (_) => const RoomPasswordDialog(),
+      );
+      _passwordRoute = route;
+      String? password = await Navigator.of(context).push(route);
+      if (identical(_passwordRoute, route)) _passwordRoute = null;
+      if (!mounted ||
+          !current() ||
+          password == null ||
+          ModalRoute.of(context)?.isCurrent != true)
+        return;
+      final pending = controller.join(
+        source: widget.entrySource,
+        password: password,
+      );
+      password = null;
+      await pending;
+      // A wrong password stays failed; only an explicit retry opens input again.
+    } finally {
+      if (mounted && epoch == _entryEpoch) _entryBusy = false;
+    }
+  }
+
   void _onComposerFocusChanged() {
     if (mounted) setState(() {});
   }
@@ -97,6 +172,11 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   void _onControllerChanged() {
     if (!mounted) {
       return;
+    }
+    if (!_controller.isEntryIdentityCurrent || _sessionEnded) {
+      _entryEpoch++;
+      _entryBusy = false;
+      _dismissEntryPassword();
     }
     if (_sessionEnded) {
       _sessionEndMessage = _controller.errorMessage ?? _sessionEndMessage;
@@ -233,8 +313,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                         const SizedBox(height: 22),
                         if (canReenter)
                           FilledButton(
-                            onPressed: () =>
-                                _controller.join(source: widget.entrySource),
+                            onPressed: _joinRoom,
                             child: const Text('重新进入'),
                           ),
                         TextButton(
@@ -309,10 +388,14 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 10),
-                Text(_controller.errorMessage ?? '请检查网络后重试。'),
+                Text(
+                  _controller.requiresEntryPassword
+                      ? '请输入正确的房间密码后重试'
+                      : (_controller.errorMessage ?? '请检查网络后重试。'),
+                ),
                 const SizedBox(height: 22),
                 FilledButton.icon(
-                  onPressed: () => _controller.join(source: widget.entrySource),
+                  onPressed: _joinRoom,
                   icon: const Icon(Icons.refresh_rounded),
                   label: const Text('重新进入'),
                 ),

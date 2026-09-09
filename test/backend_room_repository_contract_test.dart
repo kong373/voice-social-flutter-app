@@ -12,6 +12,38 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 
 void main() {
   test(
+    'password admission uses only POST body and preserves typed rejection',
+    () async {
+      final server = await _RunningServer.start((request) {
+        expect(request.path, '/app-room-api/room/com/v1/enterRoom');
+        expect(request.method, 'POST');
+        expect(request.query, isEmpty);
+        expect(request.body, {
+          'roomId': '9527',
+          'source': 0,
+          'password': '1234',
+        });
+        expect(request.requestId, isNotEmpty);
+        return const _Reply(code: 40332, httpStatus: 403, message: '房间密码错误');
+      });
+      addTearDown(server.close);
+      final repository = BackendRoomRepository(apiClient: server.client);
+      await expectLater(
+        repository.enterRoom(
+          roomId: '9527',
+          password: '1234',
+          source: RoomEntrySource.home,
+          currentUserId: 10001,
+        ),
+        throwsA(
+          isA<ApiException>().having((error) => error.code, 'code', 40332),
+        ),
+      );
+      expect(server.requests, hasLength(1));
+    },
+  );
+
+  test(
     'room snapshot contract preserves request shape and authoritative data',
     () async {
       final _RunningServer server = await _RunningServer.start((

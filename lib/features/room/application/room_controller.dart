@@ -188,6 +188,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   int _tencentImReadinessPollGeneration = 0;
   Object? _transportLeaseId;
   String? _errorMessage;
+  int? _joinErrorCode;
   String? _pendingJoinRequestRoomId;
   String? _pendingJoinRequestId;
   ApiFailureKind? _historyErrorKind;
@@ -230,6 +231,14 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   bool get canSendPublicMessage =>
       !_mutedInRoom && allows(RoomCapability.sendPublicMessage);
   String? get errorMessage => _errorMessage;
+
+  /// Admission UI must use a server code, never role/name or error text.
+  bool get requiresEntryPassword =>
+      isEntryIdentityCurrent &&
+      _status == RoomSessionStatus.failed &&
+      _joinErrorCode == 40332;
+
+  bool get isEntryIdentityCurrent => !_disposed && _sameIdentity;
   String? get pendingJoinRequestRoomId => _pendingJoinRequestRoomId;
   String? get pendingJoinRequestId => _pendingJoinRequestId;
   ApiFailureKind? get historyErrorKind => _historyErrorKind;
@@ -308,6 +317,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     _rtcAudioRequested = false;
     _rtcConnected = false;
     _status = RoomSessionStatus.joining;
+    _joinErrorCode = null;
     _errorMessage = null;
     _historyErrorKind = null;
     _historyErrorMessage = null;
@@ -434,7 +444,13 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         swallowErrors: true,
         transportLease: transportLease,
       );
-      _errorMessage = _messageFor(error, fallback: '进入房间失败，请重试');
+      if (!_isCurrent(sessionEpoch) || _joinCancelled) return;
+      _joinErrorCode = enteredSnapshot == null && error is ApiException
+          ? error.code
+          : null;
+      _errorMessage = _joinErrorCode == 40332
+          ? '请输入正确的房间密码后重试'
+          : _messageFor(error, fallback: '进入房间失败，请重试');
       if (error is RoomJoinRequestPendingException) {
         _pendingJoinRequestRoomId = error.roomId;
         _pendingJoinRequestId = error.joinRequestId;
