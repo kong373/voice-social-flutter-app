@@ -383,7 +383,9 @@ class _RoomResultTile extends StatelessWidget {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            discoveryOnlineCountLabel(room.onlineCount),
+                            room.isClosed
+                                ? '已关闭'
+                                : discoveryOnlineCountLabel(room.onlineCount),
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 9,

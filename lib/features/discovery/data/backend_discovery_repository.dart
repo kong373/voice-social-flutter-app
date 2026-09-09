@@ -458,8 +458,29 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
           _nonEmptyString(map['coverImage']) ??
           _nonEmptyString(map['coverImgUrl']),
       relationReason: _nonEmptyString(map['labelName']),
-      isLocked: _asInt(map['isLockRoom']) == 1 || _asInt(map['isLock']) == 1,
+      isLocked:
+          map['accessMode'] == 'PASSWORD' ||
+          _asInt(map['isLockRoom']) == 1 ||
+          _asInt(map['isLock']) == 1,
+      isClosed: _roomIsClosed(map),
     );
+  }
+
+  static bool _roomIsClosed(Map<String, Object?> map) {
+    String? state;
+    for (final key in ['state', 'status']) {
+      if (!map.containsKey(key)) continue;
+      final value = map[key];
+      if ((value != 'OPEN' && value != 'CLOSED') ||
+          (state != null && state != value)) {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '房间状态未知或不一致，请刷新后重试',
+        );
+      }
+      state = value as String;
+    }
+    return state == 'CLOSED';
   }
 
   static int _boundedSeatCount(int value) {

@@ -11,6 +11,21 @@ import 'package:voice_social_app/features/discovery/domain/discovery_models.dart
 import 'package:voice_social_app/features/discovery/presentation/search_results_page.dart';
 
 void main() {
+  testWidgets(
+    'closed search cards remain visible with an explicit closed label',
+    (WidgetTester tester) async {
+      final repository = _PagingDiscoveryRepository();
+      await _pumpSearch(tester, repository);
+      repository.requests.single.complete(
+        _result(rooms: <DiscoveryRoom>[_firstRoom.copyWith(isClosed: true)]),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(_firstRoom.title), findsOneWidget);
+      expect(find.text('已关闭'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('loads the next search page once and appends stable results', (
     WidgetTester tester,
   ) async {

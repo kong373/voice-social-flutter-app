@@ -11,6 +11,93 @@ import 'package:voice_social_app/features/discovery/domain/discovery_models.dart
 
 void main() {
   test(
+    'search preserves password and closed cards without granting entry',
+    () async {
+      final server = await _startServer(
+        (request, body) => _reply(
+          request,
+          data: {
+            'roomsList': [
+              {
+                'roomId': 'password',
+                'roomName': '密码房',
+                'accessMode': 'PASSWORD',
+                'state': 'OPEN',
+              },
+              {
+                'roomId': 'closed',
+                'roomName': '关闭房',
+                'state': 'CLOSED',
+                'status': 'CLOSED',
+              },
+            ],
+            'usersList': <Object?>[],
+            'total': 2,
+            'pageNo': 1,
+            'pageSize': 20,
+          },
+        ),
+      );
+      addTearDown(() => server.close(force: true));
+      final repository = BackendDiscoveryRepository(
+        apiClient: _client(server),
+        clientType: 'Android',
+      );
+      final result = await repository.search(
+        keyword: '房',
+        type: SearchEntityType.rooms,
+      );
+      expect(result.rooms.map((room) => room.id), ['password', 'closed']);
+      expect(result.rooms.first.isLocked, isTrue);
+      expect(result.rooms.last.isClosed, isTrue);
+      expect(result.rooms.last.copyWith(isFavorite: true).isClosed, isTrue);
+    },
+  );
+
+  test(
+    'contradictory or unknown room state is rejected rather than shown as open',
+    () async {
+      for (final state in [
+        {'state': 'OPEN', 'status': 'CLOSED'},
+        {'state': 'UNKNOWN'},
+      ]) {
+        final server = await _startServer(
+          (request, body) => _reply(
+            request,
+            data: {
+              'roomsList': [
+                {'roomId': 'bad', ...state},
+              ],
+              'usersList': <Object?>[],
+              'total': 1,
+              'pageNo': 1,
+              'pageSize': 20,
+            },
+          ),
+        );
+        try {
+          final repository = BackendDiscoveryRepository(
+            apiClient: _client(server),
+            clientType: 'Android',
+          );
+          await expectLater(
+            repository.search(keyword: '房', type: SearchEntityType.rooms),
+            throwsA(
+              isA<ApiException>().having(
+                (error) => error.kind,
+                'kind',
+                ApiFailureKind.protocol,
+              ),
+            ),
+          );
+        } finally {
+          await server.close(force: true);
+        }
+      }
+    },
+  );
+
+  test(
     'discovery preserves every supported authoritative online-count alias',
     () async {
       const Map<String, int> values = <String, int>{

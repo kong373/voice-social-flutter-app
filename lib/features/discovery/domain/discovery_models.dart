@@ -44,6 +44,7 @@ class DiscoveryRoom {
     this.coverUrl,
     this.relationReason,
     this.isLocked = false,
+    this.isClosed = false,
   });
 
   final String id;
@@ -63,6 +64,7 @@ class DiscoveryRoom {
   final String? coverUrl;
   final String? relationReason;
   final bool isLocked;
+  final bool isClosed;
 
   DiscoveryRoom copyWith({
     String? title,
@@ -73,6 +75,7 @@ class DiscoveryRoom {
     bool? isFavorite,
     String? relationReason,
     bool? isLocked,
+    bool? isClosed,
   }) {
     return DiscoveryRoom(
       id: id,
@@ -88,6 +91,7 @@ class DiscoveryRoom {
       coverUrl: coverUrl,
       relationReason: relationReason ?? this.relationReason,
       isLocked: isLocked ?? this.isLocked,
+      isClosed: isClosed ?? this.isClosed,
     );
   }
 }
