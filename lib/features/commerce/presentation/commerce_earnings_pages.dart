@@ -148,6 +148,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   String? _selectedPayoutAccountId;
   bool _loading = true;
   bool _submitting = false;
+  bool _confirming = false;
   bool _quoteLoading = false;
   double? _quotedAmount;
   String? _quoteError;
@@ -173,7 +174,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
 
   bool get _canApplyWithdrawal =>
       _repository.supportsWithdrawalApplication &&
-      _selectedPayoutAccount != null;
+      (_repository.pendingWithdrawal != null || _selectedPayoutAccount != null);
 
   String get _withdrawalBlockerMessage {
     final String? unavailable = _payoutAccountsUnavailableMessage;
@@ -231,6 +232,12 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
           _records = (values[1] as CommercePage<WithdrawalRecord>).items;
           _payoutSelection = payoutSelection;
           _selectedPayoutAccountId = payoutSelection?.selectedPayoutAccountId;
+          final pending = _repository.pendingWithdrawal;
+          if (pending != null) {
+            _amountController.text = pending.amount.toStringAsFixed(0);
+            _quote = pending.quote;
+            _quotedAmount = pending.amount;
+          }
           _loading = false;
         });
       }
@@ -245,6 +252,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   }
 
   Future<void> _loadQuote() async {
+    if (_submitting || _repository.pendingWithdrawal != null) return;
     final double? amount = _enteredAmount;
     if (!_isLegalAmount(amount)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -314,8 +322,9 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       return;
     }
     final double legalAmount = amount!;
-    if (legalAmount > _wallet!.cashBalance ||
-        (_quote != null && legalAmount < _quote!.minimumAmount)) {
+    if (_repository.pendingWithdrawal == null &&
+        (legalAmount > _wallet!.cashBalance ||
+            (_quote != null && legalAmount < _quote!.minimumAmount))) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('可提现余额不足或未达到服务端最低提现金额')));
@@ -327,12 +336,21 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       ).showSnackBar(const SnackBar(content: Text('请先计算当前提现金额的服务端报价')));
       return;
     }
+    final WithdrawalQuote confirmedQuote =
+        _repository.pendingWithdrawal?.quote ?? _quote!;
+    final String confirmedAccountId =
+        _repository.pendingWithdrawal?.payoutAccountId ??
+        _selectedPayoutAccount!.payoutAccountId;
+    setState(() {
+      _submitting = true;
+      _confirming = true;
+    });
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
         title: const Text('确认申请提现？'),
         content: Text(
-          '提现金额：¥${legalAmount.toStringAsFixed(2)}\n手续费（${_quote!.feeRateText}）：¥${_quote!.feeFor(legalAmount).toStringAsFixed(2)}\n预计到账：¥${_quote!.receivedFor(legalAmount).toStringAsFixed(2)}',
+          '提现金额：¥${legalAmount.toStringAsFixed(2)}\n手续费（${confirmedQuote.feeRateText}）：¥${confirmedQuote.feeFor(legalAmount).toStringAsFixed(2)}\n预计到账：¥${confirmedQuote.receivedFor(legalAmount).toStringAsFixed(2)}',
         ),
         actions: <Widget>[
           TextButton(
@@ -347,13 +365,19 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       ),
     );
     if (confirmed != true || !mounted) {
+      if (mounted)
+        setState(() {
+          _submitting = false;
+          _confirming = false;
+        });
       return;
     }
-    setState(() => _submitting = true);
+    setState(() => _confirming = false);
     try {
       await _repository.applyWithdrawal(
         amount: legalAmount,
-        payoutAccountId: _selectedPayoutAccount!.payoutAccountId,
+        confirmedQuote: confirmedQuote,
+        payoutAccountId: confirmedAccountId,
       );
       if (!mounted) return;
       _amountController.clear();
@@ -367,6 +391,22 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       }
     } catch (error) {
       if (mounted) {
+        if (error is ApiException &&
+            error.kind == ApiFailureKind.conflict &&
+            _repository.pendingWithdrawal == null) {
+          setState(() {
+            _quote = null;
+            _quotedAmount = null;
+          });
+        }
+        final pending = _repository.pendingWithdrawal;
+        if (pending != null) {
+          setState(() {
+            _amountController.text = pending.amount.toStringAsFixed(0);
+            _quote = pending.quote;
+            _quotedAmount = pending.amount;
+          });
+        }
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
@@ -379,6 +419,11 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   }
 
   Widget _buildPayoutAccountPicker() {
+    if (_repository.pendingWithdrawal != null) {
+      return const _CommerceInfoBanner(
+        text: '上一笔提现结果尚未确定，金额、报价和原收款账户已锁定；请重试原申请。',
+      );
+    }
     final PayoutAccountSelection selection = _payoutSelection!;
     final List<PayoutAccount> selectable = selection.selectableAccounts;
     return _CommercePanel(
@@ -410,15 +455,17 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                     ),
                   ),
               ],
-              onChanged: (String? value) {
-                if (value == null || _payoutSelection == null) {
-                  return;
-                }
-                setState(() {
-                  _payoutSelection = _payoutSelection!.select(value);
-                  _selectedPayoutAccountId = value;
-                });
-              },
+              onChanged: _submitting || _repository.pendingWithdrawal != null
+                  ? null
+                  : (String? value) {
+                      if (value == null || _payoutSelection == null) {
+                        return;
+                      }
+                      setState(() {
+                        _payoutSelection = _payoutSelection!.select(value);
+                        _selectedPayoutAccountId = value;
+                      });
+                    },
             ),
           if (selection.accounts.any((PayoutAccount item) => !item.selectable))
             Padding(
@@ -487,6 +534,9 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                           ),
                           const SizedBox(height: 12),
                           TextField(
+                            enabled:
+                                !_submitting &&
+                                _repository.pendingWithdrawal == null,
                             controller: _amountController,
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
@@ -509,7 +559,12 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                           ),
                           const SizedBox(height: 12),
                           OutlinedButton.icon(
-                            onPressed: _quoteLoading ? null : _loadQuote,
+                            onPressed:
+                                _quoteLoading ||
+                                    _submitting ||
+                                    _repository.pendingWithdrawal != null
+                                ? null
+                                : _loadQuote,
                             icon: _quoteLoading
                                 ? const SizedBox.square(
                                     dimension: 18,
@@ -536,15 +591,17 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                             width: double.infinity,
                             child: FilledButton(
                               onPressed:
-                                  _canApplyWithdrawal &&
-                                      _wallet!.realNameVerified &&
-                                      _wallet!.bankCard != null &&
-                                      _wallet!.cashBalance >=
-                                          WithdrawalAmountPolicy.minimum &&
+                                  (_repository.pendingWithdrawal != null ||
+                                          (_canApplyWithdrawal &&
+                                              _wallet!.realNameVerified &&
+                                              _wallet!.bankCard != null &&
+                                              _wallet!.cashBalance >=
+                                                  WithdrawalAmountPolicy
+                                                      .minimum)) &&
                                       !_submitting
                                   ? _apply
                                   : null,
-                              child: _submitting
+                              child: _submitting && !_confirming
                                   ? const SizedBox.square(
                                       dimension: 20,
                                       child: CircularProgressIndicator(

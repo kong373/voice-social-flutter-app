@@ -9,6 +9,109 @@ import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 import 'package:voice_social_app/features/commerce/presentation/commerce_pages.dart';
 
 void main() {
+  testWidgets(
+    'U01 page recreation restores unresolved confirmed intent without new quote',
+    (tester) async {
+      final repository = _ResumeWithdrawalSpy();
+      final frozenBefore =
+          (await repository.fetchWalletSummary()).frozenBalance;
+      await tester.pumpWidget(
+        MaterialApp(home: WithdrawalPage(repository: repository)),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '101');
+      await tester.ensureVisible(find.text('计算到账金额'));
+      await tester.tap(find.text('计算到账金额'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('申请提现'));
+      await tester.tap(find.text('申请提现'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确认提现'));
+      await tester.pumpAndSettle();
+      expect(repository.pendingWithdrawal, isNotNull);
+      expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(
+        MaterialApp(home: WithdrawalPage(repository: repository)),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        '101',
+      );
+      expect(repository.quoteCalls, 1);
+      await tester.ensureVisible(find.text('申请提现'));
+      await tester.tap(find.text('申请提现'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('预计到账：¥101.00'), findsOneWidget);
+      await tester.tap(find.text('确认提现'));
+      await tester.pumpAndSettle();
+      expect(repository.quoteCalls, 1);
+      expect(repository.attempts, 2);
+      expect(repository.pendingWithdrawal, isNull);
+      expect(
+        (await repository.fetchWalletSummary()).frozenBalance,
+        frozenBefore + 101,
+      );
+    },
+  );
+  testWidgets(
+    'U01 confirmation captures amount account quote and 409 requires a new confirmation',
+    (tester) async {
+      final repository = _FeePolicySpy()..updateWithdrawalFeePolicy(50);
+      final frozenBefore =
+          (await repository.fetchWalletSummary()).frozenBalance;
+      await tester.pumpWidget(
+        MaterialApp(home: WithdrawalPage(repository: repository)),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '101');
+      await tester.ensureVisible(find.text('计算到账金额'));
+      await tester.tap(find.text('计算到账金额'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('申请提现'));
+      await tester.tap(find.text('申请提现'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('预计到账：¥100.49'), findsOneWidget);
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.enabled, isFalse);
+      expect(
+        tester
+            .widget<DropdownButtonFormField<String>>(
+              find.byType(DropdownButtonFormField<String>),
+            )
+            .onChanged,
+        isNull,
+      );
+      field.controller!.text =
+          '200'; // An external update cannot replace the confirmed intent.
+      repository.updateWithdrawalFeePolicy(100);
+      await tester.tap(find.text('确认提现'));
+      await tester.pumpAndSettle();
+      expect(repository.submissions.single.amount, 101);
+      expect(repository.submissions.single.payoutAccountId, 'card-1');
+      expect(repository.submissions.single.quote.feeAmount, .51);
+      expect(find.textContaining('提现报价已变化'), findsOneWidget);
+      expect(repository.submissions, hasLength(1));
+      await tester.enterText(find.byType(TextField), '101');
+      await tester.ensureVisible(find.text('计算到账金额'));
+      await tester.tap(find.text('计算到账金额'));
+      await tester.pumpAndSettle();
+      expect(repository.submissions, hasLength(1));
+      await tester.ensureVisible(find.text('申请提现'));
+      await tester.tap(find.text('申请提现'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('预计到账：¥99.99'), findsOneWidget);
+      expect(repository.submissions, hasLength(1));
+      await tester.tap(find.text('确认提现'));
+      await tester.pumpAndSettle();
+      expect(repository.submissions, hasLength(2));
+      expect(
+        (await repository.fetchWalletSummary()).frozenBalance,
+        frozenBefore + 101,
+      );
+    },
+  );
   testWidgets('withdrawal UI refuses invalid amounts before quote or write', (
     tester,
   ) async {
@@ -166,6 +269,74 @@ void main() {
   // REMOVED_BY_PRODUCT Q15-06: remaining refund form/result/retry positives.
 }
 
+class _ResumeWithdrawalSpy extends MockCommerceRepository {
+  ConfirmedWithdrawal? _pending;
+  int attempts = 0;
+  int quoteCalls = 0;
+  @override
+  ConfirmedWithdrawal? get pendingWithdrawal => _pending;
+  @override
+  Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount}) {
+    quoteCalls++;
+    return super.fetchWithdrawalQuote(amount: amount);
+  }
+
+  @override
+  Future<WithdrawalRecord> applyWithdrawal({
+    required double amount,
+    required WithdrawalQuote confirmedQuote,
+    String? payoutAccountId,
+  }) async {
+    attempts++;
+    if (attempts == 1) {
+      _pending = ConfirmedWithdrawal(
+        amount: amount,
+        payoutAccountId: payoutAccountId!,
+        quote: confirmedQuote,
+      );
+      throw const ApiException(
+        kind: ApiFailureKind.server,
+        message: '结果未知，请重试原申请',
+      );
+    }
+    expect(amount, _pending!.amount);
+    expect(payoutAccountId, _pending!.payoutAccountId);
+    expect(identical(confirmedQuote, _pending!.quote), isTrue);
+    final result = await super.applyWithdrawal(
+      amount: amount,
+      confirmedQuote: confirmedQuote,
+      payoutAccountId: payoutAccountId,
+    );
+    _pending = null;
+    return result;
+  }
+}
+
+class _FeePolicySpy extends MockCommerceRepository {
+  @override
+  bool get supportsPayoutAccountSelection => true;
+  final submissions = <ConfirmedWithdrawal>[];
+  @override
+  Future<WithdrawalRecord> applyWithdrawal({
+    required double amount,
+    required WithdrawalQuote confirmedQuote,
+    String? payoutAccountId,
+  }) {
+    submissions.add(
+      ConfirmedWithdrawal(
+        amount: amount,
+        payoutAccountId: payoutAccountId!,
+        quote: confirmedQuote,
+      ),
+    );
+    return super.applyWithdrawal(
+      amount: amount,
+      confirmedQuote: confirmedQuote,
+      payoutAccountId: payoutAccountId,
+    );
+  }
+}
+
 class _WithdrawalUiSpyRepository extends MockCommerceRepository {
   @override
   bool get supportsWithdrawalApplication => false;
@@ -176,7 +347,8 @@ class _WithdrawalUiSpyRepository extends MockCommerceRepository {
       quotedAmount: amount,
       feeAmount: amount * 0.02,
       receivedAmount: amount * 0.98,
-      feeRate: 0.02,
+      feeRateBasisPoints: 200,
+      feePolicyVersion: 0,
       feeRateText: '2.00%',
       minimumAmount: 100,
     );
@@ -194,7 +366,8 @@ class _WithdrawalAmountSpy extends MockCommerceRepository {
       quotedAmount: amount,
       feeAmount: 5,
       receivedAmount: amount - 5,
-      feeRate: .05,
+      feeRateBasisPoints: 500,
+      feePolicyVersion: 0,
       feeRateText: '5.00%',
       minimumAmount: 100,
     );
@@ -203,6 +376,7 @@ class _WithdrawalAmountSpy extends MockCommerceRepository {
   @override
   Future<WithdrawalRecord> applyWithdrawal({
     required double amount,
+    required WithdrawalQuote confirmedQuote,
     String? payoutAccountId,
   }) async {
     writes++;

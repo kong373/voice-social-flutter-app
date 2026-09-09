@@ -149,6 +149,9 @@ void main() {
           expect(request.body, <String, Object?>{
             'amountMinor': 10100,
             'payoutAccountId': 'payout-1',
+            'expectedFeePolicyVersion': 0,
+            'expectedFeeMinor': 202,
+            'expectedNetAmountMinor': 9898,
           });
           expect(request.requestId, isNotEmpty);
           return _Reply.ok(<String, Object?>{
@@ -179,6 +182,7 @@ void main() {
     expect(accounts.selectedPayoutAccountId, 'payout-1');
     final WithdrawalRecord withdrawal = await repository.applyWithdrawal(
       amount: 101,
+      confirmedQuote: _confirmedQuote(101),
       payoutAccountId: 'payout-1',
     );
     expect(withdrawal.id, 'withdrawal-1');
@@ -883,4 +887,20 @@ class _TestServer {
   }
 
   Future<void> close() => server.close(force: true);
+}
+
+WithdrawalQuote _confirmedQuote(double amount) {
+  final minor = WithdrawalAmountPolicy.isValid(amount)
+      ? (amount * 100).round()
+      : 0;
+  final fee = WithdrawalQuote.ceilingFeeMinor(minor, 200);
+  return WithdrawalQuote(
+    quotedAmount: amount,
+    feeAmount: fee / 100,
+    receivedAmount: (minor - fee) / 100,
+    feeRateBasisPoints: 200,
+    feePolicyVersion: 0,
+    feeRateText: '2%',
+    minimumAmount: 100,
+  );
 }

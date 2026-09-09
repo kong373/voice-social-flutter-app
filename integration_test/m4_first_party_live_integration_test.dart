@@ -2339,6 +2339,7 @@ Future<void> _runCommerceFlow(
       route: routes.withdrawalApply,
       operation: () => dependencies.commerceRepository.applyWithdrawal(
         amount: withdrawalQuote.quotedAmount,
+        confirmedQuote: withdrawalQuote,
         payoutAccountId: payoutAccount!.payoutAccountId,
       ),
       requiredSuccess: true,

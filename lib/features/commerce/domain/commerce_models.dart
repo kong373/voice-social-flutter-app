@@ -325,19 +325,56 @@ class WithdrawalQuote {
     required this.quotedAmount,
     required this.feeAmount,
     required this.receivedAmount,
-    required this.feeRate,
+    required this.feeRateBasisPoints,
     required this.feeRateText,
     required this.minimumAmount,
+    required this.feePolicyVersion,
     this.currency = LedgerCurrency.cashCny,
   });
 
   final double quotedAmount;
+  final int feePolicyVersion;
   final double feeAmount;
   final double receivedAmount;
-  final double feeRate;
+  final int feeRateBasisPoints;
+  double get feeRate => feeRateBasisPoints / 10000;
   final String feeRateText;
   final double minimumAmount;
   final LedgerCurrency currency;
+
+  static int ceilingFeeMinor(int amountMinor, int basisPoints) =>
+      ((BigInt.from(amountMinor) * BigInt.from(basisPoints) +
+                  BigInt.from(9999)) ~/
+              BigInt.from(10000))
+          .toInt();
+
+  void validateFor(double amount) {
+    final int minor = WithdrawalAmountPolicy.minorUnits(amount);
+    if (!feeRate.isFinite || !feeAmount.isFinite || !receivedAmount.isFinite) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现报价金额不合法',
+      );
+    }
+    final int basisPoints = feeRateBasisPoints;
+    final int fee = (feeAmount * 100).round();
+    final int net = (receivedAmount * 100).round();
+    if (quotedAmount != amount ||
+        feePolicyVersion < 0 ||
+        currency != LedgerCurrency.cashCny ||
+        basisPoints < 0 ||
+        basisPoints > 9999 ||
+        (feeAmount * 100 - fee).abs() > 0.000001 ||
+        (receivedAmount * 100 - net).abs() > 0.000001 ||
+        fee != ceilingFeeMinor(minor, basisPoints) ||
+        net != minor - fee ||
+        net <= 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现报价版本或金额不合法，请重新报价确认',
+      );
+    }
+  }
 
   double feeFor(double amount) {
     if ((amount - quotedAmount).abs() > 0.000001) {
@@ -352,6 +389,17 @@ class WithdrawalQuote {
     }
     return receivedAmount;
   }
+}
+
+class ConfirmedWithdrawal {
+  const ConfirmedWithdrawal({
+    required this.amount,
+    required this.payoutAccountId,
+    required this.quote,
+  });
+  final double amount;
+  final String payoutAccountId;
+  final WithdrawalQuote quote;
 }
 
 class WithdrawalRecord {
@@ -481,8 +529,11 @@ abstract interface class CommerceRepository {
 
   Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount});
 
+  ConfirmedWithdrawal? get pendingWithdrawal;
+
   Future<WithdrawalRecord> applyWithdrawal({
     required double amount,
+    required WithdrawalQuote confirmedQuote,
     String? payoutAccountId,
   });
 

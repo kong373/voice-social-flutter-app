@@ -12,6 +12,146 @@ import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 
 void main() {
   test(
+    'U01 quote requires integer policy and exact CEILING_FEN amounts',
+    () async {
+      var payload = <String, Object?>{
+        'amountMinor': 10100,
+        'feeMinor': 51,
+        'netAmountMinor': 10049,
+        'minimumAmountMinor': 10000,
+        'feeRateBasisPoints': 50,
+        'feePolicyVersion': 7,
+        'rounding': 'CEILING_FEN',
+        'settlementMode': 'FIRST_PARTY_REVIEW_PROVIDER_BLOCKED',
+      };
+      final harness = await _Harness.start((_) => _Response.ok(payload));
+      addTearDown(harness.close);
+      final quote = await harness.repository.fetchWithdrawalQuote(amount: 101);
+      expect(quote.feePolicyVersion, 7);
+      expect(quote.feeAmount, .51);
+      expect(quote.receivedAmount, 100.49);
+      final valid = Map<String, Object?>.of(payload);
+      for (final bad in <Map<String, Object?>>[
+        {'feePolicyVersion': null},
+        {'feePolicyVersion': '7'},
+        {'feePolicyVersion': 7.0},
+        {'feePolicyVersion': -1},
+        {'feeRateBasisPoints': 50.0},
+        {'feeRateBasisPoints': 10000},
+        {'feeMinor': 50, 'netAmountMinor': 10050},
+        {'feeMinor': 52, 'netAmountMinor': 10048},
+        {'amountMinor': 10000},
+        {'rounding': 'FLOOR'},
+      ]) {
+        payload = {...valid, ...bad};
+        await expectLater(
+          harness.repository.fetchWithdrawalQuote(amount: 101),
+          throwsA(isA<ApiException>()),
+        );
+      }
+    },
+  );
+
+  test(
+    'U01 unknown retry retains confirmed version and byte-identical payload without requote',
+    () async {
+      var writes = 0;
+      final harness = await _Harness.start((request) {
+        if (request.path.endsWith('/withdrawal/accounts'))
+          return _Response.ok({
+            'list': [
+              {
+                'payoutAccountId': 'u01-account',
+                'accountType': 'BANK_REFERENCE',
+                'accountMasked': '****8001',
+                'holderNameMasked': 'U*',
+                'status': 'VERIFIED',
+                'selectable': true,
+              },
+            ],
+            'total': 1,
+            'selectedPayoutAccountId': 'u01-account',
+            'selectionRequired': false,
+            'providerInvocation': false,
+          });
+        writes++;
+        if (writes == 1)
+          return const _Response(
+            statusCode: 500,
+            code: 500,
+            message: 'unknown',
+            data: null,
+          );
+        return _Response.ok({
+          'withdrawalId': 'u01-result',
+          'payoutAccountId': 'u01-account',
+          'amountMinor': 10100,
+          'feeMinor': 51,
+          'netAmountMinor': 10049,
+          'status': 'SUBMITTED',
+          'payoutStatus': 'MANUAL_REVIEW_PENDING',
+          'providerInvocation': false,
+          'submittedAt': '2026-09-09T10:00:00Z',
+          'accountMasked': '****8001',
+          'holderNameMasked': 'U*',
+        });
+      });
+      addTearDown(harness.close);
+      const quote = WithdrawalQuote(
+        quotedAmount: 101,
+        feeAmount: .51,
+        receivedAmount: 100.49,
+        feeRateBasisPoints: 50,
+        feeRateText: '0.50%',
+        minimumAmount: 100,
+        feePolicyVersion: 7,
+      );
+      await expectLater(
+        harness.repository.applyWithdrawal(
+          amount: 101,
+          confirmedQuote: quote,
+          payoutAccountId: 'u01-account',
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      final recovered = harness.repository.pendingWithdrawal!;
+      await expectLater(
+        harness.repository.applyWithdrawal(
+          amount: 100,
+          confirmedQuote: _confirmedQuote(100),
+          payoutAccountId: 'u01-account',
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      final result = await harness.repository.applyWithdrawal(
+        amount: recovered.amount,
+        confirmedQuote: recovered.quote,
+        payoutAccountId: recovered.payoutAccountId,
+      );
+      expect(result.receivedAmount, 100.49);
+      expect(harness.repository.pendingWithdrawal, isNull);
+      final posts = harness.requests.where((r) => r.method == 'POST').toList();
+      expect(posts, hasLength(2));
+      expect(posts[0].requestId, posts[1].requestId);
+      expect(posts[0].rawBody, posts[1].rawBody);
+      expect(posts[0].body, {
+        'amountMinor': 10100,
+        'payoutAccountId': 'u01-account',
+        'expectedFeePolicyVersion': 7,
+        'expectedFeeMinor': 51,
+        'expectedNetAmountMinor': 10049,
+      });
+      expect(
+        harness.requests.where((r) => r.path.endsWith('/withdrawal/accounts')),
+        hasLength(1),
+      );
+      expect(
+        harness.requests.where((r) => r.path.endsWith('/fee-rate')),
+        isEmpty,
+      );
+    },
+  );
+  test(
     'withdrawal invalid product amounts never make any HTTP request',
     () async {
       final harness = await _Harness.start(
@@ -30,6 +170,7 @@ void main() {
           () => harness.repository.fetchWithdrawalQuote(amount: amount),
           () => harness.repository.applyWithdrawal(
             amount: amount,
+            confirmedQuote: _confirmedQuote(amount),
             payoutAccountId: 'account',
           ),
         ]) {
@@ -363,6 +504,7 @@ void main() {
             'amountMinor': 10000,
             'feeMinor': 100,
             'netAmountMinor': 9900,
+            'feePolicyVersion': 0,
             'feeRateBasisPoints': 100,
             'minimumAmountMinor': 10000,
             'settlementMode': 'FIRST_PARTY_REVIEW_PROVIDER_BLOCKED',
@@ -715,6 +857,7 @@ void main() {
               'amountMinor': 10000,
               'feeMinor': 200,
               'netAmountMinor': 9800,
+              'feePolicyVersion': 0,
               'feeRateBasisPoints': 200,
               'minimumAmountMinor': 10000,
               'settlementMode': 'FIRST_PARTY_REVIEW_PROVIDER_BLOCKED',
@@ -754,6 +897,7 @@ void main() {
               'amountMinor': 10100,
               'feeMinor': 202,
               'netAmountMinor': 9898,
+              'feePolicyVersion': 0,
               'feeRateBasisPoints': 200,
               'minimumAmountMinor': 10000,
               'currency': 'CASH_CNY',
@@ -859,7 +1003,10 @@ void main() {
 
       final int requestCount = harness.requests.length;
       await expectLater(
-        harness.repository.applyWithdrawal(amount: 100),
+        harness.repository.applyWithdrawal(
+          amount: 100,
+          confirmedQuote: _confirmedQuote(100),
+        ),
         throwsA(
           isA<ApiException>()
               .having(
@@ -989,6 +1136,9 @@ void main() {
             expect(request.body, <String, Object?>{
               'amountMinor': 10000,
               'payoutAccountId': selectedId,
+              'expectedFeePolicyVersion': 0,
+              'expectedFeeMinor': 100,
+              'expectedNetAmountMinor': 9900,
             });
             return _Response.ok(<String, Object?>{
               'withdrawalId': '00000000-0000-0000-0000-00000000a010',
@@ -1020,6 +1170,7 @@ void main() {
 
       final WithdrawalRecord record = await harness.repository.applyWithdrawal(
         amount: 100,
+        confirmedQuote: _confirmedQuote(100),
         payoutAccountId: selectedId,
       );
       expect(record.payoutAccountId, selectedId);
@@ -1069,6 +1220,7 @@ void main() {
       await expectLater(
         harness.repository.applyWithdrawal(
           amount: 100,
+          confirmedQuote: _confirmedQuote(100),
           payoutAccountId: staleId,
         ),
         throwsA(
@@ -1118,6 +1270,7 @@ void main() {
         'amountMinor': 10000,
         'feeMinor': 100,
         'netAmountMinor': 9900,
+        'feePolicyVersion': 0,
         'feeRateBasisPoints': 100,
         'minimumAmountMinor': 10000,
       });
@@ -1173,6 +1326,7 @@ void main() {
       await expectLater(
         harness.repository.applyWithdrawal(
           amount: 100,
+          confirmedQuote: _confirmedQuote(100),
           payoutAccountId: accountId,
         ),
         throwsA(
@@ -1234,10 +1388,12 @@ void main() {
           await Future.wait(<Future<WithdrawalRecord>>[
             harness.repository.applyWithdrawal(
               amount: 100,
+              confirmedQuote: _confirmedQuote(100),
               payoutAccountId: accountId,
             ),
             harness.repository.applyWithdrawal(
               amount: 100,
+              confirmedQuote: _confirmedQuote(100),
               payoutAccountId: accountId,
             ),
           ]);
@@ -1303,6 +1459,7 @@ void main() {
       await expectLater(
         harness.repository.applyWithdrawal(
           amount: 100,
+          confirmedQuote: _confirmedQuote(100),
           payoutAccountId: accountId,
         ),
         throwsA(
@@ -1314,7 +1471,11 @@ void main() {
         ),
       );
       final WithdrawalRecord recovered = await harness.repository
-          .applyWithdrawal(amount: 100, payoutAccountId: accountId);
+          .applyWithdrawal(
+            amount: 100,
+            confirmedQuote: _confirmedQuote(100),
+            payoutAccountId: accountId,
+          );
 
       expect(recovered.payoutAccountId, accountId);
       expect(requestIds, hasLength(2));
@@ -1366,6 +1527,7 @@ void main() {
         await expectLater(
           harness.repository.applyWithdrawal(
             amount: 100,
+            confirmedQuote: _confirmedQuote(100),
             payoutAccountId: accountId,
           ),
           throwsA(
@@ -1406,6 +1568,7 @@ void main() {
       await expectLater(
         harness.repository.applyWithdrawal(
           amount: 100,
+          confirmedQuote: _confirmedQuote(100),
           payoutAccountId: '00000000-0000-0000-0000-00000000a302',
         ),
         throwsA(
@@ -2482,6 +2645,7 @@ void main() {
         (RequestRecord request) => _Response.ok(<String, Object?>{
           'feeMinor': 1,
           'netAmountMinor': 99,
+          'feePolicyVersion': 0,
           'feeRateBasisPoints': 100,
           'minimumAmountMinor': 10000,
         }),
@@ -2627,6 +2791,7 @@ class _Harness {
           ? null
           : jsonDecode(rawBody);
       final RequestRecord record = RequestRecord(
+        rawBody: rawBody,
         method: request.method,
         path: request.uri.path,
         query: request.uri.queryParameters,
@@ -2657,6 +2822,7 @@ class _Harness {
 
 class RequestRecord {
   const RequestRecord({
+    this.rawBody = '',
     required this.method,
     required this.path,
     required this.query,
@@ -2666,6 +2832,7 @@ class RequestRecord {
   });
 
   final String method;
+  final String rawBody;
   final String path;
   final Map<String, String> query;
   final String authorization;
@@ -2691,4 +2858,20 @@ class _Response {
   final int code;
   final String message;
   final Object? data;
+}
+
+WithdrawalQuote _confirmedQuote(double amount) {
+  final minor = WithdrawalAmountPolicy.isValid(amount)
+      ? (amount * 100).round()
+      : 0;
+  final fee = WithdrawalQuote.ceilingFeeMinor(minor, 100);
+  return WithdrawalQuote(
+    quotedAmount: amount,
+    feeAmount: fee / 100,
+    receivedAmount: (minor - fee) / 100,
+    feeRateBasisPoints: 100,
+    feePolicyVersion: 0,
+    feeRateText: '1%',
+    minimumAmount: 100,
+  );
 }

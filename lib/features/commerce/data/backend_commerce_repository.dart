@@ -796,6 +796,22 @@ class BackendCommerceRepository implements CommerceRepository {
     );
     final Map<String, Object?> data = _asMap(response.data);
     final int requestedMinor = amountMinor;
+    final Object? version = data['feePolicyVersion'];
+    if (version is! int ||
+        version < 0 ||
+        data['feeRateBasisPoints'] is! int ||
+        [
+          'amountMinor',
+          'feeMinor',
+          'netAmountMinor',
+          'minimumAmountMinor',
+        ].any((key) => data[key] is! int) ||
+        (data.containsKey('rounding') && data['rounding'] != 'CEILING_FEN')) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '提现报价版本或费率格式不合法',
+      );
+    }
     final int quotedMinor = _requiredInt(data, <String>[
       'amountMinor',
     ], field: '提现报价金额');
@@ -843,24 +859,50 @@ class BackendCommerceRepository implements CommerceRepository {
       );
     }
     final double rate = basisPoints / 10000;
-    return WithdrawalQuote(
+    final quote = WithdrawalQuote(
+      feePolicyVersion: version,
       quotedAmount: _minorToMajor(quotedMinor),
       feeAmount: _minorToMajor(feeMinor),
       receivedAmount: _minorToMajor(netMinor),
-      feeRate: rate,
+      feeRateBasisPoints: basisPoints,
       feeRateText: '${(rate * 100).toStringAsFixed(2)}%',
       minimumAmount: _minorToMajor(minimumMinor),
       currency: currency,
     );
+    quote.validateFor(amount);
+    return quote;
   }
+
+  ConfirmedWithdrawal? _pendingWithdrawal;
+  @override
+  ConfirmedWithdrawal? get pendingWithdrawal => _pendingWithdrawal;
 
   @override
   Future<WithdrawalRecord> applyWithdrawal({
     required double amount,
+    required WithdrawalQuote confirmedQuote,
     String? payoutAccountId,
   }) async {
     final int amountMinor = WithdrawalAmountPolicy.minorUnits(amount);
+    confirmedQuote.validateFor(amount);
+    final int expectedFeeMinor = (confirmedQuote.feeAmount * 100).round();
+    final int expectedNetAmountMinor = (confirmedQuote.receivedAmount * 100)
+        .round();
     final String accountId = payoutAccountId?.trim() ?? '';
+    final unresolved = _pendingWithdrawal;
+    if (unresolved != null &&
+        (unresolved.amount != amount ||
+            unresolved.payoutAccountId != accountId ||
+            unresolved.quote.feePolicyVersion !=
+                confirmedQuote.feePolicyVersion ||
+            unresolved.quote.feeAmount != confirmedQuote.feeAmount ||
+            unresolved.quote.receivedAmount != confirmedQuote.receivedAmount)) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        code: 40901,
+        message: '上一笔提现结果尚未确定，请先重试原申请',
+      );
+    }
     if (accountId.isEmpty) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
@@ -868,7 +910,7 @@ class BackendCommerceRepository implements CommerceRepository {
       );
     }
     final String intentKey =
-        'withdrawal:${commerceRefundIntentDigest(scope: 'withdrawal-apply', fields: <String>['$amountMinor', accountId])}';
+        'withdrawal:${commerceRefundIntentDigest(scope: 'withdrawal-apply', fields: <String>['$amountMinor', accountId, '${confirmedQuote.feePolicyVersion}', '$expectedFeeMinor', '$expectedNetAmountMinor'])}';
     final Future<WithdrawalRecord>? pending =
         _pendingWithdrawalApplications[intentKey];
     if (pending != null) {
@@ -884,6 +926,11 @@ class BackendCommerceRepository implements CommerceRepository {
       intentKey,
     );
     late final Future<WithdrawalRecord> future;
+    _pendingWithdrawal = ConfirmedWithdrawal(
+      amount: amount,
+      payoutAccountId: accountId,
+      quote: confirmedQuote,
+    );
     future =
         _applyWithdrawalOnce(
           amountMinor: amountMinor,
@@ -891,6 +938,7 @@ class BackendCommerceRepository implements CommerceRepository {
           requestId: requestId,
           intentKey: intentKey,
           replayingRetainedWrite: replayingRetainedWrite,
+          confirmedQuote: confirmedQuote,
         ).then<WithdrawalRecord>(
           (WithdrawalRecord value) {
             if (identical(_pendingWithdrawalApplications[intentKey], future)) {
@@ -898,6 +946,7 @@ class BackendCommerceRepository implements CommerceRepository {
             }
             _retainedWithdrawalRequestIds.remove(intentKey);
             _withdrawalWritesStarted.remove(intentKey);
+            _pendingWithdrawal = null;
             return value;
           },
           onError: (Object error, StackTrace stackTrace) {
@@ -905,6 +954,7 @@ class BackendCommerceRepository implements CommerceRepository {
               _pendingWithdrawalApplications.remove(intentKey);
             }
             if (!_shouldRetainWithdrawalRequest(error)) {
+              _pendingWithdrawal = null;
               _retainedWithdrawalRequestIds.remove(intentKey);
               _withdrawalWritesStarted.remove(intentKey);
             }
@@ -921,6 +971,7 @@ class BackendCommerceRepository implements CommerceRepository {
     required String requestId,
     required String intentKey,
     required bool replayingRetainedWrite,
+    required WithdrawalQuote confirmedQuote,
   }) async {
     if (!replayingRetainedWrite) {
       final PayoutAccountSelection selection = await fetchPayoutAccounts();
@@ -936,12 +987,20 @@ class BackendCommerceRepository implements CommerceRepository {
       }
     }
     _withdrawalWritesStarted.add(intentKey);
+    _pendingWithdrawal = ConfirmedWithdrawal(
+      amount: amountMinor / 100,
+      payoutAccountId: payoutAccountId,
+      quote: confirmedQuote,
+    );
     final ApiResponse response = await _apiClient.post(
       _routes.withdrawalApply,
       headers: <String, String>{'X-Request-Id': requestId},
       body: <String, Object?>{
         'amountMinor': amountMinor,
         'payoutAccountId': payoutAccountId,
+        'expectedFeePolicyVersion': confirmedQuote.feePolicyVersion,
+        'expectedFeeMinor': (confirmedQuote.feeAmount * 100).round(),
+        'expectedNetAmountMinor': (confirmedQuote.receivedAmount * 100).round(),
       },
     );
     final Map<String, Object?> data = _asMap(response.data);
@@ -989,7 +1048,9 @@ class BackendCommerceRepository implements CommerceRepository {
     final int netMinor = _requiredInt(data, <String>[
       'netAmountMinor',
     ], field: '提现申请到账金额');
-    if (feeMinor < 0 || netMinor < 0 || amountMinor - feeMinor != netMinor) {
+    if (feeMinor != (confirmedQuote.feeAmount * 100).round() ||
+        netMinor != (confirmedQuote.receivedAmount * 100).round() ||
+        amountMinor - feeMinor != netMinor) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '提现申请金额不一致',

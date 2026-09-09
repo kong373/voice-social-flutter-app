@@ -3,6 +3,20 @@ import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catal
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 
 class MockCommerceRepository implements CommerceRepository {
+  @override
+  ConfirmedWithdrawal? get pendingWithdrawal => null;
+  int _feeBasisPoints = 0;
+  int _feePolicyVersion = 0;
+
+  void updateWithdrawalFeePolicy(int basisPoints) {
+    if (basisPoints < 0 || basisPoints > 9999)
+      throw ArgumentError.value(basisPoints);
+    if (_feeBasisPoints != basisPoints) {
+      _feeBasisPoints = basisPoints;
+      _feePolicyVersion++;
+    }
+  }
+
   MockCommerceRepository({
     DateTime? now,
     DateTime Function()? clock,
@@ -369,12 +383,17 @@ class MockCommerceRepository implements CommerceRepository {
   @override
   Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount}) async {
     final int amountMinor = WithdrawalAmountPolicy.minorUnits(amount);
+    final int fee = WithdrawalQuote.ceilingFeeMinor(
+      amountMinor,
+      _feeBasisPoints,
+    );
     return WithdrawalQuote(
+      feePolicyVersion: _feePolicyVersion,
       quotedAmount: amountMinor / 100,
-      feeAmount: 0,
-      receivedAmount: amountMinor / 100,
-      feeRate: 0,
-      feeRateText: '0.00%',
+      feeAmount: fee / 100,
+      receivedAmount: (amountMinor - fee) / 100,
+      feeRateBasisPoints: _feeBasisPoints,
+      feeRateText: '${(_feeBasisPoints / 100).toStringAsFixed(2)}%',
       minimumAmount: WithdrawalAmountPolicy.minimum,
     );
   }
@@ -382,10 +401,20 @@ class MockCommerceRepository implements CommerceRepository {
   @override
   Future<WithdrawalRecord> applyWithdrawal({
     required double amount,
+    required WithdrawalQuote confirmedQuote,
     String? payoutAccountId,
   }) async {
     final WalletSummary wallet = await fetchWalletSummary();
-    final WithdrawalQuote quote = await fetchWithdrawalQuote(amount: amount);
+    final WithdrawalQuote quote = confirmedQuote;
+    quote.validateFor(amount);
+    if (quote.feePolicyVersion != _feePolicyVersion ||
+        quote.feeRateBasisPoints != _feeBasisPoints) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        httpStatus: 409,
+        message: '提现报价已变化，请重新报价并确认',
+      );
+    }
     if (!wallet.realNameVerified || wallet.bankCard == null) {
       throw const ApiException(
         kind: ApiFailureKind.business,

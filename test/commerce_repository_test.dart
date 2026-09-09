@@ -89,14 +89,34 @@ void main() {
       expect(blocked.existingApplicationId, isNotNull);
 
       await expectLater(
-        repository.applyWithdrawal(amount: 5),
+        repository.applyWithdrawal(
+          amount: 5,
+          confirmedQuote: _confirmedQuote(5),
+        ),
         throwsA(isA<ApiException>()),
       );
       final WithdrawalRecord withdrawal = await repository.applyWithdrawal(
         amount: 100,
+        confirmedQuote: _confirmedQuote(100),
       );
       expect(withdrawal.status, WithdrawalStatus.pending);
       expect(withdrawal.receivedAmount, 100);
     },
+  );
+}
+
+WithdrawalQuote _confirmedQuote(double amount) {
+  final minor = WithdrawalAmountPolicy.isValid(amount)
+      ? (amount * 100).round()
+      : 0;
+  final fee = WithdrawalQuote.ceilingFeeMinor(minor, 0);
+  return WithdrawalQuote(
+    quotedAmount: amount,
+    feeAmount: fee / 100,
+    receivedAmount: (minor - fee) / 100,
+    feeRateBasisPoints: 0,
+    feePolicyVersion: 0,
+    feeRateText: '0%',
+    minimumAmount: 100,
   );
 }
