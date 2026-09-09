@@ -28,8 +28,18 @@ class MockRoomRepository implements RoomRepository {
     required int currentUserId,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 320));
-    final owned = await lifecycleRepository?.fetchOwnedRoom();
-    final configuration = owned?.roomId == roomId ? owned : null;
+    final lifecycle = lifecycleRepository;
+    RoomConfiguration? configuration;
+    if (lifecycle is OwnedRoomSelectionRepository) {
+      final rooms = await (lifecycle as OwnedRoomSelectionRepository)
+          .fetchOwnedRooms();
+      if (rooms.any((room) => room.roomId == roomId)) {
+        configuration = await lifecycle!.fetchRoom(roomId);
+      }
+    } else {
+      final owned = await lifecycle?.fetchOwnedRoom();
+      configuration = owned?.roomId == roomId ? owned : null;
+    }
     final closedOwner = configuration?.availability == RoomAvailability.closed;
     _snapshot = RoomSnapshot(
       roomId: roomId,

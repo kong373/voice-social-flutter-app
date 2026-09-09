@@ -125,3 +125,21 @@ class RoomLinkResolution {
 
   bool get canEnter => status == RoomLinkStatus.valid && room != null;
 }
+
+/// Owned-list identity and state only; never an editable configuration or
+/// an admission grant. Editing/entering must still use their authority APIs.
+class OwnedRoomSummary {
+  const OwnedRoomSummary({
+    required this.roomId,
+    required this.roomCode,
+    required this.title,
+    required this.availability,
+    required this.accessMode,
+  });
+
+  final String roomId;
+  final String roomCode;
+  final String title;
+  final RoomAvailability availability;
+  final RoomAccessMode accessMode;
+}

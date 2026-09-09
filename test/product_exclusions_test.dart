@@ -68,8 +68,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.textContaining('签到'), findsNothing);
-      expect(find.text('成员与管理'), findsOneWidget);
-      await tester.tap(find.text('成员与管理'));
+      expect(find.text('公会主播'), findsOneWidget);
+      await tester.tap(find.text('公会主播'));
       await tester.pumpAndSettle();
       expect(find.byType(GuildMembersPage), findsOneWidget);
       expect(find.textContaining('签到'), findsNothing);
@@ -97,7 +97,7 @@ void main() {
     for (final label in ['CP 关系', '守护与粉团', '任务与签到', '主题活动中心']) {
       expect(find.text(label), findsNothing);
     }
-    for (final label in ['公会主页', '公会加入与成员管理', '邀请与渠道归属']) {
+    for (final label in ['公会主页', '公会加入与主播管理', '邀请与渠道归属']) {
       expect(find.text(label), findsOneWidget);
     }
     await tester.tap(find.text('公会主页'));

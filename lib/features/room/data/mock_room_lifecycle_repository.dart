@@ -5,8 +5,21 @@ import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart
 import 'package:voice_social_app/features/room/domain/room_lifecycle_repository.dart';
 
 class MockRoomLifecycleRepository
-    implements RoomLifecycleRepository, RoomReopenRepository {
-  MockRoomLifecycleRepository();
+    implements
+        RoomLifecycleRepository,
+        RoomReopenRepository,
+        OwnedRoomSelectionRepository {
+  MockRoomLifecycleRepository({
+    List<RoomConfiguration>? initialRooms,
+    this.roomLimit = 1,
+  }) : _rooms = {
+         for (final room in initialRooms ?? const [_defaultRoom])
+           room.roomId!: room,
+       };
+
+  final int roomLimit;
+  final Map<String, RoomConfiguration> _rooms;
+  int _nextRoomId = 952701;
 
   @override
   final RoomLifecycleCapabilities capabilities =
@@ -17,7 +30,7 @@ class MockRoomLifecycleRepository
         supportsReopen: true,
       );
 
-  RoomConfiguration? _ownedRoom = const RoomConfiguration(
+  static const RoomConfiguration _defaultRoom = RoomConfiguration(
     roomId: '952700',
     roomCode: '952700',
     title: '周末松弛聊天局',
@@ -33,16 +46,32 @@ class MockRoomLifecycleRepository
   );
 
   @override
+  Future<List<OwnedRoomSummary>> fetchOwnedRooms() async {
+    await Future<void>.delayed(const Duration(milliseconds: 160));
+    return List<OwnedRoomSummary>.unmodifiable(
+      _rooms.values.map(
+        (room) => OwnedRoomSummary(
+          roomId: room.roomId!,
+          roomCode: room.roomCode!,
+          title: room.title,
+          availability: room.availability,
+          accessMode: room.accessMode,
+        ),
+      ),
+    );
+  }
+
+  @override
   Future<RoomConfiguration?> fetchOwnedRoom() async {
     await Future<void>.delayed(const Duration(milliseconds: 160));
-    return _ownedRoom;
+    return _rooms.values.firstOrNull;
   }
 
   @override
   Future<RoomConfiguration> fetchRoom(String roomId) async {
     await Future<void>.delayed(const Duration(milliseconds: 140));
-    final RoomConfiguration? room = _ownedRoom;
-    if (room == null || room.roomId != roomId) {
+    final RoomConfiguration? room = _rooms[roomId];
+    if (room == null) {
       throw const ApiException(
         kind: ApiFailureKind.business,
         message: '房间已失效或不存在',
@@ -58,9 +87,25 @@ class MockRoomLifecycleRepository
     _validate(configuration);
     await Future<void>.delayed(const Duration(milliseconds: 240));
     final bool created = !configuration.hasExistingRoom;
-    final String roomId = configuration.roomId ?? '952701';
+    if (created && _rooms.length >= roomLimit) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        code: 40998,
+        message: '已达到公会可建房数量上限',
+      );
+    }
+    while (_rooms.containsKey('$_nextRoomId')) {
+      _nextRoomId++;
+    }
+    final String roomId = configuration.roomId ?? '${_nextRoomId++}';
+    if (!created && !_rooms.containsKey(roomId)) {
+      throw const ApiException(
+        kind: ApiFailureKind.forbidden,
+        message: '房间不属于当前账号',
+      );
+    }
     final String roomCode = configuration.roomCode ?? roomId;
-    _ownedRoom = configuration.copyWith(
+    _rooms[roomId] = configuration.copyWith(
       roomId: roomId,
       roomCode: roomCode,
       availability: created
@@ -79,15 +124,15 @@ class MockRoomLifecycleRepository
 
   @override
   Future<void> closeRoom(String roomId, {int? expectedVersion}) async {
-    final RoomConfiguration? room = _ownedRoom;
-    if (room == null || room.roomId != roomId) {
+    final RoomConfiguration? room = _rooms[roomId];
+    if (room == null) {
       throw const ApiException(
         kind: ApiFailureKind.business,
         message: '房间状态已变化，请刷新后重试',
       );
     }
     await Future<void>.delayed(const Duration(milliseconds: 200));
-    _ownedRoom = room.copyWith(
+    _rooms[roomId] = room.copyWith(
       availability: RoomAvailability.closed,
       version: (expectedVersion ?? room.version ?? 0) + 1,
     );
@@ -104,9 +149,12 @@ class MockRoomLifecycleRepository
         message: '链接或房间号格式不正确',
       );
     }
-    final RoomConfiguration? room = _ownedRoom;
-    if (room != null &&
-        (room.roomId == normalized || room.roomCode == normalized)) {
+    final RoomConfiguration? room = _rooms.values
+        .where(
+          (room) => room.roomId == normalized || room.roomCode == normalized,
+        )
+        .firstOrNull;
+    if (room != null) {
       if (!room.isOpen) {
         return RoomLinkResolution(
           status: RoomLinkStatus.closed,
@@ -202,7 +250,7 @@ class MockRoomLifecycleRepository
         message: '请先保存公开房或密码房设置',
       );
     }
-    _ownedRoom = room.copyWith(
+    _rooms[roomId] = room.copyWith(
       availability: RoomAvailability.open,
       version: expectedVersion + 1,
     );

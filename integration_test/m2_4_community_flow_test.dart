@@ -222,7 +222,7 @@ void main() {
 
     // Review two independent applications so accept and reject are both
     // exercised. Then govern exact member records through scoped menus.
-    await _openCommunityEntry(tester, '公会加入与成员管理', GuildMembersEntryPage);
+    await _openCommunityEntry(tester, '公会加入与主播管理', GuildMembersEntryPage);
     expect(find.byType(GuildMembersPage), findsOneWidget);
     expect(find.text('申请 2'), findsOneWidget);
     await tester.tap(find.text('申请 2'));
@@ -273,12 +273,12 @@ void main() {
       reason: '拒绝申请不得新增成员',
     );
 
-    await tester.tap(find.text('成员'));
+    await tester.tap(find.text('主播'));
     await tester.pumpAndSettle();
     await _scrollToText(tester, '青禾');
     expect(_listTileForText('青禾'), findsOneWidget);
 
-    final Finder ownerTile = _listTileForText('晚星');
+    final Finder ownerTile = _listTileForText('我');
     expect(ownerTile, findsOneWidget);
     expect(
       find.descendant(
@@ -292,7 +292,7 @@ void main() {
     await _scrollToText(tester, '南风');
     final Finder nanFengTile = _listTileForText('南风');
     await _openMemberMenu(tester, nanFengTile);
-    await tester.tap(find.text('禁言成员'));
+    await tester.tap(find.text('禁言主播'));
     await tester.pumpAndSettle();
     expect(
       find.descendant(of: nanFengTile, matching: find.text('已禁言')),

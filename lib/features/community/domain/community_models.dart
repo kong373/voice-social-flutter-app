@@ -5,12 +5,12 @@ enum GuildStatus { active, closed }
 extension GuildRoleLabel on GuildRole {
   String get label => switch (this) {
     GuildRole.visitor => '未加入',
-    GuildRole.member => '成员',
-    GuildRole.manager => '管理员',
+    GuildRole.member || GuildRole.manager => '主播',
     GuildRole.owner => '会长',
   };
 
-  bool get canManage => this == GuildRole.manager || this == GuildRole.owner;
+  // manager is retained only for historical models, never as authority.
+  bool get canManage => this == GuildRole.owner;
 }
 
 class GuildRoom {

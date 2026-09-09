@@ -13,7 +13,10 @@ abstract interface class RoomReopenRepository {
 }
 
 class BackendRoomLifecycleRepository
-    implements RoomLifecycleRepository, RoomReopenRepository {
+    implements
+        RoomLifecycleRepository,
+        RoomReopenRepository,
+        OwnedRoomSelectionRepository {
   BackendRoomLifecycleRepository({
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
@@ -47,6 +50,31 @@ class BackendRoomLifecycleRepository
     'VENDOR_BLOCKED',
     'UNKNOWN',
   };
+
+  @override
+  Future<List<OwnedRoomSummary>> fetchOwnedRooms() async {
+    final rows = await _fetchOwnedRows();
+    final ids = <String>{};
+    return List<OwnedRoomSummary>.unmodifiable(
+      rows.map((row) {
+        final id = _requiredExactNonEmptyString(row, 'roomId');
+        if ((row.containsKey('roomIdStr') && row['roomIdStr'] != id) ||
+            !ids.add(id)) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '名下房间 ID 缺失或重复，请刷新后重试',
+          );
+        }
+        return OwnedRoomSummary(
+          roomId: id,
+          roomCode: _requiredOwnerText(row, 'roomCode'),
+          title: _requiredOwnerText(row, 'roomName'),
+          availability: _ownerAvailability(_requiredOwnerText(row, 'status')),
+          accessMode: _roomAccessMode(_accessMode(row)),
+        );
+      }),
+    );
+  }
 
   @override
   Future<RoomConfiguration?> fetchOwnedRoom() async {

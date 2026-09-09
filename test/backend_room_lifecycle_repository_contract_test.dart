@@ -10,6 +10,83 @@ import 'package:voice_social_app/features/room/domain/room_lifecycle_models.dart
 import 'package:voice_social_app/features/room/domain/room_intent_digest.dart';
 
 void main() {
+  test(
+    'owned selection reads all pages without topic reads or writes',
+    () async {
+      final server = await _RunningServer.start((request) {
+        expect(request.method, 'GET');
+        expect(request.path, '/app-api/rooms/getRoomSelectByUserId');
+        final page = int.parse(request.query['pageNum']!);
+        final rows = List.generate(page == 1 ? 50 : 1, (index) {
+          final id = '${(page - 1) * 50 + index + 1}';
+          return <String, Object?>{
+            'roomId': id,
+            'roomIdStr': id,
+            'roomCode': 'R$id',
+            'roomName': '房间$id',
+            'status': page == 1 ? 'OPEN' : 'CLOSED',
+            'accessMode': page == 1 ? 'PUBLIC' : 'PASSWORD',
+          };
+        });
+        return _Reply(
+          data: {
+            'list': rows,
+            'records': rows,
+            'current': page,
+            'pageSize': 50,
+            'size': 50,
+            'total': 51,
+            'pages': 2,
+          },
+        );
+      });
+      addTearDown(server.close);
+      final rooms = await BackendRoomLifecycleRepository(
+        apiClient: server.client,
+      ).fetchOwnedRooms();
+      expect(rooms, hasLength(51));
+      expect(rooms.last.roomId, '51');
+      expect(rooms.last.availability, RoomAvailability.closed);
+      expect(rooms.last.accessMode, RoomAccessMode.password);
+      expect(server.requests, hasLength(2));
+    },
+  );
+
+  for (final invalid in ['duplicate', 'alias', 'status']) {
+    test(
+      'owned selection rejects $invalid instead of choosing a room',
+      () async {
+        final server = await _RunningServer.start((request) {
+          final row = <String, Object?>{
+            'roomId': 'one',
+            'roomIdStr': invalid == 'alias' ? 'other' : 'one',
+            'roomCode': '10001',
+            'roomName': '第一间',
+            'status': invalid == 'status' ? 'UNKNOWN' : 'OPEN',
+            'accessMode': 'PUBLIC',
+          };
+          return _Reply(
+            data: _ownerPage(row: row, total: invalid == 'duplicate' ? 2 : 1),
+          );
+        });
+        addTearDown(server.close);
+        await expectLater(
+          BackendRoomLifecycleRepository(
+            apiClient: server.client,
+          ).fetchOwnedRooms(),
+          throwsA(
+            isA<ApiException>().having(
+              (e) => e.kind,
+              'kind',
+              ApiFailureKind.protocol,
+            ),
+          ),
+        );
+        expect(server.requests, hasLength(1));
+      },
+    );
+  }
+
   test('fetchRoom joins room information and topic contracts', () async {
     final _RunningServer server = await _RunningServer.start((
       _CapturedRequest request,

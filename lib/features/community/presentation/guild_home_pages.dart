@@ -422,7 +422,27 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
                                             ),
                                           );
                                         },
-                                  child: const Text('成员与管理'),
+                                  child: const Text('公会主播'),
+                                ),
+                              if (guild.joined && guild.role == GuildRole.owner)
+                                OutlinedButton(
+                                  onPressed: _busy
+                                      ? null
+                                      : () {
+                                          final dependencies =
+                                              AppDependencyScope.of(context);
+                                          Navigator.of(context).push<void>(
+                                            MaterialPageRoute<void>(
+                                              builder: (_) =>
+                                                  AppDependencyScope(
+                                                    dependencies: dependencies,
+                                                    child:
+                                                        const CreateRoomPage(),
+                                                  ),
+                                            ),
+                                          );
+                                        },
+                                  child: const Text('名下房间'),
                                 ),
                               if (guild.joined && guild.role != GuildRole.owner)
                                 OutlinedButton(

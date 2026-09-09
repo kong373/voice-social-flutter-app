@@ -12,6 +12,75 @@ import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/community/presentation/community_pages.dart';
 
 void main() {
+  testWidgets(
+    'live legacy ADMIN is a host with quit but no governance or transfer controls',
+    (tester) async {
+      final overrides = _ContractHttpOverrides();
+      await HttpOverrides.runZoned(() async {
+        final dependencies = AppDependencies.forTestEnvironment(
+          environment: AppEnvironment(
+            backendMode: BackendMode.live,
+            apiBaseUrl: 'https://community.test/',
+            clientType: 'Android',
+            clientInnerVersion: '6',
+            oauthClientId: 'public-test-client',
+            realtimeEndpoint: '',
+          ),
+        );
+        addTearDown(dependencies.dispose);
+        await dependencies.sessionManager.save(
+          AuthSession(
+            accessToken: 'test-legacy-admin',
+            tokenType: 'Bearer',
+            expiresAt: DateTime.now().add(const Duration(hours: 1)),
+            userId: 10001,
+            mobile: 'test',
+            roles: 'USER',
+          ),
+        );
+        Future<void> pumpPage(Widget page) async {
+          await tester.pumpWidget(
+            AppDependencyScope(
+              dependencies: dependencies,
+              child: MaterialApp(theme: AppTheme.social(), home: page),
+            ),
+          );
+          for (var index = 0; index < 5; index++) {
+            await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 5)),
+            );
+            await tester.pump(const Duration(milliseconds: 30));
+          }
+        }
+
+        await pumpPage(const GuildDetailPage(guildId: 'guild-active-admin'));
+        expect(find.textContaining('你是主播'), findsOneWidget);
+        expect(find.text('退出公会'), findsOneWidget);
+        expect(find.text('名下房间'), findsNothing);
+        expect(find.textContaining('解散'), findsNothing);
+        expect(find.textContaining('转让'), findsNothing);
+        await pumpPage(const GuildMembersPage(guildId: 'guild-active-admin'));
+        expect(find.byType(PopupMenuButton<String>), findsNothing);
+        expect(find.byType(SegmentedButton<int>), findsNothing);
+        expect(find.text('管理员'), findsNothing);
+        expect(
+          overrides.requests.where(
+            (uri) => uri.path.endsWith('getMembershipApplications'),
+          ),
+          isEmpty,
+        );
+        expect(
+          overrides.requests.where(
+            (uri) => uri.path.contains('guildManagement'),
+          ),
+          isEmpty,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(tester.takeException(), isNull);
+      }, createHttpClient: overrides.createHttpClient);
+    },
+  );
+
   testWidgets('guild applications expose state and only pending actions', (
     WidgetTester tester,
   ) async {
@@ -168,7 +237,7 @@ void main() {
       await pumpGuild('guild-closed-admin');
       expect(find.text('公会已关闭'), findsOneWidget);
       expect(find.text('公会签到'), findsNothing);
-      expect(find.text('成员与管理'), findsNothing);
+      expect(find.text('公会主播'), findsNothing);
       expect(find.text('退出公会'), findsNothing);
       final Iterable<InkWell> roomCards = tester.widgetList<InkWell>(
         find.ancestor(of: find.text('已关闭公会房间'), matching: find.byType(InkWell)),
@@ -445,7 +514,7 @@ Map<String, Object?> _closedGuildDetail(String guildId) => <String, Object?>{
   'ownerName': '原会长',
   'ownerAvatar': '',
   'artwork': '',
-  'status': 'CLOSED',
+  'status': guildId.contains('active') ? 'ACTIVE' : 'CLOSED',
   'memberCount': 12,
   'onlineUsers': 0,
   'hasNewApplications': false,

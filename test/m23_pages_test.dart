@@ -66,7 +66,7 @@ void main() {
     WidgetTester tester,
   ) async {
     await pumpScoped(tester, const CommunityHubPage());
-    for (final String title in <String>['公会主页', '公会加入与成员管理', '邀请与渠道归属']) {
+    for (final String title in <String>['公会主页', '公会加入与主播管理', '邀请与渠道归属']) {
       expect(find.text(title), findsOneWidget);
     }
   });

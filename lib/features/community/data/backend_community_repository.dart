@@ -664,7 +664,7 @@ class BackendCommunityRepository
     if (joined != (role != GuildRole.visitor)) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
-        message: '公会成员身份与加入状态不一致',
+        message: '公会身份与加入状态不一致',
       );
     }
     final String roomId = _requiredStringField(item, 'roomId');
@@ -766,7 +766,7 @@ class BackendCommunityRepository
     final String normalized = value?.toString().trim().toUpperCase() ?? '';
     return switch (normalized) {
       'OWNER' => GuildRole.owner,
-      'ADMIN' => GuildRole.manager,
+      'ADMIN' => GuildRole.member,
       'MEMBER' => GuildRole.member,
       'NONE' => GuildRole.visitor,
       _ => throw ApiException(
@@ -781,7 +781,7 @@ class BackendCommunityRepository
     if (role == GuildRole.visitor) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
-        message: '公会成员列表包含访客角色',
+        message: '公会主播列表包含访客角色',
       );
     }
     return role;

@@ -15,8 +15,8 @@ class CommunityHubPage extends StatelessWidget {
       ),
       _CommunityEntry(
         icon: Icons.group_add_outlined,
-        title: '公会加入与成员管理',
-        subtitle: '申请加入、成员治理与申请审核',
+        title: '公会加入与主播管理',
+        subtitle: '申请加入、主播管理与会长审核',
         page: GuildMembersEntryPage(),
         tint: Color(0xFF49BCE7),
       ),

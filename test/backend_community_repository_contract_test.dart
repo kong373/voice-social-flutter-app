@@ -687,7 +687,9 @@ void main() {
       expect(members, hasLength(51));
       expect(members.first.nickname, '成员甲');
       expect(members.first.recordId, '21');
-      expect(members.first.role, GuildRole.manager);
+      expect(members.first.role, GuildRole.member);
+      expect(members.first.role.label, '主播');
+      expect(members.first.role.canManage, isFalse);
       expect(members.first.isMuted, isTrue);
       expect(applications, hasLength(51));
       expect(applications.first.id, 'a-1');

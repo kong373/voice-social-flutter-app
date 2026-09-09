@@ -40,7 +40,7 @@ class _GuildMembersEntryPageState extends State<GuildMembersEntryPage> {
     final bool authorityUnavailable =
         _snapshot?.currentGuildAuthority == GuildCurrentAuthority.unavailable;
     return SocialPageScaffold(
-      appBar: AppBar(title: const Text('公会加入与成员管理')),
+      appBar: AppBar(title: const Text('公会加入与主播管理')),
       body: _error != null
           ? _StateError(message: _error!, onRetry: _load)
           : _snapshot == null
@@ -305,7 +305,7 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
               )
             else if (canManage && member.role != GuildRole.owner)
               PopupMenuButton<String>(
-                tooltip: '成员操作',
+                tooltip: '主播操作',
                 onSelected: (String value) {
                   if (value == 'mute') {
                     _operate(
@@ -323,7 +323,7 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
                   PopupMenuItem<String>(
                     value: 'mute',
-                    child: Text(member.isMuted ? '解除禁言' : '禁言成员'),
+                    child: Text(member.isMuted ? '解除禁言' : '禁言主播'),
                   ),
                   const PopupMenuItem<String>(
                     value: 'remove',
@@ -462,7 +462,7 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                     eyebrow: 'GUILD OPERATIONS',
                     title: _guild!.name,
                     subtitle:
-                        '${_members.length} 位成员  ·  $pendingApplicationCount 条待审核申请',
+                        '${_members.length} 人  ·  $pendingApplicationCount 条待审核申请',
                     icon: Icons.manage_accounts_rounded,
                     colors: const <Color>[
                       Color(0xFF477EDB),
@@ -483,7 +483,7 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                   SegmentedButton<int>(
                     showSelectedIcon: false,
                     segments: <ButtonSegment<int>>[
-                      const ButtonSegment<int>(value: 0, label: Text('成员')),
+                      const ButtonSegment<int>(value: 0, label: Text('主播')),
                       ButtonSegment<int>(
                         value: 1,
                         label: Text('申请 $pendingApplicationCount'),
@@ -495,17 +495,15 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                   ),
                 const SizedBox(height: 18),
                 _SectionHeading(
-                  title: _tab == 0 ? '成员列表' : '加入申请',
-                  subtitle: _tab == 0
-                      ? '点击成员查看主页，管理操作保留权限校验'
-                      : '仅管理员可以处理，结果以服务端为准',
+                  title: _tab == 0 ? '公会主播' : '加入申请',
+                  subtitle: _tab == 0 ? '点击查看主页，仅会长可管理主播' : '仅会长可以处理，结果以服务端为准',
                 ),
                 const SizedBox(height: 10),
                 if (_tab == 0)
                   if (_members.isEmpty)
                     const _InfoCard(
                       icon: Icons.group_off_outlined,
-                      text: '当前没有公会成员。',
+                      text: '当前没有公会主播。',
                     )
                   else
                     for (final GuildMember member in _members)
@@ -524,7 +522,7 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
     return widget.embedded
         ? body
         : SocialPageScaffold(
-            appBar: AppBar(title: const Text('公会成员管理')),
+            appBar: AppBar(title: const Text('公会主播管理')),
             body: body,
           );
   }
