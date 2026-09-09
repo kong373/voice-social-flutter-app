@@ -789,20 +789,7 @@ class BackendCommerceRepository implements CommerceRepository {
 
   @override
   Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount}) async {
-    if (!amount.isFinite || amount <= 0) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '提现金额必须大于 0',
-      );
-    }
-    final double scaledAmount = amount * 100;
-    final int amountMinor = scaledAmount.round();
-    if (amountMinor <= 0 || (scaledAmount - amountMinor).abs() > 0.000001) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '提现金额最多保留两位小数',
-      );
-    }
+    final int amountMinor = WithdrawalAmountPolicy.minorUnits(amount);
     final ApiResponse response = await _apiClient.get(
       _routes.withdrawalFeeRate,
       query: <String, String>{'amountMinor': '$amountMinor'},
@@ -872,7 +859,7 @@ class BackendCommerceRepository implements CommerceRepository {
     required double amount,
     String? payoutAccountId,
   }) async {
-    final int amountMinor = _validatedMinorAmount(amount, field: '提现金额');
+    final int amountMinor = WithdrawalAmountPolicy.minorUnits(amount);
     final String accountId = payoutAccountId?.trim() ?? '';
     if (accountId.isEmpty) {
       throw const ApiException(
@@ -1999,24 +1986,6 @@ class BackendCommerceRepository implements CommerceRepository {
       );
     }
     return parsed;
-  }
-
-  static int _validatedMinorAmount(double amount, {required String field}) {
-    if (!amount.isFinite || amount <= 0) {
-      throw ApiException(
-        kind: ApiFailureKind.validation,
-        message: '$field必须大于 0',
-      );
-    }
-    final double scaled = amount * 100;
-    final int minor = scaled.round();
-    if (minor <= 0 || (scaled - minor).abs() > 0.000001) {
-      throw ApiException(
-        kind: ApiFailureKind.validation,
-        message: '$field最多保留两位小数',
-      );
-    }
-    return minor;
   }
 
   static bool _shouldRetainWithdrawalRequest(Object error) {

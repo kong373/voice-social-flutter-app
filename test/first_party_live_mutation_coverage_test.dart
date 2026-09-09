@@ -147,16 +147,16 @@ void main() {
         case '/app-mini-api/mini/v1/withdrawal/apply':
           expect(request.method, 'POST');
           expect(request.body, <String, Object?>{
-            'amountMinor': 1234,
+            'amountMinor': 10100,
             'payoutAccountId': 'payout-1',
           });
           expect(request.requestId, isNotEmpty);
           return _Reply.ok(<String, Object?>{
             'withdrawalId': 'withdrawal-1',
             'payoutAccountId': 'payout-1',
-            'amountMinor': 1234,
-            'feeMinor': 25,
-            'netAmountMinor': 1209,
+            'amountMinor': 10100,
+            'feeMinor': 202,
+            'netAmountMinor': 9898,
             'status': 'SUBMITTED',
             'payoutStatus': 'MANUAL_REVIEW_PENDING',
             'providerInvocation': false,
@@ -178,11 +178,11 @@ void main() {
         .fetchPayoutAccounts();
     expect(accounts.selectedPayoutAccountId, 'payout-1');
     final WithdrawalRecord withdrawal = await repository.applyWithdrawal(
-      amount: 12.34,
+      amount: 101,
       payoutAccountId: 'payout-1',
     );
     expect(withdrawal.id, 'withdrawal-1');
-    expect(withdrawal.receivedAmount, 12.09);
+    expect(withdrawal.receivedAmount, 98.98);
 
     // REMOVED_BY_PRODUCT Q15-06: refund submit/result/retry mutation segment.
   });

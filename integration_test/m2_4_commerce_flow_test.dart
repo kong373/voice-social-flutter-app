@@ -212,23 +212,15 @@ void main() {
             pageSize: 50,
           );
       expect(quote.minimumAmount, 100);
-      expect(quote.feeRate, 0.01);
-      expect(find.text('最低 ¥100 · 手续费 1%'), findsOneWidget);
+      if (!dependencies.environment.isLive) expect(quote.feeRate, 0);
+      expect(find.textContaining('最低提现 100 元，仅支持整元'), findsOneWidget);
       expect(find.text('可提现 ¥1288.50'), findsOneWidget);
 
       await _enterFormText(tester, '提现金额', '99');
       FocusManager.instance.primaryFocus?.unfocus();
       await _scrollToAndTap(tester, find.text('申请提现'));
-      expect(find.text('确认申请提现？'), findsOneWidget);
-      expect(
-        (tester.widget<AlertDialog>(find.byType(AlertDialog)).content as Text)
-            .data,
-        '提现金额：¥99.00\n手续费：¥0.99\n预计到账：¥98.01',
-      );
-      await tester.tap(find.text('确认提现'));
-      await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsNothing);
-      expect(find.text('单笔提现金额不得少于 100 元'), findsOneWidget);
+      expect(find.text(WithdrawalAmountPolicy.message), findsOneWidget);
       WalletSummary withdrawalWallet = await dependencies.commerceRepository
           .fetchWalletSummary();
       expect(withdrawalWallet.cashBalance, 1288.50);
@@ -243,12 +235,13 @@ void main() {
         '100',
       );
       FocusManager.instance.primaryFocus?.unfocus();
+      await _scrollToAndTap(tester, find.text('计算到账金额'));
       await _scrollToAndTap(tester, find.text('申请提现'));
       expect(find.text('确认申请提现？'), findsOneWidget);
       expect(
         (tester.widget<AlertDialog>(find.byType(AlertDialog)).content as Text)
             .data,
-        '提现金额：¥100.00\n手续费：¥1.00\n预计到账：¥99.00',
+        '提现金额：¥100.00\n手续费（${quote.feeRateText}）：¥${quote.feeFor(100).toStringAsFixed(2)}\n预计到账：¥${quote.receivedFor(100).toStringAsFixed(2)}',
       );
       await tester.tap(find.text('确认提现'));
       await pumpUntilVisible(tester, find.text('提现申请已提交'));
@@ -263,8 +256,8 @@ void main() {
       expect(withdrawalsAfter.total, withdrawalsBefore.total + 1);
       final WithdrawalRecord newWithdrawal = withdrawalsAfter.items.first;
       expect(newWithdrawal.amount, 100);
-      expect(newWithdrawal.fee, 1);
-      expect(newWithdrawal.receivedAmount, 99);
+      expect(newWithdrawal.fee, quote.feeFor(100));
+      expect(newWithdrawal.receivedAmount, quote.receivedFor(100));
       expect(newWithdrawal.status, WithdrawalStatus.pending);
       expect(newWithdrawal.statusText, '待审核');
       await _scrollToFinder(tester, find.text('¥100.00 · 待审核'));

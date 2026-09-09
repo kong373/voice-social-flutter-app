@@ -2221,7 +2221,7 @@ Future<void> _runCommerceFlow(
     method: 'GET',
     route: routes.withdrawalFeeRate,
     operation: () =>
-        dependencies.commerceRepository.fetchWithdrawalQuote(amount: 10),
+        dependencies.commerceRepository.fetchWithdrawalQuote(amount: 100),
     requiredSuccess: true,
   );
   final CommercePage<WithdrawalRecord>? withdrawalRecords =
@@ -2275,7 +2275,7 @@ Future<void> _runCommerceFlow(
     method: 'GET',
     route: routes.withdrawalFeeRate,
     operation: () =>
-        dependencies.commerceRepository.fetchWithdrawalQuote(amount: 10),
+        dependencies.commerceRepository.fetchWithdrawalQuote(amount: 100),
     requiredSuccess: true,
   );
   PayoutAccount? payoutAccount;

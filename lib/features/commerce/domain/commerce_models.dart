@@ -287,6 +287,39 @@ class RefundApplication {
   }
 }
 
+/// Product amount constraints, separate from the server's configurable fee.
+abstract final class WithdrawalAmountPolicy {
+  static const minimum = 100.0;
+  // Precision guard, not a business quota: cents must remain exact on all
+  // clients, including JavaScript's safe integer range.
+  static const maximumExactYuan = 90071992547409.0;
+  static const message = '提现金额须为不少于 100 元的整元金额，且不能超出安全金额范围';
+
+  static double? parseInput(String text) {
+    final normalized = text.trim();
+    // Validate decimal text before double parsing can erase a tiny fraction.
+    if (!RegExp(r'^[0-9]+(?:\.0+)?$').hasMatch(normalized)) return null;
+    return double.tryParse(normalized);
+  }
+
+  static bool isValid(double? amount) =>
+      amount != null &&
+      amount.isFinite &&
+      amount >= minimum &&
+      amount <= maximumExactYuan &&
+      amount == amount.truncateToDouble();
+
+  static int minorUnits(double amount) {
+    if (!isValid(amount)) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: message,
+      );
+    }
+    return amount.toInt() * 100;
+  }
+}
+
 class WithdrawalQuote {
   const WithdrawalQuote({
     required this.quotedAmount,

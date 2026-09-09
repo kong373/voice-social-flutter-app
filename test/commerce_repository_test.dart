@@ -96,7 +96,7 @@ void main() {
         amount: 100,
       );
       expect(withdrawal.status, WithdrawalStatus.pending);
-      expect(withdrawal.receivedAmount, 98);
+      expect(withdrawal.receivedAmount, 100);
     },
   );
 }

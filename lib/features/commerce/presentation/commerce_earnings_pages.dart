@@ -245,11 +245,11 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   }
 
   Future<void> _loadQuote() async {
-    final double? amount = double.tryParse(_amountController.text.trim());
+    final double? amount = _enteredAmount;
     if (!_isLegalAmount(amount)) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请输入有效提现金额后再计算报价')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(WithdrawalAmountPolicy.message)),
+      );
       return;
     }
     final double legalAmount = amount!;
@@ -284,21 +284,19 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   }
 
   bool _isLegalAmount(double? amount) {
-    if (amount == null || !amount.isFinite || amount <= 0) {
-      return false;
-    }
-    final double minor = amount * 100;
-    return (minor - minor.round()).abs() < 0.000001;
+    return WithdrawalAmountPolicy.isValid(amount);
   }
 
-  double? get _enteredAmount => double.tryParse(_amountController.text.trim());
+  double? get _enteredAmount =>
+      WithdrawalAmountPolicy.parseInput(_amountController.text);
 
   bool get _hasCurrentQuote {
     final double? entered = _enteredAmount;
-    return entered != null &&
+    return _isLegalAmount(entered) &&
         _quote != null &&
         _quotedAmount != null &&
-        (entered - _quotedAmount!).abs() < 0.005;
+        entered == _quotedAmount &&
+        entered == _quote!.quotedAmount;
   }
 
   Future<void> _apply() async {
@@ -308,14 +306,21 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       ).showSnackBar(const SnackBar(content: Text('请选择当前权威列表中的有效收款账户后再提交提现。')));
       return;
     }
-    final double? amount = double.tryParse(_amountController.text.trim());
+    final double? amount = _enteredAmount;
     if (!_isLegalAmount(amount) || _submitting) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请输入有效提现金额')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(WithdrawalAmountPolicy.message)),
+      );
       return;
     }
     final double legalAmount = amount!;
+    if (legalAmount > _wallet!.cashBalance ||
+        (_quote != null && legalAmount < _quote!.minimumAmount)) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('可提现余额不足或未达到服务端最低提现金额')));
+      return;
+    }
     if (!_hasCurrentQuote) {
       ScaffoldMessenger.of(
         context,
@@ -327,7 +332,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       builder: (BuildContext context) => AlertDialog(
         title: const Text('确认申请提现？'),
         content: Text(
-          '提现金额：¥${legalAmount.toStringAsFixed(2)}\n手续费：¥${_quote!.feeFor(legalAmount).toStringAsFixed(2)}\n预计到账：¥${_quote!.receivedFor(legalAmount).toStringAsFixed(2)}',
+          '提现金额：¥${legalAmount.toStringAsFixed(2)}\n手续费（${_quote!.feeRateText}）：¥${_quote!.feeFor(legalAmount).toStringAsFixed(2)}\n预计到账：¥${_quote!.receivedFor(legalAmount).toStringAsFixed(2)}',
         ),
         actions: <Widget>[
           TextButton(
@@ -350,7 +355,10 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
         amount: legalAmount,
         payoutAccountId: _selectedPayoutAccount!.payoutAccountId,
       );
+      if (!mounted) return;
       _amountController.clear();
+      _quote = null;
+      _quotedAmount = null;
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(
@@ -473,6 +481,10 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           const _CommerceSectionTitle(title: '提现申请'),
+                          const _CommerceInfoBanner(
+                            text:
+                                '最低提现 100 元，仅支持整元，余额零头保留。按北京时间自然日每天可提交一次；驳回后次日重新申请。',
+                          ),
                           const SizedBox(height: 12),
                           TextField(
                             controller: _amountController,
@@ -491,8 +503,8 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                             decoration: InputDecoration(
                               labelText: '提现金额',
                               helperText: _quote == null
-                                  ? '输入金额后计算手续费和预计到账金额'
-                                  : '最低 ¥${_quote!.minimumAmount.toStringAsFixed(0)} · 手续费 ${_quote!.feeRateText}',
+                                  ? '输入整元金额后计算手续费和预计到账金额'
+                                  : '最低 ¥${(_quote!.minimumAmount < 100 ? 100 : _quote!.minimumAmount).toStringAsFixed(0)} · 手续费 ${_quote!.feeRateText}',
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -527,6 +539,8 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                                   _canApplyWithdrawal &&
                                       _wallet!.realNameVerified &&
                                       _wallet!.bankCard != null &&
+                                      _wallet!.cashBalance >=
+                                          WithdrawalAmountPolicy.minimum &&
                                       !_submitting
                                   ? _apply
                                   : null,

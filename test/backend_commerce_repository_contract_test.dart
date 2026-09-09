@@ -12,6 +12,44 @@ import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 
 void main() {
   test(
+    'withdrawal invalid product amounts never make any HTTP request',
+    () async {
+      final harness = await _Harness.start(
+        (_) => _Response.ok(<String, Object?>{}),
+      );
+      addTearDown(harness.close);
+      for (final amount in [
+        99.0,
+        100.01,
+        double.nan,
+        double.infinity,
+        1e308,
+        90071992547410.0,
+      ]) {
+        for (final request in [
+          () => harness.repository.fetchWithdrawalQuote(amount: amount),
+          () => harness.repository.applyWithdrawal(
+            amount: amount,
+            payoutAccountId: 'account',
+          ),
+        ]) {
+          await expectLater(
+            request(),
+            throwsA(
+              isA<ApiException>().having(
+                (e) => e.kind,
+                'kind',
+                ApiFailureKind.validation,
+              ),
+            ),
+          );
+        }
+      }
+      expect(harness.requests, isEmpty);
+    },
+  );
+
+  test(
     'guild gift share stays cash income and retains its own label',
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {
@@ -322,11 +360,11 @@ void main() {
         }),
         '/app-mini-api/mini/v1/withdrawal/fee-rate' =>
           _Response.ok(<String, Object?>{
-            'amountMinor': 100,
-            'feeMinor': 1,
-            'netAmountMinor': 99,
+            'amountMinor': 10000,
+            'feeMinor': 100,
+            'netAmountMinor': 9900,
             'feeRateBasisPoints': 100,
-            'minimumAmountMinor': 1,
+            'minimumAmountMinor': 10000,
             'settlementMode': 'FIRST_PARTY_REVIEW_PROVIDER_BLOCKED',
           }),
         '/app-mini-api/mini/v1/withdrawal/records' => _Response.ok(
@@ -377,7 +415,7 @@ void main() {
     expect(refund.currency, LedgerCurrency.cashCny);
 
     final WithdrawalQuote quote = await harness.repository.fetchWithdrawalQuote(
-      amount: 1,
+      amount: 100,
     );
     expect(quote.currency, LedgerCurrency.cashCny);
     final CommercePage<WithdrawalRecord> withdrawals = await harness.repository
@@ -674,11 +712,11 @@ void main() {
           }),
           '/app-mini-api/mini/v1/withdrawal/fee-rate' =>
             _Response.ok(<String, Object?>{
-              'amountMinor': 1000,
-              'feeMinor': 20,
-              'netAmountMinor': 980,
+              'amountMinor': 10000,
+              'feeMinor': 200,
+              'netAmountMinor': 9800,
               'feeRateBasisPoints': 200,
-              'minimumAmountMinor': 1000,
+              'minimumAmountMinor': 10000,
               'settlementMode': 'FIRST_PARTY_REVIEW_PROVIDER_BLOCKED',
             }),
           _ => _Response.ok(<String, Object?>{}),
@@ -693,8 +731,8 @@ void main() {
           .fetchRefundResult('refund-capability');
       expect(result.id, 'refund-capability');
       final WithdrawalQuote quote = await harness.repository
-          .fetchWithdrawalQuote(amount: 10);
-      expect(quote.receivedAmount, 9.8);
+          .fetchWithdrawalQuote(amount: 100);
+      expect(quote.receivedAmount, 98);
       expect(
         harness.requests.map((RequestRecord request) => request.path),
         <String>[
@@ -713,11 +751,11 @@ void main() {
         return switch (request.path) {
           '/app-mini-api/mini/v1/withdrawal/fee-rate' =>
             _Response.ok(<String, Object?>{
-              'amountMinor': 1234,
-              'feeMinor': 25,
-              'netAmountMinor': 1209,
+              'amountMinor': 10100,
+              'feeMinor': 202,
+              'netAmountMinor': 9898,
               'feeRateBasisPoints': 200,
-              'minimumAmountMinor': 1000,
+              'minimumAmountMinor': 10000,
               'currency': 'CASH_CNY',
               'availableMinor': 50000,
               'sufficient': true,
@@ -764,7 +802,7 @@ void main() {
       addTearDown(harness.close);
 
       await expectLater(
-        harness.repository.fetchWithdrawalQuote(amount: 12.345),
+        harness.repository.fetchWithdrawalQuote(amount: 101.345),
         throwsA(
           isA<ApiException>().having(
             (ApiException error) => error.kind,
@@ -775,17 +813,17 @@ void main() {
       );
       expect(harness.requests, isEmpty);
       final WithdrawalQuote quote = await harness.repository
-          .fetchWithdrawalQuote(amount: 12.34);
+          .fetchWithdrawalQuote(amount: 101);
       expect(quote.feeRate, 0.02);
       expect(quote.feeRateText, '2.00%');
-      expect(quote.minimumAmount, 10);
-      expect(quote.quotedAmount, 12.34);
-      expect(quote.feeAmount, 0.25);
-      expect(quote.receivedAmount, 12.09);
-      expect(quote.feeFor(12.34), 0.25);
-      expect(quote.receivedFor(12.34), 12.09);
+      expect(quote.minimumAmount, 100);
+      expect(quote.quotedAmount, 101);
+      expect(quote.feeAmount, 2.02);
+      expect(quote.receivedAmount, 98.98);
+      expect(quote.feeFor(101), 2.02);
+      expect(quote.receivedFor(101), 98.98);
       expect(harness.requests.single.query, <String, String>{
-        'amountMinor': '1234',
+        'amountMinor': '10100',
       });
       final CommercePage<WithdrawalRecord> settled = await harness.repository
           .fetchWithdrawalRecords(
@@ -949,15 +987,15 @@ void main() {
             applyCalls += 1;
             expect(request.method, 'POST');
             expect(request.body, <String, Object?>{
-              'amountMinor': 1000,
+              'amountMinor': 10000,
               'payoutAccountId': selectedId,
             });
             return _Response.ok(<String, Object?>{
               'withdrawalId': '00000000-0000-0000-0000-00000000a010',
               'payoutAccountId': selectedId,
-              'amountMinor': 1000,
-              'feeMinor': 10,
-              'netAmountMinor': 990,
+              'amountMinor': 10000,
+              'feeMinor': 100,
+              'netAmountMinor': 9900,
               'status': 'SUBMITTED',
               'payoutStatus': 'MANUAL_REVIEW_PENDING',
               'providerInvocation': false,
@@ -981,12 +1019,12 @@ void main() {
       expect(selection.accounts.first.holderNameMasked, 'F*2');
 
       final WithdrawalRecord record = await harness.repository.applyWithdrawal(
-        amount: 10,
+        amount: 100,
         payoutAccountId: selectedId,
       );
       expect(record.payoutAccountId, selectedId);
-      expect(record.amount, 10);
-      expect(record.receivedAmount, 9.9);
+      expect(record.amount, 100);
+      expect(record.receivedAmount, 99);
       expect(applyCalls, 1);
     },
   );
@@ -1030,7 +1068,7 @@ void main() {
       await harness.repository.fetchPayoutAccounts();
       await expectLater(
         harness.repository.applyWithdrawal(
-          amount: 10,
+          amount: 100,
           payoutAccountId: staleId,
         ),
         throwsA(
@@ -1077,17 +1115,17 @@ void main() {
     final _Harness harness = await _Harness.start((RequestRecord request) {
       expect(request.path, '/app-mini-api/mini/v1/withdrawal/fee-rate');
       return _Response.ok(<String, Object?>{
-        'amountMinor': 1000,
-        'feeMinor': 10,
-        'netAmountMinor': 990,
+        'amountMinor': 10000,
+        'feeMinor': 100,
+        'netAmountMinor': 9900,
         'feeRateBasisPoints': 100,
-        'minimumAmountMinor': 1000,
+        'minimumAmountMinor': 10000,
       });
     });
     addTearDown(harness.close);
 
     await expectLater(
-      harness.repository.fetchWithdrawalQuote(amount: 10),
+      harness.repository.fetchWithdrawalQuote(amount: 100),
       throwsA(
         isA<ApiException>().having(
           (ApiException error) => error.kind,
@@ -1124,9 +1162,9 @@ void main() {
         expect(request.path, '/app-mini-api/mini/v1/withdrawal/apply');
         return _Response.ok(<String, Object?>{
           'withdrawalId': '00000000-0000-0000-0000-00000000a152',
-          'amountMinor': 1000,
-          'feeMinor': 10,
-          'netAmountMinor': 990,
+          'amountMinor': 10000,
+          'feeMinor': 100,
+          'netAmountMinor': 9900,
           'status': 'SUBMITTED',
         });
       });
@@ -1134,7 +1172,7 @@ void main() {
 
       await expectLater(
         harness.repository.applyWithdrawal(
-          amount: 10,
+          amount: 100,
           payoutAccountId: accountId,
         ),
         throwsA(
@@ -1179,9 +1217,9 @@ void main() {
         return _Response.ok(<String, Object?>{
           'withdrawalId': '00000000-0000-0000-0000-00000000a210',
           'payoutAccountId': accountId,
-          'amountMinor': 1000,
-          'feeMinor': 10,
-          'netAmountMinor': 990,
+          'amountMinor': 10000,
+          'feeMinor': 100,
+          'netAmountMinor': 9900,
           'status': 'SUBMITTED',
           'payoutStatus': 'MANUAL_REVIEW_PENDING',
           'providerInvocation': false,
@@ -1195,11 +1233,11 @@ void main() {
       final List<WithdrawalRecord> records =
           await Future.wait(<Future<WithdrawalRecord>>[
             harness.repository.applyWithdrawal(
-              amount: 10,
+              amount: 100,
               payoutAccountId: accountId,
             ),
             harness.repository.applyWithdrawal(
-              amount: 10,
+              amount: 100,
               payoutAccountId: accountId,
             ),
           ]);
@@ -1249,9 +1287,9 @@ void main() {
         return _Response.ok(<String, Object?>{
           'withdrawalId': '00000000-0000-0000-0000-00000000a260',
           'payoutAccountId': accountId,
-          'amountMinor': 1000,
-          'feeMinor': 10,
-          'netAmountMinor': 990,
+          'amountMinor': 10000,
+          'feeMinor': 100,
+          'netAmountMinor': 9900,
           'status': 'SUBMITTED',
           'payoutStatus': 'MANUAL_REVIEW_PENDING',
           'providerInvocation': false,
@@ -1264,7 +1302,7 @@ void main() {
 
       await expectLater(
         harness.repository.applyWithdrawal(
-          amount: 10,
+          amount: 100,
           payoutAccountId: accountId,
         ),
         throwsA(
@@ -1276,7 +1314,7 @@ void main() {
         ),
       );
       final WithdrawalRecord recovered = await harness.repository
-          .applyWithdrawal(amount: 10, payoutAccountId: accountId);
+          .applyWithdrawal(amount: 100, payoutAccountId: accountId);
 
       expect(recovered.payoutAccountId, accountId);
       expect(requestIds, hasLength(2));
@@ -1317,7 +1355,9 @@ void main() {
           return _Response(
             statusCode: failure.$1,
             code: failure.$1,
-            message: 'withdrawal-${failure.$1}',
+            message: failure.$1 == 409
+                ? '北京时间今日已提交提现申请，请次日重新申请'
+                : 'withdrawal-${failure.$1}',
             data: null,
           );
         });
@@ -1325,7 +1365,7 @@ void main() {
 
         await expectLater(
           harness.repository.applyWithdrawal(
-            amount: 10,
+            amount: 100,
             payoutAccountId: accountId,
           ),
           throwsA(
@@ -1335,6 +1375,13 @@ void main() {
                   (ApiException error) => error.httpStatus,
                   'status',
                   failure.$1,
+                )
+                .having(
+                  (ApiException error) => error.message,
+                  'message',
+                  failure.$1 == 409
+                      ? '北京时间今日已提交提现申请，请次日重新申请'
+                      : 'withdrawal-${failure.$1}',
                 ),
           ),
         );
@@ -1358,7 +1405,7 @@ void main() {
       await harness.close();
       await expectLater(
         harness.repository.applyWithdrawal(
-          amount: 10,
+          amount: 100,
           payoutAccountId: '00000000-0000-0000-0000-00000000a302',
         ),
         throwsA(
@@ -2436,13 +2483,19 @@ void main() {
           'feeMinor': 1,
           'netAmountMinor': 99,
           'feeRateBasisPoints': 100,
-          'minimumAmountMinor': 1,
+          'minimumAmountMinor': 10000,
         }),
       );
       addTearDown(quoteHarness.close);
       await expectLater(
-        quoteHarness.repository.fetchWithdrawalQuote(amount: 1),
-        throwsA(isA<ApiException>()),
+        quoteHarness.repository.fetchWithdrawalQuote(amount: 100),
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
       );
 
       final _Harness recordHarness = await _Harness.start(

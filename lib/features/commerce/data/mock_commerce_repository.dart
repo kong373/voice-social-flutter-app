@@ -3,13 +3,25 @@ import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catal
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 
 class MockCommerceRepository implements CommerceRepository {
-  MockCommerceRepository({DateTime? now})
-    : this._seeded(seedNow: now ?? DateTime.now(), fixedNow: now);
+  MockCommerceRepository({
+    DateTime? now,
+    DateTime Function()? clock,
+    double initialCashBalance = 1288.50,
+  }) : this._seeded(
+         seedNow: now ?? clock?.call() ?? DateTime.now(),
+         fixedNow: now,
+         clock: clock,
+         initialCashBalance: initialCashBalance,
+       );
 
   MockCommerceRepository._seeded({
     required DateTime seedNow,
     required DateTime? fixedNow,
+    required DateTime Function()? clock,
+    required double initialCashBalance,
   }) : _fixedNow = fixedNow,
+       _clock = clock,
+       _cashBalance = initialCashBalance,
        _orders = <PaymentOrder>[
          PaymentOrder(
            orderNo: 'MOCK202608150001',
@@ -108,6 +120,9 @@ class MockCommerceRepository implements CommerceRepository {
        ];
 
   final DateTime? _fixedNow;
+  final DateTime Function()? _clock;
+  // Successful submissions only. Never reconstruct this from imported history.
+  final Set<String> _withdrawalSubmissionDays = <String>{};
   final List<PaymentOrder> _orders;
   final Map<String, RefundApplication> _refunds;
   final List<WithdrawalRecord> _withdrawals;
@@ -124,10 +139,19 @@ class MockCommerceRepository implements CommerceRepository {
     ),
   ];
   int _withdrawalSequence = 2;
-  double _cashBalance = 1288.50;
+  double _cashBalance;
   double _frozenBalance = 200;
 
-  DateTime get _currentTime => _fixedNow ?? DateTime.now();
+  DateTime get _currentTime => _clock?.call() ?? _fixedNow ?? DateTime.now();
+
+  void seedWithdrawalRecordForQa(WithdrawalRecord record) {
+    final index = _withdrawals.indexWhere((item) => item.id == record.id);
+    if (index < 0) {
+      _withdrawals.insert(0, record);
+    } else {
+      _withdrawals[index] = record;
+    }
+  }
 
   @override
   bool get supportsPaymentChannelInvocation => false;
@@ -344,24 +368,14 @@ class MockCommerceRepository implements CommerceRepository {
 
   @override
   Future<WithdrawalQuote> fetchWithdrawalQuote({required double amount}) async {
-    final double scaledAmount = amount * 100;
-    if (!amount.isFinite ||
-        amount < 10 ||
-        (scaledAmount - scaledAmount.round()).abs() > 0.000001) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '单笔提现金额不得少于 10 元且最多保留两位小数',
-      );
-    }
-    final int amountMinor = scaledAmount.round();
-    final int feeMinor = (amountMinor * 200 + 9999) ~/ 10000;
+    final int amountMinor = WithdrawalAmountPolicy.minorUnits(amount);
     return WithdrawalQuote(
       quotedAmount: amountMinor / 100,
-      feeAmount: feeMinor / 100,
-      receivedAmount: (amountMinor - feeMinor) / 100,
-      feeRate: 0.02,
-      feeRateText: '2.00%',
-      minimumAmount: 10,
+      feeAmount: 0,
+      receivedAmount: amountMinor / 100,
+      feeRate: 0,
+      feeRateText: '0.00%',
+      minimumAmount: WithdrawalAmountPolicy.minimum,
     );
   }
 
@@ -396,7 +410,7 @@ class MockCommerceRepository implements CommerceRepository {
         message: '单笔提现金额不得少于 ${quote.minimumAmount.toStringAsFixed(0)} 元',
       );
     }
-    if (amount > wallet.cashBalance) {
+    if (amount > _cashBalance) {
       throw const ApiException(
         kind: ApiFailureKind.business,
         message: '可提现余额不足',
@@ -404,6 +418,15 @@ class MockCommerceRepository implements CommerceRepository {
     }
     final double fee = quote.feeFor(amount);
     final DateTime now = _currentTime;
+    final beijing = now.toUtc().add(const Duration(hours: 8));
+    final day = '${beijing.year}-${beijing.month}-${beijing.day}';
+    if (_withdrawalSubmissionDays.contains(day)) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        httpStatus: 409,
+        message: '北京时间今日已提交提现申请，请次日重新申请；驳回当日仍占用次数',
+      );
+    }
     final WithdrawalRecord record = WithdrawalRecord(
       id: 'withdraw-${_withdrawalSequence++}',
       withdrawalNo: 'WD${now.millisecondsSinceEpoch}',
@@ -419,6 +442,7 @@ class MockCommerceRepository implements CommerceRepository {
       maskedCard: wallet.bankCard!.maskedAccount,
     );
     _withdrawals.insert(0, record);
+    _withdrawalSubmissionDays.add(day);
     _cashBalance -= amount;
     _frozenBalance += amount;
     return record;
