@@ -1,4 +1,8 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
@@ -131,17 +135,20 @@ void main() {
   testWidgets('home enters room, opens gift sheet and minimizes the session', (
     WidgetTester tester,
   ) async {
+    await loadGoldenFonts();
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
     final AppDependencies dependencies = AppDependencies.mock();
+    addTearDown(dependencies.dispose);
     await tester.pumpWidget(
       AppDependencyScope(
         dependencies: dependencies,
         child: MaterialApp(
-          theme: AppTheme.social(),
+          builder: _captureRoot,
+          theme: AppTheme.social(fontFamily: kGoldenFontFamily),
           home: MainShell(dependencies: dependencies, onSignOut: () async {}),
         ),
       ),
@@ -163,14 +170,8 @@ void main() {
     expect(find.text('礼物'), findsOneWidget);
     expect(find.text('成员'), findsOneWidget);
     expect(find.byKey(const Key('video-room-composer')), findsOneWidget);
-    expect(
-      find.byKey(const Key('video-room-mood-stage-standard')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const Key('video-room-mood-stage-compact')),
-      findsNothing,
-    );
+    await _captureRoomEvidence(tester, 'room-390x844');
+    _expectNineSeatLayout(tester);
 
     expect(find.byKey(const Key('room-follow-host')), findsNothing);
     expect(find.text('关注房主'), findsNothing);
@@ -203,10 +204,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('minimized-room-pill')), findsOneWidget);
+    await _captureRoomEvidence(tester, 'minimized-390x844');
     await tester.tap(find.byKey(const Key('minimized-room-pill')));
     await tester.pumpAndSettle();
     expect(find.byType(VideoRuntimeRoomPage), findsOneWidget);
+    _expectNineSeatLayout(tester);
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('lobby tabs, discovery publishing and private chat are routed', (
@@ -361,12 +365,14 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
 
       final AppDependencies dependencies = AppDependencies.mock();
+      addTearDown(dependencies.dispose);
       await tester.pumpWidget(
         MediaQuery(
           data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
           child: AppDependencyScope(
             dependencies: dependencies,
             child: MaterialApp(
+              builder: _captureRoot,
               theme: AppTheme.social(fontFamily: kGoldenFontFamily),
               home: MainShell(
                 dependencies: dependencies,
@@ -383,25 +389,11 @@ void main() {
       final Finder publicScreen = find.byKey(
         const Key('video-room-public-screen'),
       );
-      expect(tester.getSize(publicScreen), const Size(340, 395));
+      await _captureRoomEvidence(tester, 'room-360x764-text130');
+      _expectNineSeatLayout(tester);
       expect(
         MediaQuery.textScalerOf(tester.element(publicScreen)).scale(10),
         13,
-      );
-      expect(
-        find.byKey(const Key('video-room-mood-stage-compact')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const Key('video-room-mood-stage-standard')),
-        findsNothing,
-      );
-      expect(
-        find.ancestor(
-          of: find.byKey(const Key('video-room-mood-stage-compact')),
-          matching: find.byType(Scrollable),
-        ),
-        findsOneWidget,
       );
       expect(tester.takeException(), isNull);
 
@@ -423,19 +415,86 @@ void main() {
 
       await tester.tap(find.text('礼物').hitTestable());
       await tester.pumpAndSettle();
-      final Finder sendGift = find.textContaining('赠送').hitTestable();
-      expect(sendGift, findsWidgets);
-      await tester.tap(sendGift.first);
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(find.byKey(const Key('gift-celebration-overlay')), findsOneWidget);
+      final sheet = find.byType(GiftSheet);
+      final targets = tester.widget<GiftSheet>(sheet).targets;
+      expect(targets.length, greaterThanOrEqualTo(2));
+      final before =
+          (await dependencies.commerceRepository.fetchWalletSummary())
+              .giftCoins!
+              .tenths;
+      await tester.tap(
+        find.descendant(of: sheet, matching: find.text(targets[1].name)),
+      );
+      await tester.pump();
+      final sendGift = find
+          .descendant(
+            of: sheet,
+            matching: find.textContaining(RegExp(r'^赠送(?: ·)? 20$')),
+          )
+          .hitTestable();
+      expect(sendGift, findsOneWidget);
+      await tester.tap(sendGift);
+      await tester.pumpAndSettle();
+      // S09: separate confirmed receipts, not one synthetic batch success.
+      final plan = dependencies.giftSendCoordinator.plan!;
+      expect(plan.succeeded, 2);
+      expect(plan.terminal, isTrue);
+      expect(plan.entries.map((e) => e.command.receiverUserId), [
+        targets[0].userId,
+        targets[1].userId,
+      ]);
+      expect(
+        plan.entries.map((e) => e.command.requestId).toSet(),
+        hasLength(2),
+      );
+      expect(plan.entries.map((e) => e.transferId).toSet(), hasLength(2));
+      expect(plan.entries.every((e) => e.command.quantity == 1), isTrue);
+      expect(find.text('已送出（已确认）'), findsNWidgets(2));
+      final feedback = find.byKey(const Key('gift-success-feedback'));
+      expect(
+        find.descendant(of: feedback, matching: find.text('玫瑰 ×1 已送达')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: feedback,
+          matching: find.text('送给 ${targets[0].name}'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('晚星 送出星河心意'), findsNothing);
-      expect(find.text('玫瑰 已送达'), findsOneWidget);
-      for (int attempt = 0; attempt < 10; attempt += 1) {
-        if (find.byType(GiftSheet).evaluate().isEmpty) {
-          break;
-        }
-        await tester.pump(const Duration(milliseconds: 100));
-      }
+      expect(
+        sheet,
+        findsOneWidget,
+      ); // The result page stays until explicit dismissal.
+      await _captureRoomEvidence(tester, 'gift-results-360x764-text130');
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(
+        find.descendant(
+          of: feedback,
+          matching: find.text('送给 ${targets[1].name}'),
+        ),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 4));
+      expect(feedback, findsNothing);
+      expect(
+        (await dependencies.commerceRepository.fetchWalletSummary())
+            .giftCoins!
+            .tenths,
+        before - BigInt.from(200),
+      );
+      await tester.ensureVisible(find.text('完成查看，重新选择礼物'));
+      await tester.pumpAndSettle();
+      expect(find.text('完成查看，重新选择礼物').hitTestable(), findsOneWidget);
+      await _captureRoomEvidence(
+        tester,
+        'gift-results-complete-360x764-text130',
+      );
+      expect(tester.takeException(), isNull);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
       expect(find.byType(GiftSheet), findsNothing);
 
       expect(find.byTooltip('更多'), findsOneWidget);
@@ -444,10 +503,156 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('互动玩法'), findsOneWidget);
       expect(find.text('工具'), findsOneWidget);
+      await _captureRoomEvidence(tester, 'tools-360x764-text130');
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(find.text('互动玩法'), findsNothing);
+      _expectNineSeatLayout(tester);
       expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
     },
   );
+}
+
+const _captureKey = Key('nine-seat-layout-evidence');
+
+void _expectNineSeatLayout(WidgetTester tester) {
+  // Q06-01 + S02 frozen layout: one visibly distinct centered seat ABOVE the
+  // other eight seats in two four-column rows. Never bless an observed height.
+  final stage = find.byKey(const Key('video-room-seat-grid'));
+  final stageRect = tester.getRect(stage);
+  expect(
+    find.byWidgetPredicate(
+      (widget) =>
+          widget is Semantics &&
+          RegExp(r'^\d+ 号麦，').hasMatch(widget.properties.label ?? ''),
+    ),
+    findsNWidgets(9),
+  );
+  Finder seat(int n) => find.byWidgetPredicate(
+    (widget) =>
+        widget is Semantics &&
+        (widget.properties.label?.startsWith('$n 号麦，') ?? false),
+  );
+  final rects = <Rect>[];
+  for (var n = 1; n <= 9; n++) {
+    expect(seat(n), findsOneWidget);
+    // The seat cell includes transparent spacing below its avatar at 1.3x;
+    // check the painted avatar, not the empty center of that layout box.
+    expect(
+      find
+          .descendant(of: seat(n), matching: find.byType(AnimatedContainer))
+          .first
+          .hitTestable(),
+      findsOneWidget,
+      reason: 'seat $n avatar must remain visible',
+    );
+    final rect = tester.getRect(seat(n));
+    expect(rect.top, greaterThanOrEqualTo(stageRect.top));
+    expect(rect.bottom, lessThanOrEqualTo(stageRect.bottom));
+    rects.add(rect);
+  }
+  expect(rects[0].center.dx, closeTo(stageRect.center.dx, 0.01));
+  expect(rects[0].bottom, lessThanOrEqualTo(rects[1].top));
+  for (var column = 0; column < 4; column++) {
+    expect(rects[1 + column].top, closeTo(rects[1].top, 0.01));
+    expect(rects[5 + column].top, closeTo(rects[5].top, 0.01));
+    expect(rects[1 + column].left, closeTo(rects[5 + column].left, 0.01));
+    expect(rects[1 + column].bottom, lessThan(rects[5 + column].top));
+    if (column < 3) {
+      expect(rects[1 + column].right, lessThan(rects[2 + column].left));
+      expect(rects[5 + column].right, lessThan(rects[6 + column].left));
+    }
+  }
+  final special = tester.widget<AnimatedContainer>(
+    find
+        .descendant(of: seat(1), matching: find.byType(AnimatedContainer))
+        .first,
+  );
+  final ordinary = tester.widget<AnimatedContainer>(
+    find
+        .descendant(of: seat(2), matching: find.byType(AnimatedContainer))
+        .first,
+  );
+  expect(
+    special.constraints!.maxWidth,
+    greaterThan(ordinary.constraints!.maxWidth),
+  );
+  expect(
+    ((special.decoration! as BoxDecoration).border! as Border).top.color,
+    RoomColors.gold,
+  );
+  expect(find.textContaining('1 号特殊麦 · '), findsOneWidget);
+
+  final screen = find.byKey(const Key('video-room-public-screen'));
+  final screenRect = tester.getRect(screen);
+  final layout = find.ancestor(
+    of: stage,
+    matching: find.byWidgetPredicate(
+      (widget) =>
+          widget is Column &&
+          widget.children.any(
+            (child) => child is SizedBox && child.child is CustomScrollView,
+          ),
+    ),
+  );
+  expect(layout, findsOneWidget);
+  // Conserve the shared layout budget: seat viewport + public screen + its
+  // existing four-pixel bottom padding. Width preserves ten-pixel gutters.
+  expect(screenRect.top, closeTo(stageRect.bottom, 0.01));
+  expect(screenRect.width, closeTo(stageRect.width - 20, 0.01));
+  expect(
+    screenRect.height + stageRect.height + 4,
+    closeTo(tester.getSize(layout).height, 0.01),
+  );
+  expect(
+    screenRect.bottom,
+    lessThanOrEqualTo(
+      tester.getRect(find.byKey(const Key('video-room-composer'))).top,
+    ),
+  );
+  expect(find.textContaining('欢迎进入房间，请友善交流。').hitTestable(), findsOneWidget);
+  // Both approved nine-seat fixture viewports now use the existing <420
+  // responsive branch. The compact stage must remain IN the scrolling feed.
+  expect(screenRect.height, lessThan(420));
+  final compact = find.byKey(const Key('video-room-mood-stage-compact'));
+  expect(compact, findsOneWidget);
+  expect(find.byKey(const Key('video-room-mood-stage-standard')), findsNothing);
+  expect(
+    find.ancestor(of: compact, matching: find.byType(Scrollable)),
+    findsOneWidget,
+  );
+  expect(find.text('礼物').hitTestable(), findsOneWidget);
+  expect(find.text('成员').hitTestable(), findsOneWidget);
+  expect(find.byTooltip('更多').hitTestable(), findsOneWidget);
+  expect(tester.takeException(), isNull);
+}
+
+Widget _captureRoot(BuildContext context, Widget? child) =>
+    RepaintBoundary(key: _captureKey, child: child!);
+
+Future<void> _captureRoomEvidence(WidgetTester tester, String name) async {
+  const directory = String.fromEnvironment('ROOM_LAYOUT_EVIDENCE_DIR');
+  if (directory.isEmpty) return;
+  final context = tester.element(find.byKey(_captureKey));
+  await tester.runAsync(() async {
+    for (final image in tester.widgetList<Image>(find.byType(Image))) {
+      await precacheImage(image.image, context);
+    }
+  });
+  await tester.pump();
+  await tester.runAsync(() async {
+    final boundary = tester.renderObject<RenderRepaintBoundary>(
+      find.byKey(_captureKey),
+    );
+    final image = await boundary.toImage(pixelRatio: 1);
+    try {
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      final file = File('$directory/$name.png');
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes(bytes!.buffer.asUint8List());
+    } finally {
+      image.dispose();
+    }
+  });
 }
