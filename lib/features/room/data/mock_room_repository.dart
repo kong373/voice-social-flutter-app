@@ -297,17 +297,34 @@ class MockRoomRepository implements RoomRepository, GiftCommandRepository {
         message: '麦位状态已变化，请重新选择',
       );
     }
-    final List<MicSeat> seats = List<MicSeat>.of(snapshot.seats)
-      ..[index] = snapshot.seats[index].copyWith(
-        state: MicSeatState.occupied,
-        userId: snapshot.rtc.userId,
-        userName: '我',
-        userRole:
-            snapshot.role == RoomRole.owner ||
-                snapshot.role == RoomRole.moderator
-            ? snapshot.role
-            : RoomRole.speaker,
-      );
+    final previousSeat = snapshot.seats
+        .where((s) => s.userId == snapshot.rtc.userId && s.isOccupied)
+        .firstOrNull;
+    final List<MicSeat> seats =
+        [
+            for (final seat in snapshot.seats)
+              if (seat.userId == snapshot.rtc.userId && seat.isOccupied)
+                seat.copyWith(
+                  state: MicSeatState.available,
+                  clearUserId: true,
+                  clearUserName: true,
+                  clearAvatarUrl: true,
+                  isSpeaking: false,
+                  userRole: RoomRole.listener,
+                )
+              else
+                seat,
+          ]
+          ..[index] = snapshot.seats[index].copyWith(
+            state: previousSeat?.state ?? MicSeatState.occupied,
+            userId: snapshot.rtc.userId,
+            userName: '我',
+            userRole:
+                snapshot.role == RoomRole.owner ||
+                    snapshot.role == RoomRole.moderator
+                ? snapshot.role
+                : RoomRole.speaker,
+          );
     _snapshot = snapshot.copyWith(
       role:
           snapshot.role == RoomRole.owner || snapshot.role == RoomRole.moderator

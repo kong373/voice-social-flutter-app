@@ -10,6 +10,35 @@ import 'package:voice_social_app/features/room/presentation/room_management_page
 
 void main() {
   testWidgets(
+    'unknown approval retains exact intent and pauses queue until explicit retry',
+    (tester) async {
+      final repository = _Repository()
+        ..queue = [_request]
+        ..writeError = const ApiException(
+          kind: ApiFailureKind.timeout,
+          message: '结果未知',
+        );
+      await _open(tester, repository);
+      await tester.tap(find.text('同意'));
+      await tester.pumpAndSettle();
+      expect(find.text('重试原处理'), findsOneWidget);
+      expect(find.text('拒绝'), findsNothing);
+      final reads = repository.reads;
+      repository.queue = [];
+      await tester.pump(const Duration(seconds: 6));
+      expect(repository.reads, reads);
+      repository.writeError = null;
+      await tester.tap(find.text('重试原处理'));
+      await tester.pumpAndSettle();
+      expect(repository.decisions, [
+        (_request.id, true, _request.version, null),
+        (_request.id, true, _request.version, null),
+      ]);
+      expect(find.text('当前没有待处理的上麦申请'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+  testWidgets(
     'unknown initial queue shows loading only on requests until read completes',
     (tester) async {
       final delayed = Completer<List<MicAccessRequest>>();
@@ -252,7 +281,9 @@ Future<void> _open(WidgetTester tester, _Repository repository) async {
         roomId: 'approval-room',
         currentUserId: 20001,
         currentRole: RoomRole.owner,
-        seats: const [],
+        seats: const [
+          MicSeat(number: 4, backendIndex: 4, state: MicSeatState.available),
+        ],
         coordinationMode: MicCoordinationMode.approval,
         repositoryOverride: repository,
       ),
@@ -286,6 +317,7 @@ class _Repository extends MockRoomOperationsRepository {
   Object? writeError;
   int reads = 0;
   int resolves = 0;
+  final List<(String, bool, int, int?)> decisions = [];
   int active = 0;
   int maxActive = 0;
   @override
@@ -311,6 +343,7 @@ class _Repository extends MockRoomOperationsRepository {
     int? targetSeatNumber,
   }) async {
     resolves++;
+    decisions.add((requestId, accepted, expectedVersion, targetSeatNumber));
     if (write != null) await write!.future;
     if (writeError != null) throw writeError!;
     queue = [];

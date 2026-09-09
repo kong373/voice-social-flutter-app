@@ -1487,6 +1487,11 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
             case 'leaveMic':
               unawaited(_leaveMic());
               return;
+            case 'moveMic':
+              if (_controller.isOnMic &&
+                  _controller.allows(RoomCapability.requestMic))
+                unawaited(_showMicSheet());
+              return;
             case 'leaveRoom':
               _confirmEnd();
               return;
@@ -2768,6 +2773,8 @@ class _RoomToolsSheetState extends State<_RoomToolsSheet> {
       const _ToolItem('minimize', Icons.picture_in_picture_alt_rounded, '收起房间'),
       if (widget.isOnMic)
         const _ToolItem('leaveMic', Icons.mic_off_outlined, '主动下麦'),
+      if (widget.isOnMic)
+        const _ToolItem('moveMic', Icons.swap_horiz_rounded, '更换麦位'),
       const _ToolItem('leaveRoom', Icons.logout_rounded, '离开房间'),
     ];
     final List<_ToolItem> visible = _tab == 0 ? interactions : tools;

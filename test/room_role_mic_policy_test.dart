@@ -9,6 +9,45 @@ import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
 
 void main() {
+  test(
+    'ordinary occupied user moves without approval, preserves mute, and cannot selfgrant after down',
+    () async {
+      final repository = _Room('PUBLIC', onMic: true);
+      final operations = MockRoomOperationsRepository();
+      final realtime = MockRoomRealtimeGateway();
+      final controller = RoomController(
+        roomId: '9527',
+        title: '房间',
+        currentUserId: 10001,
+        accessToken: 'test',
+        repository: repository,
+        rtcAdapter: const SnapshotOnlyRtcAdapter(),
+        realtimeGateway: realtime,
+        roomOperationsRepository: operations,
+      );
+      addTearDown(() async {
+        controller.dispose();
+        await realtime.dispose();
+      });
+      await controller.join();
+      expect(controller.isOnMic, isTrue);
+      expect(await controller.requestMic(1), isFalse);
+      expect(await controller.requestMic(9), isTrue);
+      expect(repository.selfUpCalls, 1);
+      expect((await operations.fetchMicRequests('9527')), isEmpty);
+      final occupied = controller.seats
+          .where((s) => s.userId == 10001 && s.isOccupied)
+          .toList();
+      expect(occupied, hasLength(1));
+      expect(occupied.single.number, 9);
+      expect(occupied.single.state, MicSeatState.occupiedMuted);
+      expect(await controller.leaveMic(), isTrue);
+      expect(await controller.requestMic(4), isTrue);
+      expect(repository.selfUpCalls, 1);
+      expect((await operations.fetchMicRequests('9527')).single.seatNumber, 4);
+      expect(controller.isOnMic, isFalse);
+    },
+  );
   test('mock owned closed room stays closed until explicit reopen', () async {
     final lifecycle = MockRoomLifecycleRepository();
     final owned = (await lifecycle.fetchOwnedRoom())!;
@@ -83,7 +122,8 @@ void main() {
 }
 
 class _Room extends MockRoomRepository {
-  _Room(this.mode);
+  _Room(this.mode, {this.onMic = false});
+  final bool onMic;
   final String mode;
   int selfUpCalls = 0;
   @override
@@ -92,12 +132,24 @@ class _Room extends MockRoomRepository {
     required String? password,
     required RoomEntrySource source,
     required int currentUserId,
-  }) async => (await super.enterRoom(
-    roomId: roomId,
-    password: password,
-    source: source,
-    currentUserId: currentUserId,
-  )).copyWith(accessMode: mode, transportMode: RoomTransportMode.snapshotOnly);
+  }) async {
+    final snapshot = await super.enterRoom(
+      roomId: roomId,
+      password: password,
+      source: source,
+      currentUserId: currentUserId,
+    );
+    if (onMic) {
+      await super.requestMic(4);
+      await super.setSelfMicrophoneMuted(backendMicIndex: 4, muted: true);
+      return reconnectRoom(roomId: roomId, currentUserId: currentUserId);
+    }
+    return snapshot.copyWith(
+      accessMode: mode,
+      transportMode: RoomTransportMode.snapshotOnly,
+    );
+  }
+
   @override
   Future<RoomSnapshot> reconnectRoom({
     required String roomId,

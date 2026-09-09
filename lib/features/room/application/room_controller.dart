@@ -220,7 +220,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   List<MicAccessRequest> get micRequests =>
       List<MicAccessRequest>.unmodifiable(_micRequests);
   MicCoordinationMode get micCoordinationMode {
-    if (role == RoomRole.owner || role == RoomRole.moderator) {
+    if (isOnMic || role == RoomRole.owner || role == RoomRole.moderator) {
       return MicCoordinationMode.direct;
     }
     return MicCoordinationMode.approval;
@@ -1243,6 +1243,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     _notify();
     bool serverMicMutationCommitted = false;
     final RoomSnapshot? previousSnapshot = _snapshot;
+    final bool moving = isOnMic;
     _beginAuthorityMutation();
     try {
       if (micCoordinationMode == MicCoordinationMode.approval) {
@@ -1301,7 +1302,9 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         );
       }
       final int authorityGeneration = _rtcAudioAuthorityGeneration;
-      final bool publishAudio = _snapshotAllowsRtcPublication(refreshed);
+      final bool publishAudio =
+          (!moving || _rtcAudioRequested) &&
+          _snapshotAllowsRtcPublication(refreshed);
       await _reconcileRtcForSnapshot(refreshed, publishAudio: publishAudio);
       // A successful first-party seat mutation may still return a
       // snapshot-only projection when the token/readiness endpoint is

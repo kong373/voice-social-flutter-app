@@ -5,6 +5,8 @@ import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
+import 'package:voice_social_app/features/room/data/backend_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
@@ -92,10 +94,31 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   int? _busyUserId;
   int? _busySeatNumber;
   String? _busyMicRequestId;
+  bool _selectingMicTarget = false;
+  (MicAccessRequest, bool, int?)? _pendingMicDecision;
+  AuthSessionManager? _session;
+  int? _identity;
+  int? _leaseGeneration;
+  RoomRole? _authoritativeRole;
 
-  bool get _isOwner => configuration.currentRole == RoomRole.owner;
+  bool get _currentSession =>
+      mounted &&
+      _session?.identityGeneration == _identity &&
+      (_repositoryInstance is! BackendRoomOperationsRepository ||
+          (_repositoryInstance as BackendRoomOperationsRepository)
+                  .leaseBinding
+                  .generation ==
+              _leaseGeneration);
+
+  RoomRole get _role =>
+      _authoritativeRole ??
+      (_repositoryInstance is BackendRoomOperationsRepository
+          ? RoomRole.guest
+          : configuration.currentRole);
+
+  bool get _isOwner => _role == RoomRole.owner;
   bool get _canManage =>
-      _isOwner || configuration.currentRole == RoomRole.moderator;
+      _currentSession && (_isOwner || _role == RoomRole.moderator);
   bool get _supportsMicRequests => _canManage;
 
   bool _canGovern(RoomMember member) =>
@@ -129,6 +152,16 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         configuration.repositoryOverride ??
         AppDependencyScope.of(context).roomOperationsRepository;
     _banRepository = _repositoryInstance!.roomBanCapability;
+    _session = context
+        .dependOnInheritedWidgetOfExactType<AppDependencyScope>()
+        ?.dependencies
+        .sessionManager;
+    _identity = _session?.identityGeneration;
+    _session?.addListener(_onSessionChanged);
+    final repository = _repositoryInstance;
+    _leaseGeneration = repository is BackendRoomOperationsRepository
+        ? repository.leaseBinding.generation
+        : null;
     final roomRepository =
         configuration.authorityRepositoryOverride ??
         (configuration.repositoryOverride == null
@@ -142,6 +175,22 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
 
   bool get _canSyncQueue =>
       mounted && _foreground && _routeVisible && _supportsMicRequests;
+
+  void _onSessionChanged() {
+    if (_currentSession) return;
+    _pauseQueueSync();
+    _loadGeneration++;
+    if (!mounted) return;
+    setState(() {
+      _members.clear();
+      _requests.clear();
+      _seats = [];
+      _pendingMicDecision = null;
+      _authoritativeRole = RoomRole.guest;
+      _loading = false;
+      _error = '账号或房间会话已变化，请退出后重新打开';
+    });
+  }
 
   void _pauseQueueSync() {
     _queueTimer?.cancel();
@@ -160,6 +209,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   @override
   void dispose() {
     _pauseQueueSync();
+    _session?.removeListener(_onSessionChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -168,7 +218,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
 
   // Single-flight and visible-only; a write invalidates any older response.
   Future<void> _refreshMicQueue() async {
-    if (!_canSyncQueue) return;
+    if (!_canSyncQueue || _pendingMicDecision != null) return;
     _queuePending = true;
     if (_queueReading || _busyMicRequestId != null) return;
     _queueTimer?.cancel();
@@ -242,7 +292,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         );
       }
       final List<Object> results = await Future.wait<Object>(futures);
-      if (!mounted || generation != _loadGeneration) return;
+      if (!_currentSession || generation != _loadGeneration) return;
       final projection = authority == null
           ? null
           : results.last as RoomAuthorityProjection;
@@ -298,6 +348,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         return;
       }
       setState(() {
+        _authoritativeRole = projection?.snapshot.role ?? _authoritativeRole;
         _members
           ..clear()
           ..addAll(members);
@@ -307,6 +358,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         _seats = reconciledSeats;
         _loading = false;
       });
+      unawaited(_refreshQueue());
     } catch (error) {
       if (!mounted || generation != _loadGeneration) {
         return;
@@ -632,7 +684,8 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (BuildContext context, int index) {
         final MicAccessRequest request = _requests[index];
-        final bool busy = _busyMicRequestId == request.id;
+        final bool busy =
+            _busyMicRequestId == request.id && !_selectingMicTarget;
         return RoomGlassCard(
           padding: EdgeInsets.zero,
           radius: 16,
@@ -649,6 +702,14 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
                 ? const SizedBox.square(
                     dimension: 22,
                     child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : _pendingMicDecision?.$1.id == request.id
+                ? TextButton(
+                    onPressed: _canManage
+                        ? () =>
+                              _resolveRequest(request, _pendingMicDecision!.$2)
+                        : null,
+                    child: const Text('重试原处理'),
                   )
                 : Wrap(
                     spacing: 6,
@@ -1056,17 +1117,62 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     if (!_canGovern(request.member) ||
         !request.isRequest ||
         !request.isPending ||
-        _busyMicRequestId != null) {
+        _busyMicRequestId != null ||
+        (_pendingMicDecision != null &&
+            (_pendingMicDecision!.$1.id != request.id ||
+                _pendingMicDecision!.$2 != accepted))) {
       return;
     }
     _pauseQueueSync();
     setState(() => _busyMicRequestId = request.id);
     try {
+      var decision = _pendingMicDecision;
+      if (decision == null) {
+        final authority = _authorityRepository;
+        if (authority != null) {
+          final projection = await authority.fetchRoomAuthority(
+            roomId: configuration.roomId,
+            currentUserId: configuration.currentUserId,
+          );
+          if (!_currentSession) return;
+          if (projection.snapshot.roomId != configuration.roomId ||
+              projection.viewerUserId != configuration.currentUserId) {
+            throw const ApiException(
+              kind: ApiFailureKind.protocol,
+              message: '麦位响应身份不一致',
+            );
+          }
+          setState(() {
+            _authoritativeRole = projection.snapshot.role;
+            _seats = projection.snapshot.seats;
+          });
+        }
+        if (!_canGovern(request.member)) return;
+        int? target;
+        if (accepted &&
+            !_seats.any(
+              (s) =>
+                  s.number == request.seatNumber &&
+                  s.isAvailable &&
+                  s.canUse(request.member.role),
+            )) {
+          setState(() => _selectingMicTarget = true);
+          target = await _chooseAlternateSeat(request);
+          if (mounted) setState(() => _selectingMicTarget = false);
+          if (target == null || !_currentSession) return;
+        }
+        decision = (request, accepted, target);
+        _pendingMicDecision = decision;
+      }
+      if (!_currentSession) return;
       await _repository.resolveMicRequest(
-        requestId: request.id,
-        accepted: accepted,
-        expectedVersion: request.version,
+        requestId: decision.$1.id,
+        accepted: decision.$2,
+        expectedVersion: decision.$1.version,
+        targetSeatNumber: decision.$3,
       );
+      if (!_currentSession) return;
+      _pendingMicDecision = null;
       _changed = true;
       if (!mounted) {
         return;
@@ -1074,7 +1180,8 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       _showMessage(accepted ? '已同意上麦申请' : '已拒绝上麦申请');
       await _load();
     } catch (error) {
-      if (mounted) {
+      if (_currentSession) {
+        if (!_unknownMicResult(error)) _pendingMicDecision = null;
         _showMessage(_messageFor(error));
       }
     } finally {
@@ -1084,6 +1191,54 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       }
     }
   }
+
+  Future<int?> _chooseAlternateSeat(MicAccessRequest request) =>
+      showModalBottomSheet<int>(
+        context: context,
+        useSafeArea: true,
+        builder: (sheetContext) => Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('原申请麦位不可用，请选择备用空位'),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final seat in _seats.where(
+                    (s) => s.isAvailable && s.canUse(request.member.role),
+                  ))
+                    FilledButton.tonal(
+                      key: Key('resolve-mic-seat-${seat.number}'),
+                      onPressed: () =>
+                          Navigator.of(sheetContext).pop(seat.number),
+                      child: Text('${seat.number} 号麦'),
+                    ),
+                ],
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(sheetContext).pop(),
+                child: const Text('取消'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  static bool _unknownMicResult(Object error) =>
+      error is! ApiException ||
+      error.code == 40901 ||
+      error.code == 40902 ||
+      (error.code != 40903 &&
+          const [
+            ApiFailureKind.network,
+            ApiFailureKind.timeout,
+            ApiFailureKind.protocol,
+            ApiFailureKind.server,
+          ].contains(error.kind));
 
   Future<void> _unbanUser(RoomBannedUser banned) async {
     final RoomBanRepository? repository = _banRepository;

@@ -42,7 +42,7 @@ class RoomPermissionPolicy {
       return switch (capability) {
         RoomCapability.sendPublicMessage =>
           signedIn && snapshot.publicScreenEnabled,
-        RoomCapability.requestMic => signedIn && !isOnMic,
+        RoomCapability.requestMic => signedIn,
         RoomCapability.leaveMic => signedIn && isOnMic,
         RoomCapability.toggleMicrophone => false,
         RoomCapability.viewMembers => true,
@@ -63,7 +63,7 @@ class RoomPermissionPolicy {
     return switch (capability) {
       RoomCapability.sendPublicMessage =>
         signedIn && snapshot.publicScreenEnabled,
-      RoomCapability.requestMic => signedIn && !isOnMic,
+      RoomCapability.requestMic => signedIn,
       RoomCapability.leaveMic => signedIn && isOnMic,
       RoomCapability.toggleMicrophone => signedIn && isOnMic,
       RoomCapability.viewMembers => true,

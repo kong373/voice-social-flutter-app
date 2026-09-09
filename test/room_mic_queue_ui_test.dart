@@ -15,6 +15,79 @@ import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
 void main() {
   testWidgets(
+    'occupied requested seat requires explicit alternative and keeps request version',
+    (tester) async {
+      final repo = MockRoomOperationsRepository();
+      repo.seedMicRequestForQa(
+        MicAccessRequest(
+          id: 'alternate-request',
+          roomId: 'approval-room',
+          member: const RoomMember(
+            userId: 20005,
+            name: '申请成员',
+            role: RoomRole.listener,
+            presence: RoomMemberPresence.listener,
+          ),
+          seatNumber: 4,
+          version: 7,
+          status: MicRequestStatus.pending,
+          createdAt: DateTime.now(),
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark(),
+          home: RoomManagementPage(
+            roomId: 'approval-room',
+            currentUserId: 20001,
+            currentRole: RoomRole.owner,
+            repositoryOverride: repo,
+            seats: const [
+              MicSeat(
+                number: 1,
+                backendIndex: 1,
+                state: MicSeatState.available,
+              ),
+              MicSeat(
+                number: 4,
+                backendIndex: 4,
+                state: MicSeatState.occupied,
+                userId: 20006,
+              ),
+              MicSeat(number: 8, backendIndex: 8, state: MicSeatState.locked),
+              MicSeat(
+                number: 9,
+                backendIndex: 9,
+                state: MicSeatState.available,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('上麦申请'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('同意'));
+      await tester.pumpAndSettle();
+      expect(find.text('原申请麦位不可用，请选择备用空位'), findsOneWidget);
+      expect(find.byKey(const Key('resolve-mic-seat-1')), findsNothing);
+      expect(find.byKey(const Key('resolve-mic-seat-4')), findsNothing);
+      expect(find.byKey(const Key('resolve-mic-seat-8')), findsNothing);
+      expect(
+        (await repo.fetchMicRequests('approval-room')).single.isPending,
+        isTrue,
+      );
+      await tester.tap(find.byKey(const Key('resolve-mic-seat-9')));
+      await tester.pumpAndSettle();
+      final receipt = (await repo.fetchMicRequests('approval-room')).single;
+      expect(receipt.isApproved, isTrue);
+      expect(receipt.version, 8);
+      expect(receipt.seatNumber, 4);
+      expect(receipt.assignedSeatNumber, 9);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+  testWidgets(
     'S02 nine-seat stage and ordinary picker preserve ninth, exclude first',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(375, 667));
