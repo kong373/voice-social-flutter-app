@@ -107,7 +107,7 @@ void main() {
     await _pumpHome(tester, repository);
     repository.requests.single.complete(<DiscoveryRoom>[_countRoom(3, 2)]);
     await tester.pumpAndSettle();
-    expect(find.text('2/8 麦'), findsOneWidget);
+    expect(find.text('2/9 麦'), findsOneWidget);
     expect(
       find.descendant(
         of: find.byKey(const Key('live-room-count-room')),
@@ -131,8 +131,8 @@ void main() {
     expect(repository.requests, hasLength(2));
     repository.requests.last.complete(<DiscoveryRoom>[_countRoom(1, 0)]);
     await tester.pumpAndSettle();
-    expect(find.text('0/8 麦'), findsOneWidget);
-    expect(find.text('2/8 麦'), findsNothing);
+    expect(find.text('0/9 麦'), findsOneWidget);
+    expect(find.text('2/9 麦'), findsNothing);
     expect(
       find.descendant(
         of: find.byKey(const Key('live-room-count-room')),

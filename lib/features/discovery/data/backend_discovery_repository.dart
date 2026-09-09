@@ -487,7 +487,7 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
     if (value < 0) {
       return 0;
     }
-    return value > 8 ? 8 : value;
+    return value > 9 ? 9 : value;
   }
 
   static int? _authoritativeOnlineCount(Map<String, Object?> map) {

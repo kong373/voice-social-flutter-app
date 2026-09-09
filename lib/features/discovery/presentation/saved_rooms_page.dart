@@ -290,7 +290,7 @@ class _SavedRoomCard extends StatelessWidget {
                   child: Text(
                     room.isClosed
                         ? '已关闭'
-                        : '${discoveryOnlineCountLabel(room.onlineCount)} · ${room.occupiedSeats}/8 麦',
+                        : '${discoveryOnlineCountLabel(room.onlineCount)} · ${room.occupiedSeats}/9 麦',
                     style: const TextStyle(color: Colors.white, fontSize: 9),
                   ),
                 ),

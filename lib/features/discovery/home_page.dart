@@ -458,7 +458,7 @@ class _LiveRoomCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 7),
                     Text(
-                      '${room.occupiedSeats}/8 麦 · ${discoveryOnlineCountLabel(room.onlineCount)} · ${room.relationReason ?? '实时推荐'}',
+                      '${room.occupiedSeats}/9 麦 · ${discoveryOnlineCountLabel(room.onlineCount)} · ${room.relationReason ?? '实时推荐'}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall,
@@ -484,8 +484,8 @@ class _SeatSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final int safeOccupied = occupiedSeats < 0
         ? 0
-        : occupiedSeats > 8
-        ? 8
+        : occupiedSeats > 9
+        ? 9
         : occupiedSeats;
     return Row(
       children: <Widget>[
@@ -493,7 +493,7 @@ class _SeatSummary extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: <Widget>[
-              for (int index = 0; index < 8; index += 1)
+              for (int index = 0; index < 9; index += 1)
                 Container(
                   width: 22,
                   height: 22,
@@ -522,7 +522,7 @@ class _SeatSummary extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        Text('$safeOccupied/8 麦'),
+        Text('$safeOccupied/9 麦'),
       ],
     );
   }

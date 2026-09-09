@@ -289,7 +289,7 @@ void main() {
       expect(home, hasLength(1));
       expect(home.single.id, 'room-2');
       expect(home.single.topic, '晚间聊天');
-      expect(home.single.occupiedSeats, 8);
+      expect(home.single.occupiedSeats, 9);
       expect(home.single.isSpeaking, isTrue);
       expect(home.single.isLocked, isTrue);
 

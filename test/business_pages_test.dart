@@ -75,7 +75,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('深夜温柔陪伴'), findsOneWidget);
-    expect(find.text('36 人在线 · 3/8 麦'), findsOneWidget);
+    expect(find.text('36 人在线 · 3/9 麦'), findsOneWidget);
     await tester.tap(find.text('我的房间'));
     await tester.pumpAndSettle();
     expect(find.text('周末松弛聊天局'), findsOneWidget);

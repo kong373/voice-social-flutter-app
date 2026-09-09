@@ -266,7 +266,7 @@ class MockDynamicRepository implements DynamicRepository {
           roomId: room ? '880217' : null,
           name: room ? '深夜温柔陪伴' : '晚星',
           value: room ? 9860 : 128900,
-          subtitle: room ? '5/8 麦 · 36 人在线' : board.label,
+          subtitle: room ? '5/9 麦 · 36 人在线' : board.label,
         ),
         RankingEntry(
           rank: 2,
@@ -274,7 +274,7 @@ class MockDynamicRepository implements DynamicRepository {
           roomId: room ? '660318' : null,
           name: room ? '下班后的松弛时刻' : '南风',
           value: room ? 8420 : 96300,
-          subtitle: room ? '3/8 麦 · 24 人在线' : board.label,
+          subtitle: room ? '3/9 麦 · 24 人在线' : board.label,
         ),
         RankingEntry(
           rank: 3,
@@ -282,7 +282,7 @@ class MockDynamicRepository implements DynamicRepository {
           roomId: room ? '520906' : null,
           name: room ? '安静音乐电台' : '阿岚',
           value: room ? 7310 : 81500,
-          subtitle: room ? '2/8 麦 · 18 人在线' : board.label,
+          subtitle: room ? '2/9 麦 · 18 人在线' : board.label,
         ),
       ],
       selfEntry: room

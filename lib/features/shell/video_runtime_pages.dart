@@ -895,7 +895,7 @@ class _RoomPoster extends StatelessWidget {
                   ),
                   const Spacer(),
                   Text(
-                    '${room.occupiedSeats}/8 麦',
+                    '${room.occupiedSeats}/9 麦',
                     style: const TextStyle(
                       color: SocialColors.textTertiary,
                       fontSize: 9,

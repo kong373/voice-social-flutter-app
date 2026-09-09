@@ -430,7 +430,7 @@ class _RoomResultTile extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      '${room.occupiedSeats}/8 麦',
+                      '${room.occupiedSeats}/9 麦',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 9,
