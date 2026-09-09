@@ -607,12 +607,19 @@ class MockRoomOperationsRepository
   Future<void> resolveMicRequest({
     required String requestId,
     required bool accepted,
+    required int expectedVersion,
+    int? targetSeatNumber,
   }) async {
     _expireMicRequests();
     final int index = _requests.indexWhere(
       (MicAccessRequest request) => request.id == requestId,
     );
-    if (index < 0 || !_requests[index].isPending) {
+    if (index < 0 ||
+        !_requests[index].isPending ||
+        !_requests[index].isRequest ||
+        _requests[index].version != expectedVersion ||
+        (targetSeatNumber != null &&
+            (!accepted || targetSeatNumber < 1 || targetSeatNumber > 9))) {
       throw const ApiException(
         kind: ApiFailureKind.business,
         message: '申请已失效，请刷新列表',
@@ -625,6 +632,10 @@ class MockRoomOperationsRepository
       member: request.member,
       seatNumber: request.seatNumber,
       status: accepted ? MicRequestStatus.accepted : MicRequestStatus.rejected,
+      version: request.version + 1,
+      assignedSeatNumber: accepted
+          ? (targetSeatNumber ?? request.seatNumber)
+          : null,
       createdAt: request.createdAt,
       expiresAt: request.expiresAt,
       resolvedAt: DateTime.now(),
@@ -641,36 +652,10 @@ class MockRoomOperationsRepository
     required int userId,
     required int seatNumber,
   }) async {
-    final RoomMember member = _members.firstWhere(
-      (RoomMember item) => item.userId == userId,
-      orElse: () => throw const ApiException(
-        kind: ApiFailureKind.business,
-        message: '成员已经离开房间',
-      ),
-    );
-    if (seatNumber < 1 ||
-        seatNumber > 9 ||
-        (seatNumber == 1 &&
-            member.role != RoomRole.owner &&
-            member.role != RoomRole.moderator)) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '1号麦仅限房主或房管',
-      );
-    }
-    _requests.add(
-      MicAccessRequest(
-        id: 'invite-$userId-$seatNumber',
-        roomId: roomId,
-        member: member,
-        seatNumber: seatNumber,
-        status: MicRequestStatus.pending,
-        createdAt: DateTime.now(),
-        type: MicRequestType.invite,
-        requestedByUserId: 20001,
-        subjectUserId: userId,
-        targetAction: MicRequestTargetAction.accept,
-      ),
+    throw const ApiException(
+      kind: ApiFailureKind.business,
+      code: 41001,
+      message: '上麦邀请已停用，请由房主或房管直接安排上麦',
     );
   }
 

@@ -307,6 +307,8 @@ class _Repository extends MockRoomOperationsRepository {
   Future<void> resolveMicRequest({
     required String requestId,
     required bool accepted,
+    required int expectedVersion,
+    int? targetSeatNumber,
   }) async {
     resolves++;
     if (write != null) await write!.future;

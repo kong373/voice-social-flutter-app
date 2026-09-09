@@ -11,7 +11,7 @@ import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 
 void main() {
   test(
-    'accepting an invite cannot restore a snapshot after leave invalidates it',
+    'retired invite cannot start a reconnect or restore a snapshot after leave',
     () async {
       final MockRoomOperationsRepository operations =
           MockRoomOperationsRepository();
@@ -57,7 +57,8 @@ void main() {
         requestId: 'invite-1',
         accepted: true,
       );
-      await repository.reconnectStarted.future;
+      expect(await accepting, isFalse);
+      expect(repository.reconnectStarted.isCompleted, isFalse);
 
       expect(await controller.leaveRoom(), isTrue);
       repository.releaseReconnect.complete();

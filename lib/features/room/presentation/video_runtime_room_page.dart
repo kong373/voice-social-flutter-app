@@ -1207,6 +1207,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     final List<MicAccessRequest> requests = _controller.micRequests
         .where(
           (MicAccessRequest request) =>
+              request.isRequest &&
               request.subjectUserId == _controller.currentUserId,
         )
         .toList(growable: false);
@@ -1229,62 +1230,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           const SizedBox(height: 6),
           const Text('只有服务端确认第一方麦位后才会显示麦上状态；RTC 仍未连接。'),
           const SizedBox(height: 14),
-          if (pending?.isInvite == true) ...<Widget>[
-            Text(
-              '房管邀请你使用 ${pending!.seatNumber} 号麦',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: OutlinedButton(
-                    key: const Key('approval-mic-invite-reject'),
-                    onPressed: _controller.micRequestPending
-                        ? null
-                        : () async {
-                            Navigator.of(sheetContext).pop();
-                            final bool resolved = await _controller
-                                .resolveMicInvite(
-                                  requestId: pending.id,
-                                  accepted: false,
-                                );
-                            if (mounted && resolved) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('已拒绝上麦邀请')),
-                              );
-                            }
-                          },
-                    child: const Text('拒绝邀请'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: FilledButton(
-                    key: const Key('approval-mic-invite-accept'),
-                    onPressed: _controller.micRequestPending
-                        ? null
-                        : () async {
-                            Navigator.of(sheetContext).pop();
-                            final bool resolved = await _controller
-                                .resolveMicInvite(
-                                  requestId: pending.id,
-                                  accepted: true,
-                                );
-                            if (mounted && resolved) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('已接受邀请，第一方麦位状态已确认（RTC 未连接）'),
-                                ),
-                              );
-                            }
-                          },
-                    child: const Text('接受邀请'),
-                  ),
-                ),
-              ],
-            ),
-          ] else if (pending?.isRequest == true) ...<Widget>[
+          if (pending?.isRequest == true) ...<Widget>[
             Text(
               '你正在等待 ${pending!.seatNumber} 号麦审批',
               style: Theme.of(context).textTheme.titleMedium,

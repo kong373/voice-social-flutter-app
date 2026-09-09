@@ -41,16 +41,86 @@ void main() {
     },
   );
 
+  test('retired invite does not grant or reconcile RTC', () async {
+    final _ApprovalRoleAwareRoomRepository repository =
+        _ApprovalRoleAwareRoomRepository();
+    final MockRoomOperationsRepository operations =
+        MockRoomOperationsRepository();
+    operations.seedMicRequestForQa(
+      MicAccessRequest(
+        id: 'invite-1',
+        roomId: 'room-42',
+        member: const RoomMember(
+          userId: 10001,
+          name: '我',
+          role: RoomRole.listener,
+          presence: RoomMemberPresence.listener,
+        ),
+        seatNumber: 4,
+        status: MicRequestStatus.pending,
+        createdAt: DateTime.utc(2030, 1, 1),
+        type: MicRequestType.invite,
+        requestedByUserId: 20001,
+        subjectUserId: 10001,
+        targetAction: MicRequestTargetAction.accept,
+      ),
+    );
+    final _TrackingRtcAdapter rtc = _TrackingRtcAdapter();
+    final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
+    final RoomController controller = _controller(
+      repository: repository,
+      rtc: rtc,
+      realtime: realtime,
+      operations: operations,
+    );
+    addTearDown(() async {
+      controller.dispose();
+      await realtime.dispose();
+    });
+
+    await controller.join();
+    expect(
+      await controller.resolveMicInvite(requestId: 'invite-1', accepted: true),
+      isFalse,
+    );
+    expect(rtc.reconnects, isEmpty);
+    expect(rtc.audioStates, isEmpty);
+    expect(controller.snapshot?.rtc.role, 'audience');
+  });
+
+  test('occupied-muted direct grant never publishes audio', () async {
+    final _OccupiedMutedRoleAwareRoomRepository repository =
+        _OccupiedMutedRoleAwareRoomRepository();
+    final _TrackingRtcAdapter rtc = _TrackingRtcAdapter();
+    final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
+    final RoomController controller = _controller(
+      repository: repository,
+      rtc: rtc,
+      realtime: realtime,
+    );
+    addTearDown(() async {
+      controller.dispose();
+      await realtime.dispose();
+    });
+
+    await controller.join();
+    expect(await controller.requestMic(4), isTrue);
+    expect(rtc.reconnects.last.role, 'broadcaster');
+    expect(rtc.audioStates, <bool>[false]);
+    expect(controller.snapshot?.seats.single.state, MicSeatState.occupiedMuted);
+    expect(controller.micMuted, isTrue);
+  });
+
   test(
-    'accepted mic invite reconciles RTC before exposing the new snapshot',
+    'retired occupied-muted invite never dispatches or publishes audio',
     () async {
-      final _ApprovalRoleAwareRoomRepository repository =
-          _ApprovalRoleAwareRoomRepository();
+      final _OccupiedMutedApprovalRoleAwareRoomRepository repository =
+          _OccupiedMutedApprovalRoleAwareRoomRepository();
       final MockRoomOperationsRepository operations =
           MockRoomOperationsRepository();
       operations.seedMicRequestForQa(
         MicAccessRequest(
-          id: 'invite-1',
+          id: 'invite-occupied-muted',
           roomId: 'room-42',
           member: const RoomMember(
             userId: 10001,
@@ -83,90 +153,17 @@ void main() {
       await controller.join();
       expect(
         await controller.resolveMicInvite(
-          requestId: 'invite-1',
+          requestId: 'invite-occupied-muted',
           accepted: true,
         ),
-        isTrue,
+        isFalse,
       );
-      expect(rtc.reconnects.last.role, 'broadcaster');
-      expect(rtc.audioStates, <bool>[true]);
-      expect(controller.snapshot?.rtc.role, 'broadcaster');
+      expect(rtc.reconnects, isEmpty);
+      expect(rtc.audioStates, isEmpty);
+      expect(controller.snapshot?.seats.single.state, MicSeatState.available);
+      expect(controller.isOnMic, isFalse);
     },
   );
-
-  test('occupied-muted direct grant never publishes audio', () async {
-    final _OccupiedMutedRoleAwareRoomRepository repository =
-        _OccupiedMutedRoleAwareRoomRepository();
-    final _TrackingRtcAdapter rtc = _TrackingRtcAdapter();
-    final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
-    final RoomController controller = _controller(
-      repository: repository,
-      rtc: rtc,
-      realtime: realtime,
-    );
-    addTearDown(() async {
-      controller.dispose();
-      await realtime.dispose();
-    });
-
-    await controller.join();
-    expect(await controller.requestMic(4), isTrue);
-    expect(rtc.reconnects.last.role, 'broadcaster');
-    expect(rtc.audioStates, <bool>[false]);
-    expect(controller.snapshot?.seats.single.state, MicSeatState.occupiedMuted);
-    expect(controller.micMuted, isTrue);
-  });
-
-  test('occupied-muted invite acceptance never publishes audio', () async {
-    final _OccupiedMutedApprovalRoleAwareRoomRepository repository =
-        _OccupiedMutedApprovalRoleAwareRoomRepository();
-    final MockRoomOperationsRepository operations =
-        MockRoomOperationsRepository();
-    operations.seedMicRequestForQa(
-      MicAccessRequest(
-        id: 'invite-occupied-muted',
-        roomId: 'room-42',
-        member: const RoomMember(
-          userId: 10001,
-          name: '我',
-          role: RoomRole.listener,
-          presence: RoomMemberPresence.listener,
-        ),
-        seatNumber: 4,
-        status: MicRequestStatus.pending,
-        createdAt: DateTime.utc(2030, 1, 1),
-        type: MicRequestType.invite,
-        requestedByUserId: 20001,
-        subjectUserId: 10001,
-        targetAction: MicRequestTargetAction.accept,
-      ),
-    );
-    final _TrackingRtcAdapter rtc = _TrackingRtcAdapter();
-    final MockRoomRealtimeGateway realtime = MockRoomRealtimeGateway();
-    final RoomController controller = _controller(
-      repository: repository,
-      rtc: rtc,
-      realtime: realtime,
-      operations: operations,
-    );
-    addTearDown(() async {
-      controller.dispose();
-      await realtime.dispose();
-    });
-
-    await controller.join();
-    expect(
-      await controller.resolveMicInvite(
-        requestId: 'invite-occupied-muted',
-        accepted: true,
-      ),
-      isTrue,
-    );
-    expect(rtc.reconnects.last.role, 'broadcaster');
-    expect(rtc.audioStates, <bool>[false]);
-    expect(controller.snapshot?.seats.single.state, MicSeatState.occupiedMuted);
-    expect(controller.micMuted, isTrue);
-  });
 
   test(
     'authoritative mic revoke stops publication before applying audience token',

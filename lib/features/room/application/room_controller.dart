@@ -1396,89 +1396,11 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  // Historical callers fail locally; retired INVITE never dispatches a write.
   Future<bool> resolveMicInvite({
     required String requestId,
     required bool accepted,
-  }) async {
-    if (_micRequestPending || !_isJoinedEpoch(_sessionEpoch)) {
-      return false;
-    }
-    final RoomOperationsRepository? operations = _roomOperationsRepository;
-    if (operations == null ||
-        micCoordinationMode != MicCoordinationMode.approval) {
-      return false;
-    }
-    final int sessionEpoch = _sessionEpoch;
-    _invalidateMicQueueReads();
-    _micRequestPending = true;
-    _errorMessage = null;
-    _notify();
-    bool serverInviteMutationCommitted = false;
-    final RoomSnapshot? previousSnapshot = _snapshot;
-    _beginAuthorityMutation();
-    try {
-      await operations.resolveMicRequest(
-        requestId: requestId,
-        accepted: accepted,
-      );
-      serverInviteMutationCommitted = true;
-      if (!_isJoinedEpoch(sessionEpoch)) {
-        return false;
-      }
-      if (accepted) {
-        final RoomSnapshot refreshed = await _repository.reconnectRoom(
-          roomId: roomId,
-          currentUserId: _currentUserId,
-        );
-        if (!_isJoinedEpoch(sessionEpoch)) {
-          return false;
-        }
-        final MicSeat? ownSeat = _seatInSnapshot(refreshed);
-        if (ownSeat == null || !ownSeat.isOccupied) {
-          throw const ApiException(
-            kind: ApiFailureKind.business,
-            message: '麦位状态尚未确认，请刷新后重试',
-          );
-        }
-        final int authorityGeneration = _rtcAudioAuthorityGeneration;
-        final bool publishAudio = _snapshotAllowsRtcPublication(refreshed);
-        await _reconcileRtcForSnapshot(refreshed, publishAudio: publishAudio);
-        _rtcAudioRequested =
-            authorityGeneration == _rtcAudioAuthorityGeneration &&
-            publishAudio &&
-            _snapshotAllowsRtcPublication(refreshed);
-        if (!_rtcAudioRequested && publishAudio) {
-          await _disableRtcPublication();
-        }
-        if (!_isJoinedEpoch(sessionEpoch)) {
-          return false;
-        }
-        _snapshot = refreshed;
-      }
-      serverInviteMutationCommitted = false;
-      await _loadMicRequests(sessionEpoch: sessionEpoch);
-      return true;
-    } catch (error) {
-      if (_isJoinedEpoch(sessionEpoch) && serverInviteMutationCommitted) {
-        await _rollbackInviteMutation(
-          operations,
-          requestId: requestId,
-          sessionEpoch: sessionEpoch,
-          fallbackSnapshot: previousSnapshot,
-        );
-      }
-      if (_isJoinedEpoch(sessionEpoch)) {
-        _errorMessage = _messageFor(error, fallback: '处理上麦邀请失败');
-      }
-      return false;
-    } finally {
-      _endAuthorityMutation(sessionEpoch);
-      if (_isCurrent(sessionEpoch)) {
-        _micRequestPending = false;
-        _notify();
-      }
-    }
-  }
+  }) async => false;
 
   Future<void> _loadMicRequests({
     required int sessionEpoch,
@@ -2659,44 +2581,6 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       await _repository.leaveMic();
     } catch (_) {
       // Preserve the original failure; the authority rollback is best effort.
-    }
-    if (!_isJoinedEpoch(sessionEpoch)) {
-      return;
-    }
-    try {
-      final RoomSnapshot restored = await _repository.reconnectRoom(
-        roomId: roomId,
-        currentUserId: _currentUserId,
-      );
-      if (!_isJoinedEpoch(sessionEpoch)) {
-        return;
-      }
-      await _reconcileRtcForSnapshot(restored, publishAudio: false);
-      if (_isJoinedEpoch(sessionEpoch)) {
-        _snapshot = restored;
-      }
-    } catch (_) {
-      try {
-        await _rtcAdapter.leave();
-      } catch (_) {
-        // Keep rollback best effort and retain the original failure.
-      }
-      if (_isJoinedEpoch(sessionEpoch) && fallbackSnapshot != null) {
-        _snapshot = fallbackSnapshot;
-      }
-    }
-  }
-
-  Future<void> _rollbackInviteMutation(
-    RoomOperationsRepository operations, {
-    required String requestId,
-    required int sessionEpoch,
-    required RoomSnapshot? fallbackSnapshot,
-  }) async {
-    try {
-      await operations.resolveMicRequest(requestId: requestId, accepted: false);
-    } catch (_) {
-      // Preserve the original failure; an accepted invite may be immutable.
     }
     if (!_isJoinedEpoch(sessionEpoch)) {
       return;

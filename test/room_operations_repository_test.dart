@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/data/mock_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
@@ -172,25 +173,28 @@ void main() {
       MicRequestStatus.cancelled,
     );
 
-    await repository.inviteUserToMic(
-      roomId: '9527',
-      userId: 20005,
-      seatNumber: 4,
+    await expectLater(
+      repository.inviteUserToMic(roomId: '9527', userId: 20005, seatNumber: 4),
+      throwsA(isA<ApiException>()),
     );
     final List<MicAccessRequest> requests = await repository.fetchMicRequests(
       '9527',
     );
-    expect(requests, hasLength(2));
+    expect(requests, hasLength(1));
     final MicAccessRequest pendingInvite = requests.last;
-    expect(pendingInvite.status, MicRequestStatus.pending);
+    expect(pendingInvite.status, MicRequestStatus.cancelled);
 
-    await repository.resolveMicRequest(
-      requestId: pendingInvite.id,
-      accepted: true,
+    await expectLater(
+      repository.resolveMicRequest(
+        requestId: pendingInvite.id,
+        accepted: true,
+        expectedVersion: pendingInvite.version,
+      ),
+      throwsA(isA<ApiException>()),
     );
     expect(
       (await repository.fetchMicRequests('9527')).last.status,
-      MicRequestStatus.accepted,
+      MicRequestStatus.cancelled,
     );
   });
 }

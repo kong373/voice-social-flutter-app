@@ -495,6 +495,8 @@ class _ConflictRoomTopicRepository implements RoomOperationsRepository {
   Future<void> resolveMicRequest({
     required String requestId,
     required bool accepted,
+    required int expectedVersion,
+    int? targetSeatNumber,
   }) async => throw UnimplementedError();
 
   @override

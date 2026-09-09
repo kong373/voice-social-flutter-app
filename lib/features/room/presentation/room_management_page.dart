@@ -1065,6 +1065,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       await _repository.resolveMicRequest(
         requestId: request.id,
         accepted: accepted,
+        expectedVersion: request.version,
       );
       _changed = true;
       if (!mounted) {

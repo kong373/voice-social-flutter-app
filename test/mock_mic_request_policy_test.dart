@@ -35,6 +35,7 @@ void main() {
       await repository.resolveMicRequest(
         requestId: request.id,
         accepted: false,
+        expectedVersion: request.version,
       );
       for (var attempt = 0; attempt < 2; attempt++) {
         await expectLater(
@@ -90,7 +91,11 @@ void main() {
         _request(status: MicRequestStatus.pending),
       );
       await expectLater(
-        repository.resolveMicRequest(requestId: 'old-request', accepted: true),
+        repository.resolveMicRequest(
+          requestId: 'old-request',
+          accepted: true,
+          expectedVersion: 0,
+        ),
         throwsA(isA<ApiException>()),
       );
       final row = (await repository.fetchMicRequests('room')).single;

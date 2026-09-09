@@ -13,6 +13,153 @@ import 'package:voice_social_app/features/room/domain/room_operations_models.dar
 
 void main() {
   test(
+    'resolve unknown result binds decision version and alternate seat to one key',
+    () async {
+      var loseResponse = true;
+      final server = await _RunningServer.start((request) {
+        if (loseResponse) return const _Reply(data: null);
+        return _Reply(
+          data: {
+            ..._micRequestRecord(
+              id: 'request-1',
+              type: 'REQUEST',
+              status: 'APPROVED',
+              requestedByUserId: 10001,
+              subjectUserId: 10001,
+              seatNumber: 3,
+            ),
+            'assignedSeatNumber': 8,
+            'seatAssigned': true,
+          },
+        );
+      });
+      addTearDown(server.close);
+      final repo = BackendRoomOperationsRepository(
+        apiClient: server.client,
+        leaseBinding: admittedRoomFixture(),
+      );
+      await expectLater(
+        repo.resolveMicRequest(
+          requestId: 'request-1',
+          accepted: true,
+          expectedVersion: 0,
+          targetSeatNumber: 8,
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      for (final intent in [(true, 0, 9), (true, 1, 8), (false, 0, null)]) {
+        await expectLater(
+          repo.resolveMicRequest(
+            requestId: 'request-1',
+            accepted: intent.$1,
+            expectedVersion: intent.$2,
+            targetSeatNumber: intent.$3,
+          ),
+          throwsA(isA<ApiException>()),
+        );
+      }
+      expect(server.requests, hasLength(1));
+      loseResponse = false;
+      await repo.resolveMicRequest(
+        requestId: 'request-1',
+        accepted: true,
+        expectedVersion: 0,
+        targetSeatNumber: 8,
+      );
+      expect(server.requests, hasLength(2));
+      expect(server.requests.last.requestId, server.requests.first.requestId);
+      expect(server.requests.last.body, server.requests.first.body);
+    },
+  );
+
+  test(
+    'resolve rejection omits target and invalid intents never dispatch',
+    () async {
+      final server = await _RunningServer.start((request) {
+        expect(request.body, {
+          'sessionId': roomLeaseSessionId,
+          'requestId': 'request-1',
+          'accepted': false,
+          'expectedVersion': 0,
+        });
+        return _Reply(
+          data: _micRequestRecord(
+            id: 'request-1',
+            type: 'REQUEST',
+            status: 'REJECTED',
+            requestedByUserId: 10001,
+            subjectUserId: 10001,
+            seatNumber: 3,
+          ),
+        );
+      });
+      addTearDown(server.close);
+      final repo = BackendRoomOperationsRepository(
+        apiClient: server.client,
+        leaseBinding: admittedRoomFixture(),
+      );
+      for (final intent in [
+        (true, -1, null),
+        (true, 0, 0),
+        (true, 0, 10),
+        (false, 0, 8),
+      ]) {
+        await expectLater(
+          repo.resolveMicRequest(
+            requestId: 'request-1',
+            accepted: intent.$1,
+            expectedVersion: intent.$2,
+            targetSeatNumber: intent.$3,
+          ),
+          throwsA(isA<ApiException>()),
+        );
+      }
+      expect(server.requests, isEmpty);
+      await repo.resolveMicRequest(
+        requestId: 'request-1',
+        accepted: false,
+        expectedVersion: 0,
+      );
+      expect(server.requests, hasLength(1));
+    },
+  );
+
+  for (final bad in <Object?>[null, -1, '0', 0.5]) {
+    test('queue rejects invalid request version $bad', () async {
+      final record = _micRequestRecord(
+        id: 'request-1',
+        type: 'REQUEST',
+        status: 'PENDING',
+        requestedByUserId: 10001,
+        subjectUserId: 10001,
+        seatNumber: 3,
+      )..['version'] = bad;
+      final server = await _RunningServer.start(
+        (_) => _Reply(
+          data: {
+            'roomId': '9527',
+            'list': [record],
+            'records': [record],
+            'total': 1,
+            'coordinationMode': 'APPROVAL',
+            'providerInvocation': false,
+          },
+        ),
+      );
+      addTearDown(server.close);
+      final repo = BackendRoomOperationsRepository(
+        apiClient: server.client,
+        leaseBinding: admittedRoomFixture(),
+      );
+      await expectLater(
+        repo.fetchMicRequests('9527'),
+        throwsA(isA<ApiException>()),
+      );
+      expect(repo.micCoordinationMode, MicCoordinationMode.unavailable);
+    });
+  }
+
+  test(
     'S02 rejects special-seat applications before HTTP and accepts ninth assignment',
     () async {
       final server = await _RunningServer.start(
@@ -661,6 +808,8 @@ void main() {
               'sessionId': roomLeaseSessionId,
               'requestId': 'request-1',
               'accepted': true,
+              'expectedVersion': 0,
+              'targetSeatNumber': 8,
             });
             status = 'APPROVED';
             return _Reply(
@@ -675,6 +824,7 @@ void main() {
                   resolvedByUserId: 20001,
                 ),
                 'seatAssigned': true,
+                'assignedSeatNumber': 8,
               },
             );
           case '/app-mini-api/mini/v1/rooms/mic-requests/invite':
@@ -721,12 +871,18 @@ void main() {
       await repository.resolveMicRequest(
         requestId: 'request-1',
         accepted: true,
+        expectedVersion: 0,
+        targetSeatNumber: 8,
       );
-      await repository.inviteUserToMic(
-        roomId: '9527',
-        userId: 10002,
-        seatNumber: 4,
+      await expectLater(
+        repository.inviteUserToMic(
+          roomId: '9527',
+          userId: 10002,
+          seatNumber: 4,
+        ),
+        throwsA(isA<ApiException>().having((e) => e.code, 'retired', 41001)),
       );
+      expect(server.requests.where((r) => r.path.endsWith('/invite')), isEmpty);
       expect(
         server.requests
             .where((_CapturedRequest request) => request.method == 'POST')
@@ -1778,6 +1934,8 @@ Map<String, Object?> _micRequestRecord({
     'type': type,
     'seatNumber': seatNumber,
     'status': status,
+    'version': status == 'PENDING' ? 0 : 1,
+    'assignedSeatNumber': status == 'APPROVED' ? seatNumber : null,
     'createdAt': now,
     'expiresAt': DateTime.utc(2026, 1, 1, 1).toIso8601String(),
     'resolvedAt': resolvedAt,

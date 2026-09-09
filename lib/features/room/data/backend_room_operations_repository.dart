@@ -1056,14 +1056,34 @@ class BackendRoomOperationsRepository
   Future<void> resolveMicRequest({
     required String requestId,
     required bool accepted,
+    required int expectedVersion,
+    int? targetSeatNumber,
   }) async {
     final String normalizedRequestId = _requiredIdentifier(
       requestId,
       '上麦申请 ID',
     );
+    _syncGeneration();
+    if (expectedVersion < 0 ||
+        (targetSeatNumber != null &&
+            (!accepted || targetSeatNumber < 1 || targetSeatNumber > 9))) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '申请版本或目标麦位无效',
+      );
+    }
+    final known = _micRequestsById[normalizedRequestId];
+    if (known?.isInvite == true) {
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        code: 41001,
+        message: '上麦邀请已停用，请由房主或房管直接安排上麦',
+      );
+    }
     await _runWrite<void>(
-      intent: 'mic-request-resolve:$normalizedRequestId:$accepted',
-      fingerprint: 'ROOM_MIC_REQUEST_RESOLVE|$normalizedRequestId|$accepted',
+      intent: 'mic-request-resolve:$normalizedRequestId',
+      fingerprint:
+          'ROOM_MIC_REQUEST_RESOLVE|$normalizedRequestId|$accepted|$expectedVersion|$targetSeatNumber',
       action: (Map<String, String> headers) async {
         final ApiResponse response = await _post(
           _routes.resolveRoomMicRequest,
@@ -1074,11 +1094,13 @@ class BackendRoomOperationsRepository
           body: <String, Object?>{
             'requestId': normalizedRequestId,
             'accepted': accepted,
+            'expectedVersion': expectedVersion,
+            if (targetSeatNumber != null) 'targetSeatNumber': targetSeatNumber,
           },
         );
         final Map<String, Object?> data = _requiredMicMutationMap(
           response,
-          operation: accepted ? '接受上麦邀请/申请' : '拒绝上麦邀请/申请',
+          operation: accepted ? '同意上麦申请' : '拒绝上麦申请',
           requiredFields: const <String>[
             'requestId',
             'id',
@@ -1090,7 +1112,6 @@ class BackendRoomOperationsRepository
           ],
         );
         _assertStrictDecisionAliases(data);
-        final MicAccessRequest? known = _micRequestsById[normalizedRequestId];
         final MicAccessRequest request = _micRequestFromMap(
           data,
           expectedRoomId: known?.roomId,
@@ -1099,6 +1120,13 @@ class BackendRoomOperationsRepository
             ? MicRequestStatus.approved
             : MicRequestStatus.rejected;
         if (request.id != normalizedRequestId ||
+            !request.isRequest ||
+            request.version != expectedVersion + 1 ||
+            (accepted &&
+                request.assignedSeatNumber !=
+                    (targetSeatNumber ??
+                        known?.seatNumber ??
+                        request.seatNumber)) ||
             (known != null &&
                 (request.type != known.type ||
                     request.subjectUserId != known.subjectUserId ||
@@ -1135,58 +1163,10 @@ class BackendRoomOperationsRepository
     required int userId,
     required int seatNumber,
   }) async {
-    final String normalizedRoomId = _requiredIdentifier(roomId, '房间 ID');
-    if (userId <= 0 || seatNumber < 1 || seatNumber > 9) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '邀请成员或麦位无效',
-      );
-    }
-    await _runWrite<void>(
-      intent: 'mic-invite:$normalizedRoomId:$userId:$seatNumber',
-      fingerprint: 'ROOM_MIC_INVITE|$normalizedRoomId|$userId|$seatNumber',
-      action: (Map<String, String> headers) async {
-        final ApiResponse response = await _post(
-          _routes.inviteRoomMicRequest,
-          headers: headers,
-          body: <String, Object?>{
-            'roomId': normalizedRoomId,
-            'userId': userId,
-            'seatNumber': seatNumber,
-          },
-        );
-        final Map<String, Object?> data = _requiredMicMutationMap(
-          response,
-          operation: '邀请成员上麦',
-          requiredFields: const <String>[
-            'requestId',
-            'id',
-            'roomId',
-            'requestType',
-            'type',
-            'requestedByUserId',
-            'subjectUserId',
-            'seatNumber',
-            'status',
-            'providerInvocation',
-          ],
-        );
-        final MicAccessRequest request = _micRequestFromMap(
-          data,
-          expectedRoomId: normalizedRoomId,
-        );
-        if (!request.isInvite ||
-            request.subjectUserId != userId ||
-            request.seatNumber != seatNumber ||
-            request.status != MicRequestStatus.pending) {
-          throw const ApiException(
-            kind: ApiFailureKind.protocol,
-            message: '邀请上麦响应与请求意图不一致',
-          );
-        }
-        _micCoordinationMode = MicCoordinationMode.approval;
-        _micRequestsById[request.id] = request;
-      },
+    throw const ApiException(
+      kind: ApiFailureKind.business,
+      code: 41001,
+      message: '上麦邀请已停用，请由房主或房管直接安排上麦',
     );
   }
 
@@ -1284,6 +1264,20 @@ class BackendRoomOperationsRepository
       );
     }
     final String statusValue = _requiredStrictString(data, 'status');
+    final int version = _requiredStrictInt(data, 'version');
+    final assignedSeatNumber = data['assignedSeatNumber'];
+    if (version < 0 ||
+        !data.containsKey('assignedSeatNumber') ||
+        (assignedSeatNumber != null &&
+            (assignedSeatNumber is! int ||
+                assignedSeatNumber < 1 ||
+                assignedSeatNumber > 9)) ||
+        (statusValue == 'APPROVED') != (assignedSeatNumber != null)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '上麦申请版本或实际麦位无效',
+      );
+    }
     final MicRequestStatus status = switch (statusValue) {
       'PENDING' => MicRequestStatus.pending,
       'APPROVED' => MicRequestStatus.approved,
@@ -1384,10 +1378,9 @@ class BackendRoomOperationsRepository
         message: '上麦申请 member muted 必须为布尔值',
       );
     }
-    final MicRequestTargetAction action = status != MicRequestStatus.pending
+    final MicRequestTargetAction action =
+        status != MicRequestStatus.pending || type == MicRequestType.invite
         ? MicRequestTargetAction.none
-        : type == MicRequestType.invite
-        ? MicRequestTargetAction.accept
         : MicRequestTargetAction.cancel;
     return MicAccessRequest(
       id: id,
@@ -1402,6 +1395,8 @@ class BackendRoomOperationsRepository
         isMuted: mutedValue,
       ),
       seatNumber: seatNumber,
+      version: version,
+      assignedSeatNumber: assignedSeatNumber as int?,
       status: status,
       createdAt: createdAt,
       type: type,

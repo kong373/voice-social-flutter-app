@@ -20,8 +20,8 @@ enum MicRequestStatus {
 }
 
 /// Action available to the authenticated target after the server returned a
-/// queue record. Management code must still gate REQUEST resolution by role;
-/// an INVITE is always accepted/rejected by its subject.
+/// queue record. Management code must still gate REQUEST resolution by role.
+/// INVITE is historical only and has no live target action.
 enum MicRequestTargetAction { none, cancel, resolve, accept, reject }
 
 class RoomMember {
@@ -115,6 +115,8 @@ class MicAccessRequest {
     this.resolvedAt,
     this.resolvedByUserId,
     this.targetAction = MicRequestTargetAction.none,
+    this.version = 0,
+    this.assignedSeatNumber,
   });
 
   final String id;
@@ -130,6 +132,12 @@ class MicAccessRequest {
   final DateTime? resolvedAt;
   final int? resolvedByUserId;
   final MicRequestTargetAction targetAction;
+
+  /// Version of the REQUEST record, never a room or seat version.
+  final int version;
+
+  /// Actual resolved seat; [seatNumber] remains the original application.
+  final int? assignedSeatNumber;
 
   /// Compatibility aliases used by older presentation code and fixtures.
   MicRequestType get requestType => type;

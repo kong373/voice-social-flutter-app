@@ -64,6 +64,8 @@ abstract interface class RoomOperationsRepository {
   Future<void> resolveMicRequest({
     required String requestId,
     required bool accepted,
+    required int expectedVersion,
+    int? targetSeatNumber,
   });
 
   Future<void> inviteUserToMic({
