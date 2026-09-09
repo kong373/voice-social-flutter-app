@@ -91,3 +91,30 @@ Wallet/Hub/Earnings/Recharge/GiftCatalog 使用已有 commerce identity tuple/Li
 ## 剩余边界 / NOT_RUN
 
 真实 Backend S07+S08 合并后的 App 联调、真实设备、真实支付/退款/提现、厂商、DB/Docker、部署和全仓 Flutter test 均 NOT_RUN。主任务集成后仍需 ordinary/anchor/chair 账号现场验收：精确零头、历史申请恢复、角色撤销、新 MANUAL_FINANCE 回执及充值后余额刷新。本批不能代替后端权威身份/分账实现；多收礼人留下一批。
+
+## Curie P1 追加修正：充值返回余额未知时禁送
+
+从 clean `2a427a11974d9199b739532cec52251e3910c5e5` 接续，未重建 worktree 或 amend 原提交。仅修改 `lib/features/room/presentation/gift_sheet.dart`、新增 `test/gift_sheet_recharge_balance_test.dart` 及本文档。
+
+- 原不足余额弹框“去充值”和底栏“充值”返回，均同步 `_balance` 与 `_balanceMessage`；未知精度/网络失败显示“余额待刷新，请重试”并禁送。`_submit` 另显式拒绝 null 余额，不再跳过不足检查后调用 `onSend`。
+- 保留已有 identity/read epoch 检查，未放宽精度 parser，未修改整币商品价格、费用、权限、Backend 或其他资金页面。legacy 房间整币余额不会掩盖失败。
+- 六项新增实际 widget 测试使用真实 `BackendCommerceRepository`/精度 parser、测试 ApiClient 响应和真实充值页面导航，无外部 HTTP/支付调用。四项覆盖两入口 × 未知 precisionVersion/网络失败，另两项保留充值回读期间 A→B→A 的迟到响应隔离；失败禁送后可通过有效权威刷新恢复赠送。
+- TDD RED：handle11418 exit1，**4 FAIL / 2 PASS**；四个失败均实测 `onSend` 错误收到一个 GiftSendRequest，不是夹具或加载失败。
+- GREEN：handle7921 exit0，**4 文件 27 PASS**，包含六项新增回归，不与原提交 257 项重复累加。
+- 精准 analyze：handle2736 exit0，**No issues found（2 items）**；两个 Dart 文件 format 检查 0 changed，`git diff --check` 通过。
+
+本追加补丁先实际核验 `/Users/kongzheng/fvm/versions/3.44.7/bin/flutter --version`：Flutter3.44.7、Dart3.12.2。实际命令：
+
+```sh
+/Users/kongzheng/fvm/versions/3.44.7/bin/flutter test --no-pub --reporter expanded \
+  test/gift_sheet_recharge_balance_test.dart \
+  test/gift_sheet_live_targets_test.dart \
+  test/precise_income_widget_test.dart \
+  test/precise_income_contract_test.dart
+/Users/kongzheng/fvm/versions/3.44.7/bin/flutter analyze --no-pub \
+  lib/features/room/presentation/gift_sheet.dart test/gift_sheet_recharge_balance_test.dart
+/Users/kongzheng/fvm/versions/3.44.7/bin/dart format --output=none --set-exit-if-changed \
+  lib/features/room/presentation/gift_sheet.dart test/gift_sheet_recharge_balance_test.dart
+```
+
+未运行全量 Flutter tests、golden、设备、DB、厂商或真实资金操作；未 push/deploy。追加提交后交 Curie 只读复核，本补丁测试不替代真实上线验收。

@@ -463,7 +463,9 @@ class _GiftSheetState extends State<GiftSheet>
                         if (acceptsCommerceRead(ticket)) {
                           setState(() {
                             _balance = refreshed;
-                            if (refreshed != null) _balanceMessage = null;
+                            _balanceMessage = refreshed == null
+                                ? '余额待刷新，请重试'
+                                : null;
                           });
                         }
                       },
@@ -575,7 +577,8 @@ class _GiftSheetState extends State<GiftSheet>
       quantity: _quantity,
     );
     final balance = _balance;
-    if (balance != null && !balance.coversWholeCoins(total)) {
+    if (balance == null) return;
+    if (!balance.coversWholeCoins(total)) {
       final bool? recharge = await showDialog<bool>(
         context: context,
         builder: (BuildContext dialogContext) => AlertDialog(
@@ -602,7 +605,12 @@ class _GiftSheetState extends State<GiftSheet>
         if (!acceptsCommerceRead(ticket)) return;
         await widget.onRechargeReturn();
         final refreshed = await _readAuthoritativeBalance();
-        if (acceptsCommerceRead(ticket)) setState(() => _balance = refreshed);
+        if (acceptsCommerceRead(ticket)) {
+          setState(() {
+            _balance = refreshed;
+            _balanceMessage = refreshed == null ? '余额待刷新，请重试' : null;
+          });
+        }
       }
       return;
     }
