@@ -53,7 +53,6 @@ const List<AppPageDefinition> appPageManifest = <AppPageDefinition>[
   AppPageDefinition(id: 'US-002', name: '编辑个人资料', area: ProductArea.social),
   AppPageDefinition(id: 'US-003', name: '他人公开主页', area: ProductArea.social),
   AppPageDefinition(id: 'US-004', name: '关注、粉丝与好友列表', area: ProductArea.social),
-  AppPageDefinition(id: 'US-005', name: '好友请求', area: ProductArea.social),
   AppPageDefinition(id: 'US-006', name: '访客记录', area: ProductArea.social),
   AppPageDefinition(id: 'US-007', name: '隐私与黑名单', area: ProductArea.social),
   AppPageDefinition(id: 'US-008', name: '举报用户或房间', area: ProductArea.social),
@@ -102,8 +101,13 @@ const List<AppPageDefinition> appPageManifest = <AppPageDefinition>[
     area: ProductArea.community,
   ),
   AppPageDefinition(id: 'SC-003', name: '邀请与渠道归属', area: ProductArea.community),
-  AppPageDefinition(id: 'SC-004', name: 'CP 关系', area: ProductArea.community),
-  AppPageDefinition(id: 'SC-005', name: '守护与粉团', area: ProductArea.community),
-  AppPageDefinition(id: 'SC-006', name: '任务与签到', area: ProductArea.community),
-  AppPageDefinition(id: 'SC-007', name: '主题活动中心', area: ProductArea.community),
 ];
+
+/// Product decisions Q16-02 and Q23-01 through Q23-06, 2026-09-09.
+const Map<String, String> removedProductPages = <String, String>{
+  'US-005': 'REMOVED_BY_PRODUCT',
+  'SC-004': 'REMOVED_BY_PRODUCT',
+  'SC-005': 'REMOVED_BY_PRODUCT',
+  'SC-006': 'REMOVED_BY_PRODUCT',
+  'SC-007': 'REMOVED_BY_PRODUCT',
+};

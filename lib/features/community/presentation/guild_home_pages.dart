@@ -381,17 +381,6 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
                                 ],
                               ),
                             ),
-                            if (guild.joined && !isClosed)
-                              _SmallTag(
-                                label: switch (guild.hasSignedToday) {
-                                  true => '今日已签到',
-                                  false => '待签到',
-                                  null => '签到状态未知',
-                                },
-                                tint: guild.hasSignedToday == true
-                                    ? AppColors.success
-                                    : _CommunityPalette.gold,
-                              ),
                           ],
                         ),
                         if (!isClosed) ...<Widget>[
@@ -418,21 +407,6 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
                                       null => '申请状态未知',
                                     },
                                   ),
-                                ),
-                              if (guild.joined)
-                                FilledButton.tonal(
-                                  onPressed:
-                                      _busy || guild.hasSignedToday != false
-                                      ? null
-                                      : () => _run(
-                                          () => _repository.signGuild(guild.id),
-                                          '公会签到成功',
-                                        ),
-                                  child: Text(switch (guild.hasSignedToday) {
-                                    true => '今日已签到',
-                                    false => '公会签到',
-                                    null => '签到状态未知',
-                                  }),
                                 ),
                               if (guild.joined)
                                 OutlinedButton(

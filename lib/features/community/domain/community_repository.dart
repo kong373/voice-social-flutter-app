@@ -70,3 +70,69 @@ abstract interface class CommunityRepository {
 
   Future<List<ThemeActivity>> fetchActivities();
 }
+
+/// Permanent compatibility tombstones for product removals on 2026-09-09.
+/// No transport, state mutation, or feature switch is available here.
+mixin RemovedCommunityOperations {
+  Future<void> signGuild(String guildId) async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<List<CpRelation>> fetchCpRelations() async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<List<CpInvitation>> fetchPendingCpInvitations() async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<CpEligibility> checkCpEligibility(int targetUserId) async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<String> requestCp(int targetUserId) async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<void> resolveCpInvitation({
+    required String invitationId,
+    required bool accepted,
+  }) async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<void> endCpRelation(String relationId) async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<GuardianFanSnapshot> fetchGuardianFan(int anchorUserId) async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<void> becomeGuardian({
+    required int anchorUserId,
+    required String levelId,
+  }) async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<void> joinFansTeam(int anchorUserId) async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<TaskCenterSnapshot> fetchTaskCenter() async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<TaskCenterSnapshot> completeDailyCheckIn() async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<TaskCenterSnapshot> claimTask(String taskId) async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<List<ThemeActivity>> fetchActivities() async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+}

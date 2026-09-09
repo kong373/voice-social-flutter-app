@@ -351,7 +351,7 @@ class BackendAccountComplianceRepository
   static String _permissionPurpose(PermissionKind kind) => switch (kind) {
     PermissionKind.microphone => '上麦发言、音频诊断和房间语音互动。',
     PermissionKind.camera => '拍摄头像或动态照片，仅在主动拍摄时使用。',
-    PermissionKind.notifications => '好友请求、系统通知和房间邀请提醒。',
+    PermissionKind.notifications => '私聊消息、系统通知和房间邀请提醒。',
     PermissionKind.photos => '修改头像、举报凭证和发布动态图片。',
   };
 

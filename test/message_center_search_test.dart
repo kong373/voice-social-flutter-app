@@ -5,7 +5,6 @@ import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/shell/main_shell.dart';
-import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 void main() {
   for (final (Size size, double safeTop, double safeBottom)
@@ -101,7 +100,7 @@ void main() {
     expect(find.byType(PrivateChatPage), findsOneWidget);
   });
 
-  testWidgets('friend request shortcut opens the dedicated requests page', (
+  testWidgets('removed friend request shortcut cannot be opened', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
@@ -119,10 +118,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('好友请求').hitTestable());
-    await tester.pumpAndSettle();
-
-    expect(find.byType(FriendRequestsPage), findsOneWidget);
+    expect(find.text('好友请求'), findsNothing);
     expect(find.text('关注、粉丝与好友'), findsNothing);
   });
 }

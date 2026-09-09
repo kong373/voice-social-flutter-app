@@ -65,7 +65,7 @@ void main() {
 
       expect(find.text('编辑个人资料'), findsOneWidget);
       expect(find.text('关注、粉丝与好友'), findsOneWidget);
-      expect(find.text('好友请求'), findsOneWidget);
+      expect(find.text('好友请求'), findsNothing);
       expect(find.text('访客记录'), findsOneWidget);
       expect(find.text('隐私与黑名单'), findsOneWidget);
       expect(find.text('帮助与客服'), findsOneWidget);

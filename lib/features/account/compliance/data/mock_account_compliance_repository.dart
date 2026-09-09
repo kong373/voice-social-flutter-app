@@ -80,7 +80,7 @@ class MockAccountComplianceRepository implements AccountComplianceRepository {
           kind: PermissionKind.notifications,
           state: PermissionState.notDetermined,
           title: '通知',
-          purpose: '好友请求、系统通知和房间邀请提醒。',
+          purpose: '私聊消息、系统通知和房间邀请提醒。',
           managedByPlatform: true,
         ),
         PermissionSetting(

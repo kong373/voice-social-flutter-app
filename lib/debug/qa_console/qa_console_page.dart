@@ -154,7 +154,7 @@ class _QaConsolePageState extends State<QaConsolePage> {
               child: Row(
                 children: <Widget>[
                   FilterChip(
-                    label: const Text('全部 69'),
+                    label: Text('全部 ${qaPageCatalog.length}'),
                     selected: _area == null,
                     onSelected: (_) => setState(() => _area = null),
                   ),
@@ -194,7 +194,7 @@ class _QaConsolePageState extends State<QaConsolePage> {
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
-                Text('${entries.length} / 69'),
+                Text('${entries.length} / ${qaPageCatalog.length}'),
               ],
             ),
             const SizedBox(height: 8),

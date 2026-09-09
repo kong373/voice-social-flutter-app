@@ -5,7 +5,6 @@ import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/shell/main_shell.dart';
-import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 void main() {
   Future<void> pumpShell(WidgetTester tester, {ThemeData? outerTheme}) async {
@@ -41,18 +40,14 @@ void main() {
     expect(find.text('系统通知'), findsOneWidget);
     expect(find.text('打招呼'), findsOneWidget);
     expect(find.text('互动消息'), findsOneWidget);
-    expect(find.text('好友请求'), findsOneWidget);
+    expect(find.text('好友请求'), findsNothing);
     expect(find.byTooltip('搜索消息'), findsOneWidget);
     expect(
       Navigator.of(tester.element(find.byType(MessageCenterPage))).canPop(),
       isFalse,
     );
 
-    await tester.tap(find.text('好友请求').hitTestable());
-    await tester.pumpAndSettle();
-
-    expect(find.byType(FriendRequestsPage), findsOneWidget);
-    expect(find.text('好友请求'), findsOneWidget);
+    expect(find.text('好友请求'), findsNothing);
     expect(find.text('关注、粉丝与好友'), findsNothing);
   });
 

@@ -287,19 +287,6 @@ class _MessageCenterPageState extends State<MessageCenterPage>
                               ),
                             ),
                           ),
-                          Expanded(
-                            child: _MessageShortcutCard(
-                              icon: Icons.person_add_alt_1_rounded,
-                              title: '好友请求',
-                              accent: const Color(0xFFFF7D74),
-                              onTap: () => Navigator.of(context).push<void>(
-                                MaterialPageRoute<void>(
-                                  builder: (BuildContext context) =>
-                                      const FriendRequestsPage(),
-                                ),
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                       const SizedBox(height: 6),

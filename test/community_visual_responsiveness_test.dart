@@ -55,10 +55,6 @@ const List<_CommunityTestPage> _communityPages = <_CommunityTestPage>[
   _CommunityTestPage('SC-001', GuildHomePage.new),
   _CommunityTestPage('SC-002', GuildMembersEntryPage.new),
   _CommunityTestPage('SC-003', InviteAttributionPage.new),
-  _CommunityTestPage('SC-004', CpRelationPage.new),
-  _CommunityTestPage('SC-005', GuardianFanPage.new),
-  _CommunityTestPage('SC-006', TaskCheckInPage.new),
-  _CommunityTestPage('SC-007', ActivityCenterPage.new),
 ];
 
 class _CommunityTestPage {

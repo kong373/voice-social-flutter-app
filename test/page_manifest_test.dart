@@ -3,23 +3,41 @@ import 'package:voice_social_app/app/page_manifest.dart';
 import 'package:voice_social_app/debug/qa_console/qa_page_catalog.dart';
 
 void main() {
-  test('69-page product scope is complete and unique', () {
-    expect(appPageManifest, hasLength(69));
+  test('removed page IDs are explicit dispositions, never PASS or reused', () {
+    expect(removedProductPages.keys.toSet(), {
+      'US-005',
+      'SC-004',
+      'SC-005',
+      'SC-006',
+      'SC-007',
+    });
+    expect(removedProductPages.values.toSet(), {'REMOVED_BY_PRODUCT'});
     expect(
-      appPageManifest.map((AppPageDefinition page) => page.id).toSet(),
-      hasLength(69),
+      appPageManifest
+          .map((page) => page.id)
+          .toSet()
+          .intersection(removedProductPages.keys.toSet()),
+      isEmpty,
     );
   });
 
-  test('page-area denominators stay frozen', () {
+  test('64-page product scope is complete and unique', () {
+    expect(appPageManifest, hasLength(64));
+    expect(
+      appPageManifest.map((AppPageDefinition page) => page.id).toSet(),
+      hasLength(64),
+    );
+  });
+
+  test('active page-area denominators reflect product removals', () {
     final Map<ProductArea, int> expected = <ProductArea, int>{
       ProductArea.account: 12,
       ProductArea.discovery: 8,
-      ProductArea.social: 10,
+      ProductArea.social: 9,
       ProductArea.room: 14,
       ProductArea.message: 6,
       ProductArea.commerce: 12,
-      ProductArea.community: 7,
+      ProductArea.community: 3,
     };
 
     for (final MapEntry<ProductArea, int> entry in expected.entries) {
@@ -32,15 +50,15 @@ void main() {
     }
   });
 
-  test('the complete ordered Page ID denominator stays frozen', () {
+  test('active Page IDs preserve order without reusing removed IDs', () {
     final List<String> expected = <String>[
       ..._ids('AC', 12),
       ..._ids('DS', 8),
-      ..._ids('US', 10),
+      ..._ids('US', 10).where((id) => id != 'US-005'),
       ..._ids('RM', 14),
       ..._ids('MS', 6),
       ..._ids('CM', 12),
-      ..._ids('SC', 7),
+      ..._ids('SC', 3),
     ];
 
     expect(
@@ -50,7 +68,7 @@ void main() {
   });
 
   test('QA catalog maps every manifest page to a real implementation', () {
-    expect(qaPageCatalog, hasLength(69));
+    expect(qaPageCatalog, hasLength(64));
     expect(
       qaPageCatalog.map((entry) => entry.id).toList(),
       appPageManifest.map((AppPageDefinition page) => page.id).toList(),

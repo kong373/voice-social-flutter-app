@@ -1,7 +1,9 @@
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 
-class MockSocialRepository implements SocialRepository {
+class MockSocialRepository
+    with RemovedFriendRequestOperations
+    implements SocialRepository {
   MockSocialRepository()
     : _users = <int, SocialUser>{
         10001: const SocialUser(
@@ -75,44 +77,21 @@ class MockSocialRepository implements SocialRepository {
       };
 
   final Map<int, SocialUser> _users;
-  final List<FriendRequest> _requests = <FriendRequest>[];
-  final Map<int, FriendRequestSendResult> _outgoingFriendRequests =
-      <int, FriendRequestSendResult>{};
   final Map<String, SupportTicket> _tickets = <String, SupportTicket>{};
-  Duration friendRequestSendDelay = Duration.zero;
   PrivacySettings _privacy = const PrivacySettings(
     onlyFollowedCanFollow: false,
     serverValueKnown: true,
   );
   int _ticketSequence = 1;
-  int _friendRequestSendCount = 0;
-  int _friendRequestSequence = 1;
-
-  int get friendRequestSendCount => _friendRequestSendCount;
 
   @override
-  bool get supportsFriendRequestWorkflow => true;
+  bool get supportsFriendRequestWorkflow => false;
 
   @override
   bool get supportsTicketProgress => true;
 
   void seedSupportTicketForQa(SupportTicket ticket) {
     _tickets[ticket.id] = ticket;
-  }
-
-  void _ensureSeededRequests() {
-    if (_requests.isNotEmpty) {
-      return;
-    }
-    _requests.add(
-      FriendRequest(
-        id: 'request-1',
-        user: _users[20004]!,
-        message: '在同一个陪伴房聊过，想和你成为好友。',
-        createdAt: DateTime.now().subtract(const Duration(hours: 3)),
-        status: FriendRequestStatus.pending,
-      ),
-    );
   }
 
   @override
@@ -236,92 +215,6 @@ class MockSocialRepository implements SocialRepository {
       isFollowing: following,
       isFriend: following && user.isFollower,
     );
-  }
-
-  @override
-  Future<FriendRequestSendResult> sendFriendRequest({
-    required int userId,
-    required String message,
-  }) async {
-    if (userId <= 0 || userId == 10001) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '不能向自己发起好友申请',
-      );
-    }
-    final String normalizedMessage = message.trim();
-    if (normalizedMessage.length > 160) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        message: '好友申请留言不能超过 160 个字符',
-      );
-    }
-    final SocialUser target = _requireUser(userId);
-    if (target.isBlocked) {
-      throw const ApiException(
-        kind: ApiFailureKind.forbidden,
-        message: '该用户当前不可申请好友',
-      );
-    }
-    if (target.isFriend) {
-      throw const ApiException(
-        kind: ApiFailureKind.conflict,
-        message: '你们已经是好友',
-      );
-    }
-    final FriendRequestSendResult? existing = _outgoingFriendRequests[userId];
-    if (existing != null) {
-      return existing;
-    }
-    final FriendRequestSendResult result = FriendRequestSendResult(
-      requestId: 'friend-request-${_friendRequestSequence++}',
-      status: FriendRequestStatus.pending,
-    );
-    // Store before yielding so concurrent callers observe the same
-    // server-authoritative pending request instead of creating duplicates.
-    _outgoingFriendRequests[userId] = result;
-    _friendRequestSendCount += 1;
-    if (friendRequestSendDelay > Duration.zero) {
-      await Future<void>.delayed(friendRequestSendDelay);
-    }
-    return result;
-  }
-
-  @override
-  Future<List<FriendRequest>> fetchFriendRequests() async {
-    _ensureSeededRequests();
-    return List<FriendRequest>.unmodifiable(_requests);
-  }
-
-  @override
-  Future<void> resolveFriendRequest({
-    required String requestId,
-    required bool accepted,
-  }) async {
-    _ensureSeededRequests();
-    final int index = _requests.indexWhere(
-      (FriendRequest request) => request.id == requestId,
-    );
-    if (index < 0 || _requests[index].status != FriendRequestStatus.pending) {
-      throw const ApiException(
-        kind: ApiFailureKind.conflict,
-        message: '好友请求状态已变化，请刷新后重试',
-      );
-    }
-    final FriendRequest request = _requests[index];
-    _requests[index] = request.copyWith(
-      status: accepted
-          ? FriendRequestStatus.accepted
-          : FriendRequestStatus.rejected,
-    );
-    if (accepted) {
-      final SocialUser user = _requireUser(request.user.userId);
-      _users[user.userId] = user.copyWith(
-        isFollowing: true,
-        isFollower: true,
-        isFriend: true,
-      );
-    }
   }
 
   @override

@@ -9,7 +9,6 @@ import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/compliance/presentation/account_compliance_pages.dart';
 import 'package:voice_social_app/features/commerce/presentation/commerce_pages.dart';
-import 'package:voice_social_app/features/community/presentation/community_pages.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_models.dart';
@@ -1817,12 +1816,6 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
                             icon: Icons.people_outline_rounded,
                             label: '关注与粉丝',
                             onTap: () => _open(context, const RelationsPage()),
-                          ),
-                          _AccountTool(
-                            icon: Icons.event_available_outlined,
-                            label: '活动中心',
-                            onTap: () =>
-                                _open(context, const ActivityCenterPage()),
                           ),
                           _AccountTool(
                             icon: Icons.visibility_outlined,

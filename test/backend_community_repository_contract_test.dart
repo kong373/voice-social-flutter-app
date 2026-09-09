@@ -12,6 +12,37 @@ import 'package:voice_social_app/features/community/domain/community_models.dart
 
 void main() {
   test(
+    'guild reads do not require removed sign metadata or sign requests',
+    () async {
+      final harness = await _Harness.start((request) {
+        if (request.path == '/app-api/guild/getGuildHomepageDetails') {
+          return _Response.ok(
+            _b709GuildRow(includeHomepageState: true)
+              ..remove('signedToday')
+              ..remove('businessDate'),
+          );
+        }
+        if (request.path == '/app-api/guild/getGuildMembers') {
+          return _Response.ok(
+            _b709Page(_b709GuildMemberRow()..remove('isSigned'), pageSize: 50),
+          );
+        }
+        throw StateError('Unexpected request ${request.path}');
+      });
+      addTearDown(harness.close);
+      expect((await harness.repository.fetchGuild('guild-1')).id, 'guild-1');
+      expect(
+        (await harness.repository.fetchGuildMembers('guild-1')).single.userId,
+        21,
+      );
+      expect(harness.requests.map((request) => request.path), [
+        '/app-api/guild/getGuildHomepageDetails',
+        '/app-api/guild/getGuildMembers',
+      ]);
+    },
+  );
+
+  test(
     'community guild contracts preserve routes, payloads, and empty pages',
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {
@@ -199,61 +230,7 @@ void main() {
   );
 
   test(
-    'guild sign checks status and recovers a committed write after lost response',
-    () async {
-      int signAttempts = 0;
-      int statusReads = 0;
-      final _Harness harness = await _Harness.start((RequestRecord request) {
-        if (request.path == '/app-api/guild/sign/status') {
-          statusReads += 1;
-          expect(request.method, 'GET');
-          expect(request.query, <String, String>{'guildId': 'g-7'});
-          final bool signed = statusReads > 1;
-          return _Response.ok(<String, Object?>{
-            'guildId': 'g-7',
-            'hasGuild': true,
-            'member': true,
-            'signed': signed,
-            'signedToday': signed,
-            'isSign': signed,
-            'alreadySigned': signed,
-            'businessDate': '2026-08-23',
-            'signDate': signed ? '2026-08-23' : '',
-            'rewardPoints': signed ? 1 : 0,
-            'status': signed ? 'SIGNED' : 'AVAILABLE',
-            'providerInvocation': false,
-          });
-        }
-        if (request.path == '/app-api/guild/sign') {
-          signAttempts += 1;
-          expect(request.method, 'POST');
-          expect(request.body, <String, Object?>{'guildId': 'g-7'});
-          return const _Response(
-            statusCode: 500,
-            code: 50001,
-            message: 'response lost after commit',
-            data: null,
-          );
-        }
-        return _Response.ok(<String, Object?>{});
-      });
-      addTearDown(harness.close);
-
-      await harness.repository.signGuild('g-7');
-
-      expect(signAttempts, 1);
-      expect(statusReads, 2);
-      final List<RequestRecord> signRequests = harness.requests
-          .where(
-            (RequestRecord request) => request.path == '/app-api/guild/sign',
-          )
-          .toList();
-      expect(signRequests.single.requestId, startsWith('flutter-'));
-    },
-  );
-
-  test(
-    'community preserves authoritative member sign state and CP days',
+    'community preserves member room presence and optional historical sign metadata',
     () async {
       final _Harness harness = await _Harness.start((RequestRecord request) {
         if (request.path == '/app-api/guild/getGuildMembers') {
@@ -293,12 +270,9 @@ void main() {
 
       final List<GuildMember> members = await harness.repository
           .fetchGuildMembers('guild-1');
-      final List<CpRelation> relations = await harness.repository
-          .fetchCpRelations();
 
       expect(members.single.isSigned, isTrue);
       expect(members.single.roomId, 'room-21');
-      expect(relations.single.days, 12);
     },
   );
 
@@ -454,7 +428,6 @@ void main() {
       await repository.fetchGuild('g-7');
       await repository.applyToJoinGuild('g-7');
       await repository.quitGuild('g-7');
-      await repository.signGuild('g-7');
       await repository.resolveGuildApplication(
         applicationId: 'app-2',
         accepted: true,
@@ -477,9 +450,6 @@ void main() {
         byPath('/app-api/guildManagement/quitGuild').body,
         <String, Object?>{'guildId': 'g-7'},
       );
-      expect(byPath('/app-api/guild/sign').body, <String, Object?>{
-        'guildId': 'g-7',
-      });
       expect(
         byPath('/app-api/guildManagement/approvalMembershipApplication').body,
         <String, Object?>{'applicationId': 'app-2', 'approved': true},
@@ -584,7 +554,6 @@ void main() {
 
       await expectProtocol(harness.repository.applyToJoinGuild('g-1'));
       await expectProtocol(harness.repository.quitGuild('g-1'));
-      await expectProtocol(harness.repository.signGuild('g-1'));
       await expectProtocol(
         harness.repository.resolveGuildApplication(
           applicationId: 'app-1',
@@ -601,12 +570,6 @@ void main() {
       await expectProtocol(
         harness.repository.removeGuildMember(guildId: 'g-1', userId: 21),
       );
-      await expectProtocol(
-        harness.repository.becomeGuardian(anchorUserId: 88, levelId: '2'),
-      );
-      await expectProtocol(harness.repository.joinFansTeam(88));
-      await expectProtocol(harness.repository.completeDailyCheckIn());
-      await expectProtocol(harness.repository.claimTask('101'));
     },
   );
 
@@ -835,251 +798,6 @@ void main() {
     }
   });
 
-  test('community cp contracts parse state and preserve numeric ids', () async {
-    final _Harness harness = await _Harness.start((RequestRecord request) {
-      if (request.path == '/app-mini-api/mini/v1/cp/my-list') {
-        final int page = int.parse(request.query['pageNum']!);
-        final List<Object?> items = page == 1
-            ? <Object?>[
-                <String, Object?>{
-                  ..._b709CpRelationRow(),
-                  'cpRelationId': 'cp-1',
-                  'userId': 31,
-                  'nickName': 'CP甲',
-                  'createdAt': '2026-08-22T00:00:00Z',
-                },
-                ...List<Object?>.generate(
-                  19,
-                  (int index) => <String, Object?>{
-                    ..._b709CpRelationRow(),
-                    'cpRelationId': 'cp-extra-${index + 1}',
-                    'userId': 100 + index,
-                    'nickName': 'CP${index + 1}',
-                    'createdAt': '2026-08-22T00:00:00Z',
-                  },
-                ),
-              ]
-            : <Object?>[
-                <String, Object?>{
-                  ..._b709CpRelationRow(),
-                  'cpRelationId': 'cp-2',
-                  'userId': 33,
-                  'nickName': 'CP乙',
-                  'createdAt': '2026-08-21T00:00:00Z',
-                },
-              ];
-        expect(request.query['pageSize'], '20');
-        return _Response.ok(<String, Object?>{
-          'list': items,
-          'records': items,
-          'current': page,
-          'size': 20,
-          'pageSize': 20,
-          'total': 21,
-          'pages': 2,
-        });
-      }
-      if (request.path == '/app-mini-api/mini/v1/cp/pending-requests') {
-        final int page = int.parse(request.query['pageNum']!);
-        final List<Object?> items = page == 1
-            ? <Object?>[
-                <String, Object?>{
-                  ..._b709CpInvitationRow(),
-                  'cpRequestId': 'invite-1',
-                  'userId': 32,
-                  'nickName': '邀请者',
-                  'createdAt': '2026-08-22T00:00:00Z',
-                },
-                ...List<Object?>.generate(
-                  19,
-                  (int index) => <String, Object?>{
-                    ..._b709CpInvitationRow(),
-                    'cpRequestId': 'invite-extra-${index + 1}',
-                    'userId': 200 + index,
-                    'nickName': '邀请者${index + 1}',
-                    'createdAt': '2026-08-22T00:00:00Z',
-                  },
-                ),
-              ]
-            : <Object?>[
-                <String, Object?>{
-                  ..._b709CpInvitationRow(),
-                  'cpRequestId': 'invite-2',
-                  'userId': 34,
-                  'nickName': '邀请者乙',
-                  'createdAt': '2026-08-21T00:00:00Z',
-                },
-              ];
-        expect(request.query['pageSize'], '20');
-        return _Response.ok(<String, Object?>{
-          'list': items,
-          'records': items,
-          'current': page,
-          'size': 20,
-          'pageSize': 20,
-          'total': 21,
-          'pages': 2,
-        });
-      }
-      if (request.path ==
-          '/app-mini-api/mini/v1/cp/check-invitation-eligibility') {
-        return _Response.ok(<String, Object?>{
-          'eligible': true,
-          'reason': 'ELIGIBLE',
-          'targetUserId': 42,
-        });
-      }
-      if (request.path == '/app-mini-api/mini/v1/cp/request') {
-        return _Response.ok(<String, Object?>{
-          'cpRequestId': 'invite-3',
-          'targetUserId': 42,
-          'status': 'PENDING',
-        });
-      }
-      if (request.path == '/app-mini-api/mini/v1/cp/accept') {
-        return _Response.ok(<String, Object?>{
-          'cpRequestId': '9',
-          'status': 'ACCEPTED',
-          'cpRelationId': 'cp-accepted-9',
-        });
-      }
-      if (request.path == '/app-mini-api/mini/v1/cp/reject') {
-        return _Response.ok(<String, Object?>{
-          'cpRequestId': 'invite-1',
-          'status': 'REJECTED',
-          'cpRelationId': '',
-        });
-      }
-      return _Response.ok(<String, Object?>{});
-    });
-    addTearDown(harness.close);
-    final BackendCommunityRepository repository = harness.repository;
-
-    final List<CpRelation> relations = await repository.fetchCpRelations();
-    expect(relations, hasLength(21));
-    expect(relations.first.nickname, 'CP甲');
-    expect(relations.first.boundAt, '2026-08-22T00:00:00Z');
-    final List<CpInvitation> invitations = await repository
-        .fetchPendingCpInvitations();
-    expect(invitations, hasLength(21));
-    expect(invitations.first.invitationId, 'invite-1');
-    final CpEligibility eligibility = await repository.checkCpEligibility(42);
-    expect(eligibility.allowed, isTrue);
-    expect(eligibility.message, 'ELIGIBLE');
-    expect(await repository.requestCp(42), 'invite-3');
-    await repository.resolveCpInvitation(invitationId: '9', accepted: true);
-    await repository.resolveCpInvitation(
-      invitationId: 'invite-1',
-      accepted: false,
-    );
-
-    expect(harness.requests[4].query, <String, String>{'userId': '42'});
-    expect(harness.requests[5].body, <String, Object?>{'targetUserId': 42});
-    expect(harness.requests[6].path, '/app-mini-api/mini/v1/cp/accept');
-    expect(harness.requests[6].body, <String, Object?>{'cpRequestId': '9'});
-    expect(harness.requests[7].path, '/app-mini-api/mini/v1/cp/reject');
-    expect(harness.requests[7].body, <String, Object?>{
-      'cpRequestId': 'invite-1',
-    });
-  });
-
-  test(
-    'community CP writes reject mismatched identity and non-terminal state',
-    () async {
-      final Map<String, Object?> responses = <String, Object?>{
-        'request-missing-id': <String, Object?>{
-          'targetUserId': 42,
-          'status': 'PENDING',
-        },
-        'request-wrong-target': <String, Object?>{
-          'cpRequestId': 'request-wrong-target',
-          'targetUserId': 99,
-          'status': 'PENDING',
-        },
-        'request-wrong-state': <String, Object?>{
-          'cpRequestId': 'request-wrong-state',
-          'targetUserId': 44,
-          'status': 'ACCEPTED',
-        },
-        'accept-wrong-id': <String, Object?>{
-          'cpRequestId': 'different',
-          'status': 'ACCEPTED',
-          'cpRelationId': 'relation-1',
-        },
-        'accept-no-relation': <String, Object?>{
-          'cpRequestId': 'accept-no-relation',
-          'status': 'ACCEPTED',
-          'cpRelationId': '',
-        },
-        'reject-has-relation': <String, Object?>{
-          'cpRequestId': 'reject-has-relation',
-          'status': 'REJECTED',
-          'cpRelationId': 'relation-should-not-exist',
-        },
-        'reject-wrong-state': <String, Object?>{
-          'cpRequestId': 'reject-wrong-state',
-          'status': 'PENDING',
-          'cpRelationId': '',
-        },
-      };
-      int requestCall = 0;
-      final _Harness harness = await _Harness.start((RequestRecord request) {
-        if (request.path.endsWith('/cp/request')) {
-          requestCall += 1;
-          return _Response.ok(
-            responses[switch (requestCall) {
-              1 => 'request-missing-id',
-              2 => 'request-wrong-target',
-              _ => 'request-wrong-state',
-            }],
-          );
-        }
-        final Map<String, Object?> body = request.body! as Map<String, Object?>;
-        return _Response.ok(responses[body['cpRequestId']]);
-      });
-      addTearDown(harness.close);
-
-      Future<void> expectProtocol(Future<Object?> future) => expectLater(
-        future,
-        throwsA(
-          isA<ApiException>().having(
-            (ApiException error) => error.kind,
-            'kind',
-            ApiFailureKind.protocol,
-          ),
-        ),
-      );
-
-      await expectProtocol(harness.repository.requestCp(42));
-      await expectProtocol(harness.repository.requestCp(43));
-      await expectProtocol(harness.repository.requestCp(44));
-      await expectProtocol(
-        harness.repository.resolveCpInvitation(
-          invitationId: 'accept-wrong-id',
-          accepted: true,
-        ),
-      );
-      await expectProtocol(
-        harness.repository.resolveCpInvitation(
-          invitationId: 'accept-no-relation',
-          accepted: true,
-        ),
-      );
-      await expectProtocol(
-        harness.repository.resolveCpInvitation(
-          invitationId: 'reject-has-relation',
-          accepted: false,
-        ),
-      );
-      await expectProtocol(
-        harness.repository.resolveCpInvitation(
-          invitationId: 'reject-wrong-state',
-          accepted: false,
-        ),
-      );
-    },
-  );
-
   test(
     'community pagination rejects unsafe and non-progressing envelopes',
     () async {
@@ -1285,347 +1003,10 @@ void main() {
         (await harness.repository.fetchInviteAttribution()).invitedUsers,
         isNull,
       );
-      expect((await harness.repository.fetchCpRelations()).single.days, 1);
     },
   );
 
-  test(
-    'community ends CP relation through the first-party mutation route',
-    () async {
-      final _Harness harness = await _Harness.start((RequestRecord request) {
-        return _Response.ok(<String, Object?>{
-          'cpRelationId': 'cp-relation-1',
-          'status': 'ENDED',
-          'ended': true,
-        });
-      });
-      addTearDown(harness.close);
-
-      await harness.repository.endCpRelation('cp-relation-1');
-      expect(harness.requests.single.path, '/app-mini-api/mini/v1/cp/end');
-      expect(harness.requests.single.method, 'POST');
-      expect(harness.requests.single.body, <String, Object?>{
-        'cpRelationId': 'cp-relation-1',
-      });
-      await expectLater(
-        harness.repository.endCpRelation(''),
-        throwsA(
-          isA<ApiException>().having(
-            (ApiException error) => error.kind,
-            'kind',
-            ApiFailureKind.validation,
-          ),
-        ),
-      );
-      expect(harness.requests, hasLength(1));
-    },
-  );
-
-  test('community rejects unconfirmed or mismatched CP termination', () async {
-    final List<Map<String, Object?>> invalidResponses = <Map<String, Object?>>[
-      <String, Object?>{},
-      <String, Object?>{
-        'cpRelationId': 'different-relation',
-        'status': 'ENDED',
-        'ended': true,
-      },
-      <String, Object?>{
-        'cpRelationId': 'cp-relation-1',
-        'status': 'ACTIVE',
-        'ended': true,
-      },
-      <String, Object?>{
-        'cpRelationId': 'cp-relation-1',
-        'status': 'ENDED',
-        'ended': 1,
-      },
-    ];
-    int responseIndex = 0;
-    final _Harness harness = await _Harness.start((RequestRecord request) {
-      return _Response.ok(invalidResponses[responseIndex++]);
-    });
-    addTearDown(harness.close);
-
-    for (int index = 0; index < invalidResponses.length; index += 1) {
-      await expectLater(
-        harness.repository.endCpRelation('cp-relation-1'),
-        throwsA(
-          isA<ApiException>().having(
-            (ApiException error) => error.kind,
-            'kind',
-            ApiFailureKind.protocol,
-          ),
-        ),
-      );
-    }
-    expect(harness.requests, hasLength(invalidResponses.length));
-  });
-
-  test('CP relation requires server createdAt', () async {
-    final _Harness harness = await _Harness.start((RequestRecord request) {
-      if (request.path == '/app-mini-api/mini/v1/cp/my-list') {
-        return _Response.ok(<String, Object?>{
-          'list': <Object?>[
-            <String, Object?>{'cpRelationId': 'cp-missing-time', 'userId': 31},
-          ],
-          'current': 1,
-          'pageSize': 20,
-          'total': 1,
-          'pages': 1,
-        });
-      }
-      return _Response.ok(<String, Object?>{});
-    });
-    addTearDown(harness.close);
-
-    await expectLater(
-      harness.repository.fetchCpRelations(),
-      throwsA(
-        isA<ApiException>().having(
-          (ApiException error) => error.kind,
-          'kind',
-          ApiFailureKind.protocol,
-        ),
-      ),
-    );
-  });
-
-  test(
-    'community guardian and fan snapshot fans out four GET contracts',
-    () async {
-      final _Harness harness = await _Harness.start((RequestRecord request) {
-        return switch (request.path) {
-          '/app-api/room/radio/v1/queryGuardianLevels' => _Response.ok(
-            <String, Object?>{
-              'list': <Object?>[
-                <String, Object?>{
-                  'id': '2',
-                  'name': '银色守护',
-                  'price': 88,
-                  'durationDays': 30,
-                },
-              ],
-              'total': 1,
-              'providerInvocation': false,
-            },
-          ),
-          '/app-api/room/radio/v1/queryOenGuardianInfo' =>
-            _Response.ok(<String, Object?>{
-              'anchorUserId': 88,
-              'anchorName': '主播甲',
-              'nickName': '主播甲',
-              'roomId': 'room-88',
-              'active': true,
-              'guardianLevelId': '2',
-              'levelId': '2',
-              'levelName': '银色守护',
-              'price': 88,
-              'durationDays': 30,
-              'startedAt': '2026-08-01T00:00:00Z',
-              'expiresAt': '2026-08-31T00:00:00Z',
-              'providerInvocation': false,
-            }),
-          '/app-api/room/radio/v1/queryFansTeamRelation' =>
-            _Response.ok(<String, Object?>{
-              'anchorUserId': 88,
-              'roomId': 'room-88',
-              'fansTeamId': 'fans-88',
-              'fansTeamName': '甲的粉团',
-              'teamName': '甲的粉团',
-              'teamExists': true,
-              'fansLevel': 3,
-              'level': 3,
-              'intimacy': 66,
-              'joined': true,
-              'isJoin': true,
-              'providerInvocation': false,
-            }),
-          '/app-api/room/radio/v1/queryFansTeamTaskPage' => _Response.ok(
-            <String, Object?>{
-              'list': <Object?>[
-                _b709TaskRow(
-                  taskId: 201,
-                  taskCode: 'FANS_STAY',
-                  taskName: '陪伴主播',
-                  progress: 2,
-                  target: 5,
-                  status: 2,
-                  claimed: true,
-                ),
-              ],
-              'records': <Object?>[
-                _b709TaskRow(
-                  taskId: 201,
-                  taskCode: 'FANS_STAY',
-                  taskName: '陪伴主播',
-                  progress: 2,
-                  target: 5,
-                  status: 2,
-                  claimed: true,
-                ),
-              ],
-              'total': 1,
-              'anchorUserId': 88,
-              'roomId': 'room-88',
-              'fansTeamId': 'fans-88',
-              'fansTeamName': '甲的粉团',
-              'teamExists': true,
-              'joined': true,
-              'isJoin': true,
-              'providerInvocation': false,
-            },
-          ),
-          _ => _Response.ok(<String, Object?>{}),
-        };
-      });
-      addTearDown(harness.close);
-      final BackendCommunityRepository repository = harness.repository;
-
-      final GuardianFanSnapshot snapshot = await repository.fetchGuardianFan(
-        88,
-      );
-      expect(snapshot.anchorName, '主播甲');
-      expect(snapshot.currentGuardianLevel?.name, '银色守护');
-      expect(snapshot.fansTeamName, '甲的粉团');
-      expect(snapshot.fansLevel, 3);
-      expect(snapshot.intimacy, 66);
-      expect(snapshot.joinedFansTeam, isTrue);
-      expect(snapshot.tasks.single.claimed, isTrue);
-      expect(harness.requests, hasLength(4));
-      expect(
-        harness.requests.map(
-          (RequestRecord item) => item.query['anchorUserId'],
-        ),
-        containsAll(<String?>[null, '88', '88', '88']),
-      );
-    },
-  );
-
-  test(
-    'community guardian and task mutations preserve body and follow-up reads',
-    () async {
-      final _Harness harness = await _Harness.start((RequestRecord request) {
-        return switch (request.path) {
-          '/app-api/room/radio/v1/becomeGuard' =>
-            _Response.ok(<String, Object?>{
-              'anchorUserId': 88,
-              'active': true,
-              'guardianLevelId': '2',
-              'providerInvocation': false,
-            }),
-          '/app-api/room/radio/v1/joinFansTeam' =>
-            _Response.ok(<String, Object?>{
-              'anchorUserId': 88,
-              'joined': true,
-              'fansTeamId': 'fans-team-88',
-              'status': 'ACTIVE',
-              'providerInvocation': false,
-            }),
-          '/app-api/taskSystem/completeDailySignIn' =>
-            _Response.ok(<String, Object?>{
-              'signed': true,
-              'signedToday': true,
-              'isSign': true,
-              'alreadySigned': false,
-              'businessDate': '2026-08-23',
-              'taskId': 100,
-              'providerInvocation': false,
-            }),
-          '/app-api/taskSystem/receiveTaskReward' =>
-            _Response.ok(<String, Object?>{
-              'taskId': 101,
-              'claimed': true,
-              'isReceive': true,
-              'status': 2,
-              'providerInvocation': false,
-            }),
-          '/app-api/taskSystem/queryTaskRecords' => _Response.ok(
-            <String, Object?>{
-              'list': <Object?>[
-                _b709TaskRow(
-                  taskId: 101,
-                  taskCode: 'DAILY_SIGN_IN',
-                  taskName: '签到',
-                  progress: 1,
-                  target: 1,
-                  status: 1,
-                  claimed: false,
-                ),
-              ],
-              'records': <Object?>[
-                _b709TaskRow(
-                  taskId: 101,
-                  taskCode: 'DAILY_SIGN_IN',
-                  taskName: '签到',
-                  progress: 1,
-                  target: 1,
-                  status: 1,
-                  claimed: false,
-                ),
-              ],
-              'total': 1,
-              'type': 1,
-              'providerInvocation': false,
-            },
-          ),
-          '/app-api/taskSystem/querySignReward' =>
-            _Response.ok(<String, Object?>{
-              'list': _b709SignRows(),
-              'records': _b709SignRows(),
-              'total': 7,
-              'cycleStart': '2026-08-17',
-              'cycleEnd': '2026-08-23',
-              'providerInvocation': false,
-            }),
-          '/app-api/taskSystem/queryTodaySignStatus' =>
-            _Response.ok(<String, Object?>{
-              'signedToday': false,
-              'isSign': false,
-              'continuousDays': 2,
-              'consecutiveDays': 2,
-              'businessDate': '2026-08-23',
-              'providerInvocation': false,
-            }),
-          _ => _Response.ok(<String, Object?>{}),
-        };
-      });
-      addTearDown(harness.close);
-      final BackendCommunityRepository repository = harness.repository;
-
-      await repository.becomeGuardian(anchorUserId: 88, levelId: '2');
-      await repository.joinFansTeam(88);
-      final TaskCenterSnapshot tasks = await repository.fetchTaskCenter();
-      expect(tasks.tasks.single.state, TaskState.claimable);
-      expect(tasks.signedToday, isFalse);
-      await repository.completeDailyCheckIn();
-      await repository.claimTask('101');
-
-      expect(harness.requests[0].path, '/app-api/room/radio/v1/becomeGuard');
-      expect(harness.requests[0].body, <String, Object?>{
-        'anchorUserId': 88,
-        'guardianLevelId': '2',
-      });
-      expect(harness.requests[1].path, '/app-api/room/radio/v1/joinFansTeam');
-      expect(harness.requests[1].body, <String, Object?>{'anchorUserId': 88});
-      expect(harness.requests[2].query, <String, String>{'type': '1'});
-      expect(
-        harness.requests[6].path,
-        '/app-api/taskSystem/completeDailySignIn',
-      );
-      expect(harness.requests[6].method, 'POST');
-      expect(harness.requests[6].body, <String, Object?>{});
-      expect(harness.requests[6].requestId, startsWith('flutter-'));
-      expect(harness.requests[10].method, 'POST');
-      expect(harness.requests[10].body, <String, Object?>{'taskId': 101});
-      expect(harness.requests[10].requestId, startsWith('flutter-'));
-      expect(
-        harness.requests[10].requestId,
-        isNot(harness.requests[6].requestId),
-      );
-    },
-  );
-
-  test('community attribution, activities, and error envelopes map', () async {
+  test('community attribution and error envelopes map', () async {
     final _Harness harness = await _Harness.start((RequestRecord request) {
       return switch (request.path) {
         '/app-mini-api/mini/v1/invite/attribution' =>
@@ -1674,14 +1055,11 @@ void main() {
     addTearDown(harness.close);
     final BackendCommunityRepository repository = harness.repository;
     expect(repository.supportsInviteAttribution, isTrue);
-    expect(repository.supportsActivityCatalog, isTrue);
+    expect(repository.supportsActivityCatalog, isFalse);
     final InviteAttribution attribution = await repository
         .fetchInviteAttribution();
     expect(attribution.available, isTrue);
     expect(attribution.inviteCode, 'invite-7');
-    final ThemeActivity activity = (await repository.fetchActivities()).single;
-    expect(activity.title, '夏日活动');
-    expect(activity.status, ThemeActivityStatus.active);
     await expectLater(
       repository.searchGuilds('bad'),
       throwsA(
@@ -1720,123 +1098,6 @@ void main() {
     },
   );
 
-  test('community CP eligibility rejects inconsistent b709 reason', () async {
-    final _Harness harness = await _Harness.start((RequestRecord request) {
-      return _Response.ok(<String, Object?>{
-        'eligible': true,
-        'reason': 'ACTIVE_CP_EXISTS',
-        'targetUserId': 42,
-      });
-    });
-    addTearDown(harness.close);
-
-    await expectLater(
-      harness.repository.checkCpEligibility(42),
-      throwsA(
-        isA<ApiException>().having(
-          (ApiException error) => error.kind,
-          'kind',
-          ApiFailureKind.protocol,
-        ),
-      ),
-    );
-  });
-
-  test(
-    'activity without status trusts the first-party active-row invariant',
-    () async {
-      final _Harness harness = await _Harness.start((RequestRecord request) {
-        if (request.path == '/app-mini-api/mini/v1/activity/list') {
-          return _Response.ok(<String, Object?>{
-            'list': <Object?>[
-              <String, Object?>{
-                'activityId': 'activity-active-row',
-                'title': '服务端活动',
-                'description': '',
-                // Deliberately outside the client clock window: the endpoint
-                // contract, rather than DateTime.now(), determines the status.
-                'startsAt': '2099-01-01T00:00:00Z',
-                'endsAt': '2099-02-01T00:00:00Z',
-              },
-            ],
-            'records': <Object?>[
-              <String, Object?>{
-                'activityId': 'activity-active-row',
-                'title': '服务端活动',
-                'description': '',
-                'startsAt': '2099-01-01T00:00:00Z',
-                'endsAt': '2099-02-01T00:00:00Z',
-              },
-            ],
-            'current': 1,
-            'pageSize': 50,
-            'total': 1,
-            'pages': 1,
-            'fabricated': false,
-            'catalogAvailable': true,
-          });
-        }
-        return _Response.ok(<String, Object?>{});
-      });
-      addTearDown(harness.close);
-
-      final ThemeActivity activity =
-          (await harness.repository.fetchActivities()).single;
-      expect(activity.status, ThemeActivityStatus.active);
-    },
-  );
-
-  test(
-    'activity status is server-authoritative and unknown status fails closed',
-    () async {
-      final _Harness harness = await _Harness.start((RequestRecord request) {
-        if (request.path == '/app-mini-api/mini/v1/activity/list') {
-          return _Response.ok(<String, Object?>{
-            'list': <Object?>[
-              <String, Object?>{
-                'activityId': 'activity-unknown',
-                'title': '未知状态活动',
-                'description': '',
-                'status': 'MYSTERY',
-                'startsAt': '2026-08-22T00:00:00Z',
-                'endsAt': '2026-08-30T00:00:00Z',
-              },
-            ],
-            'records': <Object?>[
-              <String, Object?>{
-                'activityId': 'activity-unknown',
-                'title': '未知状态活动',
-                'description': '',
-                'status': 'MYSTERY',
-                'startsAt': '2026-08-22T00:00:00Z',
-                'endsAt': '2026-08-30T00:00:00Z',
-              },
-            ],
-            'current': 1,
-            'pageSize': 50,
-            'total': 1,
-            'pages': 1,
-            'fabricated': false,
-            'catalogAvailable': true,
-          });
-        }
-        return _Response.ok(<String, Object?>{});
-      });
-      addTearDown(harness.close);
-
-      await expectLater(
-        harness.repository.fetchActivities(),
-        throwsA(
-          isA<ApiException>().having(
-            (ApiException error) => error.kind,
-            'kind',
-            ApiFailureKind.protocol,
-          ),
-        ),
-      );
-    },
-  );
-
   test(
     'community preserves validation, authorization, conflict, and server errors',
     () async {
@@ -1854,19 +1115,19 @@ void main() {
             message: '无权查看',
             data: null,
           ),
-          '/app-mini-api/mini/v1/cp/request' => const _Response(
+          '/app-api/guildManagement/applyForMembership' => const _Response(
             statusCode: 409,
             code: 409,
             message: '已有待处理请求',
             data: null,
           ),
-          '/app-mini-api/mini/v1/activity/list' => const _Response(
+          '/app-api/guild/getGuildMembers' => const _Response(
             statusCode: 422,
             code: 422,
             message: '活动参数无效',
             data: null,
           ),
-          '/app-api/taskSystem/queryTaskRecords' => const _Response(
+          '/app-api/guild/getMembershipApplications' => const _Response(
             statusCode: 500,
             code: 500,
             message: '服务暂不可用',
@@ -1908,130 +1169,73 @@ void main() {
         403,
       );
       await expectFailure(
-        () => repository.requestCp(42),
+        () => repository.applyToJoinGuild('g-7'),
         ApiFailureKind.conflict,
         409,
       );
       await expectFailure(
-        () => repository.fetchActivities(),
+        () => repository.fetchGuildMembers('g-7'),
         ApiFailureKind.validation,
         422,
       );
       await expectFailure(
-        () => repository.fetchTaskCenter(),
+        () => repository.fetchGuildApplications('g-7'),
         ApiFailureKind.server,
         500,
       );
     },
   );
 
-  test(
-    'community repeated reads keep stable ids and stale application status',
-    () async {
-      final _Harness harness = await _Harness.start((RequestRecord request) {
-        return switch (request.path) {
-          '/app-mini-api/mini/v1/cp/request' => _Response.ok(<String, Object?>{
-            'cpRequestId': 'request-stable',
-            'targetUserId': 42,
-            'status': 'PENDING',
-          }),
-          '/app-api/guild/getMembershipApplications' => _Response.ok(
-            <String, Object?>{
-              'list': <Object?>[
-                <String, Object?>{
-                  ..._b709GuildApplicationRow(),
-                  'applicationId': 'application-stale',
-                  'userId': 8,
-                  'nickName': '历史申请用户',
-                  'status': 'REJECTED',
-                  'createdAt': '2026-08-21T00:00:00Z',
-                  'resolvedAt': '2026-08-21T01:00:00Z',
-                },
-              ],
-              'records': <Object?>[
-                <String, Object?>{
-                  ..._b709GuildApplicationRow(),
-                  'applicationId': 'application-stale',
-                  'userId': 8,
-                  'nickName': '历史申请用户',
-                  'status': 'REJECTED',
-                  'createdAt': '2026-08-21T00:00:00Z',
-                  'resolvedAt': '2026-08-21T01:00:00Z',
-                },
-              ],
-              'current': 1,
-              'size': 50,
-              'pageSize': 50,
-              'total': 1,
-              'pages': 1,
-            },
-          ),
-          _ => _Response.ok(<String, Object?>{}),
-        };
-      });
-      addTearDown(harness.close);
-      final BackendCommunityRepository repository = harness.repository;
-
-      final String firstRequest = await repository.requestCp(42);
-      final String repeatedRequest = await repository.requestCp(42);
-      expect(firstRequest, 'request-stable');
-      expect(repeatedRequest, firstRequest);
-      expect(
-        harness.requests
-            .where((RequestRecord item) => item.path.endsWith('/cp/request'))
-            .map((RequestRecord item) => item.body)
-            .toList(),
-        <Object?>[
-          <String, Object?>{'targetUserId': 42},
-          <String, Object?>{'targetUserId': 42},
-        ],
-      );
-
-      final List<GuildApplication> applications = await repository
-          .fetchGuildApplications('guild-1');
-      expect(applications.single.status, GuildApplicationStatus.rejected);
-      expect(applications.single.appliedAt, '2026-08-21T00:00:00Z');
-    },
-  );
-
-  test(
-    'concurrent CP requests for one target coalesce without swallowing 409',
-    () async {
-      final Completer<void> release = Completer<void>();
-      int cpCalls = 0;
-      final _Harness harness = await _Harness.start((
-        RequestRecord request,
-      ) async {
-        if (request.path == '/app-mini-api/mini/v1/cp/request') {
-          cpCalls += 1;
-          await release.future;
-          return _Response.ok(<String, Object?>{
-            'cpRequestId': 'cp-request-1',
-            'targetUserId': 42,
-            'status': 'PENDING',
-          });
-        }
-        return _Response.ok(<String, Object?>{});
-      });
-      addTearDown(harness.close);
-
-      final Future<String> first = harness.repository.requestCp(42);
-      final Future<String> second = harness.repository.requestCp(42);
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-      expect(cpCalls, 1);
-      expect(
-        harness.requests.where(
-          (RequestRecord item) => item.path.endsWith('/cp/request'),
+  test('community preserves stale guild application status', () async {
+    final _Harness harness = await _Harness.start((RequestRecord request) {
+      return switch (request.path) {
+        '/app-mini-api/mini/v1/cp/request' => _Response.ok(<String, Object?>{
+          'cpRequestId': 'request-stable',
+          'targetUserId': 42,
+          'status': 'PENDING',
+        }),
+        '/app-api/guild/getMembershipApplications' => _Response.ok(
+          <String, Object?>{
+            'list': <Object?>[
+              <String, Object?>{
+                ..._b709GuildApplicationRow(),
+                'applicationId': 'application-stale',
+                'userId': 8,
+                'nickName': '历史申请用户',
+                'status': 'REJECTED',
+                'createdAt': '2026-08-21T00:00:00Z',
+                'resolvedAt': '2026-08-21T01:00:00Z',
+              },
+            ],
+            'records': <Object?>[
+              <String, Object?>{
+                ..._b709GuildApplicationRow(),
+                'applicationId': 'application-stale',
+                'userId': 8,
+                'nickName': '历史申请用户',
+                'status': 'REJECTED',
+                'createdAt': '2026-08-21T00:00:00Z',
+                'resolvedAt': '2026-08-21T01:00:00Z',
+              },
+            ],
+            'current': 1,
+            'size': 50,
+            'pageSize': 50,
+            'total': 1,
+            'pages': 1,
+          },
         ),
-        hasLength(1),
-      );
-      release.complete();
-      expect(await Future.wait(<Future<String>>[first, second]), <String>[
-        'cp-request-1',
-        'cp-request-1',
-      ]);
-    },
-  );
+        _ => _Response.ok(<String, Object?>{}),
+      };
+    });
+    addTearDown(harness.close);
+    final BackendCommunityRepository repository = harness.repository;
+
+    final List<GuildApplication> applications = await repository
+        .fetchGuildApplications('guild-1');
+    expect(applications.single.status, GuildApplicationStatus.rejected);
+    expect(applications.single.appliedAt, '2026-08-21T00:00:00Z');
+  });
 
   test(
     'community b709 read rows fail closed instead of fabricating required fields',
@@ -2080,30 +1284,6 @@ void main() {
                   repository.fetchGuildApplications('guild-1'),
               pageSize: 50,
             ),
-            (
-              path: '/app-mini-api/mini/v1/cp/my-list',
-              row: _b709CpRelationRow(),
-              missingField: 'status',
-              read: (BackendCommunityRepository repository) =>
-                  repository.fetchCpRelations(),
-              pageSize: 20,
-            ),
-            (
-              path: '/app-mini-api/mini/v1/cp/pending-requests',
-              row: _b709CpInvitationRow(),
-              missingField: 'userId',
-              read: (BackendCommunityRepository repository) =>
-                  repository.fetchPendingCpInvitations(),
-              pageSize: 20,
-            ),
-            (
-              path: '/app-mini-api/mini/v1/activity/list',
-              row: _b709ActivityRow(),
-              missingField: 'title',
-              read: (BackendCommunityRepository repository) =>
-                  repository.fetchActivities(),
-              pageSize: 50,
-            ),
           ];
 
       for (final testCase in cases) {
@@ -2147,422 +1327,6 @@ void main() {
       }
     },
   );
-
-  test('community maps exact b709 guardian and fans payloads', () async {
-    final Map<String, Object?> fansTask = _b709TaskRow(
-      taskId: 201,
-      taskCode: 'FANS_STAY',
-      taskName: '陪伴主播',
-      progress: 2,
-      target: 5,
-      status: 0,
-      claimed: false,
-    );
-    final _Harness harness = await _Harness.start((RequestRecord request) {
-      return switch (request.path) {
-        '/app-api/room/radio/v1/queryGuardianLevels' => _Response.ok(
-          <String, Object?>{
-            'list': <Object?>[
-              <String, Object?>{
-                'id': 'SILVER',
-                'name': '银色守护',
-                'price': 88,
-                'durationDays': 30,
-              },
-            ],
-            'total': 1,
-            'providerInvocation': false,
-          },
-        ),
-        '/app-api/room/radio/v1/queryOenGuardianInfo' =>
-          _Response.ok(<String, Object?>{
-            'anchorUserId': 88,
-            'anchorName': '主播甲',
-            'nickName': '主播甲',
-            'roomId': 'room-88',
-            'active': true,
-            'guardianLevelId': 'SILVER',
-            'levelId': 'SILVER',
-            'levelName': '银色守护',
-            'price': 88,
-            'durationDays': 30,
-            'startedAt': '2026-08-01T00:00:00Z',
-            'expiresAt': '2026-08-31T00:00:00Z',
-            'providerInvocation': false,
-          }),
-        '/app-api/room/radio/v1/queryFansTeamRelation' =>
-          _Response.ok(<String, Object?>{
-            'anchorUserId': 88,
-            'roomId': 'room-88',
-            'fansTeamId': 'fans-88',
-            'fansTeamName': '甲的粉团',
-            'teamName': '甲的粉团',
-            'teamExists': true,
-            'fansLevel': 3,
-            'level': 3,
-            'intimacy': 66,
-            'joined': true,
-            'isJoin': true,
-            'providerInvocation': false,
-          }),
-        '/app-api/room/radio/v1/queryFansTeamTaskPage' => _Response.ok(
-          <String, Object?>{
-            'list': <Object?>[fansTask],
-            'records': <Object?>[fansTask],
-            'total': 1,
-            'anchorUserId': 88,
-            'roomId': 'room-88',
-            'fansTeamId': 'fans-88',
-            'fansTeamName': '甲的粉团',
-            'teamExists': true,
-            'joined': true,
-            'isJoin': true,
-            'providerInvocation': false,
-          },
-        ),
-        _ => _Response.ok(<String, Object?>{}),
-      };
-    });
-    addTearDown(harness.close);
-
-    final GuardianFanSnapshot snapshot = await harness.repository
-        .fetchGuardianFan(88);
-    expect(snapshot.anchorName, '主播甲');
-    expect(snapshot.currentGuardianLevel?.id, 'SILVER');
-    expect(snapshot.fansTeamName, '甲的粉团');
-    expect(snapshot.fansLevel, 3);
-    expect(snapshot.intimacy, 66);
-    expect(snapshot.joinedFansTeam, isTrue);
-    expect(snapshot.tasks.single.id, '201');
-    expect(snapshot.tasks.single.progress, 2);
-  });
-
-  test(
-    'community guardian catalog rejects missing b709 level identity',
-    () async {
-      final _Harness harness = await _Harness.start((RequestRecord request) {
-        if (request.path == '/app-api/room/radio/v1/queryGuardianLevels') {
-          return _Response.ok(<String, Object?>{
-            'list': <Object?>[
-              <String, Object?>{
-                'id': 'SILVER',
-                // b709 always exposes a non-empty name.
-                'price': 88,
-                'durationDays': 30,
-              },
-            ],
-            'total': 1,
-            'providerInvocation': false,
-          });
-        }
-        return _Response.ok(<String, Object?>{});
-      });
-      addTearDown(harness.close);
-
-      await expectLater(
-        harness.repository.fetchGuardianFan(88),
-        throwsA(
-          isA<ApiException>().having(
-            (ApiException error) => error.kind,
-            'kind',
-            ApiFailureKind.protocol,
-          ),
-        ),
-      );
-    },
-  );
-
-  test('community fans relation rejects divergent b709 join aliases', () async {
-    final _Harness harness = await _Harness.start((RequestRecord request) {
-      return switch (request.path) {
-        '/app-api/room/radio/v1/queryGuardianLevels' => _Response.ok(
-          <String, Object?>{
-            'list': <Object?>[],
-            'total': 0,
-            'providerInvocation': false,
-          },
-        ),
-        '/app-api/room/radio/v1/queryOenGuardianInfo' =>
-          _Response.ok(<String, Object?>{
-            'anchorUserId': 88,
-            'anchorName': '主播甲',
-            'nickName': '主播甲',
-            'roomId': 'room-88',
-            'active': false,
-            'guardianLevelId': '',
-            'levelId': '',
-            'levelName': '',
-            'price': 0,
-            'durationDays': 0,
-            'startedAt': '',
-            'expiresAt': '',
-            'providerInvocation': false,
-          }),
-        '/app-api/room/radio/v1/queryFansTeamRelation' =>
-          _Response.ok(<String, Object?>{
-            'anchorUserId': 88,
-            'roomId': 'room-88',
-            'fansTeamId': 'fans-88',
-            'fansTeamName': '甲的粉团',
-            'teamName': '甲的粉团',
-            'teamExists': true,
-            'fansLevel': 1,
-            'level': 1,
-            'intimacy': 3,
-            'joined': true,
-            'isJoin': false,
-            'providerInvocation': false,
-          }),
-        _ => _Response.ok(<String, Object?>{}),
-      };
-    });
-    addTearDown(harness.close);
-
-    await expectLater(
-      harness.repository.fetchGuardianFan(88),
-      throwsA(
-        isA<ApiException>().having(
-          (ApiException error) => error.kind,
-          'kind',
-          ApiFailureKind.protocol,
-        ),
-      ),
-    );
-  });
-
-  test('community exact b709 task payload rejects alias divergence', () async {
-    final Map<String, Object?> task = _b709TaskRow(
-      taskId: 101,
-      taskCode: 'DAILY_SIGN_IN',
-      taskName: '每日签到',
-      progress: 1,
-      target: 1,
-      status: 2,
-      claimed: true,
-    )..['currentValue'] = 0;
-    final Map<String, Object?> signDay = <String, Object?>{
-      'day': 1,
-      'signDay': 1,
-      'date': '2026-08-17',
-      'rewardDesc': '1积分',
-      'reward': '1积分',
-      'completed': true,
-      'isSign': true,
-      'today': true,
-      'isToday': true,
-    };
-    final _Harness harness = await _Harness.start((RequestRecord request) {
-      return switch (request.path) {
-        '/app-api/taskSystem/queryTaskRecords' => _Response.ok(
-          <String, Object?>{
-            'list': <Object?>[task],
-            'records': <Object?>[task],
-            'total': 1,
-            'type': 1,
-            'providerInvocation': false,
-          },
-        ),
-        '/app-api/taskSystem/querySignReward' => _Response.ok(<String, Object?>{
-          'list': <Object?>[signDay],
-          'records': <Object?>[signDay],
-          'total': 1,
-          'cycleStart': '2026-08-17',
-          'cycleEnd': '2026-08-23',
-          'providerInvocation': false,
-        }),
-        '/app-api/taskSystem/queryTodaySignStatus' =>
-          _Response.ok(<String, Object?>{
-            'signedToday': true,
-            'isSign': true,
-            'continuousDays': 1,
-            'consecutiveDays': 1,
-            'businessDate': '2026-08-17',
-            'providerInvocation': false,
-          }),
-        _ => _Response.ok(<String, Object?>{}),
-      };
-    });
-    addTearDown(harness.close);
-
-    await expectLater(
-      harness.repository.fetchTaskCenter(),
-      throwsA(
-        isA<ApiException>().having(
-          (ApiException error) => error.kind,
-          'kind',
-          ApiFailureKind.protocol,
-        ),
-      ),
-    );
-  });
-
-  test(
-    'task description aliases may differ from the title when they agree',
-    () async {
-      final Map<String, Object?> task =
-          _b709TaskRow(
-              taskId: 102,
-              taskCode: 'DAILY_SIGN_IN',
-              taskName: '每日签到',
-              progress: 1,
-              target: 1,
-              status: 2,
-              claimed: true,
-            )
-            ..['description'] = '完成签到后领取积分'
-            ..['taskDesc'] = '完成签到后领取积分';
-      final _Harness harness = await _Harness.start((RequestRecord request) {
-        return switch (request.path) {
-          '/app-api/taskSystem/queryTaskRecords' => _Response.ok(
-            <String, Object?>{
-              'list': <Object?>[task],
-              'records': <Object?>[task],
-              'total': 1,
-              'type': 1,
-              'providerInvocation': false,
-            },
-          ),
-          '/app-api/taskSystem/querySignReward' =>
-            _Response.ok(<String, Object?>{
-              'list': _b709SignRows(),
-              'records': _b709SignRows(),
-              'total': 7,
-              'cycleStart': '2026-08-17',
-              'cycleEnd': '2026-08-23',
-              'providerInvocation': false,
-            }),
-          '/app-api/taskSystem/queryTodaySignStatus' =>
-            _Response.ok(<String, Object?>{
-              'signedToday': true,
-              'isSign': true,
-              'continuousDays': 1,
-              'consecutiveDays': 1,
-              'businessDate': '2026-08-17',
-              'providerInvocation': false,
-            }),
-          _ => _Response.ok(<String, Object?>{}),
-        };
-      });
-      addTearDown(harness.close);
-
-      final TaskCenterSnapshot snapshot = await harness.repository
-          .fetchTaskCenter();
-
-      expect(snapshot.tasks.single.title, '每日签到');
-      expect(snapshot.tasks.single.description, '完成签到后领取积分');
-    },
-  );
-
-  test('task description aliases are both required', () async {
-    final Map<String, Object?> task = _b709TaskRow(
-      taskId: 103,
-      taskCode: 'DAILY_SIGN_IN',
-      taskName: '每日签到',
-      progress: 1,
-      target: 1,
-      status: 2,
-      claimed: true,
-    )..remove('taskDesc');
-    final _Harness harness = await _Harness.start((RequestRecord request) {
-      return switch (request.path) {
-        '/app-api/taskSystem/queryTaskRecords' => _Response.ok(
-          <String, Object?>{
-            'list': <Object?>[task],
-            'records': <Object?>[task],
-            'total': 1,
-            'type': 1,
-            'providerInvocation': false,
-          },
-        ),
-        '/app-api/taskSystem/querySignReward' => _Response.ok(<String, Object?>{
-          'list': _b709SignRows(),
-          'records': _b709SignRows(),
-          'total': 7,
-          'cycleStart': '2026-08-17',
-          'cycleEnd': '2026-08-23',
-          'providerInvocation': false,
-        }),
-        '/app-api/taskSystem/queryTodaySignStatus' =>
-          _Response.ok(<String, Object?>{
-            'signedToday': true,
-            'isSign': true,
-            'continuousDays': 1,
-            'consecutiveDays': 1,
-            'businessDate': '2026-08-17',
-            'providerInvocation': false,
-          }),
-        _ => _Response.ok(<String, Object?>{}),
-      };
-    });
-    addTearDown(harness.close);
-
-    await expectLater(
-      harness.repository.fetchTaskCenter(),
-      throwsA(
-        isA<ApiException>().having(
-          (ApiException error) => error.kind,
-          'kind',
-          ApiFailureKind.protocol,
-        ),
-      ),
-    );
-  });
-
-  test('task description aliases must agree', () async {
-    final Map<String, Object?> task = _b709TaskRow(
-      taskId: 104,
-      taskCode: 'DAILY_SIGN_IN',
-      taskName: '每日签到',
-      progress: 1,
-      target: 1,
-      status: 2,
-      claimed: true,
-    )..['description'] = '说明一';
-    final _Harness harness = await _Harness.start((RequestRecord request) {
-      final Map<String, Object?> responseTask = task..['taskDesc'] = '说明二';
-      return switch (request.path) {
-        '/app-api/taskSystem/queryTaskRecords' => _Response.ok(
-          <String, Object?>{
-            'list': <Object?>[responseTask],
-            'records': <Object?>[responseTask],
-            'total': 1,
-            'type': 1,
-            'providerInvocation': false,
-          },
-        ),
-        '/app-api/taskSystem/querySignReward' => _Response.ok(<String, Object?>{
-          'list': _b709SignRows(),
-          'records': _b709SignRows(),
-          'total': 7,
-          'cycleStart': '2026-08-17',
-          'cycleEnd': '2026-08-23',
-          'providerInvocation': false,
-        }),
-        '/app-api/taskSystem/queryTodaySignStatus' =>
-          _Response.ok(<String, Object?>{
-            'signedToday': true,
-            'isSign': true,
-            'continuousDays': 1,
-            'consecutiveDays': 1,
-            'businessDate': '2026-08-17',
-            'providerInvocation': false,
-          }),
-        _ => _Response.ok(<String, Object?>{}),
-      };
-    });
-    addTearDown(harness.close);
-
-    await expectLater(
-      harness.repository.fetchTaskCenter(),
-      throwsA(
-        isA<ApiException>().having(
-          (ApiException error) => error.kind,
-          'kind',
-          ApiFailureKind.protocol,
-        ),
-      ),
-    );
-  });
 
   test(
     'community guild writes reject an explicit provider invocation',
@@ -2630,7 +1394,6 @@ void main() {
 
       await expectProtocol(harness.repository.applyToJoinGuild('g-provider'));
       await expectProtocol(harness.repository.quitGuild('g-provider'));
-      await expectProtocol(harness.repository.signGuild('g-provider'));
       await expectProtocol(
         harness.repository.resolveGuildApplication(
           applicationId: 'app-provider',
@@ -2649,71 +1412,6 @@ void main() {
       );
     },
   );
-
-  test('community CP writes reject an explicit provider invocation', () async {
-    final _Harness harness = await _Harness.start((RequestRecord request) {
-      if (request.path == '/app-mini-api/mini/v1/cp/request') {
-        return _Response.ok(<String, Object?>{
-          'cpRequestId': 'cp-request-provider',
-          'targetUserId': 42,
-          'status': 'PENDING',
-          'providerInvocation': true,
-        });
-      }
-      if (request.path == '/app-mini-api/mini/v1/cp/accept') {
-        return _Response.ok(<String, Object?>{
-          'cpRequestId': 'cp-accept-provider',
-          'status': 'ACCEPTED',
-          'cpRelationId': 'cp-relation-provider',
-          'providerInvocation': true,
-        });
-      }
-      if (request.path == '/app-mini-api/mini/v1/cp/reject') {
-        return _Response.ok(<String, Object?>{
-          'cpRequestId': 'cp-reject-provider',
-          'status': 'REJECTED',
-          'cpRelationId': '',
-          'providerInvocation': true,
-        });
-      }
-      if (request.path == '/app-mini-api/mini/v1/cp/end') {
-        return _Response.ok(<String, Object?>{
-          'cpRelationId': 'cp-end-provider',
-          'status': 'ENDED',
-          'ended': true,
-          'providerInvocation': true,
-        });
-      }
-      return _Response.ok(<String, Object?>{});
-    });
-    addTearDown(harness.close);
-
-    Future<void> expectProtocol(Future<Object?> future) => expectLater(
-      future,
-      throwsA(
-        isA<ApiException>().having(
-          (ApiException error) => error.kind,
-          'kind',
-          ApiFailureKind.protocol,
-        ),
-      ),
-    );
-
-    await expectProtocol(harness.repository.requestCp(42));
-    await expectProtocol(
-      harness.repository.resolveCpInvitation(
-        invitationId: 'cp-accept-provider',
-        accepted: true,
-      ),
-    );
-    await expectProtocol(
-      harness.repository.resolveCpInvitation(
-        invitationId: 'cp-reject-provider',
-        accepted: false,
-      ),
-    );
-    await expectProtocol(harness.repository.endCpRelation('cp-end-provider'));
-  });
 
   test(
     'community paginated collections reject cross-page authoritative ID duplicates',
@@ -2818,43 +1516,6 @@ void main() {
           await repository.fetchGuildApplications('guild-1');
         },
       );
-      await expectDuplicate(
-        route: '/app-mini-api/mini/v1/cp/my-list',
-        pageSize: 20,
-        rowForIndex: (int index) => <String, Object?>{
-          ..._b709CpRelationRow(),
-          'cpRelationId': index == 0 ? 'relation-duplicate' : 'relation-$index',
-          'userId': 41 + index,
-        },
-        load: (BackendCommunityRepository repository) async {
-          await repository.fetchCpRelations();
-        },
-      );
-      await expectDuplicate(
-        route: '/app-mini-api/mini/v1/cp/pending-requests',
-        pageSize: 20,
-        rowForIndex: (int index) => <String, Object?>{
-          ..._b709CpInvitationRow(),
-          'cpRequestId': index == 0 ? 'request-duplicate' : 'request-$index',
-          'userId': 42 + index,
-        },
-        load: (BackendCommunityRepository repository) async {
-          await repository.fetchPendingCpInvitations();
-        },
-      );
-      await expectDuplicate(
-        route: '/app-mini-api/mini/v1/activity/list',
-        pageSize: 50,
-        activity: true,
-        rowForIndex: (int index) => <String, Object?>{
-          ..._b709ActivityRow(),
-          'activityId': index == 0 ? 'activity-duplicate' : 'activity-$index',
-          'title': '活动$index',
-        },
-        load: (BackendCommunityRepository repository) async {
-          await repository.fetchActivities();
-        },
-      );
     },
   );
 }
@@ -2921,67 +1582,6 @@ Map<String, Object?> _b709CpRelationRow() => <String, Object?>{
   'days': 1,
   'createdAt': '2026-08-10T00:00:00Z',
 };
-
-Map<String, Object?> _b709CpInvitationRow() => <String, Object?>{
-  'cpRequestId': 'request-1',
-  'message': '',
-  'status': 'PENDING',
-  'userId': 42,
-  'nickName': '邀请用户',
-  'headImgUrl': '',
-  'createdAt': '2026-08-22T00:00:00Z',
-};
-
-Map<String, Object?> _b709ActivityRow() => <String, Object?>{
-  'activityId': 'activity-1',
-  'title': '夏日活动',
-  'description': '',
-  'startsAt': '2026-08-22T00:00:00Z',
-  'endsAt': '2026-08-30T00:00:00Z',
-};
-
-Map<String, Object?> _b709TaskRow({
-  required int taskId,
-  required String taskCode,
-  required String taskName,
-  required int progress,
-  required int target,
-  required int status,
-  required bool claimed,
-}) => <String, Object?>{
-  'taskId': taskId,
-  'id': taskId,
-  'taskCode': taskCode,
-  'taskName': taskName,
-  'title': taskName,
-  'description': taskName,
-  'taskDesc': taskName,
-  'currentValue': progress,
-  'progress': progress,
-  'targetValue': target,
-  'target': target,
-  'rewardDesc': '1积分',
-  'reward': '1积分',
-  'isReceive': claimed,
-  'claimed': claimed,
-  'status': status,
-  'businessDate': '2026-08-23',
-};
-
-List<Object?> _b709SignRows() => List<Object?>.generate(7, (int index) {
-  final int day = index + 1;
-  return <String, Object?>{
-    'day': day,
-    'signDay': day,
-    'date': '2026-08-${17 + index}',
-    'rewardDesc': '1积分',
-    'reward': '1积分',
-    'completed': index < 2,
-    'isSign': index < 2,
-    'today': index == 6,
-    'isToday': index == 6,
-  };
-});
 
 Map<String, Object?> _b709Page(
   Map<String, Object?> row, {

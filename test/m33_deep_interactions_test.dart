@@ -7,7 +7,6 @@ import 'package:voice_social_app/debug/qa_console/qa_fixtures.dart';
 import 'package:voice_social_app/features/account/compliance/presentation/account_status_pages.dart';
 import 'package:voice_social_app/features/account/compliance/presentation/system_permission_pages.dart';
 import 'package:voice_social_app/features/commerce/presentation/commerce_pages.dart';
-import 'package:voice_social_app/features/community/presentation/community_pages.dart';
 import 'package:voice_social_app/features/room/pk/presentation/room_pk_pages.dart';
 
 void main() {
@@ -132,30 +131,6 @@ void main() {
     expect(find.text('服务端确认中'), findsOneWidget);
     expect(find.textContaining('会员'), findsNothing);
     expect(find.textContaining('礼物背包'), findsNothing);
-    expect(tester.takeException(), isNull);
-    await disposePage(tester);
-  });
-
-  testWidgets('community guardian and daily check-in update visible state', (
-    WidgetTester tester,
-  ) async {
-    usePhoneViewport(tester);
-    final AppDependencies dependencies = await createQaDependencies();
-
-    await pumpScoped(tester, dependencies, const GuardianFanPage());
-    await tester.tap(find.text('开通').first);
-    await tester.pumpAndSettle();
-    expect(find.text('开通七日守护？'), findsOneWidget);
-    await tester.tap(find.text('确认开通'));
-    await tester.pumpAndSettle();
-    expect(find.text('当前守护：七日守护'), findsOneWidget);
-
-    await pumpScoped(tester, dependencies, const TaskCheckInPage());
-    expect(find.text('连续签到 3 天'), findsOneWidget);
-    await tester.tap(find.text('签到'));
-    await tester.pumpAndSettle();
-    expect(find.text('连续签到 4 天'), findsOneWidget);
-    expect(find.text('已签到'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await disposePage(tester);
   });

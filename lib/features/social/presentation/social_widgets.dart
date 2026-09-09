@@ -992,60 +992,6 @@ class _ErrorState extends StatelessWidget {
   }
 }
 
-class _Unavailable extends StatelessWidget {
-  const _Unavailable({required this.title, required this.message});
-
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(26),
-        child: _StatusCard(
-          icon: Icons.info_outline_rounded,
-          title: title,
-          description: message,
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusCard extends StatelessWidget {
-  const _StatusCard({
-    required this.icon,
-    required this.title,
-    required this.description,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: SocialColors.card,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Icon(icon, size: 36, color: SocialColors.primary),
-          const SizedBox(height: 12),
-          Text(title, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 7),
-          Text(description, style: Theme.of(context).textTheme.bodyMedium),
-        ],
-      ),
-    );
-  }
-}
-
 class _Detail extends StatelessWidget {
   const _Detail({required this.label, required this.value});
 
@@ -1067,13 +1013,6 @@ class _Detail extends StatelessWidget {
     );
   }
 }
-
-String _friendRequestLabel(FriendRequestStatus status) => switch (status) {
-  FriendRequestStatus.pending => '待处理',
-  FriendRequestStatus.accepted => '已接受',
-  FriendRequestStatus.rejected => '已拒绝',
-  FriendRequestStatus.expired => '已过期',
-};
 
 String _formatDateTime(DateTime value) {
   final DateTime local = value.toLocal();

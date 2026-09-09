@@ -143,7 +143,7 @@ void main() {
         expect(find.text('系统通知'), findsOneWidget);
         expect(find.text('打招呼'), findsOneWidget);
         expect(find.text('互动消息'), findsOneWidget);
-        expect(find.text('好友请求'), findsOneWidget);
+        expect(find.text('好友请求'), findsNothing);
         expect(find.textContaining('实时消息暂不可用'), findsOneWidget);
       },
     );
@@ -163,7 +163,7 @@ void main() {
         expect(find.byKey(const Key('live-account-overview')), findsNothing);
         expect(find.text('Live旅客'), findsOneWidget);
         expect(find.text('晚星'), findsNothing);
-        expect(find.text('活动中心'), findsOneWidget);
+        expect(find.text('活动中心'), findsNothing);
         expect(find.text('资料与设置'), findsWidgets);
         expect(find.text('通知中心'), findsOneWidget);
         expect(find.text('帮助与反馈'), findsOneWidget);

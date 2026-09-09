@@ -15,8 +15,6 @@ import 'package:voice_social_app/debug/qa_console/qa_models.dart';
 import 'package:voice_social_app/features/commerce/data/backend_commerce_repository.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
-import 'package:voice_social_app/features/community/data/backend_community_repository.dart';
-import 'package:voice_social_app/features/community/domain/community_models.dart';
 import 'package:voice_social_app/features/message/data/backend_message_repository.dart';
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/room/data/backend_room_operations_repository.dart';
@@ -753,62 +751,7 @@ void main() {
     },
   );
 
-  test(
-    'task claim sends first-party idempotency and refreshes authoritative center',
-    () async {
-      final _TestServer server = await _TestServer.start((_Request request) {
-        if (request.path == '/app-api/taskSystem/receiveTaskReward') {
-          expect(request.body, <String, Object?>{'taskId': 7});
-          return _Reply.ok(<String, Object?>{
-            'taskId': 7,
-            'claimed': true,
-            'isReceive': true,
-            'status': 2,
-            'providerInvocation': false,
-          });
-        }
-        if (request.path == '/app-api/taskSystem/queryTaskRecords') {
-          final List<Object?> tasks = <Object?>[_taskMap(claimed: true)];
-          return _Reply.ok(<String, Object?>{
-            'type': 1,
-            'providerInvocation': false,
-            'list': tasks,
-            'records': tasks,
-            'total': 1,
-          });
-        }
-        if (request.path == '/app-api/taskSystem/querySignReward') {
-          return _Reply.ok(_signRewardsMap());
-        }
-        if (request.path == '/app-api/taskSystem/queryTodaySignStatus') {
-          return _Reply.ok(<String, Object?>{
-            'signedToday': false,
-            'isSign': false,
-            'continuousDays': 1,
-            'consecutiveDays': 1,
-            'businessDate': '2030-08-25',
-            'providerInvocation': false,
-          });
-        }
-        return _Reply.ok(<String, Object?>{});
-      });
-      addTearDown(server.close);
-      final BackendCommunityRepository repository = BackendCommunityRepository(
-        apiClient: server.client,
-        routes: const BackendRouteCatalog(),
-      );
-      final TaskCenterSnapshot center = await repository.claimTask('7');
-      expect(center.tasks.single.id, '7');
-      expect(center.tasks.single.state, TaskState.claimed);
-      final _Request claim = server.requests.firstWhere(
-        (_Request request) =>
-            request.path == '/app-api/taskSystem/receiveTaskReward',
-      );
-      expect(claim.requestId, isNotEmpty);
-    },
-  );
-
-  test('all 69 manifest entries build through the QA wiring catalog', () {
+  test('all 64 manifest entries build through the QA wiring catalog', () {
     final AppDependencies dependencies = AppDependencies.mock();
     const QaScenario scenario = QaScenario(
       role: QaRole.registeredUser,
@@ -816,8 +759,8 @@ void main() {
       mockScenario: QaMockScenario.defaultData,
       network: QaNetworkScenario.normal,
     );
-    expect(appPageManifest, hasLength(69));
-    expect(qaPageCatalog, hasLength(69));
+    expect(appPageManifest, hasLength(64));
+    expect(qaPageCatalog, hasLength(64));
     expect(
       qaPageCatalog.map((QaPageEntry entry) => entry.id).toList(),
       appPageManifest.map((AppPageDefinition page) => page.id).toList(),
@@ -938,51 +881,6 @@ Map<String, Object?> _notificationSyncMap() => <String, Object?>{
   'messageUnread': 0,
   'totalUnread': 0,
 };
-
-Map<String, Object?> _taskMap({required bool claimed}) => <String, Object?>{
-  'taskId': 7,
-  'id': 7,
-  'taskCode': 'LIVE_TASK',
-  'taskName': '完成一次互动',
-  'title': '完成一次互动',
-  'description': '第一方任务',
-  'taskDesc': '第一方任务',
-  'progress': claimed ? 1 : 0,
-  'currentValue': claimed ? 1 : 0,
-  'target': 1,
-  'targetValue': 1,
-  'rewardDesc': '奖励',
-  'reward': '奖励',
-  'claimed': claimed,
-  'isReceive': claimed,
-  'status': claimed ? 2 : 1,
-  'businessDate': '2030-08-25',
-};
-
-Map<String, Object?> _signRewardsMap() {
-  final List<Map<String, Object?>> rows = <Map<String, Object?>>[
-    for (int day = 1; day <= 7; day += 1)
-      <String, Object?>{
-        'day': day,
-        'signDay': day,
-        'date': '2030-08-${(24 + day).toString().padLeft(2, '0')}',
-        'rewardDesc': '奖励$day',
-        'reward': '奖励$day',
-        'completed': day == 1,
-        'isSign': day == 1,
-        'today': day == 7,
-        'isToday': day == 7,
-      },
-  ];
-  return <String, Object?>{
-    'cycleStart': '2030-08-25',
-    'cycleEnd': '2030-08-31',
-    'list': rows,
-    'records': rows,
-    'total': rows.length,
-    'providerInvocation': false,
-  };
-}
 
 class _Request {
   const _Request({

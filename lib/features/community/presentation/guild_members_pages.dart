@@ -280,11 +280,7 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
                       Expanded(
                         child: Text(
                           member.roomId == null
-                              ? switch (member.isSigned) {
-                                  true => '今日已签到 · 房间状态未知',
-                                  false => '今日未签到 · 房间状态未知',
-                                  null => '房间与签到状态未知',
-                                }
+                              ? '房间状态未知'
                               : '正在公会房间 ${member.roomId}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,

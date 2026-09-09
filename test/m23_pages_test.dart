@@ -62,47 +62,19 @@ void main() {
     expect(find.text('深夜温柔陪伴'), findsOneWidget);
   });
 
-  testWidgets('SC-001 through SC-007 are reachable from community hub', (
+  testWidgets('SC-001 through SC-003 are reachable from community hub', (
     WidgetTester tester,
   ) async {
     await pumpScoped(tester, const CommunityHubPage());
-    for (final String title in <String>[
-      '公会主页',
-      '公会加入与成员管理',
-      '邀请与渠道归属',
-      'CP 关系',
-      '守护与粉团',
-      '任务与签到',
-      '主题活动中心',
-    ]) {
+    for (final String title in <String>['公会主页', '公会加入与成员管理', '邀请与渠道归属']) {
       expect(find.text(title), findsOneWidget);
     }
   });
 
-  testWidgets(
-    'guild, CP, guardian, task, and activity pages render business state',
-    (WidgetTester tester) async {
-      await pumpScoped(tester, const GuildHomePage());
-      expect(find.text('晚风陪伴社'), findsOneWidget);
-
-      await tester.pumpWidget(const SizedBox.shrink());
-      await pumpScoped(tester, const CpRelationPage());
-      expect(find.text('当前关系'), findsOneWidget);
-      expect(find.text('林深'), findsOneWidget);
-
-      await tester.pumpWidget(const SizedBox.shrink());
-      await pumpScoped(tester, const GuardianFanPage());
-      expect(find.text('晚星'), findsOneWidget);
-      expect(find.text('守护档位'), findsOneWidget);
-
-      await tester.pumpWidget(const SizedBox.shrink());
-      await pumpScoped(tester, const TaskCheckInPage());
-      expect(find.textContaining('连续签到'), findsOneWidget);
-      expect(find.text('平台任务'), findsOneWidget);
-
-      await tester.pumpWidget(const SizedBox.shrink());
-      await pumpScoped(tester, const ActivityCenterPage());
-      expect(find.text('周末陪伴主题房'), findsOneWidget);
-    },
-  );
+  testWidgets('guild page renders retained business state', (
+    WidgetTester tester,
+  ) async {
+    await pumpScoped(tester, const GuildHomePage());
+    expect(find.text('晚风陪伴社'), findsOneWidget);
+  });
 }

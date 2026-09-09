@@ -1,10 +1,14 @@
+## 2026-09-09 产品删除范围
+
+当前 App/QA 目录为 **64 个有效页面**；5 个旧页面为 `REMOVED_BY_PRODUCT`。CP、守护/粉团、任务/连续签到/奖励、专题活动、公会签到、独立好友申请已退役。普通关注/互关好友、公会治理、动态、礼物和装扮保留。详见 [页面范围及验证清单](docs/qa/product-exclusions-20260909.md)。旧 69 页及 golden 记录属于历史范围，本轮未重新录制。
+
 # Voice Social Flutter App
 
 Clean-room Flutter client for the authorized reconstruction of a Chinese voice-social product.
 
-The product denominator is frozen at **69 Page IDs**. Product scope, authorized backend behavior, authorized APK evidence, and the new Flutter design system are kept separate so legacy or retired capabilities cannot leak into the new app.
+The current product denominator is **64 active Page IDs**, with five original IDs permanently recorded as `REMOVED_BY_PRODUCT`. Product scope, authorized backend behavior, authorized APK evidence, and the new Flutter design system are kept separate so retired capabilities cannot leak into the app.
 
-## Current checkpoint — F3/M4 first-party live integration
+## Historical checkpoint — F3/M4 first-party live integration
 
 The current checkpoint is the F3/M4 first-party live integration boundary. The
 69-page C-end UI scope is implemented and visually/widget-checked as

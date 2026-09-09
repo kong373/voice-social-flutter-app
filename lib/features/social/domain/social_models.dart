@@ -391,3 +391,25 @@ abstract interface class SocialRepository {
     required int pageSize,
   });
 }
+
+/// Permanent compatibility tombstones for product removals on 2026-09-09.
+/// No transport, state mutation, or feature switch is available here.
+mixin RemovedFriendRequestOperations {
+  Future<FriendRequestSendResult> sendFriendRequest({
+    required int userId,
+    required String message,
+  }) async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<List<FriendRequest>> fetchFriendRequests() async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+
+  Future<void> resolveFriendRequest({
+    required String requestId,
+    required bool accepted,
+  }) async {
+    throw UnsupportedError('REMOVED_BY_PRODUCT');
+  }
+}

@@ -470,15 +470,10 @@ class _InfoCard extends StatelessWidget {
 }
 
 class _StateError extends StatelessWidget {
-  const _StateError({
-    required this.message,
-    required this.onRetry,
-    this.retryLabel = '重新加载',
-  });
+  const _StateError({required this.message, required this.onRetry});
 
   final String message;
   final VoidCallback onRetry;
-  final String retryLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -498,7 +493,7 @@ class _StateError extends StatelessWidget {
               const SizedBox(height: 13),
               Text(message, textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              FilledButton.tonal(onPressed: onRetry, child: Text(retryLabel)),
+              FilledButton.tonal(onPressed: onRetry, child: const Text('重新加载')),
             ],
           ),
         ),
@@ -570,29 +565,6 @@ class _KeyValue extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ProgressLine extends StatelessWidget {
-  const _ProgressLine({
-    required this.value,
-    this.tint = _CommunityPalette.violet,
-  });
-
-  final double value;
-  final Color tint;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: LinearProgressIndicator(
-        minHeight: 5,
-        value: value.clamp(0, 1),
-        backgroundColor: tint.withValues(alpha: 0.11),
-        valueColor: AlwaysStoppedAnimation<Color>(tint),
       ),
     );
   }

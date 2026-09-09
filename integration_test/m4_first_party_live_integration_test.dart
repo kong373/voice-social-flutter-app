@@ -17,7 +17,6 @@ import 'package:voice_social_app/features/account/data/auth_session_manager.dart
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
-import 'package:voice_social_app/features/community/domain/community_models.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
@@ -737,110 +736,16 @@ Future<void> _runDynamicSocialCommunityFlow(
       status: 200,
     );
   }
-  final TaskCenterSnapshot? taskCenterProbe = await _probe<TaskCenterSnapshot>(
-    evidence,
-    capability: 'community.tasks',
-    method: 'GET',
-    route: const BackendRouteCatalog().taskRecords,
-    operation: () => dependencies.communityRepository.fetchTaskCenter(),
-  );
-  if (taskCenterProbe != null) {
-    evidence.composite(
-      capability: 'community.sign_rewards',
-      method: 'GET',
-      route: const BackendRouteCatalog().signRewards,
-      status: 200,
-    );
-    evidence.composite(
-      capability: 'community.today_sign_status',
-      method: 'GET',
-      route: const BackendRouteCatalog().todaySignStatus,
-      status: 200,
-    );
-
-    // A daily sign or a claimable task is a small, first-party-only mutation.
-    // The authoritative status read decides which one is safe. If an earlier
-    // AVD already performed today's idempotent operation, keep that state
-    // explicit in evidence rather than pretending that this AVD issued a
-    // second write.
-    if (!taskCenterProbe.signedToday) {
-      evidence.requireCapability('community.checkin');
-      final TaskCenterSnapshot? signed = await _probe(
-        evidence,
-        capability: 'community.checkin',
-        method: 'POST',
-        route: const BackendRouteCatalog().completeSignIn,
-        operation: () =>
-            dependencies.communityRepository.completeDailyCheckIn(),
-        requiredSuccess: true,
-      );
-      if (signed == null || !signed.signedToday) {
-        throw TestFailure('Daily sign response did not confirm signedToday.');
-      }
-      evidence.invariant('community_checkin_authority_confirmed');
-    } else {
-      evidence.preexisting(
-        'community.checkin',
-        const BackendRouteCatalog().todaySignStatus,
-      );
-    }
-
-    TaskItem? claimableTask;
-    for (final TaskItem task in taskCenterProbe.tasks) {
-      if (task.state == TaskState.claimable) {
-        claimableTask = task;
-        break;
-      }
-    }
-    if (claimableTask != null) {
-      final TaskItem selectedTask = claimableTask;
-      evidence.requireCapability('community.task.claim');
-      final TaskCenterSnapshot? claimed = await _probe(
-        evidence,
-        capability: 'community.task.claim',
-        method: 'POST',
-        route: const BackendRouteCatalog().claimTaskReward,
-        operation: () =>
-            dependencies.communityRepository.claimTask(selectedTask.id),
-        requiredSuccess: true,
-      );
-      if (claimed == null ||
-          claimed.tasks.any(
-            (TaskItem task) =>
-                task.id == selectedTask.id && task.state != TaskState.claimed,
-          )) {
-        throw TestFailure('Task claim response did not confirm claimed state.');
-      }
-      evidence.invariant('community_task_claim_authority_confirmed');
-    } else {
-      bool hasClaimedTask = false;
-      for (final TaskItem task in taskCenterProbe.tasks) {
-        if (task.state == TaskState.claimed) {
-          hasClaimedTask = true;
-          break;
-        }
-      }
-      if (hasClaimedTask) {
-        evidence.preexisting(
-          'community.task.claim',
-          const BackendRouteCatalog().taskRecords,
-        );
-      } else {
-        evidence.local(
-          'community.task.claim',
-          const BackendRouteCatalog().taskRecords,
-          'no_claimable_authoritative_task',
-        );
-      }
-    }
+  for (final capability in [
+    'community.tasks',
+    'community.sign_rewards',
+    'community.today_sign_status',
+    'community.activities',
+    'community.checkin',
+    'community.task.claim',
+  ]) {
+    evidence.local(capability, '/community', 'REMOVED_BY_PRODUCT');
   }
-  await _probe(
-    evidence,
-    capability: 'community.activities',
-    method: 'GET',
-    route: const BackendRouteCatalog().activityCatalog,
-    operation: () => dependencies.communityRepository.fetchActivities(),
-  );
 
   await tester.tap(find.text('发现').last.hitTestable());
   await _waitFor(
@@ -862,7 +767,7 @@ Future<void> _runDynamicSocialCommunityFlow(
     await tester.tap(communityEntry);
     await _waitFor(
       tester,
-      () => find.text('社交经营与活动').evaluate().isNotEmpty,
+      () => find.text('社交经营').evaluate().isNotEmpty,
       description: 'community hub',
     );
     evidence.invariant('community_hub_reachable_from_dynamic');
@@ -871,29 +776,12 @@ Future<void> _runDynamicSocialCommunityFlow(
       evidence.binding,
       'm4-${qaAvdId.toLowerCase()}-07-community',
     );
-    final Finder taskEntry = find.text('任务与签到').hitTestable();
-    if (taskEntry.evaluate().isNotEmpty) {
-      await tester.tap(taskEntry);
-      await _waitFor(
-        tester,
-        () => find.textContaining('签到').evaluate().isNotEmpty,
-        description: 'community task page',
-      );
-      evidence.invariant('task_page_reachable_without_claiming_reward');
-      await captureQaScreenshot(
-        tester,
-        evidence.binding,
-        'm4-${qaAvdId.toLowerCase()}-08-task',
-      );
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-    } else {
-      evidence.local(
-        'community.tasks.ui',
-        '/community/tasks',
-        'ui_entry_unavailable',
-      );
-    }
+    expect(find.text('任务与签到'), findsNothing);
+    evidence.local(
+      'community.tasks.ui',
+      '/community/tasks',
+      'REMOVED_BY_PRODUCT',
+    );
     await tester.pageBack();
     await tester.pumpAndSettle();
   } else {
@@ -3262,8 +3150,6 @@ class _M4Evidence {
   // `already_authoritative` marker. UI-only screenshots and route counts are
   // never substitutes for these first-party reads/writes.
   static const Set<String> _requiredMutationCapabilities = <String>{
-    'community.checkin',
-    'community.task.claim',
     'social.room.report',
     'room.moderation.mute',
     'room.moderation.restore',
@@ -3297,10 +3183,6 @@ class _M4Evidence {
     'social.homepage',
     'community.home',
     'community.recommended_guilds',
-    'community.tasks',
-    'community.sign_rewards',
-    'community.today_sign_status',
-    'community.activities',
     'room.mic_requests.get',
     ..._requiredMutationCapabilities,
     'room.enter',
