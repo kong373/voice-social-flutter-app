@@ -23,6 +23,8 @@ void main() {
     expect(closed.ownerClosedAccess, isTrue);
     expect(closed.role, RoomRole.owner);
     expect(closed.ownerId, 10001);
+    expect(closed.seats.first.userId, closed.ownerId);
+    expect(closed.seats.first.userRole, RoomRole.owner);
     expect(closed.roomLease, isNull);
     expect((await lifecycle.fetchOwnedRoom())!.isOpen, isFalse);
     final saved = (await lifecycle.fetchOwnedRoom())!;

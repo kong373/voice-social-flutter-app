@@ -80,6 +80,11 @@ class MockRoomOperationsRepository
   ];
 
   final List<MicAccessRequest> _requests = <MicAccessRequest>[];
+  void seedMemberForQa(RoomMember member) {
+    _members.removeWhere((item) => item.userId == member.userId);
+    _members.add(member);
+  }
+
   int _nextMicRequestId = 0;
   final List<RoomJoinRequest> _joinRequests = <RoomJoinRequest>[];
   final Map<String, RoomJoinRequestApplicantStatus> _applicantStatuses =
@@ -232,7 +237,7 @@ class MockRoomOperationsRepository
     required int userId,
     required int backendMicIndex,
   }) async {
-    if (backendMicIndex < 2 ||
+    if (backendMicIndex < 1 ||
         backendMicIndex > 9 ||
         _members.any((member) => member.seatNumber == backendMicIndex)) {
       throw const ApiException(
@@ -241,14 +246,16 @@ class MockRoomOperationsRepository
       );
     }
     _replaceMember(userId, (member) {
-      if (member.isManager || member.isOnMic) {
+      final privileged =
+          member.role == RoomRole.owner || member.role == RoomRole.moderator;
+      if ((backendMicIndex == 1 && !privileged) || member.isOnMic) {
         throw const ApiException(
           kind: ApiFailureKind.conflict,
-          message: '仅可安排普通听众上麦',
+          message: '1号麦仅限房主或房管，目标须未占用其他麦位',
         );
       }
       return member.copyWith(
-        role: RoomRole.speaker,
+        role: member.role == RoomRole.listener ? RoomRole.speaker : member.role,
         presence: RoomMemberPresence.onMic,
         seatNumber: backendMicIndex,
       );
@@ -264,7 +271,7 @@ class MockRoomOperationsRepository
     _replaceMember(
       userId,
       (RoomMember member) => member.copyWith(
-        role: RoomRole.listener,
+        role: member.role == RoomRole.speaker ? RoomRole.listener : member.role,
         presence: RoomMemberPresence.listener,
         clearSeatNumber: true,
       ),

@@ -93,3 +93,23 @@ mock_room_repository; fixed_eight_seat_adapter; room_models; create_room_page;
 room_configuration_form; room_management_page; video_runtime_room_page.
 Eight existing test files plus this document complete the commit. No temporary
 editing scripts, youth/financial/withdrawal/nickname/Backend/PK changes.
+
+## Review follow-up: Mock special-seat target role
+
+Corrected assignUserToMic's overly broad special-seat rejection. It now checks
+the target's CURRENT role: owner/moderator may be assigned1, ordinary/staff may
+not; range1..9, occupied-seat conflict and already-on-mic checks remain. Assignment
+and off-mic preserve management roles, so leaving a seat does not demote its owner.
+Default MockRoomRepository seat1 was already owner20001, not an ordinary user.
+Owned-room configuration now uses the actual snapshot owner ID instead of20001.
+This supersedes the earlier blanket Mock assignment2..9 description above.
+
+Owner/moderator tests: genuine2 RED then GREEN. Current-role demotion, staff and
+ordinary denial, occupied-seat uniqueness and owned-room identity also covered.
+Pinned3.44.7: **38 PASS**, full analyze no issues, diff-check clean:
+
+```sh
+/Users/kongzheng/fvm/versions/3.44.7/bin/flutter test --no-pub test/room_operations_repository_test.dart test/room_role_mic_policy_test.dart test/room_management_review_fixes_test.dart test/room_mic_queue_controller_test.dart test/room_mic_queue_ui_test.dart
+```
+
+No S05 presence mapping, Backend, golden or SDK files changed.

@@ -48,11 +48,11 @@ class MockRoomRepository implements RoomRepository {
       ownerId: configuration != null ? currentUserId : 20001,
       role: configuration != null ? RoomRole.owner : _entryRole,
       seats: <MicSeat>[
-        const MicSeat(
+        MicSeat(
           number: 1,
           backendIndex: 1,
           state: MicSeatState.occupied,
-          userId: 20001,
+          userId: configuration != null ? currentUserId : 20001,
           userName: '房主 · 鹿屿',
           avatarUrl: 'assets/runtime/avatar-copper.png',
           isSpeaking: true,
