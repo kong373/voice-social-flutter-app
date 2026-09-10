@@ -56,6 +56,22 @@ if any(route.split("::")[0] in expected for route in markers("M4_ROUTE_STATUS"))
     raise SystemExit(1)
 if "app_refund_entry_absent" not in markers("M4_AUTHORITY_INVARIANT"):
     raise SystemExit(1)
+# Q06/R01: old owner/APPROVAL-room logs cannot satisfy current fixture scope.
+required_room_evidence = {
+    "owned_open_rooms_distinct_authority_confirmed",
+    "ordinary_public_room_authority_confirmed",
+    "ordinary_mic_queue_cancelled_by_authoritative_read",
+}
+if not required_room_evidence.issubset(markers("M4_AUTHORITY_INVARIANT")):
+    raise SystemExit(1)
+if Path(path).parent.parent.name == "AVD-A":
+    if "registration_explicit_avatar_and_sex_selected" not in markers("M4_AUTHORITY_INVARIANT"):
+        raise SystemExit(1)
+    registrations = [route.split("::") for route in markers("M4_ROUTE_STATUS")
+                     if route.split("::")[0] == "auth.register"]
+    if not any(len(row) == 5 and row[1] == "POST" and row[3] in ("200", "201")
+               and row[4] == "success" for row in registrations):
+        raise SystemExit(1)
 PY
 }
 

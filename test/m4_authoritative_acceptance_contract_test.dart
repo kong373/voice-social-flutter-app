@@ -424,6 +424,13 @@ exit "\$status"
           'M4_RELEASE_READINESS::NOT_RELEASE_READY',
           removalMarkers.trimRight(),
           'M4_AUTHORITY_INVARIANT::app_refund_entry_absent',
+          'M4_AUTHORITY_INVARIANT::owned_open_rooms_distinct_authority_confirmed',
+          'M4_AUTHORITY_INVARIANT::ordinary_public_room_authority_confirmed',
+          'M4_AUTHORITY_INVARIANT::ordinary_mic_queue_cancelled_by_authoritative_read',
+          if (avd == 'AVD-A') ...[
+            'M4_AUTHORITY_INVARIANT::registration_explicit_avatar_and_sex_selected',
+            'M4_ROUTE_STATUS::auth.register::POST::/app-register-api/userAccount/v1/registerByMobile::200::success',
+          ],
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_ROUTE_STATUS::required::GET::/health::$routeStatus::success',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_AUTHORITY_INVARIANT::session_owner_matches_account',
           '${avd == 'AVD-B' ? 'flutter: ' : ''}M4_AUTHORITY_INVARIANT::room_exit_compensates_enter',
@@ -1269,6 +1276,60 @@ printf 'cleanup_failed=%s\\n' "\$cleanup_failed"
     expect(result.stdout, contains('cleanup_failed=0'));
   });
 
+  test('M4 registration explicitly selects preset and sex before submit', () {
+    final start = integrationSource.indexOf('final Finder nicknameField');
+    final end = integrationSource.indexOf(
+      'completed registration and home',
+      start,
+    );
+    final registration = integrationSource.substring(start, end);
+    expect(registration, contains('await selectM4RegistrationChoices(tester)'));
+    expect(
+      registration.indexOf('selectM4RegistrationChoices'),
+      lessThan(registration.indexOf("tester.tap(find.text('完成注册')")),
+    );
+  });
+
+  test('M4 uses owned open pair and separate ordinary home applicant', () {
+    expect(
+      integrationSource,
+      contains('pkRecoveryRoom: ownedRooms.pkRecovery'),
+    );
+    expect(integrationSource, contains('candidates: homeRooms!'));
+    expect(integrationSource, contains('requireM4OrdinaryApplicant'));
+    expect(integrationSource, isNot(contains("accessMode == 'APPROVAL'")));
+    expect(integrationSource, isNot(contains("!= 'APPROVAL'")));
+  });
+
+  test('aggregate rejects old owner APPROVAL evidence despite PASS marker', () {
+    final root = makeEvidence();
+    final log = File('${root.path}/AVD-B/logs/flutter-drive.log');
+    log.writeAsStringSync(
+      log.readAsStringSync().replaceAll(
+            RegExp(
+              r'^M4_AUTHORITY_INVARIANT::(?:owned_open_rooms_distinct_authority_confirmed|ordinary_public_room_authority_confirmed|ordinary_mic_queue_cancelled_by_authoritative_read)\n',
+              multiLine: true,
+            ),
+            '',
+          ) +
+          'M4_AUTHORITY_INVARIANT::approval_room_authority_confirmed\n'
+              'M4_AUTHORITY_INVARIANT::approval_mic_queue_action_compensated\n',
+    );
+    expect(runAggregate(root).exitCode, isNot(0));
+  });
+
+  test('aggregate rejects fresh A registration without explicit choices', () {
+    final root = makeEvidence();
+    final log = File('${root.path}/AVD-A/logs/flutter-drive.log');
+    log.writeAsStringSync(
+      log.readAsStringSync().replaceAll(
+        'M4_AUTHORITY_INVARIANT::registration_explicit_avatar_and_sex_selected\n',
+        '',
+      ),
+    );
+    expect(runAggregate(root).exitCode, isNot(0));
+  });
+
   test('fixture nickname fits the registration UI limit end to end', () {
     final String helperSource = dbEvidenceHelper.readAsStringSync();
     expect(registrationSource, contains('maxLength: 24'));
@@ -1848,7 +1909,7 @@ printf '%s\n' 'safe prefix; $(touch should-not-run)' | contains_literal_stream "
       );
       expect(
         integrationSource,
-        contains('pkRecoveryRoom: ownedModeRooms.approval'),
+        contains('pkRecoveryRoom: ownedRooms.pkRecovery'),
       );
       expect(
         integrationSource,

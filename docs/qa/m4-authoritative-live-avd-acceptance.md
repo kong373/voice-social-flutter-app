@@ -139,13 +139,14 @@ The current required mutation capabilities are:
   moderation mute/restore, seat up/down compensation, public-message reads,
   and room PK recovery. The room writes are bound to the current user's own
   authoritative room and are compensated before the flow ends. PK recovery
-  probes the authoritative hot-opponent page first; when the known approval
+  probes the authoritative hot-opponent page first; when the second owned OPEN
   room is not present on that page, it performs a targeted first-party search
   using the room's canonical discovery UUID.
 - `room.mic_requests.submit`, `room.mic_requests.get`, and
-  `room.mic_requests.cancel` in a separate approval-mode room. The required
-  sequence is submit → GET and verify the own pending request → cancel, then
-  room exit.
+  `room.mic_requests.cancel` as an off-mic ordinary listener in a separate
+  PUBLIC room discovered from real home recommendations. The required
+  sequence is submit → GET and verify the own pending request → cancel → GET
+  the same request as CANCELLED → room exit. This does not prove approval.
 - `message.private.send` followed by `message.private.history`, notification
   read/detail where an unread notification exists, and
   `message.notifications.clear`. These are first-party storage/projection
@@ -160,7 +161,7 @@ The principal M4 live write/read witnesses use these catalog routes:
 | Room lifecycle | `POST /app-room-api/room/com/v1/enterRoom`; `POST /app-room-api/room/com/v1/reConnectRoomInfo`; `POST /app-room-api/room/com/v1/exitRoom` |
 | Room moderation / seat compensation | `POST /app-api/roomUsers/setMuted`; `POST /app-api/micUserBase/userInitiativeUpMic`; `POST /app-api/micUserBase/leaveMic` |
 | PK recovery | `GET /app-api/activityPk/getRoomPkHotRoomList`; `GET /app-api/activityPk/searchRoomPk` (only after a hot-page miss, keyed by canonical room UUID); `POST /app-api/activityPk/inviteRoomPk`; `POST /app-api/activityPk/acceptRoomPkInvitation`; `POST /app-api/activityPk/rejectRoomPkInvitation`; `GET /app-api/activityPk/queryRoomPkProcess` until natural settlement |
-| Approval microphone queue | `GET/POST /app-mini-api/mini/v1/rooms/mic-requests`; `POST /app-mini-api/mini/v1/rooms/mic-requests/cancel` |
+| Ordinary microphone application/cancellation | `GET/POST /app-mini-api/mini/v1/rooms/mic-requests`; `POST /app-mini-api/mini/v1/rooms/mic-requests/cancel` |
 | Private message / history | `POST /app-mini-api/mini/v1/message/send`; `GET /app-api/user/imMessage/queryChat` |
 | Notification read / clear | `POST /app-mini-api/mini/v1/notifications/read`; `POST /app-api/dynamic/emptyUserDynamicNotify` |
 
@@ -192,32 +193,84 @@ first-party write contract is present. The route-capability catalog and
 `requiredMutationCapabilities` in the integration test are authoritative; a
 raw route-count threshold is only a minimum evidence check.
 
+### Explicit registration fixture (R01)
+
+Fresh AVD-A must really register: enter the fixture nickname, explicitly tap
+the bundled `avatar-preset-sea` option and the `不公开` sex choice (0), then tap
+`完成注册`. The existing AuthController retains the SMS challenge/device/key
+binding. No auto-filled avatar/sex, birthday, direct profile submission or
+fabricated authenticated state is substituted. AVD-B may recover/login to the
+same dedicated account and is not forced to register again.
+
+AVD-A requires a successful `auth.register` POST and
+`registration_explicit_avatar_and_sex_selected`; aggregate rejects a PASS
+marker without either. These local contract tests are not evidence that real
+registration or a device run has completed.
+
+Local fixture-change verification (2026-09-10, base `db17a24`): fixed SDK
+`/Users/kongzheng/fvm/versions/3.44.7/bin/flutter --version` confirmed 3.44.7 /
+Dart 3.12.2. Four focused contracts first failed (two obsolete source paths and
+two old evidence bundles incorrectly accepted). After the changes:
+
+```sh
+/Users/kongzheng/fvm/versions/3.44.7/bin/flutter test --no-pub \
+  test/m4_product_fixture_test.dart \
+  test/m4_authoritative_acceptance_contract_test.dart \
+  test/m4_pk_completion_support_test.dart \
+  test/registration_explicit_choices_test.dart --reporter expanded
+```
+
+Result: 126 tests passed (22 fixture behaviors + 94 authoritative contracts +
+7 existing PK helper + 3 existing registration-choice tests), with zero skips.
+Targeted analyze of the changed Dart files, format check, shell syntax and
+`git diff --check` also pass. No device, live integration, Backend DB, provider
+or seeder run was performed. Two-user approval and seeder + live M4 remain
+separate gates; neither these local tests nor validator self-tests prove them.
+
 ### Deterministic room fixture and authority rules
 
-The development fixture must expose two distinct rooms owned by the currently
-authenticated user:
-
-1. one `OPEN` direct-access room (the accepted direct access modes are
-   `DIRECT`, `PUBLIC`, or `PASSWORD`); and
-2. one `APPROVAL` room for the microphone queue.
+The development fixture must expose two distinct OPEN rooms owned by the
+currently authenticated user, both using PUBLIC or PASSWORD entry. They may
+use the same mode: the first is for governance/gifts/PK and the second for PK
+recovery. It must also expose a real home PUBLIC room where the same actor is
+not the owner, moderator or platform staff, is off mic, and has an available
+ordinary seat (2..9). Backend development seeding is maintained independently;
+the Flutter harness never writes or guesses seed identities.
 
 The test obtains the rooms from the first-party owned-room collection, keeps
 only canonical UUID IDs, and enters each candidate to prove the authoritative
-`roomId`, current-user `ownerId`, `OWNER` role, and access mode. It rejects a
-non-canonical ID, an unknown mode, a missing mode, a non-owned room, a reused
-room ID, or a fixture with only one usable room. No fixed room ID is passed in
-the command line or embedded in the live test.
+`roomId`, room code, current-user `ownerId`, `OWNER` role, active admission and
+PUBLIC/PASSWORD access mode. Closed cards and duplicate IDs cannot count;
+closed-management snapshots, missing/legacy modes and unproven authority fail.
+A fixture with only one usable owned room fails. No fixed room ID is passed
+in the command line or embedded in the live test.
 
 The direct path proves enter/reconnect authority before moderation, seat,
-gift, or PK writes and ends with `exitRoom`. The approval path proves
-enter/reconnect authority, reads the queue, cancels any own stale pending
-request, selects an available authoritative seat, submits a new request, GETs
-the queue to verify that request, cancels it, and exits. The invariant marker
-for the compensated queue flow is
-`M4_AUTHORITY_INVARIANT::approval_mic_queue_action_compensated`.
+gift, or PK writes and ends with `exitRoom`. The ordinary applicant path uses
+home candidates, exits ineligible current manager/staff candidates, and
+rechecks PUBLIC/non-owner/non-admin/off-mic authority after entry and reconnect.
+It reads the queue, cancels and verifies any own pending request, selects a
+legal empty seat 2..9, submits, GETs the exact same-room/current-user request,
+cancels it, and GETs its CANCELLED receipt before exit. Missing/wrong-user/
+wrong-room receipts and a still-PENDING, EXPIRED or APPROVED result fail.
+
+Required new authority markers on each AVD:
+
+- `owned_open_rooms_distinct_authority_confirmed`
+- `ordinary_public_room_authority_confirmed`
+- `ordinary_mic_queue_cancelled_by_authoritative_read`
+
+These do not claim a two-user approval, assigned seat or RTC publication.
+The existing backend accepts PUBLIC/PASSWORD for mic requests. Its response
+`coordinationMode=APPROVAL` describes the mic queue, not room entry. There is
+**no migration evidence that V51 converted APPROVAL rooms**: V51 is gift
+revenue policy and the V8 legacy CHECK still allows APPROVAL. Historical rows
+may remain, but the harness must not seed/select them for this workflow.
+Owner/admin free mic access does not imply that their submit API is forbidden;
+an owner's own submit/cancel simply cannot prove the ordinary-user rule.
 
 For a new outgoing PK invitation, the runner must select that distinct owned
-approval room from the authoritative hot-opponent response. The same fixture
+OPEN room from the authoritative hot-opponent response. The same fixture
 principal is therefore independently authorized as the inviter-room owner and
 the invitee-room owner, so a pending invitation can be rejected through the
 invitee-only endpoint as a real compensating action. It must not invite an
@@ -225,12 +278,12 @@ arbitrary foreign room and then treat the inviter's expected `403` rejection
 as recovery evidence.
 
 The hot-opponent response is a first-page projection, not proof that a known
-room is unavailable. If the current-user-owned approval room is missing from
+room is unavailable. If the second current-user-owned OPEN room is missing from
 that response, the harness calls `RoomPkRepository.searchOpponents` through
-`GET /app-api/activityPk/searchRoomPk` with the approval room's canonical
+`GET /app-api/activityPk/searchRoomPk` with that room's canonical
 `DiscoveryRoom.id` (the room's `code` is retained as part of the complete
 authoritative identity). The result is usable only when one item has the exact
-approval `roomId` and `isInPk == false`. A missing item, malformed response,
+target `roomId` and `isInPk == false`. A missing item, malformed response,
 network/protocol failure, or `403` remains a failed authoritative probe; none
 may be converted into an invite or a successful recovery. A successful
 targeted lookup emits
@@ -336,7 +389,7 @@ export QA_M4_FIXTURE_ID="m4-fresh-YYYYMMDD"
 export QA_M4_FIXTURE_STATUS="fresh_dedicated"
 # QA_M4_FIXTURE_ID is passed as a non-secret dart-define only. The integration
 # test derives nickname m4-<first-13-lowercase-hex-of-sha256(fixture-id)>;
-# the prefix plus digest is exactly the registration UI's 16-character limit.
+# the prefix plus digest is 16 characters, within the registration UI's 24-character limit.
 # QA_LIVE_PHONE, QA_OAUTH_CLIENT_ID, QA_DB_EVIDENCE_URL, and
 # QA_DB_EVIDENCE_TOKEN come from the protected runner environment.
 

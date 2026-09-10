@@ -143,6 +143,7 @@ void main() {
       expect(fixtureNickname, matches(RegExp(r'^m4-[0-9a-f]{13}$')));
       final _RuntimeConfig config = await _fetchRuntimeConfig();
       final AppEnvironment environment = _liveEnvironment(config.oauthClientId);
+      if (qaAvdId == 'AVD-A') evidence.requireCapability('auth.register');
       environment.validateLiveConfiguration();
       expect(_authoritativeApiBaseUrl, 'http://10.0.2.2:$_backendPortValue/');
       expect(_authoritativeApiBaseUrl, isNot(contains(':8765')));
@@ -232,6 +233,8 @@ void main() {
         final Finder nicknameField = find.widgetWithText(TextFormField, '昵称');
         await tester.enterText(nicknameField, _registrationNickname());
         await dismissQaImeAndWait(tester);
+        await selectM4RegistrationChoices(tester);
+        evidence.invariant('registration_explicit_avatar_and_sex_selected');
         await tester.ensureVisible(find.text('完成注册'));
         await tester.tap(find.text('完成注册').hitTestable());
         await _waitForAuthenticatedHome(
@@ -365,16 +368,18 @@ void main() {
         reason:
             'M4 development fixture must expose a room owned by the current user.',
       );
-      final _OwnedModeRooms ownedModeRooms = await _selectOwnedRoomsByMode(
-        dependencies,
-        evidence,
+      final M4OwnedRooms ownedRooms = await selectM4OwnedRooms(
         rooms: currentUserOwnedRooms,
         currentUserId: currentUserId,
+        enter: (room) =>
+            _enterFixtureRoom(dependencies, evidence, room, currentUserId),
+        exit: (roomId) => _exitFixtureRoom(dependencies, evidence, roomId),
       );
+      evidence.invariant('owned_open_rooms_distinct_authority_confirmed');
       await _runCanonicalRoomReportFlow(
         dependencies,
         evidence,
-        room: ownedModeRooms.direct,
+        room: ownedRooms.moderation,
       );
 
       await _runSearchFlow(tester, dependencies, evidence);
@@ -388,14 +393,14 @@ void main() {
         tester,
         dependencies,
         evidence,
-        room: ownedModeRooms.direct,
-        pkRecoveryRoom: ownedModeRooms.approval,
+        room: ownedRooms.moderation,
+        pkRecoveryRoom: ownedRooms.pkRecovery,
         currentUserId: currentUserId,
       );
-      await _runApprovalMicQueueFlow(
+      await _runOrdinaryMicQueueFlow(
         dependencies,
         evidence,
-        room: ownedModeRooms.approval,
+        candidates: homeRooms!,
         currentUserId: currentUserId,
       );
       await _runMessagesFlow(
@@ -471,6 +476,26 @@ AppEnvironment _liveEnvironment(String oauthClientId) => AppEnvironment(
 );
 
 String _registrationNickname() => _fixtureNickname();
+
+/// Exercise the real choices; never submit a locally fabricated profile.
+Future<void> selectM4RegistrationChoices(WidgetTester tester) async {
+  final preset = find.byKey(
+    const ValueKey('preset-avatar-option:avatar-preset-sea'),
+  );
+  await tester.ensureVisible(preset);
+  await tester.tap(preset.hitTestable());
+  await tester.pump();
+  final sex = find.text('不公开');
+  await tester.ensureVisible(sex);
+  await tester.tap(sex.hitTestable());
+  await tester.pump();
+  expect(
+    tester
+        .widget<SegmentedButton<int>>(find.byType(SegmentedButton<int>))
+        .selected,
+    <int>{0},
+  );
+}
 
 String _fixtureNickname() {
   if (!_fixtureIdPattern.hasMatch(_fixtureId)) {
@@ -781,179 +806,273 @@ Future<void> _runDynamicSocialCommunityFlow(
   );
 }
 
-Future<_OwnedModeRooms> _selectOwnedRoomsByMode(
-  AppDependencies dependencies,
-  _M4Evidence evidence, {
+/// Select two separate OPEN owned rooms. Entry mode is never a mic policy.
+Future<M4OwnedRooms> selectM4OwnedRooms({
   required List<DiscoveryRoom> rooms,
   required int currentUserId,
+  required Future<RoomSnapshot> Function(DiscoveryRoom) enter,
+  required Future<void> Function(String) exit,
 }) async {
-  DiscoveryRoom? directRoom;
-  DiscoveryRoom? approvalRoom;
-  for (final DiscoveryRoom candidate in rooms) {
-    if (directRoom != null && approvalRoom != null) {
-      break;
-    }
-    if (!_canonicalRoomUuidPattern.hasMatch(candidate.id)) {
+  final selected = <DiscoveryRoom>[];
+  final visited = <String>{};
+  for (final candidate in rooms) {
+    if (!_canonicalRoomUuidPattern.hasMatch(candidate.id) ||
+        candidate.ownerUserId != currentUserId ||
+        candidate.isClosed ||
+        !visited.add(candidate.id))
       continue;
-    }
-    bool entered = false;
+    final snapshot = await enter(candidate);
     try {
-      final RoomSnapshot? snapshot = await _probe<RoomSnapshot>(
-        evidence,
-        capability: 'room.enter',
-        method: 'POST',
-        route: const BackendRouteCatalog().enterRoom,
-        operation: () => dependencies.roomRepository.enterRoom(
-          roomId: candidate.id,
-          password: null,
-          source: RoomEntrySource.home,
-          currentUserId: currentUserId,
-        ),
-        requiredSuccess: true,
-      );
-      if (snapshot == null) {
-        throw TestFailure(
-          'Owned room ${candidate.id} did not return an authoritative snapshot.',
-        );
-      }
-      entered = true;
-      if (snapshot.roomId != candidate.id) {
-        throw TestFailure(
-          'Owned room selection received a snapshot for ${snapshot.roomId} '
-          'instead of ${candidate.id}.',
-        );
-      }
-      if (snapshot.ownerId != currentUserId ||
-          snapshot.role != RoomRole.owner) {
-        throw TestFailure(
-          'Owned room ${candidate.id} did not authorize the current user as '
-          'the room owner in its authoritative snapshot.',
-        );
-      }
-      final String accessMode = snapshot.accessMode.trim().toUpperCase();
-      if (_isDirectRoomAccessMode(accessMode)) {
-        directRoom ??= candidate;
-      } else if (accessMode == 'APPROVAL') {
-        approvalRoom ??= candidate;
-      } else {
-        throw TestFailure(
-          'Owned room ${candidate.id} has unknown authoritative access mode '
-          '"$accessMode"; M4 cannot guess a microphone coordination mode.',
-        );
-      }
+      requireM4OwnedRoom(candidate, snapshot, currentUserId);
+      selected.add(candidate);
     } finally {
-      if (entered) {
-        try {
-          await dependencies.roomRepository.exitRoom(candidate.id);
-          evidence.http(
-            capability: 'room.exit.cleanup',
-            method: 'POST',
-            route: const BackendRouteCatalog().exitRoom,
-            status: 200,
-            state: 'success',
-          );
-        } on ApiException catch (error) {
-          evidence.http(
-            capability: 'room.exit.cleanup',
-            method: 'POST',
-            route: const BackendRouteCatalog().exitRoom,
-            status: error.httpStatus ?? 0,
-            state: _stateFor(error),
-          );
-          throw TestFailure(
-            'Owned room ${candidate.id} cleanup failed with status '
-            '${error.httpStatus ?? 0}.',
-          );
-        }
-      }
+      await exit(candidate.id);
+    }
+    if (selected.length == 2) {
+      return M4OwnedRooms(moderation: selected[0], pkRecovery: selected[1]);
     }
   }
-  if (directRoom == null || approvalRoom == null) {
-    throw TestFailure(
-      'M4 requires two distinct canonical UUID owned rooms: one authoritative '
-      'DIRECT/PUBLIC/PASSWORD room and one APPROVAL room. '
-      'Found direct=${directRoom?.id ?? 'none'}, '
-      'approval=${approvalRoom?.id ?? 'none'}.',
-    );
-  }
-  final DiscoveryRoom selectedDirectRoom = directRoom;
-  final DiscoveryRoom selectedApprovalRoom = approvalRoom;
-  if (selectedDirectRoom.id == selectedApprovalRoom.id) {
-    throw TestFailure(
-      'M4 must not exercise direct and approval microphone paths in one room.',
-    );
-  }
-  evidence.invariant('room_access_modes_selected_from_authoritative_snapshots');
-  return _OwnedModeRooms(
-    direct: selectedDirectRoom,
-    approval: selectedApprovalRoom,
+  throw TestFailure(
+    'M4 requires two distinct OPEN PUBLIC/PASSWORD owned rooms.',
   );
 }
 
-bool _isDirectRoomAccessMode(String accessMode) =>
-    accessMode == 'DIRECT' ||
-    accessMode == 'PUBLIC' ||
-    accessMode == 'PASSWORD';
+void _requireM4OpenSnapshot(DiscoveryRoom room, RoomSnapshot snapshot) {
+  if (!_canonicalRoomUuidPattern.hasMatch(room.id) ||
+      room.code.isEmpty ||
+      room.isClosed ||
+      snapshot.roomId != room.id ||
+      snapshot.roomCode != room.code ||
+      snapshot.isClosedManagementView ||
+      snapshot.sessionId == null ||
+      snapshot.sessionId!.isEmpty) {
+    throw TestFailure('M4 room identity or active OPEN admission is unproven.');
+  }
+}
 
-Future<void> _runApprovalMicQueueFlow(
-  AppDependencies dependencies,
-  _M4Evidence evidence, {
+bool _isDirectRoomAccessMode(String mode) =>
+    mode == 'PUBLIC' || mode == 'PASSWORD';
+
+void requireM4OwnedRoom(DiscoveryRoom room, RoomSnapshot snapshot, int userId) {
+  _requireM4OpenSnapshot(room, snapshot);
+  if (room.ownerUserId != userId ||
+      snapshot.ownerId != userId ||
+      snapshot.role != RoomRole.owner ||
+      !_isDirectRoomAccessMode(snapshot.accessMode.trim().toUpperCase())) {
+    throw TestFailure(
+      'M4 governance/PK requires current owner PUBLIC/PASSWORD authority.',
+    );
+  }
+}
+
+bool _isOrdinaryApplicant(RoomSnapshot snapshot, int userId) =>
+    snapshot.ownerId > 0 &&
+    snapshot.ownerId != userId &&
+    snapshot.role == RoomRole.listener &&
+    !snapshot.platformStaff &&
+    snapshot.accessMode.trim().toUpperCase() == 'PUBLIC' &&
+    !snapshot.seats.any((seat) => seat.userId == userId && seat.isOccupied);
+
+void requireM4OrdinaryApplicant(
+  DiscoveryRoom room,
+  RoomSnapshot snapshot,
+  int userId,
+) {
+  _requireM4OpenSnapshot(room, snapshot);
+  if (room.isLocked ||
+      room.ownerUserId == userId ||
+      (room.ownerUserId != null && room.ownerUserId != snapshot.ownerId) ||
+      !_isOrdinaryApplicant(snapshot, userId)) {
+    throw TestFailure(
+      'M4 applicant must be an off-mic ordinary listener in a PUBLIC room.',
+    );
+  }
+}
+
+/// Candidates are the real home response, never owned-room or synthetic IDs.
+/// A current moderator/owner/staff candidate is exited, not used as an applicant.
+Future<DiscoveryRoom> selectM4OrdinaryRoom({
+  required List<DiscoveryRoom> candidates,
+  required int currentUserId,
+  required Future<RoomSnapshot> Function(DiscoveryRoom) enter,
+  required Future<void> Function(String) exit,
+}) async {
+  final visited = <String>{};
+  for (final room in candidates) {
+    if (!_canonicalRoomUuidPattern.hasMatch(room.id) ||
+        room.isClosed ||
+        room.isLocked ||
+        room.ownerUserId == currentUserId ||
+        !visited.add(room.id))
+      continue;
+    final snapshot = await enter(room);
+    try {
+      _requireM4OpenSnapshot(room, snapshot);
+      if (!_isOrdinaryApplicant(snapshot, currentUserId)) continue;
+      requireM4OrdinaryApplicant(room, snapshot, currentUserId);
+      selectM4OrdinarySeat(snapshot, currentUserId);
+      return room;
+    } finally {
+      await exit(room.id);
+    }
+  }
+  throw TestFailure(
+    'M4 needs a real home PUBLIC room with a non-owner/non-admin off-mic actor and an empty seat 2..9.',
+  );
+}
+
+int selectM4OrdinarySeat(RoomSnapshot snapshot, int userId) {
+  if (snapshot.seats.any((seat) => seat.userId == userId && seat.isOccupied)) {
+    throw TestFailure('M4 ordinary applicant is already on mic.');
+  }
+  for (final seat in snapshot.seats) {
+    if (seat.number >= 2 &&
+        seat.number <= 9 &&
+        seat.isAvailable &&
+        seat.userId == null &&
+        seat.canUse(snapshot.role))
+      return seat.number;
+  }
+  throw TestFailure('M4 ordinary applicant requires a legal empty seat 2..9.');
+}
+
+/// Testable real queue sequence. Only same-room/current-actor records count.
+/// This proves submission and cancellation, NOT approval or an RTC grant.
+Future<void> exerciseM4OrdinaryMicQueue({
   required DiscoveryRoom room,
   required int currentUserId,
+  required RoomSnapshot entered,
+  required Future<RoomSnapshot> Function() reconnect,
+  required Future<List<MicAccessRequest>> Function() fetch,
+  required Future<void> Function(int) submit,
+  required Future<void> Function(MicAccessRequest) cancel,
 }) async {
-  final BackendRouteCatalog routes = const BackendRouteCatalog();
-  final RoomSnapshot? entered = await _probe<RoomSnapshot>(
+  requireM4OrdinaryApplicant(room, entered, currentUserId);
+  final current = await reconnect();
+  requireM4OrdinaryApplicant(room, current, currentUserId);
+  bool own(MicAccessRequest request) =>
+      request.roomId == room.id &&
+      request.isRequest &&
+      request.requestedByUserId == currentUserId &&
+      request.subjectUserId == currentUserId;
+  Future<void> cancelAndVerify(MicAccessRequest request) async {
+    await cancel(request);
+    final receipt = (await fetch())
+        .where((row) => row.id == request.id)
+        .toList();
+    if (receipt.length != 1 ||
+        !own(receipt.single) ||
+        receipt.single.seatNumber != request.seatNumber ||
+        receipt.single.status != MicRequestStatus.cancelled) {
+      throw TestFailure(
+        'M4 cancellation must be confirmed by the exact authoritative CANCELLED request.',
+      );
+    }
+  }
+
+  final pending = (await fetch())
+      .where((row) => own(row) && row.isPending)
+      .toList();
+  if (pending.length > 1)
+    throw TestFailure('M4 ordinary queue has ambiguous pending requests.');
+  if (pending.isNotEmpty) await cancelAndVerify(pending.single);
+  final seatNumber = selectM4OrdinarySeat(current, currentUserId);
+  await submit(seatNumber);
+  final submitted = (await fetch())
+      .where((row) => own(row) && row.isPending && row.seatNumber == seatNumber)
+      .toList();
+  if (submitted.length != 1) {
+    throw TestFailure(
+      'M4 ordinary submission is missing from the exact authoritative queue.',
+    );
+  }
+  await cancelAndVerify(submitted.single);
+}
+
+Future<RoomSnapshot> _enterFixtureRoom(
+  AppDependencies dependencies,
+  _M4Evidence evidence,
+  DiscoveryRoom room,
+  int userId,
+) async {
+  final snapshot = await _probe<RoomSnapshot>(
     evidence,
     capability: 'room.enter',
     method: 'POST',
-    route: routes.enterRoom,
+    route: const BackendRouteCatalog().enterRoom,
     operation: () => dependencies.roomRepository.enterRoom(
       roomId: room.id,
       password: null,
       source: RoomEntrySource.home,
-      currentUserId: currentUserId,
+      currentUserId: userId,
     ),
     requiredSuccess: true,
   );
-  if (entered == null) {
-    throw TestFailure(
-      'Approval room did not return an authoritative snapshot.',
-    );
-  }
+  if (snapshot == null)
+    throw TestFailure('M4 room admission returned no snapshot.');
+  return snapshot;
+}
+
+Future<void> _exitFixtureRoom(
+  AppDependencies dependencies,
+  _M4Evidence evidence,
+  String roomId,
+) async {
+  await _probe<void>(
+    evidence,
+    capability: 'room.exit.cleanup',
+    method: 'POST',
+    route: const BackendRouteCatalog().exitRoom,
+    operation: () => dependencies.roomRepository.exitRoom(roomId),
+    requiredSuccess: true,
+  );
+}
+
+Future<void> _runOrdinaryMicQueueFlow(
+  AppDependencies dependencies,
+  _M4Evidence evidence, {
+  required List<DiscoveryRoom> candidates,
+  required int currentUserId,
+}) async {
+  final room = await selectM4OrdinaryRoom(
+    candidates: candidates,
+    currentUserId: currentUserId,
+    enter: (room) =>
+        _enterFixtureRoom(dependencies, evidence, room, currentUserId),
+    exit: (roomId) => _exitFixtureRoom(dependencies, evidence, roomId),
+  );
+  final entered = await _enterFixtureRoom(
+    dependencies,
+    evidence,
+    room,
+    currentUserId,
+  );
+  const routes = BackendRouteCatalog();
   try {
-    if (entered.roomId != room.id ||
-        entered.ownerId != currentUserId ||
-        entered.role != RoomRole.owner ||
-        entered.accessMode.trim().toUpperCase() != 'APPROVAL') {
-      throw TestFailure(
-        'Approval microphone queue entered a room without authoritative '
-        'owner/APPROVAL authority.',
-      );
-    }
-    final RoomSnapshot? reconnected = await _probe<RoomSnapshot>(
-      evidence,
-      capability: 'room.reconnect',
-      method: 'POST',
-      route: routes.reconnectRoom,
-      operation: () => dependencies.roomRepository.reconnectRoom(
-        roomId: room.id,
-        currentUserId: currentUserId,
-      ),
-      requiredSuccess: true,
-    );
-    if (reconnected == null ||
-        reconnected.roomId != room.id ||
-        reconnected.ownerId != currentUserId ||
-        reconnected.role != RoomRole.owner ||
-        reconnected.accessMode.trim().toUpperCase() != 'APPROVAL') {
-      throw TestFailure(
-        'Approval microphone queue reconnect did not preserve authoritative '
-        'owner/APPROVAL authority.',
-      );
-    }
-    evidence.invariant('approval_room_authority_confirmed');
-    final List<MicAccessRequest>? initialRequests =
-        await _probe<List<MicAccessRequest>>(
+    await exerciseM4OrdinaryMicQueue(
+      room: room,
+      currentUserId: currentUserId,
+      entered: entered,
+      reconnect: () async {
+        final snapshot = await _probe<RoomSnapshot>(
+          evidence,
+          capability: 'room.reconnect',
+          method: 'POST',
+          route: routes.reconnectRoom,
+          operation: () => dependencies.roomRepository.reconnectRoom(
+            roomId: room.id,
+            currentUserId: currentUserId,
+          ),
+          requiredSuccess: true,
+        );
+        if (snapshot == null)
+          throw TestFailure('M4 reconnect returned no snapshot.');
+        requireM4OrdinaryApplicant(room, snapshot, currentUserId);
+        evidence.invariant('ordinary_public_room_authority_confirmed');
+        return snapshot;
+      },
+      fetch: () async {
+        final rows = await _probe<List<MicAccessRequest>>(
           evidence,
           capability: 'room.mic_requests.get',
           method: 'GET',
@@ -962,123 +1081,36 @@ Future<void> _runApprovalMicQueueFlow(
               dependencies.roomOperationsRepository.fetchMicRequests(room.id),
           requiredSuccess: true,
         );
-    if (initialRequests == null) {
-      throw TestFailure(
-        'Approval room queue read returned no authoritative list.',
-      );
-    }
-
-    MicAccessRequest? ownPendingRequest;
-    for (final MicAccessRequest request in initialRequests) {
-      if (request.isRequest &&
-          request.isPending &&
-          request.requestedByUserId == currentUserId &&
-          request.subjectUserId == currentUserId) {
-        ownPendingRequest = request;
-        break;
-      }
-    }
-    if (ownPendingRequest != null) {
-      evidence.requireCapability('room.mic_requests.cancel');
-      await _probe<void>(
+        if (rows == null)
+          throw TestFailure('M4 queue returned no authoritative list.');
+        return rows;
+      },
+      submit: (seat) => _probe<void>(
+        evidence,
+        capability: 'room.mic_requests.submit',
+        method: 'POST',
+        route: routes.roomMicRequests,
+        operation: () => dependencies.roomOperationsRepository.submitMicRequest(
+          roomId: room.id,
+          userId: currentUserId,
+          seatNumber: seat,
+        ),
+        requiredSuccess: true,
+      ),
+      cancel: (request) => _probe<void>(
         evidence,
         capability: 'room.mic_requests.cancel',
         method: 'POST',
         route: routes.cancelRoomMicRequest,
         operation: () => dependencies.roomOperationsRepository.cancelMicRequest(
-          requestId: ownPendingRequest!.id,
+          requestId: request.id,
         ),
         requiredSuccess: true,
-      );
-    }
-    MicSeat? availableSeat;
-    for (final MicSeat seat in reconnected.seats) {
-      if (seat.isAvailable) {
-        availableSeat = seat;
-        break;
-      }
-    }
-    if (availableSeat == null) {
-      throw TestFailure(
-        'Approval room has no available seat after own queue recovery.',
-      );
-    }
-    final int seatNumber = availableSeat.number;
-    evidence.requireCapability('room.mic_requests.submit');
-    await _probe<void>(
-      evidence,
-      capability: 'room.mic_requests.submit',
-      method: 'POST',
-      route: routes.roomMicRequests,
-      operation: () => dependencies.roomOperationsRepository.submitMicRequest(
-        roomId: room.id,
-        userId: currentUserId,
-        seatNumber: seatNumber,
       ),
-      requiredSuccess: true,
     );
-    final List<MicAccessRequest>? afterSubmit =
-        await _probe<List<MicAccessRequest>>(
-          evidence,
-          capability: 'room.mic_requests.get',
-          method: 'GET',
-          route: routes.roomMicRequests,
-          operation: () =>
-              dependencies.roomOperationsRepository.fetchMicRequests(room.id),
-          requiredSuccess: true,
-        );
-    MicAccessRequest? submittedRequest;
-    for (final MicAccessRequest request
-        in afterSubmit ?? const <MicAccessRequest>[]) {
-      if (request.isRequest &&
-          request.isPending &&
-          request.requestedByUserId == currentUserId &&
-          request.subjectUserId == currentUserId &&
-          request.seatNumber == seatNumber) {
-        submittedRequest = request;
-        break;
-      }
-    }
-    if (submittedRequest == null) {
-      throw TestFailure(
-        'Approval microphone request was not visible in the authoritative '
-        'queue after submit.',
-      );
-    }
-    evidence.requireCapability('room.mic_requests.cancel');
-    await _probe<void>(
-      evidence,
-      capability: 'room.mic_requests.cancel',
-      method: 'POST',
-      route: routes.cancelRoomMicRequest,
-      operation: () => dependencies.roomOperationsRepository.cancelMicRequest(
-        requestId: submittedRequest!.id,
-      ),
-      requiredSuccess: true,
-    );
-    evidence.invariant('approval_mic_queue_action_compensated');
+    evidence.invariant('ordinary_mic_queue_cancelled_by_authoritative_read');
   } finally {
-    try {
-      await dependencies.roomRepository.exitRoom(room.id);
-      evidence.http(
-        capability: 'room.exit.cleanup',
-        method: 'POST',
-        route: routes.exitRoom,
-        status: 200,
-        state: 'success',
-      );
-    } on ApiException catch (error) {
-      evidence.http(
-        capability: 'room.exit.cleanup',
-        method: 'POST',
-        route: routes.exitRoom,
-        status: error.httpStatus ?? 0,
-        state: _stateFor(error),
-      );
-      throw TestFailure(
-        'Approval room cleanup failed with status ${error.httpStatus ?? 0}.',
-      );
-    }
+    await _exitFixtureRoom(dependencies, evidence, room.id);
   }
 }
 
@@ -1123,6 +1155,7 @@ Future<_LiveRoomContext?> _runRoomFlow(
   );
   if (entered != null) {
     final RoomSnapshot enteredSnapshot = entered;
+    requireM4OwnedRoom(room, enteredSnapshot, currentUserId);
     if (enteredSnapshot.roomId != roomId ||
         enteredSnapshot.ownerId != currentUserId ||
         enteredSnapshot.role != RoomRole.owner ||
@@ -1172,6 +1205,7 @@ Future<_LiveRoomContext?> _runRoomFlow(
       );
     }
     final RoomSnapshot snapshot = reconnectedSnapshot;
+    requireM4OwnedRoom(room, snapshot, currentUserId);
     evidence.invariant('room_mutations_use_current_user_owned_room');
     evidence.invariant('room_open_authority_confirmed_by_enter_and_reconnect');
     final RoomMemberPage? onlineMembers = await _probe<RoomMemberPage>(
@@ -1801,7 +1835,7 @@ Future<void> _runRoomPkMutation(
   }
   if (opponent == null) {
     // The hot endpoint is authoritative but paginated.  A known owned
-    // approval room may be absent from page one, so target the backend search
+    // second OPEN owned room may be absent from page one, so target the backend search
     // with its canonical discovery UUID.  Search failures and non-exact
     // results remain fail-closed; no arbitrary opponent may be substituted.
     evidence.requireCapability('room.pk.search');
@@ -1945,11 +1979,11 @@ String _m4RequestId(String scope) {
 
 // REMOVED_BY_PRODUCT Q15-06: App refund submission/result/retry scenario.
 
-class _OwnedModeRooms {
-  const _OwnedModeRooms({required this.direct, required this.approval});
+class M4OwnedRooms {
+  const M4OwnedRooms({required this.moderation, required this.pkRecovery});
 
-  final DiscoveryRoom direct;
-  final DiscoveryRoom approval;
+  final DiscoveryRoom moderation;
+  final DiscoveryRoom pkRecovery;
 }
 
 class _LiveRoomContext {
@@ -3017,10 +3051,11 @@ class _M4Evidence {
     'home_uses_authoritative_room_ids',
     'room_mutations_use_current_user_owned_room',
     'room_open_authority_confirmed_by_enter_and_reconnect',
-    'room_access_modes_selected_from_authoritative_snapshots',
+    'owned_open_rooms_distinct_authority_confirmed',
     'direct_room_authority_confirmed',
-    'approval_room_authority_confirmed',
-    'approval_mic_queue_action_compensated',
+    'ordinary_public_room_authority_confirmed',
+    'ordinary_mic_queue_cancelled_by_authoritative_read',
+    if (qaAvdId == 'AVD-A') 'registration_explicit_avatar_and_sex_selected',
     'session_refresh_persists_rotated_session',
     'restart_restores_consent_and_session',
     'search_route_is_reachable_from_home',
