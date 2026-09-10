@@ -1,5 +1,22 @@
 # 2026-09-10 macOS release golden review
 
+## PK automatic-sync follow-up
+
+Source `e5bf9c7229786d36b410f61faf4ae7cd838bdac5` changes RM-013's
+manual-refresh explanation to the implemented foreground HTTP synchronization
+with explicit invitation acceptance. Main reviewed both comparator-produced
+master/test images and the isolated diff: only this two-line explanation
+changes; geometry, contrast and the other controls remain unchanged. The
+macOS RM-013 test failed against the previous baseline, then its new actual
+render passed a separate non-update comparison (1/1). This follow-up updates
+only `test/goldens/m3_3_all/rm-013_390x844.png`; Linux is verified separately.
+Main PK/repository/permission/media/font batch also passed 107 tests, not a
+replacement for the complete release suite. Evidence is in
+`artifacts/product/filled-decisions-20260909/flutter-pk-rm013-golden-{red,generate,strict}-20260910.log`
+and `flutter-main-pk-e5bf9c7-20260910.log` under the workspace root.
+
+## Earlier complete macOS review
+
 Render source: `d97cbda7ef2c7a6aa3c835c4547f4283a793fe3e`.
 Exact Flutter 3.44.7 / Dart 3.12.2, macOS, 390×844 / DPR 1.0; the
 unchanged preset-avatar gallery uses its own 360×460 viewport.
