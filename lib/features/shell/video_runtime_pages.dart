@@ -464,47 +464,53 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
             flex: 6,
             child: room == null
                 ? const _UnavailableRoomHero()
-                : RoomCoverArtwork(
-                    roomId: room.id,
-                    media: room.coverMedia,
-                    seed: 'hero-main',
-                    height: 104,
+                : InkWell(
+                    onTap: () => widget.onOpenRoom(room),
                     borderRadius: BorderRadius.circular(19),
-                    child: InkWell(
-                      onTap: () => widget.onOpenRoom(room),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(13, 11, 11, 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            const Row(
-                              children: <Widget>[
-                                Icon(
-                                  Icons.play_circle_fill_rounded,
-                                  color: Colors.white,
-                                ),
-                                Spacer(),
-                                Icon(
-                                  Icons.favorite_rounded,
-                                  color: Color(0xFFFF9AC7),
-                                ),
-                              ],
-                            ),
-                            const Spacer(),
-                            Text(
-                              room.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                shadows: <Shadow>[
-                                  Shadow(color: Colors.black45, blurRadius: 7),
+                    child: RoomCoverArtwork(
+                      roomId: room.id,
+                      media: room.coverMedia,
+                      seed: 'hero-main',
+                      height: 104,
+                      borderRadius: BorderRadius.circular(19),
+                      child: IgnorePointer(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(13, 11, 11, 10),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              const Row(
+                                children: <Widget>[
+                                  Icon(
+                                    Icons.play_circle_fill_rounded,
+                                    color: Colors.white,
+                                  ),
+                                  Spacer(),
+                                  Icon(
+                                    Icons.favorite_rounded,
+                                    color: Color(0xFFFF9AC7),
+                                  ),
                                 ],
                               ),
-                            ),
-                          ],
+                              const Spacer(),
+                              Text(
+                                room.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  shadows: <Shadow>[
+                                    Shadow(
+                                      color: Colors.black45,
+                                      blurRadius: 7,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

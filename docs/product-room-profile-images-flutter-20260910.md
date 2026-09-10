@@ -87,3 +87,35 @@ flutter test --no-pub --reporter expanded test/backend_room_authority_projection
 flutter analyze --no-pub
 git diff --check
 ```
+
+## 独立审查两项 P2 修正（基线 9e3f86a）
+
+- 同 session 重连：页面同步记录房间状态变更的读取代次，并将该代次和原 controller / identity / session 纳入背景 scope。`reconnecting → joined` 即使在下一帧前完成，也会新建组件和 GET；已撤销的旧 scope 不复活，迟到完成不可替换新图片。不改变 controller、lease、RTC 或 PATCH 业务逻辑。
+- 首页 hero：入房 InkWell 移到封面外层，标题和图标是 IgnorePointer 装饰；真正点击“重试图片”只重试 GET，不入房。普通卡片点击仍入房。
+
+新增 6 项 widget 回归：已显示背景重连及旧文件/解码缓存清理；旧 GET 未完成、同帧重连并拒绝旧完成；重连期间账号 ABA / 不同 lease / 离房三种禁止恢复；实际首页 hero 403 后触摸重试，再验证普通卡片点击。
+
+固定 Flutter 3.44.7，未运行 DB、设备、厂商或 native build，未修改 iOS、主树、依赖及锁文件。验证顺序：
+
+1. `/tmp/room-images-p2-red.log`：hero 已真实失败（预期 opened 为空，实际一个 DiscoveryRoom）；背景测试因新 fixture 的 nullable FileImage 断言编译失败，不计产品 RED。
+2. `/tmp/room-images-p2-red-v2.log`：补可空断言后，背景 fixture 缺既有 `roomOperationsRepository` getter；只委托到原 mock dependency，不计产品 RED。
+3. `/tmp/room-images-p2-red-v3.log`：产品未改时 **6 项，3 PASS / 3 FAIL**。两项 `same-lease reconnect ...` 均失败于 `fresh background GET after reconnect`（Expected true / Actual false）；hero 失败于 `image retry must not invoke room entry`（Expected empty / Actual [DiscoveryRoom]）。ABA / lease / leave 三项已 PASS。
+4. `/tmp/room-images-p2-green.log`：仅两处产品修复后 **6/6 PASS**。随后将原普通 hero 标题点击改为相同物理坐标的 tapAt（标题现为 IgnorePointer），保留入房回调断言；重试仍使用实际 tester.tap，不绕过命中测试。
+5. `/tmp/room-images-p2-focused-green.log`：以下 9 个文件 **109/109 PASS，exit 0**，包含上述 6 项，不重复计数；无触摸命中警告。`/tmp/room-images-p2-analyze.log`：4 个改动 Dart 文件 analyze **0 issues，exit 0**。
+
+```sh
+# 使用 /Users/kongzheng/Documents/ny/.tooling/flutter-3.44.7/bin/flutter
+flutter test --no-pub --concurrency=2 --reporter expanded \
+  test/room_image_pages_test.dart test/discovery_room_cover_cards_test.dart \
+  --name 'same-lease reconnect|background reconnect cannot|actual hero retries'
+flutter test --no-pub --concurrency=2 --reporter expanded \
+  test/room_image_pages_test.dart test/discovery_room_cover_cards_test.dart \
+  test/room_image_repository_test.dart test/room_image_host_test.dart \
+  test/room_lease_controller_test.dart test/video_runtime_ui_test.dart \
+  test/video_runtime_home_race_test.dart test/platform_room_widget_test.dart \
+  test/manager_room_profile_widget_test.dart
+flutter analyze --no-pub \
+  lib/features/room/presentation/video_runtime_room_page.dart \
+  lib/features/shell/video_runtime_pages.dart \
+  test/room_image_pages_test.dart test/discovery_room_cover_cards_test.dart
+```

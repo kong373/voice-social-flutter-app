@@ -63,6 +63,8 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   DialogRoute<String>? _passwordRoute;
   String? _sessionEndMessage;
   String? _lastMessageIdentity;
+  RoomSessionStatus? _backgroundStatus;
+  int _backgroundReadGeneration = 0;
 
   RoomController get _controller => widget.controller;
 
@@ -76,6 +78,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   @override
   void initState() {
     super.initState();
+    _backgroundStatus = _controller.status;
     _composerFocus.addListener(_onComposerFocusChanged);
     _controller.addListener(_onControllerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -108,6 +111,8 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller == widget.controller) return;
     oldWidget.controller.removeListener(_onControllerChanged);
+    _backgroundStatus = _controller.status;
+    _backgroundReadGeneration++;
     _controller.addListener(_onControllerChanged);
     _entryEpoch++;
     _entryBusy = false;
@@ -179,6 +184,12 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   void _onControllerChanged() {
     if (!mounted) {
       return;
+    }
+    if (_backgroundStatus != _controller.status) {
+      _backgroundStatus = _controller.status;
+      // Fence synchronously, even if reconnecting -> joined occurs before a
+      // frame. Recovery creates a new download scope, never revives the old one.
+      _backgroundReadGeneration++;
     }
     if (!_controller.isEntryIdentityCurrent || _sessionEnded) {
       _entryEpoch++;
@@ -512,22 +523,27 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   }
 
   Widget _authoritativeBackground() {
-    final snapshot = _controller.snapshot;
+    final controller = _controller;
+    final snapshot = controller.snapshot;
     final session = snapshot?.sessionId;
+    final readGeneration = _backgroundReadGeneration;
     return _VideoRoomBackground(
       key: ValueKey((
         'room-background',
         snapshot?.roomId,
         session,
         snapshot?.isClosedManagementView,
+        readGeneration,
       )),
       media: snapshot?.backgroundMedia,
-      changes: _controller,
+      changes: controller,
       isCurrent: () =>
-          _controller.isEntryIdentityCurrent &&
-          _controller.snapshot?.roomId == snapshot?.roomId &&
-          _controller.snapshot?.sessionId == session &&
-          _controller.status == RoomSessionStatus.joined &&
+          identical(controller, _controller) &&
+          readGeneration == _backgroundReadGeneration &&
+          controller.isEntryIdentityCurrent &&
+          controller.snapshot?.roomId == snapshot?.roomId &&
+          controller.snapshot?.sessionId == session &&
+          controller.status == RoomSessionStatus.joined &&
           !_ending,
     );
   }

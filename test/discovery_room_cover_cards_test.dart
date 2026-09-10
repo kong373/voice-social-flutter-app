@@ -63,8 +63,13 @@ void main() {
               tester.widget<RoomCoverArtwork>(poster).media,
               same(rooms.last.coverMedia),
             );
-            await tester.tap(
-              find.descendant(of: hero, matching: find.text(rooms.first.title)),
+            await tester.tapAt(
+              tester.getCenter(
+                find.descendant(
+                  of: hero,
+                  matching: find.text(rooms.first.title),
+                ),
+              ),
             );
             expect(opened, [same(rooms.first)]);
             for (final seed in ['hero-date', 'hero-friends']) {
@@ -102,6 +107,79 @@ void main() {
       );
     }
   }
+
+  testWidgets('actual hero retries denied cover without entering room', (
+    tester,
+  ) async {
+    final bytes = (await tester.runAsync(
+      () => File('assets/runtime/room-cover-ruby.png').readAsBytes(),
+    ))!;
+    final temp = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('room-hero-retry-'),
+    ))!;
+    final identity = TestMediaIdentity();
+    addTearDown(() async {
+      identity.dispose();
+      await tester.runAsync(() => temp.delete(recursive: true));
+    });
+    var denied = true;
+    final http = MediaFakeHttp(
+      (_) => denied
+          ? MediaFakeResponse.json(null, status: 403, code: 40352)
+          : MediaFakeResponse(
+              200,
+              Stream.value(bytes),
+              type: 'image/png',
+              contentLength: bytes.length,
+            ),
+    );
+    final host = AppImageMediaHost(
+      api: http.api(identity),
+      userId: () => identity.user,
+      generation: () => identity.generation,
+      changes: identity,
+      picker: _NoImageSelection(),
+      temporaryParent: () async => temp,
+    );
+    final room = _room(1, mediaBytes: bytes.length);
+    final opened = <DiscoveryRoom>[];
+    await _pump(
+      tester,
+      _Surface.videoHome,
+      _RoomsRepository([room]),
+      imageMediaHost: host,
+      onOpenRoom: opened.add,
+    );
+    final hero = find.byWidgetPredicate(
+      (w) => w is RoomCoverArtwork && w.seed == 'hero-main',
+    );
+    final retry = find.descendant(of: hero, matching: find.text('重试图片'));
+    await _until(tester, () => retry.evaluate().isNotEmpty);
+    final previousGets = http.requests.length;
+    denied = false;
+    // Hit testing, not invoking the callback: the old overlay enters the room.
+    await tester.tap(retry);
+    await tester.pump();
+    expect(opened, isEmpty, reason: 'image retry must not invoke room entry');
+    final image = find.descendant(
+      of: hero,
+      matching: find.byWidgetPredicate(
+        (w) => w is Image && w.image is FileImage,
+      ),
+    );
+    await _until(tester, () => image.evaluate().isNotEmpty);
+    expect(http.requests.length, previousGets + 1);
+    expect(http.requests.every((r) => r.method == 'GET'), isTrue);
+    // The title is deliberately IgnorePointer decoration. Touch its location
+    // and assert that the outer card still receives the gesture.
+    await tester.tapAt(
+      tester.getCenter(
+        find.descendant(of: hero, matching: find.text(room.title)),
+      ),
+    );
+    expect(opened, [same(room)], reason: 'ordinary hero tap still opens room');
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('saved-room refresh replaces and clears media on the same room', (
     tester,

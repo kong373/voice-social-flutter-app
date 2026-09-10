@@ -17,6 +17,7 @@ import 'package:voice_social_app/features/room/presentation/room_image_editor.da
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/data/mock_room_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
+import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
@@ -45,6 +46,9 @@ class _Dependencies implements AppDependencies {
   final AppImageMediaHost imageMediaHost;
   @override
   AuthSessionManager get sessionManager => base.sessionManager;
+  @override
+  RoomOperationsRepository get roomOperationsRepository =>
+      base.roomOperationsRepository;
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -77,6 +81,52 @@ class _BackgroundRoom extends MockRoomRepository {
     version: 2,
     backgroundMedia: MediaReference.fromJson(_media('ROOM_BACKGROUND')),
   );
+}
+
+class _ReconnectingBackgroundRoom extends MockRoomRepository {
+  final snapshot = RoomSnapshot(
+    roomId: profileRoomId,
+    roomCode: '12345',
+    title: '可重连背景',
+    topic: '',
+    ownerId: 1,
+    role: RoomRole.owner,
+    seats: const [],
+    rtc: const RtcCredentials(token: '', channelId: ''),
+    publicScreenEnabled: false,
+    pictureMessagesAllowed: false,
+    autoLockMic: false,
+    giftCatalogAvailable: false,
+    giftBalance: null,
+    transportMode: RoomTransportMode.snapshotOnly,
+    sessionId: roomLeaseSessionId,
+    roomLease: parseRoomLease(
+      roomLeaseWireFixture(),
+      sessionId: roomLeaseSessionId,
+    ),
+    backgroundMedia: MediaReference.fromJson(_media('ROOM_BACKGROUND')),
+  );
+  final reconnectResult = Completer<RoomSnapshot>();
+
+  @override
+  Future<RoomSnapshot> enterRoom({
+    required String roomId,
+    required String? password,
+    required RoomEntrySource source,
+    required int currentUserId,
+  }) async => snapshot;
+
+  @override
+  Future<RoomSnapshot> reconnectRoom({
+    required String roomId,
+    required int currentUserId,
+  }) => reconnectResult.future;
+
+  @override
+  Future<List<RoomMessage>> fetchPublicMessages(String roomId) async => [];
+
+  @override
+  Future<void> exitRoom(String roomId) async {}
 }
 
 void main() {
@@ -574,6 +624,189 @@ void main() {
       );
     },
   );
+
+  for (final initialRead in ['displayed', 'pending']) {
+    imageTest(
+      'same-lease reconnect replaces $initialRead background scope and rejects old completion',
+      (tester) async {
+        final oldContent = Completer<HttpClientResponse>();
+        var gets = 0;
+        HttpClientResponse content() => MediaFakeResponse(
+          200,
+          Stream.value(_png),
+          type: 'image/png',
+          contentLength: _png.length,
+        );
+        readContent = (_) {
+          gets++;
+          return gets == 1 && initialRead == 'pending'
+              ? oldContent.future
+              : content();
+        };
+        final repository = _ReconnectingBackgroundRoom();
+        final rtc = MockRtcAdapter();
+        final realtime = MockRoomRealtimeGateway();
+        final controller = RoomController(
+          roomId: profileRoomId,
+          title: '可重连背景',
+          currentUserId: 1,
+          accessToken: 'fixture',
+          repository: repository,
+          rtcAdapter: rtc,
+          realtimeGateway: realtime,
+          sessionChanges: identity,
+          activeUserId: () => identity.user,
+          identityGeneration: () => identity.generation,
+        );
+        final images = find.byWidgetPredicate(
+          (widget) => widget is Image && widget.image is FileImage,
+        );
+        try {
+          await mount(tester, VideoRuntimeRoomPage(controller: controller));
+          await waitFor(tester, () => gets == 1, 'initial background GET');
+          FileImage? previous;
+          if (initialRead == 'displayed') {
+            await waitFor(
+              tester,
+              () => images.evaluate().isNotEmpty,
+              'first image',
+            );
+            previous = tester.widget<Image>(images).image as FileImage;
+          }
+          final reconnect = controller.reconnect();
+          expect(controller.status, RoomSessionStatus.reconnecting);
+          if (initialRead == 'displayed') {
+            await tester.pump();
+            expect(images, findsNothing);
+            await waitFor(
+              tester,
+              () => !previous!.file.existsSync(),
+              'old file removed',
+            );
+            expect(
+              PaintingBinding.instance.imageCache.containsKey(previous!),
+              isFalse,
+            );
+          }
+          // The pending variant completes both status transitions before a
+          // frame: rebuilding only on the final joined value is insufficient.
+          repository.reconnectResult.complete(repository.snapshot);
+          await reconnect;
+          expect(controller.status, RoomSessionStatus.joined);
+          expect(controller.snapshot!.sessionId, roomLeaseSessionId);
+          await tester.pump();
+          await waitFor(
+            tester,
+            () => gets == 2,
+            'fresh background GET after reconnect',
+          );
+          await waitFor(
+            tester,
+            () => images.evaluate().isNotEmpty,
+            'fresh background displayed',
+          );
+          final fresh = tester.widget<Image>(images).image as FileImage;
+          if (previous != null)
+            expect(fresh.file.path, isNot(previous.file.path));
+          if (initialRead == 'pending') {
+            expect(http.requests.first.aborted, isTrue);
+            oldContent.complete(content());
+            await tester.pumpAndSettle();
+            expect(tester.widget<Image>(images).image, same(fresh));
+          }
+          expect(gets, 2);
+          expect(http.requests.every((r) => r.method == 'GET'), isTrue);
+          expect(writes, isEmpty);
+          expect(rtc.joined, isFalse);
+        } finally {
+          if (!oldContent.isCompleted) oldContent.complete(content());
+          await tester.pumpWidget(const SizedBox());
+          controller.dispose();
+          await realtime.dispose();
+        }
+      },
+    );
+  }
+
+  for (final invalidation in ['ABA', 'lease', 'leave']) {
+    imageTest(
+      'background reconnect cannot recover across $invalidation or accept old GET',
+      (tester) async {
+        final oldContent = Completer<HttpClientResponse>();
+        readContent = (_) => oldContent.future;
+        final repository = _ReconnectingBackgroundRoom();
+        final realtime = MockRoomRealtimeGateway();
+        final controller = RoomController(
+          roomId: profileRoomId,
+          title: '可重连背景',
+          currentUserId: 1,
+          accessToken: 'fixture',
+          repository: repository,
+          rtcAdapter: MockRtcAdapter(),
+          realtimeGateway: realtime,
+          sessionChanges: identity,
+          activeUserId: () => identity.user,
+          identityGeneration: () => identity.generation,
+        );
+        try {
+          await mount(tester, VideoRuntimeRoomPage(controller: controller));
+          await waitFor(
+            tester,
+            () => http.requests.length == 1,
+            'pending old GET',
+          );
+          final reconnect = controller.reconnect();
+          expect(controller.status, RoomSessionStatus.reconnecting);
+          var response = repository.snapshot;
+          if (invalidation == 'ABA') {
+            identity.change(2);
+            identity.change(1);
+          } else if (invalidation == 'leave') {
+            await controller.leaveRoom();
+          } else {
+            const next = '11111111-1111-4111-8111-111111111112';
+            response = response.copyWith(
+              sessionId: next,
+              roomLease: parseRoomLease(
+                roomLeaseWireFixture(sessionId: next),
+                sessionId: next,
+              ),
+            );
+          }
+          repository.reconnectResult.complete(response);
+          await reconnect;
+          oldContent.complete(
+            MediaFakeResponse(
+              200,
+              Stream.value(_png),
+              type: 'image/png',
+              contentLength: _png.length,
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(controller.status, isNot(RoomSessionStatus.joined));
+          expect(http.requests, hasLength(1));
+          expect(http.requests.single.aborted, isTrue);
+          expect(
+            tester
+                .widgetList<Image>(find.byType(Image))
+                .where((w) => w.image is FileImage),
+            isEmpty,
+          );
+          await waitFor(
+            tester,
+            () => temp.listSync().isEmpty,
+            'old scope cleanup',
+          );
+          expect(writes, isEmpty);
+        } finally {
+          await tester.pumpWidget(const SizedBox());
+          controller.dispose();
+          await realtime.dispose();
+        }
+      },
+    );
+  }
 
   imageTest(
     'actual closed-owner room displays controlled background without membership, RTC, or IM; exit clears it',
