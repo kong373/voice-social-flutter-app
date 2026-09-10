@@ -19,6 +19,31 @@ class _MessageCenterPageState extends State<MessageCenterPage>
   AppDependencies? _dependencies;
   (int?, int)? _viewer;
   bool _identityLost = false;
+  _MessageVisibility? _visibility;
+  final ValueNotifier<int> _searchRevision = ValueNotifier(0);
+  bool get _canRead => _currentIdentity && _visibility?.viewerReason == null;
+
+  List<ConversationSummary> get _visibleConversations => [
+    for (final conversation in _conversations ?? <ConversationSummary>[])
+      if (_visibility?.reasonFor(conversation.targetUserId) == null)
+        conversation,
+  ];
+
+  void _visibilityChanged() {
+    if (!mounted || !_currentIdentity) return;
+    setState(() {
+      if (_visibility?.viewerReason != null) {
+        _cancelPendingLoads();
+        _conversations = null;
+        _loading = false;
+        _error = _visibility!.viewerReason;
+      } else {
+        _conversations = _visibleConversations;
+        _error = null;
+      }
+    });
+    _searchRevision.value++;
+  }
 
   (int?, int) get _currentViewer => (
     _dependencies!.sessionManager.session?.userId,
@@ -49,11 +74,17 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     final deps = AppDependencyScope.of(context);
     if (!identical(deps, _dependencies)) {
       _dependencies?.sessionManager.removeListener(_identityChanged);
+      _visibility?.removeListener(_visibilityChanged);
       if (_dependencies != null) _identityLost = true;
       _dependencies = deps;
       _viewer ??= _currentViewer;
+      _visibility = _MessageVisibility.forViewer(
+        deps.messageRepository,
+        _currentViewer,
+      )..addListener(_visibilityChanged);
       deps.sessionManager.addListener(_identityChanged);
       _identityChanged();
+      if (_visibility!.viewerReason != null) _visibilityChanged();
     }
     final ImAuthoritativeRefreshBus refreshBus = AppDependencyScope.of(
       context,
@@ -90,8 +121,8 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     return operation;
   }
 
-  Future<void> _load({bool showLoading = true}) async {
-    if (!mounted || !_currentIdentity) {
+  Future<void> _load({bool showLoading = true, bool revalidate = false}) async {
+    if (!mounted || !_currentIdentity || (!revalidate && !_canRead)) {
       return;
     }
     final int requestId = ++_loadRequestId;
@@ -101,6 +132,7 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     bool accepts() =>
         mounted &&
         _currentIdentity &&
+        (revalidate || _canRead) &&
         identical(dependencies, AppDependencyScope.of(context)) &&
         viewer == _currentViewer &&
         requestId == _loadRequestId;
@@ -117,12 +149,28 @@ class _MessageCenterPageState extends State<MessageCenterPage>
       if (!accepts()) {
         return;
       }
+      if (revalidate) _visibility!.restore();
       setState(() {
-        _conversations = value;
+        _conversations = [
+          for (final conversation in value)
+            if (_visibility?.reasonFor(conversation.targetUserId) == null)
+              conversation,
+        ];
         _loading = false;
       });
+      _searchRevision.value++;
     } catch (error) {
       if (!accepts()) {
+        return;
+      }
+      final denial = _MessageReadDenial.from(error);
+      if (denial != null) {
+        _visibility!.deny(denial);
+        setState(() {
+          _loading = false;
+          _conversations = null;
+          _error = _visibility!.viewerReason;
+        });
         return;
       }
       setState(() {
@@ -149,11 +197,14 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     _refreshSubscription?.cancel();
     _refreshSubscription = null;
     _dependencies?.sessionManager.removeListener(_identityChanged);
+    _visibility?.removeListener(_visibilityChanged);
+    _searchRevision.dispose();
     super.dispose();
   }
 
   Future<void> _openConversation(ConversationSummary conversation) async {
-    if (!_currentIdentity) return;
+    if (!_canRead || _visibility?.reasonFor(conversation.targetUserId) != null)
+      return;
     if (!conversation.available) {
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
@@ -184,12 +235,24 @@ class _MessageCenterPageState extends State<MessageCenterPage>
         await showSearch<ConversationSummary?>(
           context: context,
           delegate: _MessageConversationSearchDelegate(
-            conversations: _conversations ?? const <ConversationSummary>[],
-            isCurrent: () => mounted && _currentIdentity,
-            identityChanges: _dependencies!.sessionManager,
+            conversations: () => mounted && _canRead
+                ? _visibleConversations
+                : const <ConversationSummary>[],
+            isCurrent: () => mounted && _canRead,
+            identityChanges: Listenable.merge([
+              _dependencies!.sessionManager,
+              _searchRevision,
+            ]),
           ),
         );
-    if (!mounted || !_currentIdentity || selected == null) {
+    if (!mounted ||
+        !_canRead ||
+        selected == null ||
+        !_visibleConversations.any(
+          (row) =>
+              row.targetUserId == selected.targetUserId &&
+              row.id == selected.id,
+        )) {
       return;
     }
     await _openConversation(selected);
@@ -198,8 +261,7 @@ class _MessageCenterPageState extends State<MessageCenterPage>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final List<ConversationSummary> conversations =
-        _conversations ?? const <ConversationSummary>[];
+    final List<ConversationSummary> conversations = _visibleConversations;
     return PopScope<void>(
       onPopInvokedWithResult: (bool didPop, void result) {
         if (didPop) {
@@ -211,7 +273,21 @@ class _MessageCenterPageState extends State<MessageCenterPage>
           child: _loading
               ? const Center(child: CircularProgressIndicator())
               : _error != null
-              ? _MessageError(message: _error!, onRetry: _load)
+              ? !_canRead
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(_error!, textAlign: TextAlign.center),
+                            if (_currentIdentity)
+                              TextButton(
+                                onPressed: () => _load(revalidate: true),
+                                child: const Text('检查账号状态'),
+                              ),
+                          ],
+                        ),
+                      )
+                    : _MessageError(message: _error!, onRetry: _load)
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView(
@@ -412,7 +488,7 @@ class _MessageConversationSearchDelegate
     required this.identityChanges,
   }) : super(searchFieldLabel: '搜索联系人或消息内容');
 
-  final List<ConversationSummary> conversations;
+  final List<ConversationSummary> Function() conversations;
   final bool Function() isCurrent;
   final Listenable identityChanges;
 
@@ -448,7 +524,7 @@ class _MessageConversationSearchDelegate
 
   Widget _buildMatches(BuildContext context) {
     final String keyword = query.trim().toLowerCase();
-    final List<ConversationSummary> matches = conversations
+    final List<ConversationSummary> matches = conversations()
         .where(
           (ConversationSummary item) =>
               keyword.isEmpty ||

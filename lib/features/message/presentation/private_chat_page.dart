@@ -42,6 +42,8 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   final Set<String> _readScanCursors = {};
   final Set<String> _gapCursors = {};
   bool _refreshAgain = false;
+  _MessageVisibility? _visibility;
+  bool _rechecking = false;
 
   MessageRepository get _repository => _dependencies!.messageRepository;
 
@@ -87,6 +89,11 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       _loadStarted = true;
       _accountId = _dependencies!.sessionManager.session?.userId ?? 0;
       _accountGeneration = _dependencies!.sessionManager.identityGeneration;
+      _visibility = _MessageVisibility.forViewer(_repository, (
+        _dependencies!.sessionManager.session?.userId,
+        _accountGeneration!,
+      ))..addListener(_visibilityChanged);
+      _visibilityChanged();
       _load();
     } else if (!wasVisible && _visible) {
       _load(showLoading: false);
@@ -119,7 +126,94 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     _pendingSendRequestId = null;
     _pendingSendContent = null;
     _sending = false;
+    _rechecking = false;
+    _visibilityChanged();
     _load();
+  }
+
+  void _visibilityChanged() {
+    if (!mounted || _accountChanged || !_conversation.available) return;
+    final reason = _visibility?.reasonFor(_conversation.targetUserId);
+    if (reason == null) return;
+    _clearConversation(reason);
+  }
+
+  Future<void> _recheckAccess() async {
+    if (!_checkAccount() || !_active || _rechecking || _conversation.available)
+      return;
+    final epoch = _conversationEpoch;
+    final revision = _visibility!.revision;
+    final peer = _conversation.targetUserId;
+    bool current() =>
+        _checkAccount() &&
+        _active &&
+        epoch == _conversationEpoch &&
+        revision == _visibility!.revision;
+    setState(() => _rechecking = true);
+    try {
+      final rows = await _repository.fetchConversations();
+      if (!current()) return;
+      final fresh = rows
+          .where((row) => row.targetUserId == peer && row.available)
+          .firstOrNull;
+      if (fresh == null) return;
+      final repository = _repository;
+      final messages = repository is PagedPrivateMessageRepository
+          ? (await repository.fetchVisiblePrivateMessagePage(
+              fresh,
+              isCurrent: current,
+            )).messages
+          : await repository.fetchPrivateMessages(fresh);
+      if (!current()) return;
+      // Neither a cached receipt nor list membership proves history access.
+      // Publish only these two newly accepted reads, never the original title.
+      setState(() {
+        _conversationEpoch++;
+        _loadRequestId++;
+        _refreshFlight = null;
+        _conversation = fresh;
+        _rechecking = false;
+        _error = null;
+      });
+      _visibility!.restore(peer: peer);
+      _publishPage(messages, followLatest: true);
+      _scheduleSync();
+    } catch (error) {
+      if (!current()) return;
+      final denial = _MessageReadDenial.from(error);
+      if (denial != null) _visibility!.deny(denial, peer: peer);
+      // Failure is not proof of restored access. Keep the view redacted.
+    } finally {
+      if (mounted && epoch == _conversationEpoch)
+        setState(() => _rechecking = false);
+    }
+  }
+
+  void _clearConversation(String reason) {
+    _syncTimer?.cancel();
+    _loadRequestId++;
+    _conversationEpoch++;
+    _refreshAgain = false;
+    setState(() {
+      _conversation = _redactedConversation(_conversation, reason);
+      _messages.clear();
+      _historyMessageIds.clear();
+      _catchupBoundary = null;
+      _catchupCursor = null;
+      _readScanCursor = null;
+      _historyComplete = false;
+      _readScanCursors.clear();
+      _gapCursors.clear();
+      _controller.clear();
+      _pendingSendRequestId = null;
+      _pendingSendContent = null;
+      _sending = false;
+      _rechecking = false;
+      _loading = false;
+      _error = reason;
+    });
+    // Removing the composer/bubbles disposes their visits and controlled local
+    // previews. The app-level unknown-send journal is deliberately untouched.
   }
 
   @override
@@ -145,6 +239,9 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     _loadRequestId += 1;
     setState(() {
       _accountChanged = true;
+      _conversationEpoch++;
+      _conversation = _redactedConversation(_conversation, '登录状态已改变，请重新进入会话。');
+      _sending = false;
       _messages.clear();
       _historyMessageIds.clear();
       _catchupBoundary = null;
@@ -182,7 +279,9 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       _load(showLoading: false);
 
   Future<void> _load({bool showLoading = true}) {
-    if (!_checkAccount() || !_active) return Future<void>.value();
+    if (!_checkAccount() || !_active || !_conversation.available) {
+      return Future<void>.value();
+    }
     final Future<void>? active = _refreshFlight;
     if (active != null) {
       if (_repository is PagedPrivateMessageRepository) _refreshAgain = true;
@@ -218,6 +317,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     _loadRequestId += 1;
     WidgetsBinding.instance.removeObserver(this);
     _dependencies?.sessionManager.removeListener(_onAccountChanged);
+    _visibility?.removeListener(_visibilityChanged);
     _syncTimer?.cancel();
     _refreshSubscription?.cancel();
     _refreshSubscription = null;
@@ -231,6 +331,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       return;
     }
     final int requestId = ++_loadRequestId;
+    final conversationEpoch = _conversationEpoch;
     final MessageRepository repository = _repository;
     if (showLoading || _error != null) {
       setState(() {
@@ -303,9 +404,15 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       });
       if (hasNewMessages && followLatest) _scrollToEnd();
     } catch (error) {
-      if (!_checkAccount() || requestId != _loadRequestId || !_active) {
+      if (!_checkAccount() || conversationEpoch != _conversationEpoch) {
         return;
       }
+      final denial = _MessageReadDenial.from(error);
+      if (denial != null) {
+        _visibility!.deny(denial, peer: _conversation.targetUserId);
+        return;
+      }
+      if (requestId != _loadRequestId || !_active) return;
       setState(() {
         _loading = false;
         // A provider hint only requests an authoritative refresh.  If that
@@ -473,6 +580,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   Future<void> _send() async {
     if (!_checkAccount() ||
         !_active ||
+        !_conversation.available ||
         _sending ||
         !_repository.supportsPrivateSend) {
       return;
@@ -524,6 +632,11 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       if (mounted &&
           _checkAccount() &&
           conversationEpoch == _conversationEpoch) {
+        final denial = _MessageReadDenial.from(error, reading: false);
+        if (denial != null) {
+          _visibility!.deny(denial, peer: _conversation.targetUserId);
+          return;
+        }
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
@@ -536,7 +649,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   }
 
   void _mediaSent(ChatMessage message) {
-    if (!_checkAccount() || !_active) return;
+    if (!_checkAccount() || !_active || !_conversation.available) return;
     if (_conversation.isDraft && message.conversationId != null) {
       _conversation = _conversation.withServerIdentity(
         conversationId: message.conversationId!,
@@ -553,6 +666,17 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       _error = null;
     });
     _scrollToEnd();
+  }
+
+  void _mediaFailure(Object error, int epoch, {required bool reading}) {
+    if (!_checkAccount() ||
+        !_active ||
+        epoch != _conversationEpoch ||
+        !_conversation.available)
+      return;
+    final denial = _MessageReadDenial.from(error, reading: reading);
+    if (denial != null)
+      _visibility!.deny(denial, peer: _conversation.targetUserId);
   }
 
   void _scrollToEnd() {
@@ -611,6 +735,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   }
 
   void _openProfile() {
+    if (!_checkAccount() || !_conversation.available) return;
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (BuildContext context) =>
@@ -620,6 +745,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   }
 
   void _report() {
+    if (!_checkAccount() || !_conversation.available) return;
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (BuildContext context) => ReportPage(
@@ -633,6 +759,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
 
   @override
   Widget build(BuildContext context) {
+    final conversationEpoch = _conversationEpoch;
     final bool canSend =
         !_accountChanged &&
         _repository.supportsPrivateSend &&
@@ -665,7 +792,9 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    _repository.supportsPrivateRealtime
+                    !_conversation.available
+                        ? '不可访问'
+                        : _repository.supportsPrivateRealtime
                         ? '实时在线'
                         : _repository.supportsPrivateSend
                         ? '服务端留存'
@@ -684,6 +813,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
         ),
         actions: <Widget>[
           PopupMenuButton<String>(
+            enabled: _conversation.available && !_accountChanged,
             onSelected: (String value) {
               if (value == 'profile') {
                 _openProfile();
@@ -704,7 +834,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       ),
       body: Column(
         children: <Widget>[
-          if (!_repository.supportsPrivateRealtime)
+          if (_conversation.available && !_repository.supportsPrivateRealtime)
             Padding(
               padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
               child: const _MessageInfoCard(
@@ -712,7 +842,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                 text: '实时消息暂不可用，已保存的消息记录仍可查看。',
               ),
             ),
-          if (_conversation.isDraft)
+          if (_conversation.available && _conversation.isDraft)
             const Padding(
               padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
               child: _MessageInfoCard(
@@ -729,7 +859,31 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                     child: _loading
                         ? const Center(child: CircularProgressIndicator())
                         : _error != null
-                        ? _MessageError(message: _error!, onRetry: _load)
+                        ? _conversation.available
+                              ? _MessageError(message: _error!, onRetry: _load)
+                              : Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(28),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          _error!,
+                                          textAlign: TextAlign.center,
+                                        ),
+                                        if (!_accountChanged)
+                                          TextButton(
+                                            onPressed: _rechecking
+                                                ? null
+                                                : _recheckAccess,
+                                            child: Text(
+                                              _rechecking ? '正在检查…' : '检查会话状态',
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                )
                         : _messages.isEmpty
                         ? Center(
                             child: Text(
@@ -753,12 +907,18 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                                 return _ChatBubble(
                                   message: _messages[index],
                                   mediaVisible: _active && !_accountChanged,
+                                  onReadFailure: (error) => _mediaFailure(
+                                    error,
+                                    conversationEpoch,
+                                    reading: true,
+                                  ),
                                 );
                               },
                             ),
                           ),
                   ),
                   if (_repository is MediaPrivateMessageRepository &&
+                      _conversation.available &&
                       !_accountChanged)
                     ConstrainedBox(
                       constraints: BoxConstraints(
@@ -772,6 +932,11 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                           conversation: _conversation,
                           visible: _active && _conversation.available,
                           onSent: _mediaSent,
+                          onSendFailure: (error) => _mediaFailure(
+                            error,
+                            conversationEpoch,
+                            reading: false,
+                          ),
                         ),
                       ),
                     ),
@@ -842,10 +1007,15 @@ class _PrivateChatPageState extends State<PrivateChatPage>
 }
 
 class _ChatBubble extends StatelessWidget {
-  const _ChatBubble({required this.message, this.mediaVisible = true});
+  const _ChatBubble({
+    required this.message,
+    this.mediaVisible = true,
+    this.onReadFailure,
+  });
 
   final ChatMessage message;
   final bool mediaVisible;
+  final ValueChanged<Object>? onReadFailure;
 
   @override
   Widget build(BuildContext context) {
@@ -883,6 +1053,7 @@ class _ChatBubble extends StatelessWidget {
               message: message,
               host: AppDependencyScope.of(context).privateMediaHost,
               visible: mediaVisible,
+              onReadFailure: onReadFailure,
             )
           else
             Text(

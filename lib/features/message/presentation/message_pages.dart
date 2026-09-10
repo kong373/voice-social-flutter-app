@@ -20,6 +20,7 @@ import 'package:voice_social_app/features/social/presentation/social_pages.dart'
 import 'package:voice_social_app/shared/time_format.dart';
 
 part 'message_center_page.dart';
+part 'message_visibility.dart';
 part 'private_chat_page.dart';
 part 'notification_pages.dart';
 part 'message_recovery_page.dart';

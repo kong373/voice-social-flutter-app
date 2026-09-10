@@ -17,6 +17,7 @@ class PrivateMediaComposer extends StatefulWidget {
     required this.conversation,
     required this.visible,
     required this.onSent,
+    this.onSendFailure,
     super.key,
   });
   final PrivateMediaHost host;
@@ -24,6 +25,7 @@ class PrivateMediaComposer extends StatefulWidget {
   final ConversationSummary conversation;
   final bool visible;
   final ValueChanged<ChatMessage> onSent;
+  final ValueChanged<Object>? onSendFailure;
   @override
   State<PrivateMediaComposer> createState() => _PrivateMediaComposerState();
 }
@@ -162,7 +164,18 @@ class _PrivateMediaComposerState extends State<PrivateMediaComposer>
         !_foreground ||
         !identical(visit.intent, frozen))
       return;
-    final receipt = await visit.send(widget.repository);
+    late final ChatMessage receipt;
+    try {
+      receipt = await visit.send(widget.repository);
+    } catch (error) {
+      if (mounted &&
+          identical(_visit, visit) &&
+          visit.current &&
+          widget.visible &&
+          _foreground)
+        widget.onSendFailure?.call(error);
+      rethrow;
+    }
     if (mounted &&
         identical(_visit, visit) &&
         visit.current &&
@@ -367,11 +380,13 @@ class PrivateMediaBubble extends StatefulWidget {
     required this.message,
     required this.host,
     required this.visible,
+    this.onReadFailure,
     super.key,
   });
   final ChatMessage message;
   final PrivateMediaHost host;
   final bool visible;
+  final ValueChanged<Object>? onReadFailure;
   @override
   State<PrivateMediaBubble> createState() => _PrivateMediaBubbleState();
 }
@@ -506,6 +521,9 @@ class _PrivateMediaBubbleState extends State<PrivateMediaBubble>
           _busy = false;
           _error = privateMediaError(e);
         });
+        if (widget.visible && _foreground && _scope?.isCurrent == true) {
+          widget.onReadFailure?.call(e);
+        }
       }
     } finally {
       await temporary?.dispose();
