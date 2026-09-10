@@ -497,28 +497,30 @@ class _SeatSummary extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: <Widget>[
               for (int index = 0; index < 9; index += 1)
-                Container(
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: index < safeOccupied
-                        ? RoomColors.primary.withValues(alpha: 0.28)
-                        : Colors.white.withValues(alpha: 0.07),
-                    border: Border.all(
+                Flexible(
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
                       color: index < safeOccupied
-                          ? RoomColors.primary
-                          : Colors.white.withValues(alpha: 0.12),
+                          ? RoomColors.primary.withValues(alpha: 0.28)
+                          : Colors.white.withValues(alpha: 0.07),
+                      border: Border.all(
+                        color: index < safeOccupied
+                            ? RoomColors.primary
+                            : Colors.white.withValues(alpha: 0.12),
+                      ),
                     ),
-                  ),
-                  child: Icon(
-                    index < safeOccupied
-                        ? Icons.person_rounded
-                        : Icons.add_rounded,
-                    size: 12,
-                    color: index < safeOccupied
-                        ? RoomColors.textPrimary
-                        : RoomColors.textSecondary,
+                    child: Icon(
+                      index < safeOccupied
+                          ? Icons.person_rounded
+                          : Icons.add_rounded,
+                      size: 12,
+                      color: index < safeOccupied
+                          ? RoomColors.textPrimary
+                          : RoomColors.textSecondary,
+                    ),
                   ),
                 ),
             ],
