@@ -124,6 +124,20 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
        _leaveTimeout = leaveTimeout,
        _renewTimeout = renewTimeout {
     _backgroundAudioSubscription = _backgroundAudio?.changes.listen((_) {
+      if (_backgroundAudio.hasActiveLease) return;
+      final phase = _backgroundAudio.interruption;
+      if (phase == RoomAudioInterruptionPhase.began &&
+          _interruptionPhase != phase) {
+        // A pending SDK enable is not prior publication and cannot be resumed.
+        _interruptedPublication = _localAudioEnabled ? Object() : null;
+      } else if (phase == null) {
+        _interruptedPublication = null;
+      }
+      _interruptionPhase = phase;
+      if (phase == RoomAudioInterruptionPhase.ended &&
+          _interruptedPublication == null) {
+        _queueBackgroundAudioRecovery();
+      }
       if (!_backgroundAudio.hasActiveLease &&
           (_localAudioEnabled || _audioPublishing) &&
           _joined &&
@@ -145,6 +159,8 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
   int _audioRequest = 0;
   int _publicationGeneration = 0;
   bool _audioPublishing = false;
+  Object? _interruptedPublication;
+  RoomAudioInterruptionPhase? _interruptionPhase;
   final DateTime Function() _now;
   final Duration _joinTimeout;
   final Duration _leaveTimeout;
@@ -206,6 +222,33 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
   bool get initialized => _initialized;
   bool get joined => _joined;
   bool get localAudioEnabled => _localAudioEnabled;
+  Object? get interruptedPublication => _interruptedPublication;
+  bool get interruptionCanResume =>
+      _interruptedPublication != null &&
+      _backgroundAudio?.interruption == RoomAudioInterruptionPhase.ended;
+
+  /// Only a matched native end may continue earlier publication. The room
+  /// controller supplies fresh authority; this never prompts for permission.
+  Future<void> resumeInterruptedAudio(
+    Object ticket, {
+    required bool Function() allowed,
+  }) async {
+    bool current() =>
+        identical(_interruptedPublication, ticket) &&
+        (_credentials?.expiresAt?.isAfter(_now()) ?? false) &&
+        allowed();
+    if (!interruptionCanResume || !current()) return;
+    try {
+      await _queueAudio(
+        true,
+        publicationAllowed: current,
+        interruptedContinuation: true,
+      );
+    } finally {
+      if (identical(_interruptedPublication, ticket))
+        _interruptedPublication = null;
+    }
+  }
 
   bool get hasBackgroundAudioLease =>
       !_disposed &&
@@ -229,7 +272,11 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
   void setForeground(bool foreground) {
     if (_disposed || _disposing || _foreground == foreground) return;
     _foreground = foreground;
-    if (foreground && _joined && !hasBackgroundAudioLease) {
+    if (foreground &&
+        _joined &&
+        !hasBackgroundAudioLease &&
+        _backgroundAudio?.interruption != RoomAudioInterruptionPhase.began &&
+        _interruptedPublication == null) {
       _queueBackgroundAudioRecovery();
     }
   }
@@ -242,6 +289,8 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
     final operation = _audioTail.then((_) async {
       if (generation == _lifecycleGeneration &&
           _foreground &&
+          _backgroundAudio.interruption != RoomAudioInterruptionPhase.began &&
+          _interruptedPublication == null &&
           !hasBackgroundAudioLease) {
         await _startBackgroundAudio(microphone: _localAudioEnabled);
       }
@@ -255,7 +304,7 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
   Future<void> _disableAudioAfterNativeLoss() async {
     final generation = _lifecycleGeneration;
     try {
-      await setLocalAudioEnabled(false);
+      await _queueAudio(false);
     } catch (_) {
       if (generation != _lifecycleGeneration ||
           !_joined ||
@@ -274,6 +323,7 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
   Future<bool> _startBackgroundAudio({
     required bool microphone,
     bool Function()? publicationAllowed,
+    bool interruptedContinuation = false,
   }) async {
     final generation = _lifecycleGeneration;
     final audio = _backgroundAudio;
@@ -290,7 +340,9 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
           _connectionActive &&
           generation == _lifecycleGeneration &&
           (!microphone || (publicationAllowed?.call() ?? true)) &&
-          (_foreground || downgrade),
+          (_foreground ||
+              downgrade ||
+              (interruptedContinuation && _interruptedPublication != null)),
     );
   }
 
@@ -755,6 +807,15 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
     bool enabled, {
     bool Function()? publicationAllowed,
   }) {
+    _interruptedPublication = null;
+    return _queueAudio(enabled, publicationAllowed: publicationAllowed);
+  }
+
+  Future<void> _queueAudio(
+    bool enabled, {
+    bool Function()? publicationAllowed,
+    bool interruptedContinuation = false,
+  }) {
     final generation = _lifecycleGeneration;
     final request = ++_audioRequest;
     final publicationGeneration = _publicationGeneration;
@@ -764,7 +825,12 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
     final operation = _audioTail.then((_) async {
       if (generation != _lifecycleGeneration || request != _audioRequest)
         return;
-      await _setLocalAudioEnabled(enabled, request, mayPublish);
+      await _setLocalAudioEnabled(
+        enabled,
+        request,
+        mayPublish,
+        interruptedContinuation: interruptedContinuation,
+      );
     });
     _audioTail = operation.then<void>(
       (_) {},
@@ -776,13 +842,17 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
   /// Revoke pending enables synchronously, without waiting for either audio
   /// mutex or superseding a queued disable. Already-published audio still
   /// requires the normal disable/leave operation.
-  void cancelPendingPublication() => ++_publicationGeneration;
+  void cancelPendingPublication() {
+    ++_publicationGeneration;
+    _interruptedPublication = null;
+  }
 
   Future<void> _setLocalAudioEnabled(
     bool enabled,
     int request,
-    bool Function() publicationAllowed,
-  ) async {
+    bool Function() publicationAllowed, {
+    bool interruptedContinuation = false,
+  }) async {
     _ensureNotDisposed();
     if (!_joined) {
       return;
@@ -806,7 +876,10 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
       );
     }
     if (enabled) {
-      final granted = await _hasMicrophonePermission(audioRequestCurrent);
+      final granted = await _hasMicrophonePermission(
+        audioRequestCurrent,
+        requestIfNeeded: !interruptedContinuation,
+      );
       if (!audioRequestCurrent()) return;
       if (!granted) {
         throw const RtcAdapterException(
@@ -822,6 +895,7 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
         // queued disable still owns the existing playback lease and downgrades
         // it normally; audioRequestCurrent below forbids its superseded enable.
         publicationAllowed: publicationAllowed,
+        interruptedContinuation: interruptedContinuation,
       );
       if (!audioRequestCurrent()) return;
       if (!started) {
@@ -1508,7 +1582,10 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
     _handlerRegistered = true;
   }
 
-  Future<bool> _hasMicrophonePermission(bool Function() allowed) async {
+  Future<bool> _hasMicrophonePermission(
+    bool Function() allowed, {
+    bool requestIfNeeded = true,
+  }) async {
     final NativePermissionAdapter? adapter = _microphonePermissionAdapter;
     if (adapter == null) {
       return false;
@@ -1519,6 +1596,7 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
       if (state == PermissionState.granted) {
         return true;
       }
+      if (!requestIfNeeded) return false;
       if (state == PermissionState.permanentlyDenied ||
           state == PermissionState.restricted ||
           state == PermissionState.unavailable) {

@@ -3,8 +3,9 @@
 Local Flutter plugin; no RTC engine, HTTP, secrets, background runner, wake lock,
 boot receiver, or service restart. Created from Flutter commit
 `87ccc5ec55b9ea953200b1fd3e9545dea1f298c5` on `codex/rtc-background-native`.
-Only this package is in scope. AppDependencies, root pubspec/lock, Runner plist,
-RtcAdapter, RoomController and backend integration belong to the main task.
+That initial delivery was package-only. The Q10 follow-up adds the room adapter
+and controller interruption wiring documented below. It does not alter root
+pubspec/lock, Runner plist, AppDependencies or backend behavior.
 
 ## Frozen public Dart contract
 
@@ -17,8 +18,9 @@ Future<bool> isActive({required String sessionId});
 Stream<RoomAudioActivity> get events;
 Future<void> dispose();
 
-const RoomAudioActivity({required String sessionId, required bool active});
-// final String sessionId; final bool active;
+const RoomAudioActivity({required String sessionId, required bool active,
+  AudioInterruptionPhase? interruption});
+// interruption is null, began, or ended. Neither phase means active audio.
 ```
 
 `sessionId` is an opaque, locally generated UUID per transport generation, never
@@ -35,7 +37,13 @@ MethodChannel `voice_social_app/room_audio`:
 | renew (private to plugin) | `{sessionId: String}` | bool |
 
 EventChannel `voice_social_app/room_audio/events` takes no listen arguments.
-Every event is exactly `{sessionId: String, active: bool}`. Unknown fields,
+Ordinary events are exactly `{sessionId: String, active: bool}`. iOS interruption
+events are exactly `{sessionId: String, active: false, interruption: 'began'|'ended'}`.
+Only a currently owned UUID can begin; only its matching begin can end once.
+An interruption cancels local renewals but keeps a non-active continuation ID.
+Neither phase calls start automatically or accepts late positive activity.
+Explicit stop, expiration, malformed data, service loss or disposal revoke it.
+Unknown fields,
 numeric booleans and malformed UUIDs are rejected. Invalid native method
 arguments return `invalid_arguments` with a constant message and no details;
 unknown methods are not implemented. Dart invalid UUIDs throw `ArgumentError`;
@@ -146,12 +154,21 @@ its own bounded observation lease, not proof of an activated AVAudioSession.
 If the host needs proof of real audio, it must use RTC callbacks and physical
 playback/capture acceptance, independently of this API.
 
-Interruption begin/unknown interruption, media services loss/reset, termination,
-invalid configuration on route/foreground/query/renew and engine detach clear
-the lease. Interruption end never restores it automatically. Stop only removes
+Interruption begin clears active eligibility while retaining a bounded continuation
+ticket with the original UUID, microphone mode and monotonic deadline. Only a matching
+end carrying Apple's `shouldResume`, still-valid configuration and the original
+unexpired deadline emits an inactive `ended` signal. The native layer never starts
+audio itself. After current actor, room lease, occupancy, mute and permission checks,
+the host can explicitly start the same UUID (including in background for the prior
+mode only). This is not a new background microphone grant. A successful checked
+start begins normal native renewal again; waiting never extends the old deadline.
+Unknown interruption, end without `shouldResume`, media services loss/reset,
+termination, expiry, invalid configuration and engine detach discard the ticket.
+Stop only removes
 the matching observation lease; it does not deactivate the SDK's AudioSession.
 The registrar publishes the plugin so Flutter delivers engine-detach cleanup.
-The main task must add the host background mode and own SDK stop/mute/wiring.
+Host integration and Q10 validation are documented in
+`../../docs/product-q10-audio-interruption-recovery-20260910.md`.
 
 ## Verification and remaining acceptance
 

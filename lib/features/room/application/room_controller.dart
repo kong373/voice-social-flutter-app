@@ -190,6 +190,10 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   bool _rtcPublicationActive = false;
   Future<void> _rtcAudioTail = Future<void>.value();
   int _rtcAudioAuthorityGeneration = 0;
+  Object? _audioInterruptionTicket;
+  RoomSnapshot? _interruptedGrant;
+  Object? _interruptionRecoveryFlight;
+  int _acceptedAuthorityReads = 0;
   bool _refreshingFromEvent = false;
   bool _joinCancelled = false;
   bool _disposed = false;
@@ -271,7 +275,8 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     final MicSeat? seat = _ownSeat();
     return seat != null &&
         seat.isOccupied &&
-        (!_transportPublishing || seat.state == MicSeatState.occupiedMuted);
+        ((!_transportPublishing && _audioInterruptionTicket == null) ||
+            seat.state == MicSeatState.occupiedMuted);
   }
 
   bool get _transportPublishing =>
@@ -683,7 +688,9 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     _foreground = foreground;
     // Background continuation may keep already-published audio, but must not
     // finish a pending foreground grant/unmute and start a new microphone.
-    if (!foreground && !_transportPublishing) {
+    if (!foreground &&
+        !_transportPublishing &&
+        _audioInterruptionTicket == null) {
       _invalidateRtcAudioAuthority();
       _rtcAudioRequested = false;
     }
@@ -789,8 +796,100 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _onBackgroundAudioChanged() {
+    final rtc = _rtcAdapter;
+    if (!_disposed &&
+        _ownsRtcTransport(_transportLeaseId) &&
+        rtc is AgoraRtcAdapter) {
+      final ticket = rtc.interruptedPublication;
+      if (ticket == null) {
+        _audioInterruptionTicket = null;
+        _interruptedGrant = null;
+      } else if (!identical(ticket, _audioInterruptionTicket)) {
+        final current = _snapshot;
+        if (_rtcAudioRequested &&
+            _rtcPublicationActive &&
+            current != null &&
+            _lease != null &&
+            _snapshotAllowsRtcPublication(current)) {
+          _audioInterruptionTicket = ticket;
+          _interruptedGrant = current;
+        }
+      }
+      if (rtc.interruptionCanResume &&
+          identical(ticket, _audioInterruptionTicket) &&
+          ticket != null &&
+          _interruptionRecoveryFlight == null) {
+        _interruptionRecoveryFlight = ticket;
+        unawaited(_resumeInterruptedPublication(rtc, ticket));
+      }
+    }
     if (!_disposed && !_foreground && _ownsRtcTransport(_transportLeaseId)) {
       _scheduleHeartbeat();
+    }
+  }
+
+  Future<void> _resumeInterruptedPublication(
+    AgoraRtcAdapter rtc,
+    Object ticket,
+  ) async {
+    final epoch = _sessionEpoch;
+    final transport = _transportLeaseId;
+    final grant = _interruptedGrant;
+    bool current() =>
+        grant != null &&
+        _lease != null &&
+        _isJoinedEpoch(epoch) &&
+        _ownsRtcTransport(transport) &&
+        identical(_audioInterruptionTicket, ticket) &&
+        identical(rtc.interruptedPublication, ticket) &&
+        _authorityMutationCount == 0 &&
+        _snapshot != null &&
+        _sameGrant(grant, _snapshot!);
+    try {
+      if (!current()) return;
+      final reads = _acceptedAuthorityReads;
+      await refreshRoomAuthority();
+      if (!current() ||
+          _acceptedAuthorityReads <= reads ||
+          _authoritySyncDegraded)
+        return;
+      final generation = _rtcAudioAuthorityGeneration;
+      bool allowed() =>
+          current() &&
+          generation == _rtcAudioAuthorityGeneration &&
+          !_authoritySyncDegraded &&
+          _snapshotAllowsRtcPublication(_snapshot!);
+      await _withRtcAudioMutex<void>(() async {
+        if (!allowed()) return;
+        await rtc.resumeInterruptedAudio(ticket, allowed: allowed);
+        // resume consumes the adapter ticket. All other authority boundaries
+        // must still hold before acknowledging the result in this controller.
+        if (!_isJoinedEpoch(epoch) ||
+            !_ownsRtcTransport(transport) ||
+            !identical(_audioInterruptionTicket, ticket) ||
+            generation != _rtcAudioAuthorityGeneration)
+          return;
+        _rtcPublicationActive = rtc.localAudioEnabled;
+        _rtcAudioRequested = rtc.localAudioEnabled;
+      });
+    } catch (_) {
+      // No retry from an old OS event, no permission prompt, no inferred grant.
+      if (_isJoinedEpoch(epoch) &&
+          _ownsRtcTransport(transport) &&
+          identical(_audioInterruptionTicket, ticket)) {
+        _errorMessage = '音频未能恢复，请检查麦克风权限和房间状态后重试';
+      }
+    } finally {
+      if (identical(rtc.interruptedPublication, ticket))
+        rtc.cancelPendingPublication();
+      if (identical(_audioInterruptionTicket, ticket)) {
+        _audioInterruptionTicket = null;
+        _interruptedGrant = null;
+        if (!rtc.localAudioEnabled) _rtcAudioRequested = false;
+        _notify();
+      }
+      if (identical(_interruptionRecoveryFlight, ticket))
+        _interruptionRecoveryFlight = null;
     }
   }
 
@@ -990,6 +1089,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       _authorityKnown = true;
       _authoritySyncDegraded = false;
       _mutedInRoom = projection.roomMuted;
+      _acceptedAuthorityReads++;
       // A read alone never resumes audio. A newly observed occupancy grant
       // may create one foreground publication attempt with a fresh token.
       final RoomSnapshot next = projection.snapshot.copyWith(
@@ -1619,7 +1719,13 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     final epoch = _sessionEpoch;
     final audioGeneration = _rtcAudioAuthorityGeneration;
     final pending =
-        _pendingMicToggle ?? (ownSeat.backendIndex, _transportPublishing);
+        _pendingMicToggle ??
+        (
+          ownSeat.backendIndex,
+          _transportPublishing || _audioInterruptionTicket != null,
+        );
+    // A deliberate microphone action always supersedes the system resume intent.
+    _cancelPendingRtcPublication();
     final nextMuted = pending.$2;
     final audio = ownSeat.audioMute;
     if (!nextMuted &&
@@ -2680,6 +2786,8 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _cancelPendingRtcPublication() {
+    _audioInterruptionTicket = null;
+    _interruptedGrant = null;
     final rtc = _rtcAdapter;
     if (_ownsRtcTransport(_transportLeaseId) && rtc is AgoraRtcAdapter) {
       rtc.cancelPendingPublication();

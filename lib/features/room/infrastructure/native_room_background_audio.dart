@@ -21,6 +21,11 @@ class NativeRoomBackgroundAudio implements RoomBackgroundAudioPort {
     (event) => RoomBackgroundAudioActivity(
       sessionId: event.sessionId,
       active: event.active,
+      interruption: switch (event.interruption) {
+        AudioInterruptionPhase.began => RoomAudioInterruptionPhase.began,
+        AudioInterruptionPhase.ended => RoomAudioInterruptionPhase.ended,
+        null => null,
+      },
     ),
   );
 

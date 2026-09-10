@@ -3,14 +3,18 @@ import 'dart:math';
 
 /// Native runtime eligibility, not proof of activated audio, media quality or a
 /// server lease. Platform implementations may only observe audio capability.
+enum RoomAudioInterruptionPhase { began, ended }
+
 class RoomBackgroundAudioActivity {
   const RoomBackgroundAudioActivity({
     required this.sessionId,
     required this.active,
+    this.interruption,
   });
 
   final String sessionId;
   final bool active;
+  final RoomAudioInterruptionPhase? interruption;
 }
 
 /// Host wiring injects this port only on supported platforms, otherwise null.
@@ -31,7 +35,18 @@ class RoomBackgroundAudioLease {
   RoomBackgroundAudioLease(this._port) {
     _subscription = _port.activities.listen(
       (event) {
-        if (event.sessionId == _sessionId && !event.active) _loseActivity();
+        if (event.sessionId != _sessionId || event.active) return;
+        if (event.interruption == RoomAudioInterruptionPhase.began &&
+            (_active || _starting)) {
+          _interruption = RoomAudioInterruptionPhase.began;
+          _invalidate(keepInterruption: true);
+        } else if (event.interruption == RoomAudioInterruptionPhase.ended &&
+            _interruption == RoomAudioInterruptionPhase.began) {
+          _interruption = RoomAudioInterruptionPhase.ended;
+          _changes.add(null);
+        } else if (event.interruption == null) {
+          _loseActivity();
+        }
       },
       onError: (Object _) => _loseActivity(),
       onDone: _loseActivity,
@@ -49,9 +64,11 @@ class RoomBackgroundAudioLease {
   bool _active = false;
   bool _starting = false;
   bool _disposed = false;
+  RoomAudioInterruptionPhase? _interruption;
 
   bool get hasActiveLease => !_disposed && _active && _sessionId != null;
   Stream<void> get changes => _changes.stream;
+  RoomAudioInterruptionPhase? get interruption => _interruption;
 
   void begin() {
     unawaited(end());
@@ -98,6 +115,7 @@ class RoomBackgroundAudioLease {
         }
         final changed = !_active;
         _active = true;
+        _interruption = null;
         _starting = false;
         if (changed) _changes.add(null);
         return true;
@@ -128,7 +146,8 @@ class RoomBackgroundAudioLease {
     }
   }
 
-  void _invalidate() {
+  void _invalidate({bool keepInterruption = false}) {
+    if (!keepInterruption) _interruption = null;
     ++_revision;
     _active = false;
     _starting = false;
@@ -136,7 +155,7 @@ class RoomBackgroundAudioLease {
   }
 
   void _loseActivity() {
-    if (_disposed || (!_active && !_starting)) return;
+    if (_disposed || (!_active && !_starting && _interruption == null)) return;
     final id = _sessionId;
     _invalidate();
     if (id != null) unawaited(_boundedStop(id));

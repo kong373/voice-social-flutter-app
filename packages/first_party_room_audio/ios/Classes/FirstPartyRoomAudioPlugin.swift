@@ -8,6 +8,7 @@ public final class FirstPartyRoomAudioPlugin: NSObject, FlutterPlugin, FlutterSt
     private var sessionId: String?
     private var microphone = false
     private var interrupted = false
+    private var continuation: InterruptionContinuation?
     private var sink: FlutterEventSink?
     private var observers: [NSObjectProtocol] = []
     private var expiry: Timer?
@@ -32,7 +33,25 @@ public final class FirstPartyRoomAudioPlugin: NSObject, FlutterPlugin, FlutterSt
             guard let self = self else { return }
             let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? NSNumber)?.uintValue
             if type == AVAudioSession.InterruptionType.ended.rawValue {
-                self.interrupted = false // Never auto-reacquire the old lease.
+                self.interrupted = false
+                guard var ticket = self.continuation else { return }
+                // Duplicate ends must not revoke an in-flight checked resume.
+                guard !ticket.ended else { return }
+                let raw = (note.userInfo?[AVAudioSessionInterruptionOptionKey] as? NSNumber)?.uintValue ?? 0
+                let shouldResume = AVAudioSession.InterruptionOptions(rawValue: raw).contains(.shouldResume)
+                guard ticket.end(shouldResume: shouldResume, now: ProcessInfo.processInfo.systemUptime),
+                      self.eligible(ticket.microphone) else { self.clear(); return }
+                self.continuation = ticket
+                self.sink?(["sessionId": ticket.sessionId, "active": false, "interruption": "ended"])
+            } else if type == AVAudioSession.InterruptionType.began.rawValue {
+                guard !self.interrupted else { return }
+                self.interrupted = true
+                guard let id = self.sessionId else { self.clear(); return }
+                self.continuation = InterruptionContinuation(sessionId: id, microphone: self.microphone, deadline: self.deadline)
+                self.sessionId = nil; self.microphone = false
+                // Keep only the original timer and owner reservation, not audio
+                // eligibility. An explicit stop/expiry discards this ticket.
+                self.sink?(["sessionId": id, "active": false, "interruption": "began"])
             } else {
                 self.interrupted = true
                 self.clear()
@@ -61,6 +80,8 @@ public final class FirstPartyRoomAudioPlugin: NSObject, FlutterPlugin, FlutterSt
     }
     private func validateLease() {
         if sessionId != nil && (ProcessInfo.processInfo.systemUptime >= deadline || !eligible(microphone)) { clear() }
+        if let ticket = continuation,
+           ProcessInfo.processInfo.systemUptime >= ticket.deadline { clear() }
     }
     private func renew() {
         expiry?.invalidate()
@@ -71,7 +92,8 @@ public final class FirstPartyRoomAudioPlugin: NSObject, FlutterPlugin, FlutterSt
     }
     private func clear() {
         expiry?.invalidate(); expiry = nil
-        let old = sessionId
+        let old = sessionId ?? continuation?.sessionId
+        continuation = nil
         sessionId = nil; microphone = false; deadline = 0
         if Self.owner === self { Self.owner = nil }
         if let old = old { sink?(["sessionId": old, "active": false]) }
@@ -99,15 +121,20 @@ public final class FirstPartyRoomAudioPlugin: NSObject, FlutterPlugin, FlutterSt
         switch call.method {
         case "start":
             guard (Self.owner == nil || Self.owner === self),
-                  (sessionId == nil || sessionId == id) else { result(false); return }
+                  (sessionId == nil || sessionId == id),
+                  (continuation == nil || continuation?.sessionId == id) else { result(false); return }
             let foreground = UIApplication.shared.applicationState == .active
-            guard (sessionId != nil || foreground), (!mic || microphone || foreground), eligible(mic) else { result(false); return }
+            let continuing = continuation?.permits(sessionId: id, microphone: mic, now: ProcessInfo.processInfo.systemUptime) ?? false
+            guard (continuation == nil || continuing),
+                  (sessionId != nil || foreground || continuing),
+                  (!mic || microphone || foreground || continuing), eligible(mic) else { result(false); return }
+            continuation = nil
             sessionId = id; microphone = mic; Self.owner = self
             renew()
             sink?(["sessionId": id, "active": true])
             result(true)
         case "stop":
-            if sessionId == id { clear() }
+            if sessionId == id || continuation?.sessionId == id { clear() }
             result(nil)
         case "renew":
             let active = sessionId == id

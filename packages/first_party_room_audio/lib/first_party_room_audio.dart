@@ -1,10 +1,17 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
 
+enum AudioInterruptionPhase { began, ended }
+
 final class RoomAudioActivity {
-  const RoomAudioActivity({required this.sessionId, required this.active});
+  const RoomAudioActivity({
+    required this.sessionId,
+    required this.active,
+    this.interruption,
+  });
   final String sessionId;
   final bool active;
+  final AudioInterruptionPhase? interruption;
 }
 
 /// One owner per Flutter engine. Activity is a runtime lease, not media evidence.
@@ -28,6 +35,8 @@ final class FirstPartyRoomAudio {
   Timer? _heartbeat;
   String? _session;
   String? _starting;
+  String? _interruptedSession;
+  bool _interruptionEnded = false;
   int _revision = 0;
   bool _disposed = false;
   Future<void>? _disposal;
@@ -52,12 +61,16 @@ final class FirstPartyRoomAudio {
       (dynamic data) {
         if (_disposed) return;
         if (data is! Map ||
-            data.length != 2 ||
+            !(data.length == 2 ||
+                (data.length == 3 &&
+                    data['active'] == false &&
+                    (data['interruption'] == 'began' ||
+                        data['interruption'] == 'ended'))) ||
             data['sessionId'] is! String ||
             (data['sessionId'] as String).length != 36 ||
             !_uuid.hasMatch(data['sessionId'] as String) ||
             data['active'] is! bool) {
-          final id = _session ?? _starting;
+          final id = _session ?? _starting ?? _interruptedSession;
           if (id != null) _invalidate(id, cleanup: true);
           _events.addError(const FormatException('Invalid room audio event'));
           return;
@@ -65,14 +78,36 @@ final class FirstPartyRoomAudio {
         final event = RoomAudioActivity(
           sessionId: data['sessionId'] as String,
           active: data['active'] as bool,
+          interruption: switch (data['interruption']) {
+            'began' => AudioInterruptionPhase.began,
+            'ended' => AudioInterruptionPhase.ended,
+            _ => null,
+          },
         );
+        if (event.interruption == AudioInterruptionPhase.began) {
+          if (event.sessionId != _session && event.sessionId != _starting)
+            return;
+          _clear();
+          _interruptedSession = event.sessionId;
+          _events.add(event);
+          return;
+        }
+        if (event.interruption == AudioInterruptionPhase.ended) {
+          if (event.sessionId != _interruptedSession || _interruptionEnded)
+            return;
+          _interruptionEnded = true;
+          _events.add(event);
+          return;
+        }
         // A late positive signal cannot revive an invalidated generation.
         if (event.active &&
             event.sessionId != _session &&
             event.sessionId != _starting)
           return;
         if (!event.active &&
-            (event.sessionId == _session || event.sessionId == _starting)) {
+            (event.sessionId == _session ||
+                event.sessionId == _starting ||
+                event.sessionId == _interruptedSession)) {
           _invalidate(event.sessionId, cleanup: false);
           return;
         }
@@ -80,7 +115,7 @@ final class FirstPartyRoomAudio {
       },
       onError: (Object _) {
         if (_disposed) return;
-        final id = _session ?? _starting;
+        final id = _session ?? _starting ?? _interruptedSession;
         if (id != null) _invalidate(id, cleanup: true);
       },
     );
@@ -128,7 +163,7 @@ final class FirstPartyRoomAudio {
   }
 
   void _invalidate(String id, {required bool cleanup}) {
-    if (_session == id || _starting == id) {
+    if (_session == id || _starting == id || _interruptedSession == id) {
       _clear();
       _events.add(RoomAudioActivity(sessionId: id, active: false));
       // Capture the original generation; never read _session after awaiting.
@@ -136,40 +171,47 @@ final class FirstPartyRoomAudio {
     }
   }
 
-  Future<bool> start({
-    required String sessionId,
-    required bool microphone,
-  }) => _serial(() async {
-    _validate(sessionId);
-    if (_disposed || (_session != null && _session != sessionId)) return false;
-    _starting = sessionId;
-    final revision = ++_revision;
-    _listen();
-    final ok = await _bool('start', {
-      'sessionId': sessionId,
-      'microphone': microphone,
-    });
-    if (revision != _revision) return false;
-    if (ok == null) {
-      _invalidate(sessionId, cleanup: true);
-      return false;
-    }
-    _starting = null;
-    if (ok) {
-      _session = sessionId;
-      _heartbeat ??= Timer.periodic(const Duration(seconds: 10), (_) {
-        unawaited(
-          _serial(() async {
-            final id = _session;
-            if (id != null && await _bool('renew', {'sessionId': id}) != true) {
-              _invalidate(id, cleanup: true);
-            }
-          }),
-        );
+  Future<bool> start({required String sessionId, required bool microphone}) =>
+      _serial(() async {
+        _validate(sessionId);
+        if (_disposed || (_session != null && _session != sessionId))
+          return false;
+        if (_interruptedSession != null &&
+            (_interruptedSession != sessionId || !_interruptionEnded))
+          return false;
+        _starting = sessionId;
+        final revision = ++_revision;
+        _listen();
+        final ok = await _bool('start', {
+          'sessionId': sessionId,
+          'microphone': microphone,
+        });
+        if (revision != _revision) return false;
+        if (ok == null) {
+          _invalidate(sessionId, cleanup: true);
+          return false;
+        }
+        _starting = null;
+        if (ok) {
+          _interruptedSession = null;
+          _interruptionEnded = false;
+          _session = sessionId;
+          _heartbeat ??= Timer.periodic(const Duration(seconds: 10), (_) {
+            unawaited(
+              _serial(() async {
+                final id = _session;
+                final revision = _revision;
+                if (id != null &&
+                    await _bool('renew', {'sessionId': id}) != true &&
+                    revision == _revision) {
+                  _invalidate(id, cleanup: true);
+                }
+              }),
+            );
+          });
+        }
+        return ok;
       });
-    }
-    return ok;
-  });
 
   Future<void> stop({required String sessionId}) => _serial(() async {
     _validate(sessionId);
@@ -177,7 +219,7 @@ final class FirstPartyRoomAudio {
       await _disposal;
       return;
     }
-    if (_session == sessionId) _clear();
+    if (_session == sessionId || _interruptedSession == sessionId) _clear();
     await _stop(sessionId);
   });
 
@@ -194,6 +236,8 @@ final class FirstPartyRoomAudio {
   void _clear() {
     _session = null;
     _starting = null;
+    _interruptedSession = null;
+    _interruptionEnded = false;
     _revision++;
     _heartbeat?.cancel();
     _heartbeat = null;
@@ -201,7 +245,7 @@ final class FirstPartyRoomAudio {
 
   Future<void> dispose() => _disposal ??= _serial(() async {
     _disposed = true;
-    final id = _session;
+    final id = _session ?? _interruptedSession;
     final toStop = {..._unconfirmedStops, if (id != null) id};
     _clear();
     try {
