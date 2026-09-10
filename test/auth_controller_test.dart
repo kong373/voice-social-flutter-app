@@ -9,6 +9,7 @@ import 'package:voice_social_app/features/account/data/auth_session_manager.dart
 import 'package:voice_social_app/features/account/data/device_identity_provider.dart';
 import 'package:voice_social_app/features/account/data/mock_auth_repository.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
+import 'package:voice_social_app/features/account/domain/registration_avatar.dart';
 
 void main() {
   test('late login rejection cannot overwrite logout state', () async {
@@ -153,11 +154,16 @@ void main() {
     addTearDown(controller.dispose);
 
     await controller.acceptConsent();
+    await controller.sendSmsCode('13900000000');
     await controller.signInWithSms(phone: '13900000000', smsCode: '123456');
     expect(controller.stage, AuthFlowStage.registrationRequired);
 
     final bool registered = await controller.completeRegistration(
-      const RegistrationProfile(nickname: '新朋友', sex: 2),
+      RegistrationProfile(
+        nickname: '新朋友',
+        sex: 2,
+        avatar: RegistrationAvatarChoice.preset('avatar-preset-moon'),
+      ),
     );
     expect(registered, isTrue);
     expect(controller.stage, AuthFlowStage.signedIn);

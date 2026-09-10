@@ -9,6 +9,13 @@ import 'package:voice_social_app/core/storage/key_value_store.dart';
 import 'package:voice_social_app/features/account/data/backend_auth_repository.dart';
 import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
+import 'package:voice_social_app/features/account/domain/registration_avatar.dart';
+
+RegistrationProof _registrationProof() => RegistrationProof(
+  challengeId: '00000000-0000-4000-8000-000000000001',
+  requestId: 'registration-contract-1',
+  requireCurrent: () {},
+);
 
 void main() {
   test(
@@ -396,11 +403,13 @@ void main() {
         phone: '13800138000',
         smsCode: '123456',
         device: device,
-        profile: const RegistrationProfile(
+        proof: _registrationProof(),
+        profile: RegistrationProfile(
           nickname: '新用户',
           sex: 2,
           birthday: '2000-01-02',
           inviteCode: 'INV-001',
+          avatar: RegistrationAvatarChoice.preset('avatar-preset-moon'),
         ),
       );
 
@@ -409,6 +418,8 @@ void main() {
       expect(capturedBody, <String, Object?>{
         'phone': '13800138000',
         'smsCode': '123456',
+        'challengeId': '00000000-0000-4000-8000-000000000001',
+        'avatar': {'kind': 'PRESET', 'reference': 'avatar-preset-moon'},
         'sex': 2,
         'labelIds': <int>[],
         'inviteCode': 'INV-001',
@@ -496,7 +507,12 @@ void main() {
             phone: '13800138000',
             smsCode: '123456',
             device: device,
-            profile: const RegistrationProfile(nickname: '新用户', sex: 2),
+            proof: _registrationProof(),
+            profile: RegistrationProfile(
+              nickname: '新用户',
+              sex: 2,
+              avatar: RegistrationAvatarChoice.preset('avatar-preset-moon'),
+            ),
           );
         } on ApiException catch (error) {
           failure = error;
@@ -552,7 +568,12 @@ void main() {
             phone: '13800138000',
             smsCode: '123456',
             device: device,
-            profile: const RegistrationProfile(nickname: '新用户', sex: 2),
+            proof: _registrationProof(),
+            profile: RegistrationProfile(
+              nickname: '新用户',
+              sex: 2,
+              avatar: RegistrationAvatarChoice.preset('avatar-preset-moon'),
+            ),
           );
         } on ApiException catch (error) {
           failure = error;

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'registration_avatar.dart';
 
 class AuthSession {
   const AuthSession({
@@ -157,10 +158,12 @@ class RegistrationProfile {
     required this.sex,
     this.birthday,
     this.inviteCode = '',
+    this.avatar,
   });
 
   final String nickname;
   final int sex;
   final String? birthday;
   final String inviteCode;
+  final RegistrationAvatarChoice? avatar;
 }
