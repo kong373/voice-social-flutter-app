@@ -13,7 +13,7 @@ import 'package:voice_social_app/features/commerce/domain/payout_account_binding
 
 void main() {
   test(
-    'Q15 unknown binding retries identical key/body then GET selects current not old receipt',
+    'Q15 unknown then 40375 then restored eligibility retains original key/body until current GET succeeds',
     () async {
       var posts = 0;
       final harness = await _Harness.start((request) {
@@ -28,6 +28,13 @@ void main() {
               statusCode: 503,
               code: 50300,
               message: 'unknown',
+              data: null,
+            );
+          if (posts == 2)
+            return const _Response(
+              statusCode: 403,
+              code: 40375,
+              message: 'income eligibility unavailable',
               data: null,
             );
           return const _Response.ok({
@@ -67,6 +74,22 @@ void main() {
       );
       await expectLater(session.submit(input), throwsA(isA<ApiException>()));
       expect(session.hasPending, true);
+      final originalKey = session.requestId;
+      await expectLater(
+        session.submit(
+          const PayoutAccountInput(
+            accountType: 'BANK_CARD',
+            accountNumber: '5678',
+            holderName: '其他',
+            bankName: '银行',
+          ),
+        ),
+        throwsA(
+          isA<ApiException>().having((error) => error.code, 'code', 40375),
+        ),
+      );
+      expect(session.hasPending, true);
+      expect(session.requestId, originalKey);
       final result = await session.submit(
         const PayoutAccountInput(
           accountType: 'BANK_CARD',
@@ -76,7 +99,9 @@ void main() {
         ),
       );
       final writes = harness.requests.where((r) => r.method == 'POST').toList();
-      expect(writes.length, 2);
+      expect(writes.length, 3);
+      expect(writes[1].requestId, writes.first.requestId);
+      expect(writes[1].rawBody, writes.first.rawBody);
       expect(writes.first.body, input.toBody());
       expect(writes.last.rawBody, writes.first.rawBody);
       expect(writes.last.requestId, writes.first.requestId);

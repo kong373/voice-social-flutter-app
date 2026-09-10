@@ -54,6 +54,7 @@ class PayoutBindingSession {
   String? _requestId;
   bool _closed = false;
   bool _busy = false;
+  bool _outcomeUnknown = false;
   bool get hasPending =>
       !_closed && identity == repository.withdrawalIdentity && _pending != null;
   @visibleForTesting
@@ -93,17 +94,16 @@ class PayoutBindingSession {
       _requireCurrent();
       _pending = null;
       _requestId = null;
+      _outcomeUnknown = false;
       return result;
     } catch (error) {
-      if (error is ApiException &&
-          !{
-            ApiFailureKind.network,
-            ApiFailureKind.timeout,
-            ApiFailureKind.server,
-            ApiFailureKind.protocol,
-          }.contains(error.kind) &&
-          error.code != 40901 &&
-          error.code != 40902) {
+      if (_closed || identity != repository.withdrawalIdentity) {
+        dispose();
+      } else if (shouldRetainCommerceRefundRequest(error)) {
+        _outcomeUnknown = true;
+      } else if (!_outcomeUnknown) {
+        // Later authorization/validation failures precede receipt lookup and
+        // cannot prove that an earlier unknown write was not committed.
         _pending = null;
         _requestId = null;
       }
@@ -117,6 +117,7 @@ class PayoutBindingSession {
     _closed = true;
     _pending = null;
     _requestId = null;
+    _outcomeUnknown = false;
     repository.withdrawalIdentityChanges?.removeListener(_identityChanged);
   }
 }
