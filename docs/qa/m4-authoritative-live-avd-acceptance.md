@@ -155,16 +155,24 @@ The principal M4 live write/read witnesses use these catalog routes:
 
 | Capability | Method and route |
 | --- | --- |
-| Community check-in / task claim | `POST /app-api/taskSystem/completeDailySignIn`; `POST /app-api/taskSystem/receiveTaskReward` |
 | Gift / receipt | `POST /app-room-api/room/com/v1/sendGift`; `GET /app-room-api/room/com/v1/giftReceipt` |
 | Withdrawal / recovery | `POST /app-mini-api/mini/v1/withdrawal/apply`; `GET /app-mini-api/mini/v1/withdrawal/records` |
-| Refund / result / retry | `POST /app-api/refund/application`; `GET /app-api/refund/result`; `POST /app-api/refund/repeat` |
 | Room lifecycle | `POST /app-room-api/room/com/v1/enterRoom`; `POST /app-room-api/room/com/v1/reConnectRoomInfo`; `POST /app-room-api/room/com/v1/exitRoom` |
 | Room moderation / seat compensation | `POST /app-api/roomUsers/setMuted`; `POST /app-api/micUserBase/userInitiativeUpMic`; `POST /app-api/micUserBase/leaveMic` |
-| PK recovery | `GET /app-api/activityPk/getRoomPkHotRoomList`; `GET /app-api/activityPk/searchRoomPk` (only after a hot-page miss, keyed by canonical room UUID); `POST /app-api/activityPk/inviteRoomPk`; `POST /app-api/activityPk/acceptRoomPkInvitation`; `POST /app-api/activityPk/rejectRoomPkInvitation`; `POST /app-api/activityPk/surrenderRoomPk` |
+| PK recovery | `GET /app-api/activityPk/getRoomPkHotRoomList`; `GET /app-api/activityPk/searchRoomPk` (only after a hot-page miss, keyed by canonical room UUID); `POST /app-api/activityPk/inviteRoomPk`; `POST /app-api/activityPk/acceptRoomPkInvitation`; `POST /app-api/activityPk/rejectRoomPkInvitation`; `GET /app-api/activityPk/queryRoomPkProcess` until natural settlement |
 | Approval microphone queue | `GET/POST /app-mini-api/mini/v1/rooms/mic-requests`; `POST /app-mini-api/mini/v1/rooms/mic-requests/cancel` |
 | Private message / history | `POST /app-mini-api/mini/v1/message/send`; `GET /app-api/user/imMessage/queryChat` |
 | Notification read / clear | `POST /app-mini-api/mini/v1/notifications/read`; `POST /app-api/dynamic/emptyUserDynamicNotify` |
+
+Q21-04 removes voluntary surrender. After a PK is accepted, this scenario reads
+the same battle until the server settlement worker reports `COMPLETED`, with
+`completedAt == endsAt`, zero remaining time and the result matching both scores.
+The wait is bounded by the first fresh server remaining time plus 45 seconds
+(supported PK durations: 5, 10 or 15 minutes). A zero countdown alone, a changed
+battle, an early room-close result or a stalled worker fails acceptance; the test
+never closes a room, changes a clock or calls a retired surrender route to pass.
+Community check-in/task claims and App refund submission/result/retry were
+removed by the confirmed product scope; they are not live mutation requirements.
 
 The first-party adapter layer also has social profile/relation/privacy/friend-
 request writes and dynamic publish/like/comment/delete contracts. Their exact

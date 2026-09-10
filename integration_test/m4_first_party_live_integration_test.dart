@@ -29,6 +29,7 @@ import 'package:voice_social_app/features/social/domain/social_models.dart';
 
 import 'm2_4_test_support.dart';
 import 'm4_commerce_ui_support.dart';
+import 'm4_pk_completion_support.dart';
 
 /// Legacy runner profile accepted for compatibility; neither permits App refunds.
 class M4RefundScope {
@@ -1727,7 +1728,6 @@ Future<void> _runRoomPkMutation(
   required int currentUserId,
 }) async {
   final BackendRouteCatalog routes = const BackendRouteCatalog();
-  const String surrenderRoute = '/app-api/activityPk/surrenderRoomPk';
   final RoomPkInvitation? incoming = await _probe<RoomPkInvitation?>(
     evidence,
     capability: 'room.pk.incoming',
@@ -1753,22 +1753,7 @@ Future<void> _runRoomPkMutation(
         'PK accept response did not identify the current room.',
       );
     }
-    evidence.requireCapability('room.pk.end');
-    final RoomPkBattle? ended = await _probe<RoomPkBattle>(
-      evidence,
-      capability: 'room.pk.end',
-      method: 'POST',
-      route: surrenderRoute,
-      operation: () => dependencies.roomPkRepository.surrender(
-        roomId: snapshot.roomId,
-        battleId: battle.id,
-      ),
-      requiredSuccess: true,
-    );
-    if (ended == null || ended.isActive) {
-      throw TestFailure('PK compensation did not close the accepted battle.');
-    }
-    evidence.invariant('pk_accept_and_end_compensated');
+    await _observeNaturalPkCompletion(dependencies, evidence, battle);
     evidence.invariant('pk_mutation_path_confirmed');
     return;
   }
@@ -1904,27 +1889,50 @@ Future<void> _runRoomPkMutation(
     if (battle == null) {
       throw TestFailure('Accepted PK invitation did not return a battle.');
     }
-    evidence.requireCapability('room.pk.end');
-    final RoomPkBattle? ended = await _probe<RoomPkBattle>(
-      evidence,
-      capability: 'room.pk.end',
-      method: 'POST',
-      route: surrenderRoute,
-      operation: () => dependencies.roomPkRepository.surrender(
-        roomId: snapshot.roomId,
-        battleId: battle.id,
-      ),
-      requiredSuccess: true,
-    );
-    if (ended == null || ended.isActive) {
-      throw TestFailure('PK compensation did not close the accepted battle.');
-    }
-    evidence.invariant('pk_accept_and_end_compensated');
+    await _observeNaturalPkCompletion(dependencies, evidence, battle);
     evidence.invariant('pk_mutation_path_confirmed');
   } else {
     evidence.preexisting('room.pk.recovery', routes.roomPkProgress);
     evidence.invariant('pk_mutation_path_confirmed');
   }
+}
+
+Future<void> _observeNaturalPkCompletion(
+  AppDependencies dependencies,
+  _M4Evidence evidence,
+  RoomPkBattle accepted,
+) async {
+  evidence.requireCapability('room.pk.complete');
+  Future<RoomPkBattle> refresh() async {
+    final current = await _probe<RoomPkBattle>(
+      evidence,
+      capability: 'room.pk.complete',
+      method: 'GET',
+      route: const BackendRouteCatalog().roomPkProgress,
+      operation: () => dependencies.roomPkRepository.refreshBattle(
+        roomId: accepted.currentRoomId,
+        battleId: accepted.id,
+      ),
+      requiredSuccess: true,
+    );
+    if (current == null ||
+        current.id != accepted.id ||
+        current.currentRoomId != accepted.currentRoomId ||
+        current.sender.roomId != accepted.sender.roomId ||
+        current.receiver.roomId != accepted.receiver.roomId ||
+        current.invitationId != accepted.invitationId ||
+        current.startedAt != accepted.startedAt ||
+        current.endsAt != accepted.endsAt) {
+      throw TestFailure('PK authoritative completion read changed identity.');
+    }
+    return current;
+  }
+
+  await waitForM4NaturalPkCompletion(
+    accepted: await refresh(),
+    refresh: refresh,
+  );
+  evidence.invariant('pk_natural_score_settlement_confirmed');
 }
 
 String _m4RequestId(String scope) {
