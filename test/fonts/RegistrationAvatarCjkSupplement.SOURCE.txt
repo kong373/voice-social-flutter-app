@@ -1,0 +1,18 @@
+Registration avatar gallery test-only CJK supplement
+
+License: OFL.txt (existing SIL Open Font License 1.1 in this directory)
+Upstream: https://github.com/notofonts/noto-cjk
+Commit: f8d157532fbfaeda587e826d4cd5b21a49186f7c
+Path: Sans/SubsetOTF/SC/NotoSansSC-Regular.otf
+Blob: fc0fda9394367c16c1af7555a2ae4d5e2e6a6f02
+Verified upstream size: 8331336 bytes
+Verified upstream SHA-256: faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9
+FontTools: 4.63.0
+SOURCE_DATE_EPOCH=0
+Command: python -m fontTools.subset NotoSansSC-Regular.otf --text='兔狐叶熊' --output-file=RegistrationAvatarCjkSupplement.otf --name-IDs='*' --name-legacy --name-languages='*'
+Output size: 4596 bytes
+Output SHA-256: b60686207be313c36367d60141d4a0362aff6d6b9e4f15e3f4e7816053024665
+
+Only preset_avatar_visual_test.dart loads this supplement. The existing
+M3GoldenCjk regular/bold files, source manifest and baselines are unchanged.
+This is not an application runtime dependency or an external font fallback.
