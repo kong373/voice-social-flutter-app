@@ -73,7 +73,7 @@ UserAvatarView({
 - `r01-avatar-conversation-aba-red2.log`：消息列表 ABA 晚成功实际显示旧头像 RED；晚错误未泄漏。`r01-avatar-entry-identity-green.log`：9 PASS。
 - `r01-avatar-message-fields-red.log`：新增 sender/receiver 严格字段先缺 getter 编译 RED；随后 14 DTO + 10 入口 24 PASS。
 - 新增实际公主页 UPLOADED fake HTTP→真实解码→注销销毁，以及已打开搜索页的 ABA 测试。`r01-avatar-entry-final-green.log`：22 PASS（8 组件 + 12 入口 + 2 原房间头像）。
-- `r01-avatar-targeted-final.log`：23 个相关测试文件 **504 PASS，0 fail**，涵盖头像、social/room/message 既有合同、私信媒体合同、装扮、private chat/member 自动刷新。不是项目全量测试。
+- `r01-avatar-targeted-final.log`：22 个相关测试文件 **504 PASS，0 fail**，涵盖头像、social/room/message 既有合同、私信媒体合同、装扮、private chat/member 自动刷新。不是项目全量测试。
 - `r01-avatar-analyze-final.log`：full analyze **0 issue**。改动 Dart format、`git diff --check` 通过。
 - 保留失败日志：早期分页 fixture 缺 pageNum/list、fake headers 类型及假时钟/真实流切换错误已修正；不计产品行为 RED。旧 `room_avatar_contract_test.dart` 缺现有 entry decoration 所需 AppDependencyScope，仅补 fixture/销毁，保留“空头像不伪造图片”的原断言。
 - 实际图片入口测试最终按 `UserAvatarView` 子树定位 RawImage，避免把页面背景图误当头像。analyze 的异步 context 提示以显式 mounted guard 修复，未关闭 lint。
