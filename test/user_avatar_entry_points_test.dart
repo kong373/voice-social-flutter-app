@@ -24,6 +24,7 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
+import 'package:voice_social_app/features/room/pk/domain/room_pk_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_members_page.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
 import 'support/media_http_fakes.dart';
@@ -341,6 +342,8 @@ class _UiDependencies extends Fake implements AppDependencies {
       backing.backing.platformRoomRepository;
   @override
   final roomOperationsRepository = _Members();
+  @override
+  RoomPkRepository get roomPkRepository => backing.backing.roomPkRepository;
   @override
   final _Messages messageRepository = _Messages();
   @override
