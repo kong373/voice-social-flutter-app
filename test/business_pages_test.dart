@@ -3,6 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/features/account/domain/auth_models.dart';
+import 'package:voice_social_app/features/community/data/mock_community_repository.dart';
+import 'package:voice_social_app/features/community/domain/community_models.dart';
 import 'package:voice_social_app/features/discovery/presentation/global_search_page.dart';
 import 'package:voice_social_app/features/discovery/home_page.dart';
 import 'package:voice_social_app/features/discovery/presentation/saved_rooms_page.dart';
@@ -88,23 +91,43 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final AppDependencies dependencies = AppDependencies.mock();
+    await dependencies.sessionManager.save(
+      AuthSession(
+        accessToken: 'room-owner-test',
+        tokenType: 'Bearer',
+        expiresAt: DateTime(2099),
+        userId: 10001,
+        mobile: 'test',
+        roles: 'USER',
+      ),
+    );
 
     await tester.pumpWidget(
       AppDependencyScope(
         dependencies: dependencies,
         child: MaterialApp(
           theme: AppTheme.dark(),
-          home: const CreateRoomPage(),
+          home: CreateRoomPage(
+            communityRepositoryOverride: MockCommunityRepository(
+              viewerRole: GuildRole.owner,
+            ),
+          ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('名下房间'), findsOneWidget);
+    expect(find.byType(TextFormField), findsNothing);
+    await tester.tap(find.text('创建新房间'));
+    await tester.pumpAndSettle();
+
     final Finder titleField = find.widgetWithText(TextFormField, '房间名称');
     await tester.enterText(titleField, '');
-    await tester.tap(find.text('保存并进入房间'));
+    await tester.tap(find.text('创建并进入房间'));
     await tester.pump();
     expect(find.text('请输入房间名称'), findsOneWidget);
+    expect(tester.widget<TextFormField>(titleField).controller!.text, isEmpty);
   });
 
   testWidgets('RM-003 shows recovery only for invalid targets', (

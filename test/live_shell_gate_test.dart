@@ -5,7 +5,11 @@ import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
+import 'package:voice_social_app/features/account/domain/auth_models.dart';
+import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
+import 'package:voice_social_app/features/account/compliance/data/mock_account_compliance_repository.dart';
 import 'package:voice_social_app/features/commerce/presentation/commerce_pages.dart';
+import 'package:voice_social_app/features/media/app_image_media_host.dart';
 import 'package:voice_social_app/features/message/data/mock_message_repository.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/shell/live_read_only_repository.dart';
@@ -67,8 +71,19 @@ void main() {
     final AppDependencies dependencies = AppDependencies.forTestEnvironment(
       environment: environment,
     );
+    // Live profile reads require the same authenticated actor as the fixture.
+    await dependencies.sessionManager.save(
+      AuthSession(
+        accessToken: 'live-shell-test',
+        tokenType: 'Bearer',
+        expiresAt: DateTime(2099),
+        userId: 42001,
+        mobile: 'live-user-42',
+        roles: 'USER',
+      ),
+    );
     final AppDependencies inheritedDependencies =
-        scopeDependencies ?? dependencies;
+        scopeDependencies ?? _LiveAccountReadDependencies(dependencies);
     await tester.pumpWidget(
       AppDependencyScope(
         dependencies: inheritedDependencies,
@@ -294,7 +309,7 @@ void main() {
         expect(find.text('钱包与商城'), findsOneWidget);
         expect(find.text('钱包与流水'), findsOneWidget);
         expect(find.text('充值订单'), findsOneWidget);
-        expect(find.textContaining('退款'), findsWidgets);
+        expect(find.textContaining('退款'), findsNothing);
         expect(find.text('礼物'), findsOneWidget);
         expect(find.text('可用商品和支付方式以充值页为准，到账状态可在充值订单中查询。'), findsOneWidget);
 
@@ -327,6 +342,23 @@ void main() {
 class _StoredOnlyMessageRepository extends MockMessageRepository {
   @override
   bool get supportsPrivateRealtime => false;
+}
+
+class _LiveAccountReadDependencies extends Fake implements AppDependencies {
+  _LiveAccountReadDependencies(this.backing);
+  final AppDependencies backing;
+  @override
+  AppEnvironment get environment => backing.environment;
+  @override
+  AuthSessionManager get sessionManager => backing.sessionManager;
+  @override
+  AppImageMediaHost? get imageMediaHost => backing.imageMediaHost;
+  @override
+  DateTime Function() get currentTime => backing.currentTime;
+  @override
+  final socialRepository = _LiveProfileRepository();
+  @override
+  final accountComplianceRepository = MockAccountComplianceRepository();
 }
 
 class _LiveProfileRepository extends MockSocialRepository {

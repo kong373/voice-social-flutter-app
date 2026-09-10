@@ -8,6 +8,7 @@ import 'package:voice_social_app/features/account/data/auth_session_manager.dart
 import 'package:voice_social_app/features/account/presentation/preset_avatar_view.dart';
 import 'package:voice_social_app/features/account/presentation/user_avatar_view.dart';
 import 'package:voice_social_app/features/media/private_media_host.dart';
+import 'package:voice_social_app/features/media/app_image_media_host.dart';
 import 'package:voice_social_app/features/message/data/mock_message_repository.dart';
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
@@ -328,6 +329,8 @@ class _UiDependencies extends Fake implements AppDependencies {
   AppEnvironment get environment => backing.backing.environment;
   @override
   PrivateMediaHost get privateMediaHost => backing.privateMediaHost;
+  @override
+  AppImageMediaHost? get imageMediaHost => backing.backing.imageMediaHost;
   @override
   late final SocialRepository socialRepository = BackendSocialRepository(
     apiClient: privateMediaHost.api,
