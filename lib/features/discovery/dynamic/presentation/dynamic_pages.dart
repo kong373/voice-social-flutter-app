@@ -1463,7 +1463,7 @@ class _RankingPageState extends State<RankingPage> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
-                  for (final board in RankingBoard.values) ...[
+                  for (final board in productRankingBoards) ...[
                     SocialPill(
                       label: board.label,
                       active: _board == board,
@@ -1504,9 +1504,7 @@ class _RankingPageState extends State<RankingPage> {
                     ],
                   ],
                 ),
-              )
-            else
-              const Text('累计贡献 · 保留原贡献分口径'),
+              ),
             const SizedBox(height: 18),
             if (_loading)
               const Padding(

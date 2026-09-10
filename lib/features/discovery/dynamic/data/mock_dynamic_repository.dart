@@ -372,6 +372,14 @@ class MockDynamicRepository
     int page = 1,
     int pageSize = 20,
   }) async {
+    if (!productRankingBoards.contains(board)) {
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        message: '该排行榜已停用',
+        code: 41001,
+        httpStatus: 410,
+      );
+    }
     await _delay();
     if (page < 1 || pageSize < 1 || pageSize > 50) {
       throw const ApiException(

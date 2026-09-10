@@ -78,17 +78,14 @@ void main() {
     },
   );
   testWidgets(
-    'contribution exposes cumulative numeric only; room restores gift periods',
+    'only charm wealth and room boards are available with gift periods',
     (tester) async {
       final repo = ControlledRankings();
       await mount(tester, repo);
-      await choose(tester, '贡献榜');
-      repo.calls.last.succeed();
-      await tester.pumpAndSettle();
-      expect(find.text('累计贡献 · 保留原贡献分口径'), findsOneWidget);
-      expect(find.text('日榜'), findsNothing);
-      expect(find.text('700'), findsOneWidget);
-      expect(find.byKey(const ValueKey('ranking-window')), findsNothing);
+      expect(find.text('贡献榜'), findsNothing);
+      expect(find.textContaining('累计贡献'), findsNothing);
+      expect(find.text('魅力榜'), findsOneWidget);
+      expect(find.text('财富榜'), findsOneWidget);
       await choose(tester, '房间榜');
       repo.calls.last.succeed();
       await tester.pumpAndSettle();

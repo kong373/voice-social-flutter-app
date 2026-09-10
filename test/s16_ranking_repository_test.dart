@@ -54,7 +54,41 @@ void main() {
       expect(calls, 0);
     },
   );
-  for (final board in RankingBoard.values) {
+  test('retired contribution query never reaches the network', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    var calls = 0;
+    server.listen((request) async {
+      calls++;
+      await request.drain<void>();
+      await reply(
+        request,
+        rankingWire(board: RankingBoard.contribution, total: 0),
+      );
+    });
+    final repository = BackendDynamicRepository(
+      apiClient: client(server),
+      routes: const BackendRouteCatalog(),
+      currentUserIdProvider: () => 10001,
+    );
+    await expectLater(
+      repository.fetchRanking(
+        board: RankingBoard.contribution,
+        period: RankingPeriod.day,
+      ),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.code,
+          'retired code',
+          41001,
+        ),
+      ),
+    );
+    expect(calls, 0);
+  });
+  for (final board in RankingBoard.values.where(
+    (value) => value != RankingBoard.contribution,
+  )) {
     for (final period in RankingPeriod.values) {
       test(
         'real HTTP ${board.name}/${period.name} requests page2 and preserves exact score',

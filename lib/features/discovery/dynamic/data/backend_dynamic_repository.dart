@@ -433,6 +433,14 @@ class BackendDynamicRepository
     int page = 1,
     int pageSize = 20,
   }) async {
+    if (!productRankingBoards.contains(board)) {
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        message: '该排行榜已停用',
+        code: 41001,
+        httpStatus: 410,
+      );
+    }
     _validatePageRequest(page: page, pageSize: pageSize);
     if (page > 2147483647 || (page - 1) * pageSize > 2147483647) {
       throw const ApiException(

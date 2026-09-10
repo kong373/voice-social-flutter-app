@@ -164,6 +164,14 @@ class PublishDynamicRequest {
 
 enum RankingBoard { charm, wealth, contribution, room }
 
+// Retain the legacy enum only to reject old callers and decode historical data.
+// It is not a current product tab or a fetchable ranking.
+const productRankingBoards = <RankingBoard>[
+  RankingBoard.charm,
+  RankingBoard.wealth,
+  RankingBoard.room,
+];
+
 extension RankingBoardLabel on RankingBoard {
   bool get isGiftValue => this != RankingBoard.contribution;
   String get metric =>
