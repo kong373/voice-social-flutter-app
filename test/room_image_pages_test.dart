@@ -20,6 +20,7 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_repository.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
+import 'package:voice_social_app/features/room/pk/domain/room_pk_repository.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
 import 'support/media_http_fakes.dart';
 import 'manager_room_profile_test.dart' show profileWire, profileRoomId;
@@ -49,6 +50,8 @@ class _Dependencies implements AppDependencies {
   @override
   RoomOperationsRepository get roomOperationsRepository =>
       base.roomOperationsRepository;
+  @override
+  RoomPkRepository get roomPkRepository => base.roomPkRepository;
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
