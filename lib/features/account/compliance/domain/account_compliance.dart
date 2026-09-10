@@ -175,6 +175,7 @@ class AccountComplianceSnapshot {
     required this.nickname,
     required this.accountUsable,
     required this.verificationState,
+    this.needsAgeResubmission = false,
     required this.youthModeEnabled,
     required this.restriction,
     required this.cancellation,
@@ -190,6 +191,13 @@ class AccountComplianceSnapshot {
   /// missing/failed live responses are rejected before this model is built.
   final bool accountUsable;
   final VerificationState verificationState;
+  final bool needsAgeResubmission;
+
+  /// Flow state only. Account/youth restrictions and the server still apply.
+  bool get canSubmitRealName =>
+      verificationState == VerificationState.unverified ||
+      verificationState == VerificationState.rejected ||
+      (verificationState == VerificationState.verified && needsAgeResubmission);
   final bool youthModeEnabled;
   final AccountRestriction restriction;
   final CancellationEligibility cancellation;
@@ -199,6 +207,7 @@ class AccountComplianceSnapshot {
 
   AccountComplianceSnapshot copyWith({
     VerificationState? verificationState,
+    bool? needsAgeResubmission,
     bool? youthModeEnabled,
     AccountRestriction? restriction,
     bool? accountUsable,
@@ -212,6 +221,7 @@ class AccountComplianceSnapshot {
       nickname: nickname,
       accountUsable: accountUsable ?? this.accountUsable,
       verificationState: verificationState ?? this.verificationState,
+      needsAgeResubmission: needsAgeResubmission ?? this.needsAgeResubmission,
       youthModeEnabled: youthModeEnabled ?? this.youthModeEnabled,
       restriction: restriction ?? this.restriction,
       cancellation: cancellation ?? this.cancellation,

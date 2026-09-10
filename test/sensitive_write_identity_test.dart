@@ -16,6 +16,8 @@ const _document = 'SYNTHETIC-DOCUMENT-A';
 const _realNameReceipt = <String, Object?>{
   'status': 'PENDING',
   'statusCode': 1,
+  'needsAgeResubmission': false,
+  'canSubmit': false,
   'providerStatus': 'FIRST_PARTY_REVIEW',
   'reviewStatus': 'FIRST_PARTY_REVIEW',
   'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',

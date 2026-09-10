@@ -406,6 +406,10 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
             message: '实名状态暂不可用，请稍后重试',
           );
         case VerificationState.verified:
+          if (status.needsAgeResubmission) {
+            await realNameGuide();
+            return;
+          }
           break;
       }
       if (!current()) return;

@@ -280,6 +280,8 @@ class _RealNamePageState extends State<RealNamePage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _idController = TextEditingController();
   VerificationState? _state;
+  bool _needsAgeResubmission = false;
+  bool _canSubmit = false;
   String? _error;
   bool _busy = false;
   int? _identityGeneration;
@@ -326,6 +328,11 @@ class _RealNamePageState extends State<RealNamePage> {
       if (mounted) {
         setState(() {
           _state = snapshot.verificationState;
+          _needsAgeResubmission = snapshot.needsAgeResubmission;
+          _canSubmit =
+              snapshot.canSubmitRealName &&
+              snapshot.accountUsable &&
+              !snapshot.youthModeEnabled;
           _error = null;
         });
       }
@@ -346,6 +353,8 @@ class _RealNamePageState extends State<RealNamePage> {
     _idController.clear();
     setState(() {
       _state = null;
+      _needsAgeResubmission = false;
+      _canSubmit = false;
       _error = '登录状态已变化，请重新进入实名认证';
     });
   }
@@ -357,7 +366,7 @@ class _RealNamePageState extends State<RealNamePage> {
       _identityChanged();
       return;
     }
-    if (_busy || !(_formKey.currentState?.validate() ?? false)) {
+    if (_busy || !_canSubmit || !(_formKey.currentState?.validate() ?? false)) {
       return;
     }
     setState(() => _busy = true);
@@ -408,19 +417,24 @@ class _RealNamePageState extends State<RealNamePage> {
               children: <Widget>[
                 AccountStatusHero(
                   icon: Icons.badge_outlined,
-                  title: _verificationLabel(_state!),
+                  title: _needsAgeResubmission
+                      ? '需补交实名资料'
+                      : _verificationLabel(_state!),
                   description: repository.supportsRealNameSubmission
-                      ? '第一方人工审核（FIRST_PARTY_MANUAL_REVIEW）只由平台处理，不调用第三方实名厂商；服务端只返回脱敏审核状态。'
+                      ? _needsAgeResubmission
+                            ? '原实名记录缺少年龄资料，请补交证件信息。平台审核通过后才能申请加入公会；不会自动提交入会申请。'
+                            : '第一方人工审核（FIRST_PARTY_MANUAL_REVIEW）只由平台处理，不调用第三方实名厂商；服务端只返回脱敏审核状态。'
                       : 'VENDOR_BLOCKED：正式实名厂商尚未接入。Live 模式仅展示服务端状态，不会收集或上传身份证号。',
-                  tone: _state == VerificationState.verified
+                  tone:
+                      _state == VerificationState.verified &&
+                          !_needsAgeResubmission
                       ? AppColors.success
                       : AccountOxygenColors.violet,
                   badge: repository.supportsRealNameSubmission
                       ? '第一方人工审核'
                       : 'VENDOR_BLOCKED',
                 ),
-                if ((_state == VerificationState.unverified ||
-                        _state == VerificationState.rejected) &&
+                if (_canSubmit &&
                     repository.supportsRealNameSubmission) ...<Widget>[
                   const SizedBox(height: 20),
                   const AccountSectionLabel(text: '填写认证信息'),
@@ -450,8 +464,11 @@ class _RealNamePageState extends State<RealNamePage> {
                               prefixIcon: Icon(Icons.credit_card_rounded),
                             ),
                             validator: (String? value) =>
-                                value == null || value.trim().length != 18
-                                ? '请输入 18 位身份证号'
+                                value == null ||
+                                    !RegExp(
+                                      r'^(?:[0-9]{15}|[0-9]{17}[0-9Xx])$',
+                                    ).hasMatch(value.trim())
+                                ? '请输入有效的 15 或 18 位身份证号'
                                 : null,
                           ),
                           const SizedBox(height: 2),
