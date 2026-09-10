@@ -319,6 +319,116 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
     }
   }
 
+  Future<void> _applyToGuild() async {
+    if (_busy) return;
+    final dependencies = AppDependencyScope.of(context);
+    final sessions = dependencies.sessionManager;
+    final session = sessions.session;
+    final generation = sessions.identityGeneration;
+    bool current() =>
+        mounted &&
+        sessions.identityGeneration == generation &&
+        identical(sessions.session, session) &&
+        session != null &&
+        !session.isAccessExpired;
+    if (!current()) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先登录后再申请加入公会')));
+      return;
+    }
+    setState(() => _busy = true);
+    final version =
+        int.tryParse(dependencies.environment.clientInnerVersion) ?? 0;
+    final platform = dependencies.environment.clientType.toLowerCase() == 'ios'
+        ? 2
+        : 1;
+    Future<void> realNameGuide() async {
+      if (!current()) return;
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('加入公会需要实名认证'),
+          content: const Text('请完成实名认证，审核通过后再主动提交入会申请。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('暂不申请'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('去实名认证'),
+            ),
+          ],
+        ),
+      );
+      if (accepted != true || !mounted || !current()) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => RealNamePage(
+            account: session!.mobile,
+            currentVersion: version,
+            platformType: platform,
+          ),
+        ),
+      );
+      // Returning from verification never implicitly creates an application.
+    }
+
+    try {
+      final status = await dependencies.accountComplianceRepository
+          .fetchSnapshot(
+            account: session!.mobile,
+            expectedUserId: session.userId,
+            currentVersion: version,
+            platformType: platform,
+          );
+      if (!current()) return;
+      if (!status.accountUsable || status.youthModeEnabled) {
+        throw const ApiException(
+          kind: ApiFailureKind.forbidden,
+          message: '账号当前受限，暂不能申请加入公会',
+        );
+      }
+      switch (status.verificationState) {
+        case VerificationState.unverified:
+        case VerificationState.rejected:
+          await realNameGuide();
+          return;
+        case VerificationState.pending:
+          throw const ApiException(
+            kind: ApiFailureKind.forbidden,
+            message: '实名审核中，请审核通过后再申请加入公会',
+          );
+        case VerificationState.unavailable:
+          throw const ApiException(
+            kind: ApiFailureKind.server,
+            message: '实名状态暂不可用，请稍后重试',
+          );
+        case VerificationState.verified:
+          break;
+      }
+      if (!current()) return;
+      await _repository.applyToJoinGuild(widget.guildId);
+      if (!mounted || !current()) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('入会申请已提交')));
+      await _load();
+    } catch (error) {
+      if (!mounted || !current()) return;
+      if (error is ApiException && error.code == 40368) {
+        await realNameGuide();
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final GuildSummary? guild = _guild;
@@ -394,12 +504,7 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
                                   onPressed:
                                       _busy || guild.applicationPending != false
                                       ? null
-                                      : () => _run(
-                                          () => _repository.applyToJoinGuild(
-                                            guild.id,
-                                          ),
-                                          '入会申请已提交',
-                                        ),
+                                      : _applyToGuild,
                                   child: Text(
                                     switch (guild.applicationPending) {
                                       true => '申请审核中',

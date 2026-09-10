@@ -282,6 +282,7 @@ class _RealNamePageState extends State<RealNamePage> {
   VerificationState? _state;
   String? _error;
   bool _busy = false;
+  int? _identityGeneration;
 
   @override
   void didChangeDependencies() {
@@ -299,11 +300,17 @@ class _RealNamePageState extends State<RealNamePage> {
   }
 
   Future<void> _load() async {
+    final scope = AppDependencyScope.of(context);
+    final sessions = scope.sessionManager;
+    _identityGeneration ??= sessions.identityGeneration;
+    if (_identityGeneration != sessions.identityGeneration) {
+      _identityChanged();
+      return;
+    }
     if (mounted) {
       setState(() => _error = null);
     }
     try {
-      final scope = AppDependencyScope.of(context);
       final AccountComplianceSnapshot snapshot = await scope
           .accountComplianceRepository
           .fetchSnapshot(
@@ -312,6 +319,10 @@ class _RealNamePageState extends State<RealNamePage> {
             currentVersion: widget.currentVersion,
             platformType: widget.platformType,
           );
+      if (_identityGeneration != sessions.identityGeneration) {
+        _identityChanged();
+        return;
+      }
       if (mounted) {
         setState(() {
           _state = snapshot.verificationState;
@@ -319,28 +330,54 @@ class _RealNamePageState extends State<RealNamePage> {
         });
       }
     } catch (error) {
+      if (_identityGeneration != sessions.identityGeneration) {
+        _identityChanged();
+        return;
+      }
       if (mounted) {
         setState(() => _error = _messageFor(error));
       }
     }
   }
 
+  void _identityChanged() {
+    if (!mounted) return;
+    _nameController.clear();
+    _idController.clear();
+    setState(() {
+      _state = null;
+      _error = '登录状态已变化，请重新进入实名认证';
+    });
+  }
+
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate() || _busy) {
+    final scope = AppDependencyScope.of(context);
+    final sessions = scope.sessionManager;
+    if (_identityGeneration != sessions.identityGeneration) {
+      _identityChanged();
+      return;
+    }
+    if (_busy || !(_formKey.currentState?.validate() ?? false)) {
       return;
     }
     setState(() => _busy = true);
     try {
-      await AppDependencyScope.of(
-        context,
-      ).accountComplianceRepository.submitRealName(
+      await scope.accountComplianceRepository.submitRealName(
         realName: _nameController.text.trim(),
         idNumber: _idController.text.trim(),
       );
+      if (_identityGeneration != sessions.identityGeneration) {
+        _identityChanged();
+        return;
+      }
       if (mounted) {
         await _load();
       }
     } catch (error) {
+      if (_identityGeneration != sessions.identityGeneration) {
+        _identityChanged();
+        return;
+      }
       if (mounted) {
         showAccountComplianceRetrySnackBar(
           context,
@@ -382,7 +419,8 @@ class _RealNamePageState extends State<RealNamePage> {
                       ? '第一方人工审核'
                       : 'VENDOR_BLOCKED',
                 ),
-                if (_state == VerificationState.unverified &&
+                if ((_state == VerificationState.unverified ||
+                        _state == VerificationState.rejected) &&
                     repository.supportsRealNameSubmission) ...<Widget>[
                   const SizedBox(height: 20),
                   const AccountSectionLabel(text: '填写认证信息'),
