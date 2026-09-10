@@ -119,3 +119,34 @@ flutter analyze --no-pub \
   lib/features/shell/video_runtime_pages.dart \
   test/room_image_pages_test.dart test/discovery_room_cover_cards_test.dart
 ```
+
+## 未决 FileImage 解码与清理竞态（基线 30e78ab）
+
+主组合 `room-images-main-combined-20260910.log` 的 123 PASS / 1 FAIL 是产品生命周期缺口，不是少等一帧的夹具问题。`RoomMediaImage` 原本已有局部 `Image.errorBuilder`；但 widget 移除与缓存 eviction 后，Flutter 3.44.7 的 completer 可释放所有 listener（包括 ephemeral error listener），而 `FileImage._loadAsync` 仍在进行。此时身份失效已立即删除临时文件，迟到的 `PathNotFoundException` 会进入全局 Flutter 错误通道。
+
+修复仅将房间图片的 FileImage 替换为私有子类：创建 stream 时增加一次性终态 listener，成功时释放收到的 ImageInfo clone，成功或错误后都移除 listener。它不更新 UI、不修改全局错误处理、不延长文件存活；现有 errorBuilder、scope / epoch 检查、立即 unlink 与 eviction 均保持。未决 stream 只保留到终态，避免无人处理的迟到错误及迟到成功的 codec 悬挂。
+
+新增 `room_media_decode_lifecycle_test.dart` 六项真实 widget / 文件 / codec 回归：通过局部 IOOverrides 门闩暂停 FileImage 读取，分别触发账号 ABA、房间 context 失效、卸载；每种均覆盖删除后的真实读取异常和字节已读取后的迟到成功。断言门闩尚未释放时文件已经删除、Image 已移除、缓存 pending/live 已清除；释放后无未处理异常、无残留 listener、无旧图或缓存复活，且没有第二次 HTTP 请求。测试未安装兜底错误 listener，未延迟失效或文件清理，也未修改原失败测试。
+
+固定 Flutter 3.44.7 的证据：
+
+- `/tmp/room-codec-red.log`：初次 fixture 因 IOOverrides 子类缺少 `final` 编译失败，不计产品 RED。
+- `/tmp/room-codec-red-v2.log`：产品未改时六项 **3 PASS / 3 FAIL，exit 1**；三种失效后的删除异常均为真实 PathNotFoundException，迟到成功三项已 PASS。
+- `/tmp/room-codec-green.log`：最小产品修复后 **6/6 PASS，exit 0**。
+- `/tmp/room-codec-focused-green.log`：以下七个文件共 **59/59 PASS，exit 0**，包含六项新增及主原失败用例，不重复计数。
+- `/tmp/room-codec-analyze.log`：两个改动 Dart 文件 **0 issues，exit 0**；format / `git diff --check` PASS。
+
+```sh
+# 使用 /Users/kongzheng/Documents/ny/.tooling/flutter-3.44.7/bin/flutter
+flutter test --no-pub --reporter expanded test/room_media_decode_lifecycle_test.dart
+flutter test --no-pub --concurrency=2 --reporter expanded \
+  test/room_media_decode_lifecycle_test.dart test/room_image_pages_test.dart \
+  test/discovery_room_cover_cards_test.dart test/guild_pk_room_cover_cards_test.dart \
+  test/room_image_host_test.dart test/room_image_repository_test.dart \
+  test/video_runtime_ui_test.dart
+flutter analyze --no-pub \
+  lib/features/room/presentation/room_cover_artwork.dart \
+  test/room_media_decode_lifecycle_test.dart
+```
+
+范围外只记录：`lib/features/media/image_widgets.dart` 的 `_ControlledImageState` 同样使用 FileImage + errorBuilder，并在清理时 eviction / 删除文件，存在相同生命周期写法；本批未单独复现该组件、未修改它。头像显式 buffer / codec 生命周期不据此类推。本批未改 iOS、主树、依赖或锁文件，未运行 DB、设备、厂商、native build 或主组合全量回归。

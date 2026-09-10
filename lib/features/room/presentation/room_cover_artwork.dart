@@ -197,7 +197,7 @@ class _RoomMediaImageState extends State<RoomMediaImage> {
       }
       setState(() {
         _file = file;
-        _provider = FileImage(File(file.path));
+        _provider = _RoomFileImage(File(file.path));
       });
     } catch (_) {
       if (mounted && epoch == _epoch && scope.isCurrent) {
@@ -241,4 +241,24 @@ class _RoomMediaImageState extends State<RoomMediaImage> {
         ),
     ],
   );
+}
+
+/// Image.errorBuilder loses its listener when the widget is removed. Observe
+/// this stream's first outcome even after eviction/unlink, so a pending file
+/// read cannot report a late error globally. This owns no file lifetime and
+/// never updates UI; every received image clone and the listener are released.
+class _RoomFileImage extends FileImage {
+  const _RoomFileImage(super.file);
+
+  @override
+  ImageStreamCompleter loadImage(FileImage key, ImageDecoderCallback decode) {
+    final completer = super.loadImage(key, decode);
+    late final ImageStreamListener pending;
+    pending = ImageStreamListener((image, _) {
+      image.dispose();
+      completer.removeListener(pending);
+    }, onError: (_, _) => completer.removeListener(pending));
+    completer.addListener(pending);
+    return completer;
+  }
 }
