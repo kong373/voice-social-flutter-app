@@ -2,10 +2,188 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_environment.dart';
+import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
+import 'package:voice_social_app/features/room/domain/room_models.dart';
+import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 
 import '../integration_test/dual_first_party_business_support.dart';
+import '../integration_test/dual_first_party_business_test.dart' as business;
 
 void main() {
+  test(
+    'approval evidence rejects promotion, invite, wrong actor and wrong seat',
+    () {
+      MicAccessRequest request({
+        RoomRole role = RoomRole.listener,
+        MicRequestType type = MicRequestType.request,
+        MicRequestStatus status = MicRequestStatus.approved,
+        int resolver = 1,
+        int subject = 2,
+        int seat = 2,
+        int? assigned = 2,
+        String room = 'room',
+      }) => MicAccessRequest(
+        id: 'request',
+        roomId: room,
+        member: RoomMember(
+          userId: 2,
+          name: 'peer',
+          role: role,
+          presence: RoomMemberPresence.onMic,
+        ),
+        requestedByUserId: 2,
+        subjectUserId: subject,
+        type: type,
+        status: status,
+        seatNumber: seat,
+        assignedSeatNumber: assigned,
+        resolvedByUserId: resolver,
+        createdAt: DateTime.utc(2026),
+        resolvedAt: DateTime.utc(2026, 1, 1, 0, 0, 1),
+      );
+      void check(MicAccessRequest value, {int seat = 2}) =>
+          business.expectDualApprovedRequest(
+            value,
+            roomId: 'room',
+            applicant: 2,
+            owner: 1,
+            seat: seat,
+          );
+      for (final seat in List.generate(8, (i) => i + 2)) {
+        check(
+          request(seat: seat, assigned: seat),
+          seat: seat,
+        );
+      }
+      for (final invalid in [
+        request(role: RoomRole.moderator),
+        request(role: RoomRole.owner),
+        request(type: MicRequestType.invite),
+        request(status: MicRequestStatus.pending),
+        request(status: MicRequestStatus.accepted),
+        request(status: MicRequestStatus.expired),
+        request(resolver: 2),
+        request(subject: 3),
+        request(assigned: null),
+        request(assigned: 3),
+        request(room: 'other'),
+        request(seat: 1),
+      ]) {
+        expect(() => check(invalid), throwsA(isA<TestFailure>()));
+      }
+      expect(
+        () => check(request(seat: 1, assigned: 1), seat: 1),
+        throwsA(isA<TestFailure>()),
+      );
+    },
+  );
+
+  test(
+    'gift income requires current currency and per-transfer exact amount',
+    () {
+      GiftReceipt receipt({
+        String? currency = 'GIFT_COIN_TENTH',
+        int? income = 105,
+        int quantity = 3,
+      }) => GiftReceipt(
+        success: true,
+        remainingBalance: null,
+        quantity: quantity,
+        creatorIncomeMinor: income,
+        creatorIncomeCurrency: currency,
+      );
+      business.expectDualGiftIncome(
+        receipt(),
+        price: 7,
+        quantity: 3,
+        cashEligible: false,
+      );
+      business.expectDualGiftIncome(
+        receipt(currency: 'CASH_CNY'),
+        price: 7,
+        quantity: 3,
+        cashEligible: true,
+      );
+      for (final invalid in [
+        receipt(currency: null),
+        receipt(currency: 'CASH_CNY'),
+        receipt(income: null),
+        receipt(income: 104),
+        receipt(quantity: 1),
+      ]) {
+        expect(
+          () => business.expectDualGiftIncome(
+            invalid,
+            price: 7,
+            quantity: 3,
+            cashEligible: false,
+          ),
+          throwsA(isA<TestFailure>()),
+        );
+      }
+    },
+  );
+
+  test(
+    'pair settlement counts both chair commissions and exact ordinary tenths',
+    () {
+      final beforeA = _wallet('1000', 10, chair: true);
+      final beforeB = _wallet('1001', 10);
+      // One coin = 10 fen: each gift yields 5 fen to receiver, 1 fen to chair.
+      business.expectDualGiftSettlement(
+        before: beforeA,
+        after: _wallet('990', 10.07, chair: true),
+        price: 1,
+        chair: true,
+      );
+      business.expectDualGiftSettlement(
+        before: beforeB,
+        after: _wallet('996', 10),
+        price: 1,
+        chair: false,
+      );
+      for (final invalid in [
+        _wallet('990', 10.06, chair: true),
+        _wallet('990', 10.08, chair: true),
+        _wallet('989', 10.07, chair: true),
+      ]) {
+        expect(
+          () => business.expectDualGiftSettlement(
+            before: beforeA,
+            after: invalid,
+            price: 1,
+            chair: true,
+          ),
+          throwsA(isA<TestFailure>()),
+        );
+      }
+      expect(
+        () => business.expectDualGiftSettlement(
+          before: beforeB,
+          after: _wallet('991', 10.05),
+          price: 1,
+          chair: false,
+        ),
+        throwsA(isA<TestFailure>()),
+      );
+      expect(
+        () => business.expectDualGiftSettlement(
+          before: beforeB,
+          after: _wallet('996', 10.001),
+          price: 1,
+          chair: false,
+        ),
+        throwsA(isA<TestFailure>()),
+      );
+      final huge = BigInt.parse('90071992547409931');
+      business.expectDualGiftSettlement(
+        before: _wallet('$huge', 0),
+        after: _wallet('${huge - BigInt.from(5)}', 0),
+        price: 1,
+        chair: false,
+      );
+    },
+  );
   final android = DualPlatformSupport.forTest(DualPlatform.android);
   test(
     'private acceptance has ten ordered send-ready and receive barriers',
@@ -295,6 +473,9 @@ void main() {
         '.leaveRoom(',
         '.exitRoom(',
         '.join(',
+        '.resolveMicRequest(',
+        '.setManager(',
+        '.assignMic(',
         'pumpQaPage(',
         'createQaDependencies(',
       ]) {
@@ -320,6 +501,30 @@ void main() {
       }
       expect(dualPhases.toSet().length, dualPhases.length);
       expect(dualPhases.last, 'complete');
+    },
+  );
+
+  test(
+    'both seat rounds require ordinary application and owner UI approval',
+    () {
+      final source = File(
+        'integration_test/dual_first_party_business_test.dart',
+      ).readAsStringSync();
+      expect(
+        'await _seatPairThroughApproval('.allMatches(source),
+        hasLength(2),
+      );
+      for (final required in [
+        'approval-mic-seat-',
+        "find.text('同意')",
+        'fetchRoomAuthority(',
+        'expectDualApprovedRequest(',
+        'expectDualGiftSettlement(',
+        'IncomeRole.ordinary',
+        'IncomeRole.guildChair',
+      ]) {
+        expect(source, contains(required), reason: required);
+      }
     },
   );
 
@@ -365,3 +570,26 @@ void main() {
     expect(dualPhases, isNot(contains('public-read')));
   });
 }
+
+WalletSummary _wallet(String tenths, double cash, {bool chair = false}) =>
+    WalletSummary(
+      giftCoinBalance: null,
+      coinPrecision: GiftCoinBalance(
+        available: GiftCoinAmount.fromTenths(tenths),
+        frozen: const GiftCoinAmount.whole(0),
+      ),
+      incomeCapability: IncomeCapability(
+        chair ? IncomeRole.guildChair : IncomeRole.ordinary,
+        chair,
+        chair,
+      ),
+      cashBalance: cash,
+      frozenBalance: 0,
+      totalEarnings: 0,
+      yesterdayEarnings: 0,
+      totalWithdrawn: 0,
+      realNameVerified: true,
+      bankCard: null,
+      agentEarnings: null,
+      superAgentEarnings: null,
+    );

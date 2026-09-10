@@ -7,6 +7,7 @@ import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
+import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 import 'package:voice_social_app/features/discovery/dynamic/presentation/dynamic_pages.dart';
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
@@ -14,6 +15,7 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
 import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
+import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
@@ -110,7 +112,9 @@ void main() {
         'room entry',
       );
       expect(controller.isSnapshotOnly, isTrue);
-      expect(controller.micCoordinationMode, MicCoordinationMode.direct);
+      final firstLease = controller.snapshot!.sessionId;
+      expect(firstLease, isNotNull);
+      expect(firstLease, isNotEmpty);
       await _barrier(tester, relay, config, 'joined');
       final members = await dependencies.roomOperationsRepository
           .fetchOnlineMembers(roomId: config.roomId, page: 1);
@@ -119,9 +123,12 @@ void main() {
         isTrue,
       );
       expect(members.items.any((m) => m.userId == config.peerUserId), isTrue);
-      await _tap(tester, find.text('上麦'));
-      await _tap(tester, find.text(role == 'A' ? '1 号麦' : '2 号麦'));
-      await _until(tester, () => controller.isOnMic, 'self mic entry');
+      final firstApproval = await _seatPairThroughApproval(
+        tester,
+        dependencies,
+        controller,
+        config,
+      );
       await _barrier(tester, relay, config, 'seated');
       await _until(
         tester,
@@ -238,6 +245,7 @@ void main() {
         'automatic peer mic leave',
         timeout: const Duration(seconds: 5),
       );
+      await _expectPairAuthority(dependencies, config, seated: false);
       await _tap(tester, find.text('更多'));
       await _tap(tester, find.text('工具'));
       await _tap(tester, find.text('离开房间'));
@@ -267,6 +275,9 @@ void main() {
         () => controller.status == RoomSessionStatus.joined,
         'new room lease joined',
       );
+      expect(controller.snapshot!.sessionId, isNotNull);
+      expect(controller.snapshot!.sessionId, isNotEmpty);
+      expect(controller.snapshot!.sessionId, isNot(firstLease));
       await _until(
         tester,
         () => find.textContaining(peerPublic).evaluate().isNotEmpty,
@@ -281,10 +292,24 @@ void main() {
         ),
         isTrue,
       );
+      await _expectPairAuthority(dependencies, config, seated: false);
       await _barrier(tester, relay, config, 'manual_room_reentry');
-      await _tap(tester, find.text('上麦'));
-      await _tap(tester, find.text(role == 'A' ? '1 号麦' : '2 号麦'));
-      await _until(tester, () => controller.isOnMic, 'gift self mic reentry');
+      final secondApproval = await _seatPairThroughApproval(
+        tester,
+        dependencies,
+        controller,
+        config,
+      );
+      expect(secondApproval, isNot(firstApproval));
+      // Both wallets are sampled BEFORE the existing barrier releases either
+      // gift sender. No extra host phase or cross-device clock is required.
+      final giftStart = await dependencies.commerceRepository
+          .fetchWalletSummary();
+      expect(giftStart.coinPrecision, isNotNull);
+      expect(
+        giftStart.incomeCapability.role,
+        role == 'A' ? IncomeRole.guildChair : IncomeRole.ordinary,
+      );
       await _barrier(tester, relay, config, 'gift-seated');
       await _until(
         tester,
@@ -303,13 +328,14 @@ void main() {
               );
       // Serialize the two gift transfers while both devices remain in the room,
       // so each sender's exact wallet delta cannot race the reciprocal transfer.
+      String? sentTransferId;
       for (final sender in ['A', 'B']) {
         if (role == sender) {
           final before = await dependencies.commerceRepository
               .fetchWalletSummary();
           expect(
-            before.giftCoinBalance != null &&
-                before.giftCoinBalance! >= star.price,
+            before.coinPrecision != null &&
+                before.giftCoins!.coversWholeCoins(star.price),
             isTrue,
           );
           await _tap(tester, find.text('礼物'));
@@ -348,11 +374,23 @@ void main() {
             isTrue,
           );
           expect(receipt.quantity, 1);
+          expect(receipt.requestId, giftRequestId);
+          expectDualGiftIncome(
+            receipt,
+            price: star.price,
+            cashEligible: role == 'B',
+          );
           expect(receipt.transferId?.isNotEmpty, isTrue);
+          sentTransferId = receipt.transferId;
           expect(receipt.providerInvocation, isFalse);
           final after = await dependencies.commerceRepository
               .fetchWalletSummary();
-          expect(after.giftCoinBalance, before.giftCoinBalance! - star.price);
+          expect(after.coinPrecision, isNotNull);
+          expect(
+            after.giftCoins!.tenths,
+            before.giftCoins!.tenths -
+                BigInt.from(star.price) * BigInt.from(10),
+          );
           // Historical GET receipts attest immutable transfer fields, not a
           // current balance. The wallet delta above and host per-transfer
           // ledger checks remain mandatory; do not invent a GET balance field.
@@ -377,6 +415,27 @@ void main() {
         isTrue,
       );
       expect(incoming.providerInvocation, isFalse);
+      expect(sentTransferId, isNotNull);
+      expect(incoming.transferId, isNotNull);
+      expect(incoming.transferId, isNotEmpty);
+      expect(incoming.transferId, isNot(sentTransferId));
+      expect(
+        incoming.requestId,
+        'dual-${config.runId}-${config.peerRole}-gift',
+      );
+      expectDualGiftIncome(
+        incoming,
+        price: star.price,
+        cashEligible: role == 'A',
+      );
+      final giftEnd = await dependencies.commerceRepository
+          .fetchWalletSummary();
+      expectDualGiftSettlement(
+        before: giftStart,
+        after: giftEnd,
+        price: star.price,
+        chair: role == 'A',
+      );
       await _tap(tester, find.text('更多'));
       await _tap(tester, find.text('工具'));
       await _tap(tester, find.text('主动下麦'));
@@ -390,6 +449,15 @@ void main() {
         isTrue,
       );
       await _barrier(tester, relay, config, 'off-mic');
+      await _until(
+        tester,
+        () => !controller.seats.any(
+          (seat) => seat.userId == config.peerUserId && seat.isOccupied,
+        ),
+        'automatic final peer mic leave',
+        timeout: const Duration(seconds: 5),
+      );
+      await _expectPairAuthority(dependencies, config, seated: false);
 
       // Route directly to the existing profile page; all relation/chat writes
       // still require its visible controls and production callbacks.
@@ -604,6 +672,11 @@ void main() {
         'publicReceiveObservedAfterBarrierMs':
             publicReceiveWatch.elapsedMilliseconds,
         'roomReentry': 'separate_persistence_recovery',
+        'ordinaryMicApprovalRounds': 2,
+        'ordinaryMemberPromoted': false,
+        'giftSettlement':
+            'ORDINARY_TENTHS_CHAIR_CASH_AND_TWO_15_PERCENT_SHARES',
+        'giftLedgerEvidence': 'host_exact_per_transfer_and_carry_required',
         'publicVisibleBeforeReentry': visibleBeforeReentry,
         'privateReceive': 'automatic_http_sync_no_navigation',
         'privateSentCount': ownPrivateTexts.length,
@@ -635,6 +708,246 @@ Future<void> _until(
     }
     await tester.pump(const Duration(milliseconds: 100));
   }
+}
+
+/// Checks the exact ordinary-member REQUEST, never a manager INVITE or a
+/// legacy accepted projection. Kept testable without a device or backend.
+void expectDualApprovedRequest(
+  MicAccessRequest request, {
+  required String roomId,
+  required int applicant,
+  required int owner,
+  required int seat,
+}) {
+  expect(seat, inInclusiveRange(2, 9));
+  expect(request.id, isNotEmpty);
+  expect(request.roomId, roomId);
+  expect(request.type, MicRequestType.request);
+  expect(request.member.userId, applicant);
+  expect(request.member.role, RoomRole.listener);
+  expect(request.requestedByUserId, applicant);
+  expect(request.subjectUserId, applicant);
+  expect(request.seatNumber, seat);
+  expect(request.status, MicRequestStatus.approved);
+  expect(request.resolvedByUserId, owner);
+  expect(request.assignedSeatNumber, seat);
+  expect(request.resolvedAt, isNotNull);
+}
+
+Future<T> _authorityUntil<T>(
+  WidgetTester tester,
+  Future<T> Function() read,
+  bool Function(T) ready,
+  String description,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 40));
+  do {
+    final value = await read();
+    if (ready(value)) return value;
+    await tester.pump(const Duration(milliseconds: 250));
+  } while (DateTime.now().isBefore(deadline));
+  throw TestFailure('Authority timeout: $description');
+}
+
+Future<void> _expectPairAuthority(
+  AppDependencies dependencies,
+  DualConfig config, {
+  required bool seated,
+}) async {
+  final projection =
+      await (dependencies.roomRepository as RoomAuthorityRepository)
+          .fetchRoomAuthority(
+            roomId: config.roomId,
+            currentUserId: config.session.userId,
+          );
+  expect(projection.viewerUserId, config.session.userId);
+  expect(projection.memberActive, isTrue);
+  expect(projection.snapshot.roomId, config.roomId);
+  expect(
+    projection.snapshot.ownerId,
+    config.role == 'A' ? config.session.userId : config.peerUserId,
+  );
+  expect(
+    projection.snapshot.role,
+    config.role == 'A' ? RoomRole.owner : RoomRole.listener,
+  );
+  final pair = {config.session.userId, config.peerUserId};
+  final occupied = projection.snapshot.seats
+      .where((seat) => pair.contains(seat.userId) && seat.isOccupied)
+      .toList();
+  expect(occupied, hasLength(seated ? 2 : 0));
+  if (seated) {
+    final owner = config.role == 'A'
+        ? config.session.userId
+        : config.peerUserId;
+    expect(occupied.singleWhere((seat) => seat.userId == owner).number, 1);
+    expect(occupied.singleWhere((seat) => seat.userId != owner).number, 2);
+  }
+}
+
+Future<String> _seatPairThroughApproval(
+  WidgetTester tester,
+  AppDependencies dependencies,
+  RoomController controller,
+  DualConfig config,
+) async {
+  final owner = config.role == 'A' ? config.session.userId : config.peerUserId;
+  final applicant = config.role == 'B'
+      ? config.session.userId
+      : config.peerUserId;
+  const seat = 2; // Normal seat, never the reserved owner/manager seat 1.
+  expect(controller.isOnMic, isFalse);
+  expect(
+    controller.role,
+    config.role == 'A' ? RoomRole.owner : RoomRole.listener,
+  );
+  expect(
+    controller.micCoordinationMode,
+    config.role == 'A'
+        ? MicCoordinationMode.direct
+        : MicCoordinationMode.approval,
+  );
+  Future<List<MicAccessRequest>> queue() =>
+      dependencies.roomOperationsRepository.fetchMicRequests(config.roomId);
+  final previous = config.role == 'B'
+      ? (await queue()).map((r) => r.id).toSet()
+      : <String>{};
+  await _tap(tester, find.text('上麦'));
+  if (config.role == 'B') {
+    expect(find.byKey(const Key('approval-mic-seat-1')), findsNothing);
+    await _tap(tester, find.byKey(const Key('approval-mic-seat-$seat')));
+  } else {
+    await _tap(tester, find.text('1 号麦'));
+    await _until(tester, () => controller.isOnMic, 'owner seat');
+  }
+  bool ownRequest(MicAccessRequest r) =>
+      r.roomId == config.roomId &&
+      r.type == MicRequestType.request &&
+      r.subjectUserId == applicant &&
+      r.requestedByUserId == applicant &&
+      r.seatNumber == seat &&
+      (config.role == 'A' ? r.isPending : !previous.contains(r.id));
+  final requests = await _authorityUntil(
+    tester,
+    queue,
+    (rows) => rows.any(ownRequest),
+    'new ordinary request',
+  );
+  final request = requests.where(ownRequest).single;
+  expect(request.member.role, RoomRole.listener);
+  if (config.role == 'A') {
+    expect(request.status, MicRequestStatus.pending);
+    await _tap(tester, find.text('更多'));
+    await _tap(tester, find.text('工具'));
+    await _tap(tester, find.text('房管'));
+    await _until(
+      tester,
+      () => find.byType(RoomManagementPage).evaluate().isNotEmpty,
+      'owner management page',
+    );
+    await _tap(tester, find.textContaining('上麦申请'));
+    final row = find.ancestor(
+      of: find.text(request.member.name),
+      matching: find.byType(ListTile),
+    );
+    await _tap(tester, find.descendant(of: row, matching: find.text('同意')));
+  }
+  final approved = await _authorityUntil(
+    tester,
+    queue,
+    (rows) => rows.any(
+      (r) => r.id == request.id && r.status == MicRequestStatus.approved,
+    ),
+    'owner-approved exact request',
+  );
+  expectDualApprovedRequest(
+    approved.singleWhere((r) => r.id == request.id),
+    roomId: config.roomId,
+    applicant: applicant,
+    owner: owner,
+    seat: seat,
+  );
+  if (config.role == 'A') {
+    await tester.pageBack();
+    await _until(
+      tester,
+      () => find.byType(RoomManagementPage).evaluate().isEmpty,
+      'return from management',
+    );
+  }
+  await _until(
+    tester,
+    () =>
+        controller.isOnMic &&
+        controller.seats.any(
+          (s) =>
+              s.number == (config.role == 'A' ? 1 : seat) &&
+              s.userId == config.session.userId,
+        ),
+    'authoritative approved mic placement',
+    timeout: const Duration(seconds: 5),
+  );
+  await _expectPairAuthority(dependencies, config, seated: true);
+  return request.id;
+}
+
+// Prices are whole platform coins, 1 coin = 10 fen. Aggregate quantity before
+// flooring each beneficiary. No double arithmetic for platform-coin amounts.
+void expectDualGiftIncome(
+  GiftReceipt receipt, {
+  required int price,
+  int quantity = 1,
+  required bool cashEligible,
+}) {
+  expect(price, greaterThan(0));
+  expect(quantity, inInclusiveRange(1, 999));
+  final valueFen = BigInt.from(price) * BigInt.from(quantity) * BigInt.from(10);
+  expect(receipt.quantity, quantity);
+  expect(receipt.creatorIncomeMinor, isNotNull);
+  expect(BigInt.from(receipt.creatorIncomeMinor!), valueFen ~/ BigInt.two);
+  expect(
+    receipt.creatorIncomeCurrency,
+    cashEligible ? 'CASH_CNY' : 'GIFT_COIN_TENTH',
+  );
+}
+
+BigInt _cashFen(double value) {
+  final match = RegExp(r'^(\d+)(?:\.(\d{1,2}))?$').firstMatch(value.toString());
+  if (match == null) throw TestFailure('Cash projection is not exact cents');
+  return BigInt.parse(match.group(1)!) * BigInt.from(100) +
+      BigInt.parse((match.group(2) ?? '').padRight(2, '0'));
+}
+
+void expectDualGiftSettlement({
+  required WalletSummary before,
+  required WalletSummary after,
+  required int price,
+  required bool chair,
+}) {
+  expect(price, greaterThan(0));
+  expect(before.coinPrecision, isNotNull);
+  expect(after.coinPrecision, isNotNull);
+  expect(
+    before.incomeCapability.role,
+    chair ? IncomeRole.guildChair : IncomeRole.ordinary,
+  );
+  expect(after.incomeCapability.role, before.incomeCapability.role);
+  final valueFen = BigInt.from(price) * BigInt.from(10);
+  final receiverFen = valueFen ~/ BigInt.two;
+  final chairFen = valueFen * BigInt.from(15) ~/ BigInt.from(100);
+  expect(
+    after.giftCoins!.tenths - before.giftCoins!.tenths,
+    -valueFen + (chair ? BigInt.zero : receiverFen),
+  );
+  expect(
+    _cashFen(after.cashBalance) - _cashFen(before.cashBalance),
+    chair ? receiverFen + chairFen * BigInt.two : BigInt.zero,
+  );
+  expect(
+    after.coinPrecision!.frozen.tenths,
+    before.coinPrecision!.frozen.tenths,
+  );
+  expect(_cashFen(after.frozenBalance), _cashFen(before.frozenBalance));
 }
 
 Future<void> _tap(
