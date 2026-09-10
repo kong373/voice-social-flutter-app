@@ -69,10 +69,12 @@ class AppImageMediaHost extends ChangeNotifier {
 
   ImageDraft draft(String key, MediaPurpose purpose) {
     if (purpose != MediaPurpose.dynamicImage &&
-        purpose != MediaPurpose.supportImage) {
+        purpose != MediaPurpose.supportImage &&
+        purpose != MediaPurpose.roomCover &&
+        purpose != MediaPurpose.roomBackground) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
-        message: '当前图片草稿仅接入动态与反馈工单',
+        message: '当前图片草稿不支持此用途',
       );
     }
     final actor = scope.userId;
@@ -115,8 +117,8 @@ class AppImageMediaHost extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> pick(ImageDraft draft) async {
-    final bound = scope;
+  Future<void> pick(ImageDraft draft, {MediaIdentityScope? identity}) async {
+    final bound = identity ?? scope;
     _check(draft, bound);
     if (!enabled)
       throw const ApiException(
@@ -171,8 +173,9 @@ class AppImageMediaHost extends ChangeNotifier {
     ImageDraft draft,
     ImageUpload image, {
     bool recover = false,
+    MediaIdentityScope? identity,
   }) {
-    final bound = scope;
+    final bound = identity ?? scope;
     _check(draft, bound);
     if (!draft._images.contains(image) ||
         (draft.locked && !image.cancelled) ||
@@ -304,6 +307,22 @@ class AppImageMediaHost extends ChangeNotifier {
     _disposeSource(image.source);
     draft._images.remove(image);
     touch();
+  }
+
+  /// Room editors own a shorter-lived context than the app/account journal.
+  /// Keep attempted keys and asset IDs for read-only recovery, but never retain
+  /// their bytes or a Future across a page/lease change.
+  void detachRoomDraft(ImageDraft draft) {
+    if (draft.purpose != MediaPurpose.roomCover &&
+        draft.purpose != MediaPurpose.roomBackground)
+      throw mediaProtocol();
+    draft.picking = false;
+    for (final image in draft._images) {
+      _disposeSource(image.source);
+      image.source = null;
+      image.flight = null;
+    }
+    draft._images.removeWhere((image) => !image.attempted);
   }
 
   /// The immutable command and original key outlive pages and uncertain results.

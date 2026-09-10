@@ -4,6 +4,8 @@ import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/community/domain/community_models.dart';
 import 'package:voice_social_app/features/community/domain/community_request_id.dart';
 import 'package:voice_social_app/features/community/domain/community_repository.dart';
+import 'package:voice_social_app/core/media/media_models.dart';
+import 'package:voice_social_app/features/room/domain/room_image_models.dart';
 
 class BackendCommunityRepository
     with RemovedCommunityOperations
@@ -747,7 +749,19 @@ class BackendCommunityRepository
     final List<GuildRoom> rooms = roomId.isEmpty
         ? const <GuildRoom>[]
         : <GuildRoom>[
-            GuildRoom(roomId: roomId, name: roomName, onlineUsers: onlineUsers),
+            GuildRoom(
+              roomId: roomId,
+              name: roomName,
+              onlineUsers: onlineUsers,
+              coverMedia: parseRoomMedia(
+                item['coverMedia'],
+                MediaPurpose.roomCover,
+              ),
+              backgroundMedia: parseRoomMedia(
+                item['backgroundMedia'],
+                MediaPurpose.roomBackground,
+              ),
+            ),
           ];
     _requiredStringField(item, 'ownerAvatar');
     _requiredDateTimeField(item, 'createdAt');

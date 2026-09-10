@@ -1,11 +1,13 @@
 import 'dart:convert';
 
+import 'package:voice_social_app/core/media/media_models.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_request_id.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
+import 'package:voice_social_app/features/room/domain/room_image_models.dart';
 
 class BackendDiscoveryRepository implements DiscoveryRepository {
   BackendDiscoveryRepository({
@@ -457,6 +459,11 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
       coverUrl:
           _nonEmptyString(map['coverImage']) ??
           _nonEmptyString(map['coverImgUrl']),
+      coverMedia: parseRoomMedia(map['coverMedia'], MediaPurpose.roomCover),
+      backgroundMedia: parseRoomMedia(
+        map['backgroundMedia'],
+        MediaPurpose.roomBackground,
+      ),
       relationReason: _nonEmptyString(map['labelName']),
       isLocked:
           map['accessMode'] == 'PASSWORD' ||

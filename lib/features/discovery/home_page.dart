@@ -9,6 +9,7 @@ import 'package:voice_social_app/features/discovery/presentation/global_search_p
 import 'package:voice_social_app/features/discovery/presentation/saved_rooms_page.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/presentation/create_room_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_cover_artwork.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -313,7 +314,9 @@ class _HeroRoomCard extends StatelessWidget {
     ).textTheme.bodyMedium?.fontFamily;
     return Theme(
       data: AppTheme.room(fontFamily: fontFamily),
-      child: OriginalRoomArtwork(
+      child: RoomCoverArtwork(
+        roomId: room.id,
+        media: room.coverMedia,
         seed: room.id,
         height: 280,
         borderRadius: const BorderRadius.all(Radius.circular(28)),

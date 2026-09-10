@@ -1,9 +1,10 @@
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 
 /// One source of membership for the live room and operations repositories.
 /// Authentication epochs are supplied by the session owner, never by userId.
-class RoomLeaseBinding {
+class RoomLeaseBinding extends ChangeNotifier {
   RoomLeaseBinding({int Function()? authenticationGeneration})
     : _authenticationGeneration = authenticationGeneration ?? (() => 0);
 
@@ -35,6 +36,7 @@ class RoomLeaseBinding {
       _generation++;
       _current = null;
       _pendingIntent = intent;
+      notifyListeners();
     }
     return _generation;
   }
@@ -47,6 +49,7 @@ class RoomLeaseBinding {
     check(expected);
     _current = RoomLeaseMembership(roomId, userId, lease);
     _pendingIntent = null;
+    notifyListeners();
   }
 
   RoomLeaseMembership require([String? roomId]) {
@@ -62,6 +65,7 @@ class RoomLeaseBinding {
     _generation++;
     _current = null;
     _pendingIntent = null;
+    notifyListeners();
   }
 
   static ApiException stale() => const ApiException(

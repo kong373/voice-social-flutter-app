@@ -1,4 +1,6 @@
 import 'dart:async';
+import '../../../core/media/media_models.dart';
+import 'room_cover_artwork.dart';
 import '../../account/domain/user_avatar_descriptor.dart';
 import '../../account/presentation/user_avatar_view.dart';
 import '../../commerce/display/domain/equipped_decoration.dart';
@@ -417,7 +419,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     if (_controller.snapshot?.isClosedManagementView == true) {
       return Stack(
         children: <Widget>[
-          const _VideoRoomBackground(),
+          _authoritativeBackground(),
           SafeArea(
             child: Column(
               children: <Widget>[
@@ -509,12 +511,33 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     );
   }
 
+  Widget _authoritativeBackground() {
+    final snapshot = _controller.snapshot;
+    final session = snapshot?.sessionId;
+    return _VideoRoomBackground(
+      key: ValueKey((
+        'room-background',
+        snapshot?.roomId,
+        session,
+        snapshot?.isClosedManagementView,
+      )),
+      media: snapshot?.backgroundMedia,
+      changes: _controller,
+      isCurrent: () =>
+          _controller.isEntryIdentityCurrent &&
+          _controller.snapshot?.roomId == snapshot?.roomId &&
+          _controller.snapshot?.sessionId == session &&
+          _controller.status == RoomSessionStatus.joined &&
+          !_ending,
+    );
+  }
+
   Widget _roomContentBody() {
     final double keyboard = MediaQuery.viewInsetsOf(context).bottom;
     final bool composing = keyboard > 0 || _composerFocus.hasFocus;
     return Stack(
       children: <Widget>[
-        const _VideoRoomBackground(),
+        _authoritativeBackground(),
         SafeArea(
           child: AnimatedPadding(
             duration: const Duration(milliseconds: 210),
@@ -2167,35 +2190,55 @@ class _RoomMoodStage extends StatelessWidget {
 }
 
 class _VideoRoomBackground extends StatelessWidget {
-  const _VideoRoomBackground();
+  const _VideoRoomBackground({
+    this.media,
+    this.changes,
+    this.isCurrent,
+    super.key,
+  });
+  final MediaReference? media;
+  final Listenable? changes;
+  final bool Function()? isCurrent;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        const ColoredBox(color: Color(0xFF16051F)),
-        Opacity(
-          opacity: 0.34,
-          child: Image.asset(
-            'assets/runtime/room-cosmos.png',
-            fit: BoxFit.cover,
-            alignment: Alignment.topCenter,
-            color: const Color(0xFF4A123E),
-            colorBlendMode: BlendMode.multiply,
+        RoomMediaImage(
+          media: media,
+          contextChanges: changes,
+          contextIsCurrent: isCurrent,
+          placeholder: Stack(
+            fit: StackFit.expand,
+            children: [
+              const ColoredBox(color: Color(0xFF16051F)),
+              Opacity(
+                opacity: 0.34,
+                child: Image.asset(
+                  'assets/runtime/room-cosmos.png',
+                  fit: BoxFit.cover,
+                  alignment: Alignment.topCenter,
+                  color: const Color(0xFF4A123E),
+                  colorBlendMode: BlendMode.multiply,
+                ),
+              ),
+            ],
           ),
         ),
-        const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: <Color>[
-                Color(0x5C350839),
-                Color(0xB02C073A),
-                Color(0xF20B0918),
-              ],
-              stops: <double>[0, 0.54, 1],
+        const IgnorePointer(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[
+                  Color(0x5C350839),
+                  Color(0xB02C073A),
+                  Color(0xF20B0918),
+                ],
+                stops: <double>[0, 0.54, 1],
+              ),
             ),
           ),
         ),

@@ -1,6 +1,7 @@
 import 'package:voice_social_app/features/commerce/domain/gift_coin_precision.dart';
 import '../../commerce/display/domain/equipped_decoration.dart';
 import '../../account/domain/user_avatar_descriptor.dart';
+import '../../../core/media/media_models.dart';
 import 'package:voice_social_app/features/room/domain/room_audio_mute_state.dart';
 export 'package:voice_social_app/features/room/domain/room_audio_mute_state.dart';
 
@@ -358,6 +359,8 @@ class RoomSnapshot {
     this.onlineCount,
     this.coverUrl,
     this.backgroundUrl,
+    this.coverMedia,
+    this.backgroundMedia,
     this.sessionId,
     this.roomLease,
     this.ownerClosedAccess = false,
@@ -395,6 +398,8 @@ class RoomSnapshot {
   final int? onlineCount;
   final String? coverUrl;
   final String? backgroundUrl;
+  final MediaReference? coverMedia;
+  final MediaReference? backgroundMedia;
 
   /// First-party membership identifier, never an RTC or authentication token.
   final String? sessionId;
@@ -446,6 +451,8 @@ class RoomSnapshot {
       onlineCount: onlineCount ?? this.onlineCount,
       coverUrl: coverUrl ?? this.coverUrl,
       backgroundUrl: backgroundUrl ?? this.backgroundUrl,
+      coverMedia: coverMedia,
+      backgroundMedia: backgroundMedia,
     );
   }
 }

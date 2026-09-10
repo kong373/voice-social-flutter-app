@@ -1,3 +1,6 @@
+import '../../../core/media/media_models.dart';
+import 'room_image_models.dart';
+
 enum RoomAccessMode { publicRoom, password, approval }
 
 /// Declares which room-configuration operations the selected repository can
@@ -34,6 +37,10 @@ class RoomConfiguration {
     this.roomId,
     this.roomCode,
     this.coverUrl,
+    this.coverMedia,
+    this.backgroundMedia,
+    this.coverImageChange = const RoomImageChange.unchanged(),
+    this.backgroundImageChange = const RoomImageChange.unchanged(),
     // Null is retained for fixture/mocked configurations created before the
     // first-party room version contract. Live backend reads always populate
     // this field, and live writes reject a missing version for existing rooms.
@@ -61,6 +68,10 @@ class RoomConfiguration {
   final bool autoLockMic;
   final RoomAvailability availability;
   final String? coverUrl;
+  final MediaReference? coverMedia;
+  final MediaReference? backgroundMedia;
+  final RoomImageChange coverImageChange;
+  final RoomImageChange backgroundImageChange;
   final int? version;
   final bool canControlLifecycle;
   final int? editGeneration;
@@ -83,6 +94,8 @@ class RoomConfiguration {
     bool? autoLockMic,
     RoomAvailability? availability,
     String? coverUrl,
+    RoomImageChange? coverImageChange,
+    RoomImageChange? backgroundImageChange,
     int? version,
   }) {
     return RoomConfiguration(
@@ -99,6 +112,11 @@ class RoomConfiguration {
       autoLockMic: autoLockMic ?? this.autoLockMic,
       availability: availability ?? this.availability,
       coverUrl: coverUrl ?? this.coverUrl,
+      coverMedia: coverMedia,
+      backgroundMedia: backgroundMedia,
+      coverImageChange: coverImageChange ?? this.coverImageChange,
+      backgroundImageChange:
+          backgroundImageChange ?? this.backgroundImageChange,
       version: version ?? this.version,
       canControlLifecycle: canControlLifecycle,
       editGeneration: editGeneration,

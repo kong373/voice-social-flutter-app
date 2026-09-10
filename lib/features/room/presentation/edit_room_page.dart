@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import '../../media/image_widgets.dart' show imageHostOf;
+import 'room_image_editor.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';
@@ -52,6 +55,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
   int? _identity;
   bool _identityInvalidated = false;
   RoomConfiguration? _pendingSave;
+  RoomImageEditorBinding? _images;
 
   @override
   void didChangeDependencies() {
@@ -68,7 +72,64 @@ class _EditRoomPageState extends State<EditRoomPage> {
         .sessionManager;
     _identity = _session?.identityGeneration;
     _session?.addListener(_onIdentityChanged);
+    final repository = _repository;
+    if (repository is BackendRoomLifecycleRepository) {
+      repository.leaseBinding.addListener(_onLeaseChanged);
+    }
     _load();
+  }
+
+  void _onLeaseChanged() {
+    final repository = _repository;
+    if (_room != null &&
+        repository is BackendRoomLifecycleRepository &&
+        repository.editGeneration != _editGeneration)
+      _invalidateEditor();
+  }
+
+  void _releaseImages() {
+    _images?.removeListener(_imagesChanged);
+    _images?.dispose();
+    _images = null;
+  }
+
+  void _imagesChanged() {
+    if (!mounted) return;
+    if (_images?.current == false) {
+      scheduleMicrotask(() {
+        if (mounted) _invalidateEditor();
+      });
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _bindImages(RoomConfiguration room) {
+    _releaseImages();
+    final host = imageHostOf(context);
+    if (host == null || !host.enabled) return;
+    final repository = _repository;
+    _images = RoomImageEditorBinding(
+      host: host,
+      roomId: widget.roomId,
+      roomChanges: repository is BackendRoomLifecycleRepository
+          ? repository.leaseBinding
+          : null,
+      isCurrent: () {
+        if (!mounted ||
+            _identityInvalidated ||
+            _session?.identityGeneration != _identity)
+          return false;
+        try {
+          if (repository is BackendRoomLifecycleRepository)
+            repository.requireEditCurrent(room);
+          return true;
+        } catch (_) {
+          return false;
+        }
+      },
+    );
+    _images!.addListener(_imagesChanged);
   }
 
   void _onIdentityChanged() {
@@ -80,6 +141,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
   void _invalidateEditor() {
     if (!mounted) return;
     _epoch++;
+    _releaseImages();
     _passwordController.clear();
     setState(() {
       _room = null;
@@ -109,6 +171,10 @@ class _EditRoomPageState extends State<EditRoomPage> {
     if (oldWidget.roomId == widget.roomId &&
         oldWidget.repositoryOverride == widget.repositoryOverride)
       return;
+    final previous = _repository;
+    if (previous is BackendRoomLifecycleRepository)
+      previous.leaseBinding.removeListener(_onLeaseChanged);
+    _releaseImages();
     _epoch++;
     _room = null;
     _pendingSave = null;
@@ -117,6 +183,9 @@ class _EditRoomPageState extends State<EditRoomPage> {
     _repositoryInstance =
         widget.repositoryOverride ??
         AppDependencyScope.of(context).roomLifecycleRepository;
+    final next = _repository;
+    if (next is BackendRoomLifecycleRepository)
+      next.leaseBinding.addListener(_onLeaseChanged);
     _load();
   }
 
@@ -124,6 +193,10 @@ class _EditRoomPageState extends State<EditRoomPage> {
   void dispose() {
     _epoch++;
     _session?.removeListener(_onIdentityChanged);
+    final repository = _repositoryInstance;
+    if (repository is BackendRoomLifecycleRepository)
+      repository.leaseBinding.removeListener(_onLeaseChanged);
+    _releaseImages();
     _pendingSave = null;
     _passwordController.clear();
     _titleController.dispose();
@@ -151,8 +224,13 @@ class _EditRoomPageState extends State<EditRoomPage> {
       if (!_current(epoch)) {
         return;
       }
+      _bindImages(room);
       setState(() {
-        _applyAuthoritativeRoom(room);
+        final repository = _repository;
+        _pendingSave = repository is BackendRoomLifecycleRepository
+            ? repository.pendingImageSave(widget.roomId)
+            : null;
+        _applyAuthoritativeRoom(room, draft: _pendingSave);
         _loading = false;
       });
     } catch (error) {
@@ -281,6 +359,15 @@ class _EditRoomPageState extends State<EditRoomPage> {
                     setState(() => _autoLockMic = value);
                   },
                 ),
+                if (_images != null) ...[
+                  const SizedBox(height: 18),
+                  RoomImageEditor(
+                    binding: _images!,
+                    cover: room.coverMedia,
+                    background: room.backgroundMedia,
+                    enabled: enabled && _pendingSave == null,
+                  ),
+                ],
                 const SizedBox(height: 18),
                 if (!room.isOpen)
                   const RoomOxygenNotice(
@@ -350,7 +437,10 @@ class _EditRoomPageState extends State<EditRoomPage> {
               width: double.infinity,
               child: FilledButton.icon(
                 key: const Key('edit-room-save-button'),
-                onPressed: enabled && _accessMode != RoomAccessMode.approval
+                onPressed:
+                    enabled &&
+                        (_pendingSave != null || (_images?.canSave ?? true)) &&
+                        _accessMode != RoomAccessMode.approval
                     ? _save
                     : null,
                 icon: _saving
@@ -377,6 +467,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
   Future<void> _save() async {
     final epoch = _epoch;
     if (!_current(epoch) || _room == null || _saving || _closing) return;
+    if (_pendingSave == null && _images?.canSave == false) return;
     final RoomConfiguration current = _room!;
     if (_accessMode == RoomAccessMode.approval) {
       setState(() {
@@ -408,6 +499,8 @@ class _EditRoomPageState extends State<EditRoomPage> {
           showInHall: _showInHall,
           autoLockMic: _capabilities.supportsAutoLockMic ? _autoLockMic : false,
           availability: current.availability,
+          coverImageChange: _images?.change(_images!.cover),
+          backgroundImageChange: _images?.change(_images!.background),
         );
     _pendingSave = configuration;
     try {
@@ -415,6 +508,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
       if (!mounted || !_current(epoch)) {
         return;
       }
+      _images?.reset();
       setState(() {
         _saving = false;
         _pendingSave = null;
@@ -597,6 +691,12 @@ class _EditRoomPageState extends State<EditRoomPage> {
       showInHall: _showInHall,
       autoLockMic: _capabilities.supportsAutoLockMic ? _autoLockMic : false,
       availability: base.availability,
+      coverImageChange: _images?.canSave == true
+          ? _images!.change(_images!.cover)
+          : null,
+      backgroundImageChange: _images?.canSave == true
+          ? _images!.change(_images!.background)
+          : null,
     );
   }
 
@@ -634,6 +734,7 @@ class _EditRoomPageState extends State<EditRoomPage> {
       return;
     }
     setState(() {
+      _images?.reset();
       _applyAuthoritativeRoom(authoritative);
       _error = null;
     });

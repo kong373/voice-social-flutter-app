@@ -5,6 +5,8 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_repository.dart';
+import 'package:voice_social_app/core/media/media_models.dart';
+import 'package:voice_social_app/features/room/domain/room_image_models.dart';
 
 /// First-party HTTP adapter for the authoritative Room PK state machine.
 ///
@@ -745,6 +747,8 @@ class BackendRoomPkRepository implements RoomPkRepository {
       resultCode: _requiredText(data['resultCode'], '结果编码'),
       opponentRoomName: opponentSide.roomName,
       opponentCoverUrl: opponentSide.coverUrl,
+      opponentCoverMedia: opponentSide.coverMedia,
+      opponentBackgroundMedia: opponentSide.backgroundMedia,
       completedAt: completedAt,
       result: result,
       currentScore: currentSide.score,
@@ -806,6 +810,11 @@ class BackendRoomPkRepository implements RoomPkRepository {
       roomName: roomName,
       score: score,
       coverUrl: _optionalText(data['coverUrl']),
+      coverMedia: parseRoomMedia(data['coverMedia'], MediaPurpose.roomCover),
+      backgroundMedia: parseRoomMedia(
+        data['backgroundMedia'],
+        MediaPurpose.roomBackground,
+      ),
       supporters: List<RoomPkSupporter>.unmodifiable(supporters),
     );
   }
@@ -1010,6 +1019,11 @@ class BackendRoomPkRepository implements RoomPkRepository {
       roomCode: roomCode,
       roomName: roomName,
       coverUrl: _optionalText(data['coverImgUrl']),
+      coverMedia: parseRoomMedia(data['coverMedia'], MediaPurpose.roomCover),
+      backgroundMedia: parseRoomMedia(
+        data['backgroundMedia'],
+        MediaPurpose.roomBackground,
+      ),
       onlineUsers: onlineUsers,
       isInPk: _asBool(active),
     );

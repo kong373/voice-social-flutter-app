@@ -8,6 +8,8 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_repository.dart';
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
+import 'package:voice_social_app/core/media/media_models.dart';
+import 'package:voice_social_app/features/room/presentation/room_cover_artwork.dart';
 
 class RoomPkPreparationPage extends StatefulWidget {
   const RoomPkPreparationPage({
@@ -640,11 +642,17 @@ class _OpponentTile extends StatelessWidget {
       radius: 16,
       onTap: onSelect,
       child: ListTile(
-        leading: RuntimeAvatar(
-          seed: opponent.roomId,
-          size: 42,
-          ringColor: selected ? RoomColors.secondary : RoomColors.primary,
-        ),
+        leading: opponent.coverMedia != null
+            ? _PkRoomCover(
+                roomId: opponent.roomId,
+                media: opponent.coverMedia!,
+                size: 42,
+              )
+            : RuntimeAvatar(
+                seed: opponent.roomId,
+                size: 42,
+                ringColor: selected ? RoomColors.secondary : RoomColors.primary,
+              ),
         title: Text(opponent.roomName),
         subtitle: Text(
           '房间号 ${opponent.roomCode} · ${opponent.onlineUsers} 人在线'
@@ -684,6 +692,14 @@ class _IncomingInvitationCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          if (invitation.opponent.coverMedia != null) ...[
+            _PkRoomCover(
+              roomId: invitation.opponent.roomId,
+              media: invitation.opponent.coverMedia!,
+              size: 42,
+            ),
+            const SizedBox(height: 8),
+          ],
           Text(
             invitation.opponent.roomName,
             style: Theme.of(context).textTheme.titleMedium,
@@ -734,7 +750,14 @@ class _OutgoingInvitationCard extends StatelessWidget {
       radius: 16,
       child: Row(
         children: <Widget>[
-          const Icon(Icons.outgoing_mail, color: RoomColors.accent),
+          if (invitation.opponent.coverMedia != null)
+            _PkRoomCover(
+              roomId: invitation.opponent.roomId,
+              media: invitation.opponent.coverMedia!,
+              size: 42,
+            )
+          else
+            const Icon(Icons.outgoing_mail, color: RoomColors.accent),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -776,7 +799,13 @@ class _ActiveBattleCard extends StatelessWidget {
       radius: 16,
       onTap: onOpen,
       child: ListTile(
-        leading: const Icon(Icons.sports_kabaddi_rounded),
+        leading: battle.opponentSide.coverMedia != null
+            ? _PkRoomCover(
+                roomId: battle.opponentSide.roomId,
+                media: battle.opponentSide.coverMedia!,
+                size: 42,
+              )
+            : const Icon(Icons.sports_kabaddi_rounded),
         title: const Text('当前房间正在 PK'),
         subtitle: Text(
           '${battle.currentSide.score} : ${battle.opponentSide.score} · ${_formatDuration(battle.remainingSeconds)}',
@@ -844,11 +873,14 @@ class _PkSideCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: <Widget>[
-        RuntimeAvatar(
-          seed: side.roomId,
-          size: 56,
-          ringColor: mine ? RoomColors.accent : RoomColors.secondary,
-        ),
+        if (side.coverMedia != null)
+          _PkRoomCover(roomId: side.roomId, media: side.coverMedia!, size: 56)
+        else
+          RuntimeAvatar(
+            seed: side.roomId,
+            size: 56,
+            ringColor: mine ? RoomColors.accent : RoomColors.secondary,
+          ),
         const SizedBox(height: 8),
         Text(
           side.roomName,
@@ -976,12 +1008,48 @@ class _PkRecordTile extends StatelessWidget {
     };
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: CircleAvatar(child: Text(label)),
+      leading: record.opponentCoverMedia != null && record.targetRoomId != null
+          ? _PkRoomCover(
+              roomId: record.targetRoomId!,
+              media: record.opponentCoverMedia!,
+              size: 40,
+              child: Center(
+                child: Text(label, style: const TextStyle(color: Colors.white)),
+              ),
+            )
+          : CircleAvatar(child: Text(label)),
       title: Text(record.opponentRoomName),
       subtitle: Text(_formatDate(record.completedAt)),
       trailing: Text('${record.currentScore} : ${record.opponentScore}'),
     );
   }
+}
+
+class _PkRoomCover extends StatelessWidget {
+  const _PkRoomCover({
+    required this.roomId,
+    required this.media,
+    required this.size,
+    this.child,
+  });
+
+  final String roomId;
+  final MediaReference media;
+  final double size;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: size,
+    child: RoomCoverArtwork(
+      roomId: roomId,
+      media: media,
+      seed: roomId,
+      height: size,
+      borderRadius: BorderRadius.circular(size / 2),
+      child: child,
+    ),
+  );
 }
 
 class _PkInfoCard extends StatelessWidget {

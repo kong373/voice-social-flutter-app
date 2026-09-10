@@ -40,22 +40,23 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('manager edits without owner-only controls or media setters', (
-    tester,
-  ) async {
-    await mount(tester);
-    expect(find.byKey(const Key('edit-room-save-button')), findsOneWidget);
-    await tester.drag(find.byType(ListView), const Offset(0, -1800));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('edit-room-close-button')), findsNothing);
-    expect(find.byKey(const Key('edit-room-reopen-button')), findsNothing);
-    expect(find.text('在首页房间发现中展示'), findsNothing);
-    expect(find.text('进入房间时自动锁定空麦'), findsNothing);
-    expect(find.text('上传封面'), findsNothing);
-    await tester.tap(find.byKey(const Key('edit-room-save-button')));
-    await tester.pumpAndSettle();
-    expect(api.writes.single['sessionId'], roomLeaseSessionId);
-  });
+  testWidgets(
+    'mock manager edits without owner-only controls or live uploads',
+    (tester) async {
+      await mount(tester);
+      expect(find.byKey(const Key('edit-room-save-button')), findsOneWidget);
+      await tester.drag(find.byType(ListView), const Offset(0, -1800));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('edit-room-close-button')), findsNothing);
+      expect(find.byKey(const Key('edit-room-reopen-button')), findsNothing);
+      expect(find.text('在首页房间发现中展示'), findsNothing);
+      expect(find.text('进入房间时自动锁定空麦'), findsNothing);
+      expect(find.text('上传封面'), findsNothing);
+      await tester.tap(find.byKey(const Key('edit-room-save-button')));
+      await tester.pumpAndSettle();
+      expect(api.writes.single['sessionId'], roomLeaseSessionId);
+    },
+  );
 
   testWidgets('lease change before save prevents write and clears editor', (
     tester,

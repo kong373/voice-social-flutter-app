@@ -1,3 +1,5 @@
+import 'package:voice_social_app/core/media/media_models.dart';
+
 enum GuildRole { visitor, member, manager, owner }
 
 enum GuildStatus { active, closed }
@@ -14,10 +16,18 @@ extension GuildRoleLabel on GuildRole {
 }
 
 class GuildRoom {
-  const GuildRoom({required this.roomId, required this.name, this.onlineUsers});
+  const GuildRoom({
+    required this.roomId,
+    required this.name,
+    this.onlineUsers,
+    this.coverMedia,
+    this.backgroundMedia,
+  });
 
   final String roomId;
   final String name;
+  final MediaReference? coverMedia;
+  final MediaReference? backgroundMedia;
 
   /// The first-party guild payload provides the authoritative live count.
   /// Null is reserved for mock/offline models that have no server row.

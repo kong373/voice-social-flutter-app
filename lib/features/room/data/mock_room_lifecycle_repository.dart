@@ -84,6 +84,13 @@ class MockRoomLifecycleRepository
   Future<RoomLifecycleSaveResult> saveRoom(
     RoomConfiguration configuration,
   ) async {
+    if (configuration.coverImageChange.changed ||
+        configuration.backgroundImageChange.changed) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '演示环境不保存房间图片，不生成虚假上传回执',
+      );
+    }
     _validate(configuration);
     await Future<void>.delayed(const Duration(milliseconds: 240));
     final bool created = !configuration.hasExistingRoom;

@@ -1,4 +1,6 @@
 import 'package:voice_social_app/core/network/api_client.dart';
+import '../../../core/media/media_models.dart';
+import '../domain/room_image_models.dart';
 import '../../account/domain/user_avatar_descriptor.dart';
 import '../../commerce/display/domain/equipped_decoration.dart';
 import 'package:voice_social_app/features/room/domain/gift_send_models.dart';
@@ -932,6 +934,11 @@ class BackendRoomRepository
       coverUrl:
           _nonEmptyString(data['coverImgUrl']) ??
           _nonEmptyString(data['coverImage']),
+      coverMedia: parseRoomMedia(data['coverMedia'], MediaPurpose.roomCover),
+      backgroundMedia: parseRoomMedia(
+        data['backgroundMedia'],
+        MediaPurpose.roomBackground,
+      ),
     );
   }
 

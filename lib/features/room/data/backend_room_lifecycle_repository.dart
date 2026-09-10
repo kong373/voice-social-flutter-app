@@ -1,4 +1,6 @@
 import 'dart:convert';
+import '../../../core/media/media_models.dart';
+import '../domain/room_image_models.dart';
 
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -44,6 +46,10 @@ class BackendRoomLifecycleRepository
   }
 
   final RoomWriteGuard _writeGuard = RoomWriteGuard(scope: 'room-lifecycle');
+  final _pendingImageSaves = <(int, String), RoomConfiguration>{};
+
+  RoomConfiguration? pendingImageSave(String roomId) =>
+      _pendingImageSaves[(editGeneration, roomId)];
 
   @override
   final RoomLifecycleCapabilities capabilities =
@@ -176,6 +182,11 @@ class BackendRoomLifecycleRepository
       canControlLifecycle: owner,
       editGeneration: generation,
       editSessionId: session,
+      coverMedia: parseRoomMedia(data['coverMedia'], MediaPurpose.roomCover),
+      backgroundMedia: parseRoomMedia(
+        data['backgroundMedia'],
+        MediaPurpose.roomBackground,
+      ),
     );
   }
 
@@ -232,6 +243,14 @@ class BackendRoomLifecycleRepository
       autoLockMic: autoLockMic,
       availability: availability,
       coverUrl: _nonEmptyString(ownerRow['coverImgUrl']),
+      coverMedia: parseRoomMedia(
+        ownerRow['coverMedia'],
+        MediaPurpose.roomCover,
+      ),
+      backgroundMedia: parseRoomMedia(
+        ownerRow['backgroundMedia'],
+        MediaPurpose.roomBackground,
+      ),
       version: version,
       canControlLifecycle: true,
       editGeneration: generation,
@@ -297,6 +316,11 @@ class BackendRoomLifecycleRepository
       autoLockMic: _requiredBool(topic, 'autoLockMic'),
       availability: _availability(info),
       coverUrl: _nonEmptyString(info['coverImgUrl']),
+      coverMedia: parseRoomMedia(info['coverMedia'], MediaPurpose.roomCover),
+      backgroundMedia: parseRoomMedia(
+        info['backgroundMedia'],
+        MediaPurpose.roomBackground,
+      ),
       version: version,
     );
   }
@@ -420,121 +444,168 @@ class BackendRoomLifecycleRepository
       requireEditCurrent(configuration);
     }
     final String intent = _saveIntent(configuration);
-    return _writeGuard.run<RoomLifecycleSaveResult>(
-      intent: intent,
-      action: (Map<String, String> headers) async {
-        final String? roomId = configuration.roomId?.trim();
-        if (roomId == null || roomId.isEmpty) {
-          final ApiResponse response = await _apiClient.post(
-            _routes.createRoom,
+    final key = (editGeneration, configuredRoomId ?? '');
+    final pending = _pendingImageSaves[key];
+    if (pending != null && _saveIntent(pending) != intent) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '房间图片保存结果未确认，请先恢复原请求',
+      );
+    }
+    final imageSave =
+        configuration.coverImageChange.changed ||
+        configuration.backgroundImageChange.changed;
+    if (imageSave) _pendingImageSaves.putIfAbsent(key, () => configuration);
+    try {
+      final result = await _writeGuard.run<RoomLifecycleSaveResult>(
+        intent: intent,
+        action: (Map<String, String> headers) async {
+          final String? roomId = configuration.roomId?.trim();
+          if (roomId == null || roomId.isEmpty) {
+            final ApiResponse response = await _apiClient.post(
+              _routes.createRoom,
+              headers: headers,
+              body: _writeBody(configuration),
+            );
+            RoomWriteGuard.validateMutationResponse(
+              response,
+              operation: '创建房间',
+            );
+            final Map<String, Object?> created = _asMap(response.data);
+            return _saveResultFromCreateSnapshot(
+              created,
+              requested: configuration,
+            );
+          }
+          final int expectedVersion = _requireExpectedVersion(
+            configuration.version,
+            operation: '保存房间',
+          );
+          requireEditCurrent(configuration);
+          // updateRoomInformation is authoritative for the complete editable
+          // room configuration, including topic and welcomeText. Do not follow
+          // it with the legacy setRoomTopics write: that second request could
+          // partially overwrite a successful edit (especially for empty topic).
+          final ApiResponse response = await _apiClient.patchBoundToIdentity(
+            _routes.updateRoomInformation,
+            requireIdentity: () => requireEditCurrent(configuration),
             headers: headers,
-            body: _writeBody(configuration),
+            body: <String, Object?>{
+              ..._writeBody(configuration),
+              'roomId': roomId,
+              'expectedVersion': expectedVersion,
+              if (!configuration.canControlLifecycle)
+                'sessionId': configuration.editSessionId,
+            },
           );
-          RoomWriteGuard.validateMutationResponse(response, operation: '创建房间');
-          final Map<String, Object?> created = _asMap(response.data);
-          return _saveResultFromCreateSnapshot(
-            created,
-            requested: configuration,
+          requireEditCurrent(configuration);
+          RoomWriteGuard.validateMutationResponse(
+            response,
+            operation: '更新房间信息',
+            requiredFields: <String>[
+              'roomId',
+              'topicTitle',
+              'autoLockMic',
+              'status',
+              'rtcStatus',
+              'imStatus',
+              'providerInvocation',
+              'version',
+            ],
           );
-        }
-        final int expectedVersion = _requireExpectedVersion(
-          configuration.version,
-          operation: '保存房间',
-        );
-        requireEditCurrent(configuration);
-        // updateRoomInformation is authoritative for the complete editable
-        // room configuration, including topic and welcomeText. Do not follow
-        // it with the legacy setRoomTopics write: that second request could
-        // partially overwrite a successful edit (especially for empty topic).
-        final ApiResponse response = await _apiClient.patchBoundToIdentity(
-          _routes.updateRoomInformation,
-          requireIdentity: () => requireEditCurrent(configuration),
-          headers: headers,
-          body: <String, Object?>{
-            ..._writeBody(configuration),
-            'roomId': roomId,
-            'expectedVersion': expectedVersion,
-            if (!configuration.canControlLifecycle)
-              'sessionId': configuration.editSessionId,
-          },
-        );
-        requireEditCurrent(configuration);
-        RoomWriteGuard.validateMutationResponse(
-          response,
-          operation: '更新房间信息',
-          requiredFields: <String>[
-            'roomId',
-            'topicTitle',
-            'autoLockMic',
-            'status',
-            'rtcStatus',
-            'imStatus',
-            'providerInvocation',
+          final Map<String, Object?> updateData = _asMap(response.data);
+          _validateImageReceipt(updateData, configuration);
+          final int updateVersion = _requiredNonNegativeInt(
+            updateData,
             'version',
-          ],
-        );
-        final Map<String, Object?> updateData = _asMap(response.data);
-        final int updateVersion = _requiredNonNegativeInt(
-          updateData,
-          'version',
-        );
-        if (_requiredExactNonEmptyString(updateData, 'roomId') != roomId ||
-            _requiredExactNonEmptyString(updateData, 'status') !=
-                (configuration.isOpen ? 'OPEN' : 'CLOSED') ||
-            _requiredStringField(updateData, 'topicTitle') !=
-                configuration.topicTitle.trim() ||
-            _requiredBool(updateData, 'autoLockMic') !=
-                configuration.autoLockMic ||
-            !_roomReadinessStatuses.contains(
-              _requiredExactNonEmptyString(updateData, 'rtcStatus'),
-            ) ||
-            !_roomReadinessStatuses.contains(
-              _requiredExactNonEmptyString(updateData, 'imStatus'),
-            ) ||
-            _requiredBool(updateData, 'providerInvocation') ||
-            updateVersion != _nextVersion(expectedVersion)) {
-          throw const ApiException(
-            kind: ApiFailureKind.protocol,
-            message: '更新房间响应与请求配置不一致',
           );
-        }
-        final RoomConfiguration authoritative =
-            configuration.canControlLifecycle
-            ? await _fetchOwnedRoomById(roomId)
-            : await fetchRoom(roomId);
-        requireEditCurrent(configuration);
-        if (authoritative.version != updateVersion) {
-          throw const ApiException(
-            kind: ApiFailureKind.conflict,
-            message: '房间版本在保存后发生变化，请刷新后重新确认',
+          if (_requiredExactNonEmptyString(updateData, 'roomId') != roomId ||
+              _requiredExactNonEmptyString(updateData, 'status') !=
+                  (configuration.isOpen ? 'OPEN' : 'CLOSED') ||
+              _requiredStringField(updateData, 'topicTitle') !=
+                  configuration.topicTitle.trim() ||
+              _requiredBool(updateData, 'autoLockMic') !=
+                  configuration.autoLockMic ||
+              !_roomReadinessStatuses.contains(
+                _requiredExactNonEmptyString(updateData, 'rtcStatus'),
+              ) ||
+              !_roomReadinessStatuses.contains(
+                _requiredExactNonEmptyString(updateData, 'imStatus'),
+              ) ||
+              _requiredBool(updateData, 'providerInvocation') ||
+              updateVersion != _nextVersion(expectedVersion)) {
+            throw const ApiException(
+              kind: ApiFailureKind.protocol,
+              message: '更新房间响应与请求配置不一致',
+            );
+          }
+          final RoomConfiguration authoritative =
+              configuration.canControlLifecycle
+              ? await _fetchOwnedRoomById(roomId)
+              : await fetchRoom(roomId);
+          requireEditCurrent(configuration);
+          if (!sameRoomMedia(
+                authoritative.coverMedia,
+                configuration.coverImageChange.apply(configuration.coverMedia),
+              ) ||
+              !sameRoomMedia(
+                authoritative.backgroundMedia,
+                configuration.backgroundImageChange.apply(
+                  configuration.backgroundMedia,
+                ),
+              )) {
+            throw const ApiException(
+              kind: ApiFailureKind.conflict,
+              message: '房间图片已发生变化，请刷新后重新确认',
+            );
+          }
+          if (authoritative.version != updateVersion) {
+            throw const ApiException(
+              kind: ApiFailureKind.conflict,
+              message: '房间版本在保存后发生变化，请刷新后重新确认',
+            );
+          }
+          if (authoritative.title != configuration.title.trim() ||
+              authoritative.topicContent != configuration.topicContent.trim() ||
+              authoritative.topicTitle != configuration.topicTitle.trim() ||
+              authoritative.welcomeMessage !=
+                  configuration.welcomeMessage.trim() ||
+              authoritative.accessMode != configuration.accessMode ||
+              authoritative.showInHall != configuration.showInHall) {
+            throw const ApiException(
+              kind: ApiFailureKind.business,
+              message: '房间信息已被其他操作更新，请刷新后重新确认',
+            );
+          }
+          if (authoritative.autoLockMic != configuration.autoLockMic ||
+              authoritative.availability != configuration.availability) {
+            throw const ApiException(
+              kind: ApiFailureKind.business,
+              message: '房间麦位或开放状态已变化，请刷新后重试',
+            );
+          }
+          return RoomLifecycleSaveResult(
+            roomId: roomId,
+            roomCode: authoritative.roomCode ?? roomId,
+            created: false,
           );
-        }
-        if (authoritative.title != configuration.title.trim() ||
-            authoritative.topicContent != configuration.topicContent.trim() ||
-            authoritative.topicTitle != configuration.topicTitle.trim() ||
-            authoritative.welcomeMessage !=
-                configuration.welcomeMessage.trim() ||
-            authoritative.accessMode != configuration.accessMode ||
-            authoritative.showInHall != configuration.showInHall) {
-          throw const ApiException(
-            kind: ApiFailureKind.business,
-            message: '房间信息已被其他操作更新，请刷新后重新确认',
-          );
-        }
-        if (authoritative.autoLockMic != configuration.autoLockMic ||
-            authoritative.availability != configuration.availability) {
-          throw const ApiException(
-            kind: ApiFailureKind.business,
-            message: '房间麦位或开放状态已变化，请刷新后重试',
-          );
-        }
-        return RoomLifecycleSaveResult(
-          roomId: roomId,
-          roomCode: authoritative.roomCode ?? roomId,
-          created: false,
-        );
-      },
-    );
+        },
+      );
+      _pendingImageSaves.remove(key);
+      return result;
+    } catch (error) {
+      if (error is ApiException &&
+          error.code != 40901 &&
+          error.code != 40902 &&
+          !{
+            ApiFailureKind.network,
+            ApiFailureKind.timeout,
+            ApiFailureKind.server,
+            ApiFailureKind.protocol,
+          }.contains(error.kind))
+        _pendingImageSaves.remove(key);
+      rethrow;
+    }
   }
 
   Future<int> _reopenRoom(
@@ -663,8 +734,41 @@ class BackendRoomLifecycleRepository
         configuration.version?.toString() ?? 'missing',
         configuration.editGeneration?.toString() ?? 'new',
         configuration.editSessionId ?? 'owner',
+        configuration.coverImageChange.intent,
+        configuration.backgroundImageChange.intent,
       ],
     );
+  }
+
+  static void _validateImageReceipt(
+    Map<String, Object?> data,
+    RoomConfiguration requested,
+  ) {
+    for (final (field, purpose, change, previous) in [
+      (
+        'coverMedia',
+        MediaPurpose.roomCover,
+        requested.coverImageChange,
+        requested.coverMedia,
+      ),
+      (
+        'backgroundMedia',
+        MediaPurpose.roomBackground,
+        requested.backgroundImageChange,
+        requested.backgroundMedia,
+      ),
+    ]) {
+      // Old no-image fixtures remain compatible; a requested mutation never
+      // treats a missing field as confirmation that an image was cleared.
+      if ((change.changed || previous != null) && !data.containsKey(field))
+        throw mediaProtocol();
+      if (!sameRoomMedia(
+        parseRoomMedia(data[field], purpose),
+        change.apply(previous),
+      )) {
+        throw mediaProtocol();
+      }
+    }
   }
 
   @override
@@ -738,6 +842,16 @@ class BackendRoomLifecycleRepository
   }
 
   static void _validate(RoomConfiguration configuration) {
+    configuration.coverImageChange.validate(MediaPurpose.roomCover);
+    configuration.backgroundImageChange.validate(MediaPurpose.roomBackground);
+    if (!configuration.hasExistingRoom &&
+        (configuration.coverImageChange.changed ||
+            configuration.backgroundImageChange.changed)) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '请先创建房间，再上传封面或背景',
+      );
+    }
     if (configuration.accessMode == RoomAccessMode.approval) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
@@ -938,6 +1052,8 @@ class BackendRoomLifecycleRepository
       RoomAccessMode.publicRoom => 'PUBLIC',
     };
     return <String, Object?>{
+      ...configuration.coverImageChange.write('coverAssetId'),
+      ...configuration.backgroundImageChange.write('backgroundAssetId'),
       'roomName': configuration.title.trim(),
       'topicTitle': configuration.topicTitle.trim(),
       'topic': configuration.topicContent.trim(),

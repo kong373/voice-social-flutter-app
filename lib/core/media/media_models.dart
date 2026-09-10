@@ -5,7 +5,9 @@ enum MediaPurpose {
   privateImage('PRIVATE_IMAGE'),
   privateVoice('PRIVATE_VOICE'),
   privateVideo('PRIVATE_VIDEO'),
-  supportImage('SUPPORT_IMAGE');
+  supportImage('SUPPORT_IMAGE'),
+  roomCover('ROOM_COVER'),
+  roomBackground('ROOM_BACKGROUND');
 
   const MediaPurpose(this.wire);
   final String wire;

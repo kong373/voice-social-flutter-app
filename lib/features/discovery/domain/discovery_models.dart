@@ -1,3 +1,5 @@
+import 'package:voice_social_app/core/media/media_models.dart';
+
 enum SearchEntityType {
   all(0),
   users(2),
@@ -42,6 +44,8 @@ class DiscoveryRoom {
     this.ownerUserId,
     this.ownerName,
     this.coverUrl,
+    this.coverMedia,
+    this.backgroundMedia,
     this.relationReason,
     this.isLocked = false,
     this.isClosed = false,
@@ -62,6 +66,8 @@ class DiscoveryRoom {
   final int? ownerUserId;
   final String? ownerName;
   final String? coverUrl;
+  final MediaReference? coverMedia;
+  final MediaReference? backgroundMedia;
   final String? relationReason;
   final bool isLocked;
   final bool isClosed;
@@ -89,6 +95,8 @@ class DiscoveryRoom {
       ownerUserId: ownerUserId,
       ownerName: ownerName,
       coverUrl: coverUrl,
+      coverMedia: coverMedia,
+      backgroundMedia: backgroundMedia,
       relationReason: relationReason ?? this.relationReason,
       isLocked: isLocked ?? this.isLocked,
       isClosed: isClosed ?? this.isClosed,

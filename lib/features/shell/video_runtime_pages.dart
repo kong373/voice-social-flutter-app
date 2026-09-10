@@ -21,6 +21,7 @@ import 'package:voice_social_app/features/discovery/presentation/saved_rooms_pag
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/room/presentation/create_room_page.dart';
 import 'package:voice_social_app/features/room/presentation/platform_rooms_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_cover_artwork.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 import 'package:voice_social_app/features/social/presentation/public_user_id_label.dart';
@@ -463,7 +464,9 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
             flex: 6,
             child: room == null
                 ? const _UnavailableRoomHero()
-                : OriginalRoomArtwork(
+                : RoomCoverArtwork(
+                    roomId: room.id,
+                    media: room.coverMedia,
                     seed: 'hero-main',
                     height: 104,
                     borderRadius: BorderRadius.circular(19),
@@ -810,7 +813,9 @@ class _RoomPoster extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Expanded(
-          child: OriginalRoomArtwork(
+          child: RoomCoverArtwork(
+            roomId: room.id,
+            media: room.coverMedia,
             seed: room.id,
             height: double.infinity,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(17)),

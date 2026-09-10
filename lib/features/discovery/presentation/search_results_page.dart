@@ -6,6 +6,7 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
+import 'package:voice_social_app/features/room/presentation/room_cover_artwork.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
@@ -352,7 +353,9 @@ class _RoomResultTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(22),
-        child: OriginalRoomArtwork(
+        child: RoomCoverArtwork(
+          roomId: room.id,
+          media: room.coverMedia,
           seed: room.id,
           height: 116,
           child: Padding(

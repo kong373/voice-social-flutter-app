@@ -9,9 +9,11 @@ class MediaIdentityScope {
     required int Function() currentUserId,
     required int Function() identityGeneration,
     required Listenable changes,
+    bool Function()? contextIsCurrent,
   }) : _user = currentUserId,
        _generation = identityGeneration,
        _changes = changes,
+       _contextIsCurrent = contextIsCurrent,
        userId = currentUserId(),
        generation = identityGeneration() {
     check();
@@ -22,6 +24,7 @@ class MediaIdentityScope {
   final int Function() _user;
   final int Function() _generation;
   final Listenable _changes;
+  final bool Function()? _contextIsCurrent;
   final _cancelled = Completer<void>();
   final _callbacks = <void Function()>{};
   bool _closed = false;
@@ -29,7 +32,8 @@ class MediaIdentityScope {
       !_closed &&
       userId > 0 &&
       userId == _user() &&
-      generation == _generation();
+      generation == _generation() &&
+      (_contextIsCurrent?.call() ?? true);
   static const invalid = ApiException(
     kind: ApiFailureKind.unauthorized,
     message: '账号已变化，请重新选择媒体',

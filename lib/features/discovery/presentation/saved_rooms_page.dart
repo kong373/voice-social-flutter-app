@@ -7,6 +7,7 @@ import 'package:voice_social_app/features/discovery/domain/discovery_models.dart
 import 'package:voice_social_app/features/discovery/domain/discovery_repository.dart';
 import 'package:voice_social_app/features/room/presentation/create_room_page.dart';
 import 'package:voice_social_app/features/room/presentation/edit_room_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_cover_artwork.dart';
 import 'package:voice_social_app/features/room/presentation/room_page.dart';
 
 enum _SavedRoomSection { favorites, owned }
@@ -268,7 +269,9 @@ class _SavedRoomCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return OriginalRoomArtwork(
+    return RoomCoverArtwork(
+      roomId: room.id,
+      media: room.coverMedia,
       seed: room.id,
       height: 174,
       child: Padding(

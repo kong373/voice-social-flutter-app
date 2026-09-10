@@ -1,3 +1,5 @@
+import 'package:voice_social_app/core/media/media_models.dart';
+
 enum RoomPkInvitationDirection { outgoing, incoming }
 
 enum RoomPkInvitationStatus { pending, accepted, rejected, expired, canceled }
@@ -12,6 +14,8 @@ class RoomPkOpponent {
     required this.roomCode,
     required this.roomName,
     this.coverUrl,
+    this.coverMedia,
+    this.backgroundMedia,
     this.label = '',
     this.onlineUsers = 0,
     this.isInPk = false,
@@ -21,6 +25,8 @@ class RoomPkOpponent {
   final String roomCode;
   final String roomName;
   final String? coverUrl;
+  final MediaReference? coverMedia;
+  final MediaReference? backgroundMedia;
   final String label;
   final int onlineUsers;
   final bool isInPk;
@@ -92,6 +98,8 @@ class RoomPkSide {
     required this.roomName,
     required this.score,
     this.coverUrl,
+    this.coverMedia,
+    this.backgroundMedia,
     this.supporters = const <RoomPkSupporter>[],
   });
 
@@ -100,6 +108,8 @@ class RoomPkSide {
   final String roomName;
   final int score;
   final String? coverUrl;
+  final MediaReference? coverMedia;
+  final MediaReference? backgroundMedia;
   final List<RoomPkSupporter> supporters;
 
   RoomPkSide copyWith({int? score, List<RoomPkSupporter>? supporters}) {
@@ -109,6 +119,8 @@ class RoomPkSide {
       roomName: roomName,
       score: score ?? this.score,
       coverUrl: coverUrl,
+      coverMedia: coverMedia,
+      backgroundMedia: backgroundMedia,
       supporters: supporters ?? this.supporters,
     );
   }
@@ -209,6 +221,8 @@ class RoomPkRecord {
     this.battleStatus,
     this.resultCode,
     this.opponentCoverUrl,
+    this.opponentCoverMedia,
+    this.opponentBackgroundMedia,
   });
 
   final String id;
@@ -218,6 +232,8 @@ class RoomPkRecord {
   final String? resultCode;
   final String opponentRoomName;
   final String? opponentCoverUrl;
+  final MediaReference? opponentCoverMedia;
+  final MediaReference? opponentBackgroundMedia;
   final DateTime completedAt;
   final RoomPkResult result;
   final int currentScore;

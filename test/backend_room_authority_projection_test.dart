@@ -7,6 +7,7 @@ import 'package:voice_social_app/features/room/data/backend_room_repository.dart
 import 'package:voice_social_app/features/room/data/backend_rtc_token_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_repository.dart';
+import 'room_image_repository_test.dart' show roomImageWire;
 
 Map<String, Object?> _fixture() => <String, Object?>{
   'roomId': 'room-1',
@@ -46,6 +47,52 @@ final Matcher _protocol = throwsA(
 );
 
 void main() {
+  test(
+    'room authority preserves strict cover/background descriptors without activating room',
+    () async {
+      final data = _fixture()
+        ..addAll({
+          'coverMedia': roomImageWire('ROOM_COVER'),
+          'backgroundMedia': roomImageWire('ROOM_BACKGROUND'),
+        });
+      final api = _Api(data);
+      final repository = BackendRoomRepository(apiClient: api);
+      final projection = await repository.fetchRoomAuthority(
+        roomId: 'room-1',
+        currentUserId: 42,
+      );
+      expect(projection.snapshot.coverMedia!.toJson(), data['coverMedia']);
+      expect(
+        projection.snapshot.backgroundMedia!.toJson(),
+        data['backgroundMedia'],
+      );
+      expect(
+        projection.snapshot.copyWith(title: 'new title').backgroundMedia,
+        same(projection.snapshot.backgroundMedia),
+      );
+      expect(projection.snapshot.sessionId, roomLeaseSessionId);
+      expect(repository.lastTencentImRoomSession, isNull);
+      expect(api.calls, ['GET']);
+    },
+  );
+  test(
+    'room authority rejects swapped media purpose instead of fallback URL',
+    () async {
+      final data = _fixture()
+        ..addAll({
+          'coverMedia': roomImageWire('ROOM_BACKGROUND'),
+          'coverImgUrl': 'https://outside.invalid/image',
+        });
+      final api = _Api(data);
+      await expectLater(
+        BackendRoomRepository(
+          apiClient: api,
+        ).fetchRoomAuthority(roomId: 'room-1', currentUserId: 42),
+        _protocol,
+      );
+      expect(api.calls, ['GET']);
+    },
+  );
   test('S05 retains offline occupant and rejects malformed online', () async {
     final data = _fixture();
     final seatWire = (data['seats'] as List).first as Map<String, Object?>;
@@ -355,6 +402,26 @@ class _Api implements ApiClient {
   final List<String> calls = <String>[];
 
   @override
+  Future<ApiResponse> postBoundToIdentity(
+    String path, {
+    required void Function() requireIdentity,
+    Map<String, String>? headers,
+    Map<String, Object?>? body,
+  }) async {
+    requireIdentity();
+    if (!allowMic) fail('Read invoked bound POST');
+    expect(path, startsWith('/app-api/mic'));
+    expect(headers?['X-Request-Id'], isNotEmpty);
+    final result = await postWithoutUnauthorizedRecovery(
+      path,
+      headers: headers,
+      body: body,
+    );
+    requireIdentity();
+    return result;
+  }
+
+  @override
   Future<ApiResponse> get(
     String path, {
     Map<String, String>? query,
@@ -383,7 +450,14 @@ class _Api implements ApiClient {
       return ApiResponse(
         code: 200,
         message: 'OK',
-        data: <String, Object?>{...body!, 'occupied': true},
+        data: <String, Object?>{
+          ...body!,
+          'occupied': true,
+          'selfMuted': body['muted'],
+          'forcedMuted': false,
+          'legacyMuted': false,
+          'version': 1,
+        },
       );
     }
     if (!allowEntry) fail('Read invoked POST');

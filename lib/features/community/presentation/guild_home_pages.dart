@@ -588,23 +588,35 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
                           padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
                           child: Row(
                             children: <Widget>[
-                              Container(
-                                width: 52,
-                                height: 52,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(15),
-                                  gradient: const LinearGradient(
-                                    colors: <Color>[
-                                      Color(0xFF5D4BBD),
-                                      Color(0xFFE07DA8),
-                                    ],
+                              if (room.coverMedia != null)
+                                SizedBox.square(
+                                  dimension: 52,
+                                  child: RoomCoverArtwork(
+                                    roomId: room.roomId,
+                                    media: room.coverMedia,
+                                    seed: room.roomId,
+                                    height: 52,
+                                    borderRadius: BorderRadius.circular(15),
+                                  ),
+                                )
+                              else
+                                Container(
+                                  width: 52,
+                                  height: 52,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(15),
+                                    gradient: const LinearGradient(
+                                      colors: <Color>[
+                                        Color(0xFF5D4BBD),
+                                        Color(0xFFE07DA8),
+                                      ],
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.graphic_eq_rounded,
+                                    color: Colors.white,
                                   ),
                                 ),
-                                child: const Icon(
-                                  Icons.graphic_eq_rounded,
-                                  color: Colors.white,
-                                ),
-                              ),
                               const SizedBox(width: 11),
                               Expanded(
                                 child: Column(
