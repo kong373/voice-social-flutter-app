@@ -10,6 +10,7 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 import 'package:voice_social_app/features/commerce/presentation/commerce_pages.dart';
+import 'package:voice_social_app/features/commerce/presentation/gift_catalog_assets.dart';
 import 'package:voice_social_app/features/commerce/presentation/commerce_identity_fence.dart';
 
 class GiftTarget {
@@ -974,6 +975,8 @@ class _GiftSheetState extends State<GiftSheet>
   }
 
   static String _assetForGift(GiftCatalogItem item) {
+    final configured = builtInGiftCatalogAsset(item.assetUrl);
+    if (configured != null) return configured;
     // Gift IDs are server-owned UUIDs. Keep asset selection deterministic
     // without pretending the UUID is a numeric catalog index.
     final String id = item.id.toString();

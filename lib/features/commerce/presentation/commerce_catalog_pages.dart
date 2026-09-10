@@ -830,12 +830,14 @@ class _GiftCatalogPageState extends State<GiftCatalogPage>
                       itemCount: visible.length,
                       itemBuilder: (BuildContext context, int index) {
                         final GiftCatalogItem gift = visible[index];
-                        final String asset = switch (_giftAssetIndex(gift.id)) {
-                          0 => 'assets/runtime/gift-blossom.png',
-                          1 => 'assets/runtime/gift-whale.png',
-                          2 => 'assets/runtime/gift-ticket.png',
-                          _ => 'assets/runtime/gift-celebration-banner.png',
-                        };
+                        final String asset =
+                            builtInGiftCatalogAsset(gift.assetUrl) ??
+                            switch (_giftAssetIndex(gift.id)) {
+                              0 => 'assets/runtime/gift-blossom.png',
+                              1 => 'assets/runtime/gift-whale.png',
+                              2 => 'assets/runtime/gift-ticket.png',
+                              _ => 'assets/runtime/gift-celebration-banner.png',
+                            };
                         return _CommercePanel(
                           padding: const EdgeInsets.fromLTRB(5, 9, 5, 7),
                           child: Column(

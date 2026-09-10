@@ -10,6 +10,7 @@ import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catal
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_repository.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 import 'commerce_identity_fence.dart';
+import 'gift_catalog_assets.dart';
 import 'decoration_preview.dart';
 import '../catalog/domain/decoration_purchase_request_id.dart';
 
