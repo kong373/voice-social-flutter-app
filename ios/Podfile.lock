@@ -5,6 +5,8 @@ PODS:
     - Flutter
   - AgoraIrisRTC_iOS2 (4.6.2-build.1)
   - AgoraVideo_Special_iOS (4.6.2.70)
+  - audio_session (0.0.1):
+    - Flutter
   - first_party_native_permissions (0.1.0):
     - Flutter
   - first_party_room_audio (0.1.0):
@@ -14,25 +16,40 @@ PODS:
     - Flutter
     - FlutterMacOS
   - HydraAsync (2.0.6)
+  - image_picker_ios (0.0.1):
+    - Flutter
   - integration_test (0.0.1):
     - Flutter
   - iris_method_channel (0.0.1):
+    - Flutter
+  - just_audio (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - record_ios (2.0.0):
     - Flutter
   - tencent_cloud_chat_sdk (8.0.0):
     - Flutter
     - HydraAsync
     - TXIMSDK_Plus_iOS_XCFramework (~> 9.0.7652)
   - TXIMSDK_Plus_iOS_XCFramework (9.0.7667)
+  - video_player_avfoundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
 
 DEPENDENCIES:
   - agora_rtc_engine (from `.symlinks/plugins/agora_rtc_engine/ios`)
+  - audio_session (from `.symlinks/plugins/audio_session/ios`)
   - first_party_native_permissions (from `.symlinks/plugins/first_party_native_permissions/ios`)
   - first_party_room_audio (from `.symlinks/plugins/first_party_room_audio/ios`)
   - Flutter (from `Flutter`)
   - flutter_secure_storage_darwin (from `.symlinks/plugins/flutter_secure_storage_darwin/darwin`)
+  - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
   - iris_method_channel (from `.symlinks/plugins/iris_method_channel/ios`)
+  - just_audio (from `.symlinks/plugins/just_audio/darwin`)
+  - record_ios (from `.symlinks/plugins/record_ios/ios`)
   - tencent_cloud_chat_sdk (from `.symlinks/plugins/tencent_cloud_chat_sdk/ios`)
+  - video_player_avfoundation (from `.symlinks/plugins/video_player_avfoundation/darwin`)
 
 SPEC REPOS:
   trunk:
@@ -44,6 +61,8 @@ SPEC REPOS:
 EXTERNAL SOURCES:
   agora_rtc_engine:
     :path: ".symlinks/plugins/agora_rtc_engine/ios"
+  audio_session:
+    :path: ".symlinks/plugins/audio_session/ios"
   first_party_native_permissions:
     :path: ".symlinks/plugins/first_party_native_permissions/ios"
   first_party_room_audio:
@@ -52,26 +71,39 @@ EXTERNAL SOURCES:
     :path: Flutter
   flutter_secure_storage_darwin:
     :path: ".symlinks/plugins/flutter_secure_storage_darwin/darwin"
+  image_picker_ios:
+    :path: ".symlinks/plugins/image_picker_ios/ios"
   integration_test:
     :path: ".symlinks/plugins/integration_test/ios"
   iris_method_channel:
     :path: ".symlinks/plugins/iris_method_channel/ios"
+  just_audio:
+    :path: ".symlinks/plugins/just_audio/darwin"
+  record_ios:
+    :path: ".symlinks/plugins/record_ios/ios"
   tencent_cloud_chat_sdk:
     :path: ".symlinks/plugins/tencent_cloud_chat_sdk/ios"
+  video_player_avfoundation:
+    :path: ".symlinks/plugins/video_player_avfoundation/darwin"
 
 SPEC CHECKSUMS:
   agora_rtc_engine: eb07ef3cf67c06a20fbdfc7f67b09c5ffb4be324
   AgoraIrisRTC_iOS2: 13996c3c78134da357634f6a1a12741436658886
   AgoraVideo_Special_iOS: 9bd42c487f936f4d335d5630e2632f0b08e214f5
+  audio_session: 9bb7f6c970f21241b19f5a3658097ae459681ba0
   first_party_native_permissions: 3d0890f3990ee1731e64489150b3aae116289978
   first_party_room_audio: 3d34ba68964ca61c93ddf0af09067c83ee20b3fa
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_secure_storage_darwin: acdb3f316ed05a3e68f856e0353b133eec373a23
   HydraAsync: 8d589bd725b0224f899afafc9a396327405f8063
+  image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
   iris_method_channel: 7d661cf3259b3009ae423508470dbeb9374446ee
+  just_audio: 4e391f57b79cad2b0674030a00453ca5ce817eed
+  record_ios: 390a30c7caaf8b5d0fb1cb1d2fd5064b48b4520c
   tencent_cloud_chat_sdk: f03289e1fab169c20aaf7ed513942e197fb23f91
   TXIMSDK_Plus_iOS_XCFramework: 7776eb7a18b71a4b9daae8f43b230e9fa06cfc24
+  video_player_avfoundation: 3453f792138786248960ca029747fcd9f318ef52
 
 PODFILE CHECKSUM: 481650e8fb010a91d039f97af46e130197fa2421
 

@@ -125,7 +125,9 @@ void main() {
       expect(info, contains('<key>NSMicrophoneUsageDescription</key>'));
       expect(info, contains('语音房上麦和实时语音交流'));
       expect(info, contains('<key>NSPhotoLibraryUsageDescription</key>'));
-      expect(info, contains('选择头像或动态图片'));
+      expect(info, contains('选择头像、动态或反馈工单图片'));
+      expect(info, contains('主动发送的私信图片和视频'));
+      expect(info, contains('仅访问您在系统选择器中选定的媒体'));
       expect(info, contains('<key>NSPhotoLibraryAddUsageDescription</key>'));
       expect(info, contains('<key>NSCameraUsageDescription</key>'));
       expect(info, contains('拍摄头像或动态照片'));
