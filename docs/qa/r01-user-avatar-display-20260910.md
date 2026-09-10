@@ -46,3 +46,36 @@ UserAvatarView({
 - `r01-avatar-transport-red.log`：先缺新方法编译 RED；`r01-avatar-transport-green.log`：22 PASS。
 - `r01-avatar-view-red.log`：先缺组件编译 RED。组件最终 8 项覆盖真实 PNG 解码、零 ImageCache、注销释放、ABA 晚成功/错误、版本变更及 pending read 离页。
 - 这是本机 fake HTTP/unit/widget 证据，不是设备、真实注册上传、厂商或生产可见性验证。GET 的最终可见性和授权仍由服务端当前状态裁定。
+
+## 正式读投影与实际入口
+
+| 冻结字段 | App 读模型 | 本批实际显示入口 |
+| --- | --- | --- |
+| 本人/公主页 `avatar` | `LiveCurrentUser.avatar`、`SocialUser.avatar` | 主“我的”、个人中心、公主页、既有资料编辑页头像 |
+| room seats/member `avatar` | `BackendMicSeat`、`MicSeat`、`RoomMember` | 房间顶部成员头像、麦位、在线成员页 |
+| `conversations.list[].avatar` | `ConversationSummary.avatar` | 会话列表、搜索、聊天页对方头像；公主页打开聊天保留 descriptor |
+| `history.list[].senderAvatar/receiverAvatar`、send 当前回读同名字段 | `ChatMessage.senderAvatar/receiverAvatar` | 按真实 sender 显示本人/对方气泡头像；copyWith 保留，不写入发送 intent/body |
+
+- 本人/公主页仅 ACTIVE 投影消费正式头像。MicSeat 换 occupant、失去在线/占用状态清除旧 descriptor；普通音频状态更新保留。装扮仍由原外层 `EquippedDecorationView` 渲染，原权限/期限/lease 判断未放宽。
+- `chatUserInfo.avatar` 的后端字段已由主冻结，但当前 App repository 没有独立消费 chatUserInfo 的方法；本批不添加重复请求，气泡直接用 history/send 当前读投影。历史缺字段保留原气泡；新字段不从任意 URL 推导。
+- 消息列表原读仅比较 actorId，已由行为 RED 证实 A→B→A 晚成功会新建旧头像。增加页面 viewer generation、依赖实例、读取序号检查及同步清除；搜索也绑定同一 viewer。失效页面提示重新进入，不让旧 Future 成为新账号数据。不改消息发送、已读或私信媒体流程。
+
+## 当前明确未接边界
+
+- 主正在集成 Hubble 的消息 Backend 投影；Flutter parser/mock 通过不代表该 Backend 已部署。
+- 本批检查到通知 list/detail 只有 `actorHeadImgUrl`，尚未收到通知 strict descriptor 的冻结字段名。因此系统/互动通知暂保留原类型图标，**不宣称 postComment/follow 通知已支持正式头像**，也不把该旧 URL 当作 UPLOADED reference。待主冻结字段后可追加同边界适配。
+- 不扩大到关注/访客/黑名单页面、动态作者头像、Auth/注册上传；没有为这些未冻结的投影猜字段。
+- 未跑 DB、device、vendor、Android/iOS build；未读 Secret/.env，未改主树或 push。
+
+## 最终验证与修复证据
+
+- `r01-avatar-entry-red.log`：五个真实页面原本没有 `PresetAvatarView` 的行为 RED。
+- `r01-avatar-conversation-aba-red2.log`：消息列表 ABA 晚成功实际显示旧头像 RED；晚错误未泄漏。`r01-avatar-entry-identity-green.log`：9 PASS。
+- `r01-avatar-message-fields-red.log`：新增 sender/receiver 严格字段先缺 getter 编译 RED；随后 14 DTO + 10 入口 24 PASS。
+- 新增实际公主页 UPLOADED fake HTTP→真实解码→注销销毁，以及已打开搜索页的 ABA 测试。`r01-avatar-entry-final-green.log`：22 PASS（8 组件 + 12 入口 + 2 原房间头像）。
+- `r01-avatar-targeted-final.log`：23 个相关测试文件 **504 PASS，0 fail**，涵盖头像、social/room/message 既有合同、私信媒体合同、装扮、private chat/member 自动刷新。不是项目全量测试。
+- `r01-avatar-analyze-final.log`：full analyze **0 issue**。改动 Dart format、`git diff --check` 通过。
+- 保留失败日志：早期分页 fixture 缺 pageNum/list、fake headers 类型及假时钟/真实流切换错误已修正；不计产品行为 RED。旧 `room_avatar_contract_test.dart` 缺现有 entry decoration 所需 AppDependencyScope，仅补 fixture/销毁，保留“空头像不伪造图片”的原断言。
+- 实际图片入口测试最终按 `UserAvatarView` 子树定位 RawImage，避免把页面背景图误当头像。analyze 的异步 context 提示以显式 mounted guard 修复，未关闭 lint。
+
+代码拆为受控 transport/widget 和读投影/实际入口两个顺序提交；仅 cherry-pick 本批提交，不 merge 整个旧基线分支。

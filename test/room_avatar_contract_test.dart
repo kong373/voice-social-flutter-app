@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:voice_social_app/app/app_dependencies.dart';
+import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/data/mock_room_repository.dart';
@@ -45,13 +47,21 @@ void main() {
       rtcAdapter: const SnapshotOnlyRtcAdapter(),
       realtimeGateway: const SnapshotOnlyRoomRealtimeGateway(),
     );
-    addTearDown(controller.dispose);
+    final dependencies = AppDependencies.mock();
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox());
+      controller.dispose();
+      dependencies.dispose();
+    });
     await controller.join();
 
     await tester.pumpWidget(
-      MaterialApp(
-        theme: AppTheme.room(),
-        home: VideoRuntimeRoomPage(controller: controller),
+      AppDependencyScope(
+        dependencies: dependencies,
+        child: MaterialApp(
+          theme: AppTheme.room(),
+          home: VideoRuntimeRoomPage(controller: controller),
+        ),
       ),
     );
     await tester.pump();

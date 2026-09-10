@@ -1,4 +1,5 @@
 import 'package:voice_social_app/core/network/api_client.dart';
+import '../../account/domain/user_avatar_descriptor.dart';
 import '../../commerce/display/domain/equipped_decoration.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
@@ -233,6 +234,7 @@ class BackendRoomOperationsRepository
               fallback: '已禁言成员',
             ),
             avatarUrl: _optionalString(item['headImgUrl'] ?? item['avatarUrl']),
+            avatar: UserAvatarDescriptor.parseOptional(item['avatar']),
             role: _roleFromServer(item['role'] ?? item['userRoomRole']),
             presence: _presenceFrom(item),
             seatNumber: _seatNumber(item),
@@ -1421,6 +1423,7 @@ class BackendRoomOperationsRepository
         userId: memberUserId,
         name: nickname,
         avatarUrl: avatarUrl.isEmpty ? null : avatarUrl,
+        avatar: UserAvatarDescriptor.parseOptional(memberData['avatar']),
         role: _roleFromServer(roleValue),
         presence: presence,
         seatNumber: memberSeatNumber == 0 ? null : memberSeatNumber,
@@ -1696,6 +1699,7 @@ class BackendRoomOperationsRepository
       userId: userId,
       name: _string(item['nickName'] ?? item['name'], fallback: '房间成员'),
       avatarUrl: _optionalString(item['headImgUrl'] ?? item['avatarUrl']),
+      avatar: UserAvatarDescriptor.parseOptional(item['avatar']),
       role: item.containsKey('role') || item.containsKey('userRoomRole')
           ? _roleFromServer(item['role'] ?? item['userRoomRole'])
           : fallbackRole,
@@ -1724,6 +1728,7 @@ class BackendRoomOperationsRepository
         userId: userId,
         name: _string(item['nickName'] ?? item['name'], fallback: '申请用户'),
         avatarUrl: _optionalString(item['headImgUrl'] ?? item['avatarUrl']),
+        avatar: UserAvatarDescriptor.parseOptional(item['avatar']),
         role: RoomRole.listener,
         presence: RoomMemberPresence.listener,
       ),
@@ -1741,6 +1746,7 @@ class BackendRoomOperationsRepository
         userId: userId,
         name: _string(item['nickName'] ?? item['name'], fallback: '受限用户'),
         avatarUrl: _optionalString(item['headImgUrl'] ?? item['avatarUrl']),
+        avatar: UserAvatarDescriptor.parseOptional(item['avatar']),
         role: RoomRole.listener,
         presence: RoomMemberPresence.listener,
       ),

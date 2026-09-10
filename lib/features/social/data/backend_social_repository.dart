@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../account/domain/user_avatar_descriptor.dart';
 import 'dart:math';
 import '../../../core/media/media_models.dart';
 import '../../media/image_domain_contract.dart';
@@ -878,6 +879,9 @@ class BackendSocialRepository
     final display = hasHomepage ? homepage : personal;
     final SocialUser user = SocialUser(
       userId: profileId,
+      avatar: display['status'] == 'ACTIVE'
+          ? UserAvatarDescriptor.parseOptional(display['avatar'])
+          : null,
       name: profileName,
       signature: signature,
       avatarUrl: avatarUrl,

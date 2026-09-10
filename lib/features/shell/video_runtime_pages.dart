@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../account/presentation/user_avatar_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../commerce/display/domain/equipped_decoration.dart';
@@ -1954,7 +1955,16 @@ class _ProfileHeader extends StatelessWidget {
                 decorations: profile.user.equippedDecorations,
                 product: DecorationProduct.starRingFrame,
                 enabled: showDecorations,
-                child: RuntimeAvatar(seed: '${profile.user.userId}', size: 74),
+                child: UserAvatarView(
+                  avatar: profile.user.avatar,
+                  userId: profile.user.userId,
+                  size: 74,
+                  enabled: showDecorations,
+                  fallback: RuntimeAvatar(
+                    seed: '${profile.user.userId}',
+                    size: 74,
+                  ),
+                ),
               ),
               const SizedBox(width: 13),
               Expanded(

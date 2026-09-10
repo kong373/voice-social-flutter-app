@@ -644,9 +644,15 @@ class _PrivateChatPageState extends State<PrivateChatPage>
         titleSpacing: 0,
         title: Row(
           children: <Widget>[
-            RuntimeAvatar(
-              seed: _conversation.id ?? 'user-${_conversation.targetUserId}',
+            UserAvatarView(
+              avatar: _conversation.avatar,
+              userId: _conversation.targetUserId,
               size: 34,
+              enabled: _conversation.available && !_accountChanged,
+              fallback: RuntimeAvatar(
+                seed: _conversation.id ?? 'user-${_conversation.targetUserId}',
+                size: 34,
+              ),
             ),
             const SizedBox(width: 9),
             Expanded(
@@ -844,87 +850,106 @@ class _ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final DateTime now = AppDependencyScope.of(context).currentTime();
-    return Align(
-      alignment: message.isMine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 286),
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: message.isMine ? null : Colors.white.withValues(alpha: 0.86),
-          gradient: message.isMine
-              ? const LinearGradient(
-                  colors: <Color>[Color(0xFF8A70F6), Color(0xFFAF7DE8)],
-                )
-              : null,
-          border: message.isMine
-              ? null
-              : Border.all(color: const Color(0x1417213C)),
-          boxShadow: const <BoxShadow>[
-            BoxShadow(color: Color(0x0A0F1C3D), blurRadius: 8),
-          ],
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(18),
-            topRight: const Radius.circular(18),
-            bottomLeft: Radius.circular(message.isMine ? 18 : 4),
-            bottomRight: Radius.circular(message.isMine ? 4 : 18),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            if (message.messageType != ChatMessageType.text)
-              PrivateMediaBubble(
-                key: ValueKey(message.id),
-                message: message,
-                host: AppDependencyScope.of(context).privateMediaHost,
-                visible: mediaVisible,
+    final bubble = Container(
+      constraints: const BoxConstraints(maxWidth: 286),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: message.isMine ? null : Colors.white.withValues(alpha: 0.86),
+        gradient: message.isMine
+            ? const LinearGradient(
+                colors: <Color>[Color(0xFF8A70F6), Color(0xFFAF7DE8)],
               )
-            else
-              Text(
-                message.content,
-                style: TextStyle(
-                  color: message.isMine
-                      ? Colors.white
-                      : SocialColors.textPrimary,
-                ),
+            : null,
+        border: message.isMine
+            ? null
+            : Border.all(color: const Color(0x1417213C)),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(color: Color(0x0A0F1C3D), blurRadius: 8),
+        ],
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(18),
+          topRight: const Radius.circular(18),
+          bottomLeft: Radius.circular(message.isMine ? 18 : 4),
+          bottomRight: Radius.circular(message.isMine ? 4 : 18),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          if (message.messageType != ChatMessageType.text)
+            PrivateMediaBubble(
+              key: ValueKey(message.id),
+              message: message,
+              host: AppDependencyScope.of(context).privateMediaHost,
+              visible: mediaVisible,
+            )
+          else
+            Text(
+              message.content,
+              style: TextStyle(
+                color: message.isMine ? Colors.white : SocialColors.textPrimary,
               ),
-            const SizedBox(height: 4),
-            Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: <Widget>[
-                if (message.isMine &&
-                    (message.status == ChatMessageStatus.sent ||
-                        message.status ==
-                            ChatMessageStatus
-                                .storedPendingDelivery)) ...<Widget>[
-                  Text(
-                    message.receiptLabel,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: message.isMine
-                          ? Colors.white.withValues(alpha: 0.86)
-                          : SocialColors.textTertiary,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                ],
+            ),
+          const SizedBox(height: 4),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              if (message.isMine &&
+                  (message.status == ChatMessageStatus.sent ||
+                      message.status ==
+                          ChatMessageStatus.storedPendingDelivery)) ...<Widget>[
                 Text(
-                  _formatMessageTime(message.createdAt, now),
+                  message.receiptLabel,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: message.isMine
-                        ? Colors.white.withValues(alpha: 0.78)
+                        ? Colors.white.withValues(alpha: 0.86)
                         : SocialColors.textTertiary,
                   ),
                 ),
-                if (message.status == ChatMessageStatus.failed) ...<Widget>[
-                  const SizedBox(width: 5),
-                  const Icon(Icons.error_outline_rounded, size: 14),
-                ],
+                const SizedBox(width: 6),
+              ],
+              Text(
+                _formatMessageTime(message.createdAt, now),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: message.isMine
+                      ? Colors.white.withValues(alpha: 0.78)
+                      : SocialColors.textTertiary,
+                ),
+              ),
+              if (message.status == ChatMessageStatus.failed) ...<Widget>[
+                const SizedBox(width: 5),
+                const Icon(Icons.error_outline_rounded, size: 14),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+    final avatar = message.senderAvatar;
+    final image = Padding(
+      padding: const EdgeInsets.only(left: 5, right: 5, top: 2),
+      child: UserAvatarView(
+        avatar: avatar,
+        userId: message.senderUserId,
+        size: 32,
+        enabled: mediaVisible,
+        fallback: const SizedBox.shrink(),
+      ),
+    );
+    return Align(
+      alignment: message.isMine ? Alignment.centerRight : Alignment.centerLeft,
+      child: avatar == null
+          ? bubble
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!message.isMine) image,
+                Flexible(child: bubble),
+                if (message.isMine) image,
               ],
             ),
-          ],
-        ),
-      ),
     );
   }
 }

@@ -449,9 +449,16 @@ class _MessageConversationRow extends StatelessWidget {
           children: <Widget>[
             Stack(
               children: <Widget>[
-                RuntimeAvatar(
-                  seed: conversation.id ?? 'user-${conversation.targetUserId}',
+                UserAvatarView(
+                  avatar: conversation.avatar,
+                  userId: conversation.targetUserId,
                   size: 48,
+                  enabled: conversation.available,
+                  fallback: RuntimeAvatar(
+                    seed:
+                        conversation.id ?? 'user-${conversation.targetUserId}',
+                    size: 48,
+                  ),
                 ),
                 if (conversation.available)
                   Positioned(

@@ -431,9 +431,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
                       color: Colors.white,
                       shape: BoxShape.circle,
                     ),
-                    child: RuntimeAvatar(
-                      seed: '${widget.initialProfile.user.userId}',
+                    child: UserAvatarView(
+                      avatar: widget.initialProfile.user.avatar,
+                      userId: widget.initialProfile.user.userId,
                       size: 76,
+                      fallback: RuntimeAvatar(
+                        seed: '${widget.initialProfile.user.userId}',
+                        size: 76,
+                      ),
                     ),
                   ),
                   const Positioned(
@@ -644,6 +649,7 @@ class _PublicProfilePageState extends State<PublicProfilePage>
             lastMessage: '',
             unreadCount: 0,
             targetUserId: profile.user.userId,
+            avatar: profile.user.avatar,
             available: !profile.user.isBlocked,
             unavailableReason: profile.user.isBlocked ? '该用户已在黑名单中' : '',
           ),
@@ -707,9 +713,15 @@ class _PublicProfilePageState extends State<PublicProfilePage>
                       decorations: profile.user.equippedDecorations,
                       product: DecorationProduct.starRingFrame,
                       enabled: profileDisplayAuthenticated,
-                      child: RuntimeAvatar(
-                        seed: '${profile.user.userId}',
+                      child: UserAvatarView(
+                        avatar: profile.user.avatar,
+                        userId: profile.user.userId,
                         size: 88,
+                        enabled: profileDisplayAuthenticated,
+                        fallback: RuntimeAvatar(
+                          seed: '${profile.user.userId}',
+                          size: 88,
+                        ),
                       ),
                     ),
                   ),

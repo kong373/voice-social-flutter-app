@@ -1,4 +1,5 @@
 import 'package:voice_social_app/core/media/media_models.dart';
+import '../../account/domain/user_avatar_descriptor.dart';
 
 enum ConversationKind { privateChat }
 
@@ -102,6 +103,7 @@ class ConversationSummary {
     required this.unreadCount,
     required this.targetUserId,
     this.avatarUrl,
+    this.avatar,
     this.available = true,
     this.unavailableReason = '',
   });
@@ -113,6 +115,7 @@ class ConversationSummary {
   final ConversationKind kind;
   final String title;
   final String? avatarUrl;
+  final UserAvatarDescriptor? avatar;
   final String lastMessage;
 
   /// Null for a draft because the client has no authoritative server time yet.
@@ -131,6 +134,7 @@ class ConversationSummary {
     required this.unreadCount,
     required this.targetUserId,
     this.avatarUrl,
+    this.avatar,
     this.available = true,
     this.unavailableReason = '',
   }) : id = null,
@@ -149,6 +153,7 @@ class ConversationSummary {
       kind: kind,
       title: title,
       avatarUrl: avatarUrl,
+      avatar: available ? avatar : null,
       lastMessage: lastMessage,
       updatedAt: serverUpdatedAt,
       unreadCount: unreadCount,
@@ -170,6 +175,7 @@ class ConversationSummary {
       kind: kind,
       title: title,
       avatarUrl: avatarUrl,
+      avatar: (available ?? this.available) ? avatar : null,
       lastMessage: lastMessage ?? this.lastMessage,
       updatedAt: updatedAt ?? this.updatedAt,
       unreadCount: unreadCount ?? this.unreadCount,
@@ -195,12 +201,18 @@ class ChatMessage {
     this.deliveryStatus = MessageDeliveryStatus.unknown,
     this.read,
     this.readAt,
+    this.senderAvatar,
+    this.receiverAvatar,
   });
 
   final String id;
   final String? conversationId;
   final int senderUserId;
   final String senderName;
+
+  /// Current read projection, never part of a locally retained send intent.
+  final UserAvatarDescriptor? senderAvatar;
+  final UserAvatarDescriptor? receiverAvatar;
   final String content;
   final DateTime createdAt;
   final bool isMine;
@@ -245,6 +257,8 @@ class ChatMessage {
       conversationId: conversationId ?? this.conversationId,
       senderUserId: senderUserId,
       senderName: senderName,
+      senderAvatar: senderAvatar,
+      receiverAvatar: receiverAvatar,
       content: content,
       createdAt: createdAt,
       isMine: isMine,

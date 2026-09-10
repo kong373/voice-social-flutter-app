@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../account/presentation/user_avatar_view.dart';
 import '../../commerce/display/domain/equipped_decoration.dart';
 import '../../commerce/display/presentation/equipped_decoration_view.dart';
 
@@ -659,10 +660,16 @@ class _MemberAvatar extends StatelessWidget {
       decorations: member.equippedDecorations,
       product: DecorationProduct.starRingFrame,
       enabled: member.online,
-      child: RuntimeAvatar(
-        seed: '${member.userId}',
+      child: UserAvatarView(
+        avatar: member.avatar,
+        userId: member.userId,
         size: 46,
-        ringColor: RoomColors.primary.withValues(alpha: 0.78),
+        enabled: member.online,
+        fallback: RuntimeAvatar(
+          seed: '${member.userId}',
+          size: 46,
+          ringColor: RoomColors.primary.withValues(alpha: 0.78),
+        ),
       ),
     );
   }

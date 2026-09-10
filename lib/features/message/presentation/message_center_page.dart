@@ -16,6 +16,26 @@ class _MessageCenterPageState extends State<MessageCenterPage>
   ImAuthoritativeRefreshBus? _refreshBus;
   ImAuthoritativeRefreshSubscription? _refreshSubscription;
   Future<void>? _refreshFlight;
+  AppDependencies? _dependencies;
+  (int?, int)? _viewer;
+  bool _identityLost = false;
+
+  (int?, int) get _currentViewer => (
+    _dependencies!.sessionManager.session?.userId,
+    _dependencies!.sessionManager.identityGeneration,
+  );
+  bool get _currentIdentity => !_identityLost && _viewer == _currentViewer;
+
+  void _identityChanged() {
+    if (!mounted || _currentIdentity) return;
+    _identityLost = true;
+    _cancelPendingLoads();
+    setState(() {
+      _conversations = null;
+      _loading = false;
+      _error = '登录状态已改变，请重新进入消息。';
+    });
+  }
 
   MessageRepository get _repository =>
       AppDependencyScope.of(context).messageRepository;
@@ -26,6 +46,15 @@ class _MessageCenterPageState extends State<MessageCenterPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final deps = AppDependencyScope.of(context);
+    if (!identical(deps, _dependencies)) {
+      _dependencies?.sessionManager.removeListener(_identityChanged);
+      if (_dependencies != null) _identityLost = true;
+      _dependencies = deps;
+      _viewer ??= _currentViewer;
+      deps.sessionManager.addListener(_identityChanged);
+      _identityChanged();
+    }
     final ImAuthoritativeRefreshBus refreshBus = AppDependencyScope.of(
       context,
     ).imAuthoritativeRefreshBus;
@@ -62,14 +91,19 @@ class _MessageCenterPageState extends State<MessageCenterPage>
   }
 
   Future<void> _load({bool showLoading = true}) async {
-    if (!mounted) {
+    if (!mounted || !_currentIdentity) {
       return;
     }
     final int requestId = ++_loadRequestId;
     final MessageRepository repository = _repository;
     final AppDependencies dependencies = AppDependencyScope.of(context);
-    final int authUserIdAtStart =
-        dependencies.sessionManager.session?.userId ?? 0;
+    final viewer = _currentViewer;
+    bool accepts() =>
+        mounted &&
+        _currentIdentity &&
+        identical(dependencies, AppDependencyScope.of(context)) &&
+        viewer == _currentViewer &&
+        requestId == _loadRequestId;
     final bool replaceWithLoading = showLoading && _conversations == null;
     if (replaceWithLoading || _error != null) {
       setState(() {
@@ -80,11 +114,7 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     try {
       final List<ConversationSummary> value = await repository
           .fetchConversations();
-      final int authUserIdAfterFetch =
-          dependencies.sessionManager.session?.userId ?? 0;
-      if (!mounted ||
-          requestId != _loadRequestId ||
-          authUserIdAfterFetch != authUserIdAtStart) {
+      if (!accepts()) {
         return;
       }
       setState(() {
@@ -92,7 +122,7 @@ class _MessageCenterPageState extends State<MessageCenterPage>
         _loading = false;
       });
     } catch (error) {
-      if (!mounted || requestId != _loadRequestId) {
+      if (!accepts()) {
         return;
       }
       setState(() {
@@ -118,10 +148,12 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     _cancelPendingLoads();
     _refreshSubscription?.cancel();
     _refreshSubscription = null;
+    _dependencies?.sessionManager.removeListener(_identityChanged);
     super.dispose();
   }
 
   Future<void> _openConversation(ConversationSummary conversation) async {
+    if (!_currentIdentity) return;
     if (!conversation.available) {
       await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
@@ -153,9 +185,11 @@ class _MessageCenterPageState extends State<MessageCenterPage>
           context: context,
           delegate: _MessageConversationSearchDelegate(
             conversations: _conversations ?? const <ConversationSummary>[],
+            isCurrent: () => mounted && _currentIdentity,
+            identityChanges: _dependencies!.sessionManager,
           ),
         );
-    if (!mounted || selected == null) {
+    if (!mounted || !_currentIdentity || selected == null) {
       return;
     }
     await _openConversation(selected);
@@ -372,10 +406,15 @@ class _MessageCenterPageState extends State<MessageCenterPage>
 
 class _MessageConversationSearchDelegate
     extends SearchDelegate<ConversationSummary?> {
-  _MessageConversationSearchDelegate({required this.conversations})
-    : super(searchFieldLabel: '搜索联系人或消息内容');
+  _MessageConversationSearchDelegate({
+    required this.conversations,
+    required this.isCurrent,
+    required this.identityChanges,
+  }) : super(searchFieldLabel: '搜索联系人或消息内容');
 
   final List<ConversationSummary> conversations;
+  final bool Function() isCurrent;
+  final Listenable identityChanges;
 
   @override
   List<Widget>? buildActions(BuildContext context) => <Widget>[
@@ -395,10 +434,17 @@ class _MessageConversationSearchDelegate
   );
 
   @override
-  Widget buildResults(BuildContext context) => _buildMatches(context);
+  Widget buildResults(BuildContext context) => _guardedMatches(context);
 
   @override
-  Widget buildSuggestions(BuildContext context) => _buildMatches(context);
+  Widget buildSuggestions(BuildContext context) => _guardedMatches(context);
+
+  Widget _guardedMatches(BuildContext context) => ListenableBuilder(
+    listenable: identityChanges,
+    builder: (context, _) => isCurrent()
+        ? _buildMatches(context)
+        : const Center(child: Text('登录状态已改变，请重新进入消息。')),
+  );
 
   Widget _buildMatches(BuildContext context) {
     final String keyword = query.trim().toLowerCase();

@@ -1,4 +1,6 @@
 import 'dart:async';
+import '../../account/domain/user_avatar_descriptor.dart';
+import '../../account/presentation/user_avatar_view.dart';
 import '../../commerce/display/domain/equipped_decoration.dart';
 import '../../commerce/display/presentation/equipped_decoration_view.dart';
 import 'room_entry_decoration_overlay.dart';
@@ -684,6 +686,8 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                     left: index * 19,
                     child: _RoomMemberAvatar(
                       avatarUrl: occupiedSeats[index].avatarUrl,
+                      avatar: occupiedSeats[index].avatar,
+                      userId: occupiedSeats[index].userId ?? 0,
                       decorations: occupiedSeats[index].equippedDecorations,
                       decorationsEnabled:
                           occupiedSeats[index].isOnline &&
@@ -2202,6 +2206,8 @@ class _VideoRoomBackground extends StatelessWidget {
 
 class _RoomMemberAvatar extends StatelessWidget {
   const _RoomMemberAvatar({
+    required this.userId,
+    this.avatar,
     required this.avatarUrl,
     required this.size,
     this.ringColor,
@@ -2210,6 +2216,8 @@ class _RoomMemberAvatar extends StatelessWidget {
   });
 
   final String? avatarUrl;
+  final int userId;
+  final UserAvatarDescriptor? avatar;
   final double size;
   final Color? ringColor;
   final List<EquippedDecoration> decorations;
@@ -2225,37 +2233,43 @@ class _RoomMemberAvatar extends StatelessWidget {
       decorations: decorations,
       product: DecorationProduct.starRingFrame,
       enabled: decorationsEnabled,
-      child: Container(
-        width: size,
-        height: size,
-        padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: isAllowlistedAsset
-              ? null
-              : Colors.white.withValues(alpha: 0.08),
-          border: Border.all(
-            color: ringColor ?? Colors.white.withValues(alpha: 0.8),
-            width: 2,
+      child: UserAvatarView(
+        avatar: avatar,
+        userId: userId,
+        size: size,
+        enabled: decorationsEnabled,
+        fallback: Container(
+          width: size,
+          height: size,
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isAllowlistedAsset
+                ? null
+                : Colors.white.withValues(alpha: 0.08),
+            border: Border.all(
+              color: ringColor ?? Colors.white.withValues(alpha: 0.8),
+              width: 2,
+            ),
           ),
-        ),
-        child: ClipOval(
-          child: normalizedUrl == null || normalizedUrl.isEmpty
-              ? const _UnavailableMemberAvatar()
-              : isAllowlistedAsset
-              ? Image.asset(
-                  normalizedUrl,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
-                  errorBuilder: (_, __, ___) =>
-                      const _UnavailableMemberAvatar(),
-                )
-              : Image.network(
-                  normalizedUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
-                      const _UnavailableMemberAvatar(),
-                ),
+          child: ClipOval(
+            child: normalizedUrl == null || normalizedUrl.isEmpty
+                ? const _UnavailableMemberAvatar()
+                : isAllowlistedAsset
+                ? Image.asset(
+                    normalizedUrl,
+                    fit: BoxFit.cover,
+                    alignment: Alignment.topCenter,
+                    errorBuilder: (_, __, ___) =>
+                        const _UnavailableMemberAvatar(),
+                  )
+                : Image.network(
+                    normalizedUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        const _UnavailableMemberAvatar(),
+                  ),
+          ),
         ),
       ),
     );
@@ -2352,6 +2366,8 @@ class _VideoMicSeat extends StatelessWidget {
                 if (occupied)
                   _RoomMemberAvatar(
                     avatarUrl: seat.avatarUrl,
+                    avatar: seat.avatar,
+                    userId: seat.userId ?? 0,
                     decorations: seat.equippedDecorations,
                     decorationsEnabled:
                         decorationsEnabled &&

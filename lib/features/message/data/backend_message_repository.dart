@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../account/domain/user_avatar_descriptor.dart';
 
 import 'package:voice_social_app/core/media/media_identity.dart';
 import 'package:voice_social_app/core/media/media_models.dart';
@@ -1132,6 +1133,10 @@ class BackendMessageRepository
       id: id,
       conversationId: conversationId,
       senderUserId: senderId,
+      senderAvatar: UserAvatarDescriptor.parseOptional(item['senderAvatar']),
+      receiverAvatar: UserAvatarDescriptor.parseOptional(
+        item['receiverAvatar'],
+      ),
       senderName: _string(
         item['senderName'] ?? item['nickName'],
         fallback: mine ? '我' : conversation.title,
@@ -1500,6 +1505,7 @@ class BackendMessageRepository
       kind: ConversationKind.privateChat,
       title: _string(item['nickName'] ?? item['nickname'], fallback: '用户'),
       avatarUrl: _optionalString(item['headImgUrl'] ?? item['avatarUrl']),
+      avatar: UserAvatarDescriptor.parseOptional(item['avatar']),
       lastMessage: _string(item['lastMessage'] ?? item['content']),
       updatedAt: updatedAt,
       unreadCount: unreadCount,

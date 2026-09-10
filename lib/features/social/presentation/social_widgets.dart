@@ -28,7 +28,13 @@ class _ProfileHeader extends StatelessWidget {
             decorations: profile.user.equippedDecorations,
             product: DecorationProduct.starRingFrame,
             enabled: showDecorations,
-            child: RuntimeAvatar(seed: '${profile.user.userId}', size: 68),
+            child: UserAvatarView(
+              avatar: profile.user.avatar,
+              userId: profile.user.userId,
+              size: 68,
+              enabled: showDecorations,
+              fallback: RuntimeAvatar(seed: '${profile.user.userId}', size: 68),
+            ),
           ),
         ),
         const SizedBox(width: 15),
@@ -109,7 +115,15 @@ class _MineHeroCard extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              RuntimeAvatar(seed: '${profile.user.userId}', size: 74),
+              UserAvatarView(
+                avatar: profile.user.avatar,
+                userId: profile.user.userId,
+                size: 74,
+                fallback: RuntimeAvatar(
+                  seed: '${profile.user.userId}',
+                  size: 74,
+                ),
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(

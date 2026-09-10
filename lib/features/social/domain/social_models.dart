@@ -1,4 +1,5 @@
 import '../../../core/media/media_models.dart';
+import '../../account/domain/user_avatar_descriptor.dart';
 import '../../commerce/display/domain/equipped_decoration.dart';
 
 enum SocialRelationList { following, followers, friends }
@@ -58,6 +59,7 @@ class SocialUser {
     this.visitedAt,
     this.visitCount = 0,
     this.equippedDecorations = const [],
+    this.avatar,
   });
 
   final int userId;
@@ -73,6 +75,7 @@ class SocialUser {
   final DateTime? visitedAt;
   final int visitCount;
   final List<EquippedDecoration> equippedDecorations;
+  final UserAvatarDescriptor? avatar;
 
   SocialUser copyWith({
     String? name,
@@ -103,6 +106,7 @@ class SocialUser {
       visitedAt: visitedAt ?? this.visitedAt,
       visitCount: visitCount ?? this.visitCount,
       equippedDecorations: equippedDecorations ?? this.equippedDecorations,
+      avatar: avatar,
     );
   }
 }

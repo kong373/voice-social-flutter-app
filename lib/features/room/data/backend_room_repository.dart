@@ -1,4 +1,5 @@
 import 'package:voice_social_app/core/network/api_client.dart';
+import '../../account/domain/user_avatar_descriptor.dart';
 import '../../commerce/display/domain/equipped_decoration.dart';
 import 'package:voice_social_app/features/room/domain/gift_send_models.dart';
 import 'package:voice_social_app/features/commerce/domain/gift_coin_precision.dart';
@@ -871,6 +872,7 @@ class BackendRoomRepository
             userId: _asInt(raw['userId']),
             userName: _nonEmptyString(raw['userName'] ?? raw['nickname']),
             avatarUrl: _safeAvatarUrl(raw['avatarUrl'] ?? raw['headImageUrl']),
+            avatar: UserAvatarDescriptor.parseOptional(raw['avatar']),
             userRoleCode: _asInt(raw['userId']) == ownerId
                 ? 3
                 : _roleCode(raw['role'] ?? raw['userRole']),

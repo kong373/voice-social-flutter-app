@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../account/presentation/user_avatar_view.dart';
 
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';

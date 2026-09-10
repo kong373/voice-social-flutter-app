@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../account/presentation/user_avatar_view.dart';
 import '../../commerce/display/domain/equipped_decoration.dart';
 import '../../commerce/display/presentation/equipped_decoration_view.dart';
 import 'profile_display_read_fence.dart';
