@@ -315,9 +315,11 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
                       _incoming!.status ==
                           RoomPkInvitationStatus.pending) ...<Widget>[
                     const SizedBox(height: 20),
-                    Text(
-                      '收到的邀请',
-                      style: Theme.of(context).textTheme.titleLarge,
+                    Builder(
+                      builder: (context) => Text(
+                        '收到的邀请',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
                     ),
                     const SizedBox(height: 10),
                     _IncomingInvitationCard(
@@ -328,7 +330,12 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
                     ),
                   ],
                   const SizedBox(height: 22),
-                  Text('选择对手', style: Theme.of(context).textTheme.titleLarge),
+                  Builder(
+                    builder: (context) => Text(
+                      '选择对手',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
                   const SizedBox(height: 10),
                   Row(
                     children: <Widget>[
@@ -390,7 +397,12 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  Text('PK 时长', style: Theme.of(context).textTheme.titleMedium),
+                  Builder(
+                    builder: (context) => Text(
+                      'PK 时长',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   SegmentedButton<int>(
                     showSelectedIcon: false,
@@ -425,7 +437,12 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
                     ),
                   ],
                   const SizedBox(height: 24),
-                  Text('最近对战', style: Theme.of(context).textTheme.titleLarge),
+                  Builder(
+                    builder: (context) => Text(
+                      '最近对战',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
                   const SizedBox(height: 10),
                   if (_history.isEmpty)
                     const _PkInfoCard(

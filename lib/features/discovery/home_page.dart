@@ -363,7 +363,12 @@ class _HeroRoomCard extends StatelessWidget {
                 ],
               ),
               const Spacer(),
-              Text(room.title, style: Theme.of(context).textTheme.titleLarge),
+              Builder(
+                builder: (context) => Text(
+                  room.title,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
               const SizedBox(height: 7),
               Text(
                 room.topic,
@@ -383,9 +388,11 @@ class _HeroRoomCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 7),
                   Expanded(
-                    child: Text(
-                      room.relationReason ?? '根据当前活跃度推荐',
-                      style: Theme.of(context).textTheme.bodySmall,
+                    child: Builder(
+                      builder: (context) => Text(
+                        room.relationReason ?? '根据当前活跃度推荐',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     ),
                   ),
                   FilledButton(onPressed: onEnter, child: const Text('进入房间')),
