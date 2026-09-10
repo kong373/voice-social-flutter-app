@@ -62,3 +62,30 @@ git diff --check
 - 未跑全量、golden、设备、真实厂商、DB、真实两用户 HTTP/IM 或发布验收；局部门禁不代表 release PASS。需与 Backend Q19/V75 合入后由主做最终实证，本客户端不会把缺失水位的旧响应默认为成功。
 - 依赖盘点曾运行整个 `first_party_live_mutation_coverage_test.dart`，其未修改的 `room moderation and seats write exact authority with idempotency` 用例在 `RoomAudioMuteState.parse` 报“麦克风静音原因或版本无效”。本批仅改该文件的私信新字段并验证私信用例，未削弱/跳过/修改该房间断言；该范围外失败交主线处理。
 - 无 Backend、room/PK、payout、金额、部署改动；仅 AppDependencies 两行私信代次注入和 route catalog 新接口为共享接线点。媒体 host 仅上文 40481 终态处理。未 push。
+
+## 审查 P2 追加：未知清空后当前授权拒绝
+
+追加基线 `c2baa5cb5563959b4c6d50a337aa158f2c87df2e`（该 tests-only 提交已修复上节记录的旧 room mute fixture；本次不改房间）。保留 `20bdf8f` 和该父提交，不 amend。
+
+当前账号授权发生在历史回执查询前，因此首次清空结果未知后收到 `40322`，不能推断首次未提交。清空 intent 现记录 `outcomeUnknown`，同安全身份内后续拒绝仍保留原 key/body，直至可信清空回执；无曾未知状态的首次明确拒绝仍释放 intent。没有自动重提、新 API 或本地成功。现有账号/代次检查保留，登出、换号、ABA 后不复用旧 intent，迟到响应不能修改水位。
+
+先 RED：现有 transport 与 widget 测试组织内复现 **40 PASS / 2 FAIL**，分别为 `40322` 后 pending 被删除、重建页面丢失原请求重试入口。新增 4 项合同测试，并增强原 remount widget 回归；没有删除原断言。
+
+GREEN（Flutter 3.44.7 / Dart 3.12.2，固定绝对 SDK 路径已先核验）：
+
+```sh
+/Users/kongzheng/fvm/versions/3.44.7/bin/flutter test --no-pub \
+  test/q19_private_history_contract_test.dart test/q19_private_history_ui_test.dart \
+  test/backend_message_repository_contract_test.dart test/private_chat_automatic_sync_test.dart \
+  --reporter expanded
+# 157 PASS，exit 0；含新增测试，不与原 354 或中间 RED 结果相加。
+
+/Users/kongzheng/fvm/versions/3.44.7/bin/flutter analyze --no-pub \
+  lib/features/message/data/backend_message_repository.dart \
+  test/q19_private_history_contract_test.dart test/q19_private_history_ui_test.dart
+# No issues found，exit 0。
+```
+
+transport 回归经过真实 ApiClient 状态码解析、合成 HttpClient：首次模拟已提交但丢失回执、第二次 HTTP403/code40322、恢复后按原 key 返回旧水位；逐字节断言原 body/key，验证后来 sequence=2 的消息未被清除。widget 回归验证拒绝后不伪成功、重建仍能重试原请求。另验证登出/换号丢弃旧代次恢复资格，以及没有未知前序的明确拒绝不被误标为未知。
+
+3 文件 `dart format --output=none --set-exit-if-changed` 为 0 changed，`git diff --check` 无错误。原始日志位于本树 ignored `artifacts/qa/q19-private-history-clear-20260910/unknown-clear-40322-{red,green}.log`。此次只改 repository、两份定向测试和本文；未改 Q15，未运行全量、DB、设备、厂商或新 runner，未 push。等待 Ampere 对追加提交只读复审及主合并态验证。

@@ -68,7 +68,7 @@ void main() {
   }
 
   testWidgets(
-    'clear needs confirmation, unknown keeps content, retry same key after remount; new messages visible',
+    'clear needs confirmation, unknown then 40322 keeps retry after remount; new messages visible',
     (tester) async {
       await show(tester);
       expect(find.text('text-1'), findsOneWidget);
@@ -91,6 +91,18 @@ void main() {
           .key;
       await tester.pumpWidget(const SizedBox());
       await mount(tester, deps);
+      api.onPost = (_, _) => throw const ApiException(
+        kind: ApiFailureKind.forbidden,
+        code: 40322,
+        message: '当前账号暂不可清空',
+      );
+      await tester.tap(find.text('重试原清空请求'));
+      await tester.pumpAndSettle();
+      expect(find.text('text-1'), findsOneWidget);
+      expect(find.text('聊天记录已清空（仅本人）'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      await mount(tester, deps);
+      expect(find.text('重试原清空请求'), findsOneWidget);
       api.onPost = (_, _) => watermark(version: '1', through: '1');
       api.onGet = (_, _) => history(version: '1', through: '1', sequences: []);
       await tester.tap(find.text('重试原清空请求'));
@@ -99,6 +111,14 @@ void main() {
         api.posts.where((p) => p.path.endsWith('/clear-history')).last.key,
         key,
       );
+      final clearPosts = api.posts
+          .where((p) => p.path.endsWith('/clear-history'))
+          .toList();
+      expect(clearPosts, hasLength(3));
+      for (final retry in clearPosts.skip(1)) {
+        expect(retry.key, key);
+        expect(retry.body, clearPosts.first.body);
+      }
       expect(find.text('text-1'), findsNothing);
       expect(find.text('聊天记录已清空（仅本人）'), findsOneWidget);
       api.onGet = (_, _) =>

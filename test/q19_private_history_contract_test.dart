@@ -172,6 +172,108 @@ void main() {
     },
   );
   test(
+    'unknown clear then 40322 restores original receipt without clearing later messages',
+    () async {
+      final actor = TestMediaIdentity();
+      addTearDown(actor.dispose);
+      var writes = 0;
+      String? originalKey;
+      final http = MediaFakeHttp((request) {
+        if (request.method == 'GET') {
+          return MediaFakeResponse.json(
+            history(version: '1', through: '1', sequences: ['2']),
+          );
+        }
+        final key = request.headers.value('X-Request-Id');
+        if (++writes == 1) {
+          originalKey = key; // Committed through 1, but the receipt was lost.
+          return MediaFakeResponse.json({}, status: 503, code: 50300);
+        }
+        if (writes == 2) {
+          // Current actor authorization runs before historical receipt lookup.
+          return MediaFakeResponse.json({}, status: 403, code: 40322);
+        }
+        return MediaFakeResponse.json(
+          key == originalKey
+              ? watermark(version: '1', through: '1')
+              : watermark(version: '2', through: '2'),
+        );
+      });
+      repository = BackendMessageRepository(
+        apiClient: http.api(actor),
+        routes: const BackendRouteCatalog(),
+        currentUserIdProvider: () => actor.user,
+        identityGenerationProvider: () => actor.generation,
+      );
+      await expectLater(clear(), throwsA(isA<ApiException>()));
+      await expectLater(
+        clear(),
+        throwsA(isA<ApiException>().having((e) => e.code, 'code', 40322)),
+      );
+      expect(repository.hasPendingHistoryClear(2), isTrue);
+      expect(repository.privateHistory.forTarget(2), isNull);
+      actor.refreshToken(); // Eligibility recovers within the same identity.
+      await clear();
+      final posts = http.requests.where((r) => r.method == 'POST').toList();
+      expect(posts, hasLength(3));
+      expect(originalKey, isNotEmpty);
+      for (final retry in posts.skip(1)) {
+        expect(retry.headers.value('X-Request-Id'), originalKey);
+        expect(retry.body, posts.first.body);
+      }
+      expect(repository.hasPendingHistoryClear(2), isFalse);
+      expect(repository.privateHistory.forTarget(2)!.through, BigInt.one);
+      expect((await page()).single.content, 'text-2');
+    },
+  );
+  for (final nextUser in [0, 3]) {
+    test(
+      'unknown clear is not revived after identity ends via $nextUser',
+      () async {
+        var user = 1, generation = 0;
+        repository = BackendMessageRepository(
+          apiClient: api,
+          routes: const BackendRouteCatalog(),
+          currentUserIdProvider: () => user,
+          identityGenerationProvider: () => generation,
+        );
+        api.onPost = (_, _) => throw const ApiException(
+          kind: ApiFailureKind.network,
+          message: 'unknown',
+        );
+        await expectLater(clear(), throwsA(isA<ApiException>()));
+        final originalKey = api.posts.single.key;
+        user = nextUser;
+        generation++;
+        if (nextUser == 0) {
+          await expectLater(clear(), throwsA(isA<ApiException>()));
+          expect(api.posts, hasLength(1));
+        } else {
+          expect(repository.hasPendingHistoryClear(2), isFalse);
+        }
+        user = 1;
+        generation++;
+        expect(repository.hasPendingHistoryClear(2), isFalse);
+        api.onPost = (_, _) => watermark(version: '1', through: '1');
+        await clear();
+        expect(api.posts.last.key, isNot(originalKey));
+      },
+    );
+  }
+  test(
+    'first definitive clear denial does not create an unknown intent',
+    () async {
+      api.onPost = (_, _) => throw const ApiException(
+        kind: ApiFailureKind.forbidden,
+        code: 40322,
+        message: 'denied',
+      );
+      await expectLater(clear(), throwsA(isA<ApiException>()));
+      expect(repository.hasPendingHistoryClear(2), isFalse);
+      expect(repository.privateHistory.forTarget(2), isNull);
+    },
+  );
+  test(
     'late history and old clear receipt never recover cleared messages; later messages survive',
     () async {
       final late = Completer<Object?>();

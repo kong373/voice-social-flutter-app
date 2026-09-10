@@ -117,8 +117,13 @@ class BackendMessageRepository
       scope.clears.remove(conversation.targetUserId);
     } catch (error) {
       _requireHistory(scope);
-      if (!_isAmbiguousMessageWriteError(error))
+      if (_isAmbiguousMessageWriteError(error)) {
+        intent.outcomeUnknown = true;
+      } else if (!intent.outcomeUnknown) {
+        // Current authorization can reject a retry before receipt lookup;
+        // it cannot disprove an earlier unknown clear in this identity.
         scope.clears.remove(conversation.targetUserId);
+      }
       rethrow;
     }
   }
@@ -2060,6 +2065,7 @@ class _HistoryClearIntent {
   _HistoryClearIntent(this.requestId);
   final String requestId;
   Future<void>? flight;
+  bool outcomeUnknown = false;
 }
 
 class _MediaMessageIntent {
