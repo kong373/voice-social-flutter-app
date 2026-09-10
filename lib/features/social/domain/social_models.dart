@@ -1,3 +1,5 @@
+import '../../../core/media/media_models.dart';
+
 enum SocialRelationList { following, followers, friends }
 
 enum FriendRequestStatus { pending, accepted, rejected, expired }
@@ -245,12 +247,16 @@ class SupportTicketEvent {
     required this.eventType,
     required this.message,
     required this.createdAt,
+    this.eventId,
+    this.media = const <MediaReference>[],
   });
 
   final String actorType;
   final String eventType;
   final String message;
   final DateTime createdAt;
+  final String? eventId;
+  final List<MediaReference> media;
 
   String get actorLabel => switch (actorType) {
     'AGENT' => '客服回复',
@@ -377,6 +383,8 @@ abstract interface class SocialRepository {
   Future<SupportTicket> submitFeedback({
     required String subject,
     required String content,
+    List<MediaReference> media = const [],
+    String? requestId,
   });
 
   Future<SupportTicket> fetchSupportTicket(String ticketId);
@@ -384,6 +392,8 @@ abstract interface class SocialRepository {
   Future<SupportTicket> replyToSupportTicket({
     required String ticketId,
     required String message,
+    List<MediaReference> media = const [],
+    String? requestId,
   });
 
   Future<SocialPage<SupportTicket>> fetchSupportTickets({

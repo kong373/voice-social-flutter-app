@@ -1,3 +1,4 @@
+import '../../../core/media/media_models.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 
@@ -337,7 +338,14 @@ class MockSocialRepository
   Future<SupportTicket> submitFeedback({
     required String subject,
     required String content,
+    List<MediaReference> media = const [],
+    String? requestId,
   }) async {
+    if (media.isNotEmpty)
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '演示工单不上传图片',
+      );
     if (content.trim().isEmpty || content.trim().length > 200) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
@@ -386,7 +394,14 @@ class MockSocialRepository
   Future<SupportTicket> replyToSupportTicket({
     required String ticketId,
     required String message,
+    List<MediaReference> media = const [],
+    String? requestId,
   }) async {
+    if (media.isNotEmpty)
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '演示工单不上传图片',
+      );
     final SupportTicket current = await fetchSupportTicket(ticketId);
     final String text = message.trim();
     if (!current.canReply || text.isEmpty || text.length > 1000) {

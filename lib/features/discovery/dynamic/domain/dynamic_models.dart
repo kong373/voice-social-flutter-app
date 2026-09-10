@@ -1,3 +1,5 @@
+import '../../../../core/media/media_models.dart';
+
 enum DynamicCategory { all, companionship, music, chat }
 
 extension DynamicCategoryLabel on DynamicCategory {
@@ -37,6 +39,7 @@ class DynamicPost {
     required this.content,
     required this.createdAt,
     this.images = const <String>[],
+    this.media = const <MediaReference>[],
     this.location = '',
     this.tags = const <String>[],
     this.topics = const <String>[],
@@ -51,6 +54,7 @@ class DynamicPost {
   final DynamicAuthor author;
   final String content;
   final List<String> images;
+  final List<MediaReference> media;
   final String location;
   final List<String> tags;
   final List<String> topics;
@@ -72,6 +76,7 @@ class DynamicPost {
       author: author,
       content: content,
       images: images,
+      media: media,
       location: location,
       tags: tags,
       topics: topics,
@@ -146,6 +151,7 @@ class PublishDynamicRequest {
     this.topics = const <String>[],
     this.location = '',
     this.images = const <String>[],
+    this.media = const <MediaReference>[],
   });
 
   final String content;
@@ -153,6 +159,7 @@ class PublishDynamicRequest {
   final List<String> topics;
   final String location;
   final List<String> images;
+  final List<MediaReference> media;
 }
 
 enum RankingBoard { charm, wealth, contribution, room }

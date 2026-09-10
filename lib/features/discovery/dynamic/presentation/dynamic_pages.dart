@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../../../core/media/media_models.dart';
+import '../../../media/image_widgets.dart';
+import '../../../media/app_image_media_host.dart';
 import '../domain/comment_mutations.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
@@ -24,6 +27,27 @@ class DiscoveryFeedPage extends StatefulWidget {
 
 class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
     with AutomaticKeepAliveClientMixin<DiscoveryFeedPage> {
+  AppImageMediaHost? _mediaHost;
+  (int, int)? _readIdentity;
+  void _mediaIdentityChanged() {
+    final identity = _mediaHost?.identity;
+    if (!mounted || identity == _readIdentity) return;
+    _readIdentity = identity;
+    _loadRequestId++;
+    _publishingRequestId++;
+    setState(() {
+      _posts.clear();
+      _hasMore = false;
+      _loading = false;
+      _loadingMore = false;
+      _publishing = false;
+      _likeInFlight.clear();
+      _likeRequestIds.clear();
+      _pendingLikeIntents.clear();
+      _error = '账号已变化，请重新加载动态';
+    });
+  }
+
   final ScrollController _scrollController = ScrollController();
   final List<DynamicPost> _posts = <DynamicPost>[];
   DynamicCategory _category = DynamicCategory.all;
@@ -60,11 +84,15 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
     }
     _repositoryInstance =
         widget.repository ?? AppDependencyScope.of(context).dynamicRepository;
+    _mediaHost = imageHostOf(context);
+    _readIdentity = _mediaHost?.identity;
+    _mediaHost?.addListener(_mediaIdentityChanged);
     _load(reset: true);
   }
 
   @override
   void dispose() {
+    _mediaHost?.removeListener(_mediaIdentityChanged);
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
@@ -1026,6 +1054,51 @@ class PublishDynamicPage extends StatefulWidget {
 }
 
 class _PublishDynamicPageState extends State<PublishDynamicPage> {
+  ImagePageBinding? _media;
+  bool _mediaInitialized = false;
+  bool get _identityCurrent => _media?.current ?? true;
+  bool get _formLocked => _submitting || (_media?.draft.locked ?? false);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_mediaInitialized) return;
+    _mediaInitialized = true;
+    final host = imageHostOf(context);
+    if (host == null || !host.enabled || host.identity.$1 <= 0) return;
+    _media = ImagePageBinding(
+      host,
+      'dynamic:publish',
+      MediaPurpose.dynamicImage,
+    );
+    final fields = _media!.draft.fields;
+    _contentController.text = fields['content'] ?? '';
+    _topicController.text = fields['topics'] ?? '';
+    _locationController.text = fields['location'] ?? '';
+    _category = DynamicCategory.values.firstWhere(
+      (v) => v.name == fields['category'],
+      orElse: () => DynamicCategory.companionship,
+    );
+    _contentController.addListener(_saveMediaDraft);
+    _topicController.addListener(_saveMediaDraft);
+    _locationController.addListener(_saveMediaDraft);
+    _media!.addListener(_mediaChanged);
+  }
+
+  void _saveMediaDraft() {
+    if (!_identityCurrent || (_media?.draft.locked ?? true)) return;
+    _media!.draft.fields.addAll({
+      'content': _contentController.text,
+      'topics': _topicController.text,
+      'location': _locationController.text,
+      'category': _category.name,
+    });
+  }
+
+  void _mediaChanged() {
+    if (mounted) setState(() {});
+  }
+
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _contentController = TextEditingController();
   final TextEditingController _topicController = TextEditingController();
@@ -1040,6 +1113,7 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
 
   @override
   void dispose() {
+    _media?.dispose();
     _contentController.dispose();
     _topicController.dispose();
     _locationController.dispose();
@@ -1047,7 +1121,9 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
   }
 
   Future<void> _submit() async {
-    if (_submitting || !_formKey.currentState!.validate()) {
+    if (!_identityCurrent ||
+        _submitting ||
+        !_formKey.currentState!.validate()) {
       return;
     }
     final List<String> topics = _topicController.text
@@ -1060,28 +1136,43 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
     final int requestId = ++_submitRequestId;
     setState(() => _submitting = true);
     try {
-      final DynamicPost post = await _repository.publish(
-        PublishDynamicRequest(
-          content: _contentController.text,
-          category: _category,
-          topics: topics,
-          location: _locationController.text,
-        ),
-        requestId: intent.requestId,
-      );
-      if (mounted && requestId == _submitRequestId) {
+      final binding = _media;
+      final content = _contentController.text;
+      final category = _category;
+      final location = _locationController.text;
+      Future<DynamicPost> send(String key, List<MediaReference> images) =>
+          _repository.publish(
+            PublishDynamicRequest(
+              content: content,
+              category: category,
+              topics: topics,
+              location: location,
+              media: images,
+            ),
+            requestId: key,
+          );
+      final post = binding == null
+          ? await send(intent.requestId, const [])
+          : await binding.host.submit(binding.draft, {
+              'content': content.trim(),
+              'category': category.name,
+              'topics': topics,
+              'location': location.trim(),
+            }, send);
+      if (mounted && _identityCurrent && requestId == _submitRequestId) {
+        binding?.host.acknowledge(binding.draft);
         _pendingPublishIntent = null;
         Navigator.of(context).pop(post);
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted && _identityCurrent) {
         if (!shouldRetainDynamicWriteRequest(error)) {
           _pendingPublishIntent = null;
         }
         _showOperationError(context, error);
       }
     } finally {
-      if (mounted && requestId == _submitRequestId) {
+      if (mounted && _identityCurrent && requestId == _submitRequestId) {
         setState(() => _submitting = false);
       }
     }
@@ -1104,7 +1195,13 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bool supportsImages = _repository.supportsImagePublishing;
+    final bool supportsImages =
+        _repository.supportsImagePublishing && _media != null;
+    if (!_identityCurrent)
+      return SocialPageScaffold(
+        appBar: AppBar(title: const Text('发布动态')),
+        body: const Center(child: Text('账号已变化，请重新打开页面；原账号未知提交仍保留')),
+      );
     return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('发布动态'),
@@ -1122,6 +1219,7 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
           children: <Widget>[
             TextFormField(
               controller: _contentController,
+              enabled: !_formLocked,
               autofocus: true,
               minLines: 7,
               maxLines: 12,
@@ -1132,8 +1230,8 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
               ),
               validator: (String? value) {
                 final String text = value?.trim() ?? '';
-                if (text.isEmpty) {
-                  return '请输入动态内容';
+                if (text.isEmpty && (_media?.draft.images.isEmpty ?? true)) {
+                  return '请输入动态内容或选择图片';
                 }
                 if (text.length > 1000) {
                   return '动态内容不能超过 1000 个字';
@@ -1156,8 +1254,9 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
                     label: Text(category.label),
                     selected: _category == category,
                     onSelected: (bool selected) {
-                      if (selected) {
+                      if (selected && !_formLocked) {
                         setState(() => _category = category);
+                        _saveMediaDraft();
                       }
                     },
                   ),
@@ -1166,6 +1265,7 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
             const SizedBox(height: 14),
             TextField(
               controller: _topicController,
+              enabled: !_formLocked,
               decoration: const InputDecoration(
                 labelText: '话题',
                 hintText: '最多 3 个，用英文逗号分隔',
@@ -1175,6 +1275,7 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
             const SizedBox(height: 12),
             TextField(
               controller: _locationController,
+              enabled: !_formLocked,
               maxLength: 50,
               decoration: const InputDecoration(
                 labelText: '位置（可选）',
@@ -1182,14 +1283,15 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
               ),
             ),
             const SizedBox(height: 6),
-            _InfoPanel(
-              icon: supportsImages
-                  ? Icons.photo_library_outlined
-                  : Icons.cloud_off_outlined,
-              text: supportsImages
-                  ? '当前已支持上传原创图片。'
-                  : '图片对象存储尚未接入，本阶段只发布真实文字内容，不生成占位图片。',
-            ),
+            if (supportsImages)
+              ImageAttachmentEditor(binding: _media!)
+            else
+              _InfoPanel(
+                icon: supportsImages
+                    ? Icons.photo_library_outlined
+                    : Icons.cloud_off_outlined,
+                text: supportsImages ? '图片需由服务端确认就绪。' : '当前环境仅可发布文字，不生成虚假图片回执。',
+              ),
             const SizedBox(height: 20),
             FilledButton(
               onPressed: _submitting ? null : _submit,
@@ -1658,7 +1760,10 @@ class DynamicPostCard extends StatelessWidget {
                 ],
               ),
             ],
-            if (post.images.isNotEmpty) ...<Widget>[
+            if (post.media.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 12),
+              ControlledImages(media: post.media),
+            ] else if (post.images.isNotEmpty) ...<Widget>[
               const SizedBox(height: 12),
               _ImageEvidence(images: post.images),
             ],

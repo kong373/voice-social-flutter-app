@@ -203,6 +203,20 @@ class HelpCenterPage extends StatefulWidget {
 }
 
 class _HelpCenterPageState extends State<HelpCenterPage> {
+  ImagePageBinding? _media;
+  bool get _identityCurrent => _media?.current ?? true;
+  void _mediaChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _saveMediaDraft() {
+    if (!_identityCurrent || (_media?.draft.locked ?? true)) return;
+    _media!.draft.fields.addAll({
+      'subject': _subjectController.text,
+      'content': _contentController.text,
+    });
+  }
+
   final TextEditingController _subjectController = TextEditingController();
   final TextEditingController _contentController = TextEditingController();
   SupportChannel? _channel;
@@ -216,12 +230,26 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
     super.didChangeDependencies();
     if (!_initialized) {
       _initialized = true;
+      final host = imageHostOf(context);
+      if (host != null && host.enabled && host.identity.$1 > 0) {
+        _media = ImagePageBinding(
+          host,
+          'support:create',
+          MediaPurpose.supportImage,
+        );
+        _subjectController.text = _media!.draft.fields['subject'] ?? '';
+        _contentController.text = _media!.draft.fields['content'] ?? '';
+        _subjectController.addListener(_saveMediaDraft);
+        _contentController.addListener(_saveMediaDraft);
+        _media!.addListener(_mediaChanged);
+      }
       _load();
     }
   }
 
   @override
   void dispose() {
+    _media?.dispose();
     _subjectController.dispose();
     _contentController.dispose();
     super.dispose();
@@ -237,27 +265,39 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
       final SupportChannel value = await AppDependencyScope.of(
         context,
       ).socialRepository.fetchCustomerService();
-      if (mounted) setState(() => _channel = value);
+      if (mounted && _identityCurrent) setState(() => _channel = value);
     } catch (error) {
-      if (mounted) setState(() => _error = _messageFor(error));
+      if (mounted && _identityCurrent)
+        setState(() => _error = _messageFor(error));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _submit() async {
-    if (_contentController.text.trim().isEmpty || _busy) {
+    if (!_identityCurrent || _contentController.text.trim().isEmpty || _busy) {
       return;
     }
     setState(() => _busy = true);
     try {
-      final SupportTicket ticket = await AppDependencyScope.of(context)
-          .socialRepository
-          .submitFeedback(
-            subject: _subjectController.text,
-            content: _contentController.text,
-          );
-      if (mounted) {
+      final repository = AppDependencyScope.of(context).socialRepository;
+      final subject = _subjectController.text;
+      final content = _contentController.text;
+      final binding = _media;
+      final ticket = binding == null
+          ? await repository.submitFeedback(subject: subject, content: content)
+          : await binding.host.submit(
+              binding.draft,
+              {'subject': subject.trim(), 'content': content.trim()},
+              (key, images) => repository.submitFeedback(
+                subject: subject,
+                content: content,
+                media: images,
+                requestId: key,
+              ),
+            );
+      if (mounted && _identityCurrent) {
+        binding?.host.acknowledge(binding.draft);
         _subjectController.clear();
         _contentController.clear();
         FocusScope.of(context).unfocus();
@@ -269,7 +309,7 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
         );
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted && _identityCurrent) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
@@ -283,6 +323,11 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_identityCurrent)
+      return SocialPageScaffold(
+        appBar: AppBar(title: const Text('意见反馈')),
+        body: const Center(child: Text('账号已变化，请重新打开页面；原账号未知提交仍保留')),
+      );
     return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('帮助与客服'),
@@ -373,11 +418,13 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
                     children: <Widget>[
                       TextField(
                         controller: _subjectController,
+                        enabled: !_busy && !(_media?.draft.locked ?? false),
                         decoration: const InputDecoration(labelText: '问题主题'),
                       ),
                       const SizedBox(height: 10),
                       TextField(
                         controller: _contentController,
+                        enabled: !_busy && !(_media?.draft.locked ?? false),
                         onChanged: (_) => setState(() {}),
                         minLines: 5,
                         maxLines: 8,
@@ -388,6 +435,7 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                if (_media != null) ImageAttachmentEditor(binding: _media!),
                 FilledButton(
                   onPressed: _busy || _contentController.text.trim().isEmpty
                       ? null
@@ -576,6 +624,18 @@ class SupportTicketPage extends StatefulWidget {
 }
 
 class _SupportTicketPageState extends State<SupportTicketPage> {
+  ImagePageBinding? _media;
+  String? _readError;
+  bool get _identityCurrent => _media?.current ?? true;
+  void _mediaChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _saveMediaDraft() {
+    if (!_identityCurrent || (_media?.draft.locked ?? true)) return;
+    _media!.draft.fields['message'] = _replyController.text;
+  }
+
   late SupportTicket _ticket;
   bool _refreshing = false;
   bool _initialized = false;
@@ -585,6 +645,7 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
 
   @override
   void dispose() {
+    _media?.dispose();
     _replyController.dispose();
     super.dispose();
   }
@@ -600,30 +661,46 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
     super.didChangeDependencies();
     if (!_initialized) {
       _initialized = true;
+      final host = imageHostOf(context);
+      if (host != null && host.enabled && host.identity.$1 > 0) {
+        _media = ImagePageBinding(
+          host,
+          'support:reply:${_ticket.id}',
+          MediaPurpose.supportImage,
+        );
+        _replyController.text = _media!.draft.fields['message'] ?? '';
+        _replyController.addListener(_saveMediaDraft);
+        _media!.addListener(_mediaChanged);
+      }
       _refresh();
     }
   }
 
   Future<void> _refresh() async {
-    if (!_ticket.progressAvailable || _refreshing || _sending) {
+    if (!_identityCurrent ||
+        !_ticket.progressAvailable ||
+        _refreshing ||
+        _sending) {
       return;
     }
-    setState(() => _refreshing = true);
+    setState(() {
+      _refreshing = true;
+      _detailLoaded = false;
+    });
     try {
       final SupportTicket value = await AppDependencyScope.of(
         context,
       ).socialRepository.fetchSupportTicket(_ticket.id);
-      if (mounted) {
+      if (mounted && _identityCurrent) {
         setState(() {
           _ticket = value;
           _detailLoaded = true;
+          _readError = null;
         });
       }
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+      if (mounted && _identityCurrent) {
+        setState(() => _readError = _messageFor(error));
       }
     } finally {
       if (mounted) {
@@ -634,7 +711,8 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
 
   Future<void> _sendReply() async {
     final String message = _replyController.text.trim();
-    if (!_detailLoaded ||
+    if (!_identityCurrent ||
+        !_detailLoaded ||
         !_ticket.canReply ||
         _sending ||
         _refreshing ||
@@ -644,10 +722,26 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
     bool refreshAfterConflict = false;
     setState(() => _sending = true);
     try {
-      final SupportTicket ticket = await AppDependencyScope.of(context)
-          .socialRepository
-          .replyToSupportTicket(ticketId: _ticket.id, message: message);
-      if (!mounted) return;
+      final repository = AppDependencyScope.of(context).socialRepository;
+      final binding = _media;
+      final id = _ticket.id;
+      final ticket = binding == null
+          ? await repository.replyToSupportTicket(
+              ticketId: id,
+              message: message,
+            )
+          : await binding.host.submit(
+              binding.draft,
+              {'ticketId': id, 'message': message},
+              (key, images) => repository.replyToSupportTicket(
+                ticketId: id,
+                message: message,
+                media: images,
+                requestId: key,
+              ),
+            );
+      if (!mounted || !_identityCurrent) return;
+      binding?.host.acknowledge(binding.draft);
       setState(() => _ticket = ticket);
       _replyController.clear();
       FocusScope.of(context).unfocus();
@@ -658,7 +752,7 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
       refreshAfterConflict =
           error is ApiException &&
           (error.httpStatus == 409 || error.kind == ApiFailureKind.conflict);
-      if (mounted) {
+      if (mounted && _identityCurrent) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
@@ -671,6 +765,33 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_identityCurrent)
+      return SocialPageScaffold(
+        appBar: AppBar(title: const Text('工单详情')),
+        body: const Center(child: Text('账号已变化，请重新打开工单')),
+      );
+    if (_readError != null)
+      return SocialPageScaffold(
+        appBar: AppBar(
+          title: const Text('工单详情'),
+          actions: [
+            IconButton(
+              tooltip: '刷新工单进度',
+              onPressed: _refreshing ? null : _refresh,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+          ],
+        ),
+        body: Column(
+          children: [
+            Text(_readError!),
+            TextButton(
+              onPressed: _refreshing ? null : _refresh,
+              child: const Text('重新读取工单'),
+            ),
+          ],
+        ),
+      );
     return SocialPageScaffold(
       appBar: AppBar(
         title: const Text('工单详情与处理进度'),
@@ -750,7 +871,7 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
               ],
             ),
           ),
-          if (_ticket.events.isNotEmpty) ...<Widget>[
+          if (_detailLoaded && _ticket.events.isNotEmpty) ...<Widget>[
             const SizedBox(height: 14),
             _OxygenPanel(
               child: Column(
@@ -780,6 +901,8 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
                               height: 1.5,
                             ),
                           ),
+                          if (event.media.isNotEmpty)
+                            ControlledImages(media: event.media),
                           const SizedBox(height: 4),
                           Text(
                             _formatDateTime(event.createdAt),
@@ -806,7 +929,7 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
                   TextField(
                     key: const ValueKey<String>('support-reply-input'),
                     controller: _replyController,
-                    enabled: !_sending,
+                    enabled: !_sending && !(_media?.draft.locked ?? false),
                     minLines: 2,
                     maxLines: 5,
                     maxLength: 1000,
@@ -833,6 +956,7 @@ class _SupportTicketPageState extends State<SupportTicketPage> {
                         : null,
                     child: Text(_sending ? '提交中…' : '提交补充'),
                   ),
+                  if (_media != null) ImageAttachmentEditor(binding: _media!),
                 ],
               ),
             ),

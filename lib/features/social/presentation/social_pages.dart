@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../../core/media/media_models.dart';
+import '../../media/image_widgets.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/design_system/runtime_surfaces.dart';

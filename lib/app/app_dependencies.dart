@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'package:path_provider/path_provider.dart';
+import '../features/media/app_image_media_host.dart';
+import '../features/media/native_image_selection.dart';
 
 import 'package:flutter/widgets.dart';
 import 'package:voice_social_app/features/room/application/gift_send_coordinator.dart';
@@ -76,6 +79,7 @@ import 'package:voice_social_app/features/social/domain/social_models.dart';
 
 class AppDependencies {
   AppDependencies._({
+    required this.imageMediaHost,
     required this.environment,
     required this.sessionManager,
     required this.authController,
@@ -135,6 +139,7 @@ class AppDependencies {
     AccountComplianceRepository? accountComplianceRepository,
     DiscoveryRepository? discoveryRepository,
     DynamicRepository? dynamicRepository,
+    AppImageMediaHost? imageMediaHost,
     MessageRepository? messageRepository,
     ExternalUrlOpener? externalUrlOpener,
     ImSessionAdapter? imSessionAdapter,
@@ -152,6 +157,7 @@ class AppDependencies {
       accountComplianceRepositoryOverride: accountComplianceRepository,
       discoveryRepositoryOverride: discoveryRepository,
       dynamicRepositoryOverride: dynamicRepository,
+      imageMediaHostOverride: imageMediaHost,
       messageRepositoryOverride: messageRepository,
       externalUrlOpenerOverride: externalUrlOpener,
       imSessionAdapterOverride: imSessionAdapter,
@@ -171,6 +177,7 @@ class AppDependencies {
     AccountComplianceRepository? accountComplianceRepositoryOverride,
     DiscoveryRepository? discoveryRepositoryOverride,
     DynamicRepository? dynamicRepositoryOverride,
+    AppImageMediaHost? imageMediaHostOverride,
     MessageRepository? messageRepositoryOverride,
     ExternalUrlOpener? externalUrlOpenerOverride,
     ImSessionAdapter? imSessionAdapterOverride,
@@ -342,6 +349,7 @@ class AppDependencies {
     final SocialRepository socialRepository = environment.isLive
         ? BackendSocialRepository(
             apiClient: apiClient,
+            identityGeneration: () => sessionManager.identityGeneration,
             currentUserIdProvider: () => sessionManager.session?.userId ?? 0,
             routes: routes,
           )
@@ -485,6 +493,17 @@ class AppDependencies {
         externalUrlOpenerOverride ?? MethodChannelExternalUrlOpener();
     apiClient.setUnauthorizedRecovery(authController.refreshSession);
     return AppDependencies._(
+      imageMediaHost:
+          imageMediaHostOverride ??
+          AppImageMediaHost(
+            api: apiClient,
+            userId: () => sessionManager.session?.userId ?? 0,
+            generation: () => sessionManager.identityGeneration,
+            changes: sessionManager,
+            picker: NativeImageSelection(),
+            temporaryParent: getTemporaryDirectory,
+            enabled: environment.isLive,
+          ),
       environment: environment,
       sessionManager: sessionManager,
       authController: authController,
@@ -546,6 +565,7 @@ class AppDependencies {
   }
 
   final AppEnvironment environment;
+  final AppImageMediaHost? imageMediaHost;
   final AuthSessionManager sessionManager;
   final AuthController authController;
   final ImSessionAdapter imSessionAdapter;
@@ -697,6 +717,7 @@ class AppDependencies {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    imageMediaHost?.dispose();
     complianceRevision.dispose();
     giftSendCoordinator.dispose();
     for (final reference in _roomControllers) {

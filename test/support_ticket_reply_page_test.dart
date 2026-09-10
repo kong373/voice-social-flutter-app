@@ -1,3 +1,5 @@
+import 'package:voice_social_app/core/media/media_models.dart';
+import 'package:voice_social_app/features/media/app_image_media_host.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -267,6 +269,8 @@ void main() {
 }
 
 class _Dependencies implements AppDependencies {
+  @override
+  AppImageMediaHost? get imageMediaHost => null;
   _Dependencies(this.socialRepository);
   @override
   final SocialRepository socialRepository;
@@ -290,6 +294,8 @@ class _Repository extends MockSocialRepository {
   Future<SupportTicket> replyToSupportTicket({
     required String ticketId,
     required String message,
+    List<MediaReference> media = const [],
+    String? requestId,
   }) {
     messages.add(message);
     return onReply?.call() ??

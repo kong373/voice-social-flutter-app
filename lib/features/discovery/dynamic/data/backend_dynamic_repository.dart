@@ -1,3 +1,5 @@
+import '../../../../core/media/media_models.dart';
+import '../../../media/image_domain_contract.dart';
 import 'package:flutter/foundation.dart';
 import 'ranking_contract.dart';
 import '../domain/comment_mutations.dart';
@@ -40,7 +42,7 @@ class BackendDynamicRepository
   final Map<String, String> _retainedDeleteRequestIds = <String, String>{};
 
   @override
-  bool get supportsImagePublishing => false;
+  bool get supportsImagePublishing => true;
 
   @override
   Future<PagedResult<DynamicPost>> fetchFeed({
@@ -48,6 +50,8 @@ class BackendDynamicRepository
     int page = 1,
     int pageSize = 20,
   }) async {
+    final identity = commentIdentity;
+    requireCommentIdentity(identity);
     _validatePageRequest(page: page, pageSize: pageSize);
     final String? backendCategory = _backendFeedCategory(category);
     final ApiResponse response = await _apiClient.get(
@@ -59,6 +63,7 @@ class BackendDynamicRepository
       },
     );
     final Map<String, Object?> pageData = _pageData(response.data);
+    requireCommentIdentity(identity);
     final List<Map<String, Object?>> rawItems = _items(pageData);
     final bool hasMore = _hasMore(
       pageData,
@@ -77,6 +82,8 @@ class BackendDynamicRepository
 
   @override
   Future<DynamicPost> fetchPost(String dynamicId) async {
+    final identity = commentIdentity;
+    requireCommentIdentity(identity);
     final String normalizedId = dynamicId.trim();
     if (normalizedId.isEmpty) {
       throw const ApiException(
@@ -89,6 +96,7 @@ class BackendDynamicRepository
       query: <String, String>{'dynamicId': normalizedId},
     );
     final Map<String, Object?> data = _asMap(response.data);
+    requireCommentIdentity(identity);
     if (data.isEmpty) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -313,10 +321,14 @@ class BackendDynamicRepository
     String? requestId,
   }) async {
     final String content = request.content.trim();
-    if (content.isEmpty || content.length > 1000) {
+    final media = List<MediaReference>.unmodifiable(request.media);
+    final ids = imageAssetIds(media, MediaPurpose.dynamicImage);
+    final identity = commentIdentity;
+    requireCommentIdentity(identity);
+    if ((content.isEmpty && ids.isEmpty) || content.length > 1000) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
-        message: '动态内容需为 1～1000 个字',
+        message: '请填写不超过1000字的内容或上传图片',
       );
     }
     if (request.images.isNotEmpty) {
@@ -326,14 +338,16 @@ class BackendDynamicRepository
       );
     }
     final String backendCategory = _backendPublishCategory(request.category);
-    final ApiResponse response = await _apiClient.post(
+    final ApiResponse response = await _apiClient.postBoundToIdentity(
       _routes.dynamicPublish,
+      requireIdentity: () => requireCommentIdentity(identity),
       headers: _requestHeaders(requestId),
       body: <String, Object?>{
         'content': content,
         'category': backendCategory,
         'topic': request.topics.join(','),
         'location': request.location.trim(),
+        if (ids.isNotEmpty) 'mediaAssetIds': ids,
       },
     );
     final Map<String, Object?> data = _asMap(response.data);
@@ -344,6 +358,11 @@ class BackendDynamicRepository
       );
     }
     final DynamicPost post = _postFromMap(data);
+    requireCommentIdentity(identity);
+    if (post.author.userId != identity.$1 ||
+        post.content != content ||
+        !sameImageIds(post.media, media))
+      throw mediaProtocol();
     _postCache[post.id] = post;
     return post;
   }
@@ -484,10 +503,15 @@ class BackendDynamicRepository
         message: '动态 nickName 与 nickname 不一致',
       );
     }
-    final String content = _requiredString(
-      item['content'],
-      field: '动态 content',
+    final media = domainImages(
+      item.containsKey('media') ? item['media'] : const [],
+      MediaPurpose.dynamicImage,
     );
+    final content = item['content'];
+    if (content is! String ||
+        content.length > 1000 ||
+        (content.trim().isEmpty && media.isEmpty))
+      throw mediaProtocol();
     final int likeCount = _requiredNonNegativeInt(
       item['likeCount'],
       '动态 likeCount',
@@ -520,6 +544,7 @@ class BackendDynamicRepository
       ),
       content: content,
       images: _strictStringList(item['images'], '动态 images'),
+      media: media,
       location: _string(item['location']),
       tags: <String>[category],
       topics: _split(item['topic']),

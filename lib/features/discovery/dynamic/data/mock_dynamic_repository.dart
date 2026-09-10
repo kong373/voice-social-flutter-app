@@ -323,7 +323,8 @@ class MockDynamicRepository
         message: '动态内容需为 1～1000 个字',
       );
     }
-    if (request.images.isNotEmpty && !supportsImagePublishing) {
+    if (request.media.isNotEmpty ||
+        (request.images.isNotEmpty && !supportsImagePublishing)) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
         message: '图片上传服务尚未接入',

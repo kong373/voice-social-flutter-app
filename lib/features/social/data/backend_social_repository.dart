@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
+import '../../../core/media/media_models.dart';
+import '../../media/image_domain_contract.dart';
 
 import 'package:crypto/crypto.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
@@ -18,13 +20,35 @@ class BackendSocialRepository
   BackendSocialRepository({
     required ApiClient apiClient,
     required int Function() currentUserIdProvider,
+    int Function()? identityGeneration,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
   }) : _apiClient = apiClient,
        _currentUserIdProvider = currentUserIdProvider,
+       _identityGeneration = identityGeneration ?? (() => 0),
        _routes = routes;
 
   final ApiClient _apiClient;
   final int Function() _currentUserIdProvider;
+  final int Function() _identityGeneration;
+
+  void Function() _supportIdentity() {
+    final actor = _currentUserIdProvider();
+    final generation = _identityGeneration();
+    void check() {
+      if (actor <= 0 ||
+          actor != _currentUserIdProvider() ||
+          generation != _identityGeneration()) {
+        throw const ApiException(
+          kind: ApiFailureKind.unauthorized,
+          message: '账号已变化，请重新打开工单',
+        );
+      }
+    }
+
+    check();
+    return check;
+  }
+
   final BackendRouteCatalog _routes;
   final _SocialWriteCoordinator _writeCoordinator = _SocialWriteCoordinator();
   final Map<String, Future<String>> _pendingReportSubmissions =
@@ -500,6 +524,8 @@ class BackendSocialRepository
   Future<SupportTicket> submitFeedback({
     required String subject,
     required String content,
+    List<MediaReference> media = const [],
+    String? requestId,
   }) async {
     final String normalizedContent = content.trim();
     final String normalizedSubject = subject.trim();
@@ -515,6 +541,16 @@ class BackendSocialRepository
         message: '反馈主题不能超过 120 个字符',
       );
     }
+    final images = List<MediaReference>.unmodifiable(media);
+    imageAssetIds(images, MediaPurpose.supportImage);
+    if (requestId != null || images.isNotEmpty) {
+      return _submitFeedbackOnce(
+        subject: normalizedSubject,
+        content: normalizedContent,
+        media: images,
+        requestId: requestId ?? _newSocialWriteRequestId('support-media'),
+      );
+    }
     final String intentKey = _feedbackIntentKey(
       currentUserId: _currentUserIdProvider(),
       subject: normalizedSubject,
@@ -525,13 +561,13 @@ class BackendSocialRepository
     if (pending != null) {
       return pending;
     }
-    final String requestId = _retainedFeedbackRequestIds[intentKey] ??=
+    final String retainedId = _retainedFeedbackRequestIds[intentKey] ??=
         _newSocialWriteRequestId('social-feedback');
     final Future<SupportTicket> request =
         _submitFeedbackOnce(
           subject: normalizedSubject,
           content: normalizedContent,
-          requestId: requestId,
+          requestId: retainedId,
         ).then<SupportTicket>(
           (SupportTicket value) {
             _pendingFeedbackSubmissions.remove(intentKey);
@@ -554,17 +590,38 @@ class BackendSocialRepository
     required String subject,
     required String content,
     required String requestId,
+    List<MediaReference> media = const [],
   }) async {
-    final ApiResponse response = await _apiClient.post(
+    final checkIdentity = _supportIdentity();
+    final ids = imageAssetIds(media, MediaPurpose.supportImage);
+    final ApiResponse response = await _apiClient.postBoundToIdentity(
       _routes.submitFeedback,
+      requireIdentity: checkIdentity,
       headers: <String, String>{'X-Request-Id': _normalizeRequestId(requestId)},
-      body: <String, Object?>{'subject': subject, 'content': content},
+      body: <String, Object?>{
+        'subject': subject,
+        'content': content,
+        if (ids.isNotEmpty) 'mediaAssetIds': ids,
+      },
     );
-    return _supportTicketFromMap(_asMap(response.data));
+    checkIdentity();
+    final ticket = _supportTicketFromMap(_asMap(response.data));
+    if (ticket.content != content ||
+        (media.isNotEmpty &&
+            !ticket.events.any(
+              (event) =>
+                  event.actorType == 'USER' &&
+                  event.eventType == 'CREATED' &&
+                  event.message == content &&
+                  sameImageIds(event.media, media),
+            )))
+      throw mediaProtocol();
+    return ticket;
   }
 
   @override
   Future<SupportTicket> fetchSupportTicket(String ticketId) async {
+    final checkIdentity = _supportIdentity();
     final String normalizedId = ticketId.trim();
     if (normalizedId.isEmpty) {
       throw const ApiException(
@@ -577,6 +634,7 @@ class BackendSocialRepository
       query: <String, String>{'ticketId': normalizedId},
     );
     final SupportTicket ticket = _supportTicketFromMap(_asMap(response.data));
+    checkIdentity();
     if (ticket.id != normalizedId) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -590,6 +648,8 @@ class BackendSocialRepository
   Future<SupportTicket> replyToSupportTicket({
     required String ticketId,
     required String message,
+    List<MediaReference> media = const [],
+    String? requestId,
   }) {
     final String id = ticketId.trim();
     final String text = message.trim();
@@ -602,45 +662,49 @@ class BackendSocialRepository
       );
     }
     final int userId = _currentUserIdProvider();
-    void checkIdentity() {
-      if (userId <= 0 || userId != _currentUserIdProvider()) {
+    final checkIdentity = _supportIdentity();
+    final images = List<MediaReference>.unmodifiable(media);
+    final ids = imageAssetIds(images, MediaPurpose.supportImage);
+    checkIdentity();
+    Future<SupportTicket> action(Map<String, String> headers) async {
+      checkIdentity();
+      final ApiResponse response = await _apiClient.postBoundToIdentity(
+        '${_routes.supportTickets}/${Uri.encodeComponent(id)}/replies',
+        requireIdentity: checkIdentity,
+        headers: headers,
+        body: <String, Object?>{
+          'message': text,
+          if (ids.isNotEmpty) 'mediaAssetIds': ids,
+        },
+      );
+      checkIdentity();
+      final Map<String, Object?> data = _requiredSocialMap(response.data);
+      final SupportTicket ticket = _supportTicketFromMap(data);
+      if (ticket.id != id ||
+          ticket.version < 1 ||
+          !ticket.events.any(
+            (event) =>
+                event.actorType == 'USER' &&
+                event.eventType == 'MESSAGE' &&
+                event.message == text &&
+                sameImageIds(event.media, images),
+          )) {
         throw const ApiException(
-          kind: ApiFailureKind.unauthorized,
-          message: '账号已变化，请重新打开工单',
+          kind: ApiFailureKind.protocol,
+          message: '补充反馈尚未获得有效回执，请重试查询',
         );
       }
+      return ticket;
     }
 
-    checkIdentity();
+    if (requestId != null)
+      return action({'X-Request-Id': _normalizeRequestId(requestId)});
     return _writeCoordinator.run<SupportTicket>(
-      intentKey: 'support-reply:${_intentDigest(<Object?>[userId, id, text])}',
+      intentKey:
+          'support-reply:${_intentDigest(<Object?>[userId, _identityGeneration(), id, text, ids])}',
       serialKey: 'support-reply:$userId:$id',
       requestIdPrefix: 'support-reply',
-      action: (headers) async {
-        checkIdentity();
-        final ApiResponse response = await _apiClient.post(
-          '${_routes.supportTickets}/${Uri.encodeComponent(id)}/replies',
-          headers: headers,
-          body: <String, Object?>{'message': text},
-        );
-        checkIdentity();
-        final Map<String, Object?> data = _requiredSocialMap(response.data);
-        final SupportTicket ticket = _supportTicketFromMap(data);
-        if (ticket.id != id ||
-            ticket.version < 1 ||
-            !ticket.events.any(
-              (event) =>
-                  event.actorType == 'USER' &&
-                  event.eventType == 'MESSAGE' &&
-                  event.message == text,
-            )) {
-          throw const ApiException(
-            kind: ApiFailureKind.protocol,
-            message: '补充反馈尚未获得有效回执，请重试查询',
-          );
-        }
-        return ticket;
-      },
+      action: action,
     );
   }
 
@@ -1292,9 +1356,22 @@ class BackendSocialRepository
           eventType: type! as String,
           message: text,
           createdAt: time,
+          eventId: event['eventId'] == null
+              ? null
+              : requireMediaId(event['eventId']),
+          media: _eventMedia(event),
         );
       }),
     );
+  }
+
+  static List<MediaReference> _eventMedia(Map<String, Object?> event) {
+    final images = domainImages(
+      event.containsKey('media') ? event['media'] : const [],
+      MediaPurpose.supportImage,
+    );
+    if (images.isNotEmpty) requireMediaId(event['eventId']);
+    return images;
   }
 
   static SupportTicketStatus _supportTicketStatus(Object? value) {

@@ -9,6 +9,8 @@ environment:
 dependencies:
   agora_rtc_engine: 6.6.3
   crypto: 3.0.7
+  image_picker: 1.2.3
+  path_provider: 2.1.6
   first_party_native_permissions:
     path: packages/first_party_native_permissions
   first_party_room_audio:

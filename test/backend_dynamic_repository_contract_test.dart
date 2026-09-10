@@ -335,39 +335,42 @@ void main() {
     expect(rooms.entries.single.giftValueFen, BigInt.from(88));
   });
 
-  test('media publishing remains explicitly vendor blocked', () async {
-    final HttpServer server = await _startServer(
-      (HttpRequest request, Object? body) => _reply(
-        request,
-        status: 500,
-        code: 50001,
-        message: 'must not be called',
-      ),
-    );
-    addTearDown(() => server.close(force: true));
-    final BackendDynamicRepository repository = BackendDynamicRepository(
-      apiClient: _client(server),
-      routes: const BackendRouteCatalog(),
-      currentUserIdProvider: () => 10001,
-    );
-    expect(repository.supportsImagePublishing, isFalse);
-    await expectLater(
-      repository.publish(
-        const PublishDynamicRequest(
-          content: '图片动态',
-          category: DynamicCategory.chat,
-          images: <String>['local://image'],
+  test(
+    'S13 asset publishing is available but legacy URL publishing stays rejected',
+    () async {
+      final HttpServer server = await _startServer(
+        (HttpRequest request, Object? body) => _reply(
+          request,
+          status: 500,
+          code: 50001,
+          message: 'must not be called',
         ),
-      ),
-      throwsA(
-        isA<ApiException>().having(
-          (ApiException error) => error.kind,
-          'kind',
-          ApiFailureKind.configuration,
+      );
+      addTearDown(() => server.close(force: true));
+      final BackendDynamicRepository repository = BackendDynamicRepository(
+        apiClient: _client(server),
+        routes: const BackendRouteCatalog(),
+        currentUserIdProvider: () => 10001,
+      );
+      expect(repository.supportsImagePublishing, isTrue);
+      await expectLater(
+        repository.publish(
+          const PublishDynamicRequest(
+            content: '图片动态',
+            category: DynamicCategory.chat,
+            images: <String>['local://image'],
+          ),
         ),
-      ),
-    );
-  });
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.configuration,
+          ),
+        ),
+      );
+    },
+  );
 
   test(
     'dynamic error envelopes preserve 400, 403, 409, 422, and 500 kinds',
