@@ -101,7 +101,10 @@ void main() {
     await tester.enterText(find.byType(TextField), '1234');
     await tester.tap(find.text('开启青少年模式'));
     await tester.pumpAndSettle();
-    expect(find.text('青少年模式已开启'), findsOneWidget);
+    expect(dependencies.youthModeResult, isTrue);
+    expect(find.text('青少年模式已锁定'), findsOneWidget);
+    expect(find.byKey(const Key('youth-unlock-pin')), findsOneWidget);
+    expect(find.text('开启青少年模式'), findsNothing);
     expect(tester.takeException(), isNull);
     await disposePage(tester);
   });
