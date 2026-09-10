@@ -14,7 +14,8 @@ class PersonalCenterPage extends StatefulWidget {
   State<PersonalCenterPage> createState() => _PersonalCenterPageState();
 }
 
-class _PersonalCenterPageState extends State<PersonalCenterPage> {
+class _PersonalCenterPageState extends State<PersonalCenterPage>
+    with ProfileDisplayReadFence<PersonalCenterPage> {
   SocialProfile? _profile;
   String? _error;
   bool _signingOut = false;
@@ -25,26 +26,37 @@ class _PersonalCenterPageState extends State<PersonalCenterPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_profile == null && _error == null) {
+    if (!profileDisplayReadStarted && profileDisplayReadAllowed) {
       _load();
     }
   }
 
   Future<void> _load() async {
+    if (!profileDisplayReadAllowed) return;
+    final ticket = beginProfileDisplayRead();
     try {
       final SocialProfile value = await _repository.fetchMyProfile();
-      if (mounted) {
+      if (acceptsProfileDisplayRead(ticket)) {
         setState(() {
           _profile = value;
           _error = null;
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (acceptsProfileDisplayRead(ticket)) {
         setState(() => _error = _messageFor(error));
       }
     }
   }
+
+  @override
+  void clearProfileDisplay() {
+    _profile = null;
+    _error = null;
+  }
+
+  @override
+  Future<void> reloadProfileDisplay() => _load();
 
   Future<void> _open(Widget page, {bool refresh = false}) async {
     await Navigator.of(context).push<void>(
@@ -136,12 +148,17 @@ class _PersonalCenterPageState extends State<PersonalCenterPage> {
               ),
               Transform.translate(
                 offset: const Offset(0, -6),
-                child: _ProfileHeader(profile: profile),
+                child: _ProfileHeader(
+                  profile: profile,
+                  showDecorations: profileDisplayAuthenticated,
+                ),
               ),
               const SizedBox(height: 8),
               _Metrics(profile: profile),
               const SizedBox(height: 14),
-              _MineDecorationBanner(onTap: () => _open(const DecorationPage())),
+              _MineDecorationBanner(
+                onTap: () => _open(const DecorationPage(), refresh: true),
+              ),
               _OxygenPanel(
                 radius: 0,
                 padding: const EdgeInsets.symmetric(vertical: 3),
@@ -165,7 +182,7 @@ class _PersonalCenterPageState extends State<PersonalCenterPage> {
                         Color(0xFFFFA7D0),
                         Color(0xFFF16BC6),
                       ],
-                      onTap: () => _open(const DecorationPage()),
+                      onTap: () => _open(const DecorationPage(), refresh: true),
                     ),
                     _OxygenFeatureShortcut(
                       icon: Icons.person_outline_rounded,
@@ -502,7 +519,8 @@ class PublicProfilePage extends StatefulWidget {
   State<PublicProfilePage> createState() => _PublicProfilePageState();
 }
 
-class _PublicProfilePageState extends State<PublicProfilePage> {
+class _PublicProfilePageState extends State<PublicProfilePage>
+    with ProfileDisplayReadFence<PublicProfilePage> {
   SocialProfile? _profile;
   String? _error;
   bool _busy = false;
@@ -510,26 +528,45 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_profile == null && _error == null) {
+    if (!profileDisplayReadStarted && profileDisplayReadAllowed) {
       _load();
     }
   }
 
   Future<void> _load() async {
+    if (!profileDisplayReadAllowed) return;
+    final ticket = beginProfileDisplayRead();
     try {
       final SocialProfile value = await AppDependencyScope.of(
         context,
       ).socialRepository.fetchPublicProfile(widget.userId);
-      if (mounted) {
+      if (acceptsProfileDisplayRead(ticket)) {
         setState(() {
           _profile = value;
           _error = null;
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (acceptsProfileDisplayRead(ticket)) {
         setState(() => _error = _messageFor(error));
       }
+    }
+  }
+
+  @override
+  void clearProfileDisplay() {
+    _profile = null;
+    _error = null;
+  }
+
+  @override
+  Future<void> reloadProfileDisplay() => _load();
+  @override
+  void didUpdateWidget(covariant PublicProfilePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId) {
+      resetProfileDisplayRead();
+      _load();
     }
   }
 
@@ -666,13 +703,25 @@ class _PublicProfilePageState extends State<PublicProfilePage> {
                         ),
                       ],
                     ),
-                    child: RuntimeAvatar(
-                      seed: '${profile.user.userId}',
-                      size: 88,
+                    child: EquippedDecorationView(
+                      decorations: profile.user.equippedDecorations,
+                      product: DecorationProduct.starRingFrame,
+                      enabled: profileDisplayAuthenticated,
+                      child: RuntimeAvatar(
+                        seed: '${profile.user.userId}',
+                        size: 88,
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 13),
+                Center(
+                  child: EquippedDecorationView(
+                    decorations: profile.user.equippedDecorations,
+                    product: DecorationProduct.companionBadge,
+                    enabled: profileDisplayAuthenticated,
+                  ),
+                ),
                 Text(
                   profile.user.name,
                   textAlign: TextAlign.center,

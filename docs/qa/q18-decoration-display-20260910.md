@@ -35,3 +35,19 @@
 - 上述新合同14 + 19续购UI + 原合同147 = 180项不重复 PASS。未运行全量/设备测试。
 
 渲染通过实际像素非空/三款不同/头像中心透明/入场零或非有限progress不绘制检查；预览确认零购买/穿戴调用。复杂实际页面身份/期限/入场测试待后续批，不能将第一批当全链路完成。
+
+## 第二批：实际静态穿戴
+
+`EquippedDecorationView` 与商城预览共用同一个 `DecorationArtwork`。头像框只叠加透明绘制，不替换头像；徽章只在资料中出现。可选 metadata 缺失、未知产品、离线/非 ACTIVE 的服务器投影、到期或 UI 身份失效时不绘制。有限期限有本地定时器，后台恢复重新检查；历史永久无到期定时器。期限只是客户端展示裁剪，真实权益仍由 Backend 判断。
+
+已接 `PersonalCenterPage`、`PublicProfilePage`、实际主“我的”入口 `VideoRuntimeAccountPage`、room mic/header avatar、member list。后者只加头像展示，不改 member/mic/gift 操作。个人资料及公主页增加 actor/generation/read epoch/target 读隔离；主“我的”只补 profile read 身份校验与 header 的身份监听，不改资金/权限/媒体/Auth。商城返回重读 profile，不从商城模型伪造当前穿戴。
+
+覆盖真实页面出现/登出消失、ABA晚成功/晚错误、公主页换target、空麦/离线、controller身份/离房/lease失效、精确期限后无需HTTP移除。旧响应、旧账户或路由参数都不能授予效果。
+
+静态资料/麦位新增14项 PASS；相关旧profile/member/响应式36项 PASS。初次 entry fixture 在test body之后才销毁自持有controller导致4项pending timer，已补显式close，未改production lease/controller；新增mine fixture补真实Shell的Scaffold。旧断言未降低。
+
+成员 `offMic/managers/muted` 三个读取变体有真实 repository 合同测试。其中 muted 独立构造原先遗漏 metadata，先确认 `q18-display-muted-red.log` 行为失败，再补 joinedAt/online/equippedDecorations；不改禁言规则。第二批新静态测试14项，加这3个合同变体，分别覆盖展示与实际解析。
+
+绘制检查输出：`/Users/kongzheng/Documents/ny/artifacts/product/filled-decisions-20260909/q18-product-art-review.png`（专属三款实际CustomPainter栅格结果，不是设备截图）。一次性生成test已删除。
+
+只包裹现有头像组件，不实现注册的六款 `avatarPresetId` 或修改头像素材映射；后续头像接线可保留这一透明装扮层。

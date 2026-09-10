@@ -1,4 +1,6 @@
 import 'dart:async';
+import '../../commerce/display/domain/equipped_decoration.dart';
+import '../../commerce/display/presentation/equipped_decoration_view.dart';
 
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
@@ -653,10 +655,15 @@ class _MemberAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RuntimeAvatar(
-      seed: '${member.userId}',
-      size: 46,
-      ringColor: RoomColors.primary.withValues(alpha: 0.78),
+    return EquippedDecorationView(
+      decorations: member.equippedDecorations,
+      product: DecorationProduct.starRingFrame,
+      enabled: member.online,
+      child: RuntimeAvatar(
+        seed: '${member.userId}',
+        size: 46,
+        ringColor: RoomColors.primary.withValues(alpha: 0.78),
+      ),
     );
   }
 }

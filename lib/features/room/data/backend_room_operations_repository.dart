@@ -237,6 +237,11 @@ class BackendRoomOperationsRepository
             presence: _presenceFrom(item),
             seatNumber: _seatNumber(item),
             isMuted: true,
+            joinedAt: _optionalDateTime(item['joinedAt']),
+            online: item['presence'] == 'ONLINE',
+            equippedDecorations: item['presence'] == 'ONLINE'
+                ? EquippedDecoration.parseList(item['equippedDecorations'])
+                : const [],
           ),
         )
         .toList(growable: false);

@@ -1,4 +1,6 @@
 import 'dart:async';
+import '../../commerce/display/domain/equipped_decoration.dart';
+import '../../commerce/display/presentation/equipped_decoration_view.dart';
 import 'package:voice_social_app/features/room/presentation/edit_room_page.dart';
 import 'package:voice_social_app/features/room/presentation/platform_rooms_page.dart';
 
@@ -544,6 +546,12 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                                       width: 160,
                                       height: 115,
                                       child: _VideoMicSeat(
+                                        decorationsEnabled:
+                                            _controller.status ==
+                                                RoomSessionStatus.joined &&
+                                            _controller.allows(
+                                              RoomCapability.viewMembers,
+                                            ),
                                         seat: _controller.seats.firstWhere(
                                           (s) => s.number == 1,
                                           orElse: () => const MicSeat(
@@ -568,7 +576,15 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                                     children: [
                                       for (final seat in _controller.seats)
                                         if (!seat.isSpecial)
-                                          _VideoMicSeat(seat: seat),
+                                          _VideoMicSeat(
+                                            seat: seat,
+                                            decorationsEnabled:
+                                                _controller.status ==
+                                                    RoomSessionStatus.joined &&
+                                                _controller.allows(
+                                                  RoomCapability.viewMembers,
+                                                ),
+                                          ),
                                     ],
                                   ),
                                 ),
@@ -666,6 +682,11 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                     left: index * 19,
                     child: _RoomMemberAvatar(
                       avatarUrl: occupiedSeats[index].avatarUrl,
+                      decorations: occupiedSeats[index].equippedDecorations,
+                      decorationsEnabled:
+                          occupiedSeats[index].isOnline &&
+                          _controller.status == RoomSessionStatus.joined &&
+                          _controller.allows(RoomCapability.viewMembers),
                       size: 30,
                     ),
                   ),
@@ -2182,11 +2203,15 @@ class _RoomMemberAvatar extends StatelessWidget {
     required this.avatarUrl,
     required this.size,
     this.ringColor,
+    this.decorations = const [],
+    this.decorationsEnabled = false,
   });
 
   final String? avatarUrl;
   final double size;
   final Color? ringColor;
+  final List<EquippedDecoration> decorations;
+  final bool decorationsEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -2194,33 +2219,42 @@ class _RoomMemberAvatar extends StatelessWidget {
     final bool isAllowlistedAsset =
         normalizedUrl != null &&
         _allowlistedAvatarAssets.contains(normalizedUrl);
-    return Container(
-      width: size,
-      height: size,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: isAllowlistedAsset ? null : Colors.white.withValues(alpha: 0.08),
-        border: Border.all(
-          color: ringColor ?? Colors.white.withValues(alpha: 0.8),
-          width: 2,
+    return EquippedDecorationView(
+      decorations: decorations,
+      product: DecorationProduct.starRingFrame,
+      enabled: decorationsEnabled,
+      child: Container(
+        width: size,
+        height: size,
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isAllowlistedAsset
+              ? null
+              : Colors.white.withValues(alpha: 0.08),
+          border: Border.all(
+            color: ringColor ?? Colors.white.withValues(alpha: 0.8),
+            width: 2,
+          ),
         ),
-      ),
-      child: ClipOval(
-        child: normalizedUrl == null || normalizedUrl.isEmpty
-            ? const _UnavailableMemberAvatar()
-            : isAllowlistedAsset
-            ? Image.asset(
-                normalizedUrl,
-                fit: BoxFit.cover,
-                alignment: Alignment.topCenter,
-                errorBuilder: (_, __, ___) => const _UnavailableMemberAvatar(),
-              )
-            : Image.network(
-                normalizedUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const _UnavailableMemberAvatar(),
-              ),
+        child: ClipOval(
+          child: normalizedUrl == null || normalizedUrl.isEmpty
+              ? const _UnavailableMemberAvatar()
+              : isAllowlistedAsset
+              ? Image.asset(
+                  normalizedUrl,
+                  fit: BoxFit.cover,
+                  alignment: Alignment.topCenter,
+                  errorBuilder: (_, __, ___) =>
+                      const _UnavailableMemberAvatar(),
+                )
+              : Image.network(
+                  normalizedUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      const _UnavailableMemberAvatar(),
+                ),
+        ),
       ),
     );
   }
@@ -2254,9 +2288,10 @@ class _UnavailableMemberAvatar extends StatelessWidget {
 }
 
 class _VideoMicSeat extends StatelessWidget {
-  const _VideoMicSeat({required this.seat});
+  const _VideoMicSeat({required this.seat, this.decorationsEnabled = false});
 
   final MicSeat seat;
+  final bool decorationsEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -2315,6 +2350,11 @@ class _VideoMicSeat extends StatelessWidget {
                 if (occupied)
                   _RoomMemberAvatar(
                     avatarUrl: seat.avatarUrl,
+                    decorations: seat.equippedDecorations,
+                    decorationsEnabled:
+                        decorationsEnabled &&
+                        seat.isOnline &&
+                        seat.userId != null,
                     size: dense ? 40 : 52,
                     ringColor: Colors.transparent,
                   )

@@ -44,6 +44,48 @@ Map<String, Object?> _profile() => {
 };
 
 void main() {
+  for (final source in ['offMic', 'managers', 'muted']) {
+    test(
+      '$source member projection preserves display and real membership time',
+      () async {
+        final identity = TestMediaIdentity();
+        addTearDown(identity.dispose);
+        final row = <String, Object?>{
+          'userId': 1,
+          'nickName': 'member',
+          'role': 'MEMBER',
+          'presence': 'ONLINE',
+          'joinedAt': '2026-09-10T00:00:00Z',
+          'equippedDecorations': [decorationDisplayRow()],
+        };
+        final http = MediaFakeHttp(
+          (_) => MediaFakeResponse.json({
+            'current': 1,
+            'pageSize': 50,
+            'size': 50,
+            'total': 1,
+            'pages': 1,
+            'list': [row],
+            'records': [row],
+          }),
+        );
+        final repo = BackendRoomOperationsRepository(
+          apiClient: http.api(identity),
+        );
+        final members = await switch (source) {
+          'offMic' => repo.fetchOffMicListeners('9527'),
+          'managers' => repo.fetchManagers('9527'),
+          _ => repo.fetchMutedUsers('9527'),
+        };
+        expect(
+          members.single.equippedDecorations.single.product,
+          DecorationProduct.starRingFrame,
+        );
+        expect(members.single.joinedAt, DateTime.utc(2026, 9, 10));
+        if (source == 'muted') expect(members.single.isMuted, isTrue);
+      },
+    );
+  }
   for (final self in [false, true]) {
     test(
       '${self ? 'self' : 'public'} profile parses equipped display without losing it on copy',
