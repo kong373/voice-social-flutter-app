@@ -186,6 +186,9 @@ class BackendAccountComplianceRepository
       accountUsable: accountUsable,
       verificationState: _verificationState(verificationCode),
       needsAgeResubmission: realName['needsAgeResubmission']! as bool,
+      needsIdentityResubmission: RealNameSubmissionPolicy.fromBackendData(
+        realName,
+      ).needsIdentityResubmission,
       youthModeEnabled: youthModeEnabled,
       restriction: AccountRestriction(
         kind: _restrictionKind(
@@ -490,6 +493,7 @@ class BackendAccountComplianceRepository
     final Map<String, Object?> submitted = _requireMap(response.data, '实名认证提交');
     final bool legacyReceipt =
         !submitted.containsKey('needsAgeResubmission') &&
+        !submitted.containsKey('needsIdentityResubmission') &&
         !submitted.containsKey('canSubmit');
     final int code = legacyReceipt
         ? _parseVerificationState(submitted)

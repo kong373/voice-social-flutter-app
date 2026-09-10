@@ -176,6 +176,7 @@ class AccountComplianceSnapshot {
     required this.accountUsable,
     required this.verificationState,
     this.needsAgeResubmission = false,
+    this.needsIdentityResubmission = false,
     required this.youthModeEnabled,
     required this.restriction,
     required this.cancellation,
@@ -192,12 +193,14 @@ class AccountComplianceSnapshot {
   final bool accountUsable;
   final VerificationState verificationState;
   final bool needsAgeResubmission;
+  final bool needsIdentityResubmission;
 
   /// Flow state only. Account/youth restrictions and the server still apply.
   bool get canSubmitRealName =>
       verificationState == VerificationState.unverified ||
       verificationState == VerificationState.rejected ||
-      (verificationState == VerificationState.verified && needsAgeResubmission);
+      (verificationState == VerificationState.verified &&
+          (needsAgeResubmission || needsIdentityResubmission));
   final bool youthModeEnabled;
   final AccountRestriction restriction;
   final CancellationEligibility cancellation;
@@ -208,6 +211,7 @@ class AccountComplianceSnapshot {
   AccountComplianceSnapshot copyWith({
     VerificationState? verificationState,
     bool? needsAgeResubmission,
+    bool? needsIdentityResubmission,
     bool? youthModeEnabled,
     AccountRestriction? restriction,
     bool? accountUsable,
@@ -222,6 +226,8 @@ class AccountComplianceSnapshot {
       accountUsable: accountUsable ?? this.accountUsable,
       verificationState: verificationState ?? this.verificationState,
       needsAgeResubmission: needsAgeResubmission ?? this.needsAgeResubmission,
+      needsIdentityResubmission:
+          needsIdentityResubmission ?? this.needsIdentityResubmission,
       youthModeEnabled: youthModeEnabled ?? this.youthModeEnabled,
       restriction: restriction ?? this.restriction,
       cancellation: cancellation ?? this.cancellation,

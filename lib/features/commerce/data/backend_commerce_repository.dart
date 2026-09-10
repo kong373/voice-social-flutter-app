@@ -4,8 +4,10 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
 import 'package:voice_social_app/features/commerce/domain/refund_request_id.dart';
+import 'package:voice_social_app/features/commerce/domain/payout_account_binding.dart';
 
-class BackendCommerceRepository implements CommerceRepository {
+class BackendCommerceRepository
+    implements CommerceRepository, PayoutAccountBindingRepository {
   BackendCommerceRepository({
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
@@ -586,7 +588,10 @@ class BackendCommerceRepository implements CommerceRepository {
   Future<PayoutAccountSelection> _fetchPayoutAccounts(
     (String?, int) identity,
   ) async {
-    final ApiResponse response = await _apiClient.get(_routes.payoutAccounts);
+    final ApiResponse response = await _apiClient.getBoundToIdentity(
+      _routes.payoutAccounts,
+      requireIdentity: () => _requireIdentity(identity),
+    );
     _requireIdentity(identity);
     final Map<String, Object?> data = _asMap(response.data);
     final List<Object?> rawAccounts = _requiredList(data, field: '收款账户列表');
@@ -646,7 +651,16 @@ class BackendCommerceRepository implements CommerceRepository {
         );
       }
       final bool selectable = _requiredBool(raw, 'selectable');
-      final bool expectedSelectable = status == PayoutAccountStatus.verified;
+      final bool expectedSelectable =
+          status == PayoutAccountStatus.verified ||
+          status == PayoutAccountStatus.bound;
+      if (status == PayoutAccountStatus.bound &&
+          raw['verificationSource'] != 'USER_DECLARED') {
+        throw const ApiException(
+          kind: ApiFailureKind.protocol,
+          message: '收款账户来源无法确认',
+        );
+      }
       if (selectable != expectedSelectable) {
         throw const ApiException(
           kind: ApiFailureKind.protocol,
@@ -661,6 +675,9 @@ class BackendCommerceRepository implements CommerceRepository {
           holderNameMasked: holderNameMasked,
           status: status,
           selectable: selectable,
+          verificationSource:
+              _optionalTrimmedString(raw['verificationSource']) ?? '',
+          bankName: _optionalTrimmedString(raw['bankName']) ?? '',
           createdAt: _optionalDateTime(raw['createdAt']),
           updatedAt: _optionalDateTime(raw['updatedAt']),
         ),
@@ -709,11 +726,71 @@ class BackendCommerceRepository implements CommerceRepository {
       );
     }
     _availablePayoutIdentities.add(identity);
+    final canBind = data.containsKey('canBind')
+        ? _requiredBool(data, 'canBind')
+        : false;
+    final reason = data.containsKey('bindingBlockReason')
+        ? _requiredString(data, 'bindingBlockReason', field: '绑定能力')
+        : 'CONFIGURATION_UNAVAILABLE';
+    if (!{
+          'NONE',
+          'REAL_NAME_REQUIRED',
+          'REAL_NAME_RESUBMISSION_REQUIRED',
+          'INCOME_ROLE_REQUIRED',
+          'CONFIGURATION_UNAVAILABLE',
+        }.contains(reason) ||
+        canBind != (reason == 'NONE')) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '收款绑定能力无法确认',
+      );
+    }
     return PayoutAccountSelection(
       accounts: List<PayoutAccount>.unmodifiable(accounts),
       selectedPayoutAccountId: resolvedSelected,
       selectionRequired: selectionRequired,
+      canBind: canBind,
+      bindingBlockReason: reason,
     );
+  }
+
+  @override
+  Future<PayoutAccountSelection> bindPayoutAccount(
+    PayoutAccountInput input, {
+    required String requestId,
+  }) async {
+    final identity = withdrawalIdentity;
+    _requireIdentity(identity);
+    if (!input.valid || requestId.trim().isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '请填写有效收款资料',
+      );
+    }
+    final response = await _apiClient.postBoundToIdentity(
+      '/app-mini-api/mini/v1/withdrawal/payout-accounts',
+      requireIdentity: () => _requireIdentity(identity),
+      headers: {'X-Request-Id': requestId},
+      body: input.toBody(),
+    );
+    _requireIdentity(identity);
+    if (_requiredBool(_asMap(response.data), 'providerInvocation')) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '收款绑定响应无法确认',
+      );
+    }
+    // A replay receipt may describe a disabled old row. Bypass any older GET
+    // in flight and choose exclusively from a new current authority read.
+    try {
+      return await _fetchPayoutAccounts(identity);
+    } catch (_) {
+      _requireIdentity(identity);
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '绑定回执已收到，当前账户列表尚未确认，请重试原绑定',
+      );
+    }
   }
 
   /// Q15-06: App refund writes are permanently retired; history stays readable.
@@ -2052,6 +2129,7 @@ class BackendCommerceRepository implements CommerceRepository {
 
   static PayoutAccountStatus _payoutAccountStatus(String value) =>
       switch (value) {
+        'BOUND' => PayoutAccountStatus.bound,
         'VERIFIED' || 'ACTIVE' => PayoutAccountStatus.verified,
         'PENDING' || 'REVIEWING' => PayoutAccountStatus.pending,
         'DISABLED' || 'REVOKED' => PayoutAccountStatus.disabled,

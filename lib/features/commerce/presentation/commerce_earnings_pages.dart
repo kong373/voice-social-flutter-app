@@ -1,5 +1,227 @@
 part of 'commerce_pages.dart';
 
+class PayoutAccountBindingPage extends StatefulWidget {
+  const PayoutAccountBindingPage({required this.repository, super.key});
+  final CommerceRepository repository;
+  @override
+  State<PayoutAccountBindingPage> createState() =>
+      _PayoutAccountBindingPageState();
+}
+
+class _PayoutAccountBindingPageState extends State<PayoutAccountBindingPage> {
+  final _form = GlobalKey<FormState>();
+  final _account = TextEditingController();
+  final _holder = TextEditingController();
+  final _bank = TextEditingController();
+  late final PayoutBindingSession _session;
+  String _type = 'ALIPAY';
+  bool _busy = false;
+  bool _identityLost = false;
+  bool _closed = false;
+  String? _error;
+  @override
+  void initState() {
+    super.initState();
+    _session = PayoutBindingSession(widget.repository);
+    widget.repository.withdrawalIdentityChanges?.addListener(_identityChanged);
+  }
+
+  void _identityChanged() {
+    if (_session.identity == widget.repository.withdrawalIdentity) return;
+    _session.dispose();
+    _account.clear();
+    _holder.clear();
+    _bank.clear();
+    if (mounted)
+      setState(() {
+        _identityLost = true;
+        _busy = false;
+        _error = '登录身份已变更，请关闭后重新进入';
+      });
+  }
+
+  void _close() {
+    _closed = true;
+    _session.dispose();
+    _account.clear();
+    _holder.clear();
+    _bank.clear();
+  }
+
+  @override
+  void dispose() {
+    widget.repository.withdrawalIdentityChanges?.removeListener(
+      _identityChanged,
+    );
+    _close();
+    _account.dispose();
+    _holder.dispose();
+    _bank.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_closed ||
+        _busy ||
+        _identityLost ||
+        (!_session.hasPending && !(_form.currentState?.validate() ?? false)))
+      return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await _session.submit(
+        PayoutAccountInput(
+          accountType: _type,
+          accountNumber: _account.text.trim(),
+          holderName: _holder.text.trim(),
+          bankName: _type == 'BANK_CARD' ? _bank.text.trim() : '',
+        ),
+      );
+      if (!mounted ||
+          _closed ||
+          _session.identity != widget.repository.withdrawalIdentity)
+        return;
+      _account.clear();
+      _holder.clear();
+      _bank.clear();
+      Navigator.of(context).pop(true);
+    } catch (error) {
+      if (!mounted ||
+          _closed ||
+          _session.identity != widget.repository.withdrawalIdentity)
+        return;
+      setState(() {
+        _error = _session.hasPending
+            ? '结果尚未确认，请重试原绑定；原资料已锁定。关闭此页会清除本次恢复资料。'
+            : switch (error is ApiException ? error.code : null) {
+                40379 => '持有人姓名与本人实名认证资料不一致，请核对',
+                40924 => '请补充实名认证资料后绑定收款账户',
+                40371 => '请先完成本人实名认证',
+                40375 => '当前身份没有收益收款权限',
+                40079 => '收款资料格式有误，请核对',
+                50379 => '收款账户绑定暂不可用',
+                40903 => '请求内容冲突，请关闭后重新进入',
+                _ => '暂时无法绑定，请核对登录状态及填写资料后重试',
+              };
+      });
+    } finally {
+      if (mounted && !_closed && !_identityLost) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final locked = _busy || _session.hasPending || _identityLost;
+    return PopScope<bool>(
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) _close();
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('绑定本人收款账户')),
+        body: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            const Text('仅可绑定实名认证本人账户。填写后即可使用；资料由用户填写，不代表银行或支付宝已核验。提现仍由财务人工打款。'),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(_error!),
+              ),
+            if (!_identityLost)
+              Form(
+                key: _form,
+                child: Column(
+                  children: [
+                    DropdownButtonFormField<String>(
+                      initialValue: _type,
+                      decoration: const InputDecoration(labelText: '收款类型'),
+                      items: const [
+                        DropdownMenuItem(value: 'ALIPAY', child: Text('支付宝')),
+                        DropdownMenuItem(
+                          value: 'BANK_CARD',
+                          child: Text('银行卡'),
+                        ),
+                      ],
+                      onChanged: locked
+                          ? null
+                          : (value) {
+                              if (value != null)
+                                setState(() {
+                                  _type = value;
+                                  _account.clear();
+                                  _bank.clear();
+                                });
+                            },
+                    ),
+                    TextFormField(
+                      controller: _holder,
+                      enabled: !locked,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      decoration: const InputDecoration(labelText: '本人真实姓名'),
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                          ? '请填写本人真实姓名'
+                          : null,
+                    ),
+                    TextFormField(
+                      controller: _account,
+                      enabled: !locked,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      keyboardType: _type == 'BANK_CARD'
+                          ? TextInputType.number
+                          : TextInputType.emailAddress,
+                      decoration: InputDecoration(
+                        labelText: _type == 'BANK_CARD'
+                            ? '银行卡号'
+                            : '支付宝账号（手机号或邮箱）',
+                      ),
+                      validator: (value) =>
+                          PayoutAccountInput(
+                            accountType: _type,
+                            accountNumber: value?.trim() ?? '',
+                            holderName: '姓名',
+                            bankName: _type == 'BANK_CARD' ? '银行' : '',
+                          ).valid
+                          ? null
+                          : '请填写有效收款账号',
+                    ),
+                    if (_type == 'BANK_CARD')
+                      TextFormField(
+                        controller: _bank,
+                        enabled: !locked,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        decoration: const InputDecoration(labelText: '开户银行'),
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
+                            ? '请填写开户银行'
+                            : null,
+                      ),
+                    const SizedBox(height: 20),
+                    FilledButton(
+                      onPressed: _busy ? null : _submit,
+                      child: Text(
+                        _busy
+                            ? '正在确认…'
+                            : _session.hasPending
+                            ? '重试原绑定'
+                            : '确认绑定',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class EarningsPage extends StatefulWidget {
   const EarningsPage({this.repository, super.key});
   @visibleForTesting
@@ -246,7 +468,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
     if (!_repository.supportsWithdrawalApplication) {
       return '当前第一方实现未启用基于 payoutAccountId 的提现申请；报价和历史记录仍可查看。';
     }
-    return '当前没有可用的已验证收款账户。提现申请已安全禁用；报价和历史记录仍可查看。';
+    return '当前没有可用的收款账户。提现申请已安全禁用；报价和历史记录仍可查看。';
   }
 
   @override
@@ -508,6 +730,20 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
     }
   }
 
+  Future<void> _openBinding() async {
+    final identity = _repository.withdrawalIdentity;
+    if (_submitting ||
+        _wallet?.canWithdraw != true ||
+        _payoutSelection?.canBind != true)
+      return;
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (_) => PayoutAccountBindingPage(repository: _repository),
+      ),
+    );
+    if (_ownsIdentity(identity)) await _load();
+  }
+
   Widget _buildPayoutAccountPicker() {
     if (_repository.pendingWithdrawal != null) {
       return const _CommerceInfoBanner(
@@ -522,10 +758,23 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           const Text('收款账户', style: TextStyle(fontWeight: FontWeight.w800)),
+          if (selection.canBind &&
+              _wallet?.canWithdraw == true &&
+              _repository is PayoutAccountBindingRepository)
+            TextButton(
+              onPressed: _submitting ? null : _openBinding,
+              child: const Text('新增 / 更换收款账户'),
+            ),
+          if (selection.bindingBlockReason == 'REAL_NAME_RESUBMISSION_REQUIRED')
+            const Text('请补充实名认证资料后绑定收款账户'),
+          if (selection.bindingBlockReason == 'REAL_NAME_REQUIRED')
+            const Text('请先完成本人实名认证后绑定收款账户'),
+          if (selection.bindingBlockReason == 'CONFIGURATION_UNAVAILABLE')
+            const Text('收款账户绑定暂不可用'),
           if (selectable.isEmpty)
             const Padding(
               padding: EdgeInsets.only(top: 4),
-              child: _CommerceInfoBanner(text: '暂无可用于提现的已验证收款账户。'),
+              child: _CommerceInfoBanner(text: '暂无可用于提现的收款账户。'),
             )
           else
             DropdownButtonFormField<String>(
@@ -540,7 +789,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                   DropdownMenuItem<String>(
                     value: account.payoutAccountId,
                     child: Text(
-                      '${account.accountMasked} · ${account.holderNameMasked}',
+                      '${account.accountMasked} · ${account.holderNameMasked} · ${account.status == PayoutAccountStatus.bound ? '已绑定 / 用户填写' : '已验证'}',
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),

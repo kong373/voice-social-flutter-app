@@ -9,8 +9,148 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/commerce/data/backend_commerce_repository.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
+import 'package:voice_social_app/features/commerce/domain/payout_account_binding.dart';
 
 void main() {
+  test(
+    'Q15 unknown binding retries identical key/body then GET selects current not old receipt',
+    () async {
+      var posts = 0;
+      final harness = await _Harness.start((request) {
+        if (request.method == 'POST') {
+          expect(
+            request.path,
+            '/app-mini-api/mini/v1/withdrawal/payout-accounts',
+          );
+          posts++;
+          if (posts == 1)
+            return const _Response(
+              statusCode: 503,
+              code: 50300,
+              message: 'unknown',
+              data: null,
+            );
+          return const _Response.ok({
+            'payoutAccountId': 'old',
+            'status': 'DISABLED',
+            'selectable': false,
+            'providerInvocation': false,
+          });
+        }
+        return const _Response.ok({
+          'list': [
+            {
+              'payoutAccountId': 'current',
+              'accountType': 'BANK_CARD',
+              'accountMasked': '****1234',
+              'holderNameMasked': '测*',
+              'status': 'BOUND',
+              'selectable': true,
+              'verificationSource': 'USER_DECLARED',
+            },
+          ],
+          'total': 1,
+          'selectedPayoutAccountId': 'current',
+          'providerInvocation': false,
+          'canBind': true,
+          'bindingBlockReason': 'NONE',
+        });
+      });
+      addTearDown(harness.close);
+      final session = PayoutBindingSession(harness.repository);
+      addTearDown(session.dispose);
+      const input = PayoutAccountInput(
+        accountType: 'ALIPAY',
+        accountNumber: 'fixture@example.test',
+        holderName: '测试用户',
+        bankName: '',
+      );
+      await expectLater(session.submit(input), throwsA(isA<ApiException>()));
+      expect(session.hasPending, true);
+      final result = await session.submit(
+        const PayoutAccountInput(
+          accountType: 'BANK_CARD',
+          accountNumber: '1234',
+          holderName: '其他',
+          bankName: '银行',
+        ),
+      );
+      final writes = harness.requests.where((r) => r.method == 'POST').toList();
+      expect(writes.length, 2);
+      expect(writes.first.body, input.toBody());
+      expect(writes.last.rawBody, writes.first.rawBody);
+      expect(writes.last.requestId, writes.first.requestId);
+      expect(writes.first.requestId, isNotEmpty);
+      expect(harness.requests.last.method, 'GET');
+      expect(result.selectedPayoutAccountId, 'current');
+      expect(session.hasPending, false);
+    },
+  );
+  test(
+    'Q15 late binding response after identity generation change cannot GET or deliver',
+    () async {
+      var generation = 1;
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final harness = await _Harness.start(
+        (request) async {
+          started.complete();
+          await release.future;
+          return const _Response.ok({'providerInvocation': false});
+        },
+        currentUserId: () => 'A',
+        identityGeneration: () => generation,
+      );
+      addTearDown(harness.close);
+      final session = PayoutBindingSession(harness.repository);
+      const input = PayoutAccountInput(
+        accountType: 'ALIPAY',
+        accountNumber: 'fixture@example.test',
+        holderName: '测试用户',
+        bankName: '',
+      );
+      final result = expectLater(
+        session.submit(input),
+        throwsA(isA<ApiException>()),
+      );
+      await started.future;
+      generation++;
+      release.complete();
+      await result;
+      expect(session.hasPending, false);
+      expect(harness.requests, hasLength(1));
+      session.dispose();
+    },
+  );
+  test(
+    'Q15 user-declared BOUND account is selectable without verification',
+    () async {
+      final harness = await _Harness.start(
+        (_) => const _Response.ok({
+          'list': [
+            {
+              'payoutAccountId': 'bound-1',
+              'accountType': 'ALIPAY',
+              'accountMasked': 'f***@example.test',
+              'holderNameMasked': '测*',
+              'status': 'BOUND',
+              'selectable': true,
+              'verificationSource': 'USER_DECLARED',
+            },
+          ],
+          'total': 1,
+          'selectedPayoutAccountId': 'bound-1',
+          'selectionRequired': false,
+          'providerInvocation': false,
+          'canBind': true,
+          'bindingBlockReason': 'NONE',
+        }),
+      );
+      addTearDown(harness.close);
+      final selection = await harness.repository.fetchPayoutAccounts();
+      expect(selection.selectableAccounts.single.payoutAccountId, 'bound-1');
+    },
+  );
   test(
     'S07 malformed precision cannot fall back to whole coin integer',
     () async {

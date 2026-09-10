@@ -30,6 +30,17 @@ const _validResubmission = <String, Object?>{
 };
 
 void main() {
+  test('identity evidence resubmission is independent from age evidence', () {
+    final policy = RealNameSubmissionPolicy.fromBackendData({
+      'status': 'VERIFIED',
+      'statusCode': 2,
+      'needsAgeResubmission': false,
+      'needsIdentityResubmission': true,
+      'canSubmit': true,
+    });
+    expect(policy.needsAgeResubmission, false);
+    expect(policy.canSubmit, true);
+  });
   for (final value in _validCases) {
     final (status, code, needsResubmission, canSubmit) = value;
 

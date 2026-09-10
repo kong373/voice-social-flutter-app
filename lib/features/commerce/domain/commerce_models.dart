@@ -59,7 +59,7 @@ class BankCardSummary {
   final String holderNameMasked;
 }
 
-enum PayoutAccountStatus { verified, pending, disabled, unknown }
+enum PayoutAccountStatus { bound, verified, pending, disabled, unknown }
 
 class PayoutAccount {
   const PayoutAccount({
@@ -71,6 +71,8 @@ class PayoutAccount {
     required this.selectable,
     this.createdAt,
     this.updatedAt,
+    this.verificationSource = '',
+    this.bankName = '',
   });
 
   final String payoutAccountId;
@@ -81,6 +83,8 @@ class PayoutAccount {
   final bool selectable;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final String verificationSource;
+  final String bankName;
 }
 
 class PayoutAccountSelection {
@@ -88,11 +92,15 @@ class PayoutAccountSelection {
     required this.accounts,
     required this.selectedPayoutAccountId,
     required this.selectionRequired,
+    this.canBind = false,
+    this.bindingBlockReason = 'CONFIGURATION_UNAVAILABLE',
   });
 
   final List<PayoutAccount> accounts;
   final String? selectedPayoutAccountId;
   final bool selectionRequired;
+  final bool canBind;
+  final String bindingBlockReason;
 
   List<PayoutAccount> get selectableAccounts => accounts
       .where((PayoutAccount account) => account.selectable)
@@ -118,6 +126,8 @@ class PayoutAccountSelection {
       accounts: accounts,
       selectedPayoutAccountId: account.payoutAccountId,
       selectionRequired: false,
+      canBind: canBind,
+      bindingBlockReason: bindingBlockReason,
     );
   }
 }

@@ -281,6 +281,7 @@ class _RealNamePageState extends State<RealNamePage> {
   final TextEditingController _idController = TextEditingController();
   VerificationState? _state;
   bool _needsAgeResubmission = false;
+  bool _needsIdentityResubmission = false;
   bool _canSubmit = false;
   String? _error;
   bool _busy = false;
@@ -329,6 +330,7 @@ class _RealNamePageState extends State<RealNamePage> {
         setState(() {
           _state = snapshot.verificationState;
           _needsAgeResubmission = snapshot.needsAgeResubmission;
+          _needsIdentityResubmission = snapshot.needsIdentityResubmission;
           _canSubmit =
               snapshot.canSubmitRealName &&
               snapshot.accountUsable &&
@@ -354,6 +356,7 @@ class _RealNamePageState extends State<RealNamePage> {
     setState(() {
       _state = null;
       _needsAgeResubmission = false;
+      _needsIdentityResubmission = false;
       _canSubmit = false;
       _error = '登录状态已变化，请重新进入实名认证';
     });
@@ -417,7 +420,7 @@ class _RealNamePageState extends State<RealNamePage> {
               children: <Widget>[
                 AccountStatusHero(
                   icon: Icons.badge_outlined,
-                  title: _needsAgeResubmission
+                  title: _needsAgeResubmission || _needsIdentityResubmission
                       ? '需补交实名资料'
                       : _verificationLabel(_state!),
                   description: repository.supportsRealNameSubmission
@@ -427,13 +430,19 @@ class _RealNamePageState extends State<RealNamePage> {
                       : 'VENDOR_BLOCKED：正式实名厂商尚未接入。Live 模式仅展示服务端状态，不会收集或上传身份证号。',
                   tone:
                       _state == VerificationState.verified &&
-                          !_needsAgeResubmission
+                          !_needsAgeResubmission &&
+                          !_needsIdentityResubmission
                       ? AppColors.success
                       : AccountOxygenColors.violet,
                   badge: repository.supportsRealNameSubmission
                       ? '第一方人工审核'
                       : 'VENDOR_BLOCKED',
                 ),
+                if (_needsIdentityResubmission)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: Text('请补充实名认证资料后绑定收款账户'),
+                  ),
                 if (_canSubmit &&
                     repository.supportsRealNameSubmission) ...<Widget>[
                   const SizedBox(height: 20),
