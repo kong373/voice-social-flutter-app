@@ -185,23 +185,12 @@ class MockCommerceCatalogRepository implements CommerceCatalogRepository {
       RechargeProduct(
         id: 'recharge-68',
         giftCoins: 680,
-        bonusGiftCoins: 20,
         priceCny: 68,
         label: '常用',
         recommended: true,
       ),
-      RechargeProduct(
-        id: 'recharge-198',
-        giftCoins: 1980,
-        bonusGiftCoins: 100,
-        priceCny: 198,
-      ),
-      RechargeProduct(
-        id: 'recharge-648',
-        giftCoins: 6480,
-        bonusGiftCoins: 420,
-        priceCny: 648,
-      ),
+      RechargeProduct(id: 'recharge-198', giftCoins: 1980, priceCny: 198),
+      RechargeProduct(id: 'recharge-648', giftCoins: 6480, priceCny: 648),
     ];
   }
 

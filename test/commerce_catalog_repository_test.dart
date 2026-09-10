@@ -9,6 +9,23 @@ import 'package:voice_social_app/features/commerce/presentation/commerce_pages.d
 
 void main() {
   test(
+    'new recharge catalogs never grant bonus coins on either platform',
+    () async {
+      final repository = MockCommerceCatalogRepository();
+      for (final platform in ClientStorePlatform.values) {
+        final products = await repository.fetchRechargeProducts(
+          platform: platform,
+        );
+        expect(products, isNotEmpty);
+        for (final product in products) {
+          expect(product.giftCoins, greaterThan(0));
+          expect(product.bonusGiftCoins, 0);
+        }
+      }
+    },
+  );
+
+  test(
     'platform channels and youth-mode recharge boundary are exact',
     () async {
       final MockCommerceCatalogRepository repository =
