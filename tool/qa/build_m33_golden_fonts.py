@@ -69,6 +69,9 @@ def download(url: str, expected_sha256: str) -> bytes:
 
 def collect_charset() -> str:
     chars = set(ASCII_SEED)
+    # Product retirements must not remove glyphs needed by older test fixtures.
+    if CHARSET_OUTPUT.exists():
+        chars.update(CHARSET_OUTPUT.read_text(encoding="utf-8"))
     for pattern in TEXT_SOURCE_GLOBS:
         for path in sorted(REPO_ROOT.glob(pattern)):
             text = path.read_text(encoding="utf-8")

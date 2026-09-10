@@ -25,13 +25,13 @@
   "subset_outputs": [
     {
       "path": "M3GoldenCjkRegular.otf",
-      "sha256": "fa1f8c5a04404a330d4967e2fc908bcf02a9e10c8442d1a63a32382f27d9c01b",
-      "size": 242992
+      "sha256": "c12e9daaa1de89cc085dc6d58e8588862fb56984df6bf0365e3d9d70e05fa0c3",
+      "size": 257288
     },
     {
       "path": "M3GoldenCjkBold.otf",
-      "sha256": "4b57c661e14244d24cb687ac79cd7dc0d5bd412e03e3135de48295de5745d529",
-      "size": 243836
+      "sha256": "9e9782ee90d8c02594345b5e983f600089785a226cc9e6d0ae7607a76ab79750",
+      "size": 258096
     }
   ],
   "charset_file": "M3GoldenCjk.charset.txt",

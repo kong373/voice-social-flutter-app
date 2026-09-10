@@ -5,8 +5,38 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/golden_font_gate.dart';
+import 'support/opentype_cmap.dart';
 
 void main() {
+  final requiredCjk = <int>{
+    for (final file
+        in Directory('lib')
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((file) => file.path.endsWith('.dart')))
+      ...file.readAsStringSync().runes.where(_isCjk),
+  };
+  for (final name in [kGoldenRegularFontFile, kGoldenBoldFontFile]) {
+    test('$name cmap includes formerly missing room and camera glyphs', () {
+      final actual = openTypeUnicodeCodePoints(
+        File('test/fonts/$name').readAsBytesSync(),
+      );
+      expect(_missingGlyphs('特殊拍摄'.runes.toSet(), actual), isEmpty);
+    });
+    test('$name cmap covers every literal CJK character in lib', () {
+      final actual = openTypeUnicodeCodePoints(
+        File('test/fonts/$name').readAsBytesSync(),
+      );
+      expect(requiredCjk, isNotEmpty);
+      expect(_missingGlyphs(requiredCjk, actual), isEmpty);
+    });
+  }
+  test('golden charset includes current lib CJK source characters', () {
+    final charset = File(
+      'test/fonts/M3GoldenCjk.charset.txt',
+    ).readAsStringSync().runes.toSet();
+    expect(_missingGlyphs(requiredCjk, charset), isEmpty);
+  });
   test('golden fonts are checked into test/fonts', () {
     final Directory fontDirectory = resolveGoldenFontDirectory();
 
@@ -89,4 +119,24 @@ void main() {
       expect(contents.contains('/artifacts/m3-3/fonts'), isFalse);
     }
   });
+}
+
+// Conservatively include all source characters, including comments and mock
+// copy, so a newly introduced fixed UI string cannot escape the coverage gate.
+bool _isCjk(int cp) =>
+    (cp >= 0x3000 && cp <= 0x303f) ||
+    (cp >= 0x3400 && cp <= 0x4dbf) ||
+    (cp >= 0x4e00 && cp <= 0x9fff) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xff00 && cp <= 0xffef) ||
+    (cp >= 0x20000 && cp <= 0x323af);
+
+String _missingGlyphs(Set<int> required, Set<int> actual) {
+  final missing = required.difference(actual).toList()..sort();
+  return missing
+      .map(
+        (cp) =>
+            '${String.fromCharCode(cp)} U+${cp.toRadixString(16).toUpperCase()}',
+      )
+      .join(', ');
 }
