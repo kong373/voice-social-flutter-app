@@ -5,6 +5,10 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:voice_social_app/core/network/api_exception.dart';
+import '../media/media_identity.dart';
+import '../media/media_models.dart';
+
+part '../media/media_api_transport.dart';
 
 class ApiResponse {
   const ApiResponse({
