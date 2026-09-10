@@ -105,6 +105,12 @@ class AppleIapPurchaseCoordinator {
     List<String> productIds,
   ) async {
     final AppleIapAvailabilityStatus status = await _storeKit.availability();
+    if (status.state == AppleIapAvailability.unsupportedOs) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '充值需要 iOS 15 或更高版本',
+      );
+    }
     if (!status.canMakePayments) {
       return const <AppleStoreProduct>[];
     }
