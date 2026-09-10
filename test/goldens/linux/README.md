@@ -72,6 +72,9 @@ the remaining pages or runtime states have been refreshed.
 
 ## Partial product-page refresh (2026-09-10)
 
+This section preserves the earlier 61-PASS checkpoint. The later runtime and
+gallery verification is recorded separately below; the old OOM is not erased.
+
 Source: `0b9d1208dd854c9b89a44c16711805f795a83985`. This includes product
 `e5bf9c7229786d36b410f61faf4ae7cd838bdac5` and the reviewed post-unmount
 35 ms fake-time drain from `46abea669e9454ee80299dea6129bdbbb7538bdb`.
@@ -152,3 +155,76 @@ Evidence is retained under the workspace-root artifact directory
 `runtime-red.log`, `runtime-red-failures/`, and `source-resource.log` retain
 the incomplete runtime and controlled-resource evidence. Earlier failed
 monolithic runs remain separate and are not reported as golden PASS.
+
+## Runtime and gallery verification (2026-09-10)
+
+Render/test source remains `0b9d1208dd854c9b89a44c16711805f795a83985`.
+Local parent `72a908f482e9ebb8b7fdc07ef0a9c0190fbee37b` adds only the
+24 reviewed page PNGs and README above, not product code, fonts, or tests.
+The renderer remains Ubuntu 24.04.4 `linux/amd64`, Flutter 3.44.7 /
+Dart 3.12.2. With explicit resource-slot authorization, only the owned Linux
+container was changed to 1 CPU / 1879048192 bytes (1.75 GiB), no swap.
+Each test process retained the 420-second outer hard timeout and immediate
+stop-on-new-OOM check. No other container was operated by this worker.
+
+One update-mode process selected the three runtime widget tests and generated
+all 14 actual Linux runtime PNGs: handle `23252`, 3 PASS, test exit 0.
+Eight differ from the old Linux baseline: `account`, `decoration`,
+`dynamic_detail`, `expression`, `gift`, `home`, `messages`, and `room`
+(all named `m3_3_<state>_390x844.png`). The other six are byte-identical.
+All 14 were inspected against the approved same-source macOS references:
+the nine-seat room, multi-recipient gift controls, deterministic decoration
+expiry, comment replies, and retired-entry reflow match the approved product
+changes. Linux rasterization is retained; no macOS PNG was copied.
+Hubble independently inspected all 14 pairs and approved each at 99/100;
+main also approved four critical pairs. Hubble's Mac references at
+`b82a30c0f00e6c512232b03c1cb06d905513cf5b` have the same hashes as the
+`0b9d120` reference images. All 14 generated files are preserved here; Git
+records only the eight changed PNGs. The six byte-identical runtime PNGs,
+gallery PNG, page archives, and all non-Linux baselines remain unchanged.
+
+After worker visual review, five separate non-update processes each selected
+exactly one existing test using `--plain-name`:
+
+| Log | Test | Result |
+| --- | --- | --- |
+| `runtime-visual-strict.log` | M3.3 video-runtime visual states at 390x844 | 1 PASS / exit 0 |
+| `runtime-tabs-strict.log` | M3.3 root tabs and pure decoration states at 390x844 | 1 PASS / exit 0 |
+| `runtime-secondary-strict.log` | M3.3 secondary flows at 390x844 | 1 PASS / exit 0 |
+| `runtime-fontgate-strict.log` | M3.3 video-runtime golden font gate fails closed when the baseline font is absent | 1 PASS / exit 0 |
+| `gallery-strict.log` | preset artwork has a readable gallery and small silhouettes | 1 PASS / exit 0 |
+
+The first four use `test/video_runtime_visual_golden_test.dart`; gallery uses
+`test/preset_avatar_visual_test.dart`. All use the unchanged
+`flutter test --no-pub --concurrency=1 --reporter expanded` arguments.
+Sequential orchestration handle `68135` exited 0. Log-parsed test names are
+five distinct expected names, each with `+1: All tests passed!`, `TEST_EXIT=0`,
+and `oom_kill 0`. **This adds five unique strict PASS to the previous 61,
+for 66 at the same source: 60 pages + page-font gate 1 + runtime scenes 3 +
+runtime-font gate 1 + gallery 1.** Update-mode passes are excluded, and the 61
+page/font tests were not rerun. Gallery PNG SHA-256 remains
+`dcc912faa577d749b558734ea6510e92115291ca9589c32d7239bb0faebb9279`.
+
+Test exits and container shutdown are separate evidence:
+
+- Update test: exit 0. Each of five strict tests: exit 0. Orchestration: exit 0.
+- All six phases: no new OOM. Observed cgroup cumulative peak:
+  1645912064 bytes (about 1.533 GiB); this includes tool/compiler/tester/cache,
+  not a measured standalone App process peak.
+- Only after the tests completed, `docker stop --timeout 5` stopped the owned
+  container. Docker recorded its PID 1 (`sleep 1800`) exit as 137 with
+  `running=false` and `OOMKilled=false`. **That 137 is the container lifecycle
+  result, not a Flutter test exit or an OOM in this successful run.**
+- Resource slot returned; source, SDK, package/build caches and old OOM logs
+  preserved. No tolerance, assertion, CI selection, or product file changed.
+
+Workspace-root evidence:
+`artifacts/product/filled-decisions-20260909/linux-runtime-final-0b9d120-1750m-8kiXeI/`.
+`png-manifest.json` lists all 14 Linux/prior-Linux/reference-Mac SHA-256 values;
+`linux-runtime-candidate/` holds their original generated bytes;
+`worker-visual-review.json` records the worker's per-image assessment;
+`independent-visual-review.md` and `independent-visual-verdict-14.json` record
+Hubble's 14/14 independent APPROVE and input hashes;
+`runtime-update.log`, the five strict logs, and per-phase resource logs retain
+the actual runs. `terminal-result.json` records the exact distinct test set;
+`container-stop.log` separately records the shutdown status.
