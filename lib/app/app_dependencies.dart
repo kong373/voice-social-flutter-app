@@ -287,6 +287,8 @@ class AppDependencies {
             ? BackendAccountComplianceRepository(
                 apiClient: apiClient,
                 routes: routes,
+                currentUserIdProvider: () => sessionManager.session?.userId,
+                identityGeneration: () => sessionManager.identityGeneration,
                 currentDeviceIdProvider: () =>
                     sessionManager.session?.deviceId ?? '',
                 nativePermissionAdapter: nativePermissionAdapter,
@@ -355,7 +357,12 @@ class AppDependencies {
           )
         : MockSocialRepository();
     final CommunityRepository communityRepository = environment.isLive
-        ? BackendCommunityRepository(apiClient: apiClient, routes: routes)
+        ? BackendCommunityRepository(
+            apiClient: apiClient,
+            routes: routes,
+            currentUserIdProvider: () => sessionManager.session?.userId,
+            identityGeneration: () => sessionManager.identityGeneration,
+          )
         : MockCommunityRepository();
     late final CommerceRepository commerceRepository;
     late final CommerceCatalogRepository commerceCatalogRepository;
@@ -370,6 +377,8 @@ class AppDependencies {
       commerceCatalogRepository = BackendCommerceCatalogRepository(
         apiClient: apiClient,
         routes: routes,
+        currentUserIdProvider: () => sessionManager.session?.userId,
+        identityGeneration: () => sessionManager.identityGeneration,
         alipayAppPayAdapter: alipayAppPayAdapter,
         appleIapCoordinator: appleIapPurchaseCoordinator,
       );
