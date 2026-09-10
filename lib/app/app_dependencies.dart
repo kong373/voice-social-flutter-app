@@ -397,6 +397,7 @@ class AppDependencies {
           MockCommerceRepository(now: mockNow);
       commerceRepository = mockCommerceRepository;
       commerceCatalogRepository = MockCommerceCatalogRepository(
+        now: currentTime,
         onRechargeOrderChanged: mockCommerceRepository.syncRechargeOrder,
       );
     }
