@@ -20,11 +20,15 @@ class BackendAccountComplianceRepository
     required ApiClient apiClient,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
     String Function()? currentDeviceIdProvider,
+    int? Function()? currentUserIdProvider,
+    int Function()? identityGeneration,
     NativePermissionAdapter? nativePermissionAdapter,
     bool supportsRealNameSubmission = true,
   }) : _apiClient = apiClient,
        _routes = routes,
        _currentDeviceIdProvider = currentDeviceIdProvider ?? (() => ''),
+       _currentUserIdProvider = currentUserIdProvider,
+       _identityGeneration = identityGeneration,
        _nativePermissionAdapter =
            nativePermissionAdapter ?? MethodChannelNativePermissionAdapter(),
        _supportsRealNameSubmission = supportsRealNameSubmission;
@@ -32,6 +36,8 @@ class BackendAccountComplianceRepository
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
   final String Function() _currentDeviceIdProvider;
+  final int? Function()? _currentUserIdProvider;
+  final int Function()? _identityGeneration;
   final NativePermissionAdapter _nativePermissionAdapter;
   final bool _supportsRealNameSubmission;
   final Map<String, Future<void>> _pendingRealNameSubmissions =
@@ -379,7 +385,10 @@ class BackendAccountComplianceRepository
         message: '真实姓名和证件号码不能为空',
       );
     }
+    final identity = _realNameIdentity();
     final String intentKey = _writeKey('real-name', <Object?>[
+      identity.$1,
+      identity.$2,
       normalizedName,
       normalizedId,
     ]);
@@ -392,16 +401,19 @@ class BackendAccountComplianceRepository
     late final Future<void> operation;
     operation =
         _submitRealNameOnce(
+          identity: identity,
           realName: normalizedName,
           idNumber: normalizedId,
           requestId: requestId,
         ).then<void>(
           (_) {
             _removePending(_pendingRealNameSubmissions, intentKey, operation);
+            _requireRealNameIdentity(identity);
             _retainedRealNameRequestIds.remove(intentKey);
           },
           onError: (Object error, StackTrace stackTrace) {
             _removePending(_pendingRealNameSubmissions, intentKey, operation);
+            _requireRealNameIdentity(identity);
             if (!shouldRetainAccountComplianceRequest(error)) {
               _retainedRealNameRequestIds.remove(intentKey);
             }
@@ -412,21 +424,58 @@ class BackendAccountComplianceRepository
     return operation;
   }
 
+  (int, int) _realNameIdentity() {
+    if (_currentUserIdProvider == null || _identityGeneration == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '实名提交账号绑定未配置',
+      );
+    }
+    final actor = _currentUserIdProvider();
+    final generation = _identityGeneration();
+    if (actor == null || actor <= 0 || generation < 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.unauthorized,
+        message: '请登录后提交实名资料',
+      );
+    }
+    return (actor, generation);
+  }
+
+  void _requireRealNameIdentity((int, int) identity) {
+    if (_realNameIdentity() != identity) {
+      throw const ApiException(
+        kind: ApiFailureKind.unauthorized,
+        message: '账号已变化，原实名提交已失效',
+      );
+    }
+  }
+
   Future<void> _submitRealNameOnce({
+    required (int, int) identity,
     required String realName,
     required String idNumber,
     required String requestId,
   }) async {
-    final ApiResponse response = await _apiClient.post(
-      _routes.accountRealName,
-      headers: <String, String>{
-        'X-Request-Id': normalizeAccountComplianceRequestId(requestId),
-      },
-      body: <String, Object?>{
-        'legalName': realName,
-        'identityNumber': idNumber,
-      },
-    );
+    _requireRealNameIdentity(identity);
+    final ApiResponse response;
+    try {
+      response = await _apiClient.postBoundToIdentity(
+        _routes.accountRealName,
+        requireIdentity: () => _requireRealNameIdentity(identity),
+        headers: <String, String>{
+          'X-Request-Id': normalizeAccountComplianceRequestId(requestId),
+        },
+        body: <String, Object?>{
+          'legalName': realName,
+          'identityNumber': idNumber,
+        },
+      );
+    } catch (_) {
+      _requireRealNameIdentity(identity);
+      rethrow;
+    }
+    _requireRealNameIdentity(identity);
     final Map<String, Object?> submitted = _requireMap(response.data, '实名认证提交');
     if (_parseVerificationCode(submitted) != 1) {
       throw const ApiException(

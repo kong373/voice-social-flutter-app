@@ -14,11 +14,17 @@ class BackendCommunityRepository
   BackendCommunityRepository({
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
+    int? Function()? currentUserIdProvider,
+    int Function()? identityGeneration,
   }) : _apiClient = apiClient,
-       _routes = routes;
+       _routes = routes,
+       _currentUserIdProvider = currentUserIdProvider,
+       _identityGeneration = identityGeneration;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
+  final int? Function()? _currentUserIdProvider;
+  final int Function()? _identityGeneration;
   final _CommunityWriteCoordinator _writeCoordinator =
       _CommunityWriteCoordinator();
   @override
@@ -114,9 +120,10 @@ class BackendCommunityRepository
     intentKey: _writeKey('guild-apply', <Object?>[guildId]),
     serialKey: _writeKey('guild', <Object?>[guildId]),
     requestIdPrefix: 'flutter-community-guild-apply',
-    action: (Map<String, String> headers) async {
-      final ApiResponse response = await _apiClient.post(
+    action: (headers, requireIdentity) async {
+      final ApiResponse response = await _apiClient.postBoundToIdentity(
         _routes.applyGuildMembership,
+        requireIdentity: requireIdentity,
         headers: headers,
         body: <String, Object?>{'guildId': guildId},
       );
@@ -138,9 +145,10 @@ class BackendCommunityRepository
     intentKey: _writeKey('guild-quit', <Object?>[guildId]),
     serialKey: _writeKey('guild', <Object?>[guildId]),
     requestIdPrefix: 'flutter-community-guild-quit',
-    action: (Map<String, String> headers) async {
-      final ApiResponse response = await _apiClient.post(
+    action: (headers, requireIdentity) async {
+      final ApiResponse response = await _apiClient.postBoundToIdentity(
         _routes.quitGuild,
+        requireIdentity: requireIdentity,
         headers: headers,
         body: <String, Object?>{'guildId': guildId},
       );
@@ -211,9 +219,10 @@ class BackendCommunityRepository
     ]),
     serialKey: _writeKey('guild-application', <Object?>[applicationId]),
     requestIdPrefix: 'flutter-community-guild-application',
-    action: (Map<String, String> headers) async {
-      final ApiResponse response = await _apiClient.post(
+    action: (headers, requireIdentity) async {
+      final ApiResponse response = await _apiClient.postBoundToIdentity(
         _routes.resolveGuildApplication,
+        requireIdentity: requireIdentity,
         headers: headers,
         body: <String, Object?>{
           'applicationId': applicationId,
@@ -247,9 +256,10 @@ class BackendCommunityRepository
     ]),
     serialKey: _writeKey('guild-member', <Object?>[guildId, userId]),
     requestIdPrefix: 'flutter-community-guild-member-mute',
-    action: (Map<String, String> headers) async {
-      final ApiResponse response = await _apiClient.post(
+    action: (headers, requireIdentity) async {
+      final ApiResponse response = await _apiClient.postBoundToIdentity(
         _routes.guildMemberMute,
+        requireIdentity: requireIdentity,
         headers: headers,
         body: <String, Object?>{
           'guildId': guildId,
@@ -280,9 +290,10 @@ class BackendCommunityRepository
     intentKey: _writeKey('guild-member-remove', <Object?>[guildId, userId]),
     serialKey: _writeKey('guild-member', <Object?>[guildId, userId]),
     requestIdPrefix: 'flutter-community-guild-member-remove',
-    action: (Map<String, String> headers) async {
-      final ApiResponse response = await _apiClient.post(
+    action: (headers, requireIdentity) async {
+      final ApiResponse response = await _apiClient.postBoundToIdentity(
         _routes.removeGuildMember,
+        requireIdentity: requireIdentity,
         headers: headers,
         body: <String, Object?>{'guildId': guildId, 'userId': userId},
       );
@@ -437,18 +448,68 @@ class BackendCommunityRepository
     );
   }
 
+  (int, int) _communityWriteIdentity() {
+    if (_currentUserIdProvider == null || _identityGeneration == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '公会写入账号绑定未配置',
+      );
+    }
+    final actor = _currentUserIdProvider();
+    final generation = _identityGeneration();
+    if (actor == null || actor <= 0 || generation < 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.unauthorized,
+        message: '请登录后操作公会',
+      );
+    }
+    return (actor, generation);
+  }
+
   Future<T> _runCommunityWrite<T>({
     required String intentKey,
     required String serialKey,
     required String requestIdPrefix,
-    required Future<T> Function(Map<String, String> headers) action,
-  }) {
-    return _writeCoordinator.run<T>(
-      intentKey: intentKey,
-      serialKey: serialKey,
-      requestIdPrefix: requestIdPrefix,
-      action: action,
-    );
+    required Future<T> Function(
+      Map<String, String> headers,
+      void Function() requireIdentity,
+    )
+    action,
+  }) async {
+    // Freeze before joining a flight or queue; never recapture when it runs.
+    final identity = _communityWriteIdentity();
+    void requireIdentity() {
+      if (_communityWriteIdentity() != identity) {
+        throw const ApiException(
+          kind: ApiFailureKind.unauthorized,
+          message: '账号已变化，原公会操作已失效',
+        );
+      }
+    }
+
+    try {
+      final result = await _writeCoordinator.run<T>(
+        intentKey: _writeKey('identity', [identity.$1, identity.$2, intentKey]),
+        serialKey: _writeKey('identity', [identity.$1, identity.$2, serialKey]),
+        requestIdPrefix: requestIdPrefix,
+        action: (headers) async {
+          requireIdentity();
+          try {
+            final result = await action(headers, requireIdentity);
+            requireIdentity();
+            return result;
+          } catch (_) {
+            requireIdentity();
+            rethrow;
+          }
+        },
+      );
+      requireIdentity();
+      return result;
+    } catch (_) {
+      requireIdentity();
+      rethrow;
+    }
   }
 
   static String _writeKey(String operation, Iterable<Object?> values) {

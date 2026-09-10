@@ -51,6 +51,8 @@ void main() {
           BackendAccountComplianceRepository(
             apiClient: _client(server),
             supportsRealNameSubmission: true,
+            currentUserIdProvider: () => 10001,
+            identityGeneration: () => 1,
           );
       await expectLater(
         repository.submitRealName(
@@ -98,6 +100,8 @@ void main() {
         BackendAccountComplianceRepository(
           apiClient: _client(server),
           supportsRealNameSubmission: true,
+          currentUserIdProvider: () => 10001,
+          identityGeneration: () => 1,
         );
     final Future<void> first = repository.submitRealName(
       realName: '张三',
@@ -172,6 +176,8 @@ void main() {
           BackendAccountComplianceRepository(
             apiClient: _client(server),
             supportsRealNameSubmission: true,
+            currentUserIdProvider: () => 10001,
+            identityGeneration: () => 1,
           );
       await repository.submitRealName(
         realName: '张三',
@@ -221,6 +227,8 @@ void main() {
           BackendAccountComplianceRepository(
             apiClient: _client(server),
             supportsRealNameSubmission: true,
+            currentUserIdProvider: () => 10001,
+            identityGeneration: () => 1,
           );
       for (int attempt = 0; attempt < 2; attempt++) {
         await expectLater(

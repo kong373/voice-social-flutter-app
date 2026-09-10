@@ -296,6 +296,8 @@ class _Harness {
         unauthorizedRecovery: unauthorizedRecovery,
       ),
       routes: const BackendRouteCatalog(),
+      currentUserIdProvider: () => 10001,
+      identityGeneration: () => 1,
     );
     final _Harness harness = _Harness._(server, requests, repository);
     server.listen((HttpRequest request) async {

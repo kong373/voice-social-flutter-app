@@ -801,6 +801,8 @@ void main() {
           BackendAccountComplianceRepository(
             apiClient: client(server),
             supportsRealNameSubmission: true,
+            currentUserIdProvider: () => 10001,
+            identityGeneration: () => 1,
           );
       await repository.submitRealName(
         realName: '张三',

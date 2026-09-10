@@ -1609,6 +1609,8 @@ class _Harness {
           authorizationProvider: () => 'Bearer contract-test',
         ),
         routes: const BackendRouteCatalog(),
+        currentUserIdProvider: () => 10001,
+        identityGeneration: () => 1,
       );
 
   final HttpServer server;
