@@ -135,6 +135,20 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> waitForAsyncUi(
+    WidgetTester tester,
+    bool Function() reached,
+    String reason,
+  ) async {
+    for (var i = 0; !reached() && i < 200; i++) {
+      await tester.runAsync(
+        () async => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump();
+    }
+    expect(reached(), isTrue, reason: reason);
+  }
+
   Future<void> click(WidgetTester tester, Finder finder) async {
     tester.testTextInput.hide();
     await tester.pumpAndSettle();
@@ -345,14 +359,23 @@ void main() {
   imageTest(
     'controlled preview shows permission errors, never external URLs, and fences late identity',
     (tester) async {
-      domain = (r) => MediaFakeResponse.json(null, status: 403, code: 40301);
+      final denied = Completer<MediaFakeResponse>();
+      domain = (r) => denied.future;
       final media = MediaReference.fromJson(imageReference('DYNAMIC_IMAGE'));
       await mount(tester, Scaffold(body: ControlledImages(media: [media])));
-      await tester.runAsync(() async {
-        await tester.tap(find.text('查看图片'));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      });
-      await tester.pumpAndSettle();
+      await tester.tap(find.text('查看图片'));
+      await waitForAsyncUi(
+        tester,
+        () => http.requests.length == 1,
+        'controlled GET must start before completing its permission response',
+      );
+      expect(find.text('读取图片…'), findsOneWidget);
+      denied.complete(MediaFakeResponse.json(null, status: 403, code: 40301));
+      await waitForAsyncUi(
+        tester,
+        () => find.text('重试读取图片').evaluate().length == 1,
+        'await file cleanup and the permission error UI, not a fixed 20ms sleep',
+      );
       expect(find.text('重试读取图片'), findsOneWidget);
       expect(
         http.requests.single.uri.path,
@@ -360,10 +383,12 @@ void main() {
       );
       final gate = Completer<MediaFakeResponse>();
       domain = (_) => gate.future;
-      await tester.runAsync(() async {
-        await tester.tap(find.text('重试读取图片'));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      });
+      await tester.tap(find.text('重试读取图片'));
+      await waitForAsyncUi(
+        tester,
+        () => http.requests.length == 2,
+        'retry must reach HTTP before the identity changes',
+      );
       identity.change(2);
       identity.change(1);
       await tester.pumpAndSettle();
