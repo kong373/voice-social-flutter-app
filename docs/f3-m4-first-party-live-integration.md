@@ -89,7 +89,7 @@ For this fixture A is the SAME room's chair and receives cash; B is ordinary:
   when their actor/counterparty differs from the direct recipient.
 - B ordinary income has exactly one `gift_coin_precision_credit`. Compute
   `carry = floor((B starting fraction remainder + r) / 10)`. If carry >0,
-  require exactly one GIFT_COIN_CARRY journal with FOUR postings balanced per
+  require exactly one COIN_PRECISION_CARRY journal with FOUR postings balanced per
   currency, and TWO carry wallet transactions. If carry=0, require zero carry
   rows. Do not count a carry as another gift or assume every journal has two
   postings. For quantity >1 in a future case, aggregate value before flooring.
