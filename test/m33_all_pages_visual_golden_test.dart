@@ -71,7 +71,9 @@ void main() {
         ),
       );
       await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump();
+      // Finish the mock PK request's 35ms delay after disposal. Disposed
+      // controllers must not re-arm polling; pending-timer checks still apply.
+      await tester.pump(const Duration(milliseconds: 35));
     });
   }
 
