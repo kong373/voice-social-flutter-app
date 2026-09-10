@@ -9,6 +9,7 @@ import '../media/media_identity.dart';
 import '../media/media_models.dart';
 
 part '../media/media_api_transport.dart';
+part '../media/user_avatar_media_transport.dart';
 
 class ApiResponse {
   const ApiResponse({
