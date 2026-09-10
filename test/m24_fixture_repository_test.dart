@@ -120,6 +120,9 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       await tester.pump(const Duration(milliseconds: 400));
+      // The fresh process GET pushes battle in a post-frame callback. Build
+      // that already-scheduled route without advancing the fixture clock.
+      await tester.pump();
       expect(find.byType(RoomPkBattlePage), findsOneWidget);
       expect(find.text('PK 对战与结算'), findsOneWidget);
       expect(find.text('主动认输'), findsNothing);
