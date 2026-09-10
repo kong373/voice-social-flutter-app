@@ -167,12 +167,20 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
+      final AppDependencies dependencies = AppDependencies.forTestEnvironment(
+        environment: liveTestEnvironment,
+      );
+      addTearDown(dependencies.dispose);
       final RoomController controller = _snapshotOnlyController();
       addTearDown(controller.dispose);
+      addTearDown(() => tester.pumpWidget(const SizedBox()));
       await controller.join();
 
       await tester.pumpWidget(
-        MaterialApp(home: RoomRecoveryPage(controller: controller)),
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(home: RoomRecoveryPage(controller: controller)),
+        ),
       );
       await tester.pump();
 
@@ -182,7 +190,12 @@ void main() {
       expect(find.text('实时公屏'), findsNothing);
 
       await tester.pumpWidget(
-        MaterialApp(home: VideoRuntimeRoomPage(controller: controller)),
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            home: VideoRuntimeRoomPage(controller: controller),
+          ),
+        ),
       );
       await tester.pump();
 
@@ -194,16 +207,26 @@ void main() {
   testWidgets(
     'live room public screen never renders client-generated history fixtures',
     (WidgetTester tester) async {
+      final AppDependencies dependencies = AppDependencies.forTestEnvironment(
+        environment: liveTestEnvironment,
+      );
+      addTearDown(dependencies.dispose);
       final RoomController controller = _snapshotOnlyController(
         allowSyntheticPublicMessages: false,
       );
       addTearDown(controller.dispose);
+      addTearDown(() => tester.pumpWidget(const SizedBox()));
       await controller.join();
 
       expect(controller.messages, isEmpty);
 
       await tester.pumpWidget(
-        MaterialApp(home: VideoRuntimeRoomPage(controller: controller)),
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            home: VideoRuntimeRoomPage(controller: controller),
+          ),
+        ),
       );
       await tester.pump();
 
