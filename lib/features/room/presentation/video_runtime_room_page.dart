@@ -1,6 +1,7 @@
 import 'dart:async';
 import '../../commerce/display/domain/equipped_decoration.dart';
 import '../../commerce/display/presentation/equipped_decoration_view.dart';
+import 'room_entry_decoration_overlay.dart';
 import 'package:voice_social_app/features/room/presentation/edit_room_page.dart';
 import 'package:voice_social_app/features/room/presentation/platform_rooms_page.dart';
 
@@ -606,6 +607,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
             ),
           ),
         ),
+        RoomEntryDecorationOverlay(controller: _controller),
         if (_controller.realtimeDegraded &&
             _controller.status == RoomSessionStatus.joined)
           const _StatusChip(label: '实时状态可能延迟'),

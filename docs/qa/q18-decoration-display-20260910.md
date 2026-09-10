@@ -10,7 +10,7 @@
 
 读取接线：`BackendSocialRepository._profileFromMaps`（本人和公主页、404个人资料回退），`LiveReadOnlyRepository.fetchCurrentUser`，`BackendRoomRepository` 的座位快照，`BackendRoomOperationsRepository._memberFromOnline`。个人状态非 ACTIVE 不保留装扮；offline member/seat 不保留装扮。`SocialUser/RoomMember` copy 保留 metadata，`MicSeat` 换人/清空/离线清旧装扮。
 
-## 后续 UI 接线合同（第一批尚未宣称完成）
+## UI 接线合同（第一批时的范围，第二、三批已实现）
 
 - `social_profile_pages.dart` / `social_widgets.dart`：个人资料和公主页头像框、徽章；资料读取按 viewer actor/generation/read epoch/target fence；商城返回重读，不本地穿戴。
 - `video_runtime_room_page.dart`：只展示接线，头像框不改变 mic/entry/gift 操作。`room_members_page.dart` 复用现有身份/lease读隔离。
@@ -34,7 +34,7 @@
 - `q18-display-core-regression.log`：补实际像素绘制后，14新合同/绘制 + 原 seat/social/room/member/current-user 合同共161 PASS。
 - 上述新合同14 + 19续购UI + 原合同147 = 180项不重复 PASS。未运行全量/设备测试。
 
-渲染通过实际像素非空/三款不同/头像中心透明/入场零或非有限progress不绘制检查；预览确认零购买/穿戴调用。复杂实际页面身份/期限/入场测试待后续批，不能将第一批当全链路完成。
+渲染通过实际像素非空/三款不同/头像中心透明/入场零或非有限progress不绘制检查；预览确认零购买/穿戴调用。第一批单独不包含实际页面身份/期限/入场交付；这些接线及验证见第二、三批。
 
 ## 第二批：实际静态穿戴
 
@@ -51,3 +51,48 @@
 绘制检查输出：`/Users/kongzheng/Documents/ny/artifacts/product/filled-decisions-20260909/q18-product-art-review.png`（专属三款实际CustomPainter栅格结果，不是设备截图）。一次性生成test已删除。
 
 只包裹现有头像组件，不实现注册的六款 `avatarPresetId` 或修改头像素材映射；后续头像接线可保留这一透明装扮层。
+
+## 第三批：实际入场展示
+
+`RoomEntryDecorationOverlay` 只挂入正常房间内容 Stack，初始 joining、failed、ended 和 CLOSED 管理视图不创建它。不改 join、lease、mic 或 gift 方法。它按当前身份、controller、session、repository lease generation 和读 epoch 接受完整的在线成员列表；换账号 ABA、离房、lease 失效、换房或旧成功/错误响应均不能产生效果或恢复旧轮询。后台或被其他 route 覆盖时暂停并清空待播展示；恢复不重放已消费事件。
+
+`RoomEntryDecorationGate` 只按真实 membership `joinedAt` 识别新入场，不读取 seat 时间。每个 viewer actor/generation 的历史跨本进程内页面重建、最小化、token refresh/reconnect 保留；初次房间快照将其他现存成员记为基线，仅当前本人可播放一次。之后只有更晚的 membership 才可产生新效果；同 membership 内才穿上入场装扮不算新入场。服务器 joinedAt 不用客户端时钟猜测合法性。
+
+渲染与商城 `stream-entry` 预览使用同一 `DecorationArtwork`，单次 1.8 秒。开始及动画中复核当前成员、装扮 id/key 与期限；离线、过期、缺失或未知 metadata 不展示。没有购买、穿戴、join、续 lease 或媒体读取写入。
+
+### 读取与资源边界
+
+- 当前前台、可见、joined 且有 `viewMembers` 能力时，通过既有第一方 `fetchOnlineMembers` 读取，完整一轮结束后隔 5 秒再读。单页50、最多100页/5000成员；串行分页，不增加并发请求。
+- 总数/页数变化、重复成员、部分分页失败或超过边界时整轮不生成效果。可选展示失败不覆盖房间业务错误。不是实时 IM 推送，效果可能延迟或因成员在两次读取间进出而不出现。
+- 待播最多8个；超出队列的事件记为已消费，不堆积重放。每个身份最多5000房间和5000个 room/user membership 标记，达到上限后抑制新效果，不逐出旧标记导致重放。
+- 去重是进程内语义，不声称进程重启后 exactly-once。无厂商 IM/RTC、设备或 native 成功证据；本批也没有更改这些路径。
+
+入场15项（gate5、overlay10）覆盖轮询/refresh/页面重建去重、新 membership、同 membership 换麦不触发、分页失败、后台暂停、ABA/leave/lease/binding/late error/换 controller。`q18-display-entry-red.log` 是新增类缺失的编译 RED；随后 green。静态 UI 的行为 RED 和 DTO RED 保留在同目录日志；测试 fixture 修正不冒称生产行为失败。
+
+## 最终验证与集成
+
+固定 SDK `/Users/kongzheng/fvm/versions/3.44.7/bin/flutter`，`pub get --offline` 已完成，无依赖变更。最终 `flutter test --no-pub --concurrency=2 ... --reporter expanded` 的17个相关文件共 **248 PASS**，日志 `q18-display-final-targeted.log`。包含第一批180、成员变体3、静态页面/期限14、入场15和旧 UI36；旧断言未降低。文件清单：
+
+```text
+decoration_display_contract_test.dart
+decoration_display_renderer_test.dart
+decoration_renewal_ui_test.dart
+fixed_eight_seat_adapter_test.dart
+backend_social_repository_contract_test.dart
+backend_room_repository_contract_test.dart
+backend_room_operations_repository_contract_test.dart
+live_read_only_repository_test.dart
+decoration_profile_display_test.dart
+decoration_room_wear_test.dart
+equipped_decoration_view_test.dart
+room_entry_decoration_gate_test.dart
+room_entry_decoration_overlay_test.dart
+social_public_profile_friend_request_test.dart
+video_runtime_account_profile_race_test.dart
+room_members_automatic_sync_test.dart
+m33_social_message_responsive_test.dart
+```
+
+全量 `flutter analyze --no-pub` 无问题（`q18-display-final-analyze.log`）；本批 Dart 文件 format 0 changed，`git diff --check` 通过。未运行全量测试、设备、DB、厂商或 native build；主报告的集成测试/构建不计入本批结果。
+
+按模型/绘制、静态穿戴、入场展示三颗增量 commit 交主 review/cherry-pick，不整分支 merge，不 push。第二批 `15158cebf2e51bc2870ac521ccf34bc275bfe2b6` 的 room/avatar hunks 与主 mic 修改分开审；本树基线仍是 `66dd17f`，不以旧整树覆盖主的后续工作。
