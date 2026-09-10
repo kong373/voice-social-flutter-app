@@ -357,6 +357,10 @@ void main() {
               'userId': 20002,
               'seatNumber': 2,
               'muted': true,
+              'selfMuted': false,
+              'forcedMuted': true,
+              'legacyMuted': false,
+              'version': 1,
             });
           case '/app-api/micBase/openMike':
             expect(request.body, <String, Object?>{
@@ -371,6 +375,10 @@ void main() {
               'userId': 20002,
               'seatNumber': 2,
               'muted': false,
+              'selfMuted': false,
+              'forcedMuted': false,
+              'legacyMuted': false,
+              'version': 2,
             });
           case '/app-api/micBase/lockMike':
             return _Reply.ok(<String, Object?>{
