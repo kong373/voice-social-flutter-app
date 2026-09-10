@@ -904,7 +904,10 @@ int _giftAssetIndex(String giftId) => giftId.codeUnits.fold<int>(
 );
 
 class DecorationPage extends StatefulWidget {
-  const DecorationPage({super.key});
+  const DecorationPage({this.repository, super.key});
+
+  @visibleForTesting
+  final CommerceCatalogRepository? repository;
 
   @override
   State<DecorationPage> createState() => _DecorationPageState();
@@ -916,32 +919,117 @@ class _DecorationPageState extends State<DecorationPage> {
   String? _busyId;
   bool _loading = true;
   String? _error;
+  AppDependencies? _dependencies;
+  (int?, int)? _identity;
+  int _readEpoch = 0;
+  int _operationEpoch = 0;
+  DialogRoute<bool>? _dialog;
+  final Map<String, DecorationItem> _unknownPurchases = {};
 
   CommerceCatalogRepository get _repository =>
-      AppDependencyScope.of(context).commerceCatalogRepository;
+      widget.repository ?? _dependencies!.commerceCatalogRepository;
+
+  (int?, int) get _currentIdentity => (
+    _dependencies!.sessionManager.session?.userId,
+    _dependencies!.sessionManager.identityGeneration,
+  );
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_loading && _decorations == null) {
+    final dependencies = AppDependencyScope.of(context);
+    if (!identical(_dependencies, dependencies)) {
+      _dependencies?.sessionManager.removeListener(_identityChanged);
+      _dependencies = dependencies;
+      _identity = _currentIdentity;
+      dependencies.sessionManager.addListener(_identityChanged);
+      _clearIdentity();
       _load();
     }
   }
 
+  @override
+  void didUpdateWidget(covariant DecorationPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.repository, widget.repository)) {
+      _clearIdentity();
+      _load();
+    }
+  }
+
+  void _closeDialog() {
+    final route = _dialog;
+    _dialog = null;
+    if (route == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final navigator = route.navigator;
+      if (navigator != null && navigator.mounted && route.isActive)
+        navigator.removeRoute(route);
+    });
+  }
+
+  void _clearIdentity() {
+    _readEpoch++;
+    _operationEpoch++;
+    _decorations = null;
+    _busyId = null;
+    _unknownPurchases.clear();
+    _error = null;
+    _closeDialog();
+  }
+
+  void _identityChanged() {
+    if (!mounted || _identity == _currentIdentity) return;
+    _identity = _currentIdentity;
+    setState(_clearIdentity);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _readEpoch++;
+    _operationEpoch++;
+    _dependencies?.sessionManager.removeListener(_identityChanged);
+    _closeDialog();
+    super.dispose();
+  }
+
   Future<void> _load() async {
+    final identity = _currentIdentity;
+    final epoch = ++_readEpoch;
+    final repository = _repository;
+    bool accepts() =>
+        mounted &&
+        epoch == _readEpoch &&
+        identity == _currentIdentity &&
+        identical(repository, _repository);
+    if (_dependencies!.environment.isLive &&
+        (identity.$1 == null || identity.$1! <= 0)) {
+      setState(() {
+        _loading = false;
+        _error = '请登录后查看装扮';
+      });
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final List<DecorationItem> result = await _repository.fetchDecorations();
-      if (!mounted) return;
+      final List<DecorationItem> result = await repository.fetchDecorations();
+      if (!accepts()) return;
       setState(() {
-        _decorations = result;
+        final returnedIds = result.map((item) => item.id).toSet();
+        _decorations = [
+          ...result,
+          for (final intent in _unknownPurchases.values)
+            if (!returnedIds.contains(intent.id))
+              intent.copyWith(owned: false, equipped: false, forSale: false),
+        ];
         _loading = false;
       });
     } catch (error) {
-      if (mounted) {
+      if (accepts()) {
         setState(() {
           _loading = false;
           _error = _messageFor(error);
@@ -950,61 +1038,119 @@ class _DecorationPageState extends State<DecorationPage> {
     }
   }
 
-  Future<bool> _confirm(String title, String message) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (BuildContext dialogContext) => AlertDialog(
-            title: Text(title),
-            content: Text(message),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: const Text('确认'),
-              ),
-            ],
+  Future<bool> _confirm(
+    String title,
+    Widget content, {
+    required bool Function() isCurrent,
+    bool preview = false,
+  }) async {
+    final route = DialogRoute<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(child: content),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(preview ? '关闭' : '取消'),
           ),
-        ) ??
-        false;
+          if (!preview)
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(isCurrent()),
+              child: const Text('确认'),
+            ),
+        ],
+      ),
+    );
+    _dialog = route;
+    final result = await Navigator.of(context).push<bool>(route);
+    if (identical(_dialog, route)) _dialog = null;
+    return result == true && isCurrent();
   }
 
-  Future<void> _operateDecoration(DecorationItem item) async {
-    if (_busyId != null) {
-      return;
-    }
-    if (!item.owned) {
-      final bool confirmed = await _confirm(
-        '购买${item.name}？',
-        '将扣除 ${item.priceGiftCoins} 礼物币，购买结果以服务端资产记录为准。',
-      );
-      if (!confirmed || !mounted) {
-        return;
-      }
-    }
+  Future<void> _previewDecoration(DecorationItem item) async {
+    if (_dialog != null) return;
+    final identity = _currentIdentity;
+    final epoch = _operationEpoch;
+    await _confirm(
+      '${item.name} · 仅预览',
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DecorationPreview(
+            item: item,
+            size: 180,
+            allowMockAssetPaths: !_dependencies!.environment.isLive,
+          ),
+          const SizedBox(height: 12),
+          const Text('仅查看商品素材，不试用、不穿戴、不扣币。'),
+        ],
+      ),
+      preview: true,
+      isCurrent: () =>
+          mounted && epoch == _operationEpoch && identity == _currentIdentity,
+    );
+  }
+
+  Future<void> _operateDecoration(
+    DecorationItem selected, {
+    bool purchase = false,
+  }) async {
+    if (_busyId != null || _dialog != null) return;
+    final item = _unknownPurchases[selected.id] ?? selected;
+    final buying =
+        purchase || !item.owned || _unknownPurchases.containsKey(item.id);
+    if (buying && !item.canPurchase) return;
+    final renewing = item.owned || item.expiresAt != null;
+    final retrying = _unknownPurchases.containsKey(item.id);
+    final identity = _currentIdentity;
+    final epoch = ++_operationEpoch;
+    final repository = _repository;
+    bool accepts() =>
+        mounted &&
+        epoch == _operationEpoch &&
+        identity == _currentIdentity &&
+        identical(repository, _repository);
     setState(() => _busyId = item.id);
     try {
-      if (item.owned) {
-        await _repository.setDecorationEquipped(
+      if (buying) {
+        final confirmed = await _confirm(
+          '${retrying ? '重试原' : ''}${renewing ? '续购' : '购买'}${item.name}？',
+          Text(
+            '${renewing ? '续购' : '购买'} ${item.durationDays} 天，将扣除 ${item.priceGiftCoins} 礼物币。${renewing ? '从原到期时间或服务端当前时间中较晚者延长，保留有效穿戴；已过期不自动穿戴。' : ''}${retrying ? '沿用原请求，不另建购买。' : ''}最终到期与余额以服务端记录为准。',
+          ),
+          isCurrent: accepts,
+        );
+        if (!confirmed || !accepts()) return;
+        _unknownPurchases[item.id] = item;
+        await repository.purchaseDecoration(item.id);
+        if (!accepts()) return;
+        _unknownPurchases.remove(item.id);
+      } else {
+        await repository.setDecorationEquipped(
           decorationId: item.id,
           equipped: !item.equipped,
         );
-      } else {
-        await _repository.purchaseDecoration(item.id);
       }
-      if (mounted) {
+      if (accepts()) {
         await _load();
       }
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
+      if (mounted && accepts()) {
+        if (buying && !shouldRetainDecorationPurchaseRequest(error))
+          _unknownPurchases.remove(item.id);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              buying && _unknownPurchases.containsKey(item.id)
+                  ? '购买结果尚未确认，请重试原操作。${_messageFor(error)}'
+                  : _messageFor(error),
+            ),
+          ),
+        );
       }
     } finally {
-      if (mounted) {
+      if (accepts()) {
         setState(() => _busyId = null);
       }
     }
@@ -1132,39 +1278,33 @@ class _DecorationPageState extends State<DecorationPage> {
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 10,
-                            crossAxisSpacing: 10,
-                            mainAxisExtent: 188,
-                          ),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 10,
+                        crossAxisSpacing: 10,
+                        mainAxisExtent:
+                            250 +
+                            9 * MediaQuery.textScalerOf(context).scale(14),
+                      ),
                       itemCount: visible.length,
                       itemBuilder: (BuildContext context, int index) {
                         final DecorationItem item = visible[index];
-                        final String asset = switch (item.kind) {
-                          DecorationKind.avatarFrame =>
-                            'assets/runtime/avatar-rose.png',
-                          DecorationKind.entrance =>
-                            'assets/runtime/room-cover-festival.png',
-                          DecorationKind.nickname =>
-                            'assets/runtime/gift-ticket.png',
-                          DecorationKind.voiceWave =>
-                            'assets/runtime/gift-blossom.png',
-                          DecorationKind.profileCard =>
-                            'assets/runtime/room-cover-moon.png',
-                        };
                         return _CommercePanel(
                           selected: item.equipped,
                           padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
                           child: Column(
                             children: <Widget>[
-                              _CommerceAssetOrb(
-                                icon: _iconForDecoration(item.kind),
-                                asset: asset,
-                                size: 64,
+                              DecorationPreview(
+                                item: item,
+                                size: 72,
+                                allowMockAssetPaths:
+                                    !_dependencies!.environment.isLive,
                               ),
-                              const SizedBox(height: 8),
+                              TextButton(
+                                key: Key('decoration-preview-${item.id}'),
+                                onPressed: () => _previewDecoration(item),
+                                child: const Text('预览'),
+                              ),
                               Text(
                                 item.name,
                                 maxLines: 1,
@@ -1173,63 +1313,106 @@ class _DecorationPageState extends State<DecorationPage> {
                               ),
                               const SizedBox(height: 3),
                               Text(
-                                item.owned
+                                _unknownPurchases.containsKey(item.id)
+                                    ? '购买结果待确认'
+                                    : item.owned
                                     ? item.equipped
                                           ? '当前穿戴'
                                           : '已拥有'
-                                    : '${item.priceGiftCoins} 礼物币',
+                                    : item.expiresAt != null
+                                    ? '已到期'
+                                    : '未拥有',
                                 maxLines: 1,
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
+                              if (item.permanent)
+                                Text(
+                                  '历史永久',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              if (item.canPurchase)
+                                Text(
+                                  '${item.durationDays} 天 · ${item.priceGiftCoins} 礼物币',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                  textAlign: TextAlign.center,
+                                ),
+                              if (item.expiresAt != null)
+                                Text(
+                                  '到期 ${item.expiresAt!.toLocal().toIso8601String().substring(0, 16).replaceFirst('T', ' ')}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                  textAlign: TextAlign.center,
+                                ),
                               const Spacer(),
-                              SizedBox(
-                                width: double.infinity,
-                                height: 38,
-                                child: FilledButton(
-                                  key: Key('decoration-action-${item.id}'),
-                                  style: FilledButton.styleFrom(
-                                    minimumSize: const Size(52, 38),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                    ),
+                              if (item.canPurchase &&
+                                  item.owned &&
+                                  !_unknownPurchases.containsKey(item.id))
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 38,
+                                  child: OutlinedButton(
+                                    key: Key('decoration-renew-${item.id}'),
+                                    onPressed: _busyId == null
+                                        ? () => _operateDecoration(
+                                            item,
+                                            purchase: true,
+                                          )
+                                        : null,
+                                    child: const Text('续购'),
                                   ),
-                                  onPressed: _busyId == null
-                                      ? () => _operateDecoration(item)
-                                      : null,
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown,
-                                    child: Text(
-                                      _busyId == item.id
-                                          ? '处理中…'
-                                          : item.owned
-                                          ? item.equipped
-                                                ? '卸下'
-                                                : '穿戴'
-                                          : '购买',
+                                ),
+                              if (item.canPurchase && item.owned)
+                                const SizedBox(height: 4),
+                              if (item.canPurchase ||
+                                  item.owned ||
+                                  _unknownPurchases.containsKey(item.id))
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 38,
+                                  child: FilledButton(
+                                    key: Key('decoration-action-${item.id}'),
+                                    style: FilledButton.styleFrom(
+                                      minimumSize: const Size(52, 38),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                    ),
+                                    onPressed: _busyId == null
+                                        ? () => _operateDecoration(item)
+                                        : null,
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
+                                        _busyId == item.id
+                                            ? '处理中…'
+                                            : _unknownPurchases.containsKey(
+                                                item.id,
+                                              )
+                                            ? '重试原购买'
+                                            : item.owned
+                                            ? item.equipped
+                                                  ? '卸下'
+                                                  : '穿戴'
+                                            : item.expiresAt != null
+                                            ? '续购'
+                                            : '购买',
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
                             ],
                           ),
                         );
                       },
                     ),
                   const SizedBox(height: 4),
-                  const _CommerceInfoBanner(text: '装扮购买与穿戴结果以服务端资产记录为准。'),
+                  const _CommerceInfoBanner(
+                    text: '同类型仅穿戴一个。仅预览，不提供试用；续购保留有效穿戴，已过期不自动穿戴，结果以服务端记录为准。',
+                  ),
                 ],
               ),
             ),
     );
   }
-
-  static IconData _iconForDecoration(DecorationKind kind) => switch (kind) {
-    DecorationKind.avatarFrame => Icons.account_circle_outlined,
-    DecorationKind.entrance => Icons.login_rounded,
-    DecorationKind.nickname => Icons.text_fields_rounded,
-    DecorationKind.voiceWave => Icons.graphic_eq_rounded,
-    DecorationKind.profileCard => Icons.badge_outlined,
-  };
 }
 
 class _CommercePill extends StatelessWidget {

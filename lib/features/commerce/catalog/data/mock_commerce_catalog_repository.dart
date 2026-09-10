@@ -7,37 +7,55 @@ import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catal
 class MockCommerceCatalogRepository implements CommerceCatalogRepository {
   MockCommerceCatalogRepository({
     void Function(RechargeOrder order)? onRechargeOrderChanged,
+    DateTime Function()? now,
+    List<DecorationItem>? decorations,
   }) : _onRechargeOrderChanged = onRechargeOrderChanged,
-       _decorations = <DecorationItem>[
-         const DecorationItem(
-           id: 'decor-frame-starlight',
-           name: '星光头像框',
-           kind: DecorationKind.avatarFrame,
-           priceGiftCoins: 520,
-           owned: true,
-           equipped: true,
-         ),
-         const DecorationItem(
-           id: 'decor-entrance-night',
-           name: '夜色进场装扮',
-           kind: DecorationKind.entrance,
-           priceGiftCoins: 880,
-           owned: false,
-           equipped: false,
-         ),
-         const DecorationItem(
-           id: 'decor-wave-soft',
-           name: '温柔声波',
-           kind: DecorationKind.voiceWave,
-           priceGiftCoins: 360,
-           owned: true,
-           equipped: false,
-         ),
-       ];
+       _now = now ?? DateTime.now,
+       _decorations = decorations == null
+           ? <DecorationItem>[
+               DecorationItem(
+                 id: 'decor-frame-starlight',
+                 name: '星光头像框',
+                 kind: DecorationKind.avatarFrame,
+                 priceGiftCoins: 520,
+                 durationDays: 30,
+                 assetUrl: 'assets/runtime/avatar-rose.png',
+                 expiresAt: (now ?? DateTime.now)().add(
+                   const Duration(days: 30),
+                 ),
+                 owned: true,
+                 equipped: true,
+               ),
+               const DecorationItem(
+                 id: 'decor-entrance-night',
+                 name: '夜色进场装扮',
+                 kind: DecorationKind.entrance,
+                 priceGiftCoins: 880,
+                 durationDays: 7,
+                 assetUrl: 'assets/runtime/room-cover-festival.png',
+                 owned: false,
+                 equipped: false,
+               ),
+               DecorationItem(
+                 id: 'decor-wave-soft',
+                 name: '温柔声波',
+                 kind: DecorationKind.voiceWave,
+                 priceGiftCoins: 360,
+                 durationDays: 14,
+                 assetUrl: 'assets/runtime/gift-blossom.png',
+                 expiresAt: (now ?? DateTime.now)().add(
+                   const Duration(days: 14),
+                 ),
+                 owned: true,
+                 equipped: false,
+               ),
+             ]
+           : List<DecorationItem>.of(decorations);
 
   final List<RechargeOrder> _orders = <RechargeOrder>[];
   final void Function(RechargeOrder order)? _onRechargeOrderChanged;
   final List<DecorationItem> _decorations;
+  final DateTime Function() _now;
   final Map<String, int> _orderQueries = <String, int>{};
   int _giftCoinBalance = 1680;
 
@@ -301,10 +319,10 @@ class MockCommerceCatalogRepository implements CommerceCatalogRepository {
     await _delay();
     final int index = _indexForDecoration(decorationId);
     final DecorationItem current = _decorations[index];
-    if (current.owned) {
+    if (!current.canPurchase) {
       throw const ApiException(
         kind: ApiFailureKind.conflict,
-        message: '已经拥有该装扮',
+        message: '该装扮不再售卖，已拥有权益保留',
       );
     }
     if (_giftCoinBalance < current.priceGiftCoins) {
@@ -314,9 +332,18 @@ class MockCommerceCatalogRepository implements CommerceCatalogRepository {
       );
     }
     _giftCoinBalance -= current.priceGiftCoins;
+    final now = _now();
+    final previousExpiry = current.expiresAt;
+    final start = previousExpiry != null && previousExpiry.isAfter(now)
+        ? previousExpiry
+        : now;
     final DecorationItem purchased = current.copyWith(
       owned: true,
-      expiresAt: DateTime.now().add(const Duration(days: 30)),
+      equipped:
+          current.equipped &&
+          previousExpiry != null &&
+          previousExpiry.isAfter(now),
+      expiresAt: start.add(Duration(days: current.durationDays)),
     );
     _decorations[index] = purchased;
     return purchased;

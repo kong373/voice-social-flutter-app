@@ -114,6 +114,21 @@ class ApiClient {
     authenticated: authenticated,
   );
 
+  /// Identity-bound GET uses the same send/refresh fences as bound POST.
+  Future<ApiResponse> getBoundToIdentity(
+    String path, {
+    required void Function() requireIdentity,
+    Map<String, String>? query,
+    Map<String, String>? headers,
+  }) => _request(
+    method: 'GET',
+    path: path,
+    authenticated: true,
+    query: query,
+    headers: headers,
+    requireIdentity: requireIdentity,
+  );
+
   Future<ApiResponse> put(
     String path, {
     Map<String, String>? query,

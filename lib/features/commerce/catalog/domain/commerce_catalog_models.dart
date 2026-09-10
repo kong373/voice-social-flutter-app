@@ -303,8 +303,10 @@ class DecorationItem {
     required this.name,
     required this.kind,
     required this.priceGiftCoins,
+    required this.durationDays,
     required this.owned,
     required this.equipped,
+    this.forSale = true,
     this.assetUrl,
     this.expiresAt,
   });
@@ -313,19 +315,34 @@ class DecorationItem {
   final String name;
   final DecorationKind kind;
   final int priceGiftCoins;
+
+  /// Backend catalog term. Zero is no longer sold; existing rights survive.
+  final int durationDays;
+  bool get permanent => durationDays == 0 || (owned && expiresAt == null);
+  bool get canPurchase => forSale && durationDays > 0 && !permanent;
+
+  /// Live availability comes from membership in the Backend sale catalog.
+  final bool forSale;
   final bool owned;
   final bool equipped;
   final String? assetUrl;
   final DateTime? expiresAt;
 
-  DecorationItem copyWith({bool? owned, bool? equipped, DateTime? expiresAt}) {
+  DecorationItem copyWith({
+    bool? owned,
+    bool? equipped,
+    bool? forSale,
+    DateTime? expiresAt,
+  }) {
     return DecorationItem(
       id: id,
       name: name,
       kind: kind,
       priceGiftCoins: priceGiftCoins,
+      durationDays: durationDays,
       owned: owned ?? this.owned,
       equipped: equipped ?? this.equipped,
+      forSale: forSale ?? this.forSale,
       assetUrl: assetUrl,
       expiresAt: expiresAt ?? this.expiresAt,
     );

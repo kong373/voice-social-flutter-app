@@ -437,6 +437,7 @@ void main() {
             'name': '星环头像框',
             'type': 'AVATAR_FRAME',
             'giftCoinCost': 520,
+            'durationDays': 30,
             'assetKey': 'decoration/star-ring-frame',
             'owned': true,
             'equipped': true,
@@ -447,6 +448,7 @@ void main() {
             'name': '流光进场',
             'type': 'ROOM_ENTRY',
             'giftCoinCost': 999,
+            'durationDays': 30,
             'owned': false,
             'equipped': false,
           },
@@ -455,6 +457,7 @@ void main() {
             'name': '陪伴徽章',
             'type': 'PROFILE_BADGE',
             'giftCoinCost': 1880,
+            'durationDays': 0,
             'owned': false,
             'equipped': false,
           },
@@ -463,6 +466,7 @@ void main() {
             'name': '星光昵称',
             'type': 'NICKNAME',
             'giftCoinCost': 320,
+            'durationDays': 30,
             'owned': false,
             'equipped': false,
           },
@@ -471,6 +475,7 @@ void main() {
             'name': '银河声波',
             'type': 'VOICE_WAVE',
             'giftCoinCost': 460,
+            'durationDays': 30,
             'owned': false,
             'equipped': false,
           },
@@ -493,8 +498,15 @@ void main() {
     expect(items.first.priceGiftCoins, 520);
     expect(items.first.assetUrl, 'decoration/star-ring-frame');
     expect(items.first.expiresAt, DateTime.parse('2026-09-21T10:00:00Z'));
-    expect(harness.requests.single.method, 'GET');
-    expect(harness.requests.single.body, isNull);
+    expect(harness.requests.map((request) => request.path), <String>[
+      '/app-api/mall/index',
+      '/app-api/user/userDecorations/getList',
+    ]);
+    expect(
+      harness.requests.every((request) => request.method == 'GET'),
+      isTrue,
+    );
+    expect(harness.requests.every((request) => request.body == null), isTrue);
   });
 
   test(
@@ -554,6 +566,7 @@ void main() {
       'name': '星环头像框',
       'type': 'AVATAR_FRAME',
       'giftCoinCost': 520,
+      'durationDays': 30,
       'owned': false,
       'equipped': false,
     };
@@ -610,6 +623,7 @@ void main() {
               'name': '星环头像框',
               'type': 'AVATAR_FRAME',
               'giftCoinCost': 520,
+              'durationDays': 30,
               'owned': true,
               'equipped': request.method == 'GET' && purchases > 0,
             },
@@ -675,6 +689,7 @@ void main() {
               'name': '流星进场',
               'type': 'ROOM_ENTRY',
               'giftCoinCost': 188,
+              'durationDays': 30,
               'owned': economicWrites > 0,
               'equipped': false,
             },
@@ -828,6 +843,7 @@ void main() {
               'name': '流星进场',
               'type': 'ROOM_ENTRY',
               'giftCoinCost': 188,
+              'durationDays': 30,
               'owned': owned,
               'equipped': false,
             },
@@ -889,6 +905,7 @@ void main() {
               'name': '流星进场',
               'type': 'ROOM_ENTRY',
               'giftCoinCost': 188,
+              'durationDays': 30,
               'owned': false,
               'equipped': false,
             },
@@ -954,6 +971,7 @@ void main() {
               'name': '流光进场',
               'type': 'ROOM_ENTRY',
               'giftCoinCost': 999,
+              'durationDays': 30,
               'owned': true,
               'equipped': equippedState,
             },
@@ -1015,6 +1033,7 @@ void main() {
               'name': '星轨进场',
               'type': 'ROOM_ENTRY',
               'giftCoinCost': 188,
+              'durationDays': 30,
               'owned': true,
               'equipped': equippedState,
             },
@@ -1073,6 +1092,7 @@ void main() {
                 'name': '星轨进场',
                 'type': 'ROOM_ENTRY',
                 'giftCoinCost': 188,
+                'durationDays': 30,
                 'owned': true,
                 'equipped': refreshEquipped,
               },
@@ -1390,6 +1410,8 @@ class _Harness {
            authorizationProvider: () => 'Bearer contract-test',
          ),
          routes: const BackendRouteCatalog(),
+         currentUserIdProvider: () => 1,
+         identityGeneration: () => 1,
          alipayAppPayAdapter: alipayAppPayAdapter,
        );
 

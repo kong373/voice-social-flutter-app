@@ -16,6 +16,8 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   BackendCommerceCatalogRepository({
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
+    int? Function()? currentUserIdProvider,
+    int Function()? identityGeneration,
     String Function()? decorationPurchaseRequestIdGenerator,
     String Function()? alipayCreateRequestIdGenerator,
     String Function()? appleCreateRequestIdGenerator,
@@ -23,6 +25,8 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     AppleIapPurchaseCoordinator? appleIapCoordinator,
   }) : _apiClient = apiClient,
        _routes = routes,
+       _currentUserIdProvider = currentUserIdProvider,
+       _identityGeneration = identityGeneration,
        _decorationPurchaseRequestIdGenerator =
            decorationPurchaseRequestIdGenerator ??
            newDecorationPurchaseRequestId,
@@ -37,6 +41,8 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
+  final int? Function()? _currentUserIdProvider;
+  final int Function()? _identityGeneration;
   final String Function() _decorationPurchaseRequestIdGenerator;
   final String Function() _alipayCreateRequestIdGenerator;
   final String Function() _appleCreateRequestIdGenerator;
@@ -781,16 +787,91 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
 
   @override
   Future<List<DecorationItem>> fetchDecorations() async {
-    final ApiResponse response = await _apiClient.get(_routes.userDecorations);
+    return _fetchDecorations(_decorationIdentity());
+  }
+
+  (int, int) _decorationIdentity() {
+    if (_currentUserIdProvider == null || _identityGeneration == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '装扮账号绑定未配置',
+      );
+    }
+    final actor = _currentUserIdProvider();
+    final generation = _identityGeneration();
+    if (actor == null || actor <= 0 || generation < 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.unauthorized,
+        message: '请登录后操作装扮',
+      );
+    }
+    return (actor, generation);
+  }
+
+  void _assertDecorationIdentity((int, int) identity) {
+    if (_decorationIdentity() != identity) {
+      throw const ApiException(
+        kind: ApiFailureKind.unauthorized,
+        message: '账号已变化，请重新查看装扮',
+      );
+    }
+  }
+
+  Future<ApiResponse> _getDecorations(
+    (int, int) identity, {
+    bool sale = false,
+  }) async {
+    _assertDecorationIdentity(identity);
+    try {
+      final response = await _apiClient.getBoundToIdentity(
+        sale ? _routes.mallIndex : _routes.userDecorations,
+        requireIdentity: () => _assertDecorationIdentity(identity),
+      );
+      _assertDecorationIdentity(identity);
+      return response;
+    } catch (_) {
+      _assertDecorationIdentity(identity);
+      rethrow;
+    }
+  }
+
+  Future<List<DecorationItem>> _fetchDecorations((int, int) identity) async {
+    final saleResponse = await _getDecorations(identity, sale: true);
+    final sale = _parseDecorations(saleResponse, forSale: true);
+    final ApiResponse response = await _getDecorations(identity);
+    final history = _parseDecorations(response, forSale: false);
+    final byId = {for (final item in sale) item.id: item};
+    final saleIds = byId.keys.toSet();
+    for (final item in history) {
+      // Keep the latest owned projection, including retired permanent rights.
+      byId[item.id] = item.copyWith(forSale: saleIds.contains(item.id));
+    }
+    return byId.values.toList(growable: false);
+  }
+
+  List<DecorationItem> _parseDecorations(
+    ApiResponse response, {
+    required bool forSale,
+  }) {
     final List<Map<String, Object?>> items = _catalogList(
       response.data,
       label: '装扮目录',
     );
-    return items.map(_decorationFromMap).toList(growable: false);
+    final parsed = items
+        .map((item) => _decorationFromMap(item, forSale: forSale))
+        .toList(growable: false);
+    if (parsed.map((item) => item.id).toSet().length != parsed.length) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '装扮目录包含重复商品',
+      );
+    }
+    return parsed;
   }
 
   @override
   Future<DecorationItem> purchaseDecoration(String decorationId) async {
+    final identity = _decorationIdentity();
     final String normalizedId = decorationId.trim();
     if (normalizedId.isEmpty) {
       throw const ApiException(
@@ -798,50 +879,78 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         message: '请选择有效装扮商品',
       );
     }
-    return _singleFlight(_pendingDecorationPurchases, normalizedId, () async {
-      return _serializeDecorationMutation(normalizedId, () async {
-        final String requestId = _decorationPurchaseRequestIds.putIfAbsent(
-          normalizedId,
-          _newDecorationPurchaseRequestId,
-        );
-        try {
-          final ApiResponse response = await _apiClient.post(
-            _routes.purchaseMallGoods,
-            headers: <String, String>{'X-Request-Id': requestId},
-            body: <String, Object?>{'decorationId': normalizedId},
-          );
-          _validateDecorationPurchaseResponse(
-            response.data,
-            decorationId: normalizedId,
-          );
-          final DecorationItem item = await _findPurchasedDecoration(
-            normalizedId,
-            missingMessage: '购买成功后未查询到对应装扮',
-          );
-          _decorationPurchaseRequestIds.remove(normalizedId);
-          return item;
-        } catch (error) {
-          if (error is _DecorationAuthorityException) {
-            _decorationPurchaseRequestIds.remove(normalizedId);
-            rethrow;
-          }
-          final DecorationItem? reconciled =
-              await _reconcilePurchasedDecoration(
-                normalizedId,
-                requestId: requestId,
-                error: error,
+    final intent = '${identity.$1}:${identity.$2}:$normalizedId';
+    try {
+      final result = await _singleFlight(
+        _pendingDecorationPurchases,
+        intent,
+        () async {
+          return _serializeDecorationMutation(intent, () async {
+            _assertDecorationIdentity(identity);
+            final String requestId = _decorationPurchaseRequestIds.putIfAbsent(
+              intent,
+              _newDecorationPurchaseRequestId,
+            );
+            var receiptAccepted = false;
+            try {
+              final ApiResponse response = await _apiClient.postBoundToIdentity(
+                _routes.purchaseMallGoods,
+                requireIdentity: () => _assertDecorationIdentity(identity),
+                headers: <String, String>{'X-Request-Id': requestId},
+                body: <String, Object?>{'decorationId': normalizedId},
               );
-          if (reconciled != null) {
-            _decorationPurchaseRequestIds.remove(normalizedId);
-            return reconciled;
-          }
-          if (!shouldRetainDecorationPurchaseRequest(error)) {
-            _decorationPurchaseRequestIds.remove(normalizedId);
-          }
-          rethrow;
-        }
-      });
-    });
+              _assertDecorationIdentity(identity);
+              _validateDecorationPurchaseResponse(
+                response.data,
+                decorationId: normalizedId,
+              );
+              receiptAccepted = true;
+              final DecorationItem item = await _findPurchasedDecoration(
+                normalizedId,
+                identity: identity,
+                missingMessage: '购买成功后未查询到对应装扮',
+              );
+              _assertDecorationIdentity(identity);
+              _decorationPurchaseRequestIds.remove(intent);
+              return item;
+            } catch (error) {
+              _assertDecorationIdentity(identity);
+              if (receiptAccepted) {
+                throw const _DecorationAuthorityException(
+                  '已收到购买回执，但暂无法确认最新装扮状态，请重试原操作',
+                );
+              }
+              if (error is _DecorationAuthorityException) {
+                // A malformed receipt cannot prove that the debit did not
+                // happen. Keep its key, without treating pre-owned as success.
+                rethrow;
+              }
+              final DecorationItem? reconciled =
+                  await _reconcilePurchasedDecoration(
+                    normalizedId,
+                    identity: identity,
+                    requestId: requestId,
+                    error: error,
+                  );
+              _assertDecorationIdentity(identity);
+              if (reconciled != null) {
+                _decorationPurchaseRequestIds.remove(intent);
+                return reconciled;
+              }
+              if (!shouldRetainDecorationPurchaseRequest(error)) {
+                _decorationPurchaseRequestIds.remove(intent);
+              }
+              rethrow;
+            }
+          });
+        },
+      );
+      _assertDecorationIdentity(identity);
+      return result;
+    } catch (_) {
+      _assertDecorationIdentity(identity);
+      rethrow;
+    }
   }
 
   @override
@@ -849,6 +958,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     required String decorationId,
     required bool equipped,
   }) async {
+    final identity = _decorationIdentity();
     final String normalizedId = decorationId.trim();
     if (normalizedId.isEmpty) {
       throw const ApiException(
@@ -856,52 +966,68 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         message: '请选择有效装扮',
       );
     }
-    return _singleFlight(
-      _pendingDecorationEquips,
-      '$normalizedId:$equipped',
-      () async {
-        return _serializeDecorationMutation(normalizedId, () async {
-          final String intent = '$normalizedId:$equipped';
-          final String requestId = _decorationEquipRequestIds.putIfAbsent(
-            intent,
-            _decorationPurchaseRequestIdGenerator,
-          );
-          try {
-            final ApiResponse response = await _apiClient.post(
-              _routes.equipUserDecoration,
-              headers: <String, String>{
-                'X-Request-Id': normalizeDecorationPurchaseRequestId(requestId),
-              },
-              body: <String, Object?>{
-                'decorationId': normalizedId,
-                'equipped': equipped,
-              },
+    final scopeKey = '${identity.$1}:${identity.$2}:$normalizedId';
+    try {
+      final result = await _singleFlight(
+        _pendingDecorationEquips,
+        '$scopeKey:$equipped',
+        () async {
+          return _serializeDecorationMutation(scopeKey, () async {
+            _assertDecorationIdentity(identity);
+            final String intent = '$scopeKey:$equipped';
+            final String requestId = _decorationEquipRequestIds.putIfAbsent(
+              intent,
+              _decorationPurchaseRequestIdGenerator,
             );
-            _validateDecorationEquipResponse(
-              response.data,
-              decorationId: normalizedId,
-              equipped: equipped,
-            );
-            final DecorationItem result = await _findDecoration(
-              normalizedId,
-              missingMessage: '装扮状态已更新，但服务端未返回对应记录',
-              expectedEquipped: equipped,
-            );
-            _decorationEquipRequestIds.remove(intent);
-            return result;
-          } catch (error) {
-            if (error is _DecorationAuthorityException) {
+            try {
+              final ApiResponse response = await _apiClient.postBoundToIdentity(
+                _routes.equipUserDecoration,
+                requireIdentity: () => _assertDecorationIdentity(identity),
+                headers: <String, String>{
+                  'X-Request-Id': normalizeDecorationPurchaseRequestId(
+                    requestId,
+                  ),
+                },
+                body: <String, Object?>{
+                  'decorationId': normalizedId,
+                  'equipped': equipped,
+                },
+              );
+              _assertDecorationIdentity(identity);
+              _validateDecorationEquipResponse(
+                response.data,
+                decorationId: normalizedId,
+                equipped: equipped,
+              );
+              final DecorationItem result = await _findDecoration(
+                normalizedId,
+                identity: identity,
+                missingMessage: '装扮状态已更新，但服务端未返回对应记录',
+                expectedEquipped: equipped,
+              );
+              _assertDecorationIdentity(identity);
               _decorationEquipRequestIds.remove(intent);
+              return result;
+            } catch (error) {
+              _assertDecorationIdentity(identity);
+              if (error is _DecorationAuthorityException) {
+                _decorationEquipRequestIds.remove(intent);
+                rethrow;
+              }
+              if (!shouldRetainDecorationPurchaseRequest(error)) {
+                _decorationEquipRequestIds.remove(intent);
+              }
               rethrow;
             }
-            if (!shouldRetainDecorationPurchaseRequest(error)) {
-              _decorationEquipRequestIds.remove(intent);
-            }
-            rethrow;
-          }
-        });
-      },
-    );
+          });
+        },
+      );
+      _assertDecorationIdentity(identity);
+      return result;
+    } catch (_) {
+      _assertDecorationIdentity(identity);
+      rethrow;
+    }
   }
 
   Future<T> _serializeDecorationMutation<T>(
@@ -929,10 +1055,14 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
 
   Future<DecorationItem> _findDecoration(
     String decorationId, {
+    required (int, int) identity,
     required String missingMessage,
     bool? expectedEquipped,
   }) async {
-    final List<DecorationItem> decorations = await fetchDecorations();
+    final List<DecorationItem> decorations = _parseDecorations(
+      await _getDecorations(identity),
+      forSale: false,
+    );
     DecorationItem? match;
     for (final DecorationItem item in decorations) {
       if (item.id == decorationId) {
@@ -962,10 +1092,12 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
 
   Future<DecorationItem> _findPurchasedDecoration(
     String decorationId, {
+    required (int, int) identity,
     required String missingMessage,
   }) async {
     final DecorationItem item = await _findDecoration(
       decorationId,
+      identity: identity,
       missingMessage: missingMessage,
     );
     if (!item.owned) {
@@ -979,6 +1111,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
 
   Future<DecorationItem?> _reconcilePurchasedDecoration(
     String decorationId, {
+    required (int, int) identity,
     required String requestId,
     required Object error,
   }) async {
@@ -986,9 +1119,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       return null;
     }
     try {
-      final ApiResponse response = await _apiClient.get(
-        _routes.userDecorations,
-      );
+      final ApiResponse response = await _getDecorations(identity);
       final Object? raw = response.data;
       if (raw is! Map<String, Object?>) {
         return null;
@@ -1040,6 +1171,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       }
       return reconciled;
     } on ApiException {
+      _assertDecorationIdentity(identity);
       // Keep the original write failure so the caller can retry with the same
       // idempotency key instead of masking it with a fetch error.
     }
@@ -1294,11 +1426,15 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
   ).hasMatch(value.trim());
 
-  static DecorationItem _decorationFromMap(Map<String, Object?> item) {
+  static DecorationItem _decorationFromMap(
+    Map<String, Object?> item, {
+    bool forSale = false,
+  }) {
     final String id = _string(item['decorationId']);
     final String name = _string(item['name']);
     final String type = _string(item['type']).toUpperCase();
     final int? price = _asInt(item['giftCoinCost']);
+    final Object? durationDays = item['durationDays'];
     final Object? rawOwned = item['owned'];
     final Object? rawEquipped = item['equipped'];
     if (!_isUuid(id) ||
@@ -1312,6 +1448,8 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         }.contains(type) ||
         price == null ||
         price < 0 ||
+        durationDays is! int ||
+        durationDays < 0 ||
         rawOwned is! bool ||
         rawEquipped is! bool ||
         (rawEquipped && !rawOwned)) {
@@ -1338,6 +1476,8 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         _ => DecorationKind.profileCard,
       },
       priceGiftCoins: price,
+      durationDays: durationDays,
+      forSale: forSale,
       owned: rawOwned,
       equipped: rawEquipped,
       assetUrl: _optionalString(item['assetKey']),
