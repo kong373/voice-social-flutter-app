@@ -142,7 +142,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
           ? _buildFailure()
           : _creating
           ? _buildForm()
-          : _buildSelection(),
+          : Builder(builder: _buildSelection),
     );
   }
 
@@ -165,7 +165,7 @@ class _CreateRoomPageState extends State<CreateRoomPage> {
     );
   }
 
-  Widget _buildSelection() => SafeArea(
+  Widget _buildSelection(BuildContext context) => SafeArea(
     child: RefreshIndicator(
       onRefresh: _load,
       child: ListView(
