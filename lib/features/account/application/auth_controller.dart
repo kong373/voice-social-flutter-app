@@ -8,6 +8,8 @@ import 'package:voice_social_app/features/account/data/device_identity_provider.
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/account/domain/auth_repository.dart';
 import '../domain/registration_avatar.dart';
+import '../registration_avatar/registration_avatar_host.dart';
+import '../registration_avatar/registration_avatar_models.dart';
 import 'package:voice_social_app/features/im/application/im_session_coordinator.dart';
 
 enum AuthFlowStage {
@@ -28,17 +30,26 @@ class AuthController extends ChangeNotifier {
     required DeviceIdentityProvider deviceIdentityProvider,
     ImSessionCoordinator? imSessionCoordinator,
     bool allowsDevelopmentTools = false,
+    RegistrationAvatarHost Function(RegistrationAvatarContext)?
+    registrationAvatarFactory,
+    String? registrationAvatarClientId,
   }) : _repository = repository,
        _sessionManager = sessionManager,
        _deviceIdentityProvider = deviceIdentityProvider,
        _imSessionCoordinator = imSessionCoordinator,
-       _allowsDevelopmentTools = allowsDevelopmentTools;
+       _allowsDevelopmentTools = allowsDevelopmentTools,
+       _registrationAvatarFactory = registrationAvatarFactory,
+       _registrationAvatarClientId = registrationAvatarClientId;
 
   final AuthRepository _repository;
   final AuthSessionManager _sessionManager;
   final DeviceIdentityProvider _deviceIdentityProvider;
   final ImSessionCoordinator? _imSessionCoordinator;
   final bool _allowsDevelopmentTools;
+  final RegistrationAvatarHost Function(RegistrationAvatarContext)?
+  _registrationAvatarFactory;
+  final String? _registrationAvatarClientId;
+  RegistrationAvatarHost? _registrationAvatarHost;
 
   AuthFlowStage _stage = AuthFlowStage.initializing;
   bool _busy = false;
@@ -52,6 +63,7 @@ class AuthController extends ChangeNotifier {
   ClientDevice? _pendingDevice;
   SmsChallenge? _pendingChallenge;
   String? _registrationRequestId;
+  bool _registrationOutcomeUnknown = false;
   Future<bool>? _refreshInFlight;
   Future<void>? _signOutInFlight;
   int _sessionGeneration = 0;
@@ -66,6 +78,8 @@ class AuthController extends ChangeNotifier {
   AuthSession? get session => _sessionManager.session;
   String get pendingPhone => _pendingPhone ?? '';
   SmsChallenge? get lastSmsChallenge => _lastSmsChallenge;
+  RegistrationAvatarHost? get registrationAvatarHost => _registrationAvatarHost;
+  bool get registrationOutcomeUnknown => _registrationOutcomeUnknown;
   ServerLogoutOutcome get lastServerLogoutOutcome => _lastServerLogoutOutcome;
 
   /// Development OTPs are intentionally exposed only to local/development
@@ -146,6 +160,8 @@ class AuthController extends ChangeNotifier {
     }
     _sendingCode = true;
     _errorMessage = null;
+    _disposeRegistrationAvatar();
+    _registrationOutcomeUnknown = false;
     _lastSmsChallenge = null;
     _challengePhone = null;
     _challengeDevice = null;
@@ -228,6 +244,33 @@ class AuthController extends ChangeNotifier {
         _registrationRequestId =
             'register_${List.generate(32, (_) => random.nextInt(16).toRadixString(16)).join()}';
         _stage = AuthFlowStage.registrationRequired;
+        _disposeRegistrationAvatar();
+        final factory = _registrationAvatarFactory;
+        if (factory != null) {
+          final context = RegistrationAvatarContext(
+            phone: _pendingPhone!,
+            smsCode: _pendingSmsCode!,
+            challengeId: challenge.challengeId,
+            deviceId: device.deviceId,
+            clientId: _registrationAvatarClientId ?? '',
+            expiresAt: challenge.expiresAt.toUtc(),
+            changes: this,
+            requireCurrent: () {
+              if (operationGeneration != _sessionGeneration ||
+                  _stage != AuthFlowStage.registrationRequired ||
+                  !identical(challenge, _pendingChallenge) ||
+                  !identical(device, _pendingDevice)) {
+                throw registrationAvatarContextExpired;
+              }
+            },
+          );
+          try {
+            _registrationAvatarHost = factory(context);
+          } catch (_) {
+            context.dispose();
+            rethrow;
+          }
+        }
         return true;
       }
       final AuthSession? authenticatedSession = outcome.session;
@@ -262,12 +305,17 @@ class AuthController extends ChangeNotifier {
   Future<bool> completeRegistration(RegistrationProfile profile) async {
     final String phone = _pendingPhone ?? '';
     final String smsCode = _pendingSmsCode ?? '';
-    if (_busy || phone.isEmpty || smsCode.isEmpty) {
+    if (_busy ||
+        _registrationOutcomeUnknown ||
+        _registrationAvatarHost?.busy == true ||
+        phone.isEmpty ||
+        smsCode.isEmpty) {
       return false;
     }
     _busy = true;
     _errorMessage = null;
     final int operationGeneration = _sessionGeneration;
+    bool submitted = false;
     notifyListeners();
     try {
       validateRegistrationProfile(
@@ -281,10 +329,25 @@ class AuthController extends ChangeNotifier {
       if (device == null || challenge == null || requestId == null) {
         throw registrationChoiceInvalid;
       }
+      final uploadHost = _registrationAvatarHost;
+      final uploaded = profile.avatar!.kind == 'UPLOADED';
+      final ready = uploaded ? uploadHost?.ready : null;
+      if (uploaded &&
+          (ready == null ||
+              ready.assetId != profile.avatar!.reference ||
+              ready.version != profile.avatar!.expectedVersion)) {
+        throw const ApiException(
+          kind: ApiFailureKind.validation,
+          message: '头像尚未确认上传完成，请先检查上传状态',
+        );
+      }
       void requireCurrent() {
         if (operationGeneration != _sessionGeneration ||
             _stage != AuthFlowStage.registrationRequired ||
             !identical(challenge, _pendingChallenge) ||
+            (uploaded &&
+                (!identical(uploadHost, _registrationAvatarHost) ||
+                    uploadHost?.context.isCurrent != true)) ||
             !challenge.expiresAt.isAfter(DateTime.now())) {
           throw const ApiException(
             kind: ApiFailureKind.unauthorized,
@@ -294,6 +357,7 @@ class AuthController extends ChangeNotifier {
       }
 
       requireCurrent();
+      submitted = true;
       final AuthSession authenticatedSession = await _repository
           .registerWithSms(
             phone: phone,
@@ -302,7 +366,8 @@ class AuthController extends ChangeNotifier {
             profile: profile,
             proof: RegistrationProof(
               challengeId: challenge.challengeId,
-              requestId: requestId,
+              requestId: ready?.requestId ?? requestId,
+              avatarCapability: ready?.capability,
               requireCurrent: requireCurrent,
             ),
           );
@@ -323,7 +388,21 @@ class AuthController extends ChangeNotifier {
       _stage = AuthFlowStage.signedIn;
       return true;
     } catch (error) {
-      if (operationGeneration == _sessionGeneration) _setError(error);
+      if (operationGeneration == _sessionGeneration) {
+        if (submitted &&
+            (error is! ApiException ||
+                const {
+                  ApiFailureKind.network,
+                  ApiFailureKind.timeout,
+                  ApiFailureKind.protocol,
+                  ApiFailureKind.server,
+                }.contains(error.kind))) {
+          _registrationOutcomeUnknown = true;
+          _errorMessage = '注册结果尚未确认，请返回登录重新获取验证码，确认账号后继续；不要重复提交注册';
+        } else {
+          _setError(error);
+        }
+      }
       return false;
     } finally {
       _busy = false;
@@ -597,12 +676,28 @@ class AuthController extends ChangeNotifier {
   }
 
   void _clearPendingChallenge() {
+    _disposeRegistrationAvatar();
+    _registrationOutcomeUnknown = false;
     _lastSmsChallenge = null;
     _challengePhone = null;
     _challengeDevice = null;
     _pendingChallenge = null;
     _pendingDevice = null;
     _registrationRequestId = null;
+  }
+
+  void _disposeRegistrationAvatar() {
+    final host = _registrationAvatarHost;
+    _registrationAvatarHost = null;
+    host?.dispose();
+    host?.context.dispose();
+  }
+
+  @override
+  void dispose() {
+    _sessionGeneration += 1;
+    _clearPendingChallenge();
+    super.dispose();
   }
 
   void _setError(Object error) {

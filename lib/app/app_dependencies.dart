@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:path_provider/path_provider.dart';
 import '../features/media/app_image_media_host.dart';
 import '../features/media/native_image_selection.dart';
+import '../features/account/registration_avatar/registration_avatar_host.dart';
+import '../features/account/registration_avatar/registration_avatar_transport_adapter.dart';
 
 import 'package:flutter/widgets.dart';
 import 'package:voice_social_app/features/room/application/gift_send_coordinator.dart';
@@ -505,6 +507,16 @@ class AppDependencies {
       imSessionCoordinator: imSessionCoordinator,
       allowsDevelopmentTools:
           environment.deploymentEnvironment.allowsDevelopmentTools,
+      registrationAvatarClientId: environment.oauthClientId,
+      registrationAvatarFactory: environment.isLive
+          ? (context) => RegistrationAvatarHost(
+              context: context,
+              transport: ApiRegistrationAvatarTransport(apiClient),
+              store: store,
+              picker: NativeImageSelection(),
+              temporaryParent: getTemporaryDirectory,
+            )
+          : null,
     );
     final ExternalUrlOpener externalUrlOpener =
         externalUrlOpenerOverride ?? MethodChannelExternalUrlOpener();

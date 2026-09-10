@@ -71,7 +71,7 @@ void main() {
   );
 
   test(
-    'unknown registration preserves the same challenge and request id',
+    'unknown final registration refuses repeat submission until new SMS login',
     () async {
       final fixture = _Fixture();
       addTearDown(fixture.controller.dispose);
@@ -83,15 +83,17 @@ void main() {
       );
       expect(fixture.repository.proofs, hasLength(1));
       expect(fixture.controller.stage, AuthFlowStage.registrationRequired);
-      expect(await fixture.controller.completeRegistration(_profile()), isTrue);
-      expect(fixture.repository.proofs, hasLength(2));
+      expect(fixture.controller.registrationOutcomeUnknown, isTrue);
       expect(
-        fixture.repository.proofs.last.requestId,
-        fixture.repository.proofs.first.requestId,
+        await fixture.controller.completeRegistration(_profile()),
+        isFalse,
       );
+      expect(fixture.repository.proofs, hasLength(1));
       expect(fixture.repository.proofs.last.challengeId, _challenge);
       expect(fixture.repository.proofs.last.avatarCapability, isNull);
-      expect(fixture.controller.session, isNotNull);
+      expect(fixture.controller.session, isNull);
+      fixture.controller.cancelRegistration();
+      expect(fixture.controller.registrationOutcomeUnknown, isFalse);
     },
   );
 
