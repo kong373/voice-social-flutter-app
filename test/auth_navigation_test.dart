@@ -270,6 +270,11 @@ void main() {
       await tester.pumpAndSettle();
       final context = await push(tester);
       await dependencies.authController.acceptConsent();
+      final sendCode = dependencies.authController.sendSmsCode('13900000000');
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(await sendCode, isTrue);
       final login = dependencies.authController.signInWithSms(
         phone: '13900000000',
         smsCode: '123456',

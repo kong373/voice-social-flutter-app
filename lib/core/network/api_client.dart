@@ -174,6 +174,23 @@ class ApiClient {
     authenticated: authenticated,
   );
 
+  /// Anonymous, short-lived registration binding; never adopts an App token,
+  /// follows a redirect with credentials, or invokes App-session refresh.
+  Future<ApiResponse> postAnonymousBound(
+    String path, {
+    required void Function() requireCurrent,
+    Map<String, String>? headers,
+    Map<String, Object?>? body,
+  }) => _request(
+    method: 'POST',
+    path: path,
+    authenticated: false,
+    requireIdentity: requireCurrent,
+    allowUnauthorizedRecovery: false,
+    headers: headers,
+    body: body,
+  );
+
   Future<ApiResponse> delete(
     String path, {
     Map<String, String>? query,
@@ -293,6 +310,13 @@ class ApiClient {
 
       _applyHeaders(request, _requestHeadersProvider?.call());
       _applyHeaders(request, headers);
+
+      if (!authenticated && requireIdentity != null) {
+        request.followRedirects = false;
+        request.maxRedirects = 0;
+        request.headers.removeAll(HttpHeaders.authorizationHeader);
+        request.headers.removeAll(HttpHeaders.contentEncodingHeader);
+      }
 
       if (authenticated) {
         requestRecoveryGeneration = _unauthorizedRecoveryGeneration;

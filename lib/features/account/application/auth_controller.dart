@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -6,6 +7,7 @@ import 'package:voice_social_app/features/account/data/auth_session_manager.dart
 import 'package:voice_social_app/features/account/data/device_identity_provider.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/account/domain/auth_repository.dart';
+import '../domain/registration_avatar.dart';
 import 'package:voice_social_app/features/im/application/im_session_coordinator.dart';
 
 enum AuthFlowStage {
@@ -45,6 +47,11 @@ class AuthController extends ChangeNotifier {
   String? _pendingPhone;
   String? _pendingSmsCode;
   SmsChallenge? _lastSmsChallenge;
+  String? _challengePhone;
+  ClientDevice? _challengeDevice;
+  ClientDevice? _pendingDevice;
+  SmsChallenge? _pendingChallenge;
+  String? _registrationRequestId;
   Future<bool>? _refreshInFlight;
   Future<void>? _signOutInFlight;
   int _sessionGeneration = 0;
@@ -134,12 +141,22 @@ class AuthController extends ChangeNotifier {
   }
 
   Future<bool> sendSmsCode(String phone) async {
-    if (_sendingCode) {
+    if (_sendingCode || _busy) {
       return false;
     }
     _sendingCode = true;
     _errorMessage = null;
     _lastSmsChallenge = null;
+    _challengePhone = null;
+    _challengeDevice = null;
+    _pendingChallenge = null;
+    _pendingDevice = null;
+    _registrationRequestId = null;
+    if (_stage == AuthFlowStage.registrationRequired) {
+      _stage = AuthFlowStage.signedOut;
+      _pendingPhone = null;
+      _pendingSmsCode = null;
+    }
     final int operationGeneration = _sessionGeneration;
     notifyListeners();
     try {
@@ -159,6 +176,8 @@ class AuthController extends ChangeNotifier {
             ? challenge.developmentCode
             : null,
       );
+      _challengePhone = phone.trim();
+      _challengeDevice = device;
       return true;
     } catch (error) {
       if (operationGeneration == _sessionGeneration) _setError(error);
@@ -191,8 +210,23 @@ class AuthController extends ChangeNotifier {
         return false;
       }
       if (outcome.type == AuthOutcomeType.registrationRequired) {
+        final challenge = _lastSmsChallenge;
+        if (challenge == null ||
+            _challengePhone != phone.trim() ||
+            _challengeDevice?.deviceId != device.deviceId ||
+            !challenge.expiresAt.isAfter(DateTime.now())) {
+          throw const ApiException(
+            kind: ApiFailureKind.validation,
+            message: '请先在本机获取验证码，再完成注册',
+          );
+        }
         _pendingPhone = phone.trim();
         _pendingSmsCode = smsCode.trim();
+        _pendingDevice = device;
+        _pendingChallenge = challenge;
+        final random = Random.secure();
+        _registrationRequestId =
+            'register_${List.generate(32, (_) => random.nextInt(16).toRadixString(16)).join()}';
         _stage = AuthFlowStage.registrationRequired;
         return true;
       }
@@ -236,14 +270,43 @@ class AuthController extends ChangeNotifier {
     final int operationGeneration = _sessionGeneration;
     notifyListeners();
     try {
-      final ClientDevice device = await _deviceIdentityProvider.load();
+      validateRegistrationProfile(
+        profile.nickname,
+        profile.sex,
+        profile.avatar,
+      );
+      final device = _pendingDevice;
+      final challenge = _pendingChallenge;
+      final requestId = _registrationRequestId;
+      if (device == null || challenge == null || requestId == null) {
+        throw registrationChoiceInvalid;
+      }
+      void requireCurrent() {
+        if (operationGeneration != _sessionGeneration ||
+            _stage != AuthFlowStage.registrationRequired ||
+            !identical(challenge, _pendingChallenge) ||
+            !challenge.expiresAt.isAfter(DateTime.now())) {
+          throw const ApiException(
+            kind: ApiFailureKind.unauthorized,
+            message: '本次注册验证码已失效，请返回登录重新获取',
+          );
+        }
+      }
+
+      requireCurrent();
       final AuthSession authenticatedSession = await _repository
           .registerWithSms(
             phone: phone,
             smsCode: smsCode,
             device: device,
             profile: profile,
+            proof: RegistrationProof(
+              challengeId: challenge.challengeId,
+              requestId: requestId,
+              requireCurrent: requireCurrent,
+            ),
           );
+      requireCurrent();
       if (!await _saveSessionIfCurrent(
         authenticatedSession,
         operationGeneration,
@@ -535,6 +598,11 @@ class AuthController extends ChangeNotifier {
 
   void _clearPendingChallenge() {
     _lastSmsChallenge = null;
+    _challengePhone = null;
+    _challengeDevice = null;
+    _pendingChallenge = null;
+    _pendingDevice = null;
+    _registrationRequestId = null;
   }
 
   void _setError(Object error) {

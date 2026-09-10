@@ -15,6 +15,7 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
+import 'package:voice_social_app/features/account/domain/registration_avatar.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/im/application/tencent_im_avchat_room_coordinator.dart';
@@ -342,7 +343,11 @@ Future<void> _authenticate(
   );
   if (controller.stage == AuthFlowStage.registrationRequired) {
     final bool registered = await controller.completeRegistration(
-      RegistrationProfile(nickname: _registrationNickname(), sex: 0),
+      RegistrationProfile(
+        nickname: _registrationNickname(),
+        sex: 0,
+        avatar: RegistrationAvatarChoice.preset('avatar-preset-moon'),
+      ),
     );
     evidence.route(
       capability: 'auth.register',

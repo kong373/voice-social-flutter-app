@@ -1,4 +1,5 @@
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
+import 'registration_avatar.dart';
 
 abstract interface class AuthRepository {
   Future<SmsChallenge> sendSmsCode({
@@ -17,6 +18,7 @@ abstract interface class AuthRepository {
     required String smsCode,
     required ClientDevice device,
     required RegistrationProfile profile,
+    RegistrationProof? proof,
   });
 
   Future<AuthSession> refreshSession(AuthSession session);

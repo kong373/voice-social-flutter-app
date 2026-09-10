@@ -8,6 +8,7 @@ import 'package:voice_social_app/features/account/data/auth_session_manager.dart
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/account/domain/auth_refresh_recovery.dart';
 import 'package:voice_social_app/features/account/domain/auth_repository.dart';
+import '../domain/registration_avatar.dart';
 
 class BackendAuthRepository implements AuthRepository {
   BackendAuthRepository({
@@ -105,13 +106,26 @@ class BackendAuthRepository implements AuthRepository {
     required String smsCode,
     required ClientDevice device,
     required RegistrationProfile profile,
+    RegistrationProof? proof,
   }) async {
-    final ApiResponse response = await _apiClient.post(
+    validateRegistrationProfile(profile.nickname, profile.sex, profile.avatar);
+    if (proof == null) throw registrationChoiceInvalid;
+    proof.validate(profile.avatar!);
+    final ApiResponse response = await _apiClient.postAnonymousBound(
       _routes.registerByMobile,
-      headers: _publicClientHeaders,
+      requireCurrent: proof.requireCurrent,
+      headers: {
+        ..._publicClientHeaders,
+        'X-Device-Id': device.deviceId,
+        'X-Request-Id': proof.requestId,
+        if (proof.avatarCapability != null)
+          'X-Registration-Avatar-Capability': proof.avatarCapability!,
+      },
       body: <String, Object?>{
         'phone': phone,
         'smsCode': smsCode,
+        'challengeId': proof.challengeId,
+        'avatar': profile.avatar!.toJson(),
         'sex': profile.sex,
         'labelIds': <int>[],
         'inviteCode': profile.inviteCode,
@@ -123,12 +137,12 @@ class BackendAuthRepository implements AuthRepository {
         'clientId': _environment.oauthClientId,
         'isEmulator': device.isEmulator,
         'nickname': profile.nickname,
-        'birthday': profile.birthday,
+        if (profile.birthday != null) 'birthday': profile.birthday,
         'smDeviceId': device.smDeviceId,
         'sensorsAnonymousId': device.deviceId,
       },
-      authenticated: false,
     );
+    proof.requireCurrent();
     return _parseSession(response.data, deviceId: device.deviceId);
   }
 

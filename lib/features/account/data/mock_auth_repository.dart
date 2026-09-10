@@ -1,6 +1,7 @@
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/account/domain/auth_repository.dart';
+import '../domain/registration_avatar.dart';
 
 class MockAuthRepository implements AuthRepository {
   const MockAuthRepository();
@@ -19,7 +20,7 @@ class MockAuthRepository implements AuthRepository {
       );
     }
     return SmsChallenge(
-      challengeId: 'mock-${DateTime.now().millisecondsSinceEpoch}',
+      challengeId: '00000000-0000-4000-8000-000000000001',
       expiresAt: DateTime.now().add(const Duration(minutes: 5)),
       retryAfter: 60,
       developmentCode: '123456',
@@ -52,15 +53,11 @@ class MockAuthRepository implements AuthRepository {
     required String smsCode,
     required ClientDevice device,
     required RegistrationProfile profile,
+    RegistrationProof? proof,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 320));
-    if (profile.nickname.trim().length < 2) {
-      throw const ApiException(
-        kind: ApiFailureKind.validation,
-        code: 404,
-        message: '昵称至少需要 2 个字',
-      );
-    }
+    validateRegistrationProfile(profile.nickname, profile.sex, profile.avatar);
+    proof?.requireCurrent();
     return _session(phone, device.deviceId);
   }
 
