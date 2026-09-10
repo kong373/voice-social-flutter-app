@@ -47,6 +47,65 @@ void main() {
       });
     }
   }
+
+  testWidgets('CM-002 large text keeps every amount visible and selectable', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final AppDependencies dependencies = await createQaDependencies();
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: dependencies,
+        child: MaterialApp(
+          theme: AppTheme.social(),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(1.3)),
+            child: child!,
+          ),
+          home: const RechargeCatalogPage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+
+    for (final price in [6, 30, 68, 198, 648]) {
+      final coins = find.text('${price * 10} 礼物币');
+      final amount = find.text('¥$price');
+      await tester.ensureVisible(coins);
+      await tester.pumpAndSettle();
+      final card = find
+          .ancestor(of: coins, matching: find.byType(InkWell))
+          .first;
+      final bounds = tester.getRect(card).inflate(0.01);
+      for (final field in [coins, amount]) {
+        expect(field, findsOneWidget);
+        final rect = tester.getRect(field);
+        expect(bounds.contains(rect.topLeft), isTrue);
+        expect(bounds.contains(rect.bottomRight), isTrue);
+      }
+      await tester.tap(coins);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+    await tester.ensureVisible(find.text('选择支付方式'));
+    await tester.tap(find.text('选择支付方式'));
+    await tester.pumpAndSettle();
+    final submission = tester.widget<PaymentSubmissionPage>(
+      find.byType(PaymentSubmissionPage),
+    );
+    expect(submission.product.id, 'recharge-648');
+    expect(submission.product.priceCny, 648);
+    expect(submission.product.totalGiftCoins, 6480);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    dependencies.dispose();
+  });
 }
 
 final List<_CommerceTestPage> _commercePages = <_CommerceTestPage>[

@@ -199,84 +199,97 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage>
                   if (_products == null || _products!.isEmpty)
                     const _CommerceInfoBanner(text: '当前没有可用充值商品，请稍后刷新。')
                   else
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 10,
-                            crossAxisSpacing: 10,
-                            mainAxisExtent: 138,
-                          ),
-                      itemCount: _products!.length,
-                      itemBuilder: (BuildContext context, int index) {
-                        final RechargeProduct product = _products![index];
-                        final bool selected = _selected?.id == product.id;
-                        return _CommercePanel(
-                          selected: selected,
-                          onTap: product.enabled
-                              ? () => setState(() => _selected = product)
-                              : null,
-                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: <Widget>[
-                              Row(
+                    LayoutBuilder(
+                      builder: (context, constraints) => Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: _products!.map((RechargeProduct product) {
+                          final bool selected = _selected?.id == product.id;
+                          // Keep two columns, but allow scaled text to determine
+                          // card height instead of clipping a fixed grid extent.
+                          return ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minWidth: (constraints.maxWidth - 10) / 2,
+                              maxWidth: (constraints.maxWidth - 10) / 2,
+                              minHeight: 138,
+                            ),
+                            child: _CommercePanel(
+                              selected: selected,
+                              onTap: product.enabled
+                                  ? () => setState(() => _selected = product)
+                                  : null,
+                              padding: const EdgeInsets.fromLTRB(
+                                12,
+                                10,
+                                12,
+                                10,
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: <Widget>[
-                                  const _CommerceAssetOrb(
-                                    icon: Icons.diamond_rounded,
-                                    size: 32,
+                                  Row(
+                                    children: <Widget>[
+                                      const _CommerceAssetOrb(
+                                        icon: Icons.diamond_rounded,
+                                        size: 32,
+                                      ),
+                                      const Spacer(),
+                                      if (product.recommended)
+                                        const _CommercePill(label: '推荐'),
+                                    ],
                                   ),
-                                  const Spacer(),
-                                  if (product.recommended)
-                                    const _CommercePill(label: '推荐'),
+                                  const SizedBox(height: 7),
+                                  Text(
+                                    '${product.totalGiftCoins} 礼物币',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleSmall,
+                                  ),
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: <Widget>[
+                                      Expanded(
+                                        child: FittedBox(
+                                          alignment: Alignment.centerLeft,
+                                          fit: BoxFit.scaleDown,
+                                          child: Text(
+                                            product.storeDisplayPrice ??
+                                                '¥${product.priceCny.toStringAsFixed(product.priceCny % 1 == 0 ? 0 : 2)}',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleLarge
+                                                ?.copyWith(fontSize: 18),
+                                          ),
+                                        ),
+                                      ),
+                                      if (product.bonusGiftCoins >
+                                          0) ...<Widget>[
+                                        const SizedBox(width: 6),
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                            bottom: 1,
+                                          ),
+                                          child: Text(
+                                            '+${product.bonusGiftCoins}',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color: AppColors.secondary,
+                                                ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
                                 ],
                               ),
-                              const SizedBox(height: 7),
-                              Text(
-                                '${product.totalGiftCoins} 礼物币',
-                                style: Theme.of(context).textTheme.titleSmall,
-                              ),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: <Widget>[
-                                  Expanded(
-                                    child: FittedBox(
-                                      alignment: Alignment.centerLeft,
-                                      fit: BoxFit.scaleDown,
-                                      child: Text(
-                                        product.storeDisplayPrice ??
-                                            '¥${product.priceCny.toStringAsFixed(product.priceCny % 1 == 0 ? 0 : 2)}',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleLarge
-                                            ?.copyWith(fontSize: 18),
-                                      ),
-                                    ),
-                                  ),
-                                  if (product.bonusGiftCoins > 0) ...<Widget>[
-                                    const SizedBox(width: 6),
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 1),
-                                      child: Text(
-                                        '+${product.bonusGiftCoins}',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall
-                                            ?.copyWith(
-                                              color: AppColors.secondary,
-                                            ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ],
-                          ),
-                        );
-                      },
+                            ),
+                          );
+                        }).toList(),
+                      ),
                     ),
                   const SizedBox(height: 18),
                   if (_paymentAvailable)
