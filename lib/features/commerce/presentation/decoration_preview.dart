@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../catalog/domain/commerce_catalog_models.dart';
+import '../display/domain/equipped_decoration.dart';
+import '../display/presentation/decoration_artwork.dart';
 
 /// Read-only bundled artwork. Never resolves a catalog value as a network URL.
 class DecorationPreview extends StatelessWidget {
@@ -14,13 +16,6 @@ class DecorationPreview extends StatelessWidget {
   final double size;
   final bool allowMockAssetPaths;
 
-  // Product keys are known, but their dedicated artwork has not been delivered.
-  // Do not alias them to an avatar/gift/room image of the same general type.
-  static const productAssets = <String, String?>{
-    'decoration/star-ring-frame': null,
-    'decoration/stream-entry': null,
-    'decoration/companion-badge': null,
-  };
   static const mockAssets = <String>{
     'assets/runtime/avatar-rose.png',
     'assets/runtime/avatar-silver.png',
@@ -31,9 +26,15 @@ class DecorationPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final key = item.assetUrl;
-    final asset =
-        productAssets[key] ??
-        (allowMockAssetPaths && mockAssets.contains(key) ? key : null);
+    final type = switch (item.kind) {
+      DecorationKind.avatarFrame => 'AVATAR_FRAME',
+      DecorationKind.entrance => 'ROOM_ENTRY',
+      DecorationKind.profileCard => 'PROFILE_BADGE',
+      _ => '',
+    };
+    final product = DecorationProduct.resolve(key, type);
+    if (product != null) return DecorationArtwork(product: product, size: size);
+    final asset = allowMockAssetPaths && mockAssets.contains(key) ? key : null;
     Widget missing(String label) => Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,

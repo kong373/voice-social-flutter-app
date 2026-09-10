@@ -150,6 +150,8 @@ void main() {
       final Map<String, Object?> realName = <String, Object?>{
         'status': 'PENDING',
         'statusCode': 1,
+        'needsAgeResubmission': false,
+        'canSubmit': false,
         'providerStatus': 'FIRST_PARTY_REVIEW',
         'reviewStatus': 'FIRST_PARTY_REVIEW',
         'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
@@ -186,7 +188,8 @@ void main() {
 
       realName
         ..['status'] = 'REJECTED'
-        ..['statusCode'] = 3;
+        ..['statusCode'] = 3
+        ..['canSubmit'] = true;
       expect(
         (await repository.fetchSnapshot(
           account: 'user-1',
@@ -232,6 +235,8 @@ void main() {
         final Map<String, Object?> realName = <String, Object?>{
           'status': 'PENDING',
           'statusCode': 1,
+          'needsAgeResubmission': false,
+          'canSubmit': false,
           ...tuple,
         };
         final HttpServer server = await _startServer(
@@ -319,6 +324,8 @@ Future<void> _validSnapshotHandler(
           <String, Object?>{
             'status': 'UNVERIFIED',
             'statusCode': 0,
+            'needsAgeResubmission': false,
+            'canSubmit': true,
             'providerStatus': 'FIRST_PARTY_REVIEW',
             'reviewStatus': 'FIRST_PARTY_REVIEW',
             'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',

@@ -587,6 +587,8 @@ class ContractHandler(BaseHTTPRequestHandler):
                 return {
                     "status": "PENDING",
                     "statusCode": 1,
+                    "needsAgeResubmission": False,
+                    "canSubmit": False,
                     "providerStatus": "FIRST_PARTY_REVIEW",
                     "reviewStatus": "FIRST_PARTY_REVIEW",
                     "reviewMode": "FIRST_PARTY_MANUAL_REVIEW",
@@ -595,6 +597,8 @@ class ContractHandler(BaseHTTPRequestHandler):
             return {
                 "status": "UNVERIFIED",
                 "statusCode": 0,
+                "needsAgeResubmission": False,
+                "canSubmit": True,
                 "providerStatus": "FIRST_PARTY_REVIEW",
                 "reviewStatus": "FIRST_PARTY_REVIEW",
                 "reviewMode": "FIRST_PARTY_MANUAL_REVIEW",

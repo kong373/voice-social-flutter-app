@@ -66,6 +66,8 @@ Future<AccountComplianceSnapshot> fetch(
       '/app-mini-api/mini/v1/account/real-name' => <String, Object?>{
         'status': 'UNVERIFIED',
         'statusCode': 0,
+        'needsAgeResubmission': false,
+        'canSubmit': true,
         'providerStatus': 'FIRST_PARTY_REVIEW',
         'reviewStatus': 'FIRST_PARTY_REVIEW',
         'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',

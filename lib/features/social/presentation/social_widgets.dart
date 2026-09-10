@@ -1,9 +1,10 @@
 part of 'social_pages.dart';
 
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.profile});
+  const _ProfileHeader({required this.profile, this.showDecorations = false});
 
   final SocialProfile profile;
+  final bool showDecorations;
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +24,12 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ],
           ),
-          child: RuntimeAvatar(seed: '${profile.user.userId}', size: 68),
+          child: EquippedDecorationView(
+            decorations: profile.user.equippedDecorations,
+            product: DecorationProduct.starRingFrame,
+            enabled: showDecorations,
+            child: RuntimeAvatar(seed: '${profile.user.userId}', size: 68),
+          ),
         ),
         const SizedBox(width: 15),
         Expanded(
@@ -40,6 +46,11 @@ class _ProfileHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 3),
+              EquippedDecorationView(
+                decorations: profile.user.equippedDecorations,
+                product: DecorationProduct.companionBadge,
+                enabled: showDecorations,
+              ),
               PublicUserIdLabel(
                 userId: profile.user.userId,
                 prefix: '用户号',

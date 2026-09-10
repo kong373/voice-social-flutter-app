@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import '../../../core/media/media_models.dart';
 import '../../media/image_domain_contract.dart';
+import '../../commerce/display/domain/equipped_decoration.dart';
 
 import 'package:crypto/crypto.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
@@ -874,6 +875,7 @@ class BackendSocialRepository
       isOnline = false;
       roomId = '';
     }
+    final display = hasHomepage ? homepage : personal;
     final SocialUser user = SocialUser(
       userId: profileId,
       name: profileName,
@@ -885,6 +887,9 @@ class BackendSocialRepository
       isBlocked: isSelf ? false : isBlocked,
       isOnline: isSelf ? false : isOnline,
       roomId: roomId.isEmpty ? null : roomId,
+      equippedDecorations: display['status'] == 'ACTIVE'
+          ? EquippedDecoration.parseList(display['equippedDecorations'])
+          : const [],
     );
     return SocialProfile(
       user: user,

@@ -158,6 +158,7 @@ void main() {
       final List<RequestRecord> requests = <RequestRecord>[];
       String realNameStatus = 'VERIFIED';
       int realNameStatusCode = 2;
+      bool needsAgeResubmission = false;
       final HttpServer server = await startServer((
         RequestRecord request,
       ) async {
@@ -239,6 +240,11 @@ void main() {
               data: <String, Object?>{
                 'status': realNameStatus,
                 'statusCode': realNameStatusCode,
+                'needsAgeResubmission': needsAgeResubmission,
+                'canSubmit':
+                    realNameStatusCode == 0 ||
+                    realNameStatusCode == 3 ||
+                    needsAgeResubmission,
                 'providerStatus': 'FIRST_PARTY_REVIEW',
                 'reviewStatus': 'FIRST_PARTY_REVIEW',
                 'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
@@ -297,6 +303,8 @@ void main() {
       expect(snapshot.account, 'user-public-1');
       expect(snapshot.nickname, '晚星');
       expect(snapshot.verificationState, VerificationState.verified);
+      expect(snapshot.needsAgeResubmission, isFalse);
+      expect(snapshot.canSubmitRealName, isFalse);
       expect(snapshot.youthModeEnabled, isTrue);
       expect(snapshot.restriction.kind, RestrictionKind.device);
       expect(snapshot.restriction.reason, '设备风控复核中');
@@ -332,6 +340,16 @@ void main() {
         ),
       );
 
+      needsAgeResubmission = true;
+      final legacyVerified = await repository.fetchSnapshot(
+        account: 'fallback-account',
+        currentVersion: 6,
+        platformType: 1,
+      );
+      expect(legacyVerified.verificationState, VerificationState.verified);
+      expect(legacyVerified.needsAgeResubmission, isTrue);
+      expect(legacyVerified.canSubmitRealName, isTrue);
+      needsAgeResubmission = false;
       realNameStatus = 'NOT_SUBMITTED';
       realNameStatusCode = 0;
       final AccountComplianceSnapshot notSubmitted = await repository
@@ -341,6 +359,7 @@ void main() {
             platformType: 1,
           );
       expect(notSubmitted.verificationState, VerificationState.unverified);
+      expect(notSubmitted.canSubmitRealName, isTrue);
       expect(
         requests.map((RequestRecord request) => request.path),
         containsAllInOrder(<String>[
@@ -414,6 +433,8 @@ void main() {
               data: <String, Object?>{
                 'status': 'UNVERIFIED',
                 'statusCode': 0,
+                'needsAgeResubmission': false,
+                'canSubmit': true,
                 'providerStatus': 'FIRST_PARTY_REVIEW',
                 'reviewStatus': 'FIRST_PARTY_REVIEW',
                 'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
@@ -521,6 +542,8 @@ void main() {
             data: <String, Object?>{
               'status': 'UNVERIFIED',
               'statusCode': 0,
+              'needsAgeResubmission': false,
+              'canSubmit': true,
               'providerStatus': 'FIRST_PARTY_REVIEW',
               'reviewStatus': 'FIRST_PARTY_REVIEW',
               'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
@@ -616,6 +639,8 @@ void main() {
         '/app-mini-api/mini/v1/account/real-name' => <String, Object?>{
           'status': 'UNVERIFIED',
           'statusCode': 0,
+          'needsAgeResubmission': false,
+          'canSubmit': true,
           'providerStatus': 'FIRST_PARTY_REVIEW',
           'reviewStatus': 'FIRST_PARTY_REVIEW',
           'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
@@ -679,6 +704,8 @@ void main() {
           <String, Object?>{
             'status': 'VERIFIED',
             'statusCode': 1,
+            'needsAgeResubmission': false,
+            'canSubmit': false,
             'providerStatus': 'FIRST_PARTY_REVIEW',
             'reviewStatus': 'FIRST_PARTY_REVIEW',
             'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',
@@ -733,6 +760,8 @@ void main() {
               data: <String, Object?>{
                 'status': 'PENDING',
                 'statusCode': 1,
+                'needsAgeResubmission': false,
+                'canSubmit': false,
                 'providerStatus': 'FIRST_PARTY_REVIEW',
                 'reviewStatus': 'FIRST_PARTY_REVIEW',
                 'reviewMode': 'FIRST_PARTY_MANUAL_REVIEW',

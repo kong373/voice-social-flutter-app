@@ -14,6 +14,48 @@ import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/community/presentation/community_pages.dart';
 
 void main() {
+  testWidgets('legacy verified age evidence opens explicit resubmission form', (
+    tester,
+  ) async {
+    final compliance = _Compliance(VerificationState.verified)
+      ..needsAgeResubmission = true;
+    final dependencies = _dependencies(compliance);
+    addTearDown(dependencies.dispose);
+    await tester.pumpWidget(
+      _page(
+        dependencies,
+        const RealNamePage(account: 'test', currentVersion: 6, platformType: 1),
+      ),
+    );
+    await _settle(tester);
+    expect(find.text('需补交实名资料'), findsOneWidget);
+    expect(find.byType(TextFormField), findsNWidgets(2));
+    await tester.enterText(find.byType(TextFormField).at(0), '测试用户');
+    await tester.enterText(find.byType(TextFormField).at(1), '110105491231002');
+    await tester.tap(find.text('提交认证'));
+    await _settle(tester);
+    expect(compliance.submissions, 1);
+    expect(find.text('审核中'), findsOneWidget);
+    expect(find.byType(TextFormField), findsNothing);
+  });
+
+  testWidgets('legacy verified missing age cannot POST guild application', (
+    tester,
+  ) async {
+    final compliance = _Compliance(VerificationState.verified)
+      ..needsAgeResubmission = true;
+    await _guild(tester, compliance, (dependencies, http) async {
+      await tester.tap(find.text('申请加入'));
+      await _settle(tester);
+      expect(http.applications, 0);
+      expect(find.text('去实名认证'), findsOneWidget);
+      await tester.tap(find.text('去实名认证'));
+      await _settle(tester);
+      expect(find.text('需补交实名资料'), findsOneWidget);
+      expect(find.byType(TextFormField), findsNWidgets(2));
+    });
+  });
+
   testWidgets('rejected real-name form cannot submit after account ABA', (
     tester,
   ) async {
@@ -253,6 +295,7 @@ class _Compliance extends MockAccountComplianceRepository {
   VerificationState state;
   bool usable = true;
   bool locked = false;
+  bool needsAgeResubmission = false;
   int submissions = 0;
   Completer<void>? pause;
   @override
@@ -270,6 +313,7 @@ class _Compliance extends MockAccountComplianceRepository {
       platformType: platformType,
     )).copyWith(
       verificationState: state,
+      needsAgeResubmission: needsAgeResubmission,
       accountUsable: usable,
       youthModeEnabled: locked,
     );
@@ -282,6 +326,7 @@ class _Compliance extends MockAccountComplianceRepository {
   }) async {
     submissions++;
     state = VerificationState.pending;
+    needsAgeResubmission = false;
   }
 }
 

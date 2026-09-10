@@ -1,4 +1,5 @@
 import 'package:voice_social_app/core/network/api_exception.dart';
+import '../../commerce/display/domain/equipped_decoration.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 
 class BackendMicSeat {
@@ -13,6 +14,7 @@ class BackendMicSeat {
     this.isSpeaking = false,
     this.audioMute,
     this.occupantJoinedAt,
+    this.equippedDecorations = const [],
   });
 
   final int index;
@@ -25,6 +27,7 @@ class BackendMicSeat {
   final bool isSpeaking;
   final RoomAudioMuteState? audioMute;
   final String? occupantJoinedAt;
+  final List<EquippedDecoration> equippedDecorations;
 
   bool get isOccupied => status == 3 || status == 4;
 }
@@ -74,6 +77,9 @@ class FixedEightSeatAdapter {
       isSpeaking: backend.isOccupied && backend.isOnline && backend.isSpeaking,
       audioMute: backend.audioMute,
       occupantJoinedAt: backend.occupantJoinedAt,
+      equippedDecorations: backend.isOccupied && backend.isOnline
+          ? backend.equippedDecorations
+          : const [],
     );
   }
 

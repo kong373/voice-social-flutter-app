@@ -1,4 +1,5 @@
 import 'package:voice_social_app/features/room/domain/room_models.dart';
+import '../../commerce/display/domain/equipped_decoration.dart';
 
 enum RoomMemberPresence { onMic, listener }
 
@@ -35,6 +36,9 @@ class RoomMember {
     this.isMuted = false,
     this.wealthLevel = 0,
     this.charmLevel = 0,
+    this.joinedAt,
+    this.online = true,
+    this.equippedDecorations = const [],
   });
 
   final int userId;
@@ -46,6 +50,9 @@ class RoomMember {
   final bool isMuted;
   final int wealthLevel;
   final int charmLevel;
+  final DateTime? joinedAt;
+  final bool online;
+  final List<EquippedDecoration> equippedDecorations;
 
   bool get isOnMic => presence == RoomMemberPresence.onMic;
   bool get isManager =>
@@ -70,6 +77,9 @@ class RoomMember {
       isMuted: isMuted ?? this.isMuted,
       wealthLevel: wealthLevel,
       charmLevel: charmLevel,
+      joinedAt: joinedAt,
+      online: online,
+      equippedDecorations: equippedDecorations,
     );
   }
 }

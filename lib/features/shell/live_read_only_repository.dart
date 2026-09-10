@@ -1,4 +1,5 @@
 import 'package:voice_social_app/core/network/api_client.dart';
+import '../commerce/display/domain/equipped_decoration.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 
 class LiveCurrentUser {
@@ -9,6 +10,7 @@ class LiveCurrentUser {
     required this.mobile,
     required this.roles,
     required this.status,
+    this.equippedDecorations = const [],
   });
 
   final int userId;
@@ -17,6 +19,7 @@ class LiveCurrentUser {
   final String mobile;
   final String roles;
   final String status;
+  final List<EquippedDecoration> equippedDecorations;
 }
 
 class LiveWalletSnapshot {
@@ -164,6 +167,9 @@ class LiveReadOnlyRepository {
       mobile: _string(data['mobile']),
       roles: _string(data['roles']),
       status: _string(data['status']),
+      equippedDecorations: data['status'] == 'ACTIVE'
+          ? EquippedDecoration.parseList(data['equippedDecorations'])
+          : const [],
     );
   }
 

@@ -5,6 +5,7 @@ import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance.dart';
+import 'package:voice_social_app/features/account/compliance/domain/real_name_submission_policy.dart';
 import 'package:voice_social_app/features/account/compliance/domain/account_compliance_request_id.dart';
 import 'package:voice_social_app/features/account/compliance/infrastructure/native_permission_adapter.dart';
 
@@ -43,6 +44,9 @@ class BackendAccountComplianceRepository
   final Map<String, Future<void>> _pendingRealNameSubmissions =
       <String, Future<void>>{};
   final Map<String, String> _retainedRealNameRequestIds = <String, String>{};
+  // A historical receipt confirms only the command. Until a strict current
+  // read succeeds, retries must finish that read instead of submitting again.
+  final Set<String> _legacyRealNameReceiptsAwaitingRead = <String>{};
   final Map<String, Future<void>> _pendingSessionRevocations =
       <String, Future<void>>{};
   final Map<String, String> _retainedSessionRevocationRequestIds =
@@ -181,6 +185,7 @@ class BackendAccountComplianceRepository
       nickname: nickName,
       accountUsable: accountUsable,
       verificationState: _verificationState(verificationCode),
+      needsAgeResubmission: realName['needsAgeResubmission']! as bool,
       youthModeEnabled: youthModeEnabled,
       restriction: AccountRestriction(
         kind: _restrictionKind(
@@ -410,11 +415,13 @@ class BackendAccountComplianceRepository
             _removePending(_pendingRealNameSubmissions, intentKey, operation);
             _requireRealNameIdentity(identity);
             _retainedRealNameRequestIds.remove(intentKey);
+            _legacyRealNameReceiptsAwaitingRead.remove(requestId);
           },
           onError: (Object error, StackTrace stackTrace) {
             _removePending(_pendingRealNameSubmissions, intentKey, operation);
             _requireRealNameIdentity(identity);
-            if (!shouldRetainAccountComplianceRequest(error)) {
+            if (!_legacyRealNameReceiptsAwaitingRead.contains(requestId) &&
+                !shouldRetainAccountComplianceRequest(error)) {
               _retainedRealNameRequestIds.remove(intentKey);
             }
             Error.throwWithStackTrace(error, stackTrace);
@@ -458,6 +465,10 @@ class BackendAccountComplianceRepository
     required String requestId,
   }) async {
     _requireRealNameIdentity(identity);
+    if (_legacyRealNameReceiptsAwaitingRead.contains(requestId)) {
+      await _readCurrentRealName(identity);
+      return;
+    }
     final ApiResponse response;
     try {
       response = await _apiClient.postBoundToIdentity(
@@ -477,12 +488,33 @@ class BackendAccountComplianceRepository
     }
     _requireRealNameIdentity(identity);
     final Map<String, Object?> submitted = _requireMap(response.data, '实名认证提交');
-    if (_parseVerificationCode(submitted) != 1) {
+    final bool legacyReceipt =
+        !submitted.containsKey('needsAgeResubmission') &&
+        !submitted.containsKey('canSubmit');
+    final int code = legacyReceipt
+        ? _parseVerificationState(submitted)
+        : _parseVerificationCode(submitted);
+    if (code != 1 || (legacyReceipt && submitted['status'] != 'PENDING')) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '实名认证提交响应未进入待审核状态',
       );
     }
+    if (legacyReceipt) {
+      _legacyRealNameReceiptsAwaitingRead.add(requestId);
+      await _readCurrentRealName(identity);
+    }
+  }
+
+  Future<void> _readCurrentRealName((int, int) identity) async {
+    final response = await _apiClient.getBoundToIdentity(
+      _routes.accountRealName,
+      requireIdentity: () => _requireRealNameIdentity(identity),
+    );
+    _requireRealNameIdentity(identity);
+    // This read may be REJECTED or VERIFIED (including missing age evidence).
+    // Never infer today's qualification from a historical PENDING receipt.
+    _parseVerificationCode(_requireMap(response.data, '当前实名认证状态'));
   }
 
   @override
@@ -1262,6 +1294,18 @@ class BackendAccountComplianceRepository
   };
 
   static int _parseVerificationCode(Map<String, Object?> data) {
+    try {
+      RealNameSubmissionPolicy.fromBackendData(data);
+    } on FormatException {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '实名认证响应中的补交或提交状态无效',
+      );
+    }
+    return _parseVerificationState(data);
+  }
+
+  static int _parseVerificationState(Map<String, Object?> data) {
     final String status = _requiredString(data, 'status', '实名认证').toUpperCase();
     final int code = _requiredNonNegativeInt(data, 'statusCode', '实名认证');
     final int expected = switch (status) {

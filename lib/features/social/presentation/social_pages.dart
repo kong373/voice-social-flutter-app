@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import '../../commerce/display/domain/equipped_decoration.dart';
+import '../../commerce/display/presentation/equipped_decoration_view.dart';
+import 'profile_display_read_fence.dart';
 import '../../../core/media/media_models.dart';
 import '../../media/image_widgets.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';

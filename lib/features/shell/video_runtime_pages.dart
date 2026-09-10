@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../commerce/display/domain/equipped_decoration.dart';
+import '../commerce/display/presentation/equipped_decoration_view.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
@@ -1471,6 +1473,11 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
   String? _profileError;
   bool _loadingProfile = false;
   int _profileLoadRequestId = 0;
+  (int?, int)? _profileDisplayIdentity;
+  (int?, int) get _profileViewer => (
+    widget.dependencies.sessionManager.session?.userId,
+    widget.dependencies.sessionManager.identityGeneration,
+  );
   LiveReadOnlyOverview? _liveOverview;
   String? _liveError;
   bool _loadingLiveOverview = false;
@@ -1523,6 +1530,8 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
 
   Future<void> _loadProfile() async {
     final int requestId = ++_profileLoadRequestId;
+    final identity = _profileViewer;
+    final dependencies = widget.dependencies;
     setState(() {
       _loadingProfile = true;
       _profileError = null;
@@ -1532,15 +1541,22 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
           await (widget.profileRepository ??
                   widget.dependencies.socialRepository)
               .fetchMyProfile();
-      if (!mounted || requestId != _profileLoadRequestId) {
+      if (!mounted ||
+          requestId != _profileLoadRequestId ||
+          identity != _profileViewer ||
+          !identical(dependencies, widget.dependencies)) {
         return;
       }
       setState(() {
         _profile = profile;
+        _profileDisplayIdentity = identity;
         _loadingProfile = false;
       });
     } catch (error) {
-      if (!mounted || requestId != _profileLoadRequestId) {
+      if (!mounted ||
+          requestId != _profileLoadRequestId ||
+          identity != _profileViewer ||
+          !identical(dependencies, widget.dependencies)) {
         return;
       }
       setState(() {
@@ -1661,10 +1677,16 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
               sliver: SliverToBoxAdapter(
-                child: _ProfileHeader(
-                  profile: profile,
-                  onTap: () =>
-                      _open(context, accountPage, refreshProfile: true),
+                child: ListenableBuilder(
+                  listenable: widget.dependencies.sessionManager,
+                  builder: (context, _) => _ProfileHeader(
+                    profile: profile,
+                    showDecorations:
+                        _profileDisplayIdentity == _profileViewer &&
+                        _profileViewer.$1 == profile.user.userId,
+                    onTap: () =>
+                        _open(context, accountPage, refreshProfile: true),
+                  ),
                 ),
               ),
             ),
@@ -1713,7 +1735,11 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
                           title: '装扮',
                           subtitle: '图鉴与当前穿戴',
                           color: const Color(0xFFFFDDED),
-                          onTap: () => _open(context, const DecorationPage()),
+                          onTap: () => _open(
+                            context,
+                            const DecorationPage(),
+                            refreshProfile: true,
+                          ),
                         ),
                       ),
                     ],
@@ -1725,7 +1751,11 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
                 sliver: SliverToBoxAdapter(
                   child: _DecorationBanner(
-                    onTap: () => _open(context, const DecorationPage()),
+                    onTap: () => _open(
+                      context,
+                      const DecorationPage(),
+                      refreshProfile: true,
+                    ),
                   ),
                 ),
               ),
@@ -1761,7 +1791,11 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
                           title: '装扮',
                           subtitle: '头像框与进场',
                           color: const Color(0xFFFFDDED),
-                          onTap: () => _open(context, const DecorationPage()),
+                          onTap: () => _open(
+                            context,
+                            const DecorationPage(),
+                            refreshProfile: true,
+                          ),
                         ),
                       ),
                     ],
@@ -1896,10 +1930,15 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
 }
 
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.profile, required this.onTap});
+  const _ProfileHeader({
+    required this.profile,
+    required this.onTap,
+    this.showDecorations = false,
+  });
 
   final SocialProfile profile;
   final VoidCallback onTap;
+  final bool showDecorations;
 
   @override
   Widget build(BuildContext context) => InkWell(
@@ -1911,7 +1950,12 @@ class _ProfileHeader extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              RuntimeAvatar(seed: '${profile.user.userId}', size: 74),
+              EquippedDecorationView(
+                decorations: profile.user.equippedDecorations,
+                product: DecorationProduct.starRingFrame,
+                enabled: showDecorations,
+                child: RuntimeAvatar(seed: '${profile.user.userId}', size: 74),
+              ),
               const SizedBox(width: 13),
               Expanded(
                 child: Column(
@@ -1940,6 +1984,11 @@ class _ProfileHeader extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 5),
+                    EquippedDecorationView(
+                      decorations: profile.user.equippedDecorations,
+                      product: DecorationProduct.companionBadge,
+                      enabled: showDecorations,
+                    ),
                     PublicUserIdLabel(
                       userId: profile.user.userId,
                       suffix:
