@@ -8,6 +8,7 @@ import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/social/data/mock_social_repository.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
@@ -20,9 +21,14 @@ void main() {
   }) async {
     final navigator = GlobalKey<NavigatorState>();
     final page = PersonalCenterPage(session: null, onSignOut: () async {});
+    final dependencies = _Dependencies(repository);
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox());
+      dependencies.backing.dispose();
+    });
     await tester.pumpWidget(
       AppDependencyScope(
-        dependencies: _Dependencies(repository),
+        dependencies: dependencies,
         child: MaterialApp(
           navigatorKey: navigator,
           theme: AppTheme.social(),
@@ -159,6 +165,11 @@ class _ProfileRepository extends MockSocialRepository {
 
 class _Dependencies implements AppDependencies {
   _Dependencies(this.socialRepository);
+
+  final AppDependencies backing = AppDependencies.mock();
+
+  @override
+  AuthSessionManager get sessionManager => backing.sessionManager;
 
   @override
   final SocialRepository socialRepository;

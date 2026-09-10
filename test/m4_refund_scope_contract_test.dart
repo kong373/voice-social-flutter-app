@@ -57,12 +57,17 @@ void main() {
           'M4_ACCEPTANCE::PASS_WITH_PRODUCT_REMOVALS',
           'M4_RELEASE_READINESS::NOT_RELEASE_READY',
           'M4_AUTHORITY_INVARIANT::app_refund_entry_absent',
+          'M4_AUTHORITY_INVARIANT::owned_open_rooms_distinct_authority_confirmed',
+          'M4_AUTHORITY_INVARIANT::ordinary_public_room_authority_confirmed',
+          'M4_AUTHORITY_INVARIANT::ordinary_mic_queue_cancelled_by_authoritative_read',
+          'M4_AUTHORITY_INVARIANT::registration_explicit_avatar_and_sex_selected',
+          'M4_ROUTE_STATUS::auth.register::POST::/app-register-api/register::200::success',
           for (final capability in live.M4RefundScope(profile).removed)
             'M4_REMOVED_BY_PRODUCT::$capability',
         ].join('\n');
         int validate(String evidence) => Process.runSync('python3', [
           '-c',
-          'import sys\nfrom pathlib import Path\nsys.argv = ["validator", "unused", "$profile", "PASS_WITH_PRODUCT_REMOVALS"]\nPath.read_text = lambda *a, **k: ${jsonEncode(evidence)}\n$validator',
+          'import sys\nfrom pathlib import Path\nsys.argv = ["validator", "/evidence/AVD-A/logs/flutter-drive.log", "$profile", "PASS_WITH_PRODUCT_REMOVALS"]\nPath.read_text = lambda *a, **k: ${jsonEncode(evidence)}\n$validator',
         ]).exitCode;
         expect(validate(log), 0);
         expect(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
+import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
 
 void main() {
@@ -77,12 +78,20 @@ void main() {
     await tester.tap(find.text('赠送 · 10').hitTestable());
     await _pumpUntilVisible(
       tester,
-      find.byKey(const Key('gift-celebration-overlay')),
+      find.byKey(const Key('gift-success-feedback')),
     );
-    expect(find.byKey(const Key('gift-celebration-overlay')), findsOneWidget);
+    expect(find.byKey(const Key('gift-success-feedback')), findsOneWidget);
+    expect(dependencies.giftSendCoordinator.plan!.succeeded, 1);
+    expect(find.text('已送出（已确认）'), findsOneWidget);
     await tester.pump(const Duration(seconds: 4));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byKey(const Key('gift-celebration-overlay')), findsNothing);
+    expect(find.byKey(const Key('gift-success-feedback')), findsNothing);
+    // Independent recipient receipts stay visible until the user dismisses
+    // the sheet; sending no longer pops it through the legacy room callback.
+    expect(find.byType(GiftSheet), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(GiftSheet), findsNothing);
 
     await tester.tap(find.byTooltip('离开房间').hitTestable());
     final Finder minimizeAction = find.text('收起房间').hitTestable();
