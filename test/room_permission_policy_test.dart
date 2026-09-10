@@ -9,6 +9,9 @@ void main() {
     RoomRole role, {
     bool giftCatalogAvailable = true,
     RoomTransportMode transportMode = RoomTransportMode.interactive,
+    bool ownerClosedAccess = false,
+    bool closedRoomAccess = false,
+    bool platformStaff = false,
   }) => RoomSnapshot(
     roomId: '1',
     roomCode: '1',
@@ -16,6 +19,10 @@ void main() {
     topic: '',
     ownerId: 1,
     role: role,
+    ownerClosedAccess: ownerClosedAccess,
+    closedRoomAccess: closedRoomAccess,
+    platformStaff: platformStaff,
+    canControlRoomLifecycle: platformStaff,
     seats: const <MicSeat>[],
     rtc: const RtcCredentials(
       solution: RtcSolution.agora,
@@ -33,6 +40,46 @@ void main() {
   );
 
   for (final mode in RoomTransportMode.values) {
+    test('PK belongs only to current owner or room manager in $mode', () {
+      for (final role in RoomRole.values) {
+        expect(
+          policy.allows(
+            snapshot: snapshot(role, transportMode: mode),
+            capability: RoomCapability.startPk,
+            isOnMic: false,
+          ),
+          role == RoomRole.owner || role == RoomRole.moderator,
+          reason: role.name,
+        );
+      }
+      for (final role in [RoomRole.owner, RoomRole.moderator]) {
+        expect(
+          policy.allows(
+            snapshot: snapshot(
+              role,
+              transportMode: mode,
+              ownerClosedAccess: true,
+            ),
+            capability: RoomCapability.startPk,
+            isOnMic: true,
+          ),
+          isFalse,
+        );
+      }
+      expect(
+        policy.allows(
+          snapshot: snapshot(
+            RoomRole.platformModerator,
+            transportMode: mode,
+            closedRoomAccess: true,
+            platformStaff: true,
+          ),
+          capability: RoomCapability.startPk,
+          isOnMic: false,
+        ),
+        isFalse,
+      );
+    });
     test('manager can open profile but cannot control lifecycle in $mode', () {
       final room = snapshot(RoomRole.moderator, transportMode: mode);
       expect(

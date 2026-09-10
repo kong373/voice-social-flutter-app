@@ -52,7 +52,7 @@ class RoomPermissionPolicy {
         RoomCapability.closeRoom =>
           snapshotRole == RoomRole.owner ||
               (snapshot.platformStaff && snapshot.canControlRoomLifecycle),
-        RoomCapability.startPk => snapshotRole == RoomRole.owner,
+        RoomCapability.startPk => canManage,
       };
     }
 
@@ -73,7 +73,7 @@ class RoomPermissionPolicy {
       RoomCapability.closeRoom =>
         role == RoomRole.owner ||
             (snapshot.platformStaff && snapshot.canControlRoomLifecycle),
-      RoomCapability.startPk => role == RoomRole.owner,
+      RoomCapability.startPk => canManage,
     };
   }
 }
