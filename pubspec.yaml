@@ -11,6 +11,9 @@ dependencies:
   crypto: 3.0.7
   image_picker: 1.2.3
   path_provider: 2.1.6
+  record: 7.1.1
+  just_audio: 0.10.6
+  video_player: 2.14.0
   first_party_native_permissions:
     path: packages/first_party_native_permissions
   first_party_room_audio:

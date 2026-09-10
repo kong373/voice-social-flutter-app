@@ -77,9 +77,14 @@ import 'package:voice_social_app/features/social/data/backend_social_repository.
 import 'package:voice_social_app/features/social/data/mock_social_repository.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 
+import 'package:voice_social_app/features/media/private_media_host.dart';
+import 'package:voice_social_app/features/media/private_media_native.dart';
+import 'package:voice_social_app/features/media/private_media_temporary_root.dart';
+
 class AppDependencies {
   AppDependencies._({
     required this.imageMediaHost,
+    required this.privateMediaHost,
     required this.environment,
     required this.sessionManager,
     required this.authController,
@@ -140,6 +145,7 @@ class AppDependencies {
     DiscoveryRepository? discoveryRepository,
     DynamicRepository? dynamicRepository,
     AppImageMediaHost? imageMediaHost,
+    PrivateMediaHost? privateMediaHost,
     MessageRepository? messageRepository,
     ExternalUrlOpener? externalUrlOpener,
     ImSessionAdapter? imSessionAdapter,
@@ -158,6 +164,7 @@ class AppDependencies {
       discoveryRepositoryOverride: discoveryRepository,
       dynamicRepositoryOverride: dynamicRepository,
       imageMediaHostOverride: imageMediaHost,
+      privateMediaHostOverride: privateMediaHost,
       messageRepositoryOverride: messageRepository,
       externalUrlOpenerOverride: externalUrlOpener,
       imSessionAdapterOverride: imSessionAdapter,
@@ -178,6 +185,7 @@ class AppDependencies {
     DiscoveryRepository? discoveryRepositoryOverride,
     DynamicRepository? dynamicRepositoryOverride,
     AppImageMediaHost? imageMediaHostOverride,
+    PrivateMediaHost? privateMediaHostOverride,
     MessageRepository? messageRepositoryOverride,
     ExternalUrlOpener? externalUrlOpenerOverride,
     ImSessionAdapter? imSessionAdapterOverride,
@@ -501,7 +509,25 @@ class AppDependencies {
     final ExternalUrlOpener externalUrlOpener =
         externalUrlOpenerOverride ?? MethodChannelExternalUrlOpener();
     apiClient.setUnauthorizedRecovery(authController.refreshSession);
+    final privateMediaTemporary = PrivateMediaTemporaryRoot(
+      getTemporaryDirectory,
+    );
     return AppDependencies._(
+      privateMediaHost:
+          privateMediaHostOverride ??
+          PrivateMediaHost(
+            api: apiClient,
+            store: store,
+            userId: () => sessionManager.session?.userId ?? 0,
+            generation: () => sessionManager.identityGeneration,
+            changes: sessionManager,
+            temporaryParent: privateMediaTemporary.get,
+            inputFactory: () => NativePrivateMediaInput(
+              temporaryParent: privateMediaTemporary.get,
+            ),
+            playerFactory: NativePrivateLocalPlayer.new,
+            enabled: environment.isLive,
+          ),
       imageMediaHost:
           imageMediaHostOverride ??
           AppImageMediaHost(
@@ -575,6 +601,7 @@ class AppDependencies {
 
   final AppEnvironment environment;
   final AppImageMediaHost? imageMediaHost;
+  final PrivateMediaHost privateMediaHost;
   final AuthSessionManager sessionManager;
   final AuthController authController;
   final ImSessionAdapter imSessionAdapter;
@@ -727,6 +754,7 @@ class AppDependencies {
     if (_disposed) return;
     _disposed = true;
     imageMediaHost?.dispose();
+    privateMediaHost.dispose();
     complianceRevision.dispose();
     giftSendCoordinator.dispose();
     for (final reference in _roomControllers) {

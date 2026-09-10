@@ -230,7 +230,7 @@ class AppImageMediaHost extends ChangeNotifier {
         if (source == null || !source.identity.isCurrent) {
           throw const ApiException(
             kind: ApiFailureKind.conflict,
-            message: '原文件已随身份变化清理；此资产只能查询，不能替换文件续传',
+            message: '原文件已随身份变化清理；只可检查上传状态，不能替换文件续传',
           );
         }
         image.putAttempted = true;

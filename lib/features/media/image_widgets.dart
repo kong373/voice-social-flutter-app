@@ -6,6 +6,7 @@ import '../../core/media/media_files.dart';
 import '../../core/media/media_identity.dart';
 import '../../core/media/media_models.dart';
 import 'app_image_media_host.dart';
+import 'media_labels.dart';
 
 AppImageMediaHost? imageHostOf(BuildContext context) => context
     .dependOnInheritedWidgetOfExactType<AppDependencyScope>()
@@ -80,7 +81,7 @@ class ImageAttachmentEditor extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '图片 ${draft.images.indexOf(image) + 1} · ${image.status?.state.wire ?? (image.attempted ? '结果未知' : '待上传')}',
+                    '图片 ${draft.images.indexOf(image) + 1} · ${mediaStateLabel(image.status?.state, attempted: image.attempted)}',
                   ),
                   if (image.error != null) Text(image.error!),
                   Wrap(
@@ -101,7 +102,7 @@ class ImageAttachmentEditor extends StatelessWidget {
                           image.flight != null
                               ? '处理中…'
                               : image.attempted
-                              ? '查询原资产'
+                              ? '检查上传状态'
                               : '上传图片',
                         ),
                       ),
@@ -117,7 +118,7 @@ class ImageAttachmentEditor extends StatelessWidget {
                                   context,
                                   () => binding.host.upload(draft, image),
                                 ),
-                          child: const Text('重新检查就绪'),
+                          child: const Text('继续检查上传'),
                         ),
                       TextButton(
                         onPressed: draft.locked || image.flight != null
@@ -136,7 +137,9 @@ class ImageAttachmentEditor extends StatelessWidget {
           for (final image in draft.retainedUploads)
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text('已移除图片 · ${image.status?.state.wire ?? '结果未知'}'),
+              title: Text(
+                '已移除图片 · ${mediaStateLabel(image.status?.state, attempted: true)}',
+              ),
               subtitle: const Text('本机副本已清理，原请求仍保留；仅查询，不会随内容提交。'),
               trailing: TextButton(
                 onPressed: image.flight != null
@@ -145,7 +148,7 @@ class ImageAttachmentEditor extends StatelessWidget {
                         context,
                         () => binding.host.upload(draft, image, recover: true),
                       ),
-                child: const Text('查询原资产'),
+                child: const Text('检查上传状态'),
               ),
             ),
         ],

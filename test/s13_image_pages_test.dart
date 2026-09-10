@@ -196,7 +196,7 @@ void main() {
       await draft.images.single.flight;
     });
     await tester.pumpAndSettle();
-    expect(find.textContaining('READY'), findsOneWidget);
+    expect(find.textContaining('已上传'), findsOneWidget);
   }
 
   imageTest(

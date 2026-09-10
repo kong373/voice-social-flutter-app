@@ -19,6 +19,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   bool _sending = false;
   String? _error;
   int _loadRequestId = 0;
+  int _conversationEpoch = 0;
   String? _pendingSendRequestId;
   String? _pendingSendContent;
   ImAuthoritativeRefreshBus? _refreshBus;
@@ -28,6 +29,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   AppDependencies? _dependencies;
   ModalRoute<void>? _route;
   int? _accountId;
+  int? _accountGeneration;
   bool _loadStarted = false;
   bool _foreground = true;
   bool _visible = false;
@@ -84,6 +86,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     if (!_loadStarted) {
       _loadStarted = true;
       _accountId = _dependencies!.sessionManager.session?.userId ?? 0;
+      _accountGeneration = _dependencies!.sessionManager.identityGeneration;
       _load();
     } else if (!wasVisible && _visible) {
       _load(showLoading: false);
@@ -91,6 +94,32 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       _loadRequestId += 1;
       _syncTimer?.cancel();
     }
+  }
+
+  @override
+  void didUpdateWidget(PrivateChatPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.conversation.targetUserId == widget.conversation.targetUserId)
+      return;
+    _conversationEpoch++;
+    _loadRequestId++;
+    _syncTimer?.cancel();
+    _refreshFlight = null;
+    _refreshAgain = false;
+    _conversation = widget.conversation;
+    _messages.clear();
+    _historyMessageIds.clear();
+    _catchupBoundary = null;
+    _catchupCursor = null;
+    _readScanCursor = null;
+    _historyComplete = false;
+    _readScanCursors.clear();
+    _gapCursors.clear();
+    _controller.clear();
+    _pendingSendRequestId = null;
+    _pendingSendContent = null;
+    _sending = false;
+    _load();
   }
 
   @override
@@ -107,7 +136,9 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   bool _checkAccount() {
     if (!mounted || _accountChanged) return false;
     if (!_dependencies!.environment.isLive ||
-        (_dependencies!.sessionManager.session?.userId ?? 0) == _accountId) {
+        ((_dependencies!.sessionManager.session?.userId ?? 0) == _accountId &&
+            _dependencies!.sessionManager.identityGeneration ==
+                _accountGeneration)) {
       return true;
     }
     _syncTimer?.cancel();
@@ -455,6 +486,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       _pendingSendContent = text;
     }
     final String requestId = _pendingSendRequestId!;
+    final conversationEpoch = _conversationEpoch;
     setState(() => _sending = true);
     try {
       final ChatMessage message = await _repository.sendPrivateMessage(
@@ -462,7 +494,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
         content: text,
         requestId: requestId,
       );
-      if (!_checkAccount()) {
+      if (!_checkAccount() || conversationEpoch != _conversationEpoch) {
         return;
       }
       if (_conversation.isDraft && message.conversationId != null) {
@@ -489,16 +521,38 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       _pendingSendContent = null;
       _scrollToEnd();
     } catch (error) {
-      if (mounted && _checkAccount()) {
+      if (mounted &&
+          _checkAccount() &&
+          conversationEpoch == _conversationEpoch) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
-      if (mounted) {
+      if (mounted && conversationEpoch == _conversationEpoch) {
         setState(() => _sending = false);
       }
     }
+  }
+
+  void _mediaSent(ChatMessage message) {
+    if (!_checkAccount() || !_active) return;
+    if (_conversation.isDraft && message.conversationId != null) {
+      _conversation = _conversation.withServerIdentity(
+        conversationId: message.conversationId!,
+        serverUpdatedAt: message.createdAt,
+      );
+    }
+    _loadRequestId += 1;
+    final merged = _mergeMessages([message]);
+    setState(() {
+      _messages
+        ..clear()
+        ..addAll(merged);
+      _loading = false;
+      _error = null;
+    });
+    _scrollToEnd();
   }
 
   void _scrollToEnd() {
@@ -662,29 +716,62 @@ class _PrivateChatPageState extends State<PrivateChatPage>
               ),
             ),
           Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                ? _MessageError(message: _error!, onRetry: _load)
-                : _messages.isEmpty
-                ? Center(
-                    child: Text(
-                      _repository.supportsPrivateHistory
-                          ? '还没有消息，认真说第一句话吧'
-                          : '当前没有可恢复的私聊历史',
-                    ),
-                  )
-                : RefreshIndicator(
-                    onRefresh: _load,
-                    child: ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(14, 14, 14, 22),
-                      itemCount: _messages.length,
-                      itemBuilder: (BuildContext context, int index) {
-                        return _ChatBubble(message: _messages[index]);
-                      },
-                    ),
+            child: LayoutBuilder(
+              builder: (context, space) => Column(
+                children: [
+                  Expanded(
+                    child: _loading
+                        ? const Center(child: CircularProgressIndicator())
+                        : _error != null
+                        ? _MessageError(message: _error!, onRetry: _load)
+                        : _messages.isEmpty
+                        ? Center(
+                            child: Text(
+                              _repository.supportsPrivateHistory
+                                  ? '还没有消息，认真说第一句话吧'
+                                  : '当前没有可恢复的私聊历史',
+                            ),
+                          )
+                        : RefreshIndicator(
+                            onRefresh: _load,
+                            child: ListView.builder(
+                              controller: _scrollController,
+                              padding: const EdgeInsets.fromLTRB(
+                                14,
+                                14,
+                                14,
+                                22,
+                              ),
+                              itemCount: _messages.length,
+                              itemBuilder: (BuildContext context, int index) {
+                                return _ChatBubble(
+                                  message: _messages[index],
+                                  mediaVisible: _active && !_accountChanged,
+                                );
+                              },
+                            ),
+                          ),
                   ),
+                  if (_repository is MediaPrivateMessageRepository &&
+                      !_accountChanged)
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: (space.maxHeight * 0.6).clamp(0.0, 240.0),
+                      ),
+                      child: SingleChildScrollView(
+                        child: PrivateMediaComposer(
+                          host: _dependencies!.privateMediaHost,
+                          repository:
+                              _repository as MediaPrivateMessageRepository,
+                          conversation: _conversation,
+                          visible: _active && _conversation.available,
+                          onSent: _mediaSent,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
           Material(
             color: Colors.white.withValues(alpha: 0.86),
@@ -694,11 +781,12 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                 padding: EdgeInsets.fromLTRB(12, 8, 12, 10),
                 child: Row(
                   children: <Widget>[
-                    IconButton(
-                      tooltip: '语音功能暂未开放',
-                      onPressed: null,
-                      icon: const Icon(Icons.mic_none_rounded),
-                    ),
+                    if (_repository is! MediaPrivateMessageRepository)
+                      const IconButton(
+                        tooltip: '当前环境未接入媒体发送',
+                        onPressed: null,
+                        icon: Icon(Icons.mic_none_rounded),
+                      ),
                     const SizedBox(width: 4),
                     Expanded(
                       child: TextField(
@@ -748,9 +836,10 @@ class _PrivateChatPageState extends State<PrivateChatPage>
 }
 
 class _ChatBubble extends StatelessWidget {
-  const _ChatBubble({required this.message});
+  const _ChatBubble({required this.message, this.mediaVisible = true});
 
   final ChatMessage message;
+  final bool mediaVisible;
 
   @override
   Widget build(BuildContext context) {
@@ -784,12 +873,22 @@ class _ChatBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              message.content,
-              style: TextStyle(
-                color: message.isMine ? Colors.white : SocialColors.textPrimary,
+            if (message.messageType != ChatMessageType.text)
+              PrivateMediaBubble(
+                key: ValueKey(message.id),
+                message: message,
+                host: AppDependencyScope.of(context).privateMediaHost,
+                visible: mediaVisible,
+              )
+            else
+              Text(
+                message.content,
+                style: TextStyle(
+                  color: message.isMine
+                      ? Colors.white
+                      : SocialColors.textPrimary,
+                ),
               ),
-            ),
             const SizedBox(height: 4),
             Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,

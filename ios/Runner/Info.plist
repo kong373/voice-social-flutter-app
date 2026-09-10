@@ -27,9 +27,9 @@
   <key>LSRequiresIPhoneOS</key>
   <true/>
   <key>NSMicrophoneUsageDescription</key>
-  <string>用于语音房上麦和实时语音交流，仅在您主动开启麦克风时访问。</string>
+  <string>用于您主动录制私信语音、语音房上麦和实时语音交流，仅在您开启录音或麦克风时访问。</string>
   <key>NSPhotoLibraryUsageDescription</key>
-  <string>用于选择您主动添加到动态或反馈工单的图片，仅访问您在系统选择器中选定的照片。</string>
+  <string>用于选择您主动发送的私信图片、视频及动态或反馈工单图片，仅访问您在系统选择器中选定的媒体。</string>
   <key>NSPhotoLibraryAddUsageDescription</key>
   <string>用于保存您主动选择下载的图片到照片。</string>
   <key>NSCameraUsageDescription</key>
