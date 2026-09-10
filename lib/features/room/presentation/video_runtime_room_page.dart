@@ -566,6 +566,8 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                     _controller.allows(RoomCapability.closeRoom))
                   _platformLifecycleButton(),
                 _announcement(),
+                if (_controller.status == RoomSessionStatus.joined)
+                  RoomPkInvitationBanner(controller: _controller),
                 Expanded(
                   child: LayoutBuilder(
                     builder: (BuildContext context, BoxConstraints constraints) {
@@ -1713,6 +1715,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         builder: (BuildContext context) => RoomPkPreparationPage(
           roomId: snapshot.roomId,
           roomTitle: snapshot.title,
+          controller: _controller,
         ),
       ),
     );

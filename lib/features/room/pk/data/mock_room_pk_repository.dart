@@ -60,6 +60,25 @@ class MockRoomPkRepository implements RoomPkRepository {
   @override
   bool get supportsSurrender => false;
 
+  @override
+  Future<RoomPkProcess> fetchProcess({
+    required String roomId,
+    required void Function() requireCurrent,
+  }) async {
+    requireCurrent();
+    await fetchIncomingInvitation(roomId: roomId);
+    requireCurrent();
+    final invitation = _outgoing?.currentRoomId == roomId
+        ? _outgoing
+        : _incoming?.currentRoomId == roomId
+        ? _incoming
+        : null;
+    return RoomPkProcess(
+      invitation: invitation,
+      battle: _battle?.currentRoomId == roomId ? _battle : null,
+    );
+  }
+
   void seedBattleForQa(RoomPkBattle battle) {
     _battle = battle;
     _battleRefreshes = 0;
@@ -68,6 +87,7 @@ class MockRoomPkRepository implements RoomPkRepository {
   @override
   Future<List<RoomPkOpponent>> fetchHotOpponents({
     required String roomId,
+    void Function()? requireCurrent,
   }) async {
     await _delay();
     return _opponents
@@ -79,6 +99,7 @@ class MockRoomPkRepository implements RoomPkRepository {
   Future<List<RoomPkOpponent>> searchOpponents({
     required String roomId,
     required String keyword,
+    void Function()? requireCurrent,
     int pageNum = 1,
     int pageSize = 20,
   }) async {
@@ -119,8 +140,11 @@ class MockRoomPkRepository implements RoomPkRepository {
     required RoomPkOpponent opponent,
     required String punishmentTheme,
     required int durationMinutes,
+    void Function()? requireCurrent,
   }) async {
+    requireCurrent?.call();
     await _delay();
+    requireCurrent?.call();
     final String punishment = punishmentTheme.trim();
     if (inviterUserId <= 0 || opponent.roomId == roomId) {
       throw const ApiException(
@@ -211,8 +235,13 @@ class MockRoomPkRepository implements RoomPkRepository {
   }
 
   @override
-  Future<RoomPkBattle> acceptInvitation(RoomPkInvitation invitation) async {
+  Future<RoomPkBattle> acceptInvitation(
+    RoomPkInvitation invitation, {
+    void Function()? requireCurrent,
+  }) async {
+    requireCurrent?.call();
     await _delay();
+    requireCurrent?.call();
     final RoomPkInvitation? current = _incoming;
     if (current == null ||
         current.id != invitation.id ||
@@ -228,8 +257,13 @@ class MockRoomPkRepository implements RoomPkRepository {
   }
 
   @override
-  Future<void> rejectInvitation(RoomPkInvitation invitation) async {
+  Future<void> rejectInvitation(
+    RoomPkInvitation invitation, {
+    void Function()? requireCurrent,
+  }) async {
+    requireCurrent?.call();
     await _delay();
+    requireCurrent?.call();
     final RoomPkInvitation? current = _incoming;
     if (current == null ||
         current.id != invitation.id ||
@@ -352,6 +386,7 @@ class MockRoomPkRepository implements RoomPkRepository {
   @override
   Future<List<RoomPkRecord>> fetchHistory({
     required String roomId,
+    void Function()? requireCurrent,
     int pageNum = 1,
     int pageSize = 20,
   }) async {
@@ -401,6 +436,7 @@ class MockRoomPkRepository implements RoomPkRepository {
     _battleRefreshes = 0;
     return RoomPkBattle(
       id: 'battle-${invitation.id}',
+      invitationId: invitation.id,
       currentRoomId: invitation.currentRoomId,
       sender: currentIsSender ? current : opponent,
       receiver: currentIsSender ? opponent : current,

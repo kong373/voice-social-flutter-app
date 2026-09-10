@@ -54,12 +54,46 @@ class BackendRoomPkRepository implements RoomPkRepository {
   bool get supportsSurrender => false;
 
   @override
+  Future<RoomPkProcess> fetchProcess({
+    required String roomId,
+    required void Function() requireCurrent,
+  }) async {
+    final currentRoomId = _roomId(roomId, '当前房间 ID');
+    final projection = await _process(
+      roomId: currentRoomId,
+      requireCurrent: requireCurrent,
+    );
+    requireCurrent();
+    final invitation = _invitationForRoom(projection, currentRoomId);
+    final hasBattle = _optionalUuid(projection['battleId'], '对战 ID') != null;
+    if (hasBattle &&
+        (invitation == null ||
+            invitation.status != RoomPkInvitationStatus.accepted)) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: 'PK 对局缺少已接受的当前邀请',
+      );
+    }
+    final battle = !hasBattle
+        ? null
+        : _battleFromProjection(
+            projection,
+            expectedRoomId: currentRoomId,
+            expectedInvitationId: invitation?.id,
+            expectedTargetRoomId: invitation?.opponent.roomId,
+          );
+    return RoomPkProcess(invitation: invitation, battle: battle);
+  }
+
+  @override
   Future<List<RoomPkOpponent>> fetchHotOpponents({
     required String roomId,
+    void Function()? requireCurrent,
   }) async {
     final String currentRoomId = _roomId(roomId, '当前房间 ID');
-    final ApiResponse response = await _apiClient.get(
+    final ApiResponse response = await _get(
       _route(_routes.roomPkHotRooms, _hotPath),
+      requireCurrent: requireCurrent,
     );
     final _PageEnvelope page = _pageFromResponse(
       response.data,
@@ -76,6 +110,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
   Future<List<RoomPkOpponent>> searchOpponents({
     required String roomId,
     required String keyword,
+    void Function()? requireCurrent,
     int pageNum = 1,
     int pageSize = 20,
   }) async {
@@ -88,8 +123,9 @@ class BackendRoomPkRepository implements RoomPkRepository {
         message: '搜索关键词不能超过 80 个字符',
       );
     }
-    final ApiResponse response = await _apiClient.get(
+    final ApiResponse response = await _get(
       _route(_routes.roomPkSearch, _searchPath),
+      requireCurrent: requireCurrent,
       query: <String, String>{
         'keyword': value,
         'pageNum': '${page.page}',
@@ -115,6 +151,17 @@ class BackendRoomPkRepository implements RoomPkRepository {
     final Map<String, Object?> projection = await _process(
       roomId: currentRoomId,
     );
+    final invitation = _invitationForRoom(projection, currentRoomId);
+    return invitation?.direction == RoomPkInvitationDirection.incoming &&
+            invitation?.status == RoomPkInvitationStatus.pending
+        ? invitation
+        : null;
+  }
+
+  RoomPkInvitation? _invitationForRoom(
+    Map<String, Object?> projection,
+    String currentRoomId,
+  ) {
     final String? invitationId = _optionalUuid(
       projection['invitationId'],
       '邀请 ID',
@@ -157,13 +204,12 @@ class BackendRoomPkRepository implements RoomPkRepository {
         message: 'PK 邀请状态无效',
       );
     }
-    if (direction == 'OUTGOING' || status != RoomPkInvitationStatus.pending) {
-      return null;
-    }
+    final incoming = direction == 'INCOMING';
+    final target = incoming ? inviterRoomId : inviteeRoomId;
     final RoomPkOpponent opponent = _opponentFromMap(
       _requiredMap(projection['opponentRoom'], '邀请方房间'),
     );
-    if (opponent.roomId != inviterRoomId) {
+    if (opponent.roomId != target) {
       throw const ApiException(
         kind: ApiFailureKind.conflict,
         message: 'PK 邀请方房间与权威方向不一致',
@@ -172,9 +218,11 @@ class BackendRoomPkRepository implements RoomPkRepository {
     return _invitationFromProjection(
       projection,
       expectedRoomId: currentRoomId,
-      expectedTargetRoomId: inviterRoomId,
+      expectedTargetRoomId: target,
       expectedInvitationId: invitationId,
-      direction: RoomPkInvitationDirection.incoming,
+      direction: incoming
+          ? RoomPkInvitationDirection.incoming
+          : RoomPkInvitationDirection.outgoing,
       opponent: opponent,
       punishmentTheme: _requiredText(projection['punishmentTheme'], '对战主题'),
       durationMinutes: _requiredInt(projection['durationMinutes'], 'PK 时长'),
@@ -188,6 +236,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
     required RoomPkOpponent opponent,
     required String punishmentTheme,
     required int durationMinutes,
+    void Function()? requireCurrent,
   }) async {
     final String currentRoomId = _roomId(roomId, '当前房间 ID');
     final String targetRoomId = _roomId(opponent.roomId, '目标房间 ID');
@@ -219,9 +268,10 @@ class BackendRoomPkRepository implements RoomPkRepository {
         durationMinutes,
       ],
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _route(_routes.roomPkInvite, _invitePath),
           headers: headers,
+          requireCurrent: requireCurrent,
           body: <String, Object?>{
             'roomId': currentRoomId,
             'targetRoomId': targetRoomId,
@@ -273,16 +323,20 @@ class BackendRoomPkRepository implements RoomPkRepository {
   }
 
   @override
-  Future<RoomPkBattle> acceptInvitation(RoomPkInvitation invitation) async {
+  Future<RoomPkBattle> acceptInvitation(
+    RoomPkInvitation invitation, {
+    void Function()? requireCurrent,
+  }) async {
     final String invitationId = _uuid(invitation.id, '邀请 ID');
     final String currentRoomId = _roomId(invitation.currentRoomId, '当前房间 ID');
     return _runWrite<RoomPkBattle>(
       operation: 'accept',
       intentParts: <Object?>[invitationId],
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _route(_routes.roomPkAccept, _acceptPath),
           headers: headers,
+          requireCurrent: requireCurrent,
           body: <String, Object?>{'invitationId': invitationId},
         );
         return _battleFromProjection(
@@ -297,16 +351,20 @@ class BackendRoomPkRepository implements RoomPkRepository {
   }
 
   @override
-  Future<void> rejectInvitation(RoomPkInvitation invitation) async {
+  Future<void> rejectInvitation(
+    RoomPkInvitation invitation, {
+    void Function()? requireCurrent,
+  }) async {
     final String invitationId = _uuid(invitation.id, '邀请 ID');
     final String currentRoomId = _roomId(invitation.currentRoomId, '当前房间 ID');
     return _runWrite<void>(
       operation: 'reject',
       intentParts: <Object?>[invitationId],
       action: (Map<String, String> headers) async {
-        final ApiResponse response = await _apiClient.post(
+        final ApiResponse response = await _post(
           _route(_routes.roomPkReject, _rejectPath),
           headers: headers,
+          requireCurrent: requireCurrent,
           body: <String, Object?>{'invitationId': invitationId},
         );
         final RoomPkInvitation result = _invitationFromProjection(
@@ -388,13 +446,15 @@ class BackendRoomPkRepository implements RoomPkRepository {
   @override
   Future<List<RoomPkRecord>> fetchHistory({
     required String roomId,
+    void Function()? requireCurrent,
     int pageNum = 1,
     int pageSize = 20,
   }) async {
     final String currentRoomId = _roomId(roomId, '当前房间 ID');
     final _PageRequest page = _pageRequest(pageNum, pageSize);
-    final ApiResponse response = await _apiClient.get(
+    final ApiResponse response = await _get(
       _route(_routes.roomPkHistory, _historyPath),
+      requireCurrent: requireCurrent,
       query: <String, String>{
         'roomId': currentRoomId,
         'pageNum': '${page.page}',
@@ -446,10 +506,50 @@ class BackendRoomPkRepository implements RoomPkRepository {
     );
   }
 
-  Future<Map<String, Object?>> _process({required String roomId}) async {
-    final ApiResponse response = await _apiClient.get(
-      _route(_routes.roomPkProgress, _processPath),
-      query: <String, String>{'roomId': roomId},
+  Future<ApiResponse> _get(
+    String path, {
+    Map<String, String>? query,
+    void Function()? requireCurrent,
+  }) async {
+    final response = requireCurrent == null
+        ? await _apiClient.get(path, query: query)
+        : await _apiClient.getBoundToIdentity(
+            path,
+            query: query,
+            requireIdentity: requireCurrent,
+          );
+    requireCurrent?.call();
+    return response;
+  }
+
+  Future<ApiResponse> _post(
+    String path, {
+    required Map<String, String> headers,
+    required Map<String, Object?> body,
+    void Function()? requireCurrent,
+  }) async {
+    final response = requireCurrent == null
+        ? await _apiClient.post(path, headers: headers, body: body)
+        : await _apiClient.postBoundToIdentity(
+            path,
+            headers: headers,
+            body: body,
+            requireIdentity: requireCurrent,
+          );
+    requireCurrent?.call();
+    return response;
+  }
+
+  Future<Map<String, Object?>> _process({
+    required String roomId,
+    void Function()? requireCurrent,
+  }) async {
+    final path = _route(_routes.roomPkProgress, _processPath);
+    final query = <String, String>{'roomId': roomId};
+    final ApiResponse response = await _get(
+      path,
+      query: query,
+      requireCurrent: requireCurrent,
     );
     final Map<String, Object?> projection = _requiredMap(
       response.data,

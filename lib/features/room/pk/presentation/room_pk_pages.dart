@@ -10,22 +10,195 @@ import 'package:voice_social_app/features/room/pk/domain/room_pk_repository.dart
 import 'package:voice_social_app/features/room/presentation/room_oxygen_components.dart';
 import 'package:voice_social_app/core/media/media_models.dart';
 import 'package:voice_social_app/features/room/presentation/room_cover_artwork.dart';
+import 'package:voice_social_app/features/room/application/room_controller.dart';
+import '../application/room_pk_sync_controller.dart';
+
+mixin _PkSyncBinding<T extends StatefulWidget> on State<T> {
+  RoomController? get pkRoom;
+  String get pkRoomId;
+  String? get pkBattleId => null;
+  RoomPkSyncController? _sync;
+  bool _bindingInvalid = false;
+  void onPkChanged();
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (pkRoom == null || _bindingInvalid) return;
+    final dependencies = AppDependencyScope.of(context);
+    if (_sync != null &&
+        (!identical(_sync!.repository, dependencies.roomPkRepository) ||
+            !identical(_sync!.session, dependencies.sessionManager))) {
+      _sync!.setVisible(false);
+      _bindingInvalid = true;
+      _sync!.removeListener(onPkChanged);
+      _sync!.dispose();
+      onPkChanged();
+      return;
+    }
+    final route = ModalRoute.of(context);
+    _sync ??= RoomPkSyncController(
+      repository: dependencies.roomPkRepository,
+      room: pkRoom!,
+      session: dependencies.sessionManager,
+      battleId: pkBattleId,
+      routeIsCurrent: () => mounted && (route?.isCurrent ?? true),
+    )..addListener(onPkChanged);
+    if (pkRoom!.roomId != pkRoomId) {
+      _sync!.removeListener(onPkChanged);
+      _sync!.dispose();
+      _bindingInvalid = true;
+      onPkChanged();
+      return;
+    }
+    _sync!.setVisible(ModalRoute.isCurrentOf(context) ?? true);
+  }
+
+  @override
+  void didUpdateWidget(covariant T oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_bindingInvalid) return;
+    if (_sync != null &&
+        (!identical(_sync!.room, pkRoom) ||
+            _sync!.room.roomId != pkRoomId ||
+            _sync!.battleId != pkBattleId)) {
+      _sync!.removeListener(onPkChanged);
+      _sync!.dispose();
+      _bindingInvalid = true;
+      onPkChanged();
+    }
+  }
+
+  @override
+  void dispose() {
+    if (!_bindingInvalid) {
+      _sync?.removeListener(onPkChanged);
+      _sync?.dispose();
+    }
+    super.dispose();
+  }
+}
+
+/// Local room entry/notice only; acceptance stays an explicit preparation action.
+class RoomPkInvitationBanner extends StatefulWidget {
+  const RoomPkInvitationBanner({required this.controller, super.key});
+  final RoomController controller;
+  @override
+  State<RoomPkInvitationBanner> createState() => _RoomPkInvitationBannerState();
+}
+
+class _RoomPkInvitationBannerState extends State<RoomPkInvitationBanner>
+    with _PkSyncBinding<RoomPkInvitationBanner> {
+  @override
+  RoomController get pkRoom => widget.controller;
+  @override
+  String get pkRoomId => pkRoom.roomId;
+  @override
+  void onPkChanged() {
+    if (!mounted) return;
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
+      final battle = _sync?.claimAutomaticBattle();
+      if (battle != null)
+        Navigator.of(context).push(
+          MaterialPageRoute<bool>(
+            builder: (_) => RoomPkBattlePage(
+              roomId: pkRoom.roomId,
+              initialBattle: battle,
+              controller: pkRoom,
+            ),
+          ),
+        );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final invitation = _sync?.process?.invitation;
+    final battle = _sync?.process?.battle;
+    final incoming =
+        invitation?.direction == RoomPkInvitationDirection.incoming &&
+        invitation?.status == RoomPkInvitationStatus.pending;
+    if (_sync?.canRead != true || (!incoming && battle?.isActive != true))
+      return const SizedBox.shrink();
+    return TextButton.icon(
+      icon: const Icon(Icons.sports_kabaddi_rounded),
+      label: Text(incoming ? '收到 PK 邀请' : '当前房间正在 PK'),
+      onPressed: () {
+        if (_sync?.canRead != true) return;
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => RoomPkPreparationPage(
+              roomId: pkRoom.roomId,
+              roomTitle: pkRoom.displayTitle,
+              controller: pkRoom,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
 
 class RoomPkPreparationPage extends StatefulWidget {
   const RoomPkPreparationPage({
     required this.roomId,
     required this.roomTitle,
+    this.controller,
     super.key,
   });
 
   final String roomId;
   final String roomTitle;
+  final RoomController? controller;
 
   @override
   State<RoomPkPreparationPage> createState() => _RoomPkPreparationPageState();
 }
 
-class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
+class _RoomPkPreparationPageState extends State<RoomPkPreparationPage>
+    with _PkSyncBinding<RoomPkPreparationPage> {
+  @override
+  RoomController? get pkRoom => widget.controller;
+  @override
+  String get pkRoomId => widget.roomId;
+  bool _opening = false;
+  @override
+  void onPkChanged() {
+    if (!mounted) return;
+    final value = _sync?.process;
+    setState(() {
+      _incoming =
+          value?.invitation?.direction == RoomPkInvitationDirection.incoming
+          ? value?.invitation
+          : null;
+      _outgoing =
+          value?.invitation?.direction == RoomPkInvitationDirection.outgoing
+          ? value?.invitation
+          : null;
+      _activeBattle = value?.battle;
+      if (_sync?.invalidated == true) {
+        _opponents.clear();
+        _history.clear();
+        _selectedOpponent = null;
+        _searchController.clear();
+        _punishmentController.clear();
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _opening || ModalRoute.of(context)?.isCurrent != true)
+        return;
+      final battle = _sync?.claimAutomaticBattle();
+      if (battle != null) unawaited(_openBattle(battle));
+      if (_sync?.canRead == true &&
+          _sync?.process != null &&
+          !_metadataLoaded &&
+          !_metadataFlight &&
+          _error == null)
+        unawaited(_load());
+    });
+  }
+
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _punishmentController = TextEditingController(
     text: '输的一方分享今天最想放下的事',
@@ -38,6 +211,7 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
   RoomPkBattle? _activeBattle;
   int _durationMinutes = 5;
   bool _loading = true;
+  bool _metadataLoaded = false, _metadataFlight = false;
   bool _busy = false;
   bool _searching = false;
   String? _error;
@@ -61,26 +235,41 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
   }
 
   Future<void> _load() async {
+    if (_metadataFlight) return;
+    final current = _sync?.captureCurrent();
+    if (_sync != null && !_sync!.canRead) return;
+    _metadataFlight = true;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final List<Object?> result = await Future.wait<Object?>(<Future<Object?>>[
-        _repository.fetchHotOpponents(roomId: widget.roomId),
-        _repository.fetchIncomingInvitation(roomId: widget.roomId),
-        _repository.fetchActiveBattle(roomId: widget.roomId),
-        _repository.fetchHistory(roomId: widget.roomId),
+        _repository.fetchHotOpponents(
+          roomId: widget.roomId,
+          requireCurrent: current,
+        ),
+        _sync == null
+            ? _repository.fetchIncomingInvitation(roomId: widget.roomId)
+            : _sync!.refresh().then((_) => _incoming),
+        _sync == null
+            ? _repository.fetchActiveBattle(roomId: widget.roomId)
+            : Future.value(null),
+        _repository.fetchHistory(
+          roomId: widget.roomId,
+          requireCurrent: current,
+        ),
       ]);
       if (!mounted) {
         return;
       }
+      current?.call();
       setState(() {
         _opponents
           ..clear()
           ..addAll(result[0] as List<RoomPkOpponent>);
-        _incoming = result[1] as RoomPkInvitation?;
-        _activeBattle = result[2] as RoomPkBattle?;
+        if (_sync == null) _incoming = result[1] as RoomPkInvitation?;
+        if (_sync == null) _activeBattle = result[2] as RoomPkBattle?;
         _history
           ..clear()
           ..addAll(result[3] as List<RoomPkRecord>);
@@ -91,27 +280,42 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
               .firstOrNull;
         }
         _loading = false;
+        _metadataLoaded = true;
       });
     } catch (error) {
+      try {
+        current?.call();
+      } catch (_) {
+        return;
+      }
       if (mounted) {
         setState(() {
           _loading = false;
           _error = _messageFor(error);
         });
       }
+    } finally {
+      _metadataFlight = false;
+      if (mounted && _sync != null && !_metadataLoaded) {
+        setState(() => _loading = false);
+        if (_sync!.canRead && _error == null) onPkChanged();
+      }
     }
   }
 
   Future<void> _search() async {
-    if (_searching) {
+    if (_searching || (_sync != null && !_sync!.canRead)) {
       return;
     }
     setState(() => _searching = true);
+    final current = _sync?.captureCurrent();
     try {
       final List<RoomPkOpponent> values = await _repository.searchOpponents(
         roomId: widget.roomId,
         keyword: _searchController.text,
+        requireCurrent: current,
       );
+      current?.call();
       if (mounted) {
         setState(() {
           _opponents
@@ -121,7 +325,7 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted && (_sync == null || _sync!.canRead)) {
         _showMessage(_messageFor(error));
       }
     } finally {
@@ -140,6 +344,23 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
     final String punishment = _punishmentController.text.trim();
     if (punishment.isEmpty || punishment.length > 20) {
       _showMessage('对战主题需为 1～20 个字');
+      return;
+    }
+    if (_sync != null) {
+      try {
+        await _sync!.write(
+          (current) => _repository.sendInvitation(
+            roomId: widget.roomId,
+            inviterUserId: pkRoom!.currentUserId,
+            opponent: opponent,
+            punishmentTheme: punishment,
+            durationMinutes: _durationMinutes,
+            requireCurrent: current,
+          ),
+        );
+      } catch (error) {
+        if (mounted && _sync!.canRead) _showMessage(_messageFor(error));
+      }
       return;
     }
     final int inviterUserId =
@@ -169,6 +390,10 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
   }
 
   Future<void> _refreshOutgoing() async {
+    if (_sync != null) {
+      await _sync!.refresh();
+      return;
+    }
     final RoomPkInvitation? outgoing = _outgoing;
     if (outgoing == null || _busy) {
       return;
@@ -211,6 +436,24 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
     if (incoming == null || _busy) {
       return;
     }
+    if (_sync != null) {
+      try {
+        if (accepted) {
+          await _sync!.write(
+            (current) =>
+                _repository.acceptInvitation(incoming, requireCurrent: current),
+          );
+        } else {
+          await _sync!.write(
+            (current) =>
+                _repository.rejectInvitation(incoming, requireCurrent: current),
+          );
+        }
+      } catch (error) {
+        if (mounted && _sync!.canRead) _showMessage(_messageFor(error));
+      }
+      return;
+    }
     setState(() => _busy = true);
     try {
       if (accepted) {
@@ -250,15 +493,22 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
   }
 
   Future<void> _openBattle(RoomPkBattle battle) async {
+    if (_opening || (_sync != null && !_sync!.canRead)) return;
+    _opening = true;
+    _sync?.markOpened(battle);
     final bool? returnToRoom = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (BuildContext context) =>
-            RoomPkBattlePage(roomId: widget.roomId, initialBattle: battle),
+        builder: (BuildContext context) => RoomPkBattlePage(
+          roomId: widget.roomId,
+          initialBattle: battle,
+          controller: pkRoom,
+        ),
       ),
     );
     if (!mounted) {
       return;
     }
+    _opening = false;
     if (returnToRoom == true) {
       Navigator.of(context).pop();
       return;
@@ -276,7 +526,9 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
   Widget build(BuildContext context) {
     return RoomPageScaffold(
       appBar: roomOxygenAppBar(title: 'PK 邀请与准备'),
-      body: _loading
+      body: _sync != null && !_sync!.canRead
+          ? const Center(child: Text('PK 登录或房间授权已变化'))
+          : _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
           ? _PkError(message: _error!, onRetry: _load)
@@ -301,7 +553,7 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
                     const SizedBox(height: 10),
                     const _PkInfoCard(
                       icon: Icons.sync_rounded,
-                      text: '实时邀请通道尚未接入，当前通过手动刷新服务端状态确认是否开战。',
+                      text: '通过服务端自动同步邀请和对局状态，接受邀请仍需本人确认。',
                     ),
                   ],
                   if (_activeBattle != null) ...<Widget>[
@@ -324,7 +576,7 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
                     const SizedBox(height: 10),
                     _IncomingInvitationCard(
                       invitation: _incoming!,
-                      busy: _busy,
+                      busy: _busy || (_sync?.busy ?? false),
                       onAccept: () => _resolveIncoming(true),
                       onReject: () => _resolveIncoming(false),
                     ),
@@ -421,7 +673,10 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: _busy || _activeBattle?.isActive == true
+                      onPressed:
+                          _busy ||
+                              (_sync?.busy ?? false) ||
+                              _activeBattle?.isActive == true
                           ? null
                           : _sendInvitation,
                       icon: const Icon(Icons.sports_kabaddi_rounded),
@@ -432,7 +687,7 @@ class _RoomPkPreparationPageState extends State<RoomPkPreparationPage> {
                     const SizedBox(height: 12),
                     _OutgoingInvitationCard(
                       invitation: _outgoing!,
-                      busy: _busy,
+                      busy: _busy || (_sync?.busy ?? false),
                       onRefresh: _refreshOutgoing,
                     ),
                   ],
@@ -463,17 +718,36 @@ class RoomPkBattlePage extends StatefulWidget {
   const RoomPkBattlePage({
     required this.roomId,
     required this.initialBattle,
+    this.controller,
     super.key,
   });
 
   final String roomId;
   final RoomPkBattle initialBattle;
+  final RoomController? controller;
 
   @override
   State<RoomPkBattlePage> createState() => _RoomPkBattlePageState();
 }
 
-class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
+class _RoomPkBattlePageState extends State<RoomPkBattlePage>
+    with _PkSyncBinding<RoomPkBattlePage> {
+  @override
+  RoomController? get pkRoom => widget.controller;
+  @override
+  String get pkRoomId => widget.roomId;
+  @override
+  String get pkBattleId => widget.initialBattle.id;
+  @override
+  void onPkChanged() {
+    if (!mounted) return;
+    setState(() {
+      final value = _sync?.process?.battle;
+      if (value != null) _battle = value;
+      _error = _sync?.error;
+    });
+  }
+
   late RoomPkBattle _battle;
   RoomPkRepository? _repositoryInstance;
   Timer? _timer;
@@ -506,6 +780,7 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
 
   void _schedulePolling() {
     _timer?.cancel();
+    if (_sync != null) return;
     if (!_battle.isActive) {
       return;
     }
@@ -513,6 +788,10 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
   }
 
   Future<void> _refresh() async {
+    if (_sync != null) {
+      await _sync!.refresh();
+      return;
+    }
     if (_refreshing || !_battle.isActive) {
       return;
     }
@@ -571,72 +850,82 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-        children: <Widget>[
-          RoomOxygenContextBar(
-            title: current.roomName,
-            subtitle:
-                '房间号 ${widget.roomId} · ${_battle.stage == RoomPkBattleStage.completed ? '服务端已结算' : '对战进行中'}',
-            seed: widget.roomId,
-            status: _battle.stage == RoomPkBattleStage.completed
-                ? '已结束'
-                : 'PK 中',
-            statusColor: _battle.stage == RoomPkBattleStage.completed
-                ? RoomColors.success
-                : RoomColors.secondary,
-          ),
-          const SizedBox(height: 12),
-          if (!_repository.supportsRealtimeInvitations)
-            const _PkInfoCard(
-              icon: Icons.sync_rounded,
-              text: '第三方实时通道尚未接入，本页通过服务端轮询刷新比分和剩余时间。',
+      body: _sync != null && (!_sync!.canRead || _sync!.process?.battle == null)
+          ? Center(child: Text(_sync!.error ?? '正在确认当前 PK 状态'))
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+              children: <Widget>[
+                RoomOxygenContextBar(
+                  title: current.roomName,
+                  subtitle:
+                      '房间号 ${widget.roomId} · ${_battle.stage == RoomPkBattleStage.completed ? '服务端已结算' : '对战进行中'}',
+                  seed: widget.roomId,
+                  status: _battle.stage == RoomPkBattleStage.completed
+                      ? '已结束'
+                      : 'PK 中',
+                  statusColor: _battle.stage == RoomPkBattleStage.completed
+                      ? RoomColors.success
+                      : RoomColors.secondary,
+                ),
+                const SizedBox(height: 12),
+                if (!_repository.supportsRealtimeInvitations)
+                  const _PkInfoCard(
+                    icon: Icons.sync_rounded,
+                    text: '第三方实时通道尚未接入，本页通过服务端轮询刷新比分和剩余时间。',
+                  ),
+                const SizedBox(height: 12),
+                _BattleHeader(
+                  current: current,
+                  opponent: opponent,
+                  remainingSeconds: _battle.remainingSeconds,
+                  stage: _battle.stage,
+                ),
+                const SizedBox(height: 14),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    minHeight: 12,
+                    value: currentRatio.clamp(0, 1),
+                    backgroundColor: RoomColors.secondary.withValues(
+                      alpha: 0.28,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _PkInfoCard(
+                  icon: Icons.flag_outlined,
+                  text: _battle.punishmentTheme.isEmpty
+                      ? '本场未设置对战主题'
+                      : '对战主题：${_battle.punishmentTheme}',
+                ),
+                if (_error != null) ...<Widget>[
+                  const SizedBox(height: 10),
+                  _PkInfoCard(
+                    icon: Icons.warning_amber_rounded,
+                    text: '$_error。页面保留上一次有效比分，可继续刷新。',
+                  ),
+                ],
+                const SizedBox(height: 22),
+                _SupporterSection(
+                  title: '${current.roomName} 支持榜',
+                  side: current,
+                ),
+                const SizedBox(height: 16),
+                _SupporterSection(
+                  title: '${opponent.roomName} 支持榜',
+                  side: opponent,
+                ),
+                const SizedBox(height: 24),
+                if (_battle.stage == RoomPkBattleStage.completed)
+                  _ResultCard(battle: _battle)
+                else
+                  Text(
+                    '返回房间不会结束 PK，结果以服务端结算为准。',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+              ],
             ),
-          const SizedBox(height: 12),
-          _BattleHeader(
-            current: current,
-            opponent: opponent,
-            remainingSeconds: _battle.remainingSeconds,
-            stage: _battle.stage,
-          ),
-          const SizedBox(height: 14),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(
-              minHeight: 12,
-              value: currentRatio.clamp(0, 1),
-              backgroundColor: RoomColors.secondary.withValues(alpha: 0.28),
-            ),
-          ),
-          const SizedBox(height: 14),
-          _PkInfoCard(
-            icon: Icons.flag_outlined,
-            text: _battle.punishmentTheme.isEmpty
-                ? '本场未设置对战主题'
-                : '对战主题：${_battle.punishmentTheme}',
-          ),
-          if (_error != null) ...<Widget>[
-            const SizedBox(height: 10),
-            _PkInfoCard(
-              icon: Icons.warning_amber_rounded,
-              text: '$_error。页面保留上一次有效比分，可继续刷新。',
-            ),
-          ],
-          const SizedBox(height: 22),
-          _SupporterSection(title: '${current.roomName} 支持榜', side: current),
-          const SizedBox(height: 16),
-          _SupporterSection(title: '${opponent.roomName} 支持榜', side: opponent),
-          const SizedBox(height: 24),
-          if (_battle.stage == RoomPkBattleStage.completed)
-            _ResultCard(battle: _battle)
-          else
-            Text(
-              '返回房间不会结束 PK，结果以服务端结算为准。',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-        ],
-      ),
     );
   }
 }

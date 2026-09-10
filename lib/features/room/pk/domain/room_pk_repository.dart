@@ -4,11 +4,20 @@ abstract interface class RoomPkRepository {
   bool get supportsRealtimeInvitations;
   bool get supportsSurrender;
 
-  Future<List<RoomPkOpponent>> fetchHotOpponents({required String roomId});
+  Future<RoomPkProcess> fetchProcess({
+    required String roomId,
+    required void Function() requireCurrent,
+  });
+
+  Future<List<RoomPkOpponent>> fetchHotOpponents({
+    required String roomId,
+    void Function()? requireCurrent,
+  });
 
   Future<List<RoomPkOpponent>> searchOpponents({
     required String roomId,
     required String keyword,
+    void Function()? requireCurrent,
     int pageNum = 1,
     int pageSize = 20,
   });
@@ -21,13 +30,20 @@ abstract interface class RoomPkRepository {
     required RoomPkOpponent opponent,
     required String punishmentTheme,
     required int durationMinutes,
+    void Function()? requireCurrent,
   });
 
   Future<RoomPkInvitation> refreshInvitation(RoomPkInvitation invitation);
 
-  Future<RoomPkBattle> acceptInvitation(RoomPkInvitation invitation);
+  Future<RoomPkBattle> acceptInvitation(
+    RoomPkInvitation invitation, {
+    void Function()? requireCurrent,
+  });
 
-  Future<void> rejectInvitation(RoomPkInvitation invitation);
+  Future<void> rejectInvitation(
+    RoomPkInvitation invitation, {
+    void Function()? requireCurrent,
+  });
 
   Future<RoomPkBattle?> fetchActiveBattle({required String roomId});
 
@@ -47,6 +63,7 @@ abstract interface class RoomPkRepository {
 
   Future<List<RoomPkRecord>> fetchHistory({
     required String roomId,
+    void Function()? requireCurrent,
     int pageNum = 1,
     int pageSize = 20,
   });

@@ -8,6 +8,13 @@ enum RoomPkBattleStage { preparing, fighting, settling, completed, canceled }
 
 enum RoomPkResult { win, lose, draw, surrendered, canceled }
 
+/// One authoritative room process read, not separately timed invitation/battle reads.
+class RoomPkProcess {
+  const RoomPkProcess({this.invitation, this.battle});
+  final RoomPkInvitation? invitation;
+  final RoomPkBattle? battle;
+}
+
 class RoomPkOpponent {
   const RoomPkOpponent({
     required this.roomId,
