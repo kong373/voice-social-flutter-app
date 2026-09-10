@@ -1,4 +1,5 @@
 import 'package:voice_social_app/core/network/api_client.dart';
+import '../../commerce/display/domain/equipped_decoration.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
@@ -1698,6 +1699,11 @@ class BackendRoomOperationsRepository
       isMuted: _asBool(item['muted']) || _asBool(item['isMuted']),
       wealthLevel: _asInt(item['wealthLevel']) ?? 0,
       charmLevel: _asInt(item['charmLevel']) ?? 0,
+      joinedAt: _optionalDateTime(item['joinedAt']),
+      online: item['presence'] == 'ONLINE',
+      equippedDecorations: item['presence'] == 'ONLINE'
+          ? EquippedDecoration.parseList(item['equippedDecorations'])
+          : const [],
     );
   }
 

@@ -1,4 +1,5 @@
 import 'package:voice_social_app/core/network/api_client.dart';
+import '../../commerce/display/domain/equipped_decoration.dart';
 import 'package:voice_social_app/features/room/domain/gift_send_models.dart';
 import 'package:voice_social_app/features/commerce/domain/gift_coin_precision.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
@@ -864,6 +865,9 @@ class BackendRoomRepository
               occupied: _seatStatus(raw) >= 3,
             ),
             occupantJoinedAt: _nonEmptyString(raw['joinedAt']),
+            equippedDecorations: EquippedDecoration.parseList(
+              raw['equippedDecorations'],
+            ),
             userId: _asInt(raw['userId']),
             userName: _nonEmptyString(raw['userName'] ?? raw['nickname']),
             avatarUrl: _safeAvatarUrl(raw['avatarUrl'] ?? raw['headImageUrl']),

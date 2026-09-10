@@ -111,7 +111,13 @@ void main() {
     'historical permanent retains existing wear rights but cannot buy or renew',
     (tester) async {
       final spy = _Spy()
-        ..items = [_item(days: 0, key: 'decoration/companion-badge')];
+        ..items = [
+          _item(
+            days: 0,
+            key: 'decoration/companion-badge',
+            kind: DecorationKind.profileCard,
+          ),
+        ];
       await _show(tester, spy);
       expect(find.text('历史永久'), findsOneWidget);
       expect(
@@ -121,7 +127,15 @@ void main() {
       expect(find.byKey(const Key('decoration-renew-product')), findsNothing);
       await tester.tap(find.byKey(const Key('decoration-preview-product')));
       await tester.pumpAndSettle();
-      expect(find.text('预览未配置'), findsWidgets);
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byKey(
+            const ValueKey('decoration-art-decoration/companion-badge'),
+          ),
+        ),
+        findsOneWidget,
+      );
       expect(spy.purchases + spy.equips, 0);
       expect(spy.reads, 1);
       await tester.tap(find.text('关闭'));
@@ -163,16 +177,17 @@ void main() {
     },
   );
 
-  for (final asset in [
-    'decoration/star-ring-frame',
-    'decoration/stream-entry',
-    'decoration/unknown',
-    'https://untrusted.test/preview.png',
+  for (final product in <(String, DecorationKind, bool)>[
+    ('decoration/star-ring-frame', DecorationKind.avatarFrame, true),
+    ('decoration/stream-entry', DecorationKind.entrance, true),
+    ('decoration/stream-entry', DecorationKind.avatarFrame, false),
+    ('decoration/unknown', DecorationKind.avatarFrame, false),
+    ('https://untrusted.test/preview.png', DecorationKind.avatarFrame, false),
   ]) {
     testWidgets(
-      'unavailable $asset never falls back to same-type artwork or network',
+      '${product.$1}/${product.$2} preview uses only its exact registered product without writes',
       (tester) async {
-        final spy = _Spy()..items = [_item(key: asset)];
+        final spy = _Spy()..items = [_item(key: product.$1, kind: product.$2)];
         await _show(tester, spy);
         await tester.tap(find.byKey(const Key('decoration-preview-product')));
         await tester.pumpAndSettle();
@@ -183,8 +198,16 @@ void main() {
           ),
           findsNothing,
         );
-        expect(find.text('预览未配置'), findsWidgets);
+        expect(find.text('预览未配置'), product.$3 ? findsNothing : findsWidgets);
+        expect(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byKey(ValueKey('decoration-art-${product.$1}')),
+          ),
+          product.$3 ? findsOneWidget : findsNothing,
+        );
         expect(spy.purchases + spy.equips, 0);
+        expect(spy.reads, 1);
       },
     );
   }
@@ -343,12 +366,13 @@ void main() {
 DecorationItem _item({
   String id = 'product',
   String key = 'assets/runtime/avatar-rose.png',
+  DecorationKind kind = DecorationKind.avatarFrame,
   int days = 7,
   DateTime? expiresAt,
 }) => DecorationItem(
   id: id,
   name: id,
-  kind: DecorationKind.avatarFrame,
+  kind: kind,
   priceGiftCoins: 25,
   durationDays: days,
   owned: true,

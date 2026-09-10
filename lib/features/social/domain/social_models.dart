@@ -1,4 +1,5 @@
 import '../../../core/media/media_models.dart';
+import '../../commerce/display/domain/equipped_decoration.dart';
 
 enum SocialRelationList { following, followers, friends }
 
@@ -56,6 +57,7 @@ class SocialUser {
     this.roomId,
     this.visitedAt,
     this.visitCount = 0,
+    this.equippedDecorations = const [],
   });
 
   final int userId;
@@ -70,6 +72,7 @@ class SocialUser {
   final String? roomId;
   final DateTime? visitedAt;
   final int visitCount;
+  final List<EquippedDecoration> equippedDecorations;
 
   SocialUser copyWith({
     String? name,
@@ -84,6 +87,7 @@ class SocialUser {
     bool clearRoomId = false,
     DateTime? visitedAt,
     int? visitCount,
+    List<EquippedDecoration>? equippedDecorations,
   }) {
     return SocialUser(
       userId: userId,
@@ -98,6 +102,7 @@ class SocialUser {
       roomId: clearRoomId ? null : roomId ?? this.roomId,
       visitedAt: visitedAt ?? this.visitedAt,
       visitCount: visitCount ?? this.visitCount,
+      equippedDecorations: equippedDecorations ?? this.equippedDecorations,
     );
   }
 }

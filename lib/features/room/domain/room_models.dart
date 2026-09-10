@@ -1,4 +1,5 @@
 import 'package:voice_social_app/features/commerce/domain/gift_coin_precision.dart';
+import '../../commerce/display/domain/equipped_decoration.dart';
 import 'package:voice_social_app/features/room/domain/room_audio_mute_state.dart';
 export 'package:voice_social_app/features/room/domain/room_audio_mute_state.dart';
 
@@ -160,6 +161,7 @@ class MicSeat {
     this.userRole = RoomRole.listener,
     this.audioMute,
     this.occupantJoinedAt,
+    this.equippedDecorations = const [],
   });
 
   final int number;
@@ -175,6 +177,7 @@ class MicSeat {
   final RoomRole userRole;
   final RoomAudioMuteState? audioMute;
   final String? occupantJoinedAt;
+  final List<EquippedDecoration> equippedDecorations;
 
   bool get isAvailable => state == MicSeatState.available;
 
@@ -199,6 +202,7 @@ class MicSeat {
     RoomRole? userRole,
     RoomAudioMuteState? audioMute,
     String? occupantJoinedAt,
+    List<EquippedDecoration>? equippedDecorations,
   }) {
     return MicSeat(
       number: number,
@@ -221,6 +225,18 @@ class MicSeat {
           (clearUserId || (userId != null && userId != this.userId)
               ? null
               : this.occupantJoinedAt),
+      equippedDecorations:
+          clearUserId ||
+              !(isOnline ?? this.isOnline) ||
+              !const [
+                MicSeatState.occupied,
+                MicSeatState.occupiedMuted,
+              ].contains(state ?? this.state)
+          ? const []
+          : equippedDecorations ??
+                ((userId != null && userId != this.userId)
+                    ? const []
+                    : this.equippedDecorations),
     );
   }
 }
