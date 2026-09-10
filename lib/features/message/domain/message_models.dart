@@ -1,4 +1,17 @@
+import 'package:voice_social_app/core/media/media_models.dart';
+
 enum ConversationKind { privateChat }
+
+enum ChatMessageType {
+  text('TEXT', null),
+  image('IMAGE', MediaPurpose.privateImage),
+  voice('VOICE', MediaPurpose.privateVoice),
+  video('VIDEO', MediaPurpose.privateVideo);
+
+  const ChatMessageType(this.wire, this.mediaPurpose);
+  final String wire;
+  final MediaPurpose? mediaPurpose;
+}
 
 enum ChatMessageStatus {
   sending,
@@ -177,6 +190,8 @@ class ChatMessage {
     required this.createdAt,
     required this.isMine,
     required this.status,
+    this.messageType = ChatMessageType.text,
+    this.media,
     this.deliveryStatus = MessageDeliveryStatus.unknown,
     this.read,
     this.readAt,
@@ -190,6 +205,10 @@ class ChatMessage {
   final DateTime createdAt;
   final bool isMine;
   final ChatMessageStatus status;
+  final ChatMessageType messageType;
+
+  /// A private media message has one validated reference, never a remote URL.
+  final MediaReference? media;
   final MessageDeliveryStatus deliveryStatus;
 
   /// First-party recipient read projection; null means unknown, not unread.
@@ -230,6 +249,8 @@ class ChatMessage {
       createdAt: createdAt,
       isMine: isMine,
       status: status ?? this.status,
+      messageType: messageType,
+      media: media,
       deliveryStatus: deliveryStatus ?? this.deliveryStatus,
       read: this.read == true || this.readAt != null || readAt != null
           ? true

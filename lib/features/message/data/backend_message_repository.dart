@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:voice_social_app/core/media/media_identity.dart';
+import 'package:voice_social_app/core/media/media_models.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
@@ -10,7 +12,10 @@ import 'package:voice_social_app/features/message/domain/message_request_id.dart
 import 'package:voice_social_app/features/message/domain/message_repository.dart';
 
 class BackendMessageRepository
-    implements MessageRepository, PagedPrivateMessageRepository {
+    implements
+        MessageRepository,
+        PagedPrivateMessageRepository,
+        MediaPrivateMessageRepository {
   BackendMessageRepository({
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
@@ -38,11 +43,126 @@ class BackendMessageRepository
   final Map<String, String> _ambiguousWriteRequestIds = <String, String>{};
   final Map<String, _PendingMessageSend> _inFlightSends =
       <String, _PendingMessageSend>{};
+  // Weak scope keys: intents survive an unknown result while its owner lives,
+  // without retaining abandoned account generations or sharing their Futures.
+  final _mediaSendIntents = Expando<Map<String, _MediaMessageIntent>>();
   DateTime? _lastSyncAt;
 
   static const String _privateMessageType = 'TEXT';
   static const int _maximumPageSize = 100;
   static const int _maximumBackendPages = 100;
+
+  void _checkMediaIdentity(MediaIdentityScope identity) {
+    identity.check();
+    if (identity.userId != _currentUserIdProvider()) {
+      identity.dispose();
+      throw MediaIdentityScope.invalid;
+    }
+  }
+
+  @override
+  Future<ChatMessage> sendPrivateMediaMessage({
+    required ConversationSummary conversation,
+    required MediaReference media,
+    required MediaIdentityScope identity,
+    required String requestId,
+  }) async {
+    _checkMediaIdentity(identity);
+    if (!conversation.available || conversation.targetUserId <= 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '当前会话暂不可发送消息',
+      );
+    }
+    final type = ChatMessageType.values.firstWhere(
+      (type) => type.mediaPurpose == media.purpose,
+      orElse: () => throw mediaProtocol(),
+    );
+    // Unlike text drafts, media retries may never silently mint a new key.
+    if (requestId.trim().isEmpty) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '媒体发送必须保留原请求 ID',
+      );
+    }
+    final key = normalizeMessageRequestId(requestId);
+    final fingerprint = jsonEncode({
+      'targetUserId': conversation.targetUserId,
+      'messageType': type.wire,
+      'media': media.toJson(),
+    });
+    final intents = _mediaSendIntents[identity] ??=
+        <String, _MediaMessageIntent>{};
+    final intent = intents.putIfAbsent(
+      key,
+      () => _MediaMessageIntent(fingerprint),
+    );
+    if (intent.fingerprint != fingerprint) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '同一请求 ID 不能替换媒体或接收者',
+      );
+    }
+    final flight = intent.flight ??= _sendPrivateMedia(
+      conversation: conversation,
+      media: media,
+      type: type,
+      identity: identity,
+      requestId: key,
+    );
+    try {
+      final message = await identity.wait(flight);
+      _checkMediaIdentity(identity);
+      return message;
+    } catch (_) {
+      // Neither success nor an error from an old actor may reach the new one.
+      _checkMediaIdentity(identity);
+      rethrow;
+    } finally {
+      if (identical(intent.flight, flight)) intent.flight = null;
+    }
+  }
+
+  Future<ChatMessage> _sendPrivateMedia({
+    required ConversationSummary conversation,
+    required MediaReference media,
+    required ChatMessageType type,
+    required MediaIdentityScope identity,
+    required String requestId,
+  }) async {
+    final response = await identity.wait(
+      _apiClient.postBoundToIdentity(
+        _routes.sendPrivateMessage,
+        requireIdentity: () => _checkMediaIdentity(identity),
+        headers: {'X-Request-Id': requestId},
+        body: {
+          'targetUserId': conversation.targetUserId,
+          'messageType': type.wire,
+          'mediaAssetId': media.assetId,
+        },
+      ),
+    );
+    _checkMediaIdentity(identity);
+    final row = _asMap(response.data);
+    if (row['senderUserId'] is! int ||
+        row['senderUserId'] != identity.userId ||
+        row['receiverUserId'] is! int ||
+        row['receiverUserId'] != conversation.targetUserId ||
+        row['messageType'] != type.wire ||
+        row['content'] != '') {
+      throw mediaProtocol();
+    }
+    final message = _chatMessageFromMap(
+      conversation,
+      row,
+      authoritativeConversationId: conversation.id,
+    );
+    if (message.media == null ||
+        jsonEncode(message.media!.toJson()) != jsonEncode(media.toJson())) {
+      throw mediaProtocol();
+    }
+    return message;
+  }
 
   @override
   bool get supportsConversationList => true;
@@ -900,6 +1020,13 @@ class BackendMessageRepository
     Map<String, Object?> item, {
     String? authoritativeConversationId,
   }) {
+    final type = item.containsKey('messageType')
+        ? ChatMessageType.values.firstWhere(
+            (type) => type.wire == item['messageType'],
+            orElse: () => throw mediaProtocol(),
+          )
+        : ChatMessageType.text;
+    final MediaReference? media = _privateMessageMedia(item, type);
     final String id = _requiredString(
       item['id'] ?? item['messageId'] ?? item['msgId'],
       '消息响应缺少服务端消息 ID',
@@ -942,6 +1069,14 @@ class BackendMessageRepository
         kind: ApiFailureKind.protocol,
         message: '消息方向与发送者身份不一致',
       );
+    }
+    if (media != null &&
+        (item['senderUserId'] is! int ||
+            item['receiverUserId'] is! int ||
+            senderId != (mine ? currentUserId : conversation.targetUserId) ||
+            item['receiverUserId'] !=
+                (mine ? conversation.targetUserId : currentUserId))) {
+      throw mediaProtocol();
     }
     final String itemConversationId =
         _optionalString(item['conversationId']) ?? '';
@@ -1005,10 +1140,43 @@ class BackendMessageRepository
       createdAt: createdAt,
       isMine: mine,
       status: parsedStatus.status,
+      messageType: type,
+      media: media,
       deliveryStatus: parsedStatus.deliveryStatus,
       read: readAt != null ? true : rawRead as bool?,
       readAt: readAt,
     );
+  }
+
+  static MediaReference? _privateMessageMedia(
+    Map<String, Object?> row,
+    ChatMessageType type,
+  ) {
+    final raw = row['media'];
+    if (type == ChatMessageType.text) {
+      if (row.containsKey('media') && (raw is! List || raw.isNotEmpty))
+        throw mediaProtocol();
+      return null;
+    }
+    if (raw is! List || raw.length != 1 || row['content'] != '')
+      throw mediaProtocol();
+    final media = MediaReference.fromJson(raw.single);
+    if (media.purpose != type.mediaPurpose ||
+        row['storageStatus'] != 'FIRST_PARTY_STORED')
+      throw mediaProtocol();
+    final providerInvocation = _requiredStrictBool(
+      row['providerInvocation'],
+      field: 'providerInvocation',
+    );
+    final im = _requiredMessageImStatus(row['imStatus'], context: '媒体消息');
+    final delivery = _requiredMessageDeliveryStatus(
+      row['deliveryStatus'],
+      context: '媒体消息',
+    );
+    if (!_isTrustedMessageStatusBoundary(im, providerInvocation) ||
+        !_isTrustedMessageDeliveryBoundary(delivery, providerInvocation))
+      throw mediaProtocol();
+    return media;
   }
 
   static _ParsedMessageStatus _statusFromMap(
@@ -1677,6 +1845,12 @@ class BackendMessageRepository
       value == 1 ||
       value?.toString() == '1' ||
       value?.toString().toLowerCase() == 'true';
+}
+
+class _MediaMessageIntent {
+  _MediaMessageIntent(this.fingerprint);
+  final String fingerprint;
+  Future<ChatMessage>? flight;
 }
 
 class _PendingMessageSend {

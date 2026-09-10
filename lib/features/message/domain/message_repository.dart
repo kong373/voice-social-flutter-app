@@ -1,4 +1,18 @@
+import 'package:voice_social_app/core/media/media_identity.dart';
+import 'package:voice_social_app/core/media/media_models.dart';
 import 'package:voice_social_app/features/message/domain/message_models.dart';
+
+/// Opt-in contract: legacy text repositories and mocks need not support media.
+abstract interface class MediaPrivateMessageRepository {
+  /// Retry an unknown result with the same scope, requestId and reference.
+  /// A token refresh may retain that scope; account ABA permanently invalidates it.
+  Future<ChatMessage> sendPrivateMediaMessage({
+    required ConversationSummary conversation,
+    required MediaReference media,
+    required MediaIdentityScope identity,
+    required String requestId,
+  });
+}
 
 /// A visible chat may become hidden or change accounts while HTTP is pending.
 /// Check this lease before paging again or acknowledging the conversation read.
