@@ -27,8 +27,13 @@ abstract interface class VisiblePrivateMessageRepository
 }
 
 class PrivateMessageSyncBatch {
-  const PrivateMessageSyncBatch(this.messages, {this.nextCursor});
+  const PrivateMessageSyncBatch(
+    this.messages, {
+    this.nextCursor,
+    this.conversationId,
+  });
   final List<ChatMessage> messages;
+  final String? conversationId;
 
   /// A bounded batch is not a complete read. Continue before marking read or
   /// advancing the known-message boundary to the newest received messages.

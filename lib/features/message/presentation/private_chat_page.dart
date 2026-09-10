@@ -44,6 +44,116 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   bool _refreshAgain = false;
   _MessageVisibility? _visibility;
   bool _rechecking = false;
+  PrivateHistoryState? _privateHistory;
+  BigInt? _seenHistoryVersion;
+  bool _clearingHistory = false;
+  String? _clearHistoryError;
+  int _clearRequestEpoch = 0;
+
+  ClearablePrivateHistoryRepository? get _clearRepository =>
+      _repository is ClearablePrivateHistoryRepository
+      ? _repository as ClearablePrivateHistoryRepository
+      : null;
+  bool get _pendingClear =>
+      !_accountChanged &&
+      (_clearRepository?.hasPendingHistoryClear(_conversation.targetUserId) ??
+          false);
+
+  void _historyChanged() {
+    if (!mounted || !_checkAccount()) return;
+    final mark = _privateHistory?.forTarget(_conversation.targetUserId);
+    if (mark == null || mark.version == _seenHistoryVersion) return;
+    _seenHistoryVersion = mark.version;
+    if (mark.version == BigInt.zero) return;
+    _loadRequestId++;
+    _conversationEpoch++;
+    setState(() {
+      _messages.removeWhere(
+        (message) =>
+            !_privateHistory!.visible(_conversation.targetUserId, message),
+      );
+      _conversation = _privateHistory!.project(_conversation);
+      _historyMessageIds.clear();
+      _catchupBoundary = null;
+      _catchupCursor = null;
+      _readScanCursor = null;
+      _historyComplete = false;
+      _readScanCursors.clear();
+      _gapCursors.clear();
+      _controller.clear();
+      _pendingSendRequestId = null;
+      _pendingSendContent = null;
+      _sending = false;
+      _loading = false;
+    });
+    // A newly learned remote clear invalidates cursors and mounted media visits
+    // too. Resume from the head; never merge a late old page into this snapshot.
+    scheduleMicrotask(() {
+      if (mounted) _load(showLoading: false);
+    });
+  }
+
+  Future<void> _clearHistory() async {
+    final repository = _clearRepository;
+    if (repository == null ||
+        !_checkAccount() ||
+        !_active ||
+        _clearingHistory ||
+        _conversation.isDraft)
+      return;
+    final target = _conversation.targetUserId;
+    final requestEpoch = _clearRequestEpoch;
+    final conversationEpoch = _conversationEpoch;
+    if (!_pendingClear) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('清空聊天记录'),
+          content: const Text('只清空本人当前聊天记录，不影响对方，清空后无法恢复。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('确认清空'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true ||
+          !mounted ||
+          !_checkAccount() ||
+          !_active ||
+          conversationEpoch != _conversationEpoch)
+        return;
+    }
+    bool current() =>
+        mounted &&
+        _checkAccount() &&
+        requestEpoch == _clearRequestEpoch &&
+        target == _conversation.targetUserId;
+    setState(() {
+      _clearingHistory = true;
+      _clearHistoryError = null;
+    });
+    try {
+      await repository.clearPrivateHistory(_conversation);
+      if (!mounted || !current()) return;
+      setState(() => _clearHistoryError = null);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('聊天记录已清空（仅本人）')));
+    } catch (error) {
+      if (!current()) return;
+      final denial = _MessageReadDenial.from(error, reading: false);
+      if (denial != null) _visibility?.deny(denial, peer: target);
+      setState(() => _clearHistoryError = _messageFor(error));
+    } finally {
+      if (current()) setState(() => _clearingHistory = false);
+    }
+  }
 
   MessageRepository get _repository => _dependencies!.messageRepository;
 
@@ -89,6 +199,9 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       _loadStarted = true;
       _accountId = _dependencies!.sessionManager.session?.userId ?? 0;
       _accountGeneration = _dependencies!.sessionManager.identityGeneration;
+      _privateHistory = _clearRepository?.privateHistory;
+      _privateHistory?.addListener(_historyChanged);
+      _historyChanged();
       _visibility = _MessageVisibility.forViewer(_repository, (
         _dependencies!.sessionManager.session?.userId,
         _accountGeneration!,
@@ -109,6 +222,10 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     if (oldWidget.conversation.targetUserId == widget.conversation.targetUserId)
       return;
     _conversationEpoch++;
+    _clearRequestEpoch++;
+    _seenHistoryVersion = null;
+    _clearingHistory = false;
+    _clearHistoryError = null;
     _loadRequestId++;
     _syncTimer?.cancel();
     _refreshFlight = null;
@@ -239,6 +356,9 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     _loadRequestId += 1;
     setState(() {
       _accountChanged = true;
+      _clearRequestEpoch++;
+      _clearingHistory = false;
+      _clearHistoryError = null;
       _conversationEpoch++;
       _conversation = _redactedConversation(_conversation, '登录状态已改变，请重新进入会话。');
       _sending = false;
@@ -314,6 +434,8 @@ class _PrivateChatPageState extends State<PrivateChatPage>
 
   @override
   void dispose() {
+    _privateHistory?.removeListener(_historyChanged);
+    _clearRequestEpoch++;
     _loadRequestId += 1;
     WidgetsBinding.instance.removeObserver(this);
     _dependencies?.sessionManager.removeListener(_onAccountChanged);
@@ -457,6 +579,11 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       _catchupCursor = newest.nextCursor;
       _gapCursors.clear();
     }
+    if (_conversation.isDraft && newest.conversationId != null) {
+      _conversation = _conversation.withServerIdentity(
+        conversationId: newest.conversationId!,
+      );
+    }
     _publishPage(newest.messages, followLatest: true);
     if (newest.nextCursor == null) {
       _historyComplete = true;
@@ -578,7 +705,9 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   }
 
   Future<void> _send() async {
-    if (!_checkAccount() ||
+    if (_clearingHistory ||
+        _pendingClear ||
+        !_checkAccount() ||
         !_active ||
         !_conversation.available ||
         _sending ||
@@ -702,6 +831,11 @@ class _PrivateChatPageState extends State<PrivateChatPage>
         readAt: previous?.readAt,
       );
     }
+    byId.removeWhere(
+      (_, message) =>
+          !(_privateHistory?.visible(_conversation.targetUserId, message) ??
+              true),
+    );
     final order = <String, int>{};
     for (final id in byId.keys) {
       order[id] = order.length;
@@ -764,6 +898,8 @@ class _PrivateChatPageState extends State<PrivateChatPage>
         !_accountChanged &&
         _repository.supportsPrivateSend &&
         _conversation.available &&
+        !_clearingHistory &&
+        !_pendingClear &&
         !_sending;
     return SocialPageScaffold(
       appBar: AppBar(
@@ -813,27 +949,58 @@ class _PrivateChatPageState extends State<PrivateChatPage>
         ),
         actions: <Widget>[
           PopupMenuButton<String>(
-            enabled: _conversation.available && !_accountChanged,
+            enabled: !_accountChanged && !_clearingHistory,
             onSelected: (String value) {
               if (value == 'profile') {
                 _openProfile();
+              } else if (value == 'clear') {
+                _clearHistory();
               } else {
                 _report();
               }
             },
-            itemBuilder: (BuildContext context) =>
-                const <PopupMenuEntry<String>>[
-                  PopupMenuItem<String>(
-                    value: 'profile',
-                    child: Text('查看公开主页'),
-                  ),
-                  PopupMenuItem<String>(value: 'report', child: Text('举报用户')),
-                ],
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              if (_conversation.available)
+                const PopupMenuItem<String>(
+                  value: 'profile',
+                  child: Text('查看公开主页'),
+                ),
+              if (_conversation.available)
+                const PopupMenuItem<String>(
+                  value: 'report',
+                  child: Text('举报用户'),
+                ),
+              if (_clearRepository != null && !_conversation.isDraft)
+                PopupMenuItem<String>(
+                  value: 'clear',
+                  child: Text(_pendingClear ? '重试原清空请求' : '清空聊天记录'),
+                ),
+            ],
           ),
         ],
       ),
       body: Column(
         children: <Widget>[
+          if (_clearingHistory || _pendingClear || _clearHistoryError != null)
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                children: [
+                  Text(
+                    _clearingHistory
+                        ? '正在确认清空结果…'
+                        : _pendingClear
+                        ? '清空结果未知，请重试原请求，不创建新的清空操作。'
+                        : _clearHistoryError!,
+                  ),
+                  if (!_clearingHistory && _pendingClear)
+                    TextButton(
+                      onPressed: _clearHistory,
+                      child: const Text('重试原清空请求'),
+                    ),
+                ],
+              ),
+            ),
           if (_conversation.available && !_repository.supportsPrivateRealtime)
             Padding(
               padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -926,12 +1093,23 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                       ),
                       child: SingleChildScrollView(
                         child: PrivateMediaComposer(
+                          key: ValueKey((
+                            _accountGeneration,
+                            _conversationEpoch,
+                          )),
                           host: _dependencies!.privateMediaHost,
                           repository:
                               _repository as MediaPrivateMessageRepository,
                           conversation: _conversation,
-                          visible: _active && _conversation.available,
-                          onSent: _mediaSent,
+                          visible:
+                              _active &&
+                              _conversation.available &&
+                              !_clearingHistory &&
+                              !_pendingClear,
+                          onSent: (message) {
+                            if (conversationEpoch == _conversationEpoch)
+                              _mediaSent(message);
+                          },
                           onSendFailure: (error) => _mediaFailure(
                             error,
                             conversationEpoch,

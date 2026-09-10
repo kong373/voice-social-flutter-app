@@ -1527,6 +1527,8 @@ void main() {
       final _Harness harness = await _Harness.start((RequestRecord request) {
         if (request.path == '/app-api/user/imMessage/queryChat') {
           return _Response.ok(<String, Object?>{
+            'conversationId': '',
+            'targetUserId': 99,
             'list': <Object?>[],
             'nextCursor': '',
             'hasMore': false,
@@ -1673,6 +1675,8 @@ void main() {
         }
         expect(request.path, '/app-api/user/imMessage/queryChat');
         return _Response.ok(<String, Object?>{
+          'conversationId': '',
+          'targetUserId': 99,
           'list': <Object?>[],
           'nextCursor': '',
           'hasMore': false,
@@ -3031,7 +3035,7 @@ class _Harness {
           jsonEncode(<String, Object?>{
             'code': response.code,
             'message': response.message,
-            'data': response.data,
+            'data': _currentMessageFixture(record.path, response.data),
           }),
         );
       }
@@ -3041,6 +3045,54 @@ class _Harness {
   }
 
   Future<void> close() => server.close(force: true);
+}
+
+// These pre-Q19 regression fixtures model an uncleared conversation. Add only
+// the newly required fields at this explicit legacy-fixture boundary; never
+// repair their intentionally malformed old fields. Q19 strict/late-response
+// tests use raw responses (no adapter) in q19_private_history_contract_test.
+Object? _currentMessageFixture(String path, Object? data) {
+  if (data is! Map) return data;
+  final value = Map<String, Object?>.from(data);
+  Map<String, Object?> mark(Map<String, Object?> row) => {
+    'historyVersion': '0',
+    'clearedThroughSequence': '0',
+    ...row,
+  };
+  Map<String, Object?> message(Object? row) => row is Map
+      ? {'messageSequence': '1', ...Map<String, Object?>.from(row)}
+      : <String, Object?>{};
+  if (path.endsWith('/queryChat')) {
+    return mark({
+      ...value,
+      if (value['list'] is List)
+        'list': (value['list'] as List).map(message).toList(),
+    });
+  }
+  if (path.endsWith('/message/send')) {
+    if (value['message'] is Map)
+      return {...value, 'message': mark(message(value['message']))};
+    if (value['data'] is Map)
+      return {...value, 'data': mark(message(value['data']))};
+    return mark(message(value));
+  }
+  if (path.endsWith('/message/read')) return mark(value);
+  if (path.endsWith('/message/conversations') && value['list'] is List) {
+    return {
+      ...value,
+      'list': (value['list'] as List)
+          .map(
+            (row) => row is Map
+                ? mark({
+                    'lastMessageSequence': '1',
+                    ...Map<String, Object?>.from(row),
+                  })
+                : row,
+          )
+          .toList(),
+    };
+  }
+  return data;
 }
 
 class _FakeNativePermissionAdapter implements NativePermissionAdapter {

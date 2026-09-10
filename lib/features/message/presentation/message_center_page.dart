@@ -20,13 +20,14 @@ class _MessageCenterPageState extends State<MessageCenterPage>
   (int?, int)? _viewer;
   bool _identityLost = false;
   _MessageVisibility? _visibility;
+  PrivateHistoryState? _privateHistory;
   final ValueNotifier<int> _searchRevision = ValueNotifier(0);
   bool get _canRead => _currentIdentity && _visibility?.viewerReason == null;
 
   List<ConversationSummary> get _visibleConversations => [
     for (final conversation in _conversations ?? <ConversationSummary>[])
       if (_visibility?.reasonFor(conversation.targetUserId) == null)
-        conversation,
+        _privateHistory?.project(conversation) ?? conversation,
   ];
 
   void _visibilityChanged() {
@@ -42,6 +43,12 @@ class _MessageCenterPageState extends State<MessageCenterPage>
         _error = null;
       }
     });
+    _searchRevision.value++;
+  }
+
+  void _historyChanged() {
+    if (!mounted || !_currentIdentity) return;
+    setState(() => _conversations = _visibleConversations);
     _searchRevision.value++;
   }
 
@@ -75,9 +82,16 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     if (!identical(deps, _dependencies)) {
       _dependencies?.sessionManager.removeListener(_identityChanged);
       _visibility?.removeListener(_visibilityChanged);
+      _privateHistory?.removeListener(_historyChanged);
       if (_dependencies != null) _identityLost = true;
       _dependencies = deps;
       _viewer ??= _currentViewer;
+      if (deps.messageRepository is ClearablePrivateHistoryRepository) {
+        _privateHistory =
+            (deps.messageRepository as ClearablePrivateHistoryRepository)
+                .privateHistory
+              ..addListener(_historyChanged);
+      }
       _visibility = _MessageVisibility.forViewer(
         deps.messageRepository,
         _currentViewer,
@@ -198,6 +212,7 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     _refreshSubscription = null;
     _dependencies?.sessionManager.removeListener(_identityChanged);
     _visibility?.removeListener(_visibilityChanged);
+    _privateHistory?.removeListener(_historyChanged);
     _searchRevision.dispose();
     super.dispose();
   }

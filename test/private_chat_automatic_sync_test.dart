@@ -673,6 +673,32 @@ AuthSession _session(int id) => AuthSession(
 // Exercise the production repository/parser with the backend's id < cursor,
 // id DESC, pageSize/hasMore contract, rather than returning model snapshots.
 class _CursorApi extends ApiClient {
+  @override
+  Future<ApiResponse> getBoundToIdentity(
+    String path, {
+    required void Function() requireIdentity,
+    Map<String, String>? query,
+    Map<String, String>? headers,
+  }) async {
+    requireIdentity();
+    final response = await get(path, query: query, headers: headers);
+    requireIdentity();
+    return response;
+  }
+
+  @override
+  Future<ApiResponse> postBoundToIdentity(
+    String path, {
+    required void Function() requireIdentity,
+    Map<String, String>? headers,
+    Map<String, Object?>? body,
+  }) async {
+    requireIdentity();
+    final response = await post(path, headers: headers, body: body);
+    requireIdentity();
+    return response;
+  }
+
   _CursorApi()
     : super(
         baseUri: Uri.parse('http://example.invalid/'),
@@ -711,6 +737,7 @@ class _CursorApi extends ApiClient {
       final id = top - index;
       return <String, Object?>{
         'messageId': 'row-$id',
+        'messageSequence': '$id',
         'senderUserId': incomingIds.contains(id) ? 2 : 1,
         'direction': incomingIds.contains(id) ? 'INCOMING' : 'OUTGOING',
         'content': poisonOld && cursor != null ? 'late-old-$id' : 'row-$id',
@@ -735,6 +762,8 @@ class _CursorApi extends ApiClient {
       message: '',
       data: {
         'list': rows,
+        'historyVersion': '0',
+        'clearedThroughSequence': '0',
         'conversationId': 'conversation-2',
         'targetUserId': cursor != null && invalidOldTarget ? 99 : 2,
         'hasMore': top > count,
@@ -758,7 +787,13 @@ class _CursorApi extends ApiClient {
     return const ApiResponse(
       code: 200,
       message: '',
-      data: {'targetUserId': 2, 'markedRead': 0, 'unreadCount': 0},
+      data: {
+        'targetUserId': 2,
+        'markedRead': 0,
+        'unreadCount': 0,
+        'historyVersion': '0',
+        'clearedThroughSequence': '0',
+      },
     );
   }
 }

@@ -34,6 +34,9 @@ Map<String, Object?> _media() => {
 };
 
 Map<String, Object?> _row() => {
+  'messageSequence': '1',
+  'historyVersion': '0',
+  'clearedThroughSequence': '0',
   'messageId': 'stored-message',
   'senderUserId': 1,
   'receiverUserId': 99,
@@ -51,6 +54,8 @@ Map<String, Object?> _row() => {
 };
 
 Map<String, Object?> _page(Map<String, Object?> row) => {
+  'historyVersion': '0',
+  'clearedThroughSequence': '0',
   'conversationId': _conversation.id,
   'targetUserId': 99,
   'list': [row],

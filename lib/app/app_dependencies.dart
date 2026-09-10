@@ -406,6 +406,8 @@ class AppDependencies {
             ? BackendMessageRepository(
                 apiClient: apiClient,
                 routes: routes,
+                identityGenerationProvider: () =>
+                    sessionManager.identityGeneration,
                 currentUserIdProvider: () =>
                     sessionManager.session?.userId ?? 0,
                 nativePermissionAdapter: nativePermissionAdapter,

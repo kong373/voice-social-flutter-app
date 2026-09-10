@@ -663,6 +663,8 @@ class _HttpFixture {
         if (error != null) throw error;
         return MediaFakeResponse.json({
           'conversationId': _peer.id,
+          'historyVersion': '0',
+          'clearedThroughSequence': '0',
           'targetUserId': 2,
           'list': [
             _row('text', body),
@@ -684,6 +686,9 @@ class _HttpFixture {
             for (final peer in peers)
               {
                 'conversationId': 'conversation-$peer',
+                'historyVersion': '0',
+                'clearedThroughSequence': '0',
+                'lastMessageSequence': '1',
                 'targetUserId': peer,
                 'nickName': peer == 2 ? peerName : _other.title,
                 'lastMessage': peer == 2
@@ -704,6 +709,8 @@ class _HttpFixture {
       }
       return MediaFakeResponse.json({
         'targetUserId': 2,
+        'historyVersion': '0',
+        'clearedThroughSequence': '0',
         'markedRead': 0,
         'unreadCount': 0,
       });
@@ -735,6 +742,7 @@ Map<String, Object?> _row(
   Map<String, Object?>? attachment,
 }) => {
   'messageId': id,
+  'messageSequence': id == 'text' ? '1' : '2',
   'senderUserId': 2,
   'receiverUserId': 1,
   'direction': 'INCOMING',

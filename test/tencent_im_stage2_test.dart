@@ -397,6 +397,8 @@ void main() {
               'message': 'OK',
               'data': path == BackendRouteCatalog().privateChatHistory
                   ? <String, Object?>{
+                      'historyVersion': '0',
+                      'clearedThroughSequence': '0',
                       'conversationId': 'conversation-1',
                       'targetUserId': 123,
                       'hasMore': false,
@@ -407,6 +409,7 @@ void main() {
                       'list': <Object?>[
                         <String, Object?>{
                           'id': 'message-1',
+                          'messageSequence': '1',
                           'conversationId': 'conversation-1',
                           'senderUserId': 123,
                           'senderName': '我',
@@ -419,6 +422,8 @@ void main() {
                       ],
                     }
                   : <String, Object?>{
+                      'historyVersion': '0',
+                      'clearedThroughSequence': '0',
                       'conversationId': 'conversation-1',
                       'targetUserId': 123,
                       'markedRead': 0,

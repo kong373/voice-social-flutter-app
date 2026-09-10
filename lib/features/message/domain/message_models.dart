@@ -106,6 +106,7 @@ class ConversationSummary {
     this.avatar,
     this.available = true,
     this.unavailableReason = '',
+    this.lastMessageSequence,
   });
 
   /// Null until the first-party backend gives this draft a public ID.
@@ -124,6 +125,7 @@ class ConversationSummary {
   final int targetUserId;
   final bool available;
   final String unavailableReason;
+  final BigInt? lastMessageSequence;
 
   bool get isDraft => id == null || id!.trim().isEmpty;
 
@@ -138,11 +140,12 @@ class ConversationSummary {
     this.available = true,
     this.unavailableReason = '',
   }) : id = null,
+       lastMessageSequence = null,
        updatedAt = null;
 
   ConversationSummary withServerIdentity({
     required String conversationId,
-    required DateTime serverUpdatedAt,
+    DateTime? serverUpdatedAt,
   }) {
     final String normalizedId = conversationId.trim();
     if (normalizedId.isEmpty) {
@@ -160,6 +163,7 @@ class ConversationSummary {
       targetUserId: targetUserId,
       available: available,
       unavailableReason: unavailableReason,
+      lastMessageSequence: lastMessageSequence,
     );
   }
 
@@ -169,6 +173,7 @@ class ConversationSummary {
     int? unreadCount,
     bool? available,
     String? unavailableReason,
+    bool clearUpdatedAt = false,
   }) {
     return ConversationSummary(
       id: id,
@@ -177,11 +182,12 @@ class ConversationSummary {
       avatarUrl: avatarUrl,
       avatar: (available ?? this.available) ? avatar : null,
       lastMessage: lastMessage ?? this.lastMessage,
-      updatedAt: updatedAt ?? this.updatedAt,
+      updatedAt: clearUpdatedAt ? null : updatedAt ?? this.updatedAt,
       unreadCount: unreadCount ?? this.unreadCount,
       targetUserId: targetUserId,
       available: available ?? this.available,
       unavailableReason: unavailableReason ?? this.unavailableReason,
+      lastMessageSequence: lastMessageSequence,
     );
   }
 }
@@ -203,9 +209,11 @@ class ChatMessage {
     this.readAt,
     this.senderAvatar,
     this.receiverAvatar,
+    this.messageSequence,
   });
 
   final String id;
+  final BigInt? messageSequence;
   final String? conversationId;
   final int senderUserId;
   final String senderName;
@@ -254,6 +262,7 @@ class ChatMessage {
   }) {
     return ChatMessage(
       id: id,
+      messageSequence: messageSequence,
       conversationId: conversationId ?? this.conversationId,
       senderUserId: senderUserId,
       senderName: senderName,

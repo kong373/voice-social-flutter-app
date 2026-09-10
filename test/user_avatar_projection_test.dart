@@ -52,6 +52,9 @@ void main() {
             'conversationId': 'conversation',
             'senderUserId': 1,
             'receiverUserId': 2,
+            'messageSequence': '1',
+            'historyVersion': '0',
+            'clearedThroughSequence': '0',
             'direction': 'OUTGOING',
             'messageType': 'TEXT',
             'content': 'hello',
@@ -78,6 +81,8 @@ void main() {
                   ? row
                   : {
                       'conversationId': 'conversation',
+                      'historyVersion': '0',
+                      'clearedThroughSequence': '0',
                       'targetUserId': 2,
                       'list': [row],
                       'hasMore': false,
@@ -269,6 +274,9 @@ void main() {
       addTearDown(actor.dispose);
       final row = {
         'conversationId': 'conversation',
+        'historyVersion': '0',
+        'clearedThroughSequence': '0',
+        'lastMessageSequence': '1',
         'targetUserId': 2,
         'nickName': 'peer',
         'lastMessageAt': '2026-09-10T00:00:00Z',

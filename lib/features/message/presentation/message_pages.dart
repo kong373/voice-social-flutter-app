@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../domain/private_history.dart';
 import '../../account/presentation/user_avatar_view.dart';
 
 import 'package:flutter/material.dart';

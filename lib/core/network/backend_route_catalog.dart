@@ -200,6 +200,7 @@ class BackendRouteCatalog {
     this.sendPrivateMessage = '/app-mini-api/mini/v1/message/send',
     this.messageConversations = '/app-mini-api/mini/v1/message/conversations',
     this.markPrivateMessageRead = '/app-mini-api/mini/v1/message/read',
+    this.clearPrivateHistory = '/app-mini-api/mini/v1/message/clear-history',
     this.systemNotifications = '/app-mini-api/mini/v1/notifications',
     this.syncNotifications = '/app-mini-api/mini/v1/notifications/sync',
     this.markSystemNotificationRead =
@@ -402,6 +403,7 @@ class BackendRouteCatalog {
   final String pushNotificationDetail;
   final String messagePermission;
   final String sendPrivateMessage;
+  final String clearPrivateHistory;
   final String messageConversations;
   final String markPrivateMessageRead;
   final String systemNotifications;

@@ -535,6 +535,8 @@ void main() {
         switch (request.path) {
           case '/app-api/user/imMessage/queryChat':
             return _Reply.ok(<String, Object?>{
+              'historyVersion': '0',
+              'clearedThroughSequence': '0',
               'conversationId': 'conversation-20002',
               'targetUserId': 20002,
               'imStatus': 'VENDOR_BLOCKED',
@@ -542,6 +544,7 @@ void main() {
               'list': <Object?>[
                 <String, Object?>{
                   'id': 'message-1',
+                  'messageSequence': '1',
                   'senderUserId': 10001,
                   'direction': 'OUTGOING',
                   'content': '你好',
@@ -557,6 +560,8 @@ void main() {
             });
           case '/app-mini-api/mini/v1/message/read':
             return _Reply.ok(<String, Object?>{
+              'historyVersion': '0',
+              'clearedThroughSequence': '0',
               'targetUserId': 20002,
               'markedRead': 1,
               'unreadCount': 0,
@@ -571,6 +576,9 @@ void main() {
             return _Reply.ok(<String, Object?>{
               'message': <String, Object?>{
                 'id': 'message-2',
+                'historyVersion': '0',
+                'clearedThroughSequence': '0',
+                'messageSequence': '2',
                 'conversationId': 'conversation-20002',
                 'receiverUserId': 20002,
                 'senderUserId': 10001,

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../domain/private_history.dart';
 import '../../account/domain/user_avatar_descriptor.dart';
 
 import 'package:voice_social_app/core/media/media_identity.dart';
@@ -16,16 +17,19 @@ class BackendMessageRepository
     implements
         MessageRepository,
         PagedPrivateMessageRepository,
+        ClearablePrivateHistoryRepository,
         MediaPrivateMessageRepository {
   BackendMessageRepository({
     required ApiClient apiClient,
     required BackendRouteCatalog routes,
     required int Function() currentUserIdProvider,
+    int Function()? identityGenerationProvider,
     NativePermissionAdapter? nativePermissionAdapter,
     bool Function()? privateRealtimeAvailabilityProvider,
   }) : _apiClient = apiClient,
        _routes = routes,
        _currentUserIdProvider = currentUserIdProvider,
+       _identityGenerationProvider = identityGenerationProvider,
        _nativePermissionAdapter = nativePermissionAdapter,
        _privateRealtimeAvailabilityProvider =
            privateRealtimeAvailabilityProvider;
@@ -33,6 +37,92 @@ class BackendMessageRepository
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
   final int Function() _currentUserIdProvider;
+  final int Function()? _identityGenerationProvider;
+  _PrivateHistorySession? _historySession;
+
+  _PrivateHistorySession _captureHistory() {
+    final identity = (
+      _currentUserIdProvider(),
+      _identityGenerationProvider?.call() ?? 0,
+    );
+    if (identity.$1 <= 0) throw _changedIdentity;
+    if (_historySession?.identity != identity) {
+      _historySession = _PrivateHistorySession(identity);
+    }
+    return _historySession!;
+  }
+
+  static const _changedIdentity = ApiException(
+    kind: ApiFailureKind.unauthorized,
+    message: '登录状态已改变，请重新进入会话。',
+  );
+  void _requireHistory(_PrivateHistorySession scope) {
+    if (scope.identity !=
+        (_currentUserIdProvider(), _identityGenerationProvider?.call() ?? 0)) {
+      throw _changedIdentity;
+    }
+  }
+
+  @override
+  PrivateHistoryState get privateHistory => _captureHistory();
+  @override
+  bool hasPendingHistoryClear(int targetUserId) =>
+      _captureHistory().clears.containsKey(targetUserId);
+
+  @override
+  Future<void> clearPrivateHistory(ConversationSummary conversation) async {
+    final scope = _captureHistory();
+    if (conversation.isDraft || conversation.targetUserId <= 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '尚未建立可清空的会话',
+      );
+    }
+    // Peer availability is deliberately NOT required to clear one's own copy.
+    final intent = scope.clears.putIfAbsent(
+      conversation.targetUserId,
+      () => _HistoryClearIntent(createMessageRequestId()),
+    );
+    final flight = intent.flight ??= _clearHistory(scope, intent, conversation);
+    try {
+      await flight;
+      _requireHistory(scope);
+    } finally {
+      if (identical(intent.flight, flight)) intent.flight = null;
+    }
+  }
+
+  Future<void> _clearHistory(
+    _PrivateHistorySession scope,
+    _HistoryClearIntent intent,
+    ConversationSummary conversation,
+  ) async {
+    try {
+      final response = await _apiClient.postBoundToIdentity(
+        _routes.clearPrivateHistory,
+        requireIdentity: () => _requireHistory(scope),
+        headers: {'X-Request-Id': intent.requestId},
+        body: {'targetUserId': conversation.targetUserId},
+      );
+      _requireHistory(scope);
+      final data = _asMap(response.data);
+      if (data['conversationId'] != conversation.id ||
+          data['targetUserId'] is! int ||
+          data['targetUserId'] != conversation.targetUserId) {
+        throw privateHistoryProtocol;
+      }
+      final mark = PrivateHistoryWatermark.parse(data);
+      if (mark.version == BigInt.zero) throw privateHistoryProtocol;
+      scope.accept(conversation.targetUserId, mark);
+      scope.clears.remove(conversation.targetUserId);
+    } catch (error) {
+      _requireHistory(scope);
+      if (!_isAmbiguousMessageWriteError(error))
+        scope.clears.remove(conversation.targetUserId);
+      rethrow;
+    }
+  }
+
   final NativePermissionAdapter? _nativePermissionAdapter;
   final bool Function()? _privateRealtimeAvailabilityProvider;
   final Map<String, AppNotification> _notificationCache =
@@ -131,6 +221,7 @@ class BackendMessageRepository
     required MediaIdentityScope identity,
     required String requestId,
   }) async {
+    final scope = _captureHistory();
     final response = await identity.wait(
       _apiClient.postBoundToIdentity(
         _routes.sendPrivateMessage,
@@ -162,6 +253,7 @@ class BackendMessageRepository
         jsonEncode(message.media!.toJson()) != jsonEncode(media.toJson())) {
       throw mediaProtocol();
     }
+    _acceptSentMessage(scope, conversation, row, message);
     return message;
   }
 
@@ -187,19 +279,22 @@ class BackendMessageRepository
 
   @override
   Future<List<ConversationSummary>> fetchConversations() async {
+    final scope = _captureHistory();
     final List<ConversationSummary> conversations = <ConversationSummary>[];
     var pageNum = 1;
     int? expectedTotal;
     int? expectedPages;
     var hasMore = true;
     while (hasMore && pageNum <= _maximumBackendPages) {
-      final ApiResponse response = await _apiClient.get(
+      final ApiResponse response = await _apiClient.getBoundToIdentity(
         _routes.messageConversations,
+        requireIdentity: () => _requireHistory(scope),
         query: <String, String>{
           'pageNum': '$pageNum',
           'pageSize': '$_maximumPageSize',
         },
       );
+      _requireHistory(scope);
       final _ConversationPage page = _conversationPageFromMap(
         response.data,
         requestedPage: pageNum,
@@ -215,7 +310,22 @@ class BackendMessageRepository
         );
       }
       hasMore = page.hasMore;
-      conversations.addAll(page.items.map(_conversationFromMap));
+      for (final item in page.items) {
+        final row = _conversationFromMap(item);
+        final current = scope.accept(
+          row.targetUserId,
+          PrivateHistoryWatermark.parse(item),
+        );
+        conversations.add(
+          current
+              ? scope.project(row)
+              : row.copyWith(
+                  lastMessage: '',
+                  unreadCount: 0,
+                  clearUpdatedAt: true,
+                ),
+        );
+      }
       pageNum += 1;
     }
     if (hasMore) {
@@ -236,7 +346,8 @@ class BackendMessageRepository
         (ConversationSummary left, ConversationSummary right) =>
             _compareUpdatedAt(right.updatedAt, left.updatedAt),
       );
-    return conversations;
+    _requireHistory(scope);
+    return conversations.map(scope.project).toList();
   }
 
   @override
@@ -284,8 +395,14 @@ class BackendMessageRepository
     int maximumPages = _maximumBackendPages,
     bool markRead = true,
   }) async {
-    final int accountId = _currentUserIdProvider();
-    bool active() => isCurrent() && _currentUserIdProvider() == accountId;
+    final scope = _captureHistory();
+    bool active() =>
+        isCurrent() &&
+        scope.identity ==
+            (
+              _currentUserIdProvider(),
+              _identityGenerationProvider?.call() ?? 0,
+            );
     if (!active()) return const PrivateMessageSyncBatch([]);
     if (!conversation.available || conversation.targetUserId <= 0) {
       throw ApiException(
@@ -308,12 +425,19 @@ class BackendMessageRepository
         'pageSize': '$_maximumPageSize',
         if (cursor != null) 'cursor': cursor,
       };
-      final ApiResponse response = await _apiClient.get(
+      final ApiResponse response = await _apiClient.getBoundToIdentity(
         _routes.privateChatHistory,
+        requireIdentity: () => _requireHistory(scope),
         query: query,
       );
       if (!active()) return const PrivateMessageSyncBatch([]);
       final Map<String, Object?> data = _asMap(response.data);
+      final mark = PrivateHistoryWatermark.parse(data);
+      if (data['targetUserId'] is! int ||
+          data['targetUserId'] != conversation.targetUserId ||
+          data['conversationId'] is! String) {
+        throw privateHistoryProtocol;
+      }
       final List<Map<String, Object?>> items = _extractList(response.data);
       hasMore = _requiredBool(data['hasMore'], field: 'hasMore');
       _requiredNonNegativeInt(data['unreadCount'], field: 'unreadCount');
@@ -332,6 +456,8 @@ class BackendMessageRepository
             message: '私聊历史响应缺少服务端会话 ID',
           );
         }
+        if (mark.version != BigInt.zero || mark.through != BigInt.zero)
+          throw privateHistoryProtocol;
       } else if (authoritativeConversationId == null) {
         authoritativeConversationId = pageConversationId;
         if (!conversation.isDraft && conversation.id != pageConversationId) {
@@ -405,6 +531,9 @@ class BackendMessageRepository
           message: '私聊历史分页游标重复或无进展',
         );
       }
+      if (!scope.accept(conversation.targetUserId, mark)) {
+        return const PrivateMessageSyncBatch([]);
+      }
       messages.addAll(
         items
             .map(
@@ -417,6 +546,9 @@ class BackendMessageRepository
             .where((ChatMessage item) => item.id.isNotEmpty),
       );
       // queryChat is newest-first (id DESC). Once the page overlaps the
+      messages.removeWhere(
+        (item) => !scope.visible(conversation.targetUserId, item),
+      );
       // visible snapshot, all unseen newer messages have been collected.
       // Keep the entire overlap page so delivery/read projections can update.
       if (knownMessageIds.isNotEmpty &&
@@ -447,12 +579,22 @@ class BackendMessageRepository
     if (hasMore) {
       // Publish the newest bounded batch without marking unseen older rows
       // read. The visible page owns and accepts the continuation cursor.
-      return PrivateMessageSyncBatch(messages, nextCursor: cursor);
+      return PrivateMessageSyncBatch(
+        messages,
+        nextCursor: cursor,
+        conversationId: authoritativeConversationId,
+      );
     }
     if (markRead)
       await markVisiblePrivateMessagesRead(conversation, isCurrent: active);
+    messages.removeWhere(
+      (item) => !scope.visible(conversation.targetUserId, item),
+    );
     return active()
-        ? PrivateMessageSyncBatch(messages)
+        ? PrivateMessageSyncBatch(
+            messages,
+            conversationId: authoritativeConversationId,
+          )
         : const PrivateMessageSyncBatch([]);
   }
 
@@ -461,21 +603,29 @@ class BackendMessageRepository
     ConversationSummary conversation, {
     required bool Function() isCurrent,
   }) async {
-    final accountId = _currentUserIdProvider();
-    bool active() => isCurrent() && _currentUserIdProvider() == accountId;
+    final scope = _captureHistory();
+    bool active() =>
+        isCurrent() &&
+        scope.identity ==
+            (
+              _currentUserIdProvider(),
+              _identityGenerationProvider?.call() ?? 0,
+            );
     // Entering a conversation is the first-party read boundary.  Provider
     // delivery remains represented by the response-level status mapping; this
     // HTTP read never treats a provider callback as message content.
     if (!active()) return;
     await _runStableMessageWrite<void>(
-      intent: 'private-read:${conversation.targetUserId}',
+      intent: 'private-read:${scope.identity}:${conversation.targetUserId}',
       action: (Map<String, String> headers) async {
         if (!active()) return;
-        final ApiResponse readResponse = await _apiClient.post(
+        final ApiResponse readResponse = await _apiClient.postBoundToIdentity(
           _routes.markPrivateMessageRead,
+          requireIdentity: () => _requireHistory(scope),
           headers: headers,
           body: <String, Object?>{'targetUserId': conversation.targetUserId},
         );
+        _requireHistory(scope);
         final Map<String, Object?> readData = _asMap(readResponse.data);
         final int readTarget = _requiredPositiveInt(
           readData['targetUserId'],
@@ -507,6 +657,10 @@ class BackendMessageRepository
             message: '私聊已读响应包含无效的会话权威状态',
           );
         }
+        scope.accept(
+          conversation.targetUserId,
+          PrivateHistoryWatermark.parse(readData),
+        );
       },
     );
   }
@@ -517,6 +671,7 @@ class BackendMessageRepository
     required String content,
     String? requestId,
   }) async {
+    final scope = _captureHistory();
     final String normalizedContent = content.trim();
     if (normalizedContent.isEmpty || normalizedContent.length > 2000) {
       throw const ApiException(
@@ -533,12 +688,13 @@ class BackendMessageRepository
       );
     }
     final String key = normalizeMessageRequestId(requestId);
+    final scopedKey = '${scope.identity}:$key';
     final String fingerprint = _sendFingerprint(
       targetUserId: conversation.targetUserId,
       content: normalizedContent,
       messageType: _privateMessageType,
     );
-    final _PendingMessageSend? pending = _inFlightSends[key];
+    final _PendingMessageSend? pending = _inFlightSends[scopedKey];
     if (pending != null) {
       if (pending.fingerprint != fingerprint) {
         throw const ApiException(
@@ -549,12 +705,13 @@ class BackendMessageRepository
       return pending.future;
     }
     final Future<ChatMessage> request = _sendPrivateMessage(
-      key: key,
+      scope: scope,
+      key: scopedKey,
       requestId: key,
       conversation: conversation,
       content: normalizedContent,
     );
-    _inFlightSends[key] = _PendingMessageSend(
+    _inFlightSends[scopedKey] = _PendingMessageSend(
       fingerprint: fingerprint,
       future: request,
     );
@@ -1131,6 +1288,7 @@ class BackendMessageRepository
     }
     return ChatMessage(
       id: id,
+      messageSequence: privateSequence(item['messageSequence'], positive: true),
       conversationId: conversationId,
       senderUserId: senderId,
       senderAvatar: UserAvatarDescriptor.parseOptional(item['senderAvatar']),
@@ -1276,14 +1434,16 @@ class BackendMessageRepository
   }
 
   Future<ChatMessage> _sendPrivateMessage({
+    required _PrivateHistorySession scope,
     required String key,
     required String requestId,
     required ConversationSummary conversation,
     required String content,
   }) async {
     try {
-      final ApiResponse response = await _apiClient.post(
+      final ApiResponse response = await _apiClient.postBoundToIdentity(
         _routes.sendPrivateMessage,
+        requireIdentity: () => _requireHistory(scope),
         headers: <String, String>{'X-Request-Id': requestId},
         body: <String, Object?>{
           'targetUserId': conversation.targetUserId,
@@ -1295,6 +1455,7 @@ class BackendMessageRepository
       final Map<String, Object?> message = _asMap(
         data['message'] ?? data['data'] ?? data,
       );
+      _requireHistory(scope);
       final int receiverUserId = _requiredPositiveInt(
         message['receiverUserId'],
         field: 'receiverUserId',
@@ -1344,18 +1505,45 @@ class BackendMessageRepository
       if (conversation.isDraft && parsed.conversationId == null) {
         final String? resolvedId = await _resolveDraftConversationId(
           conversation,
+          scope,
         );
         if (resolvedId != null) {
           parsed = parsed.copyWith(conversationId: resolvedId);
         }
       }
+      _acceptSentMessage(scope, conversation, message, parsed);
       return parsed;
     } finally {
       _inFlightSends.remove(key);
     }
   }
 
-  Future<String?> _resolveDraftConversationId(ConversationSummary draft) async {
+  void _acceptSentMessage(
+    _PrivateHistorySession scope,
+    ConversationSummary conversation,
+    Map<String, Object?> data,
+    ChatMessage message,
+  ) {
+    _requireHistory(scope);
+    final current = scope.accept(
+      conversation.targetUserId,
+      PrivateHistoryWatermark.parse(data),
+    );
+    if (!scope.visible(conversation.targetUserId, message)) {
+      throw const ApiException(
+        kind: ApiFailureKind.business,
+        code: 40481,
+        message: '此消息已清空，请刷新聊天记录',
+      );
+    }
+    if (!current) throw privateHistoryProtocol;
+  }
+
+  Future<String?> _resolveDraftConversationId(
+    ConversationSummary draft,
+    _PrivateHistorySession scope,
+  ) async {
+    _requireHistory(scope);
     try {
       final List<ConversationSummary> conversations =
           await fetchConversations();
@@ -1373,6 +1561,7 @@ class BackendMessageRepository
       // too, the caller keeps an explicit unresolved draft.
     }
 
+    _requireHistory(scope);
     try {
       final List<ChatMessage> history = await fetchPrivateMessages(draft);
       return history
@@ -1381,6 +1570,7 @@ class BackendMessageRepository
           .where((String id) => id.trim().isNotEmpty)
           .firstOrNull;
     } on ApiException {
+      _requireHistory(scope);
       return null;
     }
   }
@@ -1492,14 +1682,20 @@ class BackendMessageRepository
       item['conversationId'] ?? item['id'],
       '消息会话响应缺少服务端会话 ID',
     );
-    final DateTime updatedAt = _requiredDateTime(
-      item['lastMessageAt'] ?? item['updatedAt'],
-      '消息会话响应缺少有效的服务端更新时间',
-    );
+    final sequence = privateSequence(item['lastMessageSequence']);
+    final rawTime = item['lastMessageAt'] ?? item['updatedAt'];
+    final DateTime? updatedAt = sequence == BigInt.zero && rawTime == ''
+        ? null
+        : _requiredDateTime(rawTime, '消息会话响应缺少有效的服务端更新时间');
     final int unreadCount = _requiredExplicitNonNegativeInt(
       item['unreadCount'],
       field: 'unreadCount',
     );
+    if (sequence == BigInt.zero &&
+        (_string(item['lastMessage'] ?? item['content']).isNotEmpty ||
+            unreadCount != 0 ||
+            updatedAt != null))
+      throw privateHistoryProtocol;
     return ConversationSummary(
       id: id,
       kind: ConversationKind.privateChat,
@@ -1507,6 +1703,7 @@ class BackendMessageRepository
       avatarUrl: _optionalString(item['headImgUrl'] ?? item['avatarUrl']),
       avatar: UserAvatarDescriptor.parseOptional(item['avatar']),
       lastMessage: _string(item['lastMessage'] ?? item['content']),
+      lastMessageSequence: sequence,
       updatedAt: updatedAt,
       unreadCount: unreadCount,
       targetUserId: targetUserId,
@@ -1851,6 +2048,18 @@ class BackendMessageRepository
       value == 1 ||
       value?.toString() == '1' ||
       value?.toString().toLowerCase() == 'true';
+}
+
+class _PrivateHistorySession extends PrivateHistoryState {
+  _PrivateHistorySession(this.identity);
+  final (int, int) identity;
+  final clears = <int, _HistoryClearIntent>{};
+}
+
+class _HistoryClearIntent {
+  _HistoryClearIntent(this.requestId);
+  final String requestId;
+  Future<void>? flight;
 }
 
 class _MediaMessageIntent {

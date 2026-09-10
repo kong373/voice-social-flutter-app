@@ -548,14 +548,30 @@ class PrivateMediaVisit extends ChangeNotifier {
       entry.sendAttempted = true;
       await host._save(entry);
       check();
-      final receipt = await scope.wait(
-        repository.sendPrivateMediaMessage(
-          conversation: conversation,
-          media: media,
-          identity: scope,
-          requestId: entry.requestId,
-        ),
-      );
+      final ChatMessage receipt;
+      try {
+        receipt = await scope.wait(
+          repository.sendPrivateMediaMessage(
+            conversation: conversation,
+            media: media,
+            identity: scope,
+            requestId: entry.requestId,
+          ),
+        );
+      } on ApiException catch (error) {
+        check();
+        if (error.code == 40481) {
+          // Q19: an authoritative cleared-message replay is terminal, not an
+          // unknown send and not success. Retire only this original journal;
+          // no new key, allocation or send is created by recovery.
+          await host._remove(entry);
+          check();
+          intent = null;
+          await _source?.dispose();
+          _source = null;
+        }
+        rethrow;
+      }
       check();
       // Even test/mock opt-in adapters must produce a matching stored receipt.
       if (!receipt.isMine ||

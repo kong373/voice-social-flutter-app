@@ -175,6 +175,9 @@ class PrivateHarness {
     'durationMillis': state < 3 ? null : reference()['durationMillis'],
   };
   Map<String, Object?> receipt({int actor = 1, int receiver = 2}) => {
+    'historyVersion': '0',
+    'clearedThroughSequence': '0',
+    'messageSequence': '1',
     'messageId': 'stored-message',
     'senderUserId': actor,
     'receiverUserId': receiver,
@@ -275,6 +278,38 @@ class _FailingStore implements KeyValueStore {
 }
 
 void main() {
+  test(
+    'Q19 cleared media replay 40481 retires only its original local intent without fake success',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'q19-private-intent-',
+      );
+      final fixture = PrivateHarness(directory);
+      addTearDown(() async {
+        await fixture.close();
+        await directory.delete(recursive: true);
+      });
+      final host = fixture.create();
+      final visit = await fixture.ready(host);
+      final originalKey = visit.intent!.requestId;
+      fixture.intercept = (r) => r.uri.path.endsWith('/message/send')
+          ? MediaFakeResponse.json({}, status: 404, code: 40481)
+          : fixture.respond(r);
+      await expectLater(
+        visit.send(fixture.repository),
+        throwsA(isA<ApiException>().having((e) => e.code, 'code', 40481)),
+      );
+      expect(visit.intent, isNull);
+      final resumed = host.visit(pmPeer);
+      await resumed.loaded;
+      expect(resumed.intent, isNull);
+      final sends = fixture.http.requests
+          .where((r) => r.uri.path.endsWith('/message/send'))
+          .toList();
+      expect(sends, hasLength(1));
+      expect(sends.single.headers.value('X-Request-Id'), originalKey);
+    },
+  );
   late Directory temp;
   late PrivateHarness h;
   setUp(() async {
