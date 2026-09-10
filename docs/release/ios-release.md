@@ -1,5 +1,30 @@
 # iOS App Store Release Candidate archive gate
 
+## Local distribution configuration
+
+Runner's Release configuration optionally includes
+`ios/Flutter/Signing.local.xcconfig`. This file is ignored by Git. Put the
+authorized team, distribution identity and exact App Store provisioning profile
+there using device-SDK-conditional build settings; never put a private key in an
+xcconfig. Without that file the existing Automatic signing default is retained.
+Debug, Profile, RunnerTests and CocoaPods targets do not include it. Do not apply
+the app provisioning profile globally to all Xcode targets or change a global
+Flutter signing preference for this project.
+
+Before a real archive, inspect `xcodebuild -showBuildSettings` for Runner Release
+with `-sdk iphoneos`, then separately check Simulator Debug and Pods to ensure
+the distribution profile has not leaked into those targets. Use a protected
+local export-options plist with `method=app-store-connect`, `destination=export`,
+`signingStyle=manual`, the matching team/certificate and an exact bundle-ID to
+profile mapping. Export is local; this configuration does not upload a build or
+submit it for review. Generate the archive only from the frozen, tested candidate
+and its approved live release configuration; a successful signing setup does
+not make a Mock/development build a release candidate.
+
+Apple's [build configuration documentation](https://developer.apple.com/documentation/xcode/adding-a-build-configuration-file-to-your-project)
+describes optional includes and build-setting precedence. Current export options
+are also listed by the installed `xcodebuild -help`.
+
 `tool/release/ios_release_validator.sh` is a read-only acceptance gate for an
 explicit `.xcarchive`. It does not build, sign, publish, or access App Store
 services. It writes only short-lived scratch files under the operating

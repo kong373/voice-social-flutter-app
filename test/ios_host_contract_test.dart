@@ -85,7 +85,7 @@ void main() {
       }
     });
 
-    test('pins iOS 13 and keeps signing identifiers as placeholders', () {
+    test('pins iOS 13 and keeps team signing configuration untracked', () {
       final String project = File(
         'ios/Runner.xcodeproj/project.pbxproj',
       ).readAsStringSync();
@@ -104,6 +104,36 @@ void main() {
         contains('CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;'),
       );
       expect(project, isNot(contains('DEVELOPMENT_TEAM =')));
+    });
+
+    test('scopes optional local signing to Runner Release only', () {
+      const include = '#include? "Signing.local.xcconfig"';
+      final release = File('ios/Flutter/Release.xcconfig').readAsStringSync();
+      expect(release, contains('CODE_SIGN_STYLE = Automatic'));
+      expect(release, contains(include));
+      expect(
+        release.indexOf(include),
+        greaterThan(release.indexOf('CODE_SIGN_STYLE = Automatic')),
+      );
+      for (final configuration in ['Debug', 'Profile']) {
+        expect(
+          File('ios/Flutter/$configuration.xcconfig').readAsStringSync(),
+          isNot(contains('Signing.local.xcconfig')),
+        );
+      }
+      final project = File(
+        'ios/Runner.xcodeproj/project.pbxproj',
+      ).readAsStringSync();
+      final runnerRelease = RegExp(
+        r'97C147071CF9000F007C117D /\* Release \*/ = \{([\s\S]*?)'
+        r'\n\t\t\tname = Release;',
+      ).firstMatch(project)!.group(1)!;
+      expect(runnerRelease, contains('/* Release.xcconfig */'));
+      expect(runnerRelease, isNot(contains('CODE_SIGN_STYLE =')));
+      expect(
+        File('ios/.gitignore').readAsLinesSync(),
+        contains('Flutter/Signing.local.xcconfig'),
+      );
     });
 
     test('declares only audio background execution for joined voice rooms', () {
