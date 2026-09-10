@@ -58,3 +58,21 @@ Branch: `codex/room-mic-policy-ui-20260909`, base `dd66c076263f10f860225ac4b794d
 Production changes are restricted to mic DTOs/repositories/seat adapter, room permission/controller mic paths, Dart RTC publication acknowledgement, management mic controls and the room mic picker/tools entry. No gift/entry/manager-profile/media logic, native plugin, Backend or dependency changes. Retained `APPROVAL` compatibility fixtures only test that entry mode does not grant mic authority; no retired entry approval UI is restored.
 
 The five implementation batches complete this local Flutter scope. Main review/cherry-pick and device/vendor acceptance are not claimed complete. No push performed.
+
+## Independent-review follow-up: permission-await P1
+
+Hubble rejected `e1202a1`: controller generation checks after an awaited adapter call were too late. While real `AgoraRtcAdapter` awaited OS permission, controller teardown queued behind its audio mutex. A later permission grant could issue `publishMicrophoneTrack=true` before controller cleanup ran. The previous Mock-adapter tests did not establish this boundary.
+
+Test-first reproduction on unchanged `e1202a1` production: actual `RoomController` + `AgoraRtcAdapter`, injected fake engine, pending permission Completer and an already-fetched publisher token. Account ABA, leave and expired lease all failed with a recorded SDK publish=true; valid authority control passed (**3 RED / 1 PASS**). Raw output: [permission-fence RED](evidence/room-mic-permission-fence-red.txt). Lease expiry advances the monotonic clock without first notifying the controller, so a cancellation flag alone cannot pass it.
+
+Repair is limited to the two production files `room_controller.dart` and `rtc_adapter.dart`:
+
+- The controller passes a live publication predicate binding session/identity generation, lease validity/session, audio-authority generation, RTC transport ownership and eligible snapshot/token. The adapter rechecks it after permission status/request, after background-runtime startup, immediately before SDK publication, and between SDK media-options update and stream unmute.
+- Controller revocation/disable/disposal and transport replacement synchronously invalidate an adapter publication generation before waiting for any controller/adapter mutex. This invalidates pending enables without superseding a queued disable. It does not pretend already-active publication was stopped synchronously.
+- Native background startup uses the same controller-revocation predicate; a plain adapter disable retains the existing playback downgrade behavior. The old `disable during pending native upgrade wins without SDK publish` assertion remains unchanged. If authority is lost while an already-issued SDK call awaits, the next enable step is suppressed and existing safe rollback is used.
+
+Final focused verification on Flutter 3.44.7: **103 PASS** in two disjoint batches: new `room_mic_permission_fence_test.dart` (16) plus `rtc_background_audio_adapter_test.dart` (20); and `rtc_agora_adapter_test.dart`, `room_controller_rtc_transition_test.dart`, `room_mic_publication_policy_test.dart`, `room_controller_race_test.dart` (67 combined). New coverage includes permission-query/request and native-start waits, ABA/leave/expiry, forced mute, dispose, synchronous adapter cancellation, SDK-options/unmute boundary, transport replacement, and valid controls with/without native background capability. Assertions record every enable call, not merely final local state. Full analyze: **0 issues**; format/diff checks clean.
+
+An additional boundary-test fixture initially included the legitimate initial audience disable in an expected `[true]` list; it now counts all publish=true calls and forbids all unmute=false calls after invalidation. No production behavior or prior assertion was relaxed for this fixture. The old playback-downgrade regression was fixed in production, not by editing its test.
+
+This is an appended repair, with the original five commits preserved. **Awaiting Hubble's independent re-review; not APPROVE and not merged/pushed.** No device, vendor, database, Backend or other Flutter-module changes.

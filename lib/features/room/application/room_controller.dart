@@ -684,7 +684,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     // Background continuation may keep already-published audio, but must not
     // finish a pending foreground grant/unmute and start a new microphone.
     if (!foreground && !_transportPublishing) {
-      _rtcAudioAuthorityGeneration += 1;
+      _invalidateRtcAudioAuthority();
       _rtcAudioRequested = false;
     }
     if (foreground && _lease != null && !_leaseUnexpired) {
@@ -1004,7 +1004,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       if (_seatInSnapshot(next)?.isOccupied == true)
         _suppressAutomaticGrant = false;
       if (!_seatPermitsAudio(next)) {
-        _rtcAudioAuthorityGeneration += 1;
+        _invalidateRtcAudioAuthority();
         _rtcAudioRequested = false;
         await _disableRtcPublication();
       } else if (_foreground && !previous.isSnapshotOnly && automaticGrant) {
@@ -2143,7 +2143,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     if (_isRtcAuthorityEvent(event.code)) {
-      _rtcAudioAuthorityGeneration += 1;
+      _invalidateRtcAudioAuthority();
     }
     final int activeEpoch = sessionEpoch ?? _sessionEpoch;
     switch (event.code) {
@@ -2362,7 +2362,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     _authorityMutationCount = 0;
     _authorityKnown = false;
     _invalidateTencentImReadinessPoll();
-    _rtcAudioAuthorityGeneration += 1;
+    _invalidateRtcAudioAuthority();
     _micQueueEpoch += 1;
     _joinCancelled = true;
     _micRequestPending = false;
@@ -2398,6 +2398,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     _realtimeTransportOwners[_realtimeGateway] = lease;
     final rtc = _rtcAdapter;
     if (rtc is AgoraRtcAdapter) {
+      rtc.cancelPendingPublication();
       rtc.setForeground(_foreground);
       _backgroundAudioSubscription ??= rtc.backgroundAudioChanges.listen(
         (_) => _onBackgroundAudioChanged(),
@@ -2470,6 +2471,13 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     final int authorityGeneration = _rtcAudioAuthorityGeneration;
+    final int sessionEpoch = _sessionEpoch;
+    bool publicationAllowed() =>
+        _isCurrent(sessionEpoch) &&
+        _ownsRtcTransport(transportLease) &&
+        authorityGeneration == _rtcAudioAuthorityGeneration &&
+        (_lease == null || _lease!.sessionId == snapshot.sessionId) &&
+        _snapshotAllowsRtcPublication(snapshot);
     try {
       await _withRtcAudioMutex<void>(() async {
         // Keep reconnect and the subsequent publication update in the same
@@ -2497,7 +2505,15 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
             publishAudio &&
             authorityGeneration == _rtcAudioAuthorityGeneration &&
             _snapshotAllowsRtcPublication(snapshot);
-        await _rtcAdapter.setLocalAudioEnabled(effectivePublishAudio);
+        final rtc = _rtcAdapter;
+        if (rtc is AgoraRtcAdapter) {
+          await rtc.setLocalAudioEnabled(
+            effectivePublishAudio,
+            publicationAllowed: publicationAllowed,
+          );
+        } else {
+          await rtc.setLocalAudioEnabled(effectivePublishAudio);
+        }
         if (!_ownsRtcTransport(transportLease)) return;
         _rtcPublicationActive = effectivePublishAudio;
         if (effectivePublishAudio && !_transportPublishing) {
@@ -2663,7 +2679,20 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     return null;
   }
 
+  void _cancelPendingRtcPublication() {
+    final rtc = _rtcAdapter;
+    if (_ownsRtcTransport(_transportLeaseId) && rtc is AgoraRtcAdapter) {
+      rtc.cancelPendingPublication();
+    }
+  }
+
+  void _invalidateRtcAudioAuthority() {
+    _rtcAudioAuthorityGeneration += 1;
+    _cancelPendingRtcPublication();
+  }
+
   Future<void> _disableRtcPublication({bool force = false}) async {
+    _cancelPendingRtcPublication();
     final transportLease = _transportLeaseId;
     await _withRtcAudioMutex<void>(() async {
       if (!_ownsRtcTransport(transportLease) ||
@@ -2950,7 +2979,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_backgroundAudioSubscription?.cancel());
     _backgroundAudioSubscription = null;
     _invalidateTencentImReadinessPoll();
-    _rtcAudioAuthorityGeneration += 1;
+    _invalidateRtcAudioAuthority();
     _micQueueEpoch += 1;
     _disposed = true;
     _joinCancelled = true;

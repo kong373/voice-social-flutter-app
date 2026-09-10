@@ -143,6 +143,7 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
   bool _foreground = true;
   Future<void> _audioTail = Future<void>.value();
   int _audioRequest = 0;
+  int _publicationGeneration = 0;
   bool _audioPublishing = false;
   final DateTime Function() _now;
   final Duration _joinTimeout;
@@ -270,7 +271,10 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
     }
   }
 
-  Future<bool> _startBackgroundAudio({required bool microphone}) async {
+  Future<bool> _startBackgroundAudio({
+    required bool microphone,
+    bool Function()? publicationAllowed,
+  }) async {
     final generation = _lifecycleGeneration;
     final audio = _backgroundAudio;
     if (audio == null) return false;
@@ -285,6 +289,7 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
           _joined &&
           _connectionActive &&
           generation == _lifecycleGeneration &&
+          (!microphone || (publicationAllowed?.call() ?? true)) &&
           (_foreground || downgrade),
     );
   }
@@ -746,13 +751,20 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
   }
 
   @override
-  Future<void> setLocalAudioEnabled(bool enabled) {
+  Future<void> setLocalAudioEnabled(
+    bool enabled, {
+    bool Function()? publicationAllowed,
+  }) {
     final generation = _lifecycleGeneration;
     final request = ++_audioRequest;
+    final publicationGeneration = _publicationGeneration;
+    bool mayPublish() =>
+        publicationGeneration == _publicationGeneration &&
+        (publicationAllowed?.call() ?? true);
     final operation = _audioTail.then((_) async {
       if (generation != _lifecycleGeneration || request != _audioRequest)
         return;
-      await _setLocalAudioEnabled(enabled, request);
+      await _setLocalAudioEnabled(enabled, request, mayPublish);
     });
     _audioTail = operation.then<void>(
       (_) {},
@@ -761,7 +773,16 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
     return operation;
   }
 
-  Future<void> _setLocalAudioEnabled(bool enabled, int request) async {
+  /// Revoke pending enables synchronously, without waiting for either audio
+  /// mutex or superseding a queued disable. Already-published audio still
+  /// requires the normal disable/leave operation.
+  void cancelPendingPublication() => ++_publicationGeneration;
+
+  Future<void> _setLocalAudioEnabled(
+    bool enabled,
+    int request,
+    bool Function() publicationAllowed,
+  ) async {
     _ensureNotDisposed();
     if (!_joined) {
       return;
@@ -770,39 +791,46 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
     final RtcCredentials current = _credentials!;
     final ClientRoleType role = _roleFor(current.role);
     final int lifecycleGeneration = _lifecycleGeneration;
+    bool audioRequestCurrent() =>
+        !_disposed &&
+        !_disposing &&
+        _joined &&
+        lifecycleGeneration == _lifecycleGeneration &&
+        request == _audioRequest &&
+        (!enabled || publicationAllowed());
+    if (!audioRequestCurrent()) return;
     if (enabled && role != ClientRoleType.clientRoleBroadcaster) {
       throw const RtcAdapterException(
         failure: RtcAdapterFailure.mute,
         message: '当前 RTC 角色不能发布麦克风',
       );
     }
-    if (enabled && !await _hasMicrophonePermission()) {
-      throw const RtcAdapterException(
-        failure: RtcAdapterFailure.permission,
-        message: '麦克风权限未授予',
+    if (enabled) {
+      final granted = await _hasMicrophonePermission(audioRequestCurrent);
+      if (!audioRequestCurrent()) return;
+      if (!granted) {
+        throw const RtcAdapterException(
+          failure: RtcAdapterFailure.permission,
+          message: '麦克风权限未授予',
+        );
+      }
+    }
+    if (enabled && _backgroundAudio != null) {
+      final started = await _startBackgroundAudio(
+        microphone: true,
+        // Controller revocation also invalidates native eligibility. A plain
+        // queued disable still owns the existing playback lease and downgrades
+        // it normally; audioRequestCurrent below forbids its superseded enable.
+        publicationAllowed: publicationAllowed,
       );
+      if (!audioRequestCurrent()) return;
+      if (!started) {
+        throw const RtcAdapterException(
+          failure: RtcAdapterFailure.permission,
+          message: '后台音频运行条件未满足，麦克风未开启',
+        );
+      }
     }
-    if (_disposed ||
-        _disposing ||
-        !_joined ||
-        lifecycleGeneration != _lifecycleGeneration ||
-        request != _audioRequest) {
-      return;
-    }
-    if (enabled &&
-        _backgroundAudio != null &&
-        !await _startBackgroundAudio(microphone: true)) {
-      throw const RtcAdapterException(
-        failure: RtcAdapterFailure.permission,
-        message: '后台音频运行条件未满足，麦克风未开启',
-      );
-    }
-    bool audioRequestCurrent() =>
-        !_disposed &&
-        !_disposing &&
-        _joined &&
-        lifecycleGeneration == _lifecycleGeneration &&
-        request == _audioRequest;
     if (!audioRequestCurrent()) return;
     if (enabled && _backgroundAudio != null && !hasBackgroundAudioLease) {
       throw const RtcAdapterException(
@@ -823,15 +851,28 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
         ),
       );
       mediaOptionsUpdated = true;
-      if (!audioRequestCurrent()) return;
-      await engine.muteLocalAudioStream(!enabled);
-      if (!_disposed &&
-          !_disposing &&
-          _joined &&
-          lifecycleGeneration == _lifecycleGeneration &&
-          request == _audioRequest) {
-        _localAudioEnabled = enabled;
+      if (!audioRequestCurrent()) {
+        await _rollbackAudioPublication(
+          engine,
+          lifecycleGeneration: lifecycleGeneration,
+          role: role,
+          enabled: enabled,
+          mediaOptionsUpdated: mediaOptionsUpdated,
+        );
+        return;
       }
+      await engine.muteLocalAudioStream(!enabled);
+      if (!audioRequestCurrent()) {
+        await _rollbackAudioPublication(
+          engine,
+          lifecycleGeneration: lifecycleGeneration,
+          role: role,
+          enabled: enabled,
+          mediaOptionsUpdated: mediaOptionsUpdated,
+        );
+        return;
+      }
+      _localAudioEnabled = enabled;
     } on AgoraRtcException catch (error) {
       await _rollbackAudioPublication(
         engine,
@@ -1467,13 +1508,14 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
     _handlerRegistered = true;
   }
 
-  Future<bool> _hasMicrophonePermission() async {
+  Future<bool> _hasMicrophonePermission(bool Function() allowed) async {
     final NativePermissionAdapter? adapter = _microphonePermissionAdapter;
     if (adapter == null) {
       return false;
     }
     try {
       PermissionState state = await adapter.status(PermissionKind.microphone);
+      if (!allowed()) return false;
       if (state == PermissionState.granted) {
         return true;
       }
@@ -1483,7 +1525,7 @@ class AgoraRtcAdapter implements RtcAdapter, RtcPublicationState {
         return false;
       }
       state = await adapter.request(PermissionKind.microphone);
-      return state == PermissionState.granted;
+      return allowed() && state == PermissionState.granted;
     } on Object {
       return false;
     }

@@ -1,0 +1,59 @@
+00:00 +0: loading /Users/kongzheng/Documents/ny/.worktrees/flutter-room-mic-policy-20260909/test/room_mic_permission_fence_test.dart
+00:00 +0: real Agora fresh grant cannot enable after accountABA during permission await
+RTC_LIFECYCLE provider=agora event=initialized
+RTC_LIFECYCLE provider=agora event=joined
+RTC_LIFECYCLE provider=agora event=left
+RTC_LIFECYCLE provider=agora event=joined
+RTC_LIFECYCLE provider=agora event=rejoined
+RTC_LIFECYCLE provider=agora event=left
+00:00 +0 -1: real Agora fresh grant cannot enable after accountABA during permission await [E]
+  Expected: empty
+    Actual: WhereIterable<bool>:[true]
+
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test/room_mic_permission_fence_test.dart 44:7       main.<fn>
+
+00:00 +0 -1: real Agora fresh grant cannot enable after leave during permission await
+RTC_LIFECYCLE provider=agora event=initialized
+RTC_LIFECYCLE provider=agora event=joined
+RTC_LIFECYCLE provider=agora event=left
+RTC_LIFECYCLE provider=agora event=joined
+RTC_LIFECYCLE provider=agora event=rejoined
+RTC_LIFECYCLE provider=agora event=left
+00:00 +0 -2: real Agora fresh grant cannot enable after leave during permission await [E]
+  Expected: empty
+    Actual: WhereIterable<bool>:[true]
+
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test/room_mic_permission_fence_test.dart 44:7       main.<fn>
+
+00:00 +0 -2: real Agora fresh grant cannot enable after expiredLease during permission await
+RTC_LIFECYCLE provider=agora event=initialized
+RTC_LIFECYCLE provider=agora event=joined
+RTC_LIFECYCLE provider=agora event=left
+RTC_LIFECYCLE provider=agora event=joined
+RTC_LIFECYCLE provider=agora event=rejoined
+00:00 +0 -3: real Agora fresh grant cannot enable after expiredLease during permission await [E]
+  Expected: empty
+    Actual: WhereIterable<bool>:[true]
+
+  package:matcher                                     expect
+  package:flutter_test/src/widget_tester.dart 473:18  expect
+  test/room_mic_permission_fence_test.dart 44:7       main.<fn>
+
+RTC_LIFECYCLE provider=agora event=left
+00:00 +0 -3: real Agora valid fresh grant enables only after permission completes
+RTC_LIFECYCLE provider=agora event=initialized
+RTC_LIFECYCLE provider=agora event=joined
+RTC_LIFECYCLE provider=agora event=left
+RTC_LIFECYCLE provider=agora event=joined
+RTC_LIFECYCLE provider=agora event=rejoined
+RTC_LIFECYCLE provider=agora event=left
+00:00 +1 -3: Some tests failed.
+
+Failing tests:
+  /Users/kongzheng/Documents/ny/.worktrees/flutter-room-mic-policy-20260909/test/room_mic_permission_fence_test.dart: real Agora fresh grant cannot enable after accountABA during permission await
+  /Users/kongzheng/Documents/ny/.worktrees/flutter-room-mic-policy-20260909/test/room_mic_permission_fence_test.dart: real Agora fresh grant cannot enable after expiredLease during permission await
+  /Users/kongzheng/Documents/ny/.worktrees/flutter-room-mic-policy-20260909/test/room_mic_permission_fence_test.dart: real Agora fresh grant cannot enable after leave during permission await
