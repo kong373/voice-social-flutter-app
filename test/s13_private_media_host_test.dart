@@ -144,6 +144,7 @@ class PrivateHarness {
   final players = <FakePrivatePlayer>[];
   final hosts = <PrivateMediaHost>[];
   MediaPurpose purpose = MediaPurpose.privateImage;
+  String expiresAt = '2099-09-10T00:00:00Z';
   int state = 0;
   FutureOr<MediaFakeResponse> Function(MediaFakeRequest)? intercept;
   late final http = MediaFakeHttp((r) {
@@ -168,7 +169,7 @@ class PrivateHarness {
     'state': ['ALLOCATED', 'UPLOADING', 'QUARANTINED', 'READY'][state],
     'version': state,
     'maximumBytes': purpose.maximumBytes,
-    'expiresAt': '2099-09-10T00:00:00Z',
+    'expiresAt': expiresAt,
     'mediaType': state < 3 ? null : reference()['mediaType'],
     'bytes': state == 0 ? null : 3,
     'durationMillis': state < 3 ? null : reference()['durationMillis'],
@@ -260,12 +261,14 @@ class _FailingStore implements KeyValueStore {
   _FailingStore(this.delegate);
   final KeyValueStore delegate;
   bool fail = false;
+  Future<void> Function(String)? beforeWrite;
   @override
   Future<String?> read(String key) => delegate.read(key);
   @override
   Future<void> delete(String key) => delegate.delete(key);
   @override
   Future<void> write(String key, String value) async {
+    await beforeWrite?.call(key);
     await delegate.write(key, value);
     if (fail) throw const FileSystemException('contract write result lost');
   }
@@ -396,6 +399,199 @@ void main() {
         first.headers.value('X-Request-Id'),
       );
       expect(h.http.requests.map((r) => r.method), ['POST', 'POST']);
+    },
+  );
+  test(
+    'cold expired ALLOCATED can be explicitly abandoned without blocking new selection',
+    () async {
+      final firstHost = h.create(), original = firstHost.visit(pmPeer);
+      await original.loaded;
+      await original.pick(MediaPurpose.privateImage);
+      final key = original.intent!.allocationKey;
+      h.intercept = (_) => throw const SocketException('lost allocation');
+      await expectLater(original.upload(), throwsA(isA<ApiException>()));
+      firstHost.dispose();
+      await firstHost.cleanup;
+
+      // Backend replays the original expired allocation and status remains a
+      // read-only ALLOCATED snapshot. No terminal state or expiry renewal.
+      h.expiresAt = '2020-01-01T00:00:00Z';
+      h.intercept = null;
+      final restored = h.create().visit(pmPeer);
+      await restored.loaded;
+      await restored.upload(readOnly: true);
+      await restored.upload(readOnly: true);
+      expect(restored.intent!.status!.state, MediaAssetState.allocated);
+      expect(restored.intent!.status!.isExpired(DateTime.now()), true);
+      expect(restored.intent!.putAttempted, false);
+      expect(h.http.requests.map((r) => r.method), ['POST', 'POST', 'GET']);
+      expect(h.http.requests[1].headers.value('X-Request-Id'), key);
+      final count = h.http.requests.length;
+      final originalRaw = await h.store.read('s13.private-media.v1.1.2');
+
+      await restored.discard();
+      expect(restored.intent, isNull);
+      expect(await h.store.read('s13.private-media.v1.1.2'), isNull);
+      final archiveKey = 's13.private-media.abandoned.v1.1.2.$key';
+      expect(await h.store.read(archiveKey), originalRaw);
+      await restored.pick(MediaPurpose.privateImage);
+      expect(restored.intent!.allocationKey, isNot(key));
+      expect(restored.intent!.allocationAttempted, false);
+      expect(
+        h.http.requests.length,
+        count,
+        reason: 'no DELETE, allocate or send',
+      );
+      restored.dispose();
+      await restored.cleanup;
+      final next = h.create().visit(pmPeer);
+      await next.loaded;
+      expect(next.intent!.allocationKey, isNot(key));
+      expect(await h.store.read(archiveKey), originalRaw);
+    },
+  );
+  test(
+    'lost allocation without ID retains original key when explicitly abandoned',
+    () async {
+      final visit = h.create().visit(pmPeer);
+      await visit.loaded;
+      await visit.pick(MediaPurpose.privateImage);
+      h.intercept = (_) => throw const SocketException('lost allocation');
+      await expectLater(visit.upload(), throwsA(isA<ApiException>()));
+      final original = (await h.store.read('s13.private-media.v1.1.2'))!;
+      final key = visit.intent!.allocationKey;
+      visit.dispose();
+      await visit.cleanup;
+      final restored = h.create().visit(pmPeer);
+      await restored.loaded;
+      await restored.discard();
+      expect(
+        await h.store.read('s13.private-media.abandoned.v1.1.2.$key'),
+        original,
+      );
+      expect(h.http.requests.length, 1);
+      await restored.pick(MediaPurpose.privateImage);
+      expect(restored.intent!.allocationKey, isNot(key));
+      expect(h.http.requests.length, 1);
+    },
+  );
+  test(
+    'unknown PUT can be locally abandoned without replay, revoke or send',
+    () async {
+      final visit = h.create().visit(pmPeer);
+      await visit.loaded;
+      await visit.pick(MediaPurpose.privateImage);
+      h.intercept = (r) {
+        if (r.method == 'PUT') throw const SocketException('unknown bytes');
+        return h.respond(r);
+      };
+      await expectLater(visit.upload(), throwsA(isA<ApiException>()));
+      final key = visit.intent!.allocationKey;
+      final original = await h.store.read('s13.private-media.v1.1.2');
+      visit.dispose();
+      await visit.cleanup;
+      final restored = h.create().visit(pmPeer);
+      await restored.loaded;
+      expect(restored.intent!.putAttempted, true);
+      await restored.discard();
+      expect(
+        await h.store.read('s13.private-media.abandoned.v1.1.2.$key'),
+        original,
+      );
+      expect(h.http.requests.map((r) => r.method), ['POST', 'PUT']);
+      expect(await h.store.read('s13.private-media.v1.1.2'), isNull);
+    },
+  );
+  test(
+    'archive storage failure keeps active upload and prevents replacing selection',
+    () async {
+      final storage = _FailingStore(h.store);
+      final visit = await h.ready(h.create(storage: storage));
+      final original = await h.store.read('s13.private-media.v1.1.2');
+      final key = visit.intent!.allocationKey, count = h.http.requests.length;
+      storage.fail = true;
+      await expectLater(visit.discard(), throwsA(isA<FileSystemException>()));
+      expect(await h.store.read('s13.private-media.v1.1.2'), original);
+      expect(visit.intent!.allocationKey, key);
+      await expectLater(
+        visit.pick(MediaPurpose.privateImage),
+        throwsA(isA<ApiException>()),
+      );
+      storage.fail = false;
+      await visit.discard();
+      expect(
+        await h.store.read('s13.private-media.abandoned.v1.1.2.$key'),
+        original,
+      );
+      expect(await h.store.read('s13.private-media.v1.1.2'), isNull);
+      expect(h.http.requests.length, count);
+    },
+  );
+  test(
+    'ABA during archive never clears the active original account intent',
+    () async {
+      final storage = _FailingStore(h.store), host = h.create(storage: null);
+      final visit = await h.ready(h.create(storage: storage));
+      final key = visit.intent!.allocationKey;
+      final original = await h.store.read('s13.private-media.v1.1.2');
+      final entered = Completer<void>(), gate = Completer<void>();
+      storage.beforeWrite = (key) async {
+        if (key.startsWith('s13.private-media.abandoned.')) {
+          entered.complete();
+          await gate.future;
+        }
+      };
+      final discarded = visit.discard();
+      final rejected = expectLater(discarded, throwsA(isA<ApiException>()));
+      await entered.future;
+      h.identity.change(7);
+      final b = host.visit(pmPeer);
+      await b.loaded;
+      expect(b.intent, isNull);
+      h.identity.change(1);
+      gate.complete();
+      await rejected;
+      expect(await h.store.read('s13.private-media.v1.1.2'), original);
+      final a = host.visit(pmPeer);
+      await a.loaded;
+      expect(a.intent!.allocationKey, key);
+    },
+  );
+  test(
+    'expired unknown message send cannot be abandoned and replays original request',
+    () async {
+      final visit = await h.ready(h.create());
+      h.intercept = (_) => throw const SocketException('unknown message');
+      await expectLater(visit.send(h.repository), throwsA(isA<ApiException>()));
+      final originalPost = h.http.requests.last;
+      final raw =
+          jsonDecode((await h.store.read('s13.private-media.v1.1.2'))!)
+              as Map<String, dynamic>;
+      (raw['status'] as Map<String, dynamic>)['expiresAt'] =
+          '2020-01-01T00:00:00Z';
+      await h.store.write('s13.private-media.v1.1.2', jsonEncode(raw));
+      visit.dispose();
+      await visit.cleanup;
+      final restored = h.create().visit(pmPeer);
+      await restored.loaded;
+      expect(restored.intent!.status!.isExpired(DateTime.now()), true);
+      expect(restored.intent!.canDiscard, false);
+      await expectLater(restored.discard(), throwsA(isA<ApiException>()));
+      expect(await h.store.read('s13.private-media.v1.1.2'), jsonEncode(raw));
+      expect(h.http.requests.last, same(originalPost));
+      expect(
+        await h.store.read(
+          's13.private-media.abandoned.v1.1.2.${raw['allocationKey']}',
+        ),
+        isNull,
+      );
+      h.intercept = null;
+      await restored.send(h.repository);
+      expect(h.http.requests.last.body, originalPost.body);
+      expect(
+        h.http.requests.last.headers.value('X-Request-Id'),
+        originalPost.headers.value('X-Request-Id'),
+      );
     },
   );
   test(

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +7,7 @@ import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/media/media_models.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/message/data/mock_message_repository.dart';
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
@@ -179,6 +181,81 @@ void main() {
   }
 
   testWidgets(
+    'cold expired allocation requires explicit abandon confirmation and permits a fresh selection',
+    (tester) async {
+      final h = await harness(tester);
+      late String key;
+      await tester.runAsync(() async {
+        final firstHost = h.create();
+        final visit = firstHost.visit(pmPeer);
+        await visit.loaded;
+        await visit.pick(MediaPurpose.privateImage);
+        key = visit.intent!.allocationKey;
+        h.intercept = (_) => throw const SocketException('lost allocation');
+        await expectLater(visit.upload(), throwsA(isA<ApiException>()));
+        firstHost.dispose();
+        await firstHost.cleanup;
+      });
+      h.expiresAt = '2020-01-01T00:00:00Z';
+      h.intercept = null;
+      await composer(tester, h, h.create());
+      await tester.tap(find.text('检查上传状态'));
+      await until(tester, () => has('待上传'));
+      expect(h.http.requests.map((r) => r.method), ['POST', 'POST']);
+      expect(h.http.requests.last.headers.value('X-Request-Id'), key);
+      await tester.tap(find.byKey(const Key('pm-abandon')));
+      await tester.pump();
+      expect(find.text('确认放弃上传'), findsOneWidget);
+      expect(await h.store.read('s13.private-media.v1.1.2'), isNotNull);
+      await tester.tap(find.text('保留本次上传'));
+      await tester.pump();
+      expect(find.text('确认放弃上传'), findsNothing);
+      expect(find.text('放弃本次上传'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('pm-abandon')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('pm-confirm-abandon')));
+      await until(tester, () => !has('放弃本次上传'));
+      expect(await h.store.read('s13.private-media.v1.1.2'), isNull);
+      final archived = (await h.store.read(
+        's13.private-media.abandoned.v1.1.2.$key',
+      ))!;
+      expect(archived, contains('"state":"ALLOCATED"'));
+      expect(archived, contains('2020-01-01'));
+      expect(archived, isNot(contains(h.directory.path)));
+      await tester.tap(find.byKey(const Key('pm-pick-image')));
+      await until(tester, () => has('上传媒体'));
+      final fresh =
+          jsonDecode((await h.store.read('s13.private-media.v1.1.2'))!)
+              as Map<String, Object?>;
+      expect(fresh['allocationKey'], isNot(key));
+      expect(fresh['allocationAttempted'], false);
+      expect(
+        h.http.requests.length,
+        2,
+        reason: 'no automatic upload/send/delete',
+      );
+    },
+  );
+  testWidgets('abandon confirmation is invalidated by account ABA', (
+    tester,
+  ) async {
+    final h = await harness(tester), host = h.create();
+    await composer(tester, h, host);
+    await pickUpload(tester, h);
+    final original = await h.store.read('s13.private-media.v1.1.2');
+    final count = h.http.requests.length;
+    await tester.tap(find.byKey(const Key('pm-abandon')));
+    await tester.pump();
+    expect(find.byKey(const Key('pm-confirm-abandon')), findsOneWidget);
+    h.identity.change(7);
+    h.identity.change(1);
+    await tester.pump();
+    expect(find.byKey(const Key('pm-confirm-abandon')), findsNothing);
+    expect(await h.store.read('s13.private-media.v1.1.2'), original);
+    expect(h.http.requests.length, count);
+  });
+
+  testWidgets(
     'real AppDependencies chat wiring sends one image only after explicit confirmation',
     (tester) async {
       tester.view.devicePixelRatio = 1;
@@ -298,12 +375,14 @@ void main() {
       };
       await confirm(tester);
       await until(tester, () => has('恢复原发送'));
+      expect(find.byKey(const Key('pm-abandon')), findsNothing);
       final original = h.http.requests.last;
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
       await composer(tester, h, host, sent: (_) => successes++);
       expect(h.http.requests.last, same(original));
       expect(successes, 0);
+      expect(find.byKey(const Key('pm-abandon')), findsNothing);
       h.intercept = null;
       await confirm(tester);
       await until(tester, () => successes == 1);

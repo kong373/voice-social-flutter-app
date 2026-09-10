@@ -32,6 +32,7 @@ class _PrivateMediaComposerState extends State<PrivateMediaComposer>
     with WidgetsBindingObserver {
   PrivateMediaVisit? _visit;
   PrivateMediaIntent? _confirming;
+  PrivateMediaIntent? _abandoning;
   String? _error;
   bool _foreground = true;
   (int, int)? _identity;
@@ -64,6 +65,7 @@ class _PrivateMediaComposerState extends State<PrivateMediaComposer>
 
   void _release() {
     _confirming = null;
+    _abandoning = null;
     _visit?.removeListener(_changed);
     _visit?.dispose();
     _visit = null;
@@ -146,7 +148,10 @@ class _PrivateMediaComposerState extends State<PrivateMediaComposer>
     final frozen = visit.intent;
     if (frozen == null) return;
     if (!confirmed) {
-      setState(() => _confirming = frozen);
+      setState(() {
+        _abandoning = null;
+        _confirming = frozen;
+      });
       return;
     }
     if (!identical(_confirming, frozen) ||
@@ -166,6 +171,25 @@ class _PrivateMediaComposerState extends State<PrivateMediaComposer>
       setState(() => _confirming = null);
       widget.onSent(receipt);
     }
+  }
+
+  Future<void> _discard(
+    PrivateMediaVisit visit, {
+    bool confirmed = false,
+  }) async {
+    final frozen = visit.intent;
+    if (frozen == null || !frozen.canDiscard) return;
+    if (frozen.allocationAttempted && !confirmed) {
+      setState(() {
+        _confirming = null;
+        _abandoning = frozen;
+      });
+      return;
+    }
+    if (confirmed && !identical(_abandoning, frozen)) return;
+    await visit.discard();
+    if (mounted && identical(_visit, visit) && visit.current)
+      setState(() => _abandoning = null);
   }
 
   @override
@@ -242,6 +266,26 @@ class _PrivateMediaComposerState extends State<PrivateMediaComposer>
           if (widget.host.enabled && intent == null && visit?.recording != true)
             const Text('图片≤10MB；语音≤60秒/10MB；视频≤30秒/100MB。'),
           if (intent != null) ...[
+            if (identical(_abandoning, intent)) ...[
+              const Text('放弃本次上传？原上传记录会保留，不会发送消息或删除服务器文件。'),
+              Wrap(
+                children: [
+                  TextButton(
+                    key: const Key('pm-confirm-abandon'),
+                    onPressed: enabled
+                        ? () => _run((v) => _discard(v, confirmed: true))
+                        : null,
+                    child: const Text('确认放弃上传'),
+                  ),
+                  TextButton(
+                    onPressed: enabled
+                        ? () => setState(() => _abandoning = null)
+                        : null,
+                    child: const Text('保留本次上传'),
+                  ),
+                ],
+              ),
+            ],
             if (identical(_confirming, intent)) ...[
               Text(
                 intent.sendAttempted
@@ -305,8 +349,9 @@ class _PrivateMediaComposerState extends State<PrivateMediaComposer>
                   ),
                 if (intent.canDiscard)
                   TextButton(
-                    onPressed: enabled ? () => _run((v) => v.discard()) : null,
-                    child: const Text('取消选择'),
+                    key: const Key('pm-abandon'),
+                    onPressed: enabled ? () => _run(_discard) : null,
+                    child: Text(intent.allocationAttempted ? '放弃本次上传' : '取消选择'),
                   ),
               ],
             ),

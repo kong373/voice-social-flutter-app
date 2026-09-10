@@ -50,11 +50,17 @@ schema/类型/身份/用途/状态和引用矛盾均拒绝，读取失败不覆�
 | UPLOADING / QUARANTINED | 检查状态只GET；用户另点“继续安全检查”才按原ID/current version complete |
 | READY、尚未发消息 | 由当前原账号重新确认；仅发送该ID的服务端六字段 |
 | 消息发送结果未知 | 显示恢复入口；重新确认后用原 receiver/requestId/commandMedia重放，原账号新scope，不复用旧Future |
+| 未曾尝试发送消息，用户确认放弃上传 | 先按原账号/收件人/分配key持久保留原记录，再释放当前选择位；零HTTP，新选择仍需重新确认上传 |
 | 严格匹配的成功回执 | 删除该意图记录，更新当前会话；失败/409/403/未知不伪成功或清key |
 | 换号 / 注销 / ABA | 旧scope永久失效，原账号记录保留但不自动发；其他账号看不到或复用它 |
 
 已选文件只在本次访问内使用。冷启动无法从任意旧picker路径恢复文件，要求重新选择，
-不能把新文件塞入旧ID。未知上传记录继续保留供检查，不自动DELETE/reallocate。
+不能把新文件塞入旧ID。未放弃的未知上传继续按原ID检查，不自动DELETE/reallocate。
+用户明确放弃时，将原记录保存到
+`s13.private-media.abandoned.v1.<actor>.<receiver>.<allocationKey>`，包含既有13字段、
+原ID（若响应已收到）、状态/版本和原key，不含路径/Token/字节；不是把原ID转给新
+选择，也不清服务器资产。存档不会载入活动发送器，无后台查询/发送，原记录保留
+用于核对，不自动删除。新的选择只生成本地草稿，不自动分配新资产。
 没有自动轮询、续传runner、网络恢复监听器或定时发送。
 
 私信字节全部放在 `getTemporaryDirectory()/s13-private-media-v1` 专用根；首次媒体I/O
@@ -134,5 +140,41 @@ git diff --check
 不是设备录音/播放或正式上线证据。首发仍需主的原生/模拟器窗口及统一验收。
 
 Q18构造已随独立parent接回；Q18与Q02三个repository的AppDependencies身份getter
-由主统一树独立wiring后对齐，不混入本媒体提交。Q02 `ab2c005` 已由主接收审查，
-本树尚未接回；不预写其参数或自行改ApiClient、commerce/community/account实现。
+由主统一树独立wiring提交，不混入本媒体提交。后续已依次接回主Q02 `662fb03` 为
+`6d8b0f4`、wiring `991b8e6` 为 `a131d24`；4文件analyze `3509` exit0。未自行改
+ApiClient、commerce/community/account实现。
+
+## 追加修复：冷恢复 ALLOCATED 过期占坑
+
+主审提出的占坑已真实复现。Backend主 `MediaAssetRegistry.status()`（79行）只读返回
+原状态，不刷新expiresAt；allocate同key在60行回原记录，不因过期自动建新对象；
+`beginUpload()`/`requireUnexpired()`（90/282行）及 `MediaUploadService.complete()`
+拒绝过期，但status不会把ALLOCATED变成REJECTED/REVOKED。
+因此“GET到终态后再取消”不成立。旧 `canDiscard` 导致peer唯一槽位永久不能重选。
+
+修复仅在私信host/composer及专属测试：`!sendAttempted && commandMedia==null`
+允许明确放弃未发送上传；尝试过allocate的意图必须在界面二次确认，并先持久存档，
+再移出当前peer槽位。存档/当前记录删除串行、每次存储I/O前校验scope和原意图对象；
+存档失败或在存档await中换号不删除活动记录。若已发起本地删除后身份变化，无法撤回
+已发出的存储I/O，但原记录已持久存档，结果不进入新身份UI。未知发送不走此分支，
+即使资产过期也不清requestId或commandMedia。无Backend DELETE、complete重试或新
+allocate副作用，不改变后端待处理资产数量限制；新分配若遭429仍如实显示。
+
+实际RED `79656` exit1：冷host恢复同分配key→过期ALLOCATED→只读GET，调用discard仍
+抛“结果未知…不能丢弃”冲突。修后同用例 `19246` exit0。测试使用真实ApiClient与
+冻结Backend DTO的fake HTTP，不启动Backend/DB，冷重建为同序列化store的新host，
+不宣称OS杀进程验证。
+
+最终 `55527` **exit0：host27＋UI14＝41PASS / 0FAIL / 0SKIP**，新增8项：过期ALLOCATED
+冷恢复、无ID丢响应、未知PUT放弃、存档失败、存档中ABA、过期未知消息拒绝放弃、
+UI明确确认/保留/重选、确认中ABA。旧未知发送widget另加无放弃按钮断言。先前
+`82959` 在新widget夹具中把初始Future建在fakeAsync、再于runAsync等待而卡住；
+已人工停止（Flutter退出码0但伴随shutdown错误，不算PASS），将冷host创建移入同一
+真实异步区后，单用例 `48471` exit0再运行最终41项。`2556` 四文件analyze 0 issue、
+format 0 change、git diff --check均exit0。结果在本树
+`build/s13-private-abandon-green.json`。本次不重跑无关316项或全量，不运行native/DB。
+
+```sh
+/Users/kongzheng/Documents/ny/.tooling/flutter-3.44.7/bin/flutter test --no-pub --concurrency=2 --reporter json test/s13_private_media_host_test.dart test/s13_private_media_ui_test.dart
+/Users/kongzheng/Documents/ny/.tooling/flutter-3.44.7/bin/flutter analyze --no-pub lib/features/media/private_media_host.dart lib/features/message/presentation/private_media_widgets.dart test/s13_private_media_host_test.dart test/s13_private_media_ui_test.dart
+```

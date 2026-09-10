@@ -108,6 +108,36 @@ class PrivateMediaHost {
       _entries[(entry.actor, entry.receiver)] = null;
   }
 
+  Future<void> _abandon(PrivateMediaIntent entry, MediaIdentityScope scope) {
+    void check() {
+      scope.check();
+      if (!entry.canDiscard ||
+          !identical(_entries[(entry.actor, entry.receiver)], entry))
+        throw mediaProtocol();
+    }
+
+    check();
+    final encoded = entry.encode();
+    final operation = _writes.then((_) async {
+      check();
+      if (entry.allocationAttempted) {
+        // Explicit local abandonment is not server revocation. Retain the
+        // original allocation identity even when its response was lost. This
+        // record is never loaded into the active sender or automatically sent.
+        await store.write(
+          's13.private-media.abandoned.v1.${entry.actor}.${entry.receiver}.${entry.allocationKey}',
+          encoded,
+        );
+      }
+      check();
+      await store.delete(_storageKey(entry.actor, entry.receiver));
+      if (identical(_entries[(entry.actor, entry.receiver)], entry))
+        _entries[(entry.actor, entry.receiver)] = null;
+    });
+    _writes = operation.catchError((Object _) {});
+    return operation;
+  }
+
   Future<MediaTemporaryFile> download(
     MediaReference media,
     MediaIdentityScope scope,
@@ -149,12 +179,9 @@ class PrivateMediaIntent {
   bool sendAttempted = false;
   MediaAssetStatus? status;
   MediaReference? commandMedia;
-  bool get canDiscard =>
-      !sendAttempted &&
-      (!allocationAttempted ||
-          status?.state == MediaAssetState.ready ||
-          status?.state == MediaAssetState.rejected ||
-          status?.state == MediaAssetState.revoked);
+  // An upload alone cannot create a private message. Only the user's explicit
+  // abandon action may free this slot; an attempted send is never discardable.
+  bool get canDiscard => !sendAttempted && commandMedia == null;
   static Map<String, Object?>? _status(MediaAssetStatus? s) => s == null
       ? null
       : {
@@ -469,7 +496,7 @@ class PrivateMediaVisit extends ChangeNotifier {
     if (status.isExpired(DateTime.now()))
       throw const ApiException(
         kind: ApiFailureKind.conflict,
-        message: '媒体已过期，请取消后重新选择',
+        message: '媒体已过期，可放弃本次上传后重新选择；不会删除服务器文件',
       );
     if (status.state == MediaAssetState.allocated && !entry.putAttempted) {
       final source = _source;
@@ -557,7 +584,7 @@ class PrivateMediaVisit extends ChangeNotifier {
         kind: ApiFailureKind.conflict,
         message: '结果未知，原请求已保留；请先恢复，不能丢弃后换键重发',
       );
-    await host._remove(entry);
+    await host._abandon(entry, scope);
     check();
     intent = null;
     await _source?.dispose();
