@@ -11,6 +11,7 @@ import '../media/media_models.dart';
 part '../media/media_api_transport.dart';
 part '../media/user_avatar_media_transport.dart';
 part '../media/registration_avatar_transport.dart';
+part '../media/profile_avatar_api_transport.dart';
 
 class ApiResponse {
   const ApiResponse({
@@ -248,6 +249,27 @@ class ApiClient {
     requireIdentity: requireIdentity,
   );
 
+  /// Identity-bound PUT with a stable request id and session refresh fences.
+  Future<ApiResponse> putBoundToIdentity(
+    String path, {
+    required void Function() requireIdentity,
+    Map<String, String>? query,
+    Map<String, String>? headers,
+    Map<String, Object?>? body,
+    String? requestId,
+    bool stripContentEncoding = false,
+  }) => _request(
+    method: 'PUT',
+    path: path,
+    authenticated: true,
+    query: query,
+    headers: headers,
+    body: body,
+    requestId: requestId,
+    requireIdentity: requireIdentity,
+    stripContentEncoding: stripContentEncoding,
+  );
+
   /// Identity/lease-bound PATCH with the same send and refresh fences as POST.
   Future<ApiResponse> patchBoundToIdentity(
     String path, {
@@ -273,6 +295,7 @@ class ApiClient {
     bool allowUnauthorizedRecovery = true,
     String? requestId,
     void Function()? requireIdentity,
+    bool stripContentEncoding = false,
   }) async {
     requireIdentity?.call();
     if (!_baseUri.hasScheme || _baseUri.host.isEmpty) {
@@ -314,6 +337,9 @@ class ApiClient {
 
       _applyHeaders(request, _requestHeadersProvider?.call());
       _applyHeaders(request, headers);
+      if (stripContentEncoding) {
+        request.headers.removeAll(HttpHeaders.contentEncodingHeader);
+      }
 
       if (!authenticated && requireIdentity != null) {
         request.followRedirects = false;
@@ -399,6 +425,7 @@ class ApiClient {
             allowUnauthorizedRecovery: false,
             requestId: stableRequestId,
             requireIdentity: requireIdentity,
+            stripContentEncoding: stripContentEncoding,
           );
         }
         if (_unauthorizedRecovery != null) {
@@ -415,6 +442,7 @@ class ApiClient {
               allowUnauthorizedRecovery: false,
               requestId: stableRequestId,
               requireIdentity: requireIdentity,
+              stripContentEncoding: stripContentEncoding,
             );
           }
         }

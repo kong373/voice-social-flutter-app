@@ -341,9 +341,14 @@ class _PersonalCenterPageState extends State<PersonalCenterPage>
 }
 
 class EditProfilePage extends StatefulWidget {
-  const EditProfilePage({required this.initialProfile, super.key});
+  const EditProfilePage({
+    required this.initialProfile,
+    this.avatarEditor,
+    super.key,
+  });
 
   final SocialProfile initialProfile;
+  final ProfileAvatarEditor? avatarEditor;
 
   @override
   State<EditProfilePage> createState() => _EditProfilePageState();
@@ -356,6 +361,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
   late final TextEditingController _birthdayController;
   late final TextEditingController _cityController;
   late int _sex;
+  late UserAvatarDescriptor? _avatar;
+  ProfileAvatarEditor? _avatarEditor;
+  bool _ownsAvatarEditor = false;
+  bool _avatarEditorStarted = false;
   bool _busy = false;
 
   @override
@@ -372,10 +381,51 @@ class _EditProfilePageState extends State<EditProfilePage> {
     );
     _cityController = TextEditingController(text: widget.initialProfile.city);
     _sex = widget.initialProfile.sex == 1 ? 1 : 2;
+    _avatar = widget.initialProfile.user.avatar;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_avatarEditorStarted) return;
+    _avatarEditorStarted = true;
+    final provided = widget.avatarEditor;
+    if (provided != null) {
+      _avatarEditor = provided;
+    } else {
+      final host = AppDependencyScope.of(context).imageMediaHost;
+      final profileTransport = host?.profileAvatarMediaTransport;
+      if (host != null && profileTransport != null && host.identity.$1 > 0) {
+        _avatarEditor = ProfileAvatarEditor(
+          api: ProfileAvatarApi(
+            apiClient: host.api,
+            mediaTransport: profileTransport,
+          ),
+          imageHost: host,
+        );
+        _ownsAvatarEditor = true;
+      }
+    }
+    final editor = _avatarEditor;
+    if (editor != null) {
+      editor.addListener(_avatarChanged);
+      unawaited(editor.load().catchError((Object _) {}));
+    }
+  }
+
+  void _avatarChanged() {
+    final editor = _avatarEditor;
+    if (!mounted || editor == null || !editor.hasCurrentSnapshot) return;
+    final next = editor.current?.avatar;
+    if (next == _avatar) return;
+    setState(() => _avatar = next);
   }
 
   @override
   void dispose() {
+    final editor = _avatarEditor;
+    editor?.removeListener(_avatarChanged);
+    if (_ownsAvatarEditor) editor?.dispose();
     _nameController.dispose();
     _signatureController.dispose();
     _birthdayController.dispose();
@@ -432,7 +482,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                       shape: BoxShape.circle,
                     ),
                     child: UserAvatarView(
-                      avatar: widget.initialProfile.user.avatar,
+                      avatar: _avatar,
                       userId: widget.initialProfile.user.userId,
                       size: 76,
                       fallback: RuntimeAvatar(
@@ -448,7 +498,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                       radius: 13,
                       backgroundColor: SocialColors.primary,
                       child: Icon(
-                        Icons.photo_camera_outlined,
+                        Icons.photo_library_outlined,
                         size: 14,
                         color: Colors.white,
                       ),
@@ -458,7 +508,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
               ),
             ),
             const SizedBox(height: 14),
-            const _InfoBanner(text: '暂不支持修改头像和封面，可编辑下方个人资料。'),
+            if (_avatarEditor != null)
+              ProfileAvatarEditPanel(
+                editor: _avatarEditor!,
+                onAvatarChanged: (avatar) {
+                  if (mounted) setState(() => _avatar = avatar);
+                },
+              )
+            else
+              const _InfoBanner(text: '当前环境暂不支持头像编辑。'),
             const SizedBox(height: 12),
             _OxygenPanel(
               child: Column(

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/media/media_files.dart';
 import '../../core/media/media_identity.dart';
 import '../../core/media/media_models.dart';
+import '../../core/media/profile_avatar_transport.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_exception.dart';
 import 'native_image_selection.dart';
@@ -24,6 +25,7 @@ class AppImageMediaHost extends ChangeNotifier {
     required this.changes,
     required this.picker,
     required this.temporaryParent,
+    this.profileAvatarMediaTransport,
     this.enabled = true,
   }) {
     _observedIdentity = identity;
@@ -35,6 +37,7 @@ class AppImageMediaHost extends ChangeNotifier {
   final Listenable changes;
   final ImageSelection picker;
   final Future<Directory> Function() temporaryParent;
+  final ProfileAvatarMediaTransport? profileAvatarMediaTransport;
   final bool enabled;
   final _drafts = <(int, String), ImageDraft>{};
   MediaIdentityScope? _scope;
@@ -71,7 +74,9 @@ class AppImageMediaHost extends ChangeNotifier {
     if (purpose != MediaPurpose.dynamicImage &&
         purpose != MediaPurpose.supportImage &&
         purpose != MediaPurpose.roomCover &&
-        purpose != MediaPurpose.roomBackground) {
+        purpose != MediaPurpose.roomBackground &&
+        !(purpose == MediaPurpose.avatar &&
+            profileAvatarMediaTransport != null)) {
       throw const ApiException(
         kind: ApiFailureKind.configuration,
         message: '当前图片草稿不支持此用途',
@@ -168,7 +173,9 @@ class AppImageMediaHost extends ChangeNotifier {
   }
 
   /// First explicit upload only. After an uncertain result the UI uses recover
-  /// (GET same ID); no retry ever repeats a PUT, even if status is ALLOCATED.
+  /// (GET same ID); raw avatar content is never replayed automatically after
+  /// 401, and an existing upload can continue only through explicit
+  /// status/complete recovery.
   Future<void> upload(
     ImageDraft draft,
     ImageUpload image, {
@@ -204,20 +211,30 @@ class AppImageMediaHost extends ChangeNotifier {
     try {
       if (image.status == null) {
         image.attempted = true;
-        final result = await api.mediaAssetJson(
-          action: MediaAssetAction.allocate,
-          purpose: draft.purpose,
-          requestId: image.key,
-          identity: bound,
-        );
+        final result = draft.purpose == MediaPurpose.avatar
+            ? await profileAvatarMediaTransport!.allocateUpload(
+                identity: bound,
+                requestId: image.key,
+              )
+            : await api.mediaAssetJson(
+                action: MediaAssetAction.allocate,
+                purpose: draft.purpose,
+                requestId: image.key,
+                identity: bound,
+              );
         _check(draft, bound);
         _accept(draft, image, result.data);
       } else {
-        final result = await api.mediaAssetJson(
-          action: MediaAssetAction.status,
-          assetId: image.status!.assetId,
-          identity: bound,
-        );
+        final result = draft.purpose == MediaPurpose.avatar
+            ? await profileAvatarMediaTransport!.statusUpload(
+                identity: bound,
+                assetId: image.status!.assetId,
+              )
+            : await api.mediaAssetJson(
+                action: MediaAssetAction.status,
+                assetId: image.status!.assetId,
+                identity: bound,
+              );
         _check(draft, bound);
         _accept(draft, image, result.data);
       }
@@ -237,26 +254,40 @@ class AppImageMediaHost extends ChangeNotifier {
           );
         }
         image.putAttempted = true;
-        final result = await api.putMediaAssetContent(
-          assetId: current.assetId,
-          expectedVersion: current.version,
-          purpose: draft.purpose,
-          bytes: image.bytes,
-          content: source.openRead(),
-          identity: bound,
-        );
+        final result = draft.purpose == MediaPurpose.avatar
+            ? await profileAvatarMediaTransport!.putUploadContent(
+                identity: bound,
+                assetId: current.assetId,
+                expectedVersion: current.version,
+                bytes: image.bytes,
+                content: source.openRead,
+              )
+            : await api.putMediaAssetContent(
+                assetId: current.assetId,
+                expectedVersion: current.version,
+                purpose: draft.purpose,
+                bytes: image.bytes,
+                content: source.openRead(),
+                identity: bound,
+              );
         _check(draft, bound);
         _accept(draft, image, result.data);
         current = image.status!;
       }
       if (current.state == MediaAssetState.uploading ||
           current.state == MediaAssetState.quarantined) {
-        final result = await api.mediaAssetJson(
-          action: MediaAssetAction.complete,
-          assetId: current.assetId,
-          expectedVersion: current.version,
-          identity: bound,
-        );
+        final result = draft.purpose == MediaPurpose.avatar
+            ? await profileAvatarMediaTransport!.completeUpload(
+                identity: bound,
+                assetId: current.assetId,
+                expectedVersion: current.version,
+              )
+            : await api.mediaAssetJson(
+                action: MediaAssetAction.complete,
+                assetId: current.assetId,
+                expectedVersion: current.version,
+                identity: bound,
+              );
         _check(draft, bound);
         _accept(draft, image, result.data);
       }

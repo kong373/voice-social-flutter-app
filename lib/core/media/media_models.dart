@@ -6,6 +6,7 @@ enum MediaPurpose {
   privateVoice('PRIVATE_VOICE'),
   privateVideo('PRIVATE_VIDEO'),
   supportImage('SUPPORT_IMAGE'),
+  avatar('AVATAR'),
   roomCover('ROOM_COVER'),
   roomBackground('ROOM_BACKGROUND');
 

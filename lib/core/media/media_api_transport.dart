@@ -20,6 +20,7 @@ extension MediaApiTransport on ApiClient {
     switch (action) {
       case MediaAssetAction.allocate:
         if (purpose == null ||
+            purpose == MediaPurpose.avatar ||
             assetId != null ||
             expectedVersion != null ||
             requestId == null ||
@@ -56,7 +57,10 @@ extension MediaApiTransport on ApiClient {
     required Stream<List<int>> content,
     required MediaIdentityScope identity,
   }) {
-    if (expectedVersion != 0 || bytes <= 0 || bytes > purpose.maximumBytes)
+    if (purpose == MediaPurpose.avatar ||
+        expectedVersion != 0 ||
+        bytes <= 0 ||
+        bytes > purpose.maximumBytes)
       throw mediaProtocol();
     return _mediaExchange(
       method: 'PUT',
@@ -93,7 +97,7 @@ extension MediaApiTransport on ApiClient {
     required String method,
     required String path,
     required MediaIdentityScope identity,
-    required String requestId,
+    required String? requestId,
     Map<String, Object?>? body,
     Stream<List<int>>? upload,
     int? uploadBytes,
@@ -134,6 +138,7 @@ extension MediaApiTransport on ApiClient {
       ApiClient._applyHeaders(activeRequest, _requestHeadersProvider?.call());
       activeRequest.headers
         ..removeAll(HttpHeaders.contentEncodingHeader)
+        ..removeAll('X-Request-Id')
         ..set(HttpHeaders.authorizationHeader, token)
         ..set(
           HttpHeaders.acceptHeader,
@@ -146,8 +151,10 @@ extension MediaApiTransport on ApiClient {
               : 'application/octet-stream',
         )
         ..set('Client-Type', clientType)
-        ..set('Client-Inner-Version', clientInnerVersion)
-        ..set('X-Request-Id', requestId);
+        ..set('Client-Inner-Version', clientInnerVersion);
+      if (requestId != null) {
+        activeRequest.headers.set('X-Request-Id', requestId);
+      }
       identity.check();
       if (upload != null) {
         activeRequest.contentLength = uploadBytes!;
@@ -229,7 +236,8 @@ extension MediaApiTransport on ApiClient {
                 await identity.wait(_recoverUnauthorized().timeout(timeout)));
         identity.check();
         // A PUT may have acquired UPLOADING even when its response is lost or
-        // auth expires during processing. Refresh does not authorize replay.
+        // auth expires during processing. Refresh never replays upload bytes;
+        // callers recover explicitly with status/complete.
         if (refreshed && upload == null) {
           return await _mediaExchange(
             method: method,

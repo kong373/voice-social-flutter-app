@@ -12,6 +12,7 @@ import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
+import 'package:voice_social_app/core/media/profile_avatar_transport.dart';
 import 'package:voice_social_app/core/storage/key_value_store.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
 import 'package:voice_social_app/features/account/compliance/data/backend_account_compliance_repository.dart';
@@ -555,6 +556,9 @@ class AppDependencies {
             changes: sessionManager,
             picker: NativeImageSelection(),
             temporaryParent: getTemporaryDirectory,
+            profileAvatarMediaTransport: environment.isLive
+                ? ApiProfileAvatarMediaTransport(apiClient)
+                : null,
             enabled: environment.isLive,
           ),
       environment: environment,

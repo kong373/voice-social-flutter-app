@@ -38,12 +38,14 @@ class PresetAvatarPicker extends StatelessWidget {
   const PresetAvatarPicker({
     required this.selectedId,
     required this.onSelected,
+    this.availableIds,
     this.enabled = true,
     super.key,
   });
 
   final String? selectedId;
   final ValueChanged<String> onSelected;
+  final Set<String>? availableIds;
   final bool enabled;
 
   @override
@@ -71,14 +73,15 @@ class PresetAvatarPicker extends StatelessWidget {
           runSpacing: 12,
           children: [
             for (final avatar in PresetAvatars.values)
-              _PresetAvatarOption(
-                avatar: avatar,
-                width: itemWidth,
-                selected: selectedId == avatar.id,
-                enabled: enabled,
-                duration: duration,
-                onSelected: onSelected,
-              ),
+              if (availableIds == null || availableIds!.contains(avatar.id))
+                _PresetAvatarOption(
+                  avatar: avatar,
+                  width: itemWidth,
+                  selected: selectedId == avatar.id,
+                  enabled: enabled,
+                  duration: duration,
+                  onSelected: onSelected,
+                ),
           ],
         );
       },

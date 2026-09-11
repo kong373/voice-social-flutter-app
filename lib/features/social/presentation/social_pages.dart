@@ -1,4 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import '../../account/domain/user_avatar_descriptor.dart';
+import '../../account/presentation/profile_avatar_edit_panel.dart';
+import '../../account/profile_avatar/profile_avatar_editor.dart';
 import '../../account/presentation/user_avatar_view.dart';
 import '../../commerce/display/domain/equipped_decoration.dart';
 import '../../commerce/display/presentation/equipped_decoration_view.dart';
