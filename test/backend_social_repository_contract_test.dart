@@ -10,6 +10,152 @@ import 'package:voice_social_app/features/social/data/backend_social_repository.
 import 'package:voice_social_app/features/social/domain/social_models.dart';
 
 void main() {
+  final aliasCases =
+      <({String name, Object? first, Object? second, bool valid})>[
+        (
+          name: 'preset avatar',
+          first: {'kind': 'PRESET', 'reference': 'avatar-rose'},
+          second: {'kind': 'PRESET', 'reference': 'avatar-rose'},
+          valid: true,
+        ),
+        (
+          name: 'reordered uploaded avatar keys',
+          first: {
+            'kind': 'UPLOADED',
+            'reference': 'c20f35da-ec61-4029-aa47-bd15a1c3d285',
+            'version': 3,
+          },
+          second: {
+            'version': 3,
+            'reference': 'c20f35da-ec61-4029-aa47-bd15a1c3d285',
+            'kind': 'UPLOADED',
+          },
+          valid: true,
+        ),
+        (
+          name: 'equal nested metadata',
+          first: {
+            'kind': 'PRESET',
+            'reference': 'avatar-rose',
+            'metadata': [
+              {'tag': 'a'},
+              null,
+              2,
+            ],
+          },
+          second: {
+            'metadata': [
+              {'tag': 'a'},
+              null,
+              2,
+            ],
+            'reference': 'avatar-rose',
+            'kind': 'PRESET',
+          },
+          valid: true,
+        ),
+        (
+          name: 'different avatar reference',
+          first: {'kind': 'PRESET', 'reference': 'avatar-rose'},
+          second: {'kind': 'PRESET', 'reference': 'avatar-night'},
+          valid: false,
+        ),
+        (
+          name: 'different uploaded version',
+          first: {'kind': 'UPLOADED', 'reference': 'asset-a', 'version': 3},
+          second: {'kind': 'UPLOADED', 'reference': 'asset-a', 'version': 4},
+          valid: false,
+        ),
+        (
+          name: 'missing nested key is not null',
+          first: {'kind': 'PRESET', 'reference': 'avatar-rose', 'extra': null},
+          second: {'kind': 'PRESET', 'reference': 'avatar-rose'},
+          valid: false,
+        ),
+        (
+          name: 'nested array order matters',
+          first: {
+            'metadata': [1, 2],
+          },
+          second: {
+            'metadata': [2, 1],
+          },
+          valid: false,
+        ),
+      ];
+  for (final scenario in aliasCases) {
+    test(
+      'social pagination aliases compare JSON values: ${scenario.name}',
+      () async {
+        var requests = 0;
+        final server = await _startServer((request, body) async {
+          requests++;
+          expect(
+            request.uri.path,
+            '/app-api/user/relation/queryUserFollowList',
+          );
+          final row = <String, Object?>{
+            'userId': 20001,
+            'nickName': 'QA peer',
+            'signature': '',
+            'headImgUrl': '',
+            'mark': 1,
+            'isOnline': 1,
+            'isInRoom': 0,
+            'roomId': '',
+          };
+          // Real HTTP JSON serialization creates independent nested objects for
+          // each alias, as AvatarProjection.attach + page() does on the backend.
+          await _reply(
+            request,
+            data: {
+              'current': 1,
+              'size': 20,
+              'pageSize': 20,
+              'total': 1,
+              'pages': 1,
+              'list': [
+                {...row, 'avatar': scenario.first},
+              ],
+              'records': [
+                {...row, 'avatar': scenario.second},
+              ],
+            },
+          );
+        });
+        addTearDown(() => server.close(force: true));
+        final repository = BackendSocialRepository(
+          apiClient: _client(server),
+          currentUserIdProvider: () => 10001,
+        );
+        final result = repository.fetchRelations(
+          type: SocialRelationList.following,
+          page: 1,
+          pageSize: 20,
+        );
+        if (scenario.valid) {
+          final page = await result;
+          expect(page.items.single.userId, 20001);
+          expect(page.total, 1);
+          expect(page.hasMore, isFalse);
+        } else {
+          await expectLater(
+            result,
+            throwsA(
+              isA<ApiException>()
+                  .having((e) => e.kind, 'kind', ApiFailureKind.protocol)
+                  .having(
+                    (e) => e.message,
+                    'message',
+                    '社交分页 list 与 records 内容不一致',
+                  ),
+            ),
+          );
+        }
+        expect(requests, 1);
+      },
+    );
+  }
   test(
     'profile daily nickname rejection preserves the authoritative error',
     () async {

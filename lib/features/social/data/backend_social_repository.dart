@@ -1137,11 +1137,36 @@ class BackendSocialRepository
       return false;
     }
     for (final MapEntry<String, Object?> entry in first.entries) {
-      if (!second.containsKey(entry.key) || second[entry.key] != entry.value) {
+      if (!second.containsKey(entry.key) ||
+          !_sameSocialValue(entry.value, second[entry.key])) {
         return false;
       }
     }
     return true;
+  }
+
+  // JSON decoding creates distinct avatar maps for list and records. Compare
+  // their values, retaining exact keys and ordered arrays for drift detection.
+  static bool _sameSocialValue(Object? first, Object? second) {
+    if (first is Map) {
+      if (second is! Map || first.length != second.length) return false;
+      for (final key in first.keys) {
+        if (key is! String ||
+            !second.containsKey(key) ||
+            !_sameSocialValue(first[key], second[key])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (first is List) {
+      if (second is! List || first.length != second.length) return false;
+      for (var index = 0; index < first.length; index++) {
+        if (!_sameSocialValue(first[index], second[index])) return false;
+      }
+      return true;
+    }
+    return first == second;
   }
 
   static Map<String, Object?> _asMap(Object? value) =>
