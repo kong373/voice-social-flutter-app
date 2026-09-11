@@ -838,7 +838,7 @@ Future<String> _seatPairThroughApproval(
   if (config.role == 'A') {
     expect(request.status, MicRequestStatus.pending);
     await _tap(tester, find.text('更多'));
-    await _tap(tester, find.text('工具'));
+    await _tap(tester, find.text('互动玩法'));
     await _tap(tester, find.text('房管'));
     await _until(
       tester,
