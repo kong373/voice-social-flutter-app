@@ -270,6 +270,98 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.iOS),
   );
 
+  for (final interruptByDrag in [false, true]) {
+    testWidgets(
+      interruptByDrag
+          ? 'manual history drag cancels pending send auto-scroll before a new page'
+          : 'incoming page during send auto-scroll keeps the newest own bubble visible',
+      (tester) async {
+        tester.view.devicePixelRatio = 2;
+        tester.view.physicalSize = const Size(750, 1334);
+        tester.view.padding = const FakeViewPadding(top: 40);
+        tester.view.viewPadding = const FakeViewPadding(top: 40);
+        tester.view.viewInsets = const FakeViewPadding(bottom: 520);
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+          tester.view.resetPadding();
+          tester.view.resetViewPadding();
+          tester.view.resetViewInsets();
+        });
+        final repository = _MediaViewportHistory();
+        for (var index = 0; index < 2; index++) {
+          repository.receive(index);
+          repository.messages.add(
+            repository._row(
+              _message(
+                _MediaViewportHistory.content('A', index),
+              ).copyWithReadForTest(false),
+            ),
+          );
+        }
+        DateTime? lastPageAt;
+        repository.onPageRead = () => lastPageAt = tester.binding.clock.now();
+        await showChat(tester, repository);
+        final own = _MediaViewportHistory.content('A', 2);
+        await tester.enterText(find.byType(TextField), own);
+        await tester.pump();
+        // Complete the actual UI send just before an independently scheduled
+        // foreground page read. The peer row was stored earlier but arrives late.
+        final sendAt = lastPageAt!.add(const Duration(milliseconds: 1919));
+        await tester.pump(sendAt.difference(tester.binding.clock.now()));
+        await tester.tap(find.byTooltip('发送消息').hitTestable());
+        await tester.pump(const Duration(milliseconds: 80));
+        double? manualOffset;
+        if (interruptByDrag) {
+          await tester.drag(find.byType(ListView), const Offset(0, 90));
+          await tester.pump();
+          manualOffset = tester
+              .widget<ListView>(find.byType(ListView))
+              .controller!
+              .offset;
+        }
+        repository.messages.add(
+          repository._row(
+            _message(_MediaViewportHistory.content('B', 2)),
+            order: 3,
+          ),
+        );
+        for (var tick = 0; tick < 50; tick++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(repository.sent.where((m) => m.content == own), hasLength(1));
+        expect(renderedMessages(tester), hasLength(6));
+        expect(
+          renderedMessages(
+            tester,
+          ).where((m) => m.content == _MediaViewportHistory.content('B', 2)),
+          hasLength(1),
+        );
+        expect(renderedMessages(tester).last.content, own);
+        final text = find.text(own, findRichText: false);
+        final position = tester
+            .widget<ListView>(find.byType(ListView))
+            .controller!
+            .position;
+        if (interruptByDrag) {
+          expect(position.pixels, closeTo(manualOffset!, 1));
+          expect(position.extentAfter, greaterThan(80));
+        } else {
+          expect(
+            text.hitTestable(),
+            findsOneWidget,
+            reason:
+                'offset=${position.pixels}, max=${position.maxScrollExtent}, '
+                'after=${position.extentAfter}, text=${tester.getRect(text)}, '
+                'viewport=${tester.getRect(find.byType(ListView))}',
+          );
+        }
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+    );
+  }
+
   testWidgets(
     'slow successful newest polling does not starve read acknowledgement',
     (tester) async {
@@ -1058,6 +1150,7 @@ class _MediaViewportHistory extends _VisibleHistory
     expect(conversation.targetUserId, 2);
     expect(cursor, isNull, reason: 'all six fixture messages fit one page');
     pageCalls++;
+    onPageRead?.call();
     final rows = await super.fetchPrivateMessages(conversation);
     if (!isCurrent()) return const PrivateMessageSyncBatch([]);
     // BackendMessageRepository reverses the server's id-DESC wire order into
@@ -1080,7 +1173,9 @@ class _MediaViewportHistory extends _VisibleHistory
   static String content(String role, int round) =>
       'dual-dualios0907-f40f21bd73-$role-private-$round';
 
-  ChatMessage _row(ChatMessage source) => ChatMessage(
+  VoidCallback? onPageRead;
+
+  ChatMessage _row(ChatMessage source, {int? order}) => ChatMessage(
     id: source.id,
     conversationId: source.conversationId,
     senderUserId: source.senderUserId,
@@ -1090,7 +1185,12 @@ class _MediaViewportHistory extends _VisibleHistory
       'reference': source.isMine ? 'avatar-preset-moon' : 'avatar-preset-sun',
     }),
     content: source.content,
-    createdAt: DateTime(2026, 9, 7, 16).add(Duration(seconds: messages.length)),
+    createdAt: DateTime(
+      2026,
+      9,
+      7,
+      16,
+    ).add(Duration(seconds: order ?? messages.length)),
     isMine: source.isMine,
     status: source.status,
     deliveryStatus: MessageDeliveryStatus.vendorBlocked,

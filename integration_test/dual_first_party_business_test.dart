@@ -512,6 +512,7 @@ void main() {
             )
             .hitTestable();
         final privateWatch = Stopwatch()..start();
+        var peerObserved = false;
         void tracePrivate(String marker) {
           // Only fixed markers and allowlisted facts; diagnostics must never
           // replace the original failure, including during route disposal.
@@ -524,6 +525,24 @@ void main() {
             final button = buttons.length == 1
                 ? buttons.single.widget as IconButton
                 : null;
+            final ownTexts = find
+                .text(privateText, findRichText: false)
+                .evaluate()
+                .where((element) => element.widget is Text)
+                .toList();
+            final ownRect = ownTexts.length == 1
+                ? tester.getRect(find.byWidget(ownTexts.single.widget))
+                : null;
+            final lists = find.byType(ListView).evaluate().toList();
+            final list = lists.length == 1
+                ? lists.single.widget as ListView
+                : null;
+            final viewport = list != null
+                ? tester.getRect(find.byWidget(list))
+                : null;
+            final position = list?.controller?.hasClients == true
+                ? list!.controller!.position
+                : null;
             debugPrint(
               'DUAL_PRIVATE_TRACE::$role::$marker::index=$index::'
               'elapsedMs=${privateWatch.elapsedMilliseconds}::'
@@ -534,11 +553,28 @@ void main() {
               'inputMatchesExpected=${field?.controller?.text == privateText}::'
               'inputEmpty=${field?.controller?.text.isEmpty == true}::'
               'sendEnabled=${button?.onPressed != null}::'
+              'ownTextMounted=${ownTexts.length == 1}::'
+              'ownTop=${ownRect?.top.toStringAsFixed(1)}::'
+              'ownBottom=${ownRect?.bottom.toStringAsFixed(1)}::'
+              'viewportTop=${viewport?.top.toStringAsFixed(1)}::'
+              'viewportBottom=${viewport?.bottom.toStringAsFixed(1)}::'
+              'scrollOffset=${position?.pixels.toStringAsFixed(1)}::'
+              'scrollMax=${position?.maxScrollExtent.toStringAsFixed(1)}::'
+              'scrollAfter=${position?.extentAfter.toStringAsFixed(1)}::'
+              'peerObserved=$peerObserved::'
               'ownVisible=${find.text(privateText, findRichText: false).hitTestable().evaluate().any((element) => element.widget is Text)}::'
               'peerVisible=${find.text(peerPrivate).hitTestable().evaluate().length == 1}',
             );
           } catch (_) {
             // Never print exception text or sensitive UI values.
+          }
+        }
+
+        void observePeerVisibility() {
+          if (!peerObserved &&
+              find.text(peerPrivate).hitTestable().evaluate().length == 1) {
+            peerObserved = true;
+            tracePrivate('peer_observed');
           }
         }
 
@@ -587,6 +623,7 @@ void main() {
             privateText,
           );
           expect(tester.widget<IconButton>(sendButton).onPressed, isNotNull);
+          observePeerVisibility();
           tracePrivate('send_tap_wait');
           await _tap(
             tester,
@@ -597,14 +634,19 @@ void main() {
           tracePrivate('send_wait');
           await _until(
             tester,
-            () =>
-                find
-                    .text(privateText, findRichText: false)
-                    .hitTestable()
-                    .evaluate()
-                    .any((element) => element.widget is Text) &&
-                tester.widget<TextField>(composer).controller!.text.isEmpty &&
-                tester.widget<IconButton>(sendButton).onPressed != null,
+            () {
+              // Reciprocal sends can scroll one bubble out after it was
+              // genuinely visible. Observe arrival during the send wait;
+              // do not require both bubbles to fit the small viewport at once.
+              observePeerVisibility();
+              return find
+                      .text(privateText, findRichText: false)
+                      .hitTestable()
+                      .evaluate()
+                      .any((element) => element.widget is Text) &&
+                  tester.widget<TextField>(composer).controller!.text.isEmpty &&
+                  tester.widget<IconButton>(sendButton).onPressed != null;
+            },
             'private UI send $index',
             onTimeout: () => tracePrivate('send_timeout'),
           );
@@ -612,13 +654,16 @@ void main() {
           tracePrivate('receive_wait');
           await _until(
             tester,
-            () => find.text(peerPrivate).hitTestable().evaluate().length == 1,
+            () {
+              observePeerVisibility();
+              return peerObserved;
+            },
             'private automatic receive without navigation $index',
             timeout: const Duration(seconds: 5),
             onTimeout: () => tracePrivate('receive_timeout'),
           );
           tracePrivate('receive_success');
-          expect(find.text(peerPrivate).hitTestable(), findsOneWidget);
+          expect(peerObserved, isTrue);
           await _barrier(tester, relay, config, 'private-received-$index');
           tracePrivate('received_barrier_return');
           roundCompleted = true;

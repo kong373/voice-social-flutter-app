@@ -13,6 +13,8 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     with WidgetsBindingObserver {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  bool _tailScrollPending = false;
+  int _tailScrollGeneration = 0;
   final List<ChatMessage> _messages = <ChatMessage>[];
   late ConversationSummary _conversation;
   bool _loading = true;
@@ -515,6 +517,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       final List<ChatMessage> mergedMessages = _mergeMessages(value);
       final bool hasNewMessages = mergedMessages.length > _messages.length;
       final bool followLatest =
+          _tailScrollPending ||
           _messages.isEmpty ||
           !_scrollController.hasClients ||
           _scrollController.position.extentAfter < 80;
@@ -674,7 +677,8 @@ class _PrivateChatPageState extends State<PrivateChatPage>
         : null;
     final shouldScroll =
         merged.length > _messages.length &&
-        (_messages.isEmpty ||
+        (_tailScrollPending ||
+            _messages.isEmpty ||
             !_scrollController.hasClients ||
             _scrollController.position.extentAfter < 80);
     setState(() {
@@ -809,13 +813,24 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   }
 
   void _scrollToEnd() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _scrollController.hasClients) {
-        _scrollController.animateTo(
+    final generation = ++_tailScrollGeneration;
+    final conversationEpoch = _conversationEpoch;
+    _tailScrollPending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        if (!mounted ||
+            !_active ||
+            generation != _tailScrollGeneration ||
+            conversationEpoch != _conversationEpoch ||
+            !_scrollController.hasClients)
+          return;
+        await _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOut,
         );
+      } finally {
+        if (generation == _tailScrollGeneration) _tailScrollPending = false;
       }
     });
   }
@@ -1061,26 +1076,38 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                           )
                         : RefreshIndicator(
                             onRefresh: _load,
-                            child: ListView.builder(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.fromLTRB(
-                                14,
-                                14,
-                                14,
-                                22,
-                              ),
-                              itemCount: _messages.length,
-                              itemBuilder: (BuildContext context, int index) {
-                                return _ChatBubble(
-                                  message: _messages[index],
-                                  mediaVisible: _active && !_accountChanged,
-                                  onReadFailure: (error) => _mediaFailure(
-                                    error,
-                                    conversationEpoch,
-                                    reading: true,
-                                  ),
-                                );
+                            child: NotificationListener<ScrollStartNotification>(
+                              onNotification: (notification) {
+                                if (notification.dragDetails != null) {
+                                  // A real drag cancels automatic following;
+                                  // another incoming page must not pull a
+                                  // reader away from older messages.
+                                  _tailScrollGeneration++;
+                                  _tailScrollPending = false;
+                                }
+                                return false;
                               },
+                              child: ListView.builder(
+                                controller: _scrollController,
+                                padding: const EdgeInsets.fromLTRB(
+                                  14,
+                                  14,
+                                  14,
+                                  22,
+                                ),
+                                itemCount: _messages.length,
+                                itemBuilder: (BuildContext context, int index) {
+                                  return _ChatBubble(
+                                    message: _messages[index],
+                                    mediaVisible: _active && !_accountChanged,
+                                    onReadFailure: (error) => _mediaFailure(
+                                      error,
+                                      conversationEpoch,
+                                      reading: true,
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                           ),
                   ),
