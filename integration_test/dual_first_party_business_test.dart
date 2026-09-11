@@ -43,7 +43,13 @@ void main() {
               AuthSessionManager.consentStorageValue,
         },
       );
-      addTearDown(dependencies.dispose);
+      addTearDown(() async {
+        // On a failed phase the chat route may still own timers/listeners.
+        // Unmount it before disposing the services those callbacks access.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        dependencies.dispose();
+      });
       await dependencies.authController.initialize();
       expect(
         dependencies.sessionManager.session?.userId == config.session.userId,
