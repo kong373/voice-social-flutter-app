@@ -78,10 +78,13 @@ class AppleIapPurchaseCoordinator {
     final Object session = _captureSession();
     await _restoreJournal(session);
     _requireSession(session);
-    if (_unresolvedOrders.isNotEmpty) {
-      for (final AppleIapOrderBinding pending in _unresolvedOrders.values) {
-        if (pending.productId == productId &&
-            _orderOwners[pending.orderNo] == _authenticatedAccount()) {
+    final String account = _authenticatedAccount()!;
+    final pendingOrders = _unresolvedOrders.values
+        .where((pending) => _orderOwners[pending.orderNo] == account)
+        .toList(growable: false);
+    if (pendingOrders.isNotEmpty) {
+      for (final AppleIapOrderBinding pending in pendingOrders) {
+        if (pending.productId == productId) {
           _boundOrders[pending.orderNo] = (session, pending);
           return pending;
         }
@@ -96,8 +99,15 @@ class AppleIapPurchaseCoordinator {
       requestId: requestId,
     );
     _requireSession(session);
+    final String? previousOwner = _orderOwners[order.orderNo];
+    if (previousOwner != null && previousOwner != account) {
+      throw const ApiException(
+        kind: ApiFailureKind.unauthorized,
+        message: 'Apple 订单不属于当前账号，请恢复当前账号的交易',
+      );
+    }
     _boundOrders[order.orderNo] = (session, order);
-    _orderOwners[order.orderNo] = _authenticatedAccount()!;
+    _orderOwners[order.orderNo] = account;
     return order;
   }
 

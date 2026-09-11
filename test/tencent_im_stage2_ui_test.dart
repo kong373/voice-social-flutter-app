@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/im/domain/im_authoritative_refresh_bus.dart';
 import 'package:voice_social_app/features/im/domain/im_refresh_hint.dart';
 import 'package:voice_social_app/features/message/data/mock_message_repository.dart';
@@ -11,6 +14,96 @@ import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 
 void main() {
+  for (final ending in <String>['success', 'error', 'logout', 'dispose']) {
+    testWidgets('message center drains pending hint after $ending', (
+      tester,
+    ) async {
+      final bus = ImAuthoritativeRefreshBus();
+      final repository = _DeferredConversationsRepository();
+      final dependencies = AppDependencies.forTestEnvironment(
+        environment: AppEnvironment.mock(),
+        messageRepository: repository,
+        imAuthoritativeRefreshBus: bus,
+      );
+      await dependencies.sessionManager.save(
+        AuthSession(
+          accessToken: 'test-only-access',
+          tokenType: 'Bearer',
+          expiresAt: DateTime.utc(2030),
+          userId: 1,
+          mobile: '',
+          roles: '',
+        ),
+      );
+      addTearDown(() {
+        bus.dispose();
+        dependencies.imSessionCoordinator.dispose();
+      });
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            theme: AppTheme.social(),
+            home: const MessageCenterPage(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(repository.calls, 1);
+      final first = bus.publish(
+        const ImRefreshHint(messageId: 'message-1', eventVersion: 1),
+      );
+      await tester.pump();
+      expect(repository.calls, 2);
+      final second = bus.publish(
+        const ImRefreshHint(messageId: 'message-2', eventVersion: 2),
+      );
+      final third = bus.publish(
+        const ImRefreshHint(messageId: 'message-3', eventVersion: 3),
+      );
+      await tester.pump();
+      expect(
+        repository.calls,
+        2,
+        reason: 'Hints must not start concurrent HTTP reads',
+      );
+      if (ending == 'logout') await dependencies.sessionManager.clear();
+      if (ending == 'dispose') await tester.pumpWidget(const SizedBox.shrink());
+      if (ending == 'error') {
+        repository.pending.completeError(StateError('test-only unavailable'));
+      } else {
+        repository.pending.complete([
+          _conversation().copyWith(lastMessage: 'snapshot-one', unreadCount: 1),
+        ]);
+      }
+      await tester.pumpAndSettle();
+      await Future.wait([first, second, third]);
+      if (ending == 'success' || ending == 'error') {
+        expect(
+          repository.calls,
+          3,
+          reason: 'New hints during a read require exactly one trailing read',
+        );
+        expect(find.text('snapshot-three'), findsOneWidget);
+        expect(find.text('snapshot-one'), findsNothing);
+        final duplicate = await bus.publish(
+          const ImRefreshHint(messageId: 'message-3', eventVersion: 3),
+        );
+        expect(duplicate.status, ImRefreshDispatchStatus.duplicate);
+        expect(repository.calls, 3);
+      } else {
+        expect(
+          repository.calls,
+          2,
+          reason: 'Old identity/page must not issue a trailing read',
+        );
+        expect(find.text('snapshot-one'), findsNothing);
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   testWidgets('trusted hint refreshes visible private-chat content once', (
     WidgetTester tester,
   ) async {
@@ -103,6 +196,23 @@ class _VisibleRefreshRepository extends MockMessageRepository {
         isMine: true,
         status: ChatMessageStatus.sent,
         deliveryStatus: MessageDeliveryStatus.delivered,
+      ),
+    ];
+  }
+}
+
+class _DeferredConversationsRepository extends MockMessageRepository {
+  int calls = 0;
+  final pending = Completer<List<ConversationSummary>>();
+
+  @override
+  Future<List<ConversationSummary>> fetchConversations() async {
+    calls++;
+    if (calls == 2) return pending.future;
+    return [
+      _conversation().copyWith(
+        lastMessage: calls == 1 ? 'initial' : 'snapshot-three',
+        unreadCount: calls == 1 ? 0 : 3,
       ),
     ];
   }

@@ -11,6 +11,107 @@ import 'package:voice_social_app/features/commerce/infrastructure/apple_iap_stor
 final Object _testSession = Object();
 
 void main() {
+  test(
+    'pending purchase belongs only to its owner across account switches',
+    () async {
+      Object session = Object();
+      String account = 'account-a';
+      final store = MemoryKeyValueStore();
+      final secondBinding = AppleIapOrderBinding(
+        orderNo: 'vs_apple_order_b',
+        productId: _binding.productId,
+        storeProductId: _binding.storeProductId,
+        appAccountToken: '22222222-2222-4222-8222-222222222222',
+        amountMinor: 600,
+        giftCoinAmount: 60,
+        environment: 'Sandbox',
+        status: 'CONFIRMING',
+        createdAt: null,
+      );
+      final backend = _FakeBackend(orderBindings: [_binding, secondBinding]);
+      final native = _FakeStoreKit(
+        purchaseResult: const AppleIapPurchaseResult(
+          outcome: AppleIapPurchaseOutcome.pending,
+        ),
+      );
+      final coordinator = AppleIapPurchaseCoordinator(
+        storeKit: native,
+        backend: backend,
+        authenticatedSession: () => session,
+        authenticatedAccount: () => account,
+        purchaseStore: store,
+      );
+      addTearDown(coordinator.dispose);
+      expect(
+        (await _purchase(coordinator)).state,
+        AppleIapPurchaseFlowState.pending,
+      );
+      account = 'account-b';
+      session = Object();
+      final orderB = await coordinator.createOrder(
+        productId: _binding.productId,
+        requestId: 'new-owner-order',
+      );
+      expect(orderB.orderNo, secondBinding.orderNo);
+      expect(orderB.appAccountToken, secondBinding.appAccountToken);
+      expect(backend.createCalls, 2);
+      await expectLater(
+        coordinator.purchase(_binding),
+        throwsA(isA<ApiException>()),
+      );
+      expect(
+        (await coordinator.purchase(orderB)).state,
+        AppleIapPurchaseFlowState.pending,
+      );
+      expect(
+        (await coordinator.createOrder(
+          productId: _binding.productId,
+          requestId: 'reuse-b',
+        )).orderNo,
+        secondBinding.orderNo,
+      );
+      await expectLater(
+        coordinator.createOrder(
+          productId: 'different-product',
+          requestId: 'pending-b-blocks-b',
+        ),
+        throwsA(isA<ApiException>()),
+      );
+      account = 'account-a';
+      session = Object();
+      final retainedA = await coordinator.createOrder(
+        productId: _binding.productId,
+        requestId: 'recover-a',
+      );
+      expect(retainedA.orderNo, _binding.orderNo);
+      expect(
+        (await coordinator.purchase(retainedA)).state,
+        AppleIapPurchaseFlowState.awaitingBackend,
+      );
+      expect(backend.createCalls, 2);
+      expect(
+        native.purchaseCalls,
+        2,
+        reason: 'One initial attempt per owner, no second purchase of A',
+      );
+      expect(native.finished, isEmpty);
+      expect(backend.deliveries, isEmpty);
+      final journal = AppleIapPurchaseJournal(store);
+      expect(
+        (await journal.readAll(
+          'account-a',
+        )).map((entry) => entry.binding.orderNo),
+        [_binding.orderNo],
+      );
+      expect(
+        (await journal.readAll(
+          'account-b',
+        )).map((entry) => entry.binding.orderNo),
+        [secondBinding.orderNo],
+      );
+    },
+  );
+
   for (final scenario in <String>['correct', 'coins', 'product', 'token']) {
     test(
       'old deferred finish survives new purchase and restart: $scenario',
@@ -348,7 +449,9 @@ void main() {
           ),
           throwsA(isA<ApiException>()),
         );
-        expect(backend.createCalls, 1);
+        // B may create its own order, but this fake returns A's same order ID.
+        // That response must still be rejected rather than changing its owner.
+        expect(backend.createCalls, 2);
         await coordinator.dispose();
       },
     );
@@ -921,6 +1024,7 @@ class _DeliveryCall {
 class _FakeBackend implements AppleIapBackendPort {
   _FakeBackend({
     this.orderBinding = _binding,
+    this.orderBindings,
     this.deliveryAck = const AppleIapDeliveryAck(
       orderNo: 'vs_apple_order_1',
       transactionId: '100000000000001',
@@ -934,6 +1038,7 @@ class _FakeBackend implements AppleIapBackendPort {
 
   final AppleIapDeliveryAck deliveryAck;
   final AppleIapOrderBinding orderBinding;
+  final List<AppleIapOrderBinding>? orderBindings;
   final Object? deliveryError;
   final Future<AppleIapDeliveryAck>? pendingAck;
   final List<_DeliveryCall> deliveries = <_DeliveryCall>[];
@@ -948,7 +1053,7 @@ class _FakeBackend implements AppleIapBackendPort {
     required String requestId,
   }) async {
     createCalls += 1;
-    return orderBinding;
+    return orderBindings == null ? orderBinding : orderBindings!.removeAt(0);
   }
 
   @override

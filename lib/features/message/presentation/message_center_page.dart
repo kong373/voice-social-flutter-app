@@ -16,6 +16,8 @@ class _MessageCenterPageState extends State<MessageCenterPage>
   ImAuthoritativeRefreshBus? _refreshBus;
   ImAuthoritativeRefreshSubscription? _refreshSubscription;
   Future<void>? _refreshFlight;
+  bool _refreshAgain = false;
+  int _refreshGeneration = 0;
   AppDependencies? _dependencies;
   (int?, int)? _viewer;
   bool _identityLost = false;
@@ -114,11 +116,13 @@ class _MessageCenterPageState extends State<MessageCenterPage>
   }
 
   Future<void> _onAuthoritativeRefresh(ImAuthoritativeRefreshRequest request) {
+    if (!mounted || !_canRead) return Future<void>.value();
     final Future<void>? active = _refreshFlight;
     if (active != null) {
+      _refreshAgain = true;
       return active;
     }
-    final Future<void> operation = _load(showLoading: false);
+    final Future<void> operation = _drainRefresh(_refreshGeneration);
     _refreshFlight = operation;
     operation.then<void>(
       (_) {
@@ -133,6 +137,18 @@ class _MessageCenterPageState extends State<MessageCenterPage>
       },
     );
     return operation;
+  }
+
+  Future<void> _drainRefresh(int generation) async {
+    // Coalesce hints received during a read, but do not lose the newer
+    // authoritative snapshot when the first response was already in flight.
+    do {
+      _refreshAgain = false;
+      await _load(showLoading: false);
+    } while (mounted &&
+        generation == _refreshGeneration &&
+        _canRead &&
+        _refreshAgain);
   }
 
   Future<void> _load({bool showLoading = true, bool revalidate = false}) async {
@@ -198,6 +214,9 @@ class _MessageCenterPageState extends State<MessageCenterPage>
 
   void _cancelPendingLoads() {
     _loadRequestId += 1;
+    _refreshGeneration += 1;
+    _refreshAgain = false;
+    _refreshFlight = null;
   }
 
   void _close() {
