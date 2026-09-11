@@ -886,6 +886,18 @@ Future<String> _seatPairThroughApproval(
         ),
     'authoritative approved mic placement',
     timeout: const Duration(seconds: 5),
+    onTimeout: () => debugPrint(
+      'DUAL_MIC_STATE::${config.role}::placement_timeout::'
+      'lifecycle=${WidgetsBinding.instance.lifecycleState?.name ?? 'unknown'}::'
+      'status=${controller.status.name}::role=${controller.role.name}::'
+      'identityCurrent=${controller.isEntryIdentityCurrent}::'
+      'requestPending=${controller.micRequestPending}::'
+      'queueLoading=${controller.micQueueLoading}::'
+      'snapshotOnly=${controller.isSnapshotOnly}::'
+      'syncDegraded=${controller.realtimeDegraded}::'
+      'onMic=${controller.isOnMic}::'
+      'ownOccupiedSeatCount=${controller.seats.where((s) => s.userId == config.session.userId && s.isOccupied).length}',
+    ),
   );
   await _expectPairAuthority(dependencies, config, seated: true);
   return request.id;
