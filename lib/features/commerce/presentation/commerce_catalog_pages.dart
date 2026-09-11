@@ -395,16 +395,19 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
       if (!mounted) {
         return;
       }
-      await Navigator.of(context).pushReplacement<void, void>(
+      await Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
           builder: (BuildContext context) => PaymentResultPage(order: order),
         ),
       );
+      if (mounted) {
+        Navigator.of(context).pop<void>();
+      }
     } catch (error) {
       if (mounted) {
         final RechargeOrder? pendingOrder = createdOrder;
         if (channel == PaymentChannelType.appleIap && pendingOrder != null) {
-          await Navigator.of(context).pushReplacement<void, void>(
+          await Navigator.of(context).push<void>(
             MaterialPageRoute<void>(
               builder: (_) => PaymentResultPage(
                 order: pendingOrder.copyWith(
@@ -414,6 +417,9 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
               ),
             ),
           );
+          if (mounted) {
+            Navigator.of(context).pop<void>();
+          }
           return;
         }
         ScaffoldMessenger.of(
