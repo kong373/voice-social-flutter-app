@@ -559,6 +559,63 @@ void main() {
       expect(adapter.loginCalls, 1);
     });
 
+    test(
+      'logout opens a new same-user ensure flight and fences old completion',
+      () async {
+        final _TwoFetchCredentialRepository repository =
+            _TwoFetchCredentialRepository(<ImSessionCredentials>[
+              _credentials(now: now),
+              _credentials(now: now, userSig: 'sig_second_123456'),
+            ]);
+        final FakeImSessionAdapter adapter = FakeImSessionAdapter(
+          now: () => now,
+        );
+        final ImSessionCoordinator coordinator = ImSessionCoordinator(
+          adapter: adapter,
+          credentialsRepository: repository,
+          now: () => now,
+        );
+        addTearDown(coordinator.dispose);
+
+        final Future<void> oldEnsure = coordinator.ensureAuthenticated(
+          _session(userId: 123),
+        );
+        await repository.firstStarted.future;
+        await coordinator.logout();
+
+        final Future<void> newEnsure = coordinator.ensureAuthenticated(
+          _session(userId: 123),
+        );
+        try {
+          expect(identical(oldEnsure, newEnsure), isFalse);
+          await repository.secondStarted.future;
+          expect(repository.fetchCalls, 2);
+
+          // Complete the stale fetch after the new flight exists. Its
+          // completion must not clear or replace the new flight.
+          repository.firstRelease.complete();
+          await oldEnsure;
+          expect(repository.secondRelease.isCompleted, isFalse);
+
+          repository.secondRelease.complete();
+          await newEnsure;
+          expect(adapter.loginCalls, 1);
+          expect(coordinator.realtimeReady, isTrue);
+        } finally {
+          if (!repository.firstRelease.isCompleted) {
+            repository.firstRelease.complete();
+          }
+          if (!repository.secondRelease.isCompleted) {
+            repository.secondRelease.complete();
+          }
+          await oldEnsure.catchError((Object _) {});
+          if (!identical(oldEnsure, newEnsure)) {
+            await newEnsure.catchError((Object _) {});
+          }
+        }
+      },
+    );
+
     test('logout wins a restore/login race and leaves adapter idle', () async {
       final _DelayedCredentialRepository repository =
           _DelayedCredentialRepository(_credentials(now: now));
@@ -918,6 +975,34 @@ class _DelayedCredentialRepository extends ImSessionCredentialRepository {
     }
     await release.future;
     return credentials;
+  }
+}
+
+class _TwoFetchCredentialRepository extends ImSessionCredentialRepository {
+  _TwoFetchCredentialRepository(this.credentials);
+
+  final List<ImSessionCredentials> credentials;
+  final Completer<void> firstStarted = Completer<void>();
+  final Completer<void> secondStarted = Completer<void>();
+  final Completer<void> firstRelease = Completer<void>();
+  final Completer<void> secondRelease = Completer<void>();
+  int fetchCalls = 0;
+
+  @override
+  Future<ImSessionCredentials> fetch() async {
+    final int call = fetchCalls++;
+    switch (call) {
+      case 0:
+        firstStarted.complete();
+        await firstRelease.future;
+        return credentials[0];
+      case 1:
+        secondStarted.complete();
+        await secondRelease.future;
+        return credentials[1];
+      default:
+        throw StateError('unexpected credential fetch $call');
+    }
   }
 }
 

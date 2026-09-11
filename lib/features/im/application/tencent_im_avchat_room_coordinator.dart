@@ -341,7 +341,17 @@ class TencentImAvChatRoomCoordinator {
   }
 
   void _handleSessionState(ImSessionState state) {
-    if (_disposed || !state.isReady) {
+    if (_disposed) {
+      return;
+    }
+    if (_invalidatesNativeGroupBinding(state.status)) {
+      // The Tencent adapter emits these non-ready states while renew/logout
+      // has already discarded native group membership. Do not let the local
+      // group claim survive across that native-session replacement; the next
+      // READY event is allowed to rejoin only the still-current room binding.
+      _joinedGroupId = null;
+    }
+    if (!state.isReady) {
       return;
     }
     final TencentImAvChatRoomSession? session = _activeSession;
@@ -401,6 +411,16 @@ class TencentImAvChatRoomCoordinator {
       _isCurrentGeneration(generation) &&
       identical(_activeSession, session) &&
       session.hasActiveLease(_now());
+
+  static bool _invalidatesNativeGroupBinding(ImSessionStatus status) =>
+      status == ImSessionStatus.blocked ||
+      status == ImSessionStatus.idle ||
+      status == ImSessionStatus.initializing ||
+      status == ImSessionStatus.loggingIn ||
+      status == ImSessionStatus.renewing ||
+      status == ImSessionStatus.loggingOut ||
+      status == ImSessionStatus.expired ||
+      status == ImSessionStatus.error;
 
   Future<void> _quitGroupBounded(
     ImRoomGroupCapability capability,

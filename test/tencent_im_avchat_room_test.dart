@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/features/im/application/tencent_im_avchat_room_coordinator.dart';
+import 'package:voice_social_app/features/im/domain/im_session_adapter.dart';
 import 'package:voice_social_app/features/im/domain/im_session_credentials.dart';
 import 'package:voice_social_app/features/im/domain/tencent_im_room_models.dart';
 import 'package:voice_social_app/features/im/infrastructure/tencent_im_session_adapter.dart';
@@ -335,6 +336,158 @@ void main() {
       expect(sdk.joinedGroupIds, <String>['room-group-1']);
       expect(coordinator.activeGroupId, 'room-group-1');
     });
+
+    test(
+      'rejoins the current room once after the adapter replaces its native session',
+      () async {
+        final _GroupSdk sdk = _GroupSdk();
+        final TencentImSessionAdapter adapter = TencentImSessionAdapter(
+          sdkClient: sdk,
+          now: () => now,
+          operationTimeout: const Duration(milliseconds: 100),
+        );
+        final TencentImAvChatRoomCoordinator coordinator =
+            TencentImAvChatRoomCoordinator(
+              sessionAdapter: adapter,
+              operationTimeout: const Duration(milliseconds: 100),
+            );
+        addTearDown(() async {
+          await coordinator.dispose();
+          await adapter.dispose();
+          await sdk.dispose();
+        });
+
+        await adapter.login(_credentials(now));
+        final TencentImAvChatRoomJoinResult initial = await coordinator.enter(
+          TencentImAvChatRoomSession.fromBackendData(_roomData()),
+        );
+        expect(initial.mode, TencentImAvChatRoomJoinMode.joined);
+        expect(sdk.joinedGroupIds, <String>['room-group-1']);
+
+        await adapter.renew(_credentials(now, userSig: 'sig_renewed_123456'));
+        await _waitUntil(() => sdk.joinedGroupIds.length == 2);
+        await _eventTurn();
+
+        expect(sdk.quitGroupIds, <String>['room-group-1']);
+        expect(sdk.logoutCalls, 1);
+        expect(sdk.loginCalls, 2);
+        expect(sdk.joinedGroupIds, <String>['room-group-1', 'room-group-1']);
+        expect(coordinator.activeGroupId, 'room-group-1');
+      },
+    );
+
+    test(
+      'clears the group claim on failed renew and reenters after later login',
+      () async {
+        final _GroupSdk sdk = _GroupSdk();
+        final TencentImSessionAdapter adapter = TencentImSessionAdapter(
+          sdkClient: sdk,
+          now: () => now,
+          operationTimeout: const Duration(milliseconds: 100),
+        );
+        final TencentImAvChatRoomCoordinator coordinator =
+            TencentImAvChatRoomCoordinator(
+              sessionAdapter: adapter,
+              operationTimeout: const Duration(milliseconds: 100),
+            );
+        addTearDown(() async {
+          await coordinator.dispose();
+          await adapter.dispose();
+          await sdk.dispose();
+        });
+
+        await adapter.login(_credentials(now));
+        await coordinator.enter(
+          TencentImAvChatRoomSession.fromBackendData(_roomData()),
+        );
+        sdk.loginResultCode = 10015;
+        await expectLater(
+          adapter.renew(_credentials(now, userSig: 'sig_failed_123456')),
+          throwsA(
+            isA<ImSessionException>().having(
+              (ImSessionException error) => error.failure,
+              'failure',
+              ImSessionFailure.renew,
+            ),
+          ),
+        );
+        expect(sdk.quitGroupIds, <String>['room-group-1']);
+        expect(sdk.joinedGroupIds, <String>['room-group-1']);
+        expect(coordinator.activeGroupId, isNull);
+
+        sdk.loginResultCode = 0;
+        await adapter.login(_credentials(now, userSig: 'sig_recovered_123456'));
+        await _waitUntil(() => sdk.joinedGroupIds.length == 2);
+        await _eventTurn();
+        expect(sdk.loginCalls, 3);
+        expect(sdk.joinedGroupIds, <String>['room-group-1', 'room-group-1']);
+        expect(coordinator.activeGroupId, 'room-group-1');
+      },
+    );
+
+    test(
+      'rejoins only the current room after switching before native renewal',
+      () async {
+        final _GroupSdk sdk = _GroupSdk();
+        final TencentImSessionAdapter adapter = TencentImSessionAdapter(
+          sdkClient: sdk,
+          now: () => now,
+          operationTimeout: const Duration(milliseconds: 100),
+        );
+        final TencentImAvChatRoomCoordinator coordinator =
+            TencentImAvChatRoomCoordinator(
+              sessionAdapter: adapter,
+              operationTimeout: const Duration(milliseconds: 100),
+            );
+        addTearDown(() async {
+          await coordinator.dispose();
+          await adapter.dispose();
+          await sdk.dispose();
+        });
+
+        await adapter.login(_credentials(now));
+        await coordinator.enter(
+          TencentImAvChatRoomSession.fromBackendData(_roomData()),
+        );
+        await coordinator.enter(
+          TencentImAvChatRoomSession.fromBackendData(
+            _roomData(
+              roomId: 'room-2',
+              sessionId: 'session-2',
+              groupId: 'room-group-2',
+            ),
+          ),
+        );
+        expect(sdk.joinedGroupIds, <String>['room-group-1', 'room-group-2']);
+        expect(sdk.quitGroupIds, <String>['room-group-1']);
+
+        await adapter.renew(_credentials(now, userSig: 'sig_switched_123456'));
+        await _waitUntil(() => sdk.joinedGroupIds.length == 3);
+        await _eventTurn();
+        expect(sdk.quitGroupIds, <String>['room-group-1', 'room-group-2']);
+        expect(sdk.joinedGroupIds, <String>[
+          'room-group-1',
+          'room-group-2',
+          'room-group-2',
+        ]);
+        expect(coordinator.activeSession?.roomId, 'room-2');
+        expect(coordinator.activeGroupId, 'room-group-2');
+      },
+    );
+
+    test(
+      'leave fences a late READY after native session replacement',
+      () async {
+        await _exerciseLateReadyRoomFence(closeCoordinator: false);
+      },
+    );
+
+    test(
+      'close fences a late READY after native session replacement',
+      () async {
+        await _exerciseLateReadyRoomFence(closeCoordinator: true);
+      },
+    );
 
     test(
       'uses HTTP-only mode when the group capability is unavailable',
@@ -781,15 +934,20 @@ void main() {
   });
 }
 
-Map<String, Object?> _roomData({String status = 'READY'}) => <String, Object?>{
-  'roomId': 'room-1',
-  'sessionId': 'session-1',
+Map<String, Object?> _roomData({
+  String status = 'READY',
+  String roomId = 'room-1',
+  String sessionId = 'session-1',
+  String groupId = 'room-group-1',
+}) => <String, Object?>{
+  'roomId': roomId,
+  'sessionId': sessionId,
   'version': 1,
   'realtimeGroup': <String, Object?>{
     'provider': 'tencent-im',
     'type': 'AVCHATROOM',
     'groupType': 'AVChatRoom',
-    'groupId': 'room-group-1',
+    'groupId': groupId,
     'status': status,
     'messageMode': 'METADATA_HINT',
     'contentAuthority': 'HTTP',
@@ -814,11 +972,14 @@ RoomController _roomController(
   tencentImReadinessPollWindow: tencentImReadinessPollWindow,
 );
 
-ImSessionCredentials _credentials(DateTime now) => ImSessionCredentials(
+ImSessionCredentials _credentials(
+  DateTime now, {
+  String userSig = 'sig_123456789012',
+}) => ImSessionCredentials(
   provider: ImSessionCredentials.expectedProvider,
   sdkAppId: 1400000000,
   userId: 'u-123',
-  userSig: 'sig_123456789012',
+  userSig: userSig,
   expiresAt: now.add(const Duration(hours: 1)),
   ttlSeconds: 3600,
   imStatus: ImSessionCredentials.readyStatus,
@@ -844,6 +1005,63 @@ TencentImSdkEvent _customEvent({
 );
 
 Future<void> _eventTurn() => Future<void>.delayed(Duration.zero);
+
+Future<void> _exerciseLateReadyRoomFence({
+  required bool closeCoordinator,
+}) async {
+  final _GroupSdk sdk = _GroupSdk();
+  final TencentImSessionAdapter adapter = TencentImSessionAdapter(
+    sdkClient: sdk,
+    now: () => DateTime.utc(2030, 1, 1, 12),
+    operationTimeout: const Duration(seconds: 1),
+  );
+  final TencentImAvChatRoomCoordinator coordinator =
+      TencentImAvChatRoomCoordinator(
+        sessionAdapter: adapter,
+        operationTimeout: const Duration(milliseconds: 10),
+      );
+  Completer<int>? loginGate;
+  Future<void>? renew;
+  bool coordinatorClosed = false;
+  try {
+    final DateTime now = DateTime.utc(2030, 1, 1, 12);
+    await adapter.login(_credentials(now));
+    await coordinator.enter(
+      TencentImAvChatRoomSession.fromBackendData(_roomData()),
+    );
+    expect(sdk.joinedGroupIds, <String>['room-group-1']);
+
+    loginGate = Completer<int>();
+    sdk.loginGate = loginGate;
+    renew = adapter.renew(_credentials(now, userSig: 'sig_late_ready_123456'));
+    await _waitUntil(() => sdk.logoutCalls == 1);
+
+    if (closeCoordinator) {
+      await coordinator.dispose();
+      coordinatorClosed = true;
+    } else {
+      await coordinator.leave();
+    }
+    expect(sdk.joinedGroupIds, <String>['room-group-1']);
+
+    loginGate.complete(0);
+    await renew;
+    await _eventTurn();
+    expect(sdk.joinedGroupIds, <String>['room-group-1']);
+  } finally {
+    if (loginGate != null && !loginGate.isCompleted) {
+      loginGate.complete(0);
+    }
+    if (renew != null) {
+      await renew.catchError((Object _) {});
+    }
+    if (!coordinatorClosed) {
+      await coordinator.dispose();
+    }
+    await adapter.dispose();
+    await sdk.dispose();
+  }
+}
 
 Future<void> _waitUntil(bool Function() condition) async {
   for (int attempt = 0; attempt < 100; attempt += 1) {
@@ -879,8 +1097,13 @@ class _GroupSdk
       StreamController<TencentImSdkEvent>.broadcast(sync: true);
   final List<String> joinedGroupIds = <String>[];
   final List<String> quitGroupIds = <String>[];
+  int loginCalls = 0;
+  int logoutCalls = 0;
+  int uninitCalls = 0;
   int joinResultCode = 0;
   int quitResultCode = 0;
+  int loginResultCode = 0;
+  Completer<int>? loginGate;
   bool hangJoin = false;
   bool hangQuit = false;
 
@@ -891,14 +1114,27 @@ class _GroupSdk
   Future<bool> initSdk({required int sdkAppId}) async => true;
 
   @override
-  Future<int> login({required String userId, required String userSig}) async =>
-      0;
+  Future<int> login({required String userId, required String userSig}) async {
+    loginCalls += 1;
+    final Completer<int>? gate = loginGate;
+    loginGate = null;
+    if (gate != null) {
+      return gate.future;
+    }
+    return loginResultCode;
+  }
 
   @override
-  Future<int> logout() async => 0;
+  Future<int> logout() async {
+    logoutCalls += 1;
+    return 0;
+  }
 
   @override
-  Future<int> uninitSdk() async => 0;
+  Future<int> uninitSdk() async {
+    uninitCalls += 1;
+    return 0;
+  }
 
   @override
   Future<int> joinGroup({

@@ -219,6 +219,13 @@ class ImSessionCoordinator extends ChangeNotifier {
   Future<void> logout() async {
     _ensureNotDisposed();
     ++_generation;
+    // A logout invalidates the in-flight credential fetch as well as the
+    // active auth binding. Clear the same-user single-flight before native
+    // teardown so a new login cannot inherit a stale future from the old
+    // generation. Its completion callback is identity-fenced below and must
+    // never clear a flight opened by that new generation.
+    _ensureFlight = null;
+    _ensureFlightUserId = null;
     _renewalTimer?.cancel();
     _renewalTimer = null;
     _activeAuthSession = null;
