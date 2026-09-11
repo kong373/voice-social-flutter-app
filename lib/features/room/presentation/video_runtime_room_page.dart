@@ -22,6 +22,7 @@ import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
 import 'package:voice_social_app/features/room/pk/presentation/room_pk_pages.dart';
 import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
 import 'package:voice_social_app/features/room/presentation/room_audio_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_favorite_sheet.dart';
 import 'package:voice_social_app/features/room/presentation/room_management_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_members_page.dart';
 import 'package:voice_social_app/features/room/presentation/room_recovery_page.dart';
@@ -1582,6 +1583,24 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
         onAction: (String action) {
           Navigator.of(sheetContext).pop();
           switch (action) {
+            case 'favorite':
+              final favoriteController = _controller;
+              if (!favoriteController.isEntryIdentityCurrent ||
+                  favoriteController.status != RoomSessionStatus.joined)
+                return;
+              final favoriteRepository = AppDependencyScope.of(
+                context,
+              ).discoveryRepository;
+              showModalBottomSheet<void>(
+                context: context,
+                useSafeArea: true,
+                isScrollControlled: true,
+                builder: (_) => RoomFavoriteSheet(
+                  controller: favoriteController,
+                  repository: favoriteRepository,
+                ),
+              );
+              return;
             case 'profile':
               if (!_controller.allows(RoomCapability.editRoom)) return;
               Navigator.of(context).push<void>(
@@ -2945,6 +2964,7 @@ class _RoomToolsSheetState extends State<_RoomToolsSheet> {
         ),
       const _ToolItem('members', Icons.groups_2_outlined, '成员'),
       const _ToolItem('topic', Icons.campaign_outlined, '公告'),
+      const _ToolItem('favorite', Icons.bookmark_add_outlined, '收藏房间'),
       if (widget.canPk)
         const _ToolItem('pk', Icons.sports_kabaddi_rounded, '房间 PK'),
       const _ToolItem('report', Icons.report_outlined, '举报房间'),

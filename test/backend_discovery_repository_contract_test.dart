@@ -10,6 +10,133 @@ import 'package:voice_social_app/features/discovery/data/backend_discovery_repos
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 
 void main() {
+  for (final changedAccount in [true, false]) {
+    test(
+      'favorite 401 retry respects identity change=$changedAccount',
+      () async {
+        var actor = 10;
+        var generation = 1;
+        var requests = 0;
+        final server = await _startServer((request, body) async {
+          requests++;
+          if (requests == 1) {
+            await _reply(request, status: 401, code: 40101);
+          } else {
+            await _reply(
+              request,
+              data: {'roomId': 'room-a', 'favorite': true, 'collectionFlag': 1},
+            );
+          }
+        });
+        addTearDown(() => server.close(force: true));
+        final client = ApiClient(
+          baseUri: Uri.parse(
+            'http://${server.address.address}:${server.port}/',
+          ),
+          clientType: 'Android',
+          clientInnerVersion: '6',
+          authorizationProvider: () => 'Bearer test-$actor',
+          unauthorizedRecovery: () async {
+            if (changedAccount) {
+              actor = 20;
+              generation++;
+            }
+            return true;
+          },
+        );
+        final repository = BackendDiscoveryRepository(
+          apiClient: client,
+          clientType: 'Android',
+          currentUserIdProvider: () => actor,
+          identityGeneration: () => generation,
+        );
+        final action = repository.setFavorite(roomId: 'room-a', favorite: true);
+        if (changedAccount) {
+          await expectLater(
+            action,
+            throwsA(
+              isA<ApiException>().having(
+                (error) => error.kind,
+                'kind',
+                ApiFailureKind.unauthorized,
+              ),
+            ),
+          );
+          expect(requests, 1);
+        } else {
+          expect(await action, isTrue);
+          expect(requests, 2);
+        }
+      },
+    );
+  }
+
+  test('queued favorite intent cannot run after account ABA', () async {
+    var generation = 1;
+    var requests = 0;
+    final arrived = Completer<void>();
+    final release = Completer<void>();
+    final server = await _startServer((request, body) async {
+      requests++;
+      if (requests == 1) {
+        arrived.complete();
+        await release.future;
+      }
+      final data = body as Map<String, dynamic>;
+      await _reply(
+        request,
+        data: {
+          'roomId': 'room-a',
+          'favorite': data['favorite'],
+          'collectionFlag': data['favorite'] == true ? 1 : 0,
+        },
+      );
+    });
+    addTearDown(() => server.close(force: true));
+    final repository = BackendDiscoveryRepository(
+      apiClient: _client(server),
+      clientType: 'Android',
+      currentUserIdProvider: () => 10,
+      identityGeneration: () => generation,
+    );
+    final first = repository.setFavorite(roomId: 'room-a', favorite: true);
+    final firstCheck = expectLater(
+      first,
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.kind,
+          'kind',
+          ApiFailureKind.unauthorized,
+        ),
+      ),
+    );
+    await arrived.future;
+    final queued = repository.setFavorite(roomId: 'room-a', favorite: false);
+    final queuedCheck = expectLater(
+      queued,
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.kind,
+          'kind',
+          ApiFailureKind.unauthorized,
+        ),
+      ),
+    );
+    generation += 2;
+    release.complete();
+    await Future.wait([firstCheck, queuedCheck]);
+    expect(
+      requests,
+      1,
+      reason: 'old queued remove is never submitted as the new session',
+    );
+    expect(
+      await repository.setFavorite(roomId: 'room-a', favorite: true),
+      isTrue,
+    );
+    expect(requests, 2);
+  });
+
   test(
     'search preserves password and closed cards without granting entry',
     () async {

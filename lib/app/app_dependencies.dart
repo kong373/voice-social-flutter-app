@@ -343,6 +343,9 @@ class AppDependencies {
             ? BackendDiscoveryRepository(
                 apiClient: apiClient,
                 clientType: environment.clientType,
+                currentUserIdProvider: () =>
+                    sessionManager.session?.userId ?? 0,
+                identityGeneration: () => sessionManager.identityGeneration,
                 routes: routes,
               )
             : MockDiscoveryRepository());

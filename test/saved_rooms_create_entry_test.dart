@@ -8,8 +8,48 @@ import 'package:voice_social_app/features/discovery/data/mock_discovery_reposito
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/discovery/presentation/saved_rooms_page.dart';
 import 'package:voice_social_app/features/room/presentation/create_room_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_page.dart';
 
 void main() {
+  testWidgets('returning from ordinary room reloads favorites after removal', (
+    tester,
+  ) async {
+    final repository = _Collections(initiallyEmpty: true);
+    final dependencies = AppDependencies.forTestEnvironment(
+      environment: AppEnvironment.mock(),
+      discoveryRepository: repository,
+    );
+    addTearDown(dependencies.dispose);
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: dependencies,
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: const SavedRoomsPage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('进入房间'));
+    await tester.pumpAndSettle();
+    expect(find.byType(RoomPage), findsOneWidget);
+    await tester.tap(find.text('更多').hitTestable());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('收藏房间').hitTestable());
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '取消收藏'));
+    await tester.pumpAndSettle();
+    expect(repository.favoriteVisible, isFalse);
+    await tester.tap(find.byTooltip('关闭收藏面板'));
+    await tester.pumpAndSettle();
+    final beforeReturn = repository.reads;
+    Navigator.of(tester.element(find.byType(RoomPage))).pop();
+    await tester.pumpAndSettle();
+    expect(repository.reads, beforeReturn + 1);
+    expect(find.text('还没有收藏房间'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
   for (final bool initiallyEmpty in <bool>[true, false]) {
     testWidgets(
       'owned rooms create route and return reload (empty=$initiallyEmpty)',
@@ -89,6 +129,16 @@ class _Collections extends MockDiscoveryRepository {
   final bool initiallyEmpty;
   int reads = 0;
   bool changed = false;
+  bool favoriteVisible = true;
+
+  @override
+  Future<bool> setFavorite({
+    required String roomId,
+    required bool favorite,
+  }) async {
+    expect(roomId, '880217');
+    return favoriteVisible = favorite;
+  }
 
   @override
   Future<RoomCollectionSnapshot> fetchRoomCollections({
@@ -97,7 +147,7 @@ class _Collections extends MockDiscoveryRepository {
   }) async {
     reads++;
     return RoomCollectionSnapshot(
-      favorites: <DiscoveryRoom>[_room('favorite', '收藏测试房')],
+      favorites: <DiscoveryRoom>[if (favoriteVisible) _room('880217', '收藏测试房')],
       ownedRooms: <DiscoveryRoom>[
         if (changed)
           _room('owned', '更新后的本人房')

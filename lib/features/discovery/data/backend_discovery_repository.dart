@@ -13,14 +13,20 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
   BackendDiscoveryRepository({
     required ApiClient apiClient,
     required String clientType,
+    int Function()? currentUserIdProvider,
+    int Function()? identityGeneration,
     BackendRouteCatalog routes = const BackendRouteCatalog(),
   }) : _apiClient = apiClient,
        _routes = routes,
+       _currentUserIdProvider = currentUserIdProvider,
+       _identityGeneration = identityGeneration,
        _platformCode = clientType.toLowerCase().contains('ios') ? 2 : 1;
 
   final ApiClient _apiClient;
   final BackendRouteCatalog _routes;
   final int _platformCode;
+  final int Function()? _currentUserIdProvider;
+  final int Function()? _identityGeneration;
   final Map<String, Future<bool>> _pendingFavoriteWrites =
       <String, Future<bool>>{};
   final Map<String, String> _favoriteRequestIds = <String, String>{};
@@ -278,13 +284,29 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
         message: '收藏房间 ID 不能为空',
       );
     }
-    final String intent = '$normalizedRoomId:$favorite';
+    final actor = _currentUserIdProvider?.call();
+    final generation = _identityGeneration?.call();
+    void requireIdentity() {
+      if ((actor != null &&
+              (actor <= 0 || actor != _currentUserIdProvider?.call())) ||
+          generation != _identityGeneration?.call()) {
+        throw const ApiException(
+          kind: ApiFailureKind.unauthorized,
+          message: '账号已变化，请重新打开房间收藏',
+        );
+      }
+    }
+
+    requireIdentity();
+    final identity = '$actor:$generation';
+    final String intent = '$identity:$normalizedRoomId:$favorite';
     final Future<bool>? pending = _pendingFavoriteWrites[intent];
     if (pending != null) {
       return pending;
     }
     final Future<bool> request =
-        _serializeFavoriteMutation(normalizedRoomId, () async {
+        _serializeFavoriteMutation('$identity:$normalizedRoomId', () async {
+          requireIdentity();
           final String requestId = _favoriteRequestIds[intent] ??=
               newDiscoveryRequestId('discovery-favorite');
           try {
@@ -292,6 +314,7 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
               roomId: normalizedRoomId,
               favorite: favorite,
               requestId: requestId,
+              requireIdentity: requireIdentity,
             );
             _favoriteRequestIds.remove(intent);
             return result;
@@ -312,9 +335,11 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
     required String roomId,
     required bool favorite,
     required String requestId,
+    required void Function() requireIdentity,
   }) async {
-    final ApiResponse response = await _apiClient.post(
+    final ApiResponse response = await _apiClient.postBoundToIdentity(
       _routes.starRoom,
+      requireIdentity: requireIdentity,
       headers: <String, String>{
         'X-Request-Id': normalizeDiscoveryRequestId(requestId),
       },
@@ -324,6 +349,7 @@ class BackendDiscoveryRepository implements DiscoveryRepository {
         'type': favorite ? 1 : 0,
       },
     );
+    requireIdentity();
     final Map<String, Object?> data = _requiredMap(
       response.data,
       context: '收藏写入响应',

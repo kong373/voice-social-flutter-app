@@ -231,13 +231,14 @@ class _SavedRoomsPageState extends State<SavedRoomsPage> {
     }
   }
 
-  void _enterRoom(DiscoveryRoom room) {
-    Navigator.of(context).push<void>(
+  Future<void> _enterRoom(DiscoveryRoom room) async {
+    await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (BuildContext context) =>
             RoomPage(roomId: room.id, title: room.title),
       ),
     );
+    if (mounted) await _load();
   }
 
   Future<void> _manageRoom(DiscoveryRoom room) async {
