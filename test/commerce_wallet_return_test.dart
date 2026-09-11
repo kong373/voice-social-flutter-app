@@ -9,7 +9,7 @@ import 'package:voice_social_app/features/commerce/presentation/commerce_pages.d
 
 void main() {
   testWidgets(
-    'WALLET-01 Alipay result returns to catalog and refreshes wallet balance',
+    'WALLET-01 Alipay result returns to catalog and then wallet hub with refreshed balance',
     (WidgetTester tester) async {
       final AppDependencies dependencies = AppDependencies.mock();
       addTearDown(dependencies.dispose);
@@ -76,6 +76,15 @@ void main() {
       await tester.drag(find.byType(Scrollable).last, const Offset(0, 900));
       await tester.pumpAndSettle();
       expect(find.text('当前礼物币余额'), findsOneWidget);
+      expect(find.text(after), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
+      expect(routes.pagePops, 3);
+      expect(find.byType(RechargeCatalogPage), findsNothing);
+      expect(find.byType(CommerceHubPage), findsOneWidget);
+      expect(find.text('钱包与商城'), findsOneWidget);
       expect(find.text(after), findsOneWidget);
     },
   );

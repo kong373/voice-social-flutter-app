@@ -58,10 +58,13 @@ class _CommerceHubPageState extends State<CommerceHubPage>
     }
   }
 
-  void _open(Widget page) {
-    Navigator.of(context).push<void>(
+  Future<void> _open(Widget page) async {
+    await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(builder: (BuildContext context) => page),
     );
+    if (mounted) {
+      await _load();
+    }
   }
 
   @override
