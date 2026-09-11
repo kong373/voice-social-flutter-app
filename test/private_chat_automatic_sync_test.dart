@@ -6,6 +6,9 @@ import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
+import 'package:voice_social_app/features/account/domain/user_avatar_descriptor.dart';
+import 'package:voice_social_app/core/media/media_identity.dart';
+import 'package:voice_social_app/core/media/media_models.dart';
 import 'package:voice_social_app/features/message/data/mock_message_repository.dart';
 import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/domain/message_repository.dart';
@@ -106,6 +109,166 @@ void main() {
       return bubble.message as ChatMessage;
     });
   }
+
+  testWidgets(
+    '375x667 private media chat follows latest own receipt across three rounds',
+    (tester) async {
+      // Explicit widget fixtures, not device-captured MediaQuery values.
+      // Keep the real screen size; 260 logical px models a portrait keyboard.
+      tester.view.devicePixelRatio = 2;
+      tester.view.physicalSize = const Size(750, 1334);
+      tester.view.padding = const FakeViewPadding(top: 40);
+      tester.view.viewPadding = const FakeViewPadding(top: 40);
+      tester.platformDispatcher.textScaleFactorTestValue = 1;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPadding();
+        tester.view.resetViewPadding();
+        tester.view.resetViewInsets();
+        tester.platformDispatcher.clearTextScaleFactorTestValue();
+      });
+      final repository = _MediaViewportHistory()..receive(0);
+      final dependencies = await showChat(tester, repository);
+      expect(dependencies.privateMediaHost.enabled, isTrue);
+      expect(find.byKey(const Key('pm-pick-image')), findsOneWidget);
+      expect(find.text('图片≤10MB；语音≤60秒/10MB；视频≤30秒/100MB。'), findsOneWidget);
+      final media = MediaQuery.of(tester.element(find.byType(PrivateChatPage)));
+      expect(media.size, const Size(375, 667));
+      expect(media.padding, const EdgeInsets.only(top: 20));
+      expect(media.textScaler.scale(1), 1);
+
+      Map<String, Object?> snapshot(String stage, String content) {
+        final text = find.text(content, findRichText: false);
+        final viewport = tester.getRect(find.byType(ListView));
+        final position = tester
+            .widget<ListView>(find.byType(ListView))
+            .controller!
+            .position;
+        final mounted = text.evaluate().length == 1;
+        final rect = mounted ? tester.getRect(text) : null;
+        final result = <String, Object?>{
+          'stage': stage,
+          'dataPresent': renderedMessages(
+            tester,
+          ).any((m) => m.content == content),
+          'textMounted': mounted,
+          'centerHit': text.hitTestable().evaluate().length == 1,
+          'topHit':
+              text
+                  .hitTestable(at: const Alignment(0, -0.95))
+                  .evaluate()
+                  .length ==
+              1,
+          'textRect': rect,
+          'viewport': viewport,
+          'visibleTextHeight': rect != null && rect.overlaps(viewport)
+              ? rect.intersect(viewport).height
+              : 0.0,
+          'offset': position.pixels,
+          'maxExtent': position.maxScrollExtent,
+          'extentAfter': position.extentAfter,
+        };
+        debugPrint('PRIVATE_VIEWPORT $result');
+        return result;
+      }
+
+      for (var round = 0; round < 3; round++) {
+        final own = _MediaViewportHistory.content('A', round);
+        final peer = _MediaViewportHistory.content('B', round);
+        if (round > 0) repository.receive(round);
+        // Default foreground polling only: no manual refresh/scroll or bus event.
+        var peerVisible = false;
+        for (var tick = 0; tick < 50; tick++) {
+          await tester.pump(const Duration(milliseconds: 100));
+          peerVisible = find.text(peer).hitTestable().evaluate().length == 1;
+          if (peerVisible) break;
+        }
+        expect(
+          peerVisible,
+          isTrue,
+          reason: 'round $round peer visible within 5s',
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        snapshot('peer-$round', peer);
+
+        final composer = find.byType(TextField).hitTestable();
+        await tester.tap(composer);
+        await tester.pump();
+        expect(
+          tester
+              .widget<EditableText>(find.byType(EditableText))
+              .focusNode
+              .hasFocus,
+          isTrue,
+        );
+        tester.view.viewInsets = const FakeViewPadding(bottom: 520);
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(
+          MediaQuery.of(
+            tester.element(find.byType(PrivateChatPage)),
+          ).viewInsets.bottom,
+          260,
+        );
+        await tester.enterText(composer, own);
+        await tester.pump(const Duration(milliseconds: 300));
+        final sendButton = find.byWidgetPredicate(
+          (widget) => widget is IconButton && widget.tooltip == '发送消息',
+        );
+        final send = sendButton.hitTestable();
+        expect(send, findsOneWidget);
+        await tester.tap(send);
+        // The repository returns a stored receipt for this actual UI send.
+        for (var tick = 0; tick < 50; tick++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(repository.sent.where((m) => m.content == own), hasLength(1));
+        final receipt = renderedMessages(
+          tester,
+        ).singleWhere((m) => m.content == own);
+        expect(receipt.isMine, isTrue);
+        expect(receipt.status, ChatMessageStatus.storedPendingDelivery);
+        expect(receipt.receiptLabel, '已留存·未读·实时不可用');
+        expect(
+          tester.widget<TextField>(find.byType(TextField)).controller!.text,
+          isEmpty,
+        );
+        expect(tester.widget<IconButton>(sendButton).onPressed, isNotNull);
+        expect(renderedMessages(tester).last.id, receipt.id);
+        snapshot('own-$round-keyboard', own);
+
+        // The supplied post-failure screenshot has no keyboard. Observe that
+        // state too without repairing the list offset using ensureVisible.
+        tester.view.viewInsets = const FakeViewPadding();
+        await tester.pumpAndSettle(
+          const Duration(milliseconds: 100),
+          EnginePhase.sendSemanticsUpdate,
+          const Duration(seconds: 5),
+        );
+        snapshot('own-$round-keyboard-dismissed', own);
+        expect(tester.takeException(), isNull);
+      }
+      expect(repository.sent, hasLength(3));
+      expect(repository.messages, hasLength(6));
+      expect(renderedMessages(tester), hasLength(6));
+      expect(repository.pageCalls, greaterThan(1));
+      expect(repository.readMarks, greaterThan(0));
+      expect(repository.boundaries, isEmpty, reason: 'use the Paged branch');
+      final own = _MediaViewportHistory.content('A', 2);
+      final last = snapshot('final-latest-own', own);
+      final viewport = tester.getRect(find.byType(ListView));
+      final textRect = tester.getRect(find.text(own, findRichText: false));
+      expect(textRect.height, lessThan(viewport.height));
+      expect(last['centerHit'], isTrue, reason: '$last');
+      expect(textRect.top, greaterThanOrEqualTo(viewport.top), reason: '$last');
+      expect(
+        textRect.bottom,
+        lessThanOrEqualTo(viewport.bottom),
+        reason: '$last',
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 
   testWidgets(
     'slow successful newest polling does not starve read acknowledgement',
@@ -874,4 +1037,92 @@ class _VisibleHistory extends _History
     required String content,
     String? requestId,
   }) async => _message(content).copyWithReadForTest(false);
+}
+
+// Reuse the existing history/send fixture with the real media composer and
+// Paged page-load branch. No media operation, external HTTP, or device is used.
+class _MediaViewportHistory extends _VisibleHistory
+    implements MediaPrivateMessageRepository, PagedPrivateMessageRepository {
+  final sent = <ChatMessage>[];
+  int pageCalls = 0;
+  int readMarks = 0;
+
+  @override
+  Future<PrivateMessageSyncBatch> fetchVisiblePrivateMessagePage(
+    ConversationSummary conversation, {
+    required bool Function() isCurrent,
+    String? cursor,
+  }) async {
+    if (!isCurrent()) return const PrivateMessageSyncBatch([]);
+    expect(conversation.id, 'conversation-2');
+    expect(conversation.targetUserId, 2);
+    expect(cursor, isNull, reason: 'all six fixture messages fit one page');
+    pageCalls++;
+    final rows = await super.fetchPrivateMessages(conversation);
+    if (!isCurrent()) return const PrivateMessageSyncBatch([]);
+    // BackendMessageRepository reverses the server's id-DESC wire order into
+    // chronological page output. _row assigns strictly increasing timestamps.
+    return PrivateMessageSyncBatch(rows, conversationId: 'conversation-2');
+  }
+
+  @override
+  Future<void> markVisiblePrivateMessagesRead(
+    ConversationSummary conversation, {
+    required bool Function() isCurrent,
+  }) async {
+    if (!isCurrent()) return;
+    expect(conversation.id, 'conversation-2');
+    expect(conversation.targetUserId, 2);
+    // First-party read acknowledgement only; no provider or media invocation.
+    readMarks++;
+  }
+
+  static String content(String role, int round) =>
+      'dual-dualios0907-f40f21bd73-$role-private-$round';
+
+  ChatMessage _row(ChatMessage source) => ChatMessage(
+    id: source.id,
+    conversationId: source.conversationId,
+    senderUserId: source.senderUserId,
+    senderName: source.senderName,
+    senderAvatar: UserAvatarDescriptor.fromBackendData({
+      'kind': 'PRESET',
+      'reference': source.isMine ? 'avatar-preset-moon' : 'avatar-preset-sun',
+    }),
+    content: source.content,
+    createdAt: DateTime(2026, 9, 7, 16).add(Duration(seconds: messages.length)),
+    isMine: source.isMine,
+    status: source.status,
+    deliveryStatus: MessageDeliveryStatus.vendorBlocked,
+    read: source.isMine ? false : null,
+  );
+
+  void receive(int round) => messages.add(_row(_message(content('B', round))));
+
+  @override
+  Future<ChatMessage> sendPrivateMessage({
+    required ConversationSummary conversation,
+    required String content,
+    String? requestId,
+  }) async {
+    final receipt = _row(
+      await super.sendPrivateMessage(
+        conversation: conversation,
+        content: content,
+        requestId: requestId,
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    messages.add(receipt);
+    sent.add(receipt);
+    return receipt;
+  }
+
+  @override
+  Future<ChatMessage> sendPrivateMediaMessage({
+    required ConversationSummary conversation,
+    required MediaReference media,
+    required MediaIdentityScope identity,
+    required String requestId,
+  }) => throw StateError('This fixture only sends text through the real UI');
 }
