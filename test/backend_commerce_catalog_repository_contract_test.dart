@@ -1477,7 +1477,9 @@ class _AvailableAlipayAdapter implements AlipayAppPayAdapter {
   Future<AlipayAppPayResult> pay({
     required String orderNo,
     required String orderString,
+    void Function()? requireIdentity,
   }) async {
+    requireIdentity?.call();
     payCalls.add(orderNo);
     return const AlipayAppPayResult(
       outcome: AlipayAppPayOutcome.processing,

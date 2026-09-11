@@ -945,11 +945,17 @@ class _CursorApi extends ApiClient {
   Future<ApiResponse> postBoundToIdentity(
     String path, {
     required void Function() requireIdentity,
+    Map<String, String>? query,
     Map<String, String>? headers,
     Map<String, Object?>? body,
   }) async {
     requireIdentity();
-    final response = await post(path, headers: headers, body: body);
+    final response = await post(
+      path,
+      query: query,
+      headers: headers,
+      body: body,
+    );
     requireIdentity();
     return response;
   }

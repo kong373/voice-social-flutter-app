@@ -405,6 +405,7 @@ class _Api implements ApiClient {
   Future<ApiResponse> postBoundToIdentity(
     String path, {
     required void Function() requireIdentity,
+    Map<String, String>? query,
     Map<String, String>? headers,
     Map<String, Object?>? body,
   }) async {
@@ -414,6 +415,7 @@ class _Api implements ApiClient {
     expect(headers?['X-Request-Id'], isNotEmpty);
     final result = await postWithoutUnauthorizedRecovery(
       path,
+      query: query,
       headers: headers,
       body: body,
     );

@@ -122,6 +122,7 @@ abstract interface class AlipayAppPayAdapter {
   Future<AlipayAppPayResult> pay({
     required String orderNo,
     required String orderString,
+    void Function()? requireIdentity,
   });
 }
 
@@ -136,6 +137,7 @@ class DisabledAlipayAppPayAdapter implements AlipayAppPayAdapter {
   Future<AlipayAppPayResult> pay({
     required String orderNo,
     required String orderString,
+    void Function()? requireIdentity,
   }) async => const AlipayAppPayResult(
     outcome: AlipayAppPayOutcome.unavailable,
     reason: AlipayAppPayReason.disabled,
@@ -191,7 +193,9 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
   Future<AlipayAppPayResult> pay({
     required String orderNo,
     required String orderString,
+    void Function()? requireIdentity,
   }) {
+    requireIdentity?.call();
     final String normalizedOrderNo = orderNo.trim();
     if (normalizedOrderNo.isEmpty || normalizedOrderNo.length > 128) {
       throw ArgumentError('订单号无效');
@@ -223,10 +227,18 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
       if (existing.orderDigest != orderDigest) {
         throw ArgumentError('同一订单不能使用不同的服务端签名支付串');
       }
-      return existing.future;
+      return requireIdentity == null
+          ? existing.future
+          : existing.future.then((result) {
+              requireIdentity();
+              return result;
+            });
     }
 
-    final Future<AlipayAppPayResult> nativeFuture = _invokeNative(orderString);
+    final Future<AlipayAppPayResult> nativeFuture = _invokeNative(
+      orderString,
+      requireIdentity,
+    );
     late final _PendingPayment pending;
     final Future<AlipayAppPayResult> future = nativeFuture.whenComplete(() {
       if (identical(_invocations[normalizedOrderNo], pending)) {
@@ -238,16 +250,23 @@ class MethodChannelAlipayAppPayAdapter implements AlipayAppPayAdapter {
     return future;
   }
 
-  Future<AlipayAppPayResult> _invokeNative(String orderString) async {
+  Future<AlipayAppPayResult> _invokeNative(
+    String orderString,
+    void Function()? requireIdentity,
+  ) async {
     bool consentAccepted;
     try {
       consentAccepted = await _consentChecker();
     } catch (_) {
+      requireIdentity?.call();
       return const AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.unavailable,
         reason: AlipayAppPayReason.consentRequired,
       );
     }
+    // Disposing the payment page does not cancel this consent Future. Recheck
+    // the initiating account generation outside native error classification.
+    requireIdentity?.call();
     if (!consentAccepted) {
       return const AlipayAppPayResult(
         outcome: AlipayAppPayOutcome.unavailable,

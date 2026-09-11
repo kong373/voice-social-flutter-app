@@ -125,6 +125,8 @@ void main() {
       final _FakeAlipayAdapter adapter = _FakeAlipayAdapter();
       final BackendCommerceCatalogRepository repository =
           BackendCommerceCatalogRepository(
+            currentUserIdProvider: () => 1,
+            identityGeneration: () => 1,
             apiClient: ApiClient(
               baseUri: Uri.parse('http://authority.invalid/'),
               clientType: 'Android',
@@ -218,7 +220,9 @@ class _FakeAlipayAdapter implements AlipayAppPayAdapter {
   Future<AlipayAppPayResult> pay({
     required String orderNo,
     required String orderString,
+    void Function()? requireIdentity,
   }) async {
+    requireIdentity?.call();
     invocations += 1;
     return const AlipayAppPayResult(
       outcome: AlipayAppPayOutcome.sdkCompleted,

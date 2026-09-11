@@ -43,6 +43,37 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   final BackendRouteCatalog _routes;
   final int? Function()? _currentUserIdProvider;
   final int Function()? _identityGeneration;
+  // Local provenance only; backend authentication remains financial authority.
+  // Never allow an old signed order to launch under a new login generation.
+  final Map<String, (int, int)> _alipayOrderIdentities = {};
+
+  (int, int) _alipayIdentity() {
+    if (_currentUserIdProvider == null || _identityGeneration == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.configuration,
+        message: '支付宝账号绑定未配置',
+      );
+    }
+    final actor = _currentUserIdProvider();
+    final generation = _identityGeneration();
+    if (actor == null || actor <= 0 || generation < 0) {
+      throw const ApiException(
+        kind: ApiFailureKind.unauthorized,
+        message: '请登录后操作支付宝订单',
+      );
+    }
+    return (actor, generation);
+  }
+
+  void _assertAlipayIdentity((int, int) identity) {
+    if (_alipayIdentity() != identity) {
+      throw const ApiException(
+        kind: ApiFailureKind.unauthorized,
+        message: '账号已变化，请重新查看充值订单',
+      );
+    }
+  }
+
   final String Function() _decorationPurchaseRequestIdGenerator;
   final String Function() _alipayCreateRequestIdGenerator;
   final String Function() _appleCreateRequestIdGenerator;
@@ -236,7 +267,9 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     if (iosApple) {
       return _createAppleOrderSingleFlight(account: account, product: product);
     }
+    final identity = _alipayIdentity();
     final String intentKey = _alipayCreateIntentKey(
+      identity: identity,
       account: account,
       productId: product.id,
       platform: platform,
@@ -252,6 +285,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     );
     late final Future<RechargeOrder> operation;
     operation = _createAlipayRechargeOrder(
+      identity: identity,
       intentKey: intentKey,
       requestId: requestId,
       account: account,
@@ -349,14 +383,16 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   }
 
   Future<RechargeOrder> _createAlipayRechargeOrder({
+    required (int, int) identity,
     required String intentKey,
     required String requestId,
     required String account,
     required RechargeProduct product,
   }) async {
     try {
-      final ApiResponse response = await _apiClient.post(
+      final ApiResponse response = await _apiClient.postBoundToIdentity(
         _routes.createAlipayRechargeOrder,
+        requireIdentity: () => _assertAlipayIdentity(identity),
         headers: <String, String>{'X-Request-Id': requestId},
         body: <String, Object?>{
           // The backend must bind account to the authenticated principal. It
@@ -368,11 +404,13 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
           'platform': 'ANDROID',
         },
       );
+      _assertAlipayIdentity(identity);
       final RechargeOrder order = _alipayRechargeOrderFromResponse(
         response.data,
         account: account,
         product: product,
       );
+      _alipayOrderIdentities[order.orderNo] = identity;
       // A valid server response closes this logical creation intent. An
       // ambiguous failure deliberately retains the key for a later retry.
       if (_alipayCreateRequestIds[intentKey] == requestId) {
@@ -380,6 +418,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       }
       return order;
     } catch (error) {
+      _assertAlipayIdentity(identity);
       if (!_shouldRetainAlipayCreateRequestId(error) &&
           _alipayCreateRequestIds[intentKey] == requestId) {
         _alipayCreateRequestIds.remove(intentKey);
@@ -407,10 +446,19 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         message: '服务端未返回有效的支付宝支付串',
       );
     }
+    final identity = _alipayIdentity();
+    if (_alipayOrderIdentities[order.orderNo] != identity) {
+      throw const ApiException(
+        kind: ApiFailureKind.unauthorized,
+        message: '订单不属于本次登录，请重新查看充值订单',
+      );
+    }
     final AlipayAppPayResult result = await _alipayAppPayAdapter.pay(
       orderNo: order.orderNo,
       orderString: orderString,
+      requireIdentity: () => _assertAlipayIdentity(identity),
     );
+    _assertAlipayIdentity(identity);
     // Every native outcome remains a provisional UI status.  Even 9000 is
     // followed by queryRechargeOrder, which is the only authority allowed to
     // report a successful recharge.
@@ -438,15 +486,17 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       // response is deliberately ignored: the following DB-only GET remains
       // the sole authority for the order state.
       try {
-        await _cancelAlipayRechargeOrder(provisional);
+        await _cancelAlipayRechargeOrder(provisional, identity);
       } catch (_) {
+        _assertAlipayIdentity(identity);
         // Even if the cancel write is unavailable, force the read below so a
         // concurrent provider callback or a retried request can determine the
         // authoritative state. Never infer cancellation locally.
       }
       try {
-        return await _queryRechargeOrderStatus(provisional);
+        return await _queryRechargeOrderStatus(provisional, identity: identity);
       } catch (_) {
+        _assertAlipayIdentity(identity);
         return provisional;
       }
     }
@@ -455,8 +505,9 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     // projection.  The recovery method also runs from the result page, so an
     // app killed between PayTask and this call can still recover the order.
     try {
-      return await queryRechargeOrder(provisional);
+      return await _queryAlipayRechargeOrder(provisional, identity);
     } catch (_) {
+      _assertAlipayIdentity(identity);
       return provisional;
     }
   }
@@ -518,8 +569,18 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     if (order.channel == PaymentChannelType.appleIap) {
       return _queryAppleRechargeOrder(order);
     }
-    if (order.channel == PaymentChannelType.alipay &&
-        !_isTerminalAlipayOrderState(order.state)) {
+    if (order.channel == PaymentChannelType.alipay) {
+      return _queryAlipayRechargeOrder(order, _alipayIdentity());
+    }
+    return _queryRechargeOrderStatus(order);
+  }
+
+  Future<RechargeOrder> _queryAlipayRechargeOrder(
+    RechargeOrder order,
+    (int, int) identity,
+  ) async {
+    _assertAlipayIdentity(identity);
+    if (!_isTerminalAlipayOrderState(order.state)) {
       if (_hasTrustedNativeCancellationEvidence(order)) {
         // A process/network interruption can happen after PayTask returns but
         // before the initial cancel POST reaches the backend. Replaying the
@@ -527,8 +588,9 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         // an UNKNOWN cancellation result, and gives the backend another
         // chance to close/query before the normal reconcile flow.
         try {
-          await _cancelAlipayRechargeOrder(order);
+          await _cancelAlipayRechargeOrder(order, identity);
         } catch (_) {
+          _assertAlipayIdentity(identity);
           // Reconciliation remains best effort and the DB-only GET below is
           // still mandatory. Never infer cancellation from this write.
         }
@@ -537,12 +599,13 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       // reconciliation is unavailable. This keeps the DB projection the only
       // source of final payment authority and makes manual refresh recoverable.
       try {
-        await _reconcileAlipayRechargeOrder(order);
+        await _reconcileAlipayRechargeOrder(order, identity);
       } catch (_) {
+        _assertAlipayIdentity(identity);
         // Continue to the read-only status endpoint.
       }
     }
-    return _queryRechargeOrderStatus(order);
+    return _queryRechargeOrderStatus(order, identity: identity);
   }
 
   Future<RechargeOrder> _queryAppleRechargeOrder(RechargeOrder order) async {
@@ -597,14 +660,27 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   /// Reads the first-party order projection without invoking a provider or a
   /// provider-capable reconcile operation. This is intentionally used after
   /// an explicit local PayTask cancellation mutation.
-  Future<RechargeOrder> _queryRechargeOrderStatus(RechargeOrder order) async {
+  Future<RechargeOrder> _queryRechargeOrderStatus(
+    RechargeOrder order, {
+    (int, int)? identity,
+  }) async {
     final String statusRoute = order.channel == PaymentChannelType.alipay
         ? _routes.alipayRechargeOrderStatus
         : _routes.rechargeOrderStatus;
-    final ApiResponse response = await _apiClient.get(
-      statusRoute,
-      query: <String, String>{'orderNo': order.orderNo},
-    );
+    final ApiResponse response;
+    try {
+      response = identity == null
+          ? await _apiClient.get(statusRoute, query: {'orderNo': order.orderNo})
+          : await _apiClient.getBoundToIdentity(
+              statusRoute,
+              query: {'orderNo': order.orderNo},
+              requireIdentity: () => _assertAlipayIdentity(identity),
+            );
+      if (identity != null) _assertAlipayIdentity(identity);
+    } catch (_) {
+      if (identity != null) _assertAlipayIdentity(identity);
+      rethrow;
+    }
     final Object? raw = response.data;
     if (raw is! Map<String, Object?> || raw.isEmpty) {
       throw const ApiException(
@@ -654,23 +730,33 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     );
   }
 
-  Future<void> _reconcileAlipayRechargeOrder(RechargeOrder order) async {
+  Future<void> _reconcileAlipayRechargeOrder(
+    RechargeOrder order,
+    (int, int) identity,
+  ) async {
     final String requestId = _alipayReconcileRequestId(order.orderNo);
-    await _apiClient.post(
+    await _apiClient.postBoundToIdentity(
       _routes.reconcileAlipayRechargeOrder,
+      requireIdentity: () => _assertAlipayIdentity(identity),
       query: <String, String>{'orderNo': order.orderNo},
       headers: <String, String>{'X-Request-Id': requestId},
     );
+    _assertAlipayIdentity(identity);
   }
 
-  Future<void> _cancelAlipayRechargeOrder(RechargeOrder order) async {
-    await _apiClient.post(
+  Future<void> _cancelAlipayRechargeOrder(
+    RechargeOrder order,
+    (int, int) identity,
+  ) async {
+    await _apiClient.postBoundToIdentity(
       _routes.cancelAlipayRechargeOrder,
+      requireIdentity: () => _assertAlipayIdentity(identity),
       query: <String, String>{'orderNo': order.orderNo},
       headers: <String, String>{
         'X-Request-Id': _alipayCancelRequestId(order.orderNo),
       },
     );
+    _assertAlipayIdentity(identity);
   }
 
   /// Only the exact native cancellation evidence may enter the explicit
@@ -721,12 +807,15 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   }
 
   static String _alipayCreateIntentKey({
+    required (int, int) identity,
     required String account,
     required String productId,
     required ClientStorePlatform platform,
   }) {
     final String canonical = <String>[
       'voice-social:alipay-create',
+      identity.$1.toString(),
+      identity.$2.toString(),
       account.length.toString(),
       account,
       productId.length.toString(),

@@ -193,6 +193,8 @@ void main() {
       final _FakeAlipayAdapter adapter = _FakeAlipayAdapter();
       final BackendCommerceCatalogRepository repository =
           BackendCommerceCatalogRepository(
+            currentUserIdProvider: () => 1,
+            identityGeneration: () => 1,
             apiClient: ApiClient(
               baseUri: Uri.parse(
                 'http://${server.address.address}:${server.port}/',
@@ -346,6 +348,8 @@ void main() {
         try {
           final BackendCommerceCatalogRepository repository =
               BackendCommerceCatalogRepository(
+                currentUserIdProvider: () => 1,
+                identityGeneration: () => 1,
                 apiClient: harness.client,
                 routes: const BackendRouteCatalog(),
                 alipayAppPayAdapter: harness.adapter,
@@ -431,6 +435,8 @@ void main() {
       addTearDown(harness.close);
       final BackendCommerceCatalogRepository repository =
           BackendCommerceCatalogRepository(
+            currentUserIdProvider: () => 1,
+            identityGeneration: () => 1,
             apiClient: harness.client,
             routes: const BackendRouteCatalog(),
             alipayAppPayAdapter: harness.adapter,
@@ -537,6 +543,8 @@ void main() {
       addTearDown(harness.close);
       final BackendCommerceCatalogRepository repository =
           BackendCommerceCatalogRepository(
+            currentUserIdProvider: () => 1,
+            identityGeneration: () => 1,
             apiClient: harness.client,
             routes: const BackendRouteCatalog(),
             alipayAppPayAdapter: harness.adapter,
@@ -589,6 +597,8 @@ void main() {
       addTearDown(harness.close);
       final BackendCommerceCatalogRepository repository =
           BackendCommerceCatalogRepository(
+            currentUserIdProvider: () => 1,
+            identityGeneration: () => 1,
             apiClient: harness.client,
             routes: const BackendRouteCatalog(),
             alipayAppPayAdapter: harness.adapter,
@@ -654,6 +664,8 @@ void main() {
       addTearDown(harness.close);
       final BackendCommerceCatalogRepository repository =
           BackendCommerceCatalogRepository(
+            currentUserIdProvider: () => 1,
+            identityGeneration: () => 1,
             apiClient: harness.client,
             routes: const BackendRouteCatalog(),
             alipayAppPayAdapter: harness.adapter,
@@ -719,6 +731,8 @@ void main() {
       addTearDown(harness.close);
       final BackendCommerceCatalogRepository repository =
           BackendCommerceCatalogRepository(
+            currentUserIdProvider: () => 1,
+            identityGeneration: () => 1,
             apiClient: harness.client,
             routes: const BackendRouteCatalog(),
             alipayAppPayAdapter: harness.adapter,
@@ -833,6 +847,8 @@ void main() {
       });
       final BackendCommerceCatalogRepository repository =
           BackendCommerceCatalogRepository(
+            currentUserIdProvider: () => 1,
+            identityGeneration: () => 1,
             apiClient: ApiClient(
               baseUri: Uri.parse(
                 'http://${server.address.address}:${server.port}/',
@@ -876,6 +892,8 @@ void main() {
     addTearDown(harness.close);
     final BackendCommerceCatalogRepository repository =
         BackendCommerceCatalogRepository(
+          currentUserIdProvider: () => 1,
+          identityGeneration: () => 1,
           apiClient: harness.client,
           routes: const BackendRouteCatalog(),
           alipayAppPayAdapter: adapter,
@@ -981,6 +999,8 @@ void main() {
 
       final BackendCommerceCatalogRepository repository =
           BackendCommerceCatalogRepository(
+            currentUserIdProvider: () => 1,
+            identityGeneration: () => 1,
             apiClient: ApiClient(
               baseUri: Uri.parse(
                 'http://${server.address.address}:${server.port}/',
@@ -1088,6 +1108,8 @@ void main() {
 
       final BackendCommerceCatalogRepository repository =
           BackendCommerceCatalogRepository(
+            currentUserIdProvider: () => 1,
+            identityGeneration: () => 1,
             apiClient: ApiClient(
               baseUri: Uri.parse(
                 'http://${server.address.address}:${server.port}/',
@@ -1174,6 +1196,8 @@ void main() {
 
     final BackendCommerceCatalogRepository repository =
         BackendCommerceCatalogRepository(
+          currentUserIdProvider: () => 1,
+          identityGeneration: () => 1,
           apiClient: ApiClient(
             baseUri: Uri.parse(
               'http://${server.address.address}:${server.port}/',
@@ -1305,6 +1329,8 @@ void main() {
 
       final BackendCommerceCatalogRepository repository =
           BackendCommerceCatalogRepository(
+            currentUserIdProvider: () => 1,
+            identityGeneration: () => 1,
             apiClient: ApiClient(
               baseUri: Uri.parse(
                 'http://${server.address.address}:${server.port}/',
@@ -1423,6 +1449,8 @@ void main() {
       });
       final BackendCommerceCatalogRepository repository =
           BackendCommerceCatalogRepository(
+            currentUserIdProvider: () => 1,
+            identityGeneration: () => 1,
             apiClient: ApiClient(
               baseUri: Uri.parse(
                 'http://${server.address.address}:${server.port}/',
@@ -1497,6 +1525,8 @@ void main() {
     });
     final BackendCommerceCatalogRepository repository =
         BackendCommerceCatalogRepository(
+          currentUserIdProvider: () => 1,
+          identityGeneration: () => 1,
           apiClient: ApiClient(
             baseUri: Uri.parse(
               'http://${server.address.address}:${server.port}/',
@@ -1542,7 +1572,9 @@ class _FakeAlipayAdapter implements AlipayAppPayAdapter {
   Future<AlipayAppPayResult> pay({
     required String orderNo,
     required String orderString,
+    void Function()? requireIdentity,
   }) async {
+    requireIdentity?.call();
     orderStrings.add(orderString);
     return nativeResult;
   }

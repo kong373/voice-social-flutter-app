@@ -235,12 +235,14 @@ class ApiClient {
   Future<ApiResponse> postBoundToIdentity(
     String path, {
     required void Function() requireIdentity,
+    Map<String, String>? query,
     Map<String, String>? headers,
     Map<String, Object?>? body,
   }) => _request(
     method: 'POST',
     path: path,
     authenticated: true,
+    query: query,
     headers: headers,
     body: body,
     requireIdentity: requireIdentity,
