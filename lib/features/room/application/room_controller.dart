@@ -1408,6 +1408,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     bool snapshotConfirmed = false;
     final bool moving = isOnMic;
     _beginAuthorityMutation();
+    bool authorityMutationActive = true;
     try {
       if (placement.$3) {
         final RoomOperationsRepository? operations = _roomOperationsRepository;
@@ -1426,6 +1427,10 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
         if (!_isJoinedEpoch(sessionEpoch)) {
           return false;
         }
+        // The write is confirmed. A slow, read-only queue request must not
+        // prevent authority polling from observing the owner's approval.
+        authorityMutationActive = false;
+        _endAuthorityMutation(sessionEpoch);
         await _loadMicRequests(sessionEpoch: sessionEpoch);
         if (allowsSyntheticPublicMessages) {
           _messages.add(
@@ -1525,7 +1530,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       _errorMessage = _messageFor(error, fallback: '申请上麦失败');
       return false;
     } finally {
-      _endAuthorityMutation(sessionEpoch);
+      if (authorityMutationActive) _endAuthorityMutation(sessionEpoch);
       if (_isCurrent(sessionEpoch)) {
         _micRequestPending = false;
         _notify();
