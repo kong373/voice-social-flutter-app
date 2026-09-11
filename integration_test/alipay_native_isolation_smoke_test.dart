@@ -321,6 +321,10 @@ void main() {
             BackendCommerceCatalogRepository(
               apiClient: diagnosticApiClient,
               routes: const BackendRouteCatalog(),
+              currentUserIdProvider: () =>
+                  dependencies.sessionManager.session?.userId,
+              identityGeneration: () =>
+                  dependencies.sessionManager.identityGeneration,
               alipayCreateRequestIdGenerator: () => 'qa-alipay-$_runId',
               alipayAppPayAdapter: dependencies.alipayAppPayAdapter,
             );
