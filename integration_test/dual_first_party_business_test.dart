@@ -868,7 +868,7 @@ Future<String> _seatPairThroughApproval(
     seat: seat,
   );
   if (config.role == 'A') {
-    await tester.pageBack();
+    await _tap(tester, find.byTooltip('返回房间'));
     await _until(
       tester,
       () => find.byType(RoomManagementPage).evaluate().isEmpty,

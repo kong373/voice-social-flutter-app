@@ -1228,48 +1228,55 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     await showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+      ),
       backgroundColor: const Color(0xFF14152E),
-      builder: (BuildContext sheetContext) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text('选择麦位', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 14),
-            if (available.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Center(child: Text('当前没有可用麦位')),
-              )
-            else
-              GridView.count(
-                shrinkWrap: true,
-                crossAxisCount: 4,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                children: <Widget>[
-                  for (final MicSeat seat in available)
-                    InkWell(
-                      onTap: () async {
-                        Navigator.of(sheetContext).pop();
-                        if (mounted &&
-                            identical(controller, _controller) &&
-                            controller.isEntryIdentityCurrent)
-                          await controller.requestMic(seat.number);
-                      },
-                      borderRadius: BorderRadius.circular(18),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(18),
+      builder: (BuildContext sheetContext) => SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text('选择麦位', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 14),
+              if (available.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: Text('当前没有可用麦位')),
+                )
+              else
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 4,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                  children: <Widget>[
+                    for (final MicSeat seat in available)
+                      InkWell(
+                        onTap: () async {
+                          Navigator.of(sheetContext).pop();
+                          if (mounted &&
+                              identical(controller, _controller) &&
+                              controller.isEntryIdentityCurrent)
+                            await controller.requestMic(seat.number);
+                        },
+                        borderRadius: BorderRadius.circular(18),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: Center(child: Text('${seat.number} 号麦')),
                         ),
-                        child: Center(child: Text('${seat.number} 号麦')),
                       ),
-                    ),
-                ],
-              ),
-          ],
+                  ],
+                ),
+            ],
+          ),
         ),
       ),
     );

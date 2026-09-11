@@ -12,6 +12,64 @@ import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
 
 void main() {
+  for (final double textScale in <double>[1.0, 1.3]) {
+    testWidgets('direct mic sheet fits nine empty seats at ${textScale}x', (
+      tester,
+    ) async {
+      _configureSmallViewport(tester);
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPadding();
+        tester.view.resetViewPadding();
+      });
+      final dependencies = AppDependencies.mock();
+      final controller = RoomController(
+        roomId: '952700',
+        title: '房间',
+        currentUserId: 10001,
+        accessToken: 'test',
+        repository: _EmptyOwnedRoomRepository(),
+        rtcAdapter: const SnapshotOnlyRtcAdapter(),
+        realtimeGateway: const SnapshotOnlyRoomRealtimeGateway(),
+      );
+      addTearDown(() {
+        controller.dispose();
+        dependencies.dispose();
+      });
+      await tester.runAsync(controller.join);
+      expect(controller.role, RoomRole.owner);
+      expect(controller.isOnMic, isFalse);
+      expect(controller.seats.where((seat) => seat.isAvailable), hasLength(9));
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            theme: AppTheme.social().copyWith(platform: TargetPlatform.iOS),
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(textScale)),
+              child: child!,
+            ),
+            home: VideoRuntimeRoomPage(controller: controller),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      _expectNoFlutterException(tester, 'nine empty seats room');
+      await tester.tap(find.text('上麦').hitTestable());
+      await tester.pumpAndSettle();
+      _expectNoFlutterException(
+        tester,
+        'direct mic sheet with nine empty seats',
+      );
+      expect(find.text('选择麦位'), findsOneWidget);
+      for (var number = 1; number <= 9; number++) {
+        expect(find.text('$number 号麦').hitTestable(), findsOneWidget);
+      }
+    });
+  }
   for (final bool ownerOnMic in <bool>[false, true]) {
     for (final double textScale in <double>[1.0, 1.3]) {
       testWidgets(
@@ -109,6 +167,37 @@ void main() {
         },
       );
     }
+  }
+}
+
+class _EmptyOwnedRoomRepository extends MockRoomRepository {
+  _EmptyOwnedRoomRepository()
+    : super(lifecycleRepository: MockRoomLifecycleRepository());
+
+  @override
+  Future<RoomSnapshot> enterRoom({
+    required String roomId,
+    required String? password,
+    required RoomEntrySource source,
+    required int currentUserId,
+  }) async {
+    final snapshot = await super.enterRoom(
+      roomId: roomId,
+      password: password,
+      source: source,
+      currentUserId: currentUserId,
+    );
+    return snapshot.copyWith(
+      transportMode: RoomTransportMode.snapshotOnly,
+      seats: [
+        for (var number = 1; number <= 9; number++)
+          MicSeat(
+            number: number,
+            backendIndex: number,
+            state: MicSeatState.available,
+          ),
+      ],
+    );
   }
 }
 
