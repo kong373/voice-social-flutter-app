@@ -81,6 +81,99 @@ void main() {
     },
   );
 
+  test(
+    'late cancelled enter cannot compensate or replace an immediate same-room retry',
+    () async {
+      final _RoomReentryRaceRepository repository =
+          _RoomReentryRaceRepository();
+      final _RaceRealtimeGateway realtime = _RaceRealtimeGateway();
+      final _TrackingRtcAdapter rtc = _TrackingRtcAdapter();
+      final RoomController controller = _roomReentryController(
+        repository,
+        realtime,
+        rtc,
+      );
+      addTearDown(() async {
+        controller.dispose();
+        await realtime.dispose();
+      });
+
+      final Future<void> cancelledJoin = controller.join();
+      await repository.enterStarted[0].future;
+      expect(await controller.leaveRoom(), isTrue);
+
+      final Future<void> retry = controller.join();
+      await repository.enterStarted[1].future;
+      repository.enterGates[1].complete(
+        _snapshot(occupiedOwnSeat: false, sessionId: _newRoomSessionId),
+      );
+      await retry;
+      expect(controller.status, RoomSessionStatus.joined);
+      expect(controller.snapshot?.sessionId, _newRoomSessionId);
+      expect(repository.exitSessionIds, isEmpty);
+      expect(rtc.joined, isTrue);
+
+      repository.enterGates[0].complete(
+        _snapshot(occupiedOwnSeat: false, sessionId: _oldRoomSessionId),
+      );
+      await cancelledJoin;
+
+      expect(controller.status, RoomSessionStatus.joined);
+      expect(controller.snapshot?.sessionId, _newRoomSessionId);
+      expect(repository.exitSessionIds, isEmpty);
+      expect(rtc.joined, isTrue);
+    },
+  );
+
+  test(
+    'late cancelled-entry compensation is isolated from a newer same-room session',
+    () async {
+      final _RoomReentryRaceRepository repository =
+          _RoomReentryRaceRepository();
+      final _RaceRealtimeGateway realtime = _RaceRealtimeGateway();
+      final _TrackingRtcAdapter rtc = _TrackingRtcAdapter();
+      final RoomController controller = _roomReentryController(
+        repository,
+        realtime,
+        rtc,
+      );
+      addTearDown(() async {
+        controller.dispose();
+        await realtime.dispose();
+      });
+
+      final Future<void> cancelledJoin = controller.join();
+      await repository.enterStarted[0].future;
+      expect(await controller.leaveRoom(), isTrue);
+
+      repository.enterGates[0].complete(
+        _snapshot(occupiedOwnSeat: false, sessionId: _oldRoomSessionId),
+      );
+      await repository.exitStarted.future;
+      expect(repository.exitSessionIds, <String>[_oldRoomSessionId]);
+
+      final Future<void> retry = controller.join();
+      await repository.enterStarted[1].future;
+      repository.enterGates[1].complete(
+        _snapshot(occupiedOwnSeat: false, sessionId: _newRoomSessionId),
+      );
+      await retry;
+
+      expect(controller.status, RoomSessionStatus.joined);
+      expect(controller.snapshot?.sessionId, _newRoomSessionId);
+      expect(repository.activeSessionId, _newRoomSessionId);
+
+      repository.exitGates.single.complete();
+      await cancelledJoin;
+
+      expect(controller.status, RoomSessionStatus.joined);
+      expect(controller.snapshot?.sessionId, _newRoomSessionId);
+      expect(repository.activeSessionId, _newRoomSessionId);
+      expect(repository.exitSessionIds, <String>[_oldRoomSessionId]);
+      expect(rtc.joined, isTrue);
+    },
+  );
+
   test('late public history cannot write after the room is left', () async {
     final _RaceRepository repository = _RaceRepository()
       ..holdPublicMessages = true;
@@ -520,7 +613,27 @@ RoomController _controller(
   );
 }
 
-RoomSnapshot _snapshot({required bool occupiedOwnSeat}) {
+const _oldRoomSessionId = '00000000-0000-4000-8000-000000000001';
+const _newRoomSessionId = '00000000-0000-4000-8000-000000000002';
+
+RoomController _roomReentryController(
+  _RoomReentryRaceRepository repository,
+  _RaceRealtimeGateway realtime,
+  _TrackingRtcAdapter rtc,
+) {
+  return RoomController(
+    roomId: '880217',
+    title: '深夜温柔陪伴',
+    currentUserId: 10001,
+    accessToken: 'token',
+    repository: repository,
+    rtcAdapter: rtc,
+    realtimeGateway: realtime,
+  );
+}
+
+RoomSnapshot _snapshot({required bool occupiedOwnSeat, String? sessionId}) {
+  final DateTime serverTime = DateTime.utc(2026);
   return RoomSnapshot(
     roomId: '880217',
     roomCode: '880217',
@@ -561,6 +674,17 @@ RoomSnapshot _snapshot({required bool occupiedOwnSeat}) {
     autoLockMic: false,
     giftCatalogAvailable: true,
     giftBalance: 1200,
+    sessionId: sessionId,
+    roomLease: sessionId == null
+        ? null
+        : RoomSessionLease(
+            sessionId: sessionId,
+            sequence: 0,
+            serverTime: serverTime,
+            expiresAt: serverTime.add(const Duration(seconds: 90)),
+            heartbeatIntervalSeconds: 20,
+            leaseDurationSeconds: 90,
+          ),
   );
 }
 
@@ -817,6 +941,45 @@ class _StaleJoinRepository implements RoomRepository {
     required int giftFrom,
     String? requestId,
   }) async => const GiftReceipt(success: true, remainingBalance: 1200);
+}
+
+class _RoomReentryRaceRepository extends _StaleJoinRepository {
+  final List<Completer<void>> enterStarted = <Completer<void>>[];
+  final List<Completer<RoomSnapshot>> enterGates = <Completer<RoomSnapshot>>[];
+  final Completer<void> exitStarted = Completer<void>();
+  final List<Completer<void>> exitGates = <Completer<void>>[];
+  final List<String> exitSessionIds = <String>[];
+  String? activeSessionId;
+
+  @override
+  Future<RoomSnapshot> enterRoom({
+    required String roomId,
+    required String? password,
+    required RoomEntrySource source,
+    required int currentUserId,
+  }) {
+    final Completer<void> started = Completer<void>();
+    final Completer<RoomSnapshot> gate = Completer<RoomSnapshot>();
+    enterStarted.add(started);
+    enterGates.add(gate);
+    started.complete();
+    return gate.future.then((RoomSnapshot snapshot) {
+      activeSessionId = snapshot.sessionId;
+      return snapshot;
+    });
+  }
+
+  @override
+  Future<void> exitRoom(String roomId) {
+    final String? sessionId = activeSessionId;
+    if (sessionId != null) exitSessionIds.add(sessionId);
+    final Completer<void> gate = Completer<void>();
+    exitGates.add(gate);
+    if (!exitStarted.isCompleted) exitStarted.complete();
+    return gate.future.then<void>((_) {
+      if (activeSessionId == sessionId) activeSessionId = null;
+    });
+  }
 }
 
 class _FailingExitRepository extends _RaceRepository {
