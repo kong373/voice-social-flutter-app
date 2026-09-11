@@ -10,8 +10,118 @@ import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/discovery/dynamic/data/backend_dynamic_repository.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_models.dart';
+import 'package:voice_social_app/features/account/domain/user_avatar_descriptor.dart';
+
+const _dynamicAvatarUploadedReference = '11111111-1111-4111-8111-111111111111';
 
 void main() {
+  test(
+    'dynamic post and comment responses parse canonical avatars without URL fallback',
+    () async {
+      final HttpServer server = await _startServer((request, _) async {
+        if (request.uri.path == '/app-mini-api/mini/v1/dynamic/detail') {
+          return _reply(
+            request,
+            data: <String, Object?>{
+              'dynamicId': 'post-1',
+              'userId': 10001,
+              'nickName': '作者',
+              'content': '动态正文',
+              'createdAt': '2026-09-12T00:00:00Z',
+              'category': 'CHAT',
+              'likeCount': 0,
+              'commentCount': 3,
+              'liked': false,
+              'isLike': 0,
+              'images': <String>[],
+              'headImgUrl': 'https://legacy.invalid/post.png',
+              'avatar': <String, Object?>{
+                'kind': 'UPLOADED',
+                'reference': _dynamicAvatarUploadedReference,
+                'version': 7,
+              },
+            },
+          );
+        }
+        if (request.uri.path == '/app-mini-api/mini/v1/dynamic/comment/list') {
+          final List<Map<String, Object?>> records = <Map<String, Object?>>[
+            <String, Object?>{
+              ..._s14Capabilities(),
+              'commentId': 'comment-preset',
+              'userId': 10002,
+              'nickName': '预设评论者',
+              'content': '预设头像',
+              'createdAt': '2026-09-12T00:01:00Z',
+              'headImgUrl': 'https://legacy.invalid/preset.png',
+              'avatar': <String, Object?>{
+                'kind': 'PRESET',
+                'reference': 'avatar-preset-moon',
+              },
+            },
+            <String, Object?>{
+              ..._s14Capabilities(),
+              'commentId': 'comment-uploaded',
+              'userId': 10003,
+              'nickName': '上传评论者',
+              'content': '上传头像',
+              'createdAt': '2026-09-12T00:02:00Z',
+              'headImgUrl': 'https://legacy.invalid/uploaded.png',
+              'avatar': <String, Object?>{
+                'kind': 'UPLOADED',
+                'reference': _dynamicAvatarUploadedReference,
+                'version': 5,
+              },
+            },
+            <String, Object?>{
+              ..._s14Capabilities(),
+              'commentId': 'comment-none',
+              'userId': 10004,
+              'nickName': '无头像评论者',
+              'content': '无头像',
+              'createdAt': '2026-09-12T00:03:00Z',
+              'headImgUrl': 'https://legacy.invalid/none.png',
+              'avatar': null,
+            },
+          ];
+          return _reply(
+            request,
+            data: <String, Object?>{
+              'current': 1,
+              'pageSize': 30,
+              'total': records.length,
+              'pages': 1,
+              'records': records,
+              'list': records,
+            },
+          );
+        }
+        return _reply(request, status: 404, code: 404);
+      });
+      addTearDown(() => server.close(force: true));
+      final BackendDynamicRepository repository = BackendDynamicRepository(
+        apiClient: _client(server),
+        routes: const BackendRouteCatalog(),
+        currentUserIdProvider: () => 10001,
+      );
+
+      final DynamicPost post = await repository.fetchPost('post-1');
+      expect(post.author.avatar?.kind, UserAvatarKind.uploaded);
+      expect(post.author.avatar?.reference, _dynamicAvatarUploadedReference);
+      expect(post.author.avatar?.version, 7);
+      expect(post.author.avatarUrl, 'https://legacy.invalid/post.png');
+
+      final PagedResult<DynamicComment> comments = await repository
+          .fetchComments(dynamicId: 'post-1');
+      expect(
+        comments.items.map((comment) => comment.author.avatar?.kind),
+        <UserAvatarKind?>[UserAvatarKind.preset, UserAvatarKind.uploaded, null],
+      );
+      expect(comments.items[0].author.avatar?.reference, 'avatar-preset-moon');
+      expect(comments.items[1].author.avatar?.version, 5);
+      expect(comments.items[2].author.avatar, isNull);
+    },
+  );
+
   test(
     'dynamic feed, detail, like, comments, and delete use live contracts',
     () async {

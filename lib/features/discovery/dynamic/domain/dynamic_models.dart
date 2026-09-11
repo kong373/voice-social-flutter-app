@@ -1,4 +1,5 @@
 import '../../../../core/media/media_models.dart';
+import '../../../account/domain/user_avatar_descriptor.dart';
 
 enum DynamicCategory { all, companionship, music, chat }
 
@@ -23,12 +24,14 @@ class DynamicAuthor {
     required this.userId,
     required this.nickname,
     this.avatarUrl,
+    this.avatar,
     this.gender = 0,
   });
 
   final int userId;
   final String nickname;
   final String? avatarUrl;
+  final UserAvatarDescriptor? avatar;
   final int gender;
 }
 

@@ -9,6 +9,7 @@ import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_models.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_request_id.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_repository.dart';
+import 'package:voice_social_app/features/account/domain/user_avatar_descriptor.dart';
 
 class BackendDynamicRepository
     with CommentMutationJournal
@@ -548,6 +549,7 @@ class BackendDynamicRepository
         userId: userId,
         nickname: nickname,
         avatarUrl: _optionalString(item['avatarUrl'] ?? item['headImgUrl']),
+        avatar: _optionalAvatar(item),
         gender: _asInt(item['gender'] ?? item['sex']) ?? 0,
       ),
       content: content,
@@ -649,6 +651,7 @@ class BackendDynamicRepository
         userId: userId,
         nickname: nickname,
         avatarUrl: _optionalString(item['avatarUrl'] ?? item['headImgUrl']),
+        avatar: _optionalAvatar(item),
       ),
       content: status == 'PUBLISHED'
           ? _requiredString(item['content'], field: '评论 content')
@@ -953,6 +956,18 @@ class BackendDynamicRepository
   static String? _optionalString(Object? value) {
     final String result = value?.toString().trim() ?? '';
     return result.isEmpty ? null : result;
+  }
+
+  static UserAvatarDescriptor? _optionalAvatar(Map<String, Object?> item) {
+    if (!item.containsKey('avatar')) return null;
+    try {
+      return UserAvatarDescriptor.parseOptional(item['avatar']);
+    } on FormatException {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '动态 avatar 响应无效',
+      );
+    }
   }
 
   static int? _asInt(Object? value) =>

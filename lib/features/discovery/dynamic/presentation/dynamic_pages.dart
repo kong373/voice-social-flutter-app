@@ -11,6 +11,7 @@ import 'package:voice_social_app/features/community/presentation/community_pages
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_models.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_request_id.dart';
 import 'package:voice_social_app/features/discovery/dynamic/domain/dynamic_repository.dart';
+import 'package:voice_social_app/features/account/presentation/user_avatar_view.dart';
 import 'package:voice_social_app/features/room/presentation/room_deep_link_page.dart';
 import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 import 'package:voice_social_app/shared/time_format.dart';
@@ -1710,7 +1711,12 @@ class DynamicPostCard extends StatelessWidget {
           children: <Widget>[
             Row(
               children: <Widget>[
-                RuntimeAvatar(seed: '${post.author.userId}', size: 42),
+                UserAvatarView(
+                  avatar: post.author.avatar,
+                  userId: post.author.userId,
+                  size: 42,
+                  fallback: const _DynamicNeutralAvatar(),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -1846,7 +1852,12 @@ class _CommentTile extends StatelessWidget {
       child: ListTile(
         contentPadding: EdgeInsets.zero,
         onTap: onReply,
-        leading: RuntimeAvatar(seed: '${comment.author.userId}', size: 42),
+        leading: UserAvatarView(
+          avatar: comment.author.avatar,
+          userId: comment.author.userId,
+          size: 42,
+          fallback: const _DynamicNeutralAvatar(),
+        ),
         title: Row(
           children: <Widget>[
             Expanded(child: Text(comment.author.nickname)),
@@ -1891,6 +1902,28 @@ class _CommentTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _DynamicNeutralAvatar extends StatelessWidget {
+  const _DynamicNeutralAvatar();
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    image: true,
+    label: '头像不可用',
+    child: SizedBox.square(
+      key: const Key('dynamic-avatar-neutral'),
+      dimension: 42,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color(0xFFE8E1EC),
+          border: Border.all(color: const Color(0xFFD4C7DB), width: 2),
+        ),
+        child: const Icon(Icons.person_outline, color: Color(0xFF70647D)),
+      ),
+    ),
+  );
 }
 
 DateTime _currentPresentationTime(BuildContext context) =>
