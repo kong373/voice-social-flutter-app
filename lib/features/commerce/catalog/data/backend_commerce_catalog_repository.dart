@@ -97,6 +97,16 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   // server's catalog readiness separately so a local SDK cannot enable order
   // creation while the authenticated backend port is fail-closed.
   ClientStorePlatform? _readyPlatform;
+  int _catalogGeneration = 0;
+
+  void _assertCurrentCatalog(int generation) {
+    if (generation != _catalogGeneration) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        message: '充值商品目录已更新，请使用最新结果',
+      );
+    }
+  }
 
   @override
   bool get supportsRechargeCatalog => true;
@@ -125,6 +135,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
   }) async {
     // A refresh that is in flight must not leave an earlier READY result
     // usable if the server later reports a blocked or malformed contract.
+    final int generation = ++_catalogGeneration;
     _readyPlatform = null;
     final String expectedPlatform = platform == ClientStorePlatform.android
         ? 'ANDROID'
@@ -133,6 +144,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
       _routes.rechargeProducts,
       query: <String, String>{'platform': expectedPlatform},
     );
+    _assertCurrentCatalog(generation);
     final List<Map<String, Object?>> items = _catalogList(
       response.data,
       label: '充值商品目录',
@@ -173,12 +185,14 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
             // StoreKit retains the transaction; catalog browsing is still
             // allowed and the coordinator keeps uncertain purchases fenced.
           }
+          _assertCurrentCatalog(generation);
           final List<AppleStoreProduct> storeProducts = await coordinator
               .validateProducts(
                 products
                     .map((RechargeProduct item) => item.storeProductId!)
                     .toList(growable: false),
               );
+          _assertCurrentCatalog(generation);
           if (storeProducts.length == products.length) {
             final Map<String, AppleStoreProduct> storeById =
                 <String, AppleStoreProduct>{

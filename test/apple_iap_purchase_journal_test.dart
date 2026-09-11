@@ -141,6 +141,82 @@ void main() {
     },
   );
 
+  test(
+    '128 unfinished deliveries are retained and the 129th start cannot evict them',
+    () async {
+      final store = _RecordingStore();
+      final journal = AppleIapPurchaseJournal(store);
+      // Fixed-size fixture construction, no native call or wall-clock wait.
+      for (var index = 0; index < 128; index++) {
+        final order = 'capacity_$index';
+        await journal.start('a', _binding(order));
+        await journal.markTerminal(
+          'a',
+          order,
+          'DELIVERED',
+          stillCurrent: () => true,
+        );
+      }
+      final snapshot = store.lastValue;
+      await expectLater(
+        journal.start('a', _binding('capacity_128')),
+        throwsStateError,
+      );
+      expect(store.lastValue, snapshot);
+      final retained = await journal.readAll('a');
+      expect(retained, hasLength(128));
+      expect(retained.every((entry) => entry.state == 'DELIVERED'), isTrue);
+      expect(retained.first.binding.orderNo, 'capacity_0');
+      expect(retained.last.binding.orderNo, 'capacity_127');
+
+      await journal.markTerminal(
+        'a',
+        'capacity_0',
+        'FINISHED',
+        stillCurrent: () => true,
+      );
+      await journal.start('a', _binding('capacity_128'));
+      final afterCleanup = await journal.readAll('a');
+      expect(afterCleanup, hasLength(128));
+      expect(
+        afterCleanup.any((entry) => entry.binding.orderNo == 'capacity_0'),
+        isFalse,
+      );
+      expect(
+        afterCleanup.where((entry) => entry.state == 'DELIVERED'),
+        hasLength(127),
+      );
+      expect(afterCleanup.last.binding.orderNo, 'capacity_128');
+      expect(afterCleanup.last.state, 'ATTEMPTED');
+    },
+  );
+
+  test(
+    'v2 duplicate order identities fail closed without clearing saved data',
+    () async {
+      final store = _RecordingStore();
+      final journal = AppleIapPurchaseJournal(store);
+      await journal.start('a', _binding('duplicate_order'));
+      final entry = jsonDecode(
+        AppleIapJournalEntry(
+          binding: _binding('duplicate_order'),
+          state: 'DELIVERED',
+        ).encode(),
+      );
+      final corrupted = jsonEncode(<String, Object?>{
+        'schema': 2,
+        'entries': <Object?>[entry, entry],
+      });
+      await store.write(store.lastKey!, corrupted);
+      await expectLater(journal.readAll('a'), throwsStateError);
+      await expectLater(
+        journal.start('a', _binding('new_order')),
+        throwsStateError,
+      );
+      expect(store.lastValue, corrupted);
+    },
+  );
+
   test('invalid or expanded records fail closed', () {
     final valid =
         jsonDecode(

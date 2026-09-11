@@ -841,6 +841,84 @@ void main() {
     );
 
     test(
+      'one deferred recovery entry does not starve a valid current order',
+      () async {
+        final foreign = AppleIapTransaction(
+          transactionId: '100000000000002',
+          originalTransactionId: '100000000000002',
+          productId: _binding.storeProductId,
+          appAccountToken: '22222222-2222-4222-8222-222222222222',
+          purchaseDate: DateTime.utc(2026, 9, 4),
+          signedTransaction: 'fixture.header.payload',
+          verification: AppleIapVerification.verified,
+          source: AppleIapTransactionSource.unfinished,
+        );
+        final storeKit = _FakeStoreKit(
+          recovered: <AppleIapTransaction>[
+            foreign,
+            _transaction(source: AppleIapTransactionSource.unfinished),
+          ],
+        );
+        final backend = _RejectForeignRecoveryBackend();
+        final coordinator = AppleIapPurchaseCoordinator(
+          purchaseStore: MemoryKeyValueStore(),
+          authenticatedAccount: () => 'test-account',
+          authenticatedSession: () => _testSession,
+          storeKit: storeKit,
+          backend: backend,
+        );
+        addTearDown(coordinator.dispose);
+        await coordinator.createOrder(
+          productId: _binding.productId,
+          requestId: 'current-order-snapshot',
+        );
+        final result = await coordinator.recoverUnfinished().timeout(
+          const Duration(seconds: 2),
+        );
+        expect(result.observed, 2);
+        expect(result.delivered, 1);
+        expect(result.finished, 1);
+        expect(result.deferred, 1);
+        expect(backend.deliveries, hasLength(2));
+        expect(backend.deliveries.first.orderNo, isNull);
+        expect(backend.deliveries.last.orderNo, _binding.orderNo);
+        expect(storeKit.finished, <String>['100000000000001']);
+        expect(storeKit.purchaseCalls, 0);
+        expect(backend.createCalls, 1);
+      },
+    );
+
+    test(
+      'unfinished delivery uses saved binding without loading today catalog or buying again',
+      () async {
+        final store = MemoryKeyValueStore();
+        final journal = AppleIapPurchaseJournal(store);
+        await journal.start('test-account', _binding);
+        final storeKit = _NoCatalogRecoveryStore();
+        final backend = _FakeBackend();
+        final coordinator = AppleIapPurchaseCoordinator(
+          purchaseStore: store,
+          authenticatedAccount: () => 'test-account',
+          authenticatedSession: () => _testSession,
+          storeKit: storeKit,
+          backend: backend,
+        );
+        addTearDown(coordinator.dispose);
+        final result = await coordinator.recoverUnfinished().timeout(
+          const Duration(seconds: 2),
+        );
+        expect(result.delivered, 1);
+        expect(result.finished, 1);
+        expect(result.deferred, 0);
+        expect(storeKit.productLoads, 0);
+        expect(storeKit.purchaseCalls, 0);
+        expect(backend.createCalls, 0);
+        expect(backend.deliveries.single.orderNo, _binding.orderNo);
+        expect((await journal.read('test-account'))!.state, 'FINISHED');
+      },
+    );
+
+    test(
       'transaction updates use the same backend-before-finish gate',
       () async {
         final StreamController<AppleIapTransaction> updates =
@@ -1081,4 +1159,41 @@ class _FakeBackend implements AppleIapBackendPort {
         transactionId: '100000000000001',
         finishAllowed: true,
       );
+}
+
+class _RejectForeignRecoveryBackend extends _FakeBackend {
+  @override
+  Future<AppleIapDeliveryAck> deliverTransaction({
+    required String? orderNo,
+    required AppleIapTransaction transaction,
+    required String requestId,
+  }) async {
+    if (transaction.transactionId == '100000000000002') {
+      deliveries.add(_DeliveryCall(orderNo: orderNo, transaction: transaction));
+      throw const ApiException(
+        kind: ApiFailureKind.unauthorized,
+        message: 'Fixture order belongs to another account',
+      );
+    }
+    return super.deliverTransaction(
+      orderNo: orderNo,
+      transaction: transaction,
+      requestId: requestId,
+    );
+  }
+}
+
+class _NoCatalogRecoveryStore extends _FakeStoreKit {
+  _NoCatalogRecoveryStore()
+    : super(
+        recovered: <AppleIapTransaction>[
+          _transaction(source: AppleIapTransactionSource.unfinished),
+        ],
+      );
+  int productLoads = 0;
+  @override
+  Future<List<AppleStoreProduct>> loadProducts(List<String> productIds) async {
+    productLoads += 1;
+    throw StateError('Current fixture catalog is unavailable');
+  }
 }
