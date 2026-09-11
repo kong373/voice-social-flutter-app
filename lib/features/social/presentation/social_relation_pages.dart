@@ -109,14 +109,16 @@ class _RelationsPageState extends State<RelationsPage> {
                                   subtitle: _items[index].signature.isEmpty
                                       ? '对方还没有留下签名'
                                       : _items[index].signature,
-                                  onTap: () => Navigator.of(context).push<void>(
-                                    MaterialPageRoute<void>(
-                                      builder: (BuildContext context) =>
-                                          PublicProfilePage(
-                                            userId: _items[index].userId,
-                                          ),
-                                    ),
-                                  ),
+                                  onTap: () async {
+                                    final userId = _items[index].userId;
+                                    await Navigator.of(context).push<void>(
+                                      MaterialPageRoute<void>(
+                                        builder: (BuildContext context) =>
+                                            PublicProfilePage(userId: userId),
+                                      ),
+                                    );
+                                    if (mounted) await _load();
+                                  },
                                 ),
                                 if (index < _items.length - 1)
                                   const Divider(height: 1),
