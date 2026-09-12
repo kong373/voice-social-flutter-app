@@ -15,6 +15,8 @@ class _MessageVisibility extends ChangeNotifier {
   String? viewerReason;
   int revision = 0;
 
+  Iterable<int> get deniedPeers => _deniedPeers.keys;
+
   String? reasonFor(int peer) => viewerReason ?? _deniedPeers[peer];
 
   void deny(_MessageReadDenial denial, {int? peer}) {

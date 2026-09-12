@@ -488,6 +488,80 @@ void main() {
     },
   );
 
+  testWidgets(
+    'message activation rechecks a denied peer and restores only current history authority',
+    (tester) async {
+      final fixture = _HttpFixture();
+      final deps = await _show(tester, fixture.repository);
+      fixture.denial = (403, 40381);
+      await _tick(tester);
+      expect(find.text('old-body'), findsNothing);
+
+      fixture.denial = null;
+      final active = ValueNotifier<bool>(false);
+      addTearDown(active.dispose);
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: deps,
+          child: MaterialApp(
+            home: ValueListenableBuilder<bool>(
+              valueListenable: active,
+              builder: (context, isActive, child) =>
+                  MessageCenterPage(isActive: isActive),
+            ),
+          ),
+        ),
+      );
+      await _drain(tester);
+      expect(find.text('deleted-peer-name'), findsNothing);
+      final historyCallsBeforeActivation = fixture.historyCalls;
+
+      active.value = true;
+      await tester.pump();
+      await _drain(tester);
+
+      expect(find.text('deleted-peer-name'), findsOneWidget);
+      expect(fixture.historyCalls, greaterThan(historyCallsBeforeActivation));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'message activation keeps a blocked peer redacted after list success',
+    (tester) async {
+      final fixture = _HttpFixture();
+      final deps = await _show(tester, fixture.repository);
+      fixture.denial = (403, 40381);
+      await _tick(tester);
+      expect(find.text('old-body'), findsNothing);
+
+      final active = ValueNotifier<bool>(false);
+      addTearDown(active.dispose);
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: deps,
+          child: MaterialApp(
+            home: ValueListenableBuilder<bool>(
+              valueListenable: active,
+              builder: (context, isActive, child) =>
+                  MessageCenterPage(isActive: isActive),
+            ),
+          ),
+        ),
+      );
+      await _drain(tester);
+      final historyCallsBeforeActivation = fixture.historyCalls;
+
+      active.value = true;
+      await tester.pump();
+      await _drain(tester);
+
+      expect(find.text('deleted-peer-name'), findsNothing);
+      expect(fixture.historyCalls, greaterThan(historyCallsBeforeActivation));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final reason in ['BLOCKED_RELATION', 'FRIENDS_ONLY']) {
     testWidgets(
       'send 40381 $reason does not confuse send policy with read revocation',

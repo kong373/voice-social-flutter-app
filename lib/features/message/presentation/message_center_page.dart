@@ -82,8 +82,12 @@ class _MessageCenterPageState extends State<MessageCenterPage>
   @override
   void didUpdateWidget(covariant MessageCenterPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!widget.isActive && oldWidget.isActive) {
+      _cancelPendingLoads();
+      return;
+    }
     if (widget.isActive && !oldWidget.isActive) {
-      _load(showLoading: false).ignore();
+      _load(showLoading: false, revalidateDeniedPeers: true).ignore();
     }
   }
 
@@ -121,12 +125,12 @@ class _MessageCenterPageState extends State<MessageCenterPage>
       _refreshSubscription = refreshBus.subscribe(_onAuthoritativeRefresh);
     }
     if (_conversations == null && _loading) {
-      _load();
+      _load(revalidateDeniedPeers: widget.isActive);
     }
   }
 
   Future<void> _onAuthoritativeRefresh(ImAuthoritativeRefreshRequest request) {
-    if (!mounted || !_canRead) return Future<void>.value();
+    if (!mounted || !widget.isActive || !_canRead) return Future<void>.value();
     final Future<void>? active = _refreshFlight;
     if (active != null) {
       _refreshAgain = true;
@@ -156,12 +160,17 @@ class _MessageCenterPageState extends State<MessageCenterPage>
       _refreshAgain = false;
       await _load(showLoading: false);
     } while (mounted &&
+        widget.isActive &&
         generation == _refreshGeneration &&
         _canRead &&
         _refreshAgain);
   }
 
-  Future<void> _load({bool showLoading = true, bool revalidate = false}) async {
+  Future<void> _load({
+    bool showLoading = true,
+    bool revalidate = false,
+    bool revalidateDeniedPeers = false,
+  }) async {
     if (!mounted || !_currentIdentity || (!revalidate && !_canRead)) {
       return;
     }
@@ -172,6 +181,7 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     bool accepts() =>
         mounted &&
         _currentIdentity &&
+        (!revalidateDeniedPeers || widget.isActive) &&
         (revalidate || _canRead) &&
         identical(dependencies, AppDependencyScope.of(context)) &&
         viewer == _currentViewer &&
@@ -188,6 +198,16 @@ class _MessageCenterPageState extends State<MessageCenterPage>
           .fetchConversations();
       if (!accepts()) {
         return;
+      }
+      if (revalidateDeniedPeers) {
+        final Set<int>? restoredPeers = await _revalidateDeniedPeers(
+          value,
+          accepts: accepts,
+        );
+        if (restoredPeers == null || !accepts()) return;
+        for (final peer in restoredPeers) {
+          _visibility!.restore(peer: peer);
+        }
       }
       if (revalidate) _visibility!.restore();
       setState(() {
@@ -220,6 +240,40 @@ class _MessageCenterPageState extends State<MessageCenterPage>
         }
       });
     }
+  }
+
+  Future<Set<int>?> _revalidateDeniedPeers(
+    List<ConversationSummary> conversations, {
+    required bool Function() accepts,
+  }) async {
+    final visibility = _visibility;
+    final repository = _repository;
+    if (visibility == null || repository is! PagedPrivateMessageRepository) {
+      return const <int>{};
+    }
+    final Map<int, ConversationSummary> available = {
+      for (final conversation in conversations)
+        if (conversation.available) conversation.targetUserId: conversation,
+    };
+    final Set<int> restored = <int>{};
+    for (final peer in visibility.deniedPeers.toList()) {
+      final conversation = available[peer];
+      if (conversation == null) continue;
+      try {
+        await repository.fetchVisiblePrivateMessagePage(
+          conversation,
+          isCurrent: accepts,
+        );
+        if (!accepts()) return null;
+        restored.add(peer);
+      } catch (error) {
+        if (!accepts()) return null;
+        final denial = _MessageReadDenial.from(error);
+        if (denial != null) visibility.deny(denial, peer: peer);
+        // A denial or transient failure is not proof that access returned.
+      }
+    }
+    return restored;
   }
 
   void _cancelPendingLoads() {
