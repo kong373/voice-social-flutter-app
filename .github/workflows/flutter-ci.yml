@@ -178,11 +178,18 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          rm -rf .ci_app/lib .ci_app/test .ci_app/integration_test .ci_app/packages
+          rm -rf .ci_app/lib .ci_app/test .ci_app/integration_test .ci_app/packages .ci_app/assets
           cp -R lib .ci_app/lib
           cp -R test .ci_app/test
           cp -R integration_test .ci_app/integration_test
           cp -R packages .ci_app/packages
+          test -d assets/runtime
+          cp -R assets .ci_app/assets
+          test -d .ci_app/assets/runtime
+          source_asset_count="$(find assets -type f | wc -l | tr -d ' ')"
+          copied_asset_count="$(find .ci_app/assets -type f | wc -l | tr -d ' ')"
+          test "$source_asset_count" -gt 0
+          test "$source_asset_count" -eq "$copied_asset_count"
           cp pubspec.yaml pubspec.lock analysis_options.yaml .ci_app/
           mkdir -p .ci_app/tool
           cp tool/prepare_android_audio_manifest.py .ci_app/tool/
