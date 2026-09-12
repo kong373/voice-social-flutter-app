@@ -1867,7 +1867,11 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
                           _AccountTool(
                             icon: Icons.people_outline_rounded,
                             label: '关注与粉丝',
-                            onTap: () => _open(context, const RelationsPage()),
+                            onTap: () => _open(
+                              context,
+                              const RelationsPage(),
+                              refreshProfile: true,
+                            ),
                           ),
                           _AccountTool(
                             icon: Icons.visibility_outlined,
