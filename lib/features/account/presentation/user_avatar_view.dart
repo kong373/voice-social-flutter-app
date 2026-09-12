@@ -167,7 +167,12 @@ class _UserAvatarViewState extends State<UserAvatarView> {
               .clamp(1, 512);
       final width = descriptor.width;
       final height = descriptor.height;
-      if (width <= 0 || height <= 0) return;
+      if (width <= 0 || height <= 0) {
+        if (_current(scope, epoch)) {
+          setState(() => _loadState = _UserAvatarLoadState.unavailable);
+        }
+        return;
+      }
       final ratio = (limit / (width > height ? width : height)).clamp(0.0, 1.0);
       codec = await descriptor.instantiateCodec(
         targetWidth: (width * ratio).round().clamp(1, 512),
