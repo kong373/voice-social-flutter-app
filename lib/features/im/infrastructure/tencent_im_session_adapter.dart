@@ -12,6 +12,7 @@ import 'package:tencent_cloud_chat_sdk/models/v2_tim_value_callback.dart';
 import 'package:voice_social_app/features/im/domain/im_session_adapter.dart';
 import 'package:voice_social_app/features/im/domain/im_session_credentials.dart';
 import 'package:voice_social_app/features/im/domain/im_refresh_hint.dart';
+import 'package:voice_social_app/features/im/domain/im_correlation_trace.dart';
 import 'package:voice_social_app/features/im/domain/im_room_events.dart';
 import 'package:voice_social_app/features/im/domain/im_session_events.dart';
 
@@ -138,13 +139,16 @@ class OfficialTencentImSdkClient
     V2TIMManager? manager,
     TencentImHintTrustEvaluator? trustedHintEvaluator,
     TencentImObservabilityLogger? logger,
+    ImCorrelationTrace? correlationTrace,
   }) : _manager = manager ?? V2TIMManager(),
        _trustedHintEvaluator = trustedHintEvaluator,
-       _logger = logger ?? _defaultTencentImObservabilityLogger;
+       _logger = logger ?? _defaultTencentImObservabilityLogger,
+       _correlationTrace = correlationTrace;
 
   final V2TIMManager _manager;
   final TencentImHintTrustEvaluator? _trustedHintEvaluator;
   final TencentImObservabilityLogger _logger;
+  final ImCorrelationTrace? _correlationTrace;
   final StreamController<TencentImSdkEvent> _eventController =
       StreamController<TencentImSdkEvent>.broadcast(sync: true);
 
@@ -315,7 +319,11 @@ class OfficialTencentImSdkClient
         providerTrusted: trusted,
       ),
     );
-    _emit(
+    final ImCorrelationTrace trace = _trace;
+    final ImRefreshHint? traceHint = trace.enabled && groupId == null
+        ? ImRefreshHint.tryParse(observedCustomData, trustedSource: trusted)
+        : null;
+    void emitEvent() => _emit(
       TencentImSdkEvent.customElement(
         data: observedCustomData,
         trustedFirstParty: trusted,
@@ -324,7 +332,18 @@ class OfficialTencentImSdkClient
         isSelf: message.isSelf,
       ),
     );
+    if (traceHint != null) {
+      trace.runForValidatedHint(traceHint, () {
+        trace.sdkCallback();
+        emitEvent();
+      });
+    } else {
+      emitEvent();
+    }
   }
+
+  ImCorrelationTrace get _trace =>
+      _correlationTrace ?? ImCorrelationTrace.active;
 }
 
 class TencentImObservedMessage {
@@ -352,6 +371,7 @@ class TencentImSessionAdapter
     this.operationTimeout = const Duration(seconds: 15),
     ImLifecycleLogger? logger,
     TencentImObservabilityLogger? observabilityLogger,
+    ImCorrelationTrace? correlationTrace,
   }) : assert(operationTimeout > Duration.zero),
        _sdkClient =
            sdkClient ??
@@ -359,11 +379,13 @@ class TencentImSessionAdapter
            OfficialTencentImSdkClient(
              logger:
                  observabilityLogger ?? _defaultTencentImObservabilityLogger,
+             correlationTrace: correlationTrace,
            ),
        _now = now ?? DateTime.now,
        _logger = logger ?? _defaultLogger,
        _observabilityLogger =
-           observabilityLogger ?? _defaultTencentImObservabilityLogger {
+           observabilityLogger ?? _defaultTencentImObservabilityLogger,
+       _correlationTrace = correlationTrace {
     final TencentImSdkEventSource? source =
         _sdkClient is TencentImSdkEventSource
         ? _sdkClient as TencentImSdkEventSource
@@ -378,6 +400,7 @@ class TencentImSessionAdapter
   final Duration operationTimeout;
   final ImLifecycleLogger _logger;
   final TencentImObservabilityLogger _observabilityLogger;
+  final ImCorrelationTrace? _correlationTrace;
   final StreamController<ImSessionState> _stateController =
       StreamController<ImSessionState>.broadcast(sync: true);
   final StreamController<ImSessionEvent> _eventController =
@@ -804,7 +827,11 @@ class TencentImSessionAdapter
           ),
         );
         if (hint != null) {
-          _emitEvent(ImSessionEvent.refresh(hint));
+          final ImCorrelationTrace trace = _trace;
+          trace.runForValidatedHint(hint, () {
+            trace.adapterAccepted();
+            _emitEvent(ImSessionEvent.refresh(hint));
+          });
         }
         break;
     }
@@ -815,6 +842,9 @@ class TencentImSessionAdapter
       _eventController.add(event);
     }
   }
+
+  ImCorrelationTrace get _trace =>
+      _correlationTrace ?? ImCorrelationTrace.active;
 
   Future<void> _initializeInternal(ImSessionCredentials credentials) async {
     if (_initialized && _sdkAppId == credentials.sdkAppId) {

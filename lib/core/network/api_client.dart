@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import '../media/media_identity.dart';
 import '../media/media_models.dart';
+import 'package:voice_social_app/features/im/domain/im_correlation_trace.dart';
 
 part '../media/media_api_transport.dart';
 part '../media/user_avatar_media_transport.dart';
@@ -48,16 +49,19 @@ class ApiClient {
     HttpClient? httpClient,
     this.timeout = const Duration(seconds: 15),
     this.maximumResponseBytes = 2 * 1024 * 1024,
+    ImCorrelationTrace? correlationTrace,
   }) : _baseUri = baseUri,
        _authorizationProvider = authorizationProvider,
        _requestHeadersProvider = requestHeadersProvider,
        _unauthorizedRecovery = unauthorizedRecovery,
+       _correlationTrace = correlationTrace,
        // The backend advertises a five-second keep-alive window. Retire owned
        // idle sockets earlier to avoid racing its close on the next request.
        // Explicit caller-owned transports keep their own connection policy.
        _httpClient =
            httpClient ??
            (HttpClient()..idleTimeout = const Duration(seconds: 2));
+  final ImCorrelationTrace? _correlationTrace;
 
   final Uri _baseUri;
   final String clientType;
@@ -70,6 +74,9 @@ class ApiClient {
   UnauthorizedRecovery? _unauthorizedRecovery;
   Future<bool>? _unauthorizedRecoveryInFlight;
   int _unauthorizedRecoveryGeneration = 0;
+
+  ImCorrelationTrace get _trace =>
+      _correlationTrace ?? ImCorrelationTrace.active;
 
   void setUnauthorizedRecovery(UnauthorizedRecovery? recovery) {
     _unauthorizedRecovery = recovery;
@@ -317,6 +324,13 @@ class ApiClient {
         authenticated && (!allowUnauthorizedRecovery || requireIdentity != null)
         ? _authorizationProvider()
         : null;
+    final ImCorrelationTrace trace = _trace;
+    final int? traceStartUs = trace.httpStart(
+      method: method,
+      identityBound: requireIdentity != null,
+    );
+    int? traceStatus;
+    String traceOutcome = 'error';
     try {
       final HttpClientRequest request = await _httpClient
           .openUrl(method, uri)
@@ -373,6 +387,7 @@ class ApiClient {
       final HttpClientResponse response = await request.close().timeout(
         timeout,
       );
+      traceStatus = response.statusCode;
       final String responseBody = await _readResponseBody(response);
       if (responseBody.trim().isEmpty) {
         throw ApiException(
@@ -403,6 +418,7 @@ class ApiClient {
       final bool httpSuccess =
           response.statusCode >= 200 && response.statusCode < 300;
       if (httpSuccess && apiResponse.isSuccess) {
+        traceOutcome = 'success';
         return apiResponse;
       }
 
@@ -413,8 +429,11 @@ class ApiClient {
       if (authenticated &&
           allowUnauthorizedRecovery &&
           kind == ApiFailureKind.unauthorized) {
+        traceOutcome = 'unauthorized';
+        trace.httpAuthRecoveryStart();
         requireIdentity?.call();
         if (_unauthorizedRecoveryGeneration > requestRecoveryGeneration) {
+          trace.httpReplayStart();
           return _request(
             method: method,
             path: path,
@@ -432,6 +451,7 @@ class ApiClient {
           final bool recovered = await _recoverUnauthorized();
           requireIdentity?.call();
           if (recovered) {
+            trace.httpReplayStart();
             return _request(
               method: method,
               path: path,
@@ -445,9 +465,13 @@ class ApiClient {
               stripContentEncoding: stripContentEncoding,
             );
           }
+          trace.httpReplaySkipped();
+        } else {
+          trace.httpReplaySkipped();
         }
       }
 
+      traceOutcome = 'api_error';
       throw ApiException(
         kind: kind,
         code: code,
@@ -455,30 +479,43 @@ class ApiClient {
         message: message,
       );
     } on TimeoutException catch (error) {
+      traceOutcome = 'timeout';
       throw ApiException(
         kind: ApiFailureKind.timeout,
         message: '请求超时，请检查网络后重试',
         cause: error,
       );
     } on SocketException catch (error) {
+      traceOutcome = 'network';
       throw ApiException(
         kind: ApiFailureKind.network,
         message: '网络连接失败，请稍后重试',
         cause: error,
       );
     } on ApiException {
+      if (traceOutcome == 'error') traceOutcome = 'api_error';
       rethrow;
     } on FormatException catch (error) {
+      traceOutcome = 'protocol';
       throw ApiException(
         kind: ApiFailureKind.protocol,
         message: '服务端返回了无法解析的数据',
         cause: error,
       );
     } on HttpException catch (error) {
+      traceOutcome = 'network';
       throw ApiException(
         kind: ApiFailureKind.network,
         message: '网络请求失败',
         cause: error,
+      );
+    } finally {
+      trace.httpComplete(
+        startedAtUs: traceStartUs,
+        method: method,
+        identityBound: requireIdentity != null,
+        status: traceStatus,
+        outcome: traceOutcome,
       );
     }
   }

@@ -44,6 +44,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   final Set<String> _readScanCursors = {};
   final Set<String> _gapCursors = {};
   bool _refreshAgain = false;
+  ImCorrelationTraceContext? _queuedRefreshTrace;
   _MessageVisibility? _visibility;
   bool _rechecking = false;
   PrivateHistoryState? _privateHistory;
@@ -88,6 +89,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       _sending = false;
       _loading = false;
     });
+    _queuedRefreshTrace = null;
     // A newly learned remote clear invalidates cursors and mounted media visits
     // too. Resume from the head; never merge a late old page into this snapshot.
     scheduleMicrotask(() {
@@ -232,6 +234,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     _syncTimer?.cancel();
     _refreshFlight = null;
     _refreshAgain = false;
+    _queuedRefreshTrace = null;
     _conversation = widget.conversation;
     _messages.clear();
     _historyMessageIds.clear();
@@ -313,6 +316,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     _loadRequestId++;
     _conversationEpoch++;
     _refreshAgain = false;
+    _queuedRefreshTrace = null;
     setState(() {
       _conversation = _redactedConversation(_conversation, reason);
       _messages.clear();
@@ -356,6 +360,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     }
     _syncTimer?.cancel();
     _loadRequestId += 1;
+    _queuedRefreshTrace = null;
     setState(() {
       _accountChanged = true;
       _clearRequestEpoch++;
@@ -397,16 +402,38 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     });
   }
 
-  Future<void> _onAuthoritativeRefresh(ImAuthoritativeRefreshRequest request) =>
-      _load(showLoading: false);
+  Future<void> _onAuthoritativeRefresh(ImAuthoritativeRefreshRequest request) {
+    final ImCorrelationTrace trace = ImCorrelationTrace.active;
+    trace.pageHandler(
+      active: _active,
+      flight: _refreshFlight != null,
+      action: ImCorrelationTracePageAction.entered,
+    );
+    return _load(showLoading: false);
+  }
 
   Future<void> _load({bool showLoading = true}) {
     if (!_checkAccount() || !_active || !_conversation.available) {
+      ImCorrelationTrace.active.pageHandler(
+        active: _active,
+        flight: _refreshFlight != null,
+        action: ImCorrelationTracePageAction.ignored,
+      );
       return Future<void>.value();
     }
     final Future<void>? active = _refreshFlight;
     if (active != null) {
-      if (_repository is PagedPrivateMessageRepository) _refreshAgain = true;
+      if (_repository is PagedPrivateMessageRepository) {
+        _refreshAgain = true;
+        final ImCorrelationTraceContext? context =
+            ImCorrelationTrace.currentContext;
+        if (context != null) _queuedRefreshTrace = context;
+        ImCorrelationTrace.active.pageHandler(
+          active: true,
+          flight: true,
+          action: ImCorrelationTracePageAction.queued,
+        );
+      }
       return active;
     }
     _syncTimer?.cancel();
@@ -417,8 +444,21 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       if (identical(_refreshFlight, operation)) {
         _refreshFlight = null;
         if (mounted && _refreshAgain && _canAutoSync) {
+          final ImCorrelationTraceContext? queuedTrace = _queuedRefreshTrace;
+          _queuedRefreshTrace = null;
           _refreshAgain = false;
-          _load(showLoading: false);
+          if (queuedTrace == null) {
+            _load(showLoading: false);
+          } else {
+            queuedTrace.trace.runInContext(queuedTrace, () {
+              queuedTrace.trace.pageHandler(
+                active: _active,
+                flight: false,
+                action: ImCorrelationTracePageAction.dequeued,
+              );
+              _load(showLoading: false);
+            });
+          }
         } else if (mounted && _repository is! PagedPrivateMessageRepository) {
           _scheduleSync();
         }
@@ -439,6 +479,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     _privateHistory?.removeListener(_historyChanged);
     _clearRequestEpoch++;
     _loadRequestId += 1;
+    _queuedRefreshTrace = null;
     WidgetsBinding.instance.removeObserver(this);
     _dependencies?.sessionManager.removeListener(_onAccountChanged);
     _visibility?.removeListener(_visibilityChanged);
@@ -457,6 +498,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     final int requestId = ++_loadRequestId;
     final conversationEpoch = _conversationEpoch;
     final MessageRepository repository = _repository;
+    ImCorrelationTrace.active.pageLoadStart();
     if (showLoading || _error != null) {
       setState(() {
         _loading = showLoading;
@@ -688,6 +730,16 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       _loading = false;
       _error = null;
     });
+    final ImCorrelationTrace trace = ImCorrelationTrace.active;
+    final ImCorrelationTraceContext? traceContext =
+        ImCorrelationTrace.currentContext;
+    trace.pagePublish(followLatest: followLatest);
+    if (trace.enabled && traceContext != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        trace.runInContext(traceContext, trace.pageFrame);
+      });
+    }
     if (shouldScroll) {
       _scrollToEnd();
     } else if (!followLatest &&

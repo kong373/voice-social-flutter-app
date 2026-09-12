@@ -1,4 +1,5 @@
 import 'package:voice_social_app/features/im/domain/im_refresh_hint.dart';
+import 'package:voice_social_app/features/im/domain/im_correlation_trace.dart';
 
 enum ImAuthoritativeRefreshScope { privateConversation }
 
@@ -41,10 +42,14 @@ typedef ImAuthoritativeRefreshHandler =
 /// content.  Consumers must call an existing authoritative repository method
 /// and keep their current UI state when that call fails.
 class ImAuthoritativeRefreshBus {
-  ImAuthoritativeRefreshBus({this.maximumRememberedHints = 256})
-    : assert(maximumRememberedHints > 0);
+  ImAuthoritativeRefreshBus({
+    this.maximumRememberedHints = 256,
+    ImCorrelationTrace? correlationTrace,
+  }) : _correlationTrace = correlationTrace,
+       assert(maximumRememberedHints > 0);
 
   final int maximumRememberedHints;
+  final ImCorrelationTrace? _correlationTrace;
   final Map<String, int> _rememberedVersions = <String, int>{};
   final Map<int, ImAuthoritativeRefreshHandler> _handlers =
       <int, ImAuthoritativeRefreshHandler>{};
@@ -75,6 +80,7 @@ class ImAuthoritativeRefreshBus {
       );
     }
     if (isCurrent != null && !isCurrent()) {
+      _trace.busRejected(reason: 'stale');
       return const ImRefreshDispatchResult(
         status: ImRefreshDispatchStatus.stale,
       );
@@ -82,11 +88,13 @@ class ImAuthoritativeRefreshBus {
     final int? previousVersion = _lastAcceptedVersion;
     final int? previousForMessage = _rememberedVersions[hint.messageId];
     if (previousForMessage != null && hint.eventVersion <= previousForMessage) {
+      _trace.busRejected(reason: 'duplicate');
       return const ImRefreshDispatchResult(
         status: ImRefreshDispatchStatus.duplicate,
       );
     }
     if (previousVersion != null && hint.eventVersion <= previousVersion) {
+      _trace.busRejected(reason: 'stale');
       return const ImRefreshDispatchResult(
         status: ImRefreshDispatchStatus.stale,
       );
@@ -100,6 +108,7 @@ class ImAuthoritativeRefreshBus {
     final List<ImAuthoritativeRefreshHandler> handlers =
         List<ImAuthoritativeRefreshHandler>.of(_handlers.values);
     if (handlers.isEmpty) {
+      _trace.busRejected(reason: 'no_subscribers');
       return const ImRefreshDispatchResult(
         status: ImRefreshDispatchStatus.noSubscribers,
       );
@@ -108,6 +117,8 @@ class ImAuthoritativeRefreshBus {
       scope: ImAuthoritativeRefreshScope.privateConversation,
       hint: hint,
     );
+    final ImCorrelationTrace trace = _trace;
+    trace.busAccepted(handlers: handlers.length);
     int successfulHandlers = 0;
     int failedHandlers = 0;
     await Future.wait<void>(
@@ -125,6 +136,7 @@ class ImAuthoritativeRefreshBus {
         }
       }),
     );
+    trace.busCompleted(successful: successfulHandlers, failed: failedHandlers);
     return ImRefreshDispatchResult(
       status: failedHandlers == 0
           ? ImRefreshDispatchStatus.delivered
@@ -139,6 +151,9 @@ class ImAuthoritativeRefreshBus {
     _handlers.clear();
     _rememberedVersions.clear();
   }
+
+  ImCorrelationTrace get _trace =>
+      _correlationTrace ?? ImCorrelationTrace.active;
 }
 
 class ImAuthoritativeRefreshSubscription {
