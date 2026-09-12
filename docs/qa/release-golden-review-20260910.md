@@ -98,3 +98,33 @@ including `pre-repair-goldens-8fc6cd5/`, `flutter-mac-golden-render-20260910.log
 `flutter-mac-strict-goldens-20260910.log`,
 `flutter-font-room-main-20260910.log` and
 `flutter-dark-context-main-20260910.log`.
+
+## 2026-09-13 controlled avatar and profile-capability refresh
+
+The later app source is `4e78573f5fd00fffbe70c9ed274b7c31a7342fa8`, including
+`1bc3c8d` canonical dynamic-author projection and `2a7aff0` controlled profile
+avatar editing. Main reviewed the four current macOS `testImage` captures
+against their matching master/diff diagnostics. This follow-up updates only
+these four macOS PNGs; Linux is refreshed separately from its own renderer:
+
+- `test/goldens/m3_3_all/ds-004_390x844.png`
+- `test/goldens/m3_3_all/ds-005_390x844.png`
+- `test/goldens/m3_3_dynamic_detail_390x844.png`
+- `test/goldens/m3_3_all/us-002_390x844.png`
+
+The dynamic Mock fixture retains null canonical avatar descriptors. The
+reviewed output is consequently the secure neutral `UserAvatarView` fallback,
+not a newly invented PRESET identity and not the retired `RuntimeAvatar` or
+URL fallback. The positive canonical-descriptor and missing-descriptor
+contracts remain unchanged. In US-002, the Mock environment has no avatar
+media transport, so the reviewed unavailable-capability branch shows the
+`photo_library` icon and current avatar-editing message.
+
+The source-render check used local Flutter 3.44.7 / Dart 3.12.2 at 390 x 844,
+DPR 1.0, with `--concurrency=1`; the only selected test cases were DS-004,
+DS-005, US-002 and `M3.3 secondary flows`. The latter's first affected capture
+was dynamic detail; after its baseline update, its remaining captures also
+completed. All four intentionally failed against the old Mac baselines before
+refresh; the diagnostics are retained at
+`artifacts/release/ci-golden-isolation-34711980135-20260913/macos-targeted-20260913/`.
+No comparator tolerance, test logic, font, or unrelated baseline changed.

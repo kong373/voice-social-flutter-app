@@ -228,3 +228,31 @@ Hubble's 14/14 independent APPROVE and input hashes;
 `runtime-update.log`, the five strict logs, and per-phase resource logs retain
 the actual runs. `terminal-result.json` records the exact distinct test set;
 `container-stop.log` separately records the shutdown status.
+
+## Controlled avatar and profile-capability refresh (2026-09-13)
+
+The app source is `4e78573f5fd00fffbe70c9ed274b7c31a7342fa8`, including
+`1bc3c8d` canonical dynamic-author projection and `2a7aff0` controlled profile
+avatar editing. The isolated CI wrapper is `1f9bb9f7fcc14abe778a69839eb5045df0fc2601`;
+it does not change product source. Four Linux baselines were refreshed from
+the actual Flutter 3.44.7 / Dart 3.12.2 Linux renders at 390 x 844, DPR 1.0:
+
+- `m3_3_all/ds-004_390x844.png`
+- `m3_3_all/ds-005_390x844.png`
+- `m3_3_dynamic_detail_390x844.png`
+- `m3_3_all/us-002_390x844.png`
+
+The dynamic Mock authors and comments intentionally have no canonical avatar
+descriptor. Their `UserAvatarView` path therefore renders the secure neutral
+fallback; this refresh does not invent a PRESET mapping and does not restore
+the old `RuntimeAvatar` or URL fallback. The positive descriptor projection and
+missing-descriptor behavior remain covered by their contract tests. US-002
+uses the current Mock capability branch, whose unavailable transport renders
+the reviewed `photo_library` icon and avatar-editing message.
+
+The matching four macOS PNGs are refreshed separately from their own macOS
+renders; neither platform copies the other platform's bytes. The targeted
+failure diagnostics and review record are retained under
+`artifacts/release/ci-golden-isolation-34711980135-20260913/`. Comparator
+tolerances, test logic, fonts, viewport and the remaining baselines are
+unchanged.
