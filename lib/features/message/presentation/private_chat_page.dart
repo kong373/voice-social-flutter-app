@@ -1,5 +1,18 @@
 part of 'message_pages.dart';
 
+enum _PrivateLoadOrigin { ordinary, periodic, realtime }
+
+enum _PrivateLoadPhase { head, continuation, read }
+
+class _PrivateRefreshFlight {
+  _PrivateRefreshFlight(this.origin);
+
+  final _PrivateLoadOrigin origin;
+  _PrivateLoadPhase phase = _PrivateLoadPhase.head;
+  late Future<void> operation;
+  bool abandoned = false;
+}
+
 class PrivateChatPage extends StatefulWidget {
   const PrivateChatPage({required this.conversation, super.key});
 
@@ -26,7 +39,8 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   String? _pendingSendContent;
   ImAuthoritativeRefreshBus? _refreshBus;
   ImAuthoritativeRefreshSubscription? _refreshSubscription;
-  Future<void>? _refreshFlight;
+  _PrivateRefreshFlight? _refreshFlight;
+  _PrivateRefreshFlight? _abandonedPeriodicHead;
   Timer? _syncTimer;
   AppDependencies? _dependencies;
   ModalRoute<void>? _route;
@@ -396,9 +410,15 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     // IM hints remain the fast path. HTTP also repairs missed hints and works
     // when realtime delivery is unavailable; it is not an IM delivery receipt.
     // Leave time for the authoritative response and rendering within the
-    // five-second foreground fallback budget. Requests still run single-flight.
+    // five-second foreground fallback budget. Ordinary refreshes remain
+    // single-flight; a realtime hint may abandon one periodic head.
     _syncTimer = Timer(const Duration(seconds: 2), () {
-      if (_checkAccount() && _canAutoSync) _load(showLoading: false);
+      final ImCorrelationTrace trace = ImCorrelationTrace.active;
+      trace.runWithoutContext<void>(() {
+        if (_checkAccount() && _canAutoSync) {
+          _load(showLoading: false, origin: _PrivateLoadOrigin.periodic);
+        }
+      });
     });
   }
 
@@ -409,10 +429,13 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       flight: _refreshFlight != null,
       action: ImCorrelationTracePageAction.entered,
     );
-    return _load(showLoading: false);
+    return _load(showLoading: false, origin: _PrivateLoadOrigin.realtime);
   }
 
-  Future<void> _load({bool showLoading = true}) {
+  Future<void> _load({
+    bool showLoading = true,
+    _PrivateLoadOrigin origin = _PrivateLoadOrigin.ordinary,
+  }) {
     if (!_checkAccount() || !_active || !_conversation.available) {
       ImCorrelationTrace.active.pageHandler(
         active: _active,
@@ -421,8 +444,25 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       );
       return Future<void>.value();
     }
-    final Future<void>? active = _refreshFlight;
+    final _PrivateRefreshFlight? active = _refreshFlight;
     if (active != null) {
+      // A validated realtime hint may bypass exactly one lower-priority head.
+      // The old transport is left to finish, but requestId makes its result
+      // non-current before a new accepted flight starts.
+      if (origin == _PrivateLoadOrigin.realtime &&
+          active.origin == _PrivateLoadOrigin.periodic &&
+          active.phase == _PrivateLoadPhase.head &&
+          _abandonedPeriodicHead == null &&
+          _repository is PagedPrivateMessageRepository) {
+        _syncTimer?.cancel();
+        _loadRequestId += 1;
+        _refreshAgain = false;
+        _queuedRefreshTrace = null;
+        active.abandoned = true;
+        _abandonedPeriodicHead = active;
+        _refreshFlight = null;
+        return _load(showLoading: false, origin: origin);
+      }
       if (_repository is PagedPrivateMessageRepository) {
         _refreshAgain = true;
         final ImCorrelationTraceContext? context =
@@ -434,14 +474,22 @@ class _PrivateChatPageState extends State<PrivateChatPage>
           action: ImCorrelationTracePageAction.queued,
         );
       }
-      return active;
+      return active.operation;
     }
     _syncTimer?.cancel();
-    final Future<void> operation = _performLoad(showLoading: showLoading);
-    _refreshFlight = operation;
+    final _PrivateRefreshFlight flight = _PrivateRefreshFlight(origin);
+    final Future<void> operation = _performLoad(
+      showLoading: showLoading,
+      flight: flight,
+    );
+    flight.operation = operation;
+    _refreshFlight = flight;
     if (_repository is PagedPrivateMessageRepository) _scheduleSync();
     void completed() {
-      if (identical(_refreshFlight, operation)) {
+      if (flight.abandoned && identical(_abandonedPeriodicHead, flight)) {
+        _abandonedPeriodicHead = null;
+      }
+      if (identical(_refreshFlight, flight)) {
         _refreshFlight = null;
         if (mounted && _refreshAgain && _canAutoSync) {
           final ImCorrelationTraceContext? queuedTrace = _queuedRefreshTrace;
@@ -491,7 +539,10 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     super.dispose();
   }
 
-  Future<void> _performLoad({required bool showLoading}) async {
+  Future<void> _performLoad({
+    required bool showLoading,
+    required _PrivateRefreshFlight flight,
+  }) async {
     if (!mounted) {
       return;
     }
@@ -507,7 +558,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     }
     try {
       if (repository is PagedPrivateMessageRepository) {
-        await _performPagedLoad(repository, requestId);
+        await _performPagedLoad(repository, requestId, flight);
         return;
       }
       final Set<String> historyBoundary =
@@ -571,7 +622,9 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       });
       if (hasNewMessages && followLatest) _scrollToEnd();
     } catch (error) {
-      if (!_checkAccount() || conversationEpoch != _conversationEpoch) {
+      if (!_checkAccount() ||
+          conversationEpoch != _conversationEpoch ||
+          requestId != _loadRequestId) {
         return;
       }
       final denial = _MessageReadDenial.from(error);
@@ -599,6 +652,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   Future<void> _performPagedLoad(
     PagedPrivateMessageRepository repository,
     int requestId,
+    _PrivateRefreshFlight flight,
   ) async {
     bool current() =>
         _active &&
@@ -607,6 +661,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
         (_dependencies!.sessionManager.session?.userId ?? 0) == _accountId;
     // Always start at the head, never at the old receipt cursor. Publish this
     // response before any lower-priority work, under the same visibility lease.
+    flight.phase = _PrivateLoadPhase.head;
     final newest = await repository.fetchVisiblePrivateMessagePage(
       _conversation,
       isCurrent: current,
@@ -652,9 +707,10 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     }
     // Guarantee bounded progress even when each head takes longer than the
     // polling interval. A due head must not indefinitely starve gap/receipt
-    // work. One head + at most one old page per turn, all requests serialized;
-    // the queued next turn still starts at the head before any old page.
+    // work. Each accepted flight has one head + at most one old page; a
+    // priority handoff can leave one invalidated periodic head transport.
     if ((_catchupCursor != null || _readScanCursor != null) && current()) {
+      flight.phase = _PrivateLoadPhase.continuation;
       final isGap = _catchupCursor != null;
       final cursor = _catchupCursor ?? _readScanCursor!;
       final seen = isGap ? _gapCursors : _readScanCursors;
@@ -690,6 +746,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     // A one-page newest response is not proof that older incoming rows have
     // been loaded. Only acknowledge after completing history, while visible.
     if (_historyComplete && _catchupCursor == null && current()) {
+      flight.phase = _PrivateLoadPhase.read;
       await repository.markVisiblePrivateMessagesRead(
         _conversation,
         isCurrent: current,

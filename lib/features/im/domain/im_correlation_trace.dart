@@ -100,6 +100,11 @@ class ImCorrelationTrace {
     );
   }
 
+  /// Runs an ordinary periodic refresh without inheriting a provider-hint
+  /// context from the code that scheduled its timer.
+  T runWithoutContext<T>(T Function() action) =>
+      runZoned<T>(action, zoneValues: <Object, Object?>{_zoneKey: null});
+
   void sdkCallback() =>
       _record(stage: 'sdk_callback', event: 'trusted_custom_callback');
 

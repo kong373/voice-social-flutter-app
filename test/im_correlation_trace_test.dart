@@ -8,6 +8,7 @@ import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/features/im/domain/im_authoritative_refresh_bus.dart';
 import 'package:voice_social_app/features/im/domain/im_correlation_trace.dart';
@@ -509,6 +510,184 @@ void main() {
     );
   });
 
+  testWidgets(
+    'prioritizes a valid hint over a periodic head and isolates its trace',
+    (tester) async {
+      final List<String> logs = <String>[];
+      final ImCorrelationTrace trace = ImCorrelationTrace.forTest(
+        enabled: true,
+        sink: logs.add,
+      );
+      final ImAuthoritativeRefreshBus bus = ImAuthoritativeRefreshBus(
+        correlationTrace: trace,
+      );
+      final _PriorityTraceRepository repository = _PriorityTraceRepository();
+      final AppDependencies dependencies = AppDependencies.forTestEnvironment(
+        environment: const AppEnvironment(
+          backendMode: BackendMode.live,
+          apiBaseUrl: 'http://127.0.0.1:28080/',
+          clientType: 'test',
+          clientInnerVersion: '1',
+          oauthClientId: 'public-test-client',
+          realtimeEndpoint: '',
+          allowInsecureHttp: true,
+        ),
+        messageRepository: repository,
+        imAuthoritativeRefreshBus: bus,
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox());
+        bus.dispose();
+        dependencies.dispose();
+      });
+      await dependencies.sessionManager.save(_authSession(DateTime.now()));
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: PrivateChatPage(conversation: _conversation()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('initial-message'), findsOneWidget);
+
+      const ImRefreshHint seedHint = ImRefreshHint(
+        messageId: 'message-periodic-seed',
+        eventVersion: 31,
+      );
+      await trace.runForValidatedHint(seedHint, () => bus.publish(seedHint));
+      await tester.pumpAndSettle();
+      expect(repository.pageCalls, 2);
+      logs.clear();
+
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+      expect(repository.periodicHeadStarted, isTrue);
+
+      const ImRefreshHint realtimeHint = ImRefreshHint(
+        messageId: 'message-realtime-priority',
+        eventVersion: 32,
+      );
+      final Future<ImRefreshDispatchResult> dispatch = trace
+          .runForValidatedHint(realtimeHint, () => bus.publish(realtimeHint));
+      await tester.pump();
+      expect(
+        repository.realtimeHeadStarted,
+        isTrue,
+        reason: 'a valid hint must not wait for the periodic head',
+      );
+      await dispatch;
+      await tester.pumpAndSettle();
+
+      expect(find.text('realtime-message'), findsOneWidget);
+      expect(repository.readMarks, 3);
+      final String seedFingerprint = ImCorrelationTrace.fingerprintFor(
+        seedHint.messageId,
+      );
+      final String realtimeFingerprint = ImCorrelationTrace.fingerprintFor(
+        realtimeHint.messageId,
+      );
+      expect(logs, everyElement(isNot(contains('fp=$seedFingerprint'))));
+      expect(
+        logs,
+        anyElement(
+          allOf(
+            contains('stage=page_load'),
+            contains('event=start'),
+            contains('fp=$realtimeFingerprint'),
+          ),
+        ),
+      );
+
+      repository.periodicHead.complete(_batch('stale-periodic-message'));
+      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(find.text('realtime-message'), findsOneWidget);
+      expect(find.text('stale-periodic-message'), findsNothing);
+      expect(repository.readMarks, 3);
+    },
+  );
+
+  testWidgets(
+    'a preempted periodic denial cannot revoke the realtime conversation',
+    (tester) async {
+      final ImCorrelationTrace trace = ImCorrelationTrace.forTest(
+        enabled: false,
+        sink: (_) {},
+      );
+      final ImAuthoritativeRefreshBus bus = ImAuthoritativeRefreshBus(
+        correlationTrace: trace,
+      );
+      final _PriorityTraceRepository repository = _PriorityTraceRepository();
+      final AppDependencies dependencies = AppDependencies.forTestEnvironment(
+        environment: const AppEnvironment(
+          backendMode: BackendMode.live,
+          apiBaseUrl: 'http://127.0.0.1:28080/',
+          clientType: 'test',
+          clientInnerVersion: '1',
+          oauthClientId: 'public-test-client',
+          realtimeEndpoint: '',
+          allowInsecureHttp: true,
+        ),
+        messageRepository: repository,
+        imAuthoritativeRefreshBus: bus,
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox());
+        bus.dispose();
+        dependencies.dispose();
+      });
+      await dependencies.sessionManager.save(_authSession(DateTime.now()));
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            theme: AppTheme.dark(),
+            home: PrivateChatPage(conversation: _conversation()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      const ImRefreshHint seedHint = ImRefreshHint(
+        messageId: 'message-periodic-denial-seed',
+        eventVersion: 41,
+      );
+      await bus.publish(seedHint);
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+      expect(repository.periodicHeadStarted, isTrue);
+
+      const ImRefreshHint realtimeHint = ImRefreshHint(
+        messageId: 'message-denial-priority',
+        eventVersion: 42,
+      );
+      final Future<ImRefreshDispatchResult> dispatch = bus.publish(
+        realtimeHint,
+      );
+      await tester.pump();
+      expect(repository.realtimeHeadStarted, isTrue);
+      await dispatch;
+      await tester.pumpAndSettle();
+      expect(find.text('realtime-message'), findsOneWidget);
+
+      repository.periodicHead.completeError(
+        const ApiException(
+          kind: ApiFailureKind.forbidden,
+          httpStatus: 403,
+          code: 40322,
+          message: 'stale periodic denial',
+        ),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(find.text('realtime-message'), findsOneWidget);
+    },
+  );
+
   testWidgets('does not emit a first-frame marker after the page is covered', (
     WidgetTester tester,
   ) async {
@@ -610,6 +789,60 @@ class _TraceCredentialRepository extends ImSessionCredentialRepository {
 
   @override
   Future<ImSessionCredentials> fetch() async => credentials;
+}
+
+class _PriorityTraceRepository extends MockMessageRepository
+    implements PagedPrivateMessageRepository {
+  int pageCalls = 0;
+  bool periodicHeadStarted = false;
+  bool realtimeHeadStarted = false;
+  int readMarks = 0;
+  final Completer<PrivateMessageSyncBatch> periodicHead =
+      Completer<PrivateMessageSyncBatch>();
+
+  @override
+  Future<PrivateMessageSyncBatch> fetchVisiblePrivateMessages(
+    ConversationSummary conversation, {
+    required bool Function() isCurrent,
+    Set<String> knownMessageIds = const <String>{},
+    String? resumeCursor,
+  }) async => _batch('fallback-message');
+
+  @override
+  Future<PrivateMessageSyncBatch> fetchVisiblePrivateMessagePage(
+    ConversationSummary conversation, {
+    required bool Function() isCurrent,
+    String? cursor,
+  }) {
+    pageCalls += 1;
+    return switch (pageCalls) {
+      1 => Future<PrivateMessageSyncBatch>.value(_batch('initial-message')),
+      2 => Future<PrivateMessageSyncBatch>.value(_batch('seed-message')),
+      3 => _startPeriodicHead(),
+      4 => _startRealtimeHead(),
+      _ => Future<PrivateMessageSyncBatch>.error(
+        StateError('unexpected priority page call $pageCalls'),
+      ),
+    };
+  }
+
+  Future<PrivateMessageSyncBatch> _startPeriodicHead() {
+    periodicHeadStarted = true;
+    return periodicHead.future;
+  }
+
+  Future<PrivateMessageSyncBatch> _startRealtimeHead() {
+    realtimeHeadStarted = true;
+    return Future<PrivateMessageSyncBatch>.value(_batch('realtime-message'));
+  }
+
+  @override
+  Future<void> markVisiblePrivateMessagesRead(
+    ConversationSummary conversation, {
+    required bool Function() isCurrent,
+  }) async {
+    if (isCurrent()) readMarks += 1;
+  }
 }
 
 class _PagedTraceRepository extends MockMessageRepository
