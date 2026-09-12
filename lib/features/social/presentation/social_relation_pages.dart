@@ -143,25 +143,56 @@ class VisitorRecordsPage extends StatefulWidget {
   State<VisitorRecordsPage> createState() => _VisitorRecordsPageState();
 }
 
-class _VisitorRecordsPageState extends State<VisitorRecordsPage> {
+class _VisitorRecordsPageState extends State<VisitorRecordsPage>
+    with ProfileDisplayReadFence<VisitorRecordsPage> {
   VisitorRecordType _type = VisitorRecordType.viewedMe;
   List<SocialUser>? _items;
+  String? _error;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_items == null) {
+    if (!profileDisplayReadStarted && profileDisplayReadAllowed) {
       _load();
     }
   }
 
   Future<void> _load() async {
-    final SocialPage<SocialUser> value = await AppDependencyScope.of(
-      context,
-    ).socialRepository.fetchVisitors(type: _type, page: 1, pageSize: 50);
-    if (mounted) {
-      setState(() => _items = value.items);
+    if (!profileDisplayReadAllowed) return;
+    final ticket = beginProfileDisplayRead();
+    final type = _type;
+    try {
+      final value = await profileDisplayDependencies.socialRepository
+          .fetchVisitors(type: type, page: 1, pageSize: 50);
+      if (acceptsProfileDisplayRead(ticket)) {
+        setState(() {
+          _items = value.items;
+          _error = null;
+        });
+      }
+    } catch (error) {
+      if (acceptsProfileDisplayRead(ticket)) {
+        setState(() => _error = _messageFor(error));
+      }
     }
+  }
+
+  @override
+  void clearProfileDisplay() {
+    _items = null;
+    _error = null;
+  }
+
+  @override
+  Future<void> reloadProfileDisplay() => _load();
+
+  Future<void> _openProfile(int userId) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => PublicProfilePage(userId: userId),
+      ),
+    );
+    if (mounted) await _load();
   }
 
   @override
@@ -184,6 +215,7 @@ class _VisitorRecordsPageState extends State<VisitorRecordsPage> {
                   setState(() {
                     _type = value;
                     _items = null;
+                    _error = null;
                   });
                   _load();
                 },
@@ -191,7 +223,9 @@ class _VisitorRecordsPageState extends State<VisitorRecordsPage> {
             ),
           ),
           Expanded(
-            child: _items == null
+            child: _error != null
+                ? _ErrorState(message: _error!, onRetry: _load)
+                : _items == null
                 ? const Center(child: CircularProgressIndicator())
                 : _items!.isEmpty
                 ? const Center(child: Text('暂无访客记录'))
@@ -210,14 +244,8 @@ class _VisitorRecordsPageState extends State<VisitorRecordsPage> {
                               _OxygenUserRow(
                                 user: _items![index],
                                 subtitle: '访问 ${_items![index].visitCount} 次',
-                                onTap: () => Navigator.of(context).push<void>(
-                                  MaterialPageRoute<void>(
-                                    builder: (BuildContext context) =>
-                                        PublicProfilePage(
-                                          userId: _items![index].userId,
-                                        ),
-                                  ),
-                                ),
+                                onTap: () =>
+                                    _openProfile(_items![index].userId),
                               ),
                               if (index < _items!.length - 1)
                                 const Divider(height: 1),
