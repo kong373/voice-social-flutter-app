@@ -135,7 +135,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   bool get _canSyncAuthority =>
       mounted &&
       _foreground &&
-      _routeVisible &&
+      (_routeVisible || _managementOverlayDepth > 0) &&
       _authorityRepository != null &&
       _currentSession &&
       (_authoritativeRole == null || _canManage);
@@ -265,6 +265,11 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         _authorityFlight = null;
         _authorityFlightGeneration = null;
       }
+      if (!_currentSession ||
+          !_foreground ||
+          (!_routeVisible && _managementOverlayDepth == 0)) {
+        throw StateError('Room authority read was invalidated');
+      }
       return _readAuthority();
     }
     final Future<RoomAuthorityProjection> flight =
@@ -296,7 +301,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       _currentSession &&
       generation == _queueGeneration &&
       _foreground &&
-      _routeVisible;
+      (_routeVisible || _managementOverlayDepth > 0);
 
   void _validateAuthorityProjection(RoomAuthorityProjection projection) {
     if (projection.snapshot.roomId != configuration.roomId ||
@@ -368,7 +373,12 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     });
   }
 
-  void _beginManagementOverlay() => _managementOverlayDepth++;
+  void _beginManagementOverlay() {
+    _managementOverlayDepth++;
+    if (_managementOverlayDepth == 1 && _authorityRepository != null) {
+      unawaited(_refreshQueue());
+    }
+  }
 
   void _endManagementOverlay() {
     if (_managementOverlayDepth > 0) _managementOverlayDepth--;
@@ -376,11 +386,23 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
 
   void _dismissManagementOverlays() {
     if (!mounted || _managementOverlayDepth == 0) return;
-    Navigator.of(context).popUntil(
-      (Route<dynamic> route) =>
-          route.settings.name != _managementOverlayRouteName,
-    );
     _managementOverlayDepth = 0;
+    void popNamedOverlays() {
+      if (!mounted) return;
+      Navigator.of(context).popUntil(
+        (Route<dynamic> route) =>
+            route.settings.name != _managementOverlayRouteName,
+      );
+    }
+
+    popNamedOverlays();
+    // A management action can open the next sheet while the previous sheet's
+    // pop transition is still being dispatched. Re-run the named-route fence
+    // on the next frame so that queued management overlays cannot reappear
+    // after the authority downgrade has already invalidated this page.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      popNamedOverlays();
+    });
   }
 
   // One visible timer drives both authority and queue reads. Authority is

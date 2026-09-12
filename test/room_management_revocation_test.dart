@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:voice_social_app/app/app_dependencies.dart';
+import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
+import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/room/data/mock_room_operations_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/domain/room_operations_models.dart';
@@ -158,7 +161,87 @@ void main() {
     expect(repository.resolveWrites, 1);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'management picker closes on authority loss without sending its old command',
+    (tester) async {
+      final repository = _Repository();
+      await _open(tester, repository);
+      await tester.scrollUntilVisible(
+        find.text('阿岚'),
+        150,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(find.text('阿岚'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('安排上麦'));
+      await tester.pumpAndSettle();
+      expect(find.text('安排 阿岚 上麦'), findsOneWidget);
+
+      final readsBeforeRoleDrop = repository.authorityReads;
+      repository.role = RoomRole.listener;
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+
+      expect(repository.authorityRoles.last, RoomRole.listener);
+      expect(repository.authorityReads, greaterThan(readsBeforeRoleDrop));
+      expect(find.text('安排 阿岚 上麦'), findsNothing);
+      expect(repository.assignWrites, 0);
+      expect(find.text('房间治理权限已变化，请退出后重新打开'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'stale authority flight does not restart after session identity changes',
+    (tester) async {
+      final dependencies = AppDependencies.mock();
+      addTearDown(dependencies.dispose);
+      final repository = _Repository();
+      final delayedAuthority = Completer<RoomAuthorityProjection>();
+      repository.nextAuthorityRead = delayedAuthority;
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            home: RoomManagementPage(
+              roomId: 'room-1',
+              currentUserId: 20004,
+              currentRole: RoomRole.moderator,
+              coordinationMode: MicCoordinationMode.approval,
+              seats: repository.seats,
+              repositoryOverride: repository,
+              authorityRepositoryOverride: repository,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(repository.authorityReads, 1);
+
+      await dependencies.sessionManager.save(_testSession(20005));
+      await tester.pump();
+      expect(find.text('账号或房间会话已变化，请退出后重新打开'), findsOneWidget);
+      await tester.tap(find.byTooltip('刷新权威状态'));
+      await tester.pump();
+      expect(repository.authorityReads, 1);
+
+      delayedAuthority.complete(repository.projection());
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(repository.authorityReads, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 }
+
+AuthSession _testSession(int userId) => AuthSession(
+  accessToken: 'test-session',
+  tokenType: 'Bearer',
+  expiresAt: DateTime.utc(2030),
+  userId: userId,
+  mobile: '',
+  roles: '',
+);
 
 Future<void> _open(WidgetTester tester, _Repository repository) async {
   await tester.pumpWidget(
@@ -184,10 +267,14 @@ class _Repository extends MockRoomOperationsRepository
   Object? queueError;
   Completer<List<MicAccessRequest>>? nextQueueRead;
   int queueReads = 0;
+  Completer<RoomAuthorityProjection>? nextAuthorityRead;
+  int authorityReads = 0;
+  final List<RoomRole> authorityRoles = <RoomRole>[];
   Object? resolveError;
   int resolveWrites = 0;
   Object? lockError;
   int lockWrites = 0;
+  int assignWrites = 0;
 
   List<MicSeat> seats = const <MicSeat>[
     MicSeat(number: 2, backendIndex: 2, state: MicSeatState.available),
@@ -225,10 +312,31 @@ class _Repository extends MockRoomOperationsRepository
   }
 
   @override
+  Future<void> assignUserToMic({
+    required String roomId,
+    required int userId,
+    required int backendMicIndex,
+  }) async {
+    assignWrites++;
+  }
+
+  @override
   Future<RoomAuthorityProjection> fetchRoomAuthority({
     required String roomId,
     required int currentUserId,
   }) async {
+    authorityReads++;
+    authorityRoles.add(role);
+    final delayed = nextAuthorityRead;
+    nextAuthorityRead = null;
+    if (delayed != null) return delayed.future;
+    return projection(roomId: roomId, currentUserId: currentUserId);
+  }
+
+  RoomAuthorityProjection projection({
+    String roomId = 'room-1',
+    int currentUserId = 20004,
+  }) {
     return RoomAuthorityProjection(
       snapshot: RoomSnapshot(
         roomId: roomId,
