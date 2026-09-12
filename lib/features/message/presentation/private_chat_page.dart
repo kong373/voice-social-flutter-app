@@ -735,10 +735,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
         ImCorrelationTrace.currentContext;
     trace.pagePublish(followLatest: followLatest);
     if (trace.enabled && traceContext != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        trace.runInContext(traceContext, trace.pageFrame);
-      });
+      _scheduleTraceFirstFrame(trace, traceContext);
     }
     if (shouldScroll) {
       _scrollToEnd();
@@ -758,6 +755,34 @@ class _PrivateChatPageState extends State<PrivateChatPage>
         }
       });
     }
+  }
+
+  void _scheduleTraceFirstFrame(
+    ImCorrelationTrace trace,
+    ImCorrelationTraceContext traceContext,
+  ) {
+    final int frameRequestId = _loadRequestId;
+    final int frameConversationEpoch = _conversationEpoch;
+    final int? frameAccountId = _accountId;
+    final int? frameAccountGeneration = _accountGeneration;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final AppDependencies? dependencies = _dependencies;
+      if (!mounted ||
+          !_active ||
+          _accountChanged ||
+          frameRequestId != _loadRequestId ||
+          frameConversationEpoch != _conversationEpoch ||
+          frameAccountId != _accountId ||
+          frameAccountGeneration != _accountGeneration ||
+          dependencies == null ||
+          (dependencies.sessionManager.session?.userId ?? 0) !=
+              (frameAccountId ?? 0) ||
+          dependencies.sessionManager.identityGeneration !=
+              frameAccountGeneration) {
+        return;
+      }
+      trace.runInContext(traceContext, trace.pageFrame);
+    });
   }
 
   Future<void> _send() async {

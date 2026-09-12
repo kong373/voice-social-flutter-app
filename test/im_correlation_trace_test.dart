@@ -6,12 +6,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/app/app_environment.dart';
+import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/features/im/domain/im_authoritative_refresh_bus.dart';
 import 'package:voice_social_app/features/im/domain/im_correlation_trace.dart';
 import 'package:voice_social_app/features/im/domain/im_refresh_hint.dart';
+import 'package:voice_social_app/features/im/application/im_session_coordinator.dart';
 import 'package:voice_social_app/features/im/domain/im_session_credentials.dart';
+import 'package:voice_social_app/features/im/domain/im_session_repository.dart';
 import 'package:voice_social_app/features/im/infrastructure/tencent_im_session_adapter.dart';
 import 'package:voice_social_app/features/message/data/mock_message_repository.dart';
 import 'package:voice_social_app/features/message/domain/message_models.dart';
@@ -201,6 +204,76 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(logs, isEmpty);
   });
+
+  test(
+    'keeps correlation when a real adapter stream reaches the coordinator bus',
+    () async {
+      final List<String> logs = <String>[];
+      final ImCorrelationTrace trace = ImCorrelationTrace.forTest(
+        enabled: true,
+        sink: logs.add,
+      );
+      final _TraceSdk sdk = _TraceSdk();
+      final DateTime now = DateTime.utc(2026, 9, 12, 12);
+      final TencentImSessionAdapter adapter = TencentImSessionAdapter(
+        sdkClient: sdk,
+        operationTimeout: const Duration(milliseconds: 100),
+        now: () => now,
+        logger: (_) {},
+        observabilityLogger: (_) {},
+        correlationTrace: trace,
+      );
+      final ImAuthoritativeRefreshBus bus = ImAuthoritativeRefreshBus(
+        correlationTrace: trace,
+      );
+      final Completer<void> handled = Completer<void>();
+      bus.subscribe((ImAuthoritativeRefreshRequest request) async {
+        if (!handled.isCompleted) handled.complete();
+      });
+      final ImSessionCoordinator coordinator = ImSessionCoordinator(
+        adapter: adapter,
+        credentialsRepository: _TraceCredentialRepository(_credentials(now)),
+        authoritativeRefreshBus: bus,
+        now: () => now,
+        correlationTrace: trace,
+      );
+      addTearDown(() async {
+        coordinator.dispose();
+        bus.dispose();
+        await adapter.dispose();
+        await sdk.dispose();
+      });
+      await coordinator.ensureAuthenticated(_authSession(now));
+      logs.clear();
+
+      sdk.emit(
+        TencentImSdkEvent.customElement(
+          data: '{"messageId":"message-stream-chain","eventVersion":18}',
+          trustedFirstParty: true,
+          senderUserId: 'administrator',
+          isSelf: false,
+        ),
+      );
+      await handled.future;
+      await Future<void>.delayed(Duration.zero);
+
+      final String fingerprint = ImCorrelationTrace.fingerprintFor(
+        'message-stream-chain',
+      );
+      expect(
+        logs,
+        anyElement(
+          allOf(contains('stage=adapter_parse'), contains('fp=$fingerprint')),
+        ),
+      );
+      expect(
+        logs,
+        anyElement(
+          allOf(contains('stage=bus_dispatch'), contains('fp=$fingerprint')),
+        ),
+      );
+    },
+  );
 
   test(
     'bus traces only a validated context and preserves dispatch result',
@@ -435,6 +508,74 @@ void main() {
       ),
     );
   });
+
+  testWidgets('does not emit a first-frame marker after the page is covered', (
+    WidgetTester tester,
+  ) async {
+    final List<String> logs = <String>[];
+    final ImCorrelationTrace trace = ImCorrelationTrace.forTest(
+      enabled: true,
+      sink: logs.add,
+    );
+    final ImAuthoritativeRefreshBus bus = ImAuthoritativeRefreshBus(
+      correlationTrace: trace,
+    );
+    final _PagedTraceRepository repository = _PagedTraceRepository();
+    final AppDependencies dependencies = AppDependencies.forTestEnvironment(
+      environment: const AppEnvironment(
+        backendMode: BackendMode.live,
+        apiBaseUrl: 'http://127.0.0.1:28080/',
+        clientType: 'test',
+        clientInnerVersion: '1',
+        oauthClientId: 'public-test-client',
+        realtimeEndpoint: '',
+        allowInsecureHttp: true,
+      ),
+      messageRepository: repository,
+      imAuthoritativeRefreshBus: bus,
+    );
+    addTearDown(() {
+      bus.dispose();
+      dependencies.imSessionCoordinator.dispose();
+    });
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: dependencies,
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: PrivateChatPage(conversation: _conversation()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    logs.clear();
+
+    const ImRefreshHint hint = ImRefreshHint(
+      messageId: 'message-covered-before-frame',
+      eventVersion: 19,
+    );
+    final Future<ImRefreshDispatchResult> dispatch = trace.runForValidatedHint(
+      hint,
+      () => bus.publish(hint),
+    );
+    await tester.pump();
+    expect(repository.pageCalls, 2);
+
+    bool covered = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      covered = true;
+      Navigator.of(
+        tester.element(find.byType(PrivateChatPage)),
+      ).push(MaterialPageRoute<void>(builder: (_) => const SizedBox()));
+    });
+    repository.releaseRefresh.complete(_batch('covered-message'));
+    await tester.pump();
+    await tester.pump();
+    await dispatch;
+    expect(covered, isTrue);
+    expect(logs, anyElement(contains('stage=page_publish')));
+    expect(logs, isNot(anyElement(contains('stage=page_frame'))));
+  });
 }
 
 class _TraceSdk implements TencentImSdkClient, TencentImSdkEventSource {
@@ -460,6 +601,15 @@ class _TraceSdk implements TencentImSdkClient, TencentImSdkEventSource {
   void emit(TencentImSdkEvent event) => _events.add(event);
 
   Future<void> dispose() => _events.close();
+}
+
+class _TraceCredentialRepository extends ImSessionCredentialRepository {
+  _TraceCredentialRepository(this.credentials);
+
+  final ImSessionCredentials credentials;
+
+  @override
+  Future<ImSessionCredentials> fetch() async => credentials;
 }
 
 class _PagedTraceRepository extends MockMessageRepository
@@ -529,4 +679,16 @@ ImSessionCredentials _credentials(DateTime now) => ImSessionCredentials(
   ttlSeconds: 3600,
   imStatus: ImSessionCredentials.readyStatus,
   systemAccount: 'administrator',
+);
+
+AuthSession _authSession(DateTime now) => AuthSession(
+  accessToken: 'access-token',
+  tokenType: 'Bearer',
+  expiresAt: now.add(const Duration(hours: 1)),
+  refreshToken: 'refresh-token',
+  refreshExpiresAt: now.add(const Duration(hours: 2)),
+  deviceId: 'device-1',
+  userId: 123,
+  mobile: '13800138000',
+  roles: 'USER',
 );

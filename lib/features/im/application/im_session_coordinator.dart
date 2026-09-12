@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/im/domain/im_authoritative_refresh_bus.dart';
+import 'package:voice_social_app/features/im/domain/im_correlation_trace.dart';
 import 'package:voice_social_app/features/im/domain/im_refresh_hint.dart';
 import 'package:voice_social_app/features/im/domain/im_session_adapter.dart';
 import 'package:voice_social_app/features/im/domain/im_session_credentials.dart';
@@ -21,10 +22,12 @@ class ImSessionCoordinator extends ChangeNotifier {
     required ImSessionCredentialRepository credentialsRepository,
     ImAuthoritativeRefreshBus? authoritativeRefreshBus,
     DateTime Function()? now,
+    ImCorrelationTrace? correlationTrace,
   }) : _adapter = adapter,
        _credentialsRepository = credentialsRepository,
        _authoritativeRefreshBus = authoritativeRefreshBus,
-       _now = now ?? DateTime.now {
+       _now = now ?? DateTime.now,
+       _correlationTrace = correlationTrace {
     _adapterSubscription = _adapter.states.listen((ImSessionState _) {
       if (!_disposed) {
         notifyListeners();
@@ -39,6 +42,7 @@ class ImSessionCoordinator extends ChangeNotifier {
   final ImSessionCredentialRepository _credentialsRepository;
   final ImAuthoritativeRefreshBus? _authoritativeRefreshBus;
   final DateTime Function() _now;
+  final ImCorrelationTrace? _correlationTrace;
   late final StreamSubscription<ImSessionState> _adapterSubscription;
   late final StreamSubscription<ImSessionEvent> _adapterEventSubscription;
 
@@ -204,14 +208,21 @@ class ImSessionCoordinator extends ChangeNotifier {
             return;
           }
           final int generation = _generation;
-          await bus.publish(
+          final ImCorrelationTrace trace = _trace;
+          await trace.runForValidatedHint(
             hint,
-            isCurrent: () => _isCurrent(session, generation),
+            () => bus.publish(
+              hint,
+              isCurrent: () => _isCurrent(session, generation),
+            ),
           );
         }
         return;
     }
   }
+
+  ImCorrelationTrace get _trace =>
+      _correlationTrace ?? ImCorrelationTrace.active;
 
   /// Invalidates all pending coordinator work and clears the provider session.
   /// Both logout and uninitialization are attempted so a native failure cannot
