@@ -620,7 +620,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
           ..addAll(mergedMessages);
         _loading = false;
       });
-      if (hasNewMessages && followLatest) _scrollToEnd();
+      if (hasNewMessages && followLatest) _scrollToEnd(animate: false);
     } catch (error) {
       if (!_checkAccount() ||
           conversationEpoch != _conversationEpoch ||
@@ -795,13 +795,22 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       _scheduleTraceFirstFrame(trace, traceContext);
     }
     if (shouldScroll) {
-      _scrollToEnd();
+      _scrollToEnd(animate: false);
     } else if (!followLatest &&
+        !_tailScrollPending &&
         previousExtent != null &&
         previousOffset != null) {
       // Prepending old history must not move a reader away from their anchor.
+      // A queued anchor cannot override a newer tail follow or a real drag.
+      final anchorGeneration = _tailScrollGeneration;
+      final anchorConversationEpoch = _conversationEpoch;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _scrollController.hasClients) {
+        if (_checkAccount() &&
+            _active &&
+            anchorGeneration == _tailScrollGeneration &&
+            anchorConversationEpoch == _conversationEpoch &&
+            !_tailScrollPending &&
+            _scrollController.hasClients) {
           final position = _scrollController.position;
           _scrollController.jumpTo(
             (previousOffset + position.maxScrollExtent - previousExtent).clamp(
@@ -946,23 +955,31 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       _visibility!.deny(denial, peer: _conversation.targetUserId);
   }
 
-  void _scrollToEnd() {
+  void _scrollToEnd({bool animate = true}) {
     final generation = ++_tailScrollGeneration;
     final conversationEpoch = _conversationEpoch;
     _tailScrollPending = true;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        if (!mounted ||
+        if (!_checkAccount() ||
             !_active ||
             generation != _tailScrollGeneration ||
             conversationEpoch != _conversationEpoch ||
             !_scrollController.hasClients)
           return;
-        await _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-        );
+        final target = _scrollController.position.maxScrollExtent;
+        if (animate) {
+          // Preserve the existing explicit-send interaction, including drag
+          // cancellation while its scroll is in progress.
+          await _scrollController.animateTo(
+            target,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+          );
+        } else {
+          // Following an incoming page needs no extra animated clipping phase.
+          _scrollController.jumpTo(target);
+        }
       } finally {
         if (generation == _tailScrollGeneration) _tailScrollPending = false;
       }

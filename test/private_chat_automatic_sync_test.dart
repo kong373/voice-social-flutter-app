@@ -110,6 +110,107 @@ void main() {
     });
   }
 
+  void useCompactViewport(WidgetTester tester) {
+    tester.view.devicePixelRatio = 2;
+    tester.view.physicalSize = const Size(750, 1334);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+  }
+
+  void expectFullyVisibleTail(WidgetTester tester, String content) {
+    final list = tester.widget<ListView>(find.byType(ListView));
+    final viewport = tester.getRect(find.byType(ListView));
+    final text = find.text(content);
+    expect(text, findsOneWidget);
+    final rect = tester.getRect(text);
+    expect(
+      list.controller!.position.extentAfter,
+      lessThanOrEqualTo(1),
+      reason: 'new tail must not wait for a scroll animation',
+    );
+    expect(rect.top, greaterThanOrEqualTo(viewport.top));
+    expect(rect.bottom, lessThanOrEqualTo(viewport.bottom));
+  }
+
+  testWidgets(
+    'tail follow exposes incoming text after layout without animation',
+    (tester) async {
+      useCompactViewport(tester);
+      final repository = _MediaViewportHistory();
+      for (var index = 0; index < 12; index++) {
+        repository.receive(index);
+      }
+      await showChat(tester, repository);
+      repository.receive(12);
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(); // Layout and post-layout correction; no 180ms wait.
+      await tester
+          .pump(); // Paint the corrected offset, without advancing time.
+      expectFullyVisibleTail(tester, _MediaViewportHistory.content('B', 12));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('tail follow is not overwritten by a receipt-only old page', (
+    tester,
+  ) async {
+    useCompactViewport(tester);
+    final repository = _TailContinuationHistory();
+    for (var index = 0; index < 12; index++) {
+      repository.messages.add(
+        repository._row(_message('old-own-$index').copyWithReadForTest(false)),
+      );
+    }
+    await showChat(tester, repository);
+    final position = tester
+        .widget<ListView>(find.byType(ListView))
+        .controller!
+        .position;
+    position.jumpTo(
+      position.maxScrollExtent - 40,
+    ); // Within the existing tail zone.
+    await tester.pump();
+    repository
+      ..receive(12)
+      ..withContinuation = true;
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump();
+    await tester.pump();
+    expect(repository.oldPageCalls, 1, reason: 'exercise a real continuation');
+    expect(renderedMessages(tester), hasLength(13));
+    expectFullyVisibleTail(tester, _MediaViewportHistory.content('B', 12));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('tail follow leaves a reader of older messages at their offset', (
+    tester,
+  ) async {
+    useCompactViewport(tester);
+    final repository = _MediaViewportHistory();
+    for (var index = 0; index < 12; index++) {
+      repository.receive(index);
+    }
+    await showChat(tester, repository);
+    await tester.drag(find.byType(ListView), const Offset(0, 250));
+    await tester.pumpAndSettle();
+    final position = tester
+        .widget<ListView>(find.byType(ListView))
+        .controller!
+        .position;
+    final offset = position.pixels;
+    expect(position.extentAfter, greaterThan(80));
+    repository.receive(12);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump();
+    await tester.pump();
+    expect(renderedMessages(tester), hasLength(13));
+    expect(position.pixels, closeTo(offset, 1));
+    expect(position.extentAfter, greaterThan(80));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     '375x667 private media chat follows latest own receipt across three rounds',
     (tester) async {
@@ -1139,6 +1240,41 @@ class _VisibleHistory extends _History
 
 // Reuse the existing history/send fixture with the real media composer and
 // Paged page-load branch. No media operation, external HTTP, or device is used.
+class _TailContinuationHistory extends _MediaViewportHistory {
+  bool withContinuation = false;
+  int oldPageCalls = 0;
+
+  @override
+  Future<PrivateMessageSyncBatch> fetchVisiblePrivateMessagePage(
+    ConversationSummary conversation, {
+    required bool Function() isCurrent,
+    String? cursor,
+  }) async {
+    if (!withContinuation) {
+      return super.fetchVisiblePrivateMessagePage(
+        conversation,
+        isCurrent: isCurrent,
+        cursor: cursor,
+      );
+    }
+    if (!isCurrent()) return const PrivateMessageSyncBatch([]);
+    pageCalls++;
+    if (cursor != null) {
+      expect(cursor, 'old-tail-page');
+      oldPageCalls++;
+      return PrivateMessageSyncBatch(
+        List.of(messages.take(messages.length - 3)),
+        conversationId: 'conversation-2',
+      );
+    }
+    return PrivateMessageSyncBatch(
+      messages.skip(messages.length - 3).toList(),
+      nextCursor: 'old-tail-page',
+      conversationId: 'conversation-2',
+    );
+  }
+}
+
 class _MediaViewportHistory extends _VisibleHistory
     implements MediaPrivateMessageRepository, PagedPrivateMessageRepository {
   final sent = <ChatMessage>[];
