@@ -26,6 +26,7 @@ UserAvatarDescriptor preset(String id) => UserAvatarDescriptor.fromBackendData({
   'reference': 'avatar-preset-$id',
 });
 const legacy = Text('LEGACY');
+const loading = Key('user-avatar-loading');
 const unavailable = Key('user-avatar-unavailable');
 void main() {
   testWidgets(
@@ -63,6 +64,28 @@ void main() {
     );
     expect(find.text('LEGACY'), findsOneWidget);
   });
+  testWidgets(
+    'uploaded avatar exposes loading semantics until controlled read completes',
+    (tester) async {
+      final bytes = await tester.runAsync(avatarPng);
+      final reply = Completer<MediaFakeResponse>();
+      final deps = await AvatarDependencies.create((_) => reply.future);
+      addTearDown(() => deps.close(tester));
+
+      await deps.show(tester, uploaded());
+      await tester.pump();
+      expect(deps.http.requests, hasLength(1));
+      expect(find.byKey(loading), findsOneWidget);
+      expect(find.byKey(unavailable), findsNothing);
+      expect(find.semantics.byLabel('头像加载中').evaluate(), hasLength(1));
+      expect(find.semantics.byLabel('头像不可用').evaluate(), isEmpty);
+
+      reply.complete(avatarResponse(bytes: bytes!));
+      await decoded(tester);
+      expect(find.semantics.byLabel('用户头像').evaluate(), hasLength(1));
+      expect(find.byKey(loading), findsNothing);
+    },
+  );
   testWidgets(
     'all six strict presets use exact artwork without HTTP, logout clears',
     (tester) async {

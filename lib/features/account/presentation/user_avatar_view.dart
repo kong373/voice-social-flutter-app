@@ -8,6 +8,8 @@ import '../../../core/network/api_client.dart';
 import '../domain/user_avatar_descriptor.dart';
 import 'preset_avatar_view.dart';
 
+enum _UserAvatarLoadState { loading, ready, unavailable }
+
 /// Authoritative avatar display only. Null preserves the caller's legacy UI;
 /// an uploaded reference is never routed to Image.network or ImageCache.
 class UserAvatarView extends StatefulWidget {
@@ -34,6 +36,7 @@ class _UserAvatarViewState extends State<UserAvatarView> {
   MediaIdentityScope? _scope;
   ui.Image? _image;
   int _epoch = 0;
+  _UserAvatarLoadState _loadState = _UserAvatarLoadState.unavailable;
   bool _invalidIdentity = false;
   (int?, int) get _identity => (
     _dependencies!.sessionManager.session?.userId,
@@ -79,6 +82,7 @@ class _UserAvatarViewState extends State<UserAvatarView> {
     _scope = null;
     _image?.dispose();
     _image = null;
+    _loadState = _UserAvatarLoadState.unavailable;
   }
 
   @override
@@ -121,8 +125,10 @@ class _UserAvatarViewState extends State<UserAvatarView> {
       changes: deps.sessionManager,
     );
     _scope = scope;
-    if (avatar.kind == UserAvatarKind.uploaded)
+    if (avatar.kind == UserAvatarKind.uploaded) {
+      _loadState = _UserAvatarLoadState.loading;
       unawaited(_load(avatar, scope, _epoch));
+    }
   }
 
   bool _current(MediaIdentityScope scope, int epoch) =>
@@ -173,11 +179,15 @@ class _UserAvatarViewState extends State<UserAvatarView> {
       if (!_current(scope, epoch)) return;
       setState(() {
         _image = image;
+        _loadState = _UserAvatarLoadState.ready;
         image = null;
       });
     } catch (_) {
       // Failed authorization/protocol/decode never reveals a URL, raw error or
       // previous image. The neutral placeholder is not a successful avatar.
+      if (_current(scope, epoch)) {
+        setState(() => _loadState = _UserAvatarLoadState.unavailable);
+      }
     } finally {
       image?.dispose();
       codec?.dispose();
@@ -198,12 +208,24 @@ class _UserAvatarViewState extends State<UserAvatarView> {
     if (widget.avatar == null) return widget.fallback;
     final active =
         !_invalidIdentity && widget.enabled && _scope?.isCurrent == true;
+    final bool loadedUploadedImage =
+        active &&
+        widget.avatar!.kind == UserAvatarKind.uploaded &&
+        _loadState == _UserAvatarLoadState.ready &&
+        _image != null;
+    final bool loadingUploadedImage =
+        active &&
+        widget.avatar!.kind == UserAvatarKind.uploaded &&
+        _loadState == _UserAvatarLoadState.loading;
     return Semantics(
       image: true,
       label:
           active &&
-              (_image != null || widget.avatar!.kind == UserAvatarKind.preset)
+              (loadedUploadedImage ||
+                  widget.avatar!.kind == UserAvatarKind.preset)
           ? '用户头像'
+          : loadingUploadedImage
+          ? '头像加载中'
           : '头像不可用',
       child: SizedBox.square(
         dimension: widget.size,
@@ -215,6 +237,8 @@ class _UserAvatarViewState extends State<UserAvatarView> {
                   presetId: widget.avatar!.reference,
                   size: widget.size,
                 )
+              : loadingUploadedImage
+              ? _loading()
               : _image == null
               ? _unavailable()
               : RawImage(image: _image, fit: BoxFit.cover),
@@ -227,5 +251,16 @@ class _UserAvatarViewState extends State<UserAvatarView> {
     key: Key('user-avatar-unavailable'),
     color: Color(0xFF70647D),
     child: Icon(Icons.person_outline, color: Colors.white),
+  );
+
+  Widget _loading() => const ColoredBox(
+    key: Key('user-avatar-loading'),
+    color: Color(0xFF70647D),
+    child: Center(
+      child: SizedBox.square(
+        dimension: 18,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      ),
+    ),
   );
 }
