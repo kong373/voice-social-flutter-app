@@ -404,6 +404,24 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     if (_loadStarted) _checkAccount();
   }
 
+  bool _isCurrentReadScope({
+    required int conversationEpoch,
+    required int peer,
+    required int? accountId,
+    required int? accountGeneration,
+  }) {
+    final session = _dependencies?.sessionManager;
+    return mounted &&
+        !_accountChanged &&
+        conversationEpoch == _conversationEpoch &&
+        peer == _conversation.targetUserId &&
+        accountId == _accountId &&
+        accountGeneration == _accountGeneration &&
+        session != null &&
+        session.session?.userId == accountId &&
+        session.identityGeneration == accountGeneration;
+  }
+
   void _scheduleSync() {
     _syncTimer?.cancel();
     if (!_canAutoSync) return;
@@ -548,6 +566,9 @@ class _PrivateChatPageState extends State<PrivateChatPage>
     }
     final int requestId = ++_loadRequestId;
     final conversationEpoch = _conversationEpoch;
+    final int peer = _conversation.targetUserId;
+    final int? accountId = _accountId;
+    final int? accountGeneration = _accountGeneration;
     final MessageRepository repository = _repository;
     ImCorrelationTrace.active.pageLoadStart();
     if (showLoading || _error != null) {
@@ -622,14 +643,30 @@ class _PrivateChatPageState extends State<PrivateChatPage>
       });
       if (hasNewMessages && followLatest) _scrollToEnd(animate: false);
     } catch (error) {
-      if (!_checkAccount() ||
+      final bool accountCurrent = _checkAccount();
+      final denial = _MessageReadDenial.from(error);
+      final bool currentReadScope =
+          accountCurrent &&
+          _isCurrentReadScope(
+            conversationEpoch: conversationEpoch,
+            peer: peer,
+            accountId: accountId,
+            accountGeneration: accountGeneration,
+          );
+      if (denial != null &&
+          repository is! PagedPrivateMessageRepository &&
+          !flight.abandoned &&
+          currentReadScope) {
+        _visibility!.deny(denial, peer: peer);
+        return;
+      }
+      if (!accountCurrent ||
           conversationEpoch != _conversationEpoch ||
           requestId != _loadRequestId) {
         return;
       }
-      final denial = _MessageReadDenial.from(error);
       if (denial != null) {
-        _visibility!.deny(denial, peer: _conversation.targetUserId);
+        _visibility!.deny(denial, peer: peer);
         return;
       }
       if (requestId != _loadRequestId || !_active) return;
