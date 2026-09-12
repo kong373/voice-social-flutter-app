@@ -69,6 +69,8 @@ class _RoomManagementSession extends StatefulWidget {
 
 class _RoomManagementPageState extends State<_RoomManagementSession>
     with WidgetsBindingObserver {
+  static const String _managementOverlayRouteName = 'room-management-overlay';
+
   RoomManagementPage get configuration => widget.configuration;
   Timer? _queueTimer;
   bool _foreground = true;
@@ -102,6 +104,12 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   int? _identity;
   int? _leaseGeneration;
   RoomRole? _authoritativeRole;
+  int _managementGeneration = 0;
+  int _authorityRequestGeneration = 0;
+  Future<RoomAuthorityProjection>? _authorityFlight;
+  int? _authorityFlightGeneration;
+  int _managementOverlayDepth = 0;
+  bool _managementWasAuthorized = false;
 
   bool get _currentSession =>
       mounted &&
@@ -114,7 +122,8 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
 
   RoomRole get _role =>
       _authoritativeRole ??
-      (_repositoryInstance is BackendRoomOperationsRepository
+      (_authorityRepository != null ||
+              _repositoryInstance is BackendRoomOperationsRepository
           ? RoomRole.guest
           : configuration.currentRole);
 
@@ -122,6 +131,23 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   bool get _canManage =>
       _currentSession && (_isOwner || _role == RoomRole.moderator);
   bool get _supportsMicRequests => _canManage;
+
+  bool get _canSyncAuthority =>
+      mounted &&
+      _foreground &&
+      _routeVisible &&
+      _authorityRepository != null &&
+      _currentSession &&
+      (_authoritativeRole == null || _canManage);
+
+  bool get _canScheduleManagementSync =>
+      _canSyncAuthority ||
+      (_canSyncQueue &&
+          _pendingMicDecision == null &&
+          _busyMicRequestId == null);
+
+  bool _isCurrentOperation(int generation) =>
+      generation == _managementGeneration && _currentSession;
 
   bool _canGovern(RoomMember member) =>
       _canManage &&
@@ -161,9 +187,10 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     _identity = _session?.identityGeneration;
     _session?.addListener(_onSessionChanged);
     final repository = _repositoryInstance;
-    _leaseGeneration = repository is BackendRoomOperationsRepository
-        ? repository.leaseBinding.generation
-        : null;
+    if (repository is BackendRoomOperationsRepository) {
+      _leaseGeneration = repository.leaseBinding.generation;
+      repository.leaseBinding.addListener(_onLeaseChanged);
+    }
     final roomRepository =
         configuration.authorityRepositoryOverride ??
         (configuration.repositoryOverride == null
@@ -180,26 +207,19 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
 
   void _onSessionChanged() {
     if (_currentSession) return;
-    _pauseQueueSync();
-    _loadGeneration++;
-    if (!mounted) return;
-    setState(() {
-      _members.clear();
-      _requests.clear();
-      _seats = [];
-      _pendingMicDecision = null;
-      _pendingAssignment = null;
-      _pendingAudioDecision = null;
-      _authoritativeRole = RoomRole.guest;
-      _loading = false;
-      _error = '账号或房间会话已变化，请退出后重新打开';
-    });
+    _invalidateManagementState(message: '账号或房间会话已变化，请退出后重新打开');
+  }
+
+  void _onLeaseChanged() {
+    if (_currentSession) return;
+    _invalidateManagementState(message: '账号或房间会话已变化，请退出后重新打开');
   }
 
   void _pauseQueueSync() {
     _queueTimer?.cancel();
     _queueTimer = null;
     _queueGeneration++;
+    _authorityRequestGeneration++;
     _queuePending = false;
   }
 
@@ -214,28 +234,202 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   void dispose() {
     _pauseQueueSync();
     _session?.removeListener(_onSessionChanged);
+    if (_repositoryInstance
+        case final BackendRoomOperationsRepository repository) {
+      repository.leaseBinding.removeListener(_onLeaseChanged);
+    }
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   Future<void> _refreshQueue() => _refreshMicQueue();
 
-  // Single-flight and visible-only; a write invalidates any older response.
+  Future<RoomAuthorityProjection> _readAuthority() async {
+    final authority = _authorityRepository;
+    if (authority == null) {
+      throw StateError('Room authority capability is unavailable');
+    }
+    final int requestGeneration = _authorityRequestGeneration;
+    final existing = _authorityFlight;
+    if (existing != null) {
+      if (_authorityFlightGeneration == requestGeneration) {
+        return existing;
+      }
+      try {
+        await existing;
+      } catch (_) {
+        // A read from the previous visibility, lease, or identity generation
+        // is only a fence. The current caller must start a fresh read below.
+      }
+      if (identical(_authorityFlight, existing)) {
+        _authorityFlight = null;
+        _authorityFlightGeneration = null;
+      }
+      return _readAuthority();
+    }
+    final Future<RoomAuthorityProjection> flight =
+        Future<RoomAuthorityProjection>.sync(
+          () => authority.fetchRoomAuthority(
+            roomId: configuration.roomId,
+            currentUserId: configuration.currentUserId,
+          ),
+        );
+    _authorityFlight = flight;
+    _authorityFlightGeneration = requestGeneration;
+    unawaited(
+      flight.then<void>(
+        (_) => _clearAuthorityFlight(flight),
+        onError: (Object _, StackTrace __) => _clearAuthorityFlight(flight),
+      ),
+    );
+    return flight;
+  }
+
+  void _clearAuthorityFlight(Future<RoomAuthorityProjection> flight) {
+    if (identical(_authorityFlight, flight)) {
+      _authorityFlight = null;
+      _authorityFlightGeneration = null;
+    }
+  }
+
+  bool _isCurrentQueueRead(int generation) =>
+      _currentSession &&
+      generation == _queueGeneration &&
+      _foreground &&
+      _routeVisible;
+
+  void _validateAuthorityProjection(RoomAuthorityProjection projection) {
+    if (projection.snapshot.roomId != configuration.roomId ||
+        projection.viewerUserId != configuration.currentUserId) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '麦位权威响应与当前房间不一致',
+      );
+    }
+  }
+
+  static bool _projectionAllowsManagement(RoomAuthorityProjection projection) {
+    return projection.memberActive &&
+        (projection.snapshot.role == RoomRole.owner ||
+            projection.snapshot.role == RoomRole.moderator);
+  }
+
+  bool _isAuthorityDowngrade(RoomAuthorityProjection projection) {
+    if (_projectionAllowsManagement(projection)) return false;
+    return _managementWasAuthorized ||
+        (_authoritativeRole == null &&
+            (configuration.currentRole == RoomRole.owner ||
+                configuration.currentRole == RoomRole.moderator));
+  }
+
+  static bool _isGovernanceDenied(Object error) {
+    if (error is! ApiException) return false;
+    final int? code = error.code;
+    return error.kind == ApiFailureKind.forbidden ||
+        error.httpStatus == 403 ||
+        code == 40335 ||
+        (code != null && code >= 40300 && code < 40400);
+  }
+
+  void _handleGovernanceDenied(
+    Object error, {
+    required int managementGeneration,
+  }) {
+    if (!mounted || managementGeneration != _managementGeneration) return;
+    _invalidateManagementState();
+    if (mounted) _showMessage(_messageFor(error));
+  }
+
+  void _invalidateManagementState({String message = '房间治理权限已变化，请退出后重新打开'}) {
+    if (!mounted) return;
+    _managementGeneration++;
+    _loadGeneration++;
+    _pauseQueueSync();
+    _dismissManagementOverlays();
+    if (!mounted) return;
+    setState(() {
+      _members.clear();
+      _requests.clear();
+      _bannedUsers.clear();
+      _seats = <MicSeat>[];
+      _pendingMicDecision = null;
+      _pendingAssignment = null;
+      _pendingAudioDecision = null;
+      _selectingMicTarget = false;
+      _busyUserId = null;
+      _busySeatNumber = null;
+      _busyMicRequestId = null;
+      _queueKnown = false;
+      _queueError = null;
+      _authoritativeRole = RoomRole.guest;
+      _section = _ManagementSection.members;
+      _loading = false;
+      _error = message;
+    });
+  }
+
+  void _beginManagementOverlay() => _managementOverlayDepth++;
+
+  void _endManagementOverlay() {
+    if (_managementOverlayDepth > 0) _managementOverlayDepth--;
+  }
+
+  void _dismissManagementOverlays() {
+    if (!mounted || _managementOverlayDepth == 0) return;
+    Navigator.of(context).popUntil(
+      (Route<dynamic> route) =>
+          route.settings.name != _managementOverlayRouteName,
+    );
+    _managementOverlayDepth = 0;
+  }
+
+  // One visible timer drives both authority and queue reads. Authority is
+  // read first so a stale manager cannot continue to fetch or act on a queue.
   Future<void> _refreshMicQueue() async {
-    if (!_canSyncQueue || _pendingMicDecision != null) return;
+    final bool hasAuthority = _authorityRepository != null;
+    if ((hasAuthority && !_canSyncAuthority) ||
+        (!hasAuthority && !_canSyncQueue) ||
+        (!hasAuthority && _pendingMicDecision != null)) {
+      return;
+    }
     _queuePending = true;
-    if (_queueReading || _busyMicRequestId != null) return;
+    if (_queueReading) return;
     _queueTimer?.cancel();
     _queueReading = true;
     try {
       do {
         _queuePending = false;
         final generation = _queueGeneration;
+        final managementGeneration = _managementGeneration;
         try {
+          if (hasAuthority) {
+            final projection = await _readAuthority();
+            if (!_isCurrentQueueRead(generation)) continue;
+            _validateAuthorityProjection(projection);
+            if (!_projectionAllowsManagement(projection)) {
+              if (_isAuthorityDowngrade(projection)) {
+                _invalidateManagementState();
+                return;
+              }
+              if (_authoritativeRole != projection.snapshot.role) {
+                setState(() => _authoritativeRole = projection.snapshot.role);
+              }
+              continue;
+            }
+            _managementWasAuthorized = true;
+            if (_authoritativeRole != projection.snapshot.role) {
+              setState(() => _authoritativeRole = projection.snapshot.role);
+            }
+          }
+          if (!_canSyncQueue ||
+              _pendingMicDecision != null ||
+              _busyMicRequestId != null) {
+            continue;
+          }
           final requests = await _repository.fetchMicRequests(
             configuration.roomId,
           );
-          if (!_canSyncQueue || generation != _queueGeneration) continue;
+          if (!_isCurrentQueueRead(generation) || !_canSyncQueue) continue;
           setState(() {
             _requests
               ..clear()
@@ -246,22 +440,34 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
             _queueKnown = true;
           });
         } catch (error) {
-          if (_canSyncQueue && generation == _queueGeneration) {
+          if (_isGovernanceDenied(error)) {
+            _handleGovernanceDenied(
+              error,
+              managementGeneration: managementGeneration,
+            );
+            return;
+          }
+          if (_isCurrentQueueRead(generation) && _canSyncQueue) {
             setState(() => _queueError = _messageFor(error));
           }
         }
-      } while (_queuePending && _canSyncQueue && _busyMicRequestId == null);
+      } while (_queuePending &&
+          (_canSyncAuthority || _canSyncQueue) &&
+          (hasAuthority || _pendingMicDecision == null) &&
+          (hasAuthority || _busyMicRequestId == null));
     } finally {
       _queueReading = false;
-      if (_canSyncQueue && _busyMicRequestId == null) {
+      if (_canScheduleManagementSync) {
         _queueTimer = Timer(const Duration(seconds: 2), _refreshMicQueue);
       }
     }
   }
 
   Future<void> _load() async {
+    _pauseQueueSync();
     final generation = ++_loadGeneration;
-    unawaited(_refreshQueue());
+    final managementGeneration = _managementGeneration;
+    if (_authorityRepository == null) unawaited(_refreshQueue());
     setState(() {
       _loading = true;
       _error = null;
@@ -288,12 +494,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       }
       final authority = _authorityRepository;
       if (authority != null) {
-        futures.add(
-          authority.fetchRoomAuthority(
-            roomId: configuration.roomId,
-            currentUserId: configuration.currentUserId,
-          ),
-        );
+        futures.add(_readAuthority());
       }
       final List<Object> results = await Future.wait<Object>(futures);
       if (!_currentSession || generation != _loadGeneration) return;
@@ -303,10 +504,16 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       if (projection != null &&
           (projection.snapshot.roomId != configuration.roomId ||
               projection.viewerUserId != configuration.currentUserId)) {
-        throw const ApiException(
-          kind: ApiFailureKind.protocol,
-          message: '麦位权威响应与当前房间不一致',
-        );
+        _validateAuthorityProjection(projection);
+      }
+      if (projection != null && !_projectionAllowsManagement(projection)) {
+        if (_isAuthorityDowngrade(projection)) {
+          _invalidateManagementState();
+          return;
+        }
+      }
+      if (projection != null && _projectionAllowsManagement(projection)) {
+        _managementWasAuthorized = true;
       }
       final RoomMemberPage page = results[0] as RoomMemberPage;
       final List<RoomMember> muted = results[1] as List<RoomMember>;
@@ -367,6 +574,13 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       if (!mounted || generation != _loadGeneration) {
         return;
       }
+      if (_isGovernanceDenied(error)) {
+        _handleGovernanceDenied(
+          error,
+          managementGeneration: managementGeneration,
+        );
+        return;
+      }
       setState(() {
         _loading = false;
         _error = _messageFor(error);
@@ -404,8 +618,8 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
                 subtitle:
                     '房间号 ${configuration.roomCode ?? configuration.roomId} · 权威状态管理',
                 seed: configuration.roomId,
-                status: _isOwner ? '房主' : '房管',
-                statusColor: _isOwner ? RoomColors.gold : RoomColors.primary,
+                status: _roleLabel,
+                statusColor: _roleColor,
               ),
             ),
             _buildSectionPicker(),
@@ -432,6 +646,19 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       ),
     );
   }
+
+  String get _roleLabel => switch (_role) {
+    RoomRole.owner => '房主',
+    RoomRole.moderator => '房管',
+    RoomRole.platformModerator => '平台管理',
+    _ => '成员',
+  };
+
+  Color get _roleColor => switch (_role) {
+    RoomRole.owner => RoomColors.gold,
+    RoomRole.moderator => RoomColors.primary,
+    _ => RoomColors.accent,
+  };
 
   Widget _buildSectionPicker() {
     final bool supportsRequests = _supportsMicRequests;
@@ -810,79 +1037,85 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
 
   Future<void> _showMemberMenu(RoomMember member) async {
     if (!_canGovern(member)) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      useSafeArea: true,
-      builder: (BuildContext sheetContext) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            RoomOxygenContextBar(
-              title: member.name,
-              subtitle: member.isOnMic ? '${member.seatNumber} 号麦' : '听众席',
-              seed: '${member.userId}',
-              status: member.isManager ? '管理' : '成员',
-              statusColor: member.isManager
-                  ? RoomColors.gold
-                  : RoomColors.accent,
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              leading: Icon(
-                member.isMuted
-                    ? Icons.chat_rounded
-                    : Icons.comments_disabled_outlined,
+    _beginManagementOverlay();
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        useSafeArea: true,
+        routeSettings: const RouteSettings(name: _managementOverlayRouteName),
+        builder: (BuildContext sheetContext) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              RoomOxygenContextBar(
+                title: member.name,
+                subtitle: member.isOnMic ? '${member.seatNumber} 号麦' : '听众席',
+                seed: '${member.userId}',
+                status: member.isManager ? '管理' : '成员',
+                statusColor: member.isManager
+                    ? RoomColors.gold
+                    : RoomColors.accent,
               ),
-              title: Text(member.isMuted ? '解除禁言' : '禁言用户'),
-              onTap: () {
-                Navigator.of(sheetContext).pop();
-                _setUserMuted(member, !member.isMuted);
-              },
-            ),
-            if (member.isOnMic && member.seatNumber != null)
+              const SizedBox(height: 10),
               ListTile(
-                leading: const Icon(Icons.keyboard_voice_outlined),
-                title: const Text('移下麦位'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _takeOffMic(member);
-                },
-              ),
-            if (!member.isManager && !member.isOnMic)
-              ListTile(
-                leading: const Icon(Icons.mic_external_on_outlined),
-                title: const Text('安排上麦'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _assignToMic(member);
-                },
-              ),
-            if (_isOwner && member.role != RoomRole.owner)
-              ListTile(
-                leading: const Icon(Icons.admin_panel_settings_outlined),
-                title: Text(member.isManager ? '解除房管' : '设为房管'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _setManager(member, !member.isManager);
-                },
-              ),
-            if (member.role != RoomRole.owner)
-              ListTile(
-                leading: const Icon(
-                  Icons.logout_rounded,
-                  color: Color(0xFFFF7A8D),
+                leading: Icon(
+                  member.isMuted
+                      ? Icons.chat_rounded
+                      : Icons.comments_disabled_outlined,
                 ),
-                title: const Text('移出房间'),
+                title: Text(member.isMuted ? '解除禁言' : '禁言用户'),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
-                  _kickMember(member);
+                  _setUserMuted(member, !member.isMuted);
                 },
               ),
-          ],
+              if (member.isOnMic && member.seatNumber != null)
+                ListTile(
+                  leading: const Icon(Icons.keyboard_voice_outlined),
+                  title: const Text('移下麦位'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _takeOffMic(member);
+                  },
+                ),
+              if (!member.isManager && !member.isOnMic)
+                ListTile(
+                  leading: const Icon(Icons.mic_external_on_outlined),
+                  title: const Text('安排上麦'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _assignToMic(member);
+                  },
+                ),
+              if (_isOwner && member.role != RoomRole.owner)
+                ListTile(
+                  leading: const Icon(Icons.admin_panel_settings_outlined),
+                  title: Text(member.isManager ? '解除房管' : '设为房管'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _setManager(member, !member.isManager);
+                  },
+                ),
+              if (member.role != RoomRole.owner)
+                ListTile(
+                  leading: const Icon(
+                    Icons.logout_rounded,
+                    color: Color(0xFFFF7A8D),
+                  ),
+                  title: const Text('移出房间'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _kickMember(member);
+                  },
+                ),
+            ],
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      _endManagementOverlay();
+    }
   }
 
   Future<void> _setUserMuted(RoomMember member, bool muted) async {
@@ -899,6 +1132,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
 
   Future<void> _setManager(RoomMember member, bool manager) async {
     if (!_isOwner || !_canGovern(member)) return;
+    final int operationGeneration = _managementGeneration;
     final bool confirmed = await _confirm(
       title: manager ? '设为房管？' : '解除房管？',
       message: manager
@@ -906,7 +1140,10 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
           : '${member.name} 将失去房间治理权限。',
       confirmLabel: manager ? '确认任命' : '确认解除',
     );
-    if (!confirmed || !mounted) {
+    if (!confirmed ||
+        !mounted ||
+        !_isCurrentOperation(operationGeneration) ||
+        !_canGovern(member)) {
       return;
     }
     await _runMemberOperation(
@@ -921,12 +1158,16 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
   }
 
   Future<void> _kickMember(RoomMember member) async {
+    final int operationGeneration = _managementGeneration;
     final bool confirmed = await _confirm(
       title: '移出房间？',
       message: '${member.name} 将立即离开当前房间，10 分钟内不能再次进入本房间。',
       confirmLabel: '确认移出并限制',
     );
-    if (!confirmed || !mounted) {
+    if (!confirmed ||
+        !mounted ||
+        !_isCurrentOperation(operationGeneration) ||
+        !_canGovern(member)) {
       return;
     }
     await _runMemberOperation(
@@ -951,12 +1192,16 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       _showMessage('麦位状态已变化，请刷新');
       return;
     }
+    final int operationGeneration = _managementGeneration;
     final bool confirmed = await _confirm(
       title: '移下麦位？',
       message: '${member.name} 将停止发言并回到听众席。',
       confirmLabel: '确认移下麦',
     );
-    if (!confirmed || !mounted) {
+    if (!confirmed ||
+        !mounted ||
+        !_isCurrentOperation(operationGeneration) ||
+        !_canGovern(member)) {
       return;
     }
     await _runMemberOperation(
@@ -983,42 +1228,55 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       _showMessage('当前没有可安排的空麦位');
       return;
     }
-    final int? seatNumber = await showModalBottomSheet<int>(
-      context: context,
-      useSafeArea: true,
-      builder: (BuildContext sheetContext) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(
-              '安排 ${member.name} 上麦',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '安排到所选麦位；发言仍需对方设备的麦克风授权。',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: <Widget>[
-                for (final MicSeat seat in available)
-                  FilledButton.tonal(
-                    onPressed: () =>
-                        Navigator.of(sheetContext).pop(seat.number),
-                    child: Text('${seat.number} 号麦'),
-                  ),
-              ],
-            ),
-          ],
+    final int operationGeneration = _managementGeneration;
+    _beginManagementOverlay();
+    final int? seatNumber;
+    try {
+      seatNumber = await showModalBottomSheet<int>(
+        context: context,
+        useSafeArea: true,
+        routeSettings: const RouteSettings(name: _managementOverlayRouteName),
+        builder: (BuildContext sheetContext) => Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                '安排 ${member.name} 上麦',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '安排到所选麦位；发言仍需对方设备的麦克风授权。',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  for (final MicSeat seat in available)
+                    FilledButton.tonal(
+                      onPressed:
+                          _isCurrentOperation(operationGeneration) &&
+                              _canGovern(member)
+                          ? () => Navigator.of(sheetContext).pop(seat.number)
+                          : null,
+                      child: Text('${seat.number} 号麦'),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
-    );
-    if (seatNumber == null || !_currentSession || !_canGovern(member)) {
+      );
+    } finally {
+      _endManagementOverlay();
+    }
+    if (seatNumber == null ||
+        !_isCurrentOperation(operationGeneration) ||
+        !_canGovern(member)) {
       return;
     }
     final seat = available.firstWhere((seat) => seat.number == seatNumber);
@@ -1030,6 +1288,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     final pending = _pendingAssignment;
     if (pending == null || !_canGovern(pending.$1) || _busyUserId != null)
       return;
+    final int operationGeneration = _managementGeneration;
     setState(() => _busyUserId = pending.$1.userId);
     try {
       await _repository.assignUserToMic(
@@ -1037,18 +1296,28 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         userId: pending.$1.userId,
         backendMicIndex: pending.$2.backendIndex,
       );
-      if (!_currentSession) return;
+      if (!_isCurrentOperation(operationGeneration) ||
+          !_canGovern(pending.$1)) {
+        return;
+      }
       _pendingAssignment = null;
       _changed = true;
       _showMessage('已安排 ${pending.$1.name} 上麦');
       await _load();
     } catch (error) {
-      if (_currentSession) {
+      if (_isGovernanceDenied(error)) {
+        _handleGovernanceDenied(
+          error,
+          managementGeneration: operationGeneration,
+        );
+      } else if (_isCurrentOperation(operationGeneration)) {
         if (!_unknownMicResult(error)) _pendingAssignment = null;
         _showMessage(_messageFor(error));
       }
     } finally {
-      if (mounted) setState(() => _busyUserId = null);
+      if (mounted && _managementGeneration == operationGeneration) {
+        setState(() => _busyUserId = null);
+      }
     }
   }
 
@@ -1058,9 +1327,13 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     required String successMessage,
   }) async {
     if (!_canGovern(member) || _busyUserId != null) return;
+    final int operationGeneration = _managementGeneration;
     setState(() => _busyUserId = member.userId);
     try {
       await operation();
+      if (!_isCurrentOperation(operationGeneration) || !_canGovern(member)) {
+        return;
+      }
       _changed = true;
       if (!mounted) {
         return;
@@ -1068,18 +1341,29 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       _showMessage(successMessage);
       await _load();
     } catch (error) {
-      if (!mounted) {
-        return;
+      if (_isGovernanceDenied(error)) {
+        _handleGovernanceDenied(
+          error,
+          managementGeneration: operationGeneration,
+        );
+      } else if (_isCurrentOperation(operationGeneration)) {
+        _showMessage(_messageFor(error));
       }
-      _showMessage(_messageFor(error));
     } finally {
-      if (mounted) {
+      if (mounted && _managementGeneration == operationGeneration) {
         setState(() => _busyUserId = null);
       }
     }
   }
 
   Future<void> _setSeatLocked(MicSeat seat, bool locked) async {
+    if (!_isCurrentOperation(_managementGeneration) ||
+        !_canManage ||
+        seat.isOccupied ||
+        _busySeatNumber != null) {
+      return;
+    }
+    final int operationGeneration = _managementGeneration;
     setState(() => _busySeatNumber = seat.number);
     try {
       await _repository.setSeatLocked(
@@ -1087,7 +1371,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         backendMicIndex: seat.backendIndex,
         locked: locked,
       );
-      if (!mounted) {
+      if (!_isCurrentOperation(operationGeneration)) {
         return;
       }
       setState(() {
@@ -1105,11 +1389,16 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       _showMessage(locked ? '麦位已锁定' : '麦位已解锁');
       if (_authorityRepository != null) await _load();
     } catch (error) {
-      if (mounted) {
+      if (_isGovernanceDenied(error)) {
+        _handleGovernanceDenied(
+          error,
+          managementGeneration: operationGeneration,
+        );
+      } else if (_isCurrentOperation(operationGeneration)) {
         _showMessage(_messageFor(error));
       }
     } finally {
-      if (mounted) {
+      if (mounted && _managementGeneration == operationGeneration) {
         setState(() => _busySeatNumber = null);
       }
     }
@@ -1130,6 +1419,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       _showMessage('原静音操作结果待确认，请重试原操作');
       return;
     }
+    final int operationGeneration = _managementGeneration;
     _pendingAudioDecision = (seat, muted);
     setState(() => _busySeatNumber = seat.number);
     try {
@@ -1139,7 +1429,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         muted: muted,
         targetUserId: seat.userId,
       );
-      if (!_currentSession) {
+      if (!_isCurrentOperation(operationGeneration)) {
         return;
       }
       _pendingAudioDecision = null;
@@ -1168,12 +1458,17 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       if (_authorityRepository != null) await _load();
       if (_currentSession) _showMessage(muted ? '管理静音已设置' : '管理静音已解除；个人静音保持不变');
     } catch (error) {
-      if (_currentSession) {
+      if (_isGovernanceDenied(error)) {
+        _handleGovernanceDenied(
+          error,
+          managementGeneration: operationGeneration,
+        );
+      } else if (_isCurrentOperation(operationGeneration)) {
         if (!_unknownMicResult(error)) _pendingAudioDecision = null;
         _showMessage(_messageFor(error));
       }
     } finally {
-      if (mounted) {
+      if (mounted && _managementGeneration == operationGeneration) {
         setState(() => _busySeatNumber = null);
       }
     }
@@ -1189,6 +1484,7 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
                 _pendingMicDecision!.$2 != accepted))) {
       return;
     }
+    final int operationGeneration = _managementGeneration;
     _pauseQueueSync();
     setState(() => _busyMicRequestId = request.id);
     try {
@@ -1196,24 +1492,25 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       if (decision == null) {
         final authority = _authorityRepository;
         if (authority != null) {
-          final projection = await authority.fetchRoomAuthority(
-            roomId: configuration.roomId,
-            currentUserId: configuration.currentUserId,
-          );
-          if (!_currentSession) return;
-          if (projection.snapshot.roomId != configuration.roomId ||
-              projection.viewerUserId != configuration.currentUserId) {
-            throw const ApiException(
-              kind: ApiFailureKind.protocol,
-              message: '麦位响应身份不一致',
-            );
+          final projection = await _readAuthority();
+          if (!_isCurrentOperation(operationGeneration)) return;
+          _validateAuthorityProjection(projection);
+          if (!_projectionAllowsManagement(projection)) {
+            if (_isAuthorityDowngrade(projection)) {
+              _invalidateManagementState();
+            }
+            return;
           }
+          _managementWasAuthorized = true;
           setState(() {
             _authoritativeRole = projection.snapshot.role;
             _seats = projection.snapshot.seats;
           });
         }
-        if (!_canGovern(request.member)) return;
+        if (!_isCurrentOperation(operationGeneration) ||
+            !_canGovern(request.member)) {
+          return;
+        }
         int? target;
         if (accepted &&
             !_seats.any(
@@ -1224,20 +1521,24 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
             )) {
           setState(() => _selectingMicTarget = true);
           target = await _chooseAlternateSeat(request);
-          if (mounted) setState(() => _selectingMicTarget = false);
-          if (target == null || !_currentSession) return;
+          if (mounted && _managementGeneration == operationGeneration) {
+            setState(() => _selectingMicTarget = false);
+          }
+          if (target == null || !_isCurrentOperation(operationGeneration)) {
+            return;
+          }
         }
         decision = (request, accepted, target);
         _pendingMicDecision = decision;
       }
-      if (!_currentSession) return;
+      if (!_isCurrentOperation(operationGeneration)) return;
       await _repository.resolveMicRequest(
         requestId: decision.$1.id,
         accepted: decision.$2,
         expectedVersion: decision.$1.version,
         targetSeatNumber: decision.$3,
       );
-      if (!_currentSession) return;
+      if (!_isCurrentOperation(operationGeneration)) return;
       _pendingMicDecision = null;
       _changed = true;
       if (!mounted) {
@@ -1246,22 +1547,30 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       _showMessage(accepted ? '已同意上麦申请' : '已拒绝上麦申请');
       await _load();
     } catch (error) {
-      if (_currentSession) {
+      if (_isGovernanceDenied(error)) {
+        _handleGovernanceDenied(
+          error,
+          managementGeneration: operationGeneration,
+        );
+      } else if (_isCurrentOperation(operationGeneration)) {
         if (!_unknownMicResult(error)) _pendingMicDecision = null;
         _showMessage(_messageFor(error));
       }
     } finally {
-      if (mounted) {
+      if (mounted && _managementGeneration == operationGeneration) {
         setState(() => _busyMicRequestId = null);
         unawaited(_refreshQueue());
       }
     }
   }
 
-  Future<int?> _chooseAlternateSeat(MicAccessRequest request) =>
-      showModalBottomSheet<int>(
+  Future<int?> _chooseAlternateSeat(MicAccessRequest request) async {
+    _beginManagementOverlay();
+    try {
+      return await showModalBottomSheet<int>(
         context: context,
         useSafeArea: true,
+        routeSettings: const RouteSettings(name: _managementOverlayRouteName),
         builder: (sheetContext) => Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -1279,8 +1588,9 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
                   ))
                     FilledButton.tonal(
                       key: Key('resolve-mic-seat-${seat.number}'),
-                      onPressed: () =>
-                          Navigator.of(sheetContext).pop(seat.number),
+                      onPressed: _canManage
+                          ? () => Navigator.of(sheetContext).pop(seat.number)
+                          : null,
                       child: Text('${seat.number} 号麦'),
                     ),
                 ],
@@ -1293,6 +1603,10 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
           ),
         ),
       );
+    } finally {
+      _endManagementOverlay();
+    }
+  }
 
   static bool _unknownMicResult(Object error) =>
       error is! ApiException ||
@@ -1311,12 +1625,16 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     if (repository == null || !_canGovern(banned.member)) {
       return;
     }
+    final int operationGeneration = _managementGeneration;
     final bool confirmed = await _confirm(
       title: '解除房间限制？',
       message: '踢出后的 10 分钟冷却期不能提前解除。到期后，${banned.member.name} 可以再次尝试进入房间。',
       confirmLabel: '确认解除',
     );
-    if (!confirmed || !mounted) {
+    if (!confirmed ||
+        !mounted ||
+        !_isCurrentOperation(operationGeneration) ||
+        !_canGovern(banned.member)) {
       return;
     }
     setState(() => _busyUserId = banned.member.userId);
@@ -1325,6 +1643,10 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
         roomId: configuration.roomId,
         userId: banned.member.userId,
       );
+      if (!_isCurrentOperation(operationGeneration) ||
+          !_canGovern(banned.member)) {
+        return;
+      }
       _changed = true;
       if (!mounted) {
         return;
@@ -1332,11 +1654,16 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
       _showMessage('已解除 ${banned.member.name} 的房间限制');
       await _load();
     } catch (error) {
-      if (mounted) {
+      if (_isGovernanceDenied(error)) {
+        _handleGovernanceDenied(
+          error,
+          managementGeneration: operationGeneration,
+        );
+      } else if (_isCurrentOperation(operationGeneration)) {
         _showMessage(_messageFor(error));
       }
     } finally {
-      if (mounted) {
+      if (mounted && _managementGeneration == operationGeneration) {
         setState(() => _busyUserId = null);
       }
     }
@@ -1347,24 +1674,32 @@ class _RoomManagementPageState extends State<_RoomManagementSession>
     required String message,
     required String confirmLabel,
   }) async {
-    final bool? result = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(confirmLabel),
-          ),
-        ],
-      ),
-    );
-    return result == true;
+    _beginManagementOverlay();
+    try {
+      final bool? result = await showDialog<bool>(
+        context: context,
+        routeSettings: const RouteSettings(name: _managementOverlayRouteName),
+        builder: (BuildContext dialogContext) => AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: _canManage
+                  ? () => Navigator.of(dialogContext).pop(true)
+                  : null,
+              child: Text(confirmLabel),
+            ),
+          ],
+        ),
+      );
+      return result == true;
+    } finally {
+      _endManagementOverlay();
+    }
   }
 
   void _showMessage(String message) {
