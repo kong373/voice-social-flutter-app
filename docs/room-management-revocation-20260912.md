@@ -7,7 +7,7 @@
 ## 验证记录
 
 - RED：基线运行 `test/room_management_revocation_test.dart`，撤权后锁定按钮仍返回可执行闭包，测试期望 `onPressed == null` 失败。
-- GREEN：Flutter `3.44.7`、`--no-pub` 运行撤权定向用例，4 个用例通过。
+- GREEN：Flutter `3.44.7`、`--no-pub` 运行撤权定向用例，5 个用例通过。
 - 兼容回归：撤权用例及此前受影响的 `room_management_review_fixes_test.dart` 共 14 个用例通过。
 - 定向检查：受影响页面、撤权测试和 review-fixes 测试 `dart analyze` 通过；`dart format --set-exit-if-changed` 与 `git diff --check` 通过。
 
