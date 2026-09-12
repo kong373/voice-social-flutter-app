@@ -12,10 +12,13 @@ class _MessageVisibility extends ChangeNotifier {
   ) => (_scopes[repository] ??= {}).putIfAbsent(viewer, _MessageVisibility.new);
 
   final Map<int, String> _deniedPeers = {};
+  final Map<int, int> _peerDenialGenerations = {};
   String? viewerReason;
   int revision = 0;
 
   Iterable<int> get deniedPeers => _deniedPeers.keys;
+
+  int peerDenialGeneration(int peer) => _peerDenialGenerations[peer] ?? 0;
 
   String? reasonFor(int peer) => viewerReason ?? _deniedPeers[peer];
 
@@ -24,6 +27,9 @@ class _MessageVisibility extends ChangeNotifier {
       if (viewerReason != null) return;
       viewerReason = denial.reason;
     } else {
+      // A repeated denial still fences an older peer recheck, even though the
+      // already-redacted UI does not need another revision notification.
+      _peerDenialGenerations[peer] = peerDenialGeneration(peer) + 1;
       if (_deniedPeers.containsKey(peer)) return;
       _deniedPeers[peer] = denial.reason;
     }
@@ -37,6 +43,16 @@ class _MessageVisibility extends ChangeNotifier {
     if (peer != null) _deniedPeers.remove(peer);
     revision++;
     notifyListeners();
+  }
+
+  // Only an unchanged peer-denial generation may be restored by a recheck.
+  bool restorePeerIfCurrent(int peer, int generation) {
+    if (peerDenialGeneration(peer) != generation ||
+        !_deniedPeers.containsKey(peer)) {
+      return false;
+    }
+    restore(peer: peer);
+    return true;
   }
 }
 

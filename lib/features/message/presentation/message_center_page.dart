@@ -200,13 +200,13 @@ class _MessageCenterPageState extends State<MessageCenterPage>
         return;
       }
       if (revalidateDeniedPeers) {
-        final Set<int>? restoredPeers = await _revalidateDeniedPeers(
+        final Map<int, int>? restoredPeers = await _revalidateDeniedPeers(
           value,
           accepts: accepts,
         );
         if (restoredPeers == null || !accepts()) return;
-        for (final peer in restoredPeers) {
-          _visibility!.restore(peer: peer);
+        for (final entry in restoredPeers.entries) {
+          _visibility!.restorePeerIfCurrent(entry.key, entry.value);
         }
       }
       if (revalidate) _visibility!.restore();
@@ -214,7 +214,7 @@ class _MessageCenterPageState extends State<MessageCenterPage>
         _conversations = [
           for (final conversation in value)
             if (_visibility?.reasonFor(conversation.targetUserId) == null)
-              conversation,
+              _privateHistory?.project(conversation) ?? conversation,
         ];
         _loading = false;
       });
@@ -242,21 +242,27 @@ class _MessageCenterPageState extends State<MessageCenterPage>
     }
   }
 
-  Future<Set<int>?> _revalidateDeniedPeers(
+  Future<Map<int, int>?> _revalidateDeniedPeers(
     List<ConversationSummary> conversations, {
     required bool Function() accepts,
   }) async {
     final visibility = _visibility;
     final repository = _repository;
     if (visibility == null || repository is! PagedPrivateMessageRepository) {
-      return const <int>{};
+      return const <int, int>{};
     }
     final Map<int, ConversationSummary> available = {
       for (final conversation in conversations)
         if (conversation.available) conversation.targetUserId: conversation,
     };
-    final Set<int> restored = <int>{};
-    for (final peer in visibility.deniedPeers.toList()) {
+    final Map<int, int> candidates = {
+      for (final peer in visibility.deniedPeers.toList())
+        peer: visibility.peerDenialGeneration(peer),
+    };
+    final Map<int, int> restored = <int, int>{};
+    for (final entry in candidates.entries) {
+      final peer = entry.key;
+      final generation = entry.value;
       final conversation = available[peer];
       if (conversation == null) continue;
       try {
@@ -265,7 +271,9 @@ class _MessageCenterPageState extends State<MessageCenterPage>
           isCurrent: accepts,
         );
         if (!accepts()) return null;
-        restored.add(peer);
+        if (visibility.peerDenialGeneration(peer) == generation) {
+          restored[peer] = generation;
+        }
       } catch (error) {
         if (!accepts()) return null;
         final denial = _MessageReadDenial.from(error);

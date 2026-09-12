@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
@@ -562,6 +563,160 @@ void main() {
     },
   );
 
+  testWidgets(
+    'activation success after tab deactivation cannot restore a denied peer',
+    (tester) async {
+      final fixture = _HttpFixture();
+      final deps = await _show(tester, fixture.repository);
+      fixture.denial = (403, 40381);
+      await _tick(tester);
+      expect(find.text('old-body'), findsNothing);
+
+      fixture.denial = null;
+      final active = ValueNotifier<bool>(false);
+      addTearDown(active.dispose);
+      await _renderCenter(tester, deps, active);
+      await _drain(tester);
+      expect(find.text('deleted-peer-name'), findsNothing);
+
+      final pending = Completer<MediaFakeResponse>();
+      fixture.nextHistory = pending;
+      active.value = true;
+      await tester.pump();
+      await _drain(tester);
+      expect(
+        fixture.nextHistory,
+        isNull,
+        reason: 'activation must issue the real Paged authority read',
+      );
+
+      active.value = false;
+      await tester.pump();
+      await _drain(tester);
+      pending.complete(_historyResponse('late-after-deactivation'));
+      await _drain(tester);
+
+      expect(find.text('deleted-peer-name'), findsNothing);
+      expect(find.text('late-after-deactivation'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'activation success after same-account logout-login ABA cannot restore',
+    (tester) async {
+      final fixture = _HttpFixture();
+      final deps = await _show(tester, fixture.repository);
+      fixture.denial = (403, 40381);
+      await _tick(tester);
+
+      final active = ValueNotifier<bool>(false);
+      addTearDown(active.dispose);
+      await _renderCenter(tester, deps, active);
+      await _drain(tester);
+
+      final pending = Completer<MediaFakeResponse>();
+      fixture.nextHistory = pending;
+      active.value = true;
+      await tester.pump();
+      await _drain(tester);
+      expect(fixture.nextHistory, isNull);
+
+      await deps.sessionManager.save(_session(4));
+      await _drain(tester);
+      await deps.sessionManager.save(_session(1));
+      await _drain(tester);
+      pending.complete(_historyResponse('late-after-aba'));
+      await _drain(tester);
+
+      expect(find.text('deleted-peer-name'), findsNothing);
+      expect(find.text('late-after-aba'), findsNothing);
+      expect(find.text('登录状态已改变，请返回后重新验证账号状态。'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'cleared history authority cannot revive the old activation summary or text',
+    (tester) async {
+      final fixture = _HttpFixture();
+      final deps = await _show(tester, fixture.repository);
+      fixture.denial = (403, 40381);
+      await _tick(tester);
+      expect(find.text('old-body'), findsNothing);
+
+      fixture.denial = null;
+      final active = ValueNotifier<bool>(false);
+      addTearDown(active.dispose);
+      await _renderCenter(tester, deps, active);
+      await _drain(tester);
+
+      fixture.historyVersion = '1';
+      fixture.clearedThroughSequence = '1';
+      final historyCallsBeforeActivation = fixture.historyCalls;
+      active.value = true;
+      await tester.pump();
+      await _drain(tester);
+
+      expect(find.text('deleted-peer-name'), findsOneWidget);
+      expect(fixture.historyCalls, greaterThan(historyCallsBeforeActivation));
+      expect(find.text('old-preview'), findsNothing);
+      expect(find.text('old-body'), findsNothing);
+      await tester.tap(find.text('deleted-peer-name'));
+      await _drain(tester);
+      expect(find.text('old-body'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('newer same-peer denial fences an activation success in flight', (
+    tester,
+  ) async {
+    final fixture = _HttpFixture();
+    final deps = await _show(tester, fixture.repository);
+    fixture.denial = (403, 40381);
+    await _tick(tester);
+    expect(find.text('old-body'), findsNothing);
+
+    final active = ValueNotifier<bool>(false);
+    addTearDown(active.dispose);
+    fixture.denial = null;
+    await _renderCenterWithRecheckSource(tester, deps, active);
+    await _drain(tester);
+    expect(find.text('deleted-peer-name'), findsNothing);
+
+    final peerDenial = Completer<MediaFakeResponse>();
+    fixture.nextHistory = peerDenial;
+    await tester.tap(find.text('检查会话状态'));
+    await tester.pump();
+    await _drain(tester);
+    expect(fixture.nextHistory, isNull);
+
+    final activation = Completer<MediaFakeResponse>();
+    fixture.nextHistory = activation;
+    active.value = true;
+    await tester.pump();
+    await _drain(tester);
+    expect(
+      fixture.nextHistory,
+      isNull,
+      reason: 'activation must issue the real Paged authority read',
+    );
+    expect(fixture.historyCalls, 4);
+
+    peerDenial.complete(MediaFakeResponse.json(null, status: 403, code: 40381));
+    await _drain(tester);
+    expect(find.text('deleted-peer-name'), findsNothing);
+    activation.complete(_historyResponse('late-after-newer-denial'));
+    await _drain(tester);
+
+    expect(find.text('deleted-peer-name'), findsNothing);
+    expect(find.text('late-after-newer-denial'), findsNothing);
+    expect(fixture.historyCalls, greaterThanOrEqualTo(3));
+    expect(tester.takeException(), isNull);
+    expect(deps.sessionManager.session?.userId, 1);
+  });
+
   for (final reason in ['BLOCKED_RELATION', 'FRIENDS_ONLY']) {
     testWidgets(
       'send 40381 $reason does not confuse send policy with read revocation',
@@ -675,6 +830,47 @@ Future<void> _render(
   ),
 );
 
+Future<void> _renderCenter(
+  WidgetTester tester,
+  AppDependencies deps,
+  ValueListenable<bool> active,
+) => tester.pumpWidget(
+  AppDependencyScope(
+    dependencies: deps,
+    child: MaterialApp(
+      home: ValueListenableBuilder<bool>(
+        valueListenable: active,
+        builder: (context, isActive, child) =>
+            MessageCenterPage(isActive: isActive),
+      ),
+    ),
+  ),
+);
+
+Future<void> _renderCenterWithRecheckSource(
+  WidgetTester tester,
+  AppDependencies deps,
+  ValueListenable<bool> active,
+) => tester.pumpWidget(
+  AppDependencyScope(
+    dependencies: deps,
+    child: MaterialApp(
+      home: ValueListenableBuilder<bool>(
+        valueListenable: active,
+        builder: (context, isActive, child) => Stack(
+          children: [
+            Offstage(
+              offstage: !isActive,
+              child: MessageCenterPage(isActive: isActive),
+            ),
+            const PrivateChatPage(conversation: _peer),
+          ],
+        ),
+      ),
+    ),
+  ),
+);
+
 Future<void> _tick(WidgetTester tester) async {
   await tester.pump(const Duration(seconds: 3));
   await _drain(tester);
@@ -724,6 +920,19 @@ AuthSession _session(int user) => AuthSession(
   mobile: '',
   roles: 'USER',
 );
+
+MediaFakeResponse _historyResponse(String content) => MediaFakeResponse.json({
+  'conversationId': _peer.id,
+  'historyVersion': '0',
+  'clearedThroughSequence': '0',
+  'targetUserId': 2,
+  'list': [_row('late-$content', content)],
+  'hasMore': false,
+  'nextCursor': '',
+  'unreadCount': 0,
+  'imStatus': 'VENDOR_BLOCKED',
+  'providerInvocation': false,
+});
 
 Future<AppDependencies> _show(
   WidgetTester tester,
@@ -777,8 +986,8 @@ class _HttpFixture {
         if (error != null) throw error;
         return MediaFakeResponse.json({
           'conversationId': _peer.id,
-          'historyVersion': '0',
-          'clearedThroughSequence': '0',
+          'historyVersion': historyVersion,
+          'clearedThroughSequence': clearedThroughSequence,
           'targetUserId': 2,
           'list': [
             _row('text', body),
@@ -846,6 +1055,8 @@ class _HttpFixture {
   List<int> peers = [2, 3];
   int historyCalls = 0;
   Completer<MediaFakeResponse>? nextHistory;
+  String historyVersion = '0';
+  String clearedThroughSequence = '0';
   Map<String, Object?>? media;
 }
 
