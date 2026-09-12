@@ -9,6 +9,7 @@ import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/features/discovery/data/mock_discovery_repository.dart';
 import 'package:voice_social_app/features/discovery/domain/discovery_models.dart';
 import 'package:voice_social_app/features/discovery/presentation/search_results_page.dart';
+import 'package:voice_social_app/features/room/presentation/room_page.dart';
 
 void main() {
   testWidgets(
@@ -25,6 +26,65 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('reloads the active search after returning from a room route', (
+    WidgetTester tester,
+  ) async {
+    final _PagingDiscoveryRepository repository = _PagingDiscoveryRepository();
+    final AppDependencies dependencies = AppDependencies.forTestEnvironment(
+      environment: AppEnvironment.mock(),
+      discoveryRepository: repository,
+    );
+    addTearDown(dependencies.dispose);
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: dependencies,
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: const SearchResultsPage(keyword: '999547'),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(repository.requests, hasLength(1));
+    expect(repository.requests.single.keyword, '999547');
+    repository.requests.single.complete(
+      _result(rooms: const <DiscoveryRoom>[_closedRoom]),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('已关闭'), findsOneWidget);
+
+    final Finder roomTile = find.ancestor(
+      of: find.text(_closedRoom.title),
+      matching: find.byType(InkWell),
+    );
+    expect(roomTile, findsOneWidget);
+    // Invoke the real tile callback so the test is not coupled to artwork
+    // hit testing; the callback still pushes the production RoomPage route.
+    tester.widget<InkWell>(roomTile).onTap!();
+    await tester.pumpAndSettle();
+    expect(find.byType(RoomPage), findsOneWidget);
+
+    Navigator.of(tester.element(find.byType(RoomPage))).pop();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Returning from the RoomPage must reload page 1 for the same keyword
+    // and filter so a room reopened while the route was active is current.
+    expect(repository.requests, hasLength(2));
+    expect(repository.requests.last.keyword, '999547');
+    expect(repository.requests.last.type, SearchEntityType.all);
+    expect(repository.requests.last.page, 1);
+    repository.requests.last.complete(
+      _result(rooms: const <DiscoveryRoom>[_reopenedRoom]),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('已关闭'), findsNothing);
+    expect(find.text('2 人在线'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('loads the next search page once and appends stable results', (
     WidgetTester tester,
@@ -229,8 +289,13 @@ const DiscoveryRoom _staleRoom = DiscoveryRoom(
 );
 
 class _SearchRequest {
-  _SearchRequest({required this.type, required this.page});
+  _SearchRequest({
+    required this.keyword,
+    required this.type,
+    required this.page,
+  });
 
+  final String keyword;
   final SearchEntityType type;
   final int page;
   final Completer<DiscoverySearchResult> _completer =
@@ -253,8 +318,35 @@ class _PagingDiscoveryRepository extends MockDiscoveryRepository {
     int page = 1,
     int pageSize = 20,
   }) {
-    final _SearchRequest request = _SearchRequest(type: type, page: page);
+    final _SearchRequest request = _SearchRequest(
+      keyword: keyword,
+      type: type,
+      page: page,
+    );
     requests.add(request);
     return request.future;
   }
 }
+
+const DiscoveryRoom _closedRoom = DiscoveryRoom(
+  id: 'room-999547',
+  code: '999547',
+  title: '房164搜索结果',
+  topic: '关闭后重新开放',
+  onlineCount: 0,
+  occupiedSeats: 0,
+  isSpeaking: false,
+  isFavorite: false,
+  isClosed: true,
+);
+
+const DiscoveryRoom _reopenedRoom = DiscoveryRoom(
+  id: 'room-999547',
+  code: '999547',
+  title: '房164搜索结果',
+  topic: '关闭后重新开放',
+  onlineCount: 2,
+  occupiedSeats: 0,
+  isSpeaking: false,
+  isFavorite: false,
+);

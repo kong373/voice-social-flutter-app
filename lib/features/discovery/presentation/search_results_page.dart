@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
@@ -275,15 +277,7 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
   }
 
   void _openRoom(DiscoveryRoom room) {
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => RoomPage(
-          roomId: room.id,
-          title: room.title,
-          entrySource: RoomEntrySource.search,
-        ),
-      ),
-    );
+    unawaited(_openRoomAndReload(roomId: room.id, title: room.title));
   }
 
   void _openUserRoom(DiscoveryUser user) {
@@ -291,15 +285,26 @@ class _SearchResultsPageState extends State<SearchResultsPage> {
     if (roomId == null) {
       return;
     }
-    Navigator.of(context).push<void>(
+    unawaited(
+      _openRoomAndReload(roomId: roomId, title: user.currentRoomTitle ?? '语音房'),
+    );
+  }
+
+  Future<void> _openRoomAndReload({
+    required String roomId,
+    required String title,
+  }) async {
+    await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (BuildContext context) => RoomPage(
           roomId: roomId,
-          title: user.currentRoomTitle ?? '语音房',
+          title: title,
           entrySource: RoomEntrySource.search,
         ),
       ),
     );
+    if (!mounted) return;
+    await _load();
   }
 
   void _openProfile(DiscoveryUser user) {
