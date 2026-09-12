@@ -329,17 +329,29 @@ final class ProfileAvatarEditor extends ChangeNotifier {
     if (_closed) return Future<void>.error(MediaIdentityScope.invalid);
     if (!_ownerCurrent) return Future<void>.error(MediaIdentityScope.invalid);
     if (_loaded) return Future<void>.value();
+    return _startLoad(recoverUpload: false);
+  }
+
+  /// Explicit read-only recovery. A lost upload/inspection response keeps its
+  /// original asset; this action never allocates, resends bytes or binds it.
+  Future<void> reload() {
+    if (!_ownerCurrent) return Future<void>.error(MediaIdentityScope.invalid);
+    if (busy) return _loadFlight ?? Future<void>.value();
+    return _startLoad(recoverUpload: true);
+  }
+
+  Future<void> _startLoad({required bool recoverUpload}) {
     final existing = _loadFlight;
     if (existing != null) return existing;
     late Future<void> flight;
-    flight = _loadInternal().whenComplete(() {
+    flight = _loadInternal(recoverUpload: recoverUpload).whenComplete(() {
       if (identical(_loadFlight, flight)) _loadFlight = null;
     });
     _loadFlight = flight;
     return flight;
   }
 
-  Future<void> _loadInternal() async {
+  Future<void> _loadInternal({required bool recoverUpload}) async {
     _loading = true;
     _uploadState = ProfileAvatarUploadState.loading;
     _error = null;
@@ -351,14 +363,47 @@ final class ProfileAvatarEditor extends ChangeNotifier {
       _requireOwner();
       final presetIds = await api.fetchPresetIds();
       _requireOwner();
+      final pending = hasSelectedImage ? _draft.images.single : null;
+      if (recoverUpload && pending?.status != null) {
+        await imageHost.upload(
+          _draft,
+          pending!,
+          recover: true,
+          identity: scope,
+        );
+        _requireOwner();
+      }
+      final alreadyBound =
+          pending?.status?.state == MediaAssetState.ready &&
+          snapshot.avatar?.kind == UserAvatarKind.uploaded &&
+          snapshot.avatar?.reference == pending!.status!.assetId &&
+          snapshot.avatar?.version == pending.status!.version;
+      if (alreadyBound) {
+        imageHost.remove(_draft, pending);
+        _resetBindRequest();
+      }
       _current = snapshot;
       _availablePresetIds = presetIds;
-      _selectedPresetId = snapshot.avatar?.kind == UserAvatarKind.preset
+      _selectedPresetId =
+          !hasSelectedImage && snapshot.avatar?.kind == UserAvatarKind.preset
           ? snapshot.avatar!.reference
           : null;
       _loaded = true;
-      _uploadState = ProfileAvatarUploadState.idle;
-      _error = null;
+      _error = pending?.error;
+      _uploadState = alreadyBound
+          ? ProfileAvatarUploadState.saved
+          : _error != null
+          ? ProfileAvatarUploadState.failed
+          : hasSelectedImage
+          ? ProfileAvatarUploadState.picked
+          : ProfileAvatarUploadState.idle;
+      if (recoverUpload && pending?.status != null) {
+        _notice = alreadyBound
+            ? '头像已保存，已读取最新头像'
+            : pending!.status!.state == MediaAssetState.ready
+            ? '图片已处理完成，点击保存头像后生效'
+            : '已读取原图片状态；尚未绑定头像，可稍后继续保存';
+      }
       notifyListeners();
     } catch (error) {
       if (_ownerCurrent) {

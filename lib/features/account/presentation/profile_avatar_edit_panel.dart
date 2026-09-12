@@ -148,7 +148,11 @@ class ProfileAvatarEditPanel extends StatelessWidget {
 
   Future<void> _reload(BuildContext context) async {
     try {
-      await editor.load();
+      await editor.reload();
+      final snapshot = editor.current;
+      if (context.mounted && snapshot != null) {
+        onAvatarChanged(snapshot.avatar);
+      }
     } catch (error) {
       if (context.mounted) _showError(context, error);
     }
