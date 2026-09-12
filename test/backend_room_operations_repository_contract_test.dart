@@ -1167,6 +1167,121 @@ void main() {
     },
   );
 
+  for (final Object? resolver in <Object?>[0, null]) {
+    test(
+      'approval queue preserves pending requests beside automatic cancellation with resolver $resolver',
+      () async {
+        final Map<String, Object?> cancelled =
+            _micRequestRecord(
+              id: 'auto-cancelled-1',
+              type: 'REQUEST',
+              status: 'CANCELLED',
+              requestedByUserId: 10001,
+              subjectUserId: 10001,
+              seatNumber: 3,
+            )..addAll(<String, Object?>{
+              'version': 0,
+              'resolvedByUserId': resolver,
+            });
+        final Map<String, Object?> pending = _micRequestRecord(
+          id: 'pending-2',
+          type: 'REQUEST',
+          status: 'PENDING',
+          requestedByUserId: 10001,
+          subjectUserId: 10001,
+          seatNumber: 3,
+        );
+        final List<Object?> records = <Object?>[cancelled, pending];
+        final _RunningServer server = await _RunningServer.start((request) {
+          expect(request.method, 'GET');
+          return _Reply(
+            data: <String, Object?>{
+              'list': records,
+              'records': records,
+              'total': 2,
+              'roomId': '9527',
+              'coordinationMode': 'APPROVAL',
+              'providerInvocation': false,
+            },
+          );
+        });
+        addTearDown(server.close);
+        final BackendRoomOperationsRepository repository =
+            BackendRoomOperationsRepository(
+              leaseBinding: admittedRoomFixture(),
+              apiClient: server.client,
+            );
+
+        final List<MicAccessRequest> requests = await repository
+            .fetchMicRequests('9527');
+        expect(requests, hasLength(2));
+        expect(requests.first.status, MicRequestStatus.cancelled);
+        expect(requests.first.resolvedAt, DateTime.utc(2026, 1, 1));
+        expect(requests.first.resolvedByUserId, isNull);
+        expect(requests.last.status, MicRequestStatus.pending);
+        expect(requests.last.resolvedAt, isNull);
+        expect(requests.last.resolvedByUserId, isNull);
+        expect(server.requests, hasLength(1));
+      },
+    );
+  }
+
+  for (final invalid in <({String status, Object? resolver, String time})>[
+    (status: 'APPROVED', resolver: 0, time: '2026-01-01T00:00:00Z'),
+    (status: 'APPROVED', resolver: null, time: '2026-01-01T00:00:00Z'),
+    (status: 'REJECTED', resolver: 0, time: '2026-01-01T00:00:00Z'),
+    (status: 'REJECTED', resolver: null, time: '2026-01-01T00:00:00Z'),
+    (status: 'CANCELLED', resolver: -1, time: '2026-01-01T00:00:00Z'),
+    (status: 'CANCELLED', resolver: 0, time: ''),
+    (status: 'CANCELLED', resolver: 20001, time: ''),
+  ]) {
+    test(
+      'approval queue rejects invalid resolution metadata $invalid',
+      () async {
+        final Map<String, Object?> record =
+            _micRequestRecord(
+              id: 'invalid-resolution',
+              type: 'REQUEST',
+              status: invalid.status,
+              requestedByUserId: 10001,
+              subjectUserId: 10001,
+              seatNumber: 3,
+            )..addAll(<String, Object?>{
+              'resolvedByUserId': invalid.resolver,
+              'resolvedAt': invalid.time,
+            });
+        final _RunningServer server = await _RunningServer.start((request) {
+          return _Reply(
+            data: <String, Object?>{
+              'list': <Object?>[record],
+              'records': <Object?>[record],
+              'total': 1,
+              'roomId': '9527',
+              'coordinationMode': 'APPROVAL',
+              'providerInvocation': false,
+            },
+          );
+        });
+        addTearDown(server.close);
+        final BackendRoomOperationsRepository repository =
+            BackendRoomOperationsRepository(
+              leaseBinding: admittedRoomFixture(),
+              apiClient: server.client,
+            );
+        await expectLater(
+          repository.fetchMicRequests('9527'),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.protocol,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   test('delayed room A reads cannot overwrite room B seat identity', () async {
     final Completer<void> roomAStarted = Completer<void>();
     final Completer<void> releaseRoomA = Completer<void>();

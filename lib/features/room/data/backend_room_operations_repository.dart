@@ -1354,12 +1354,19 @@ class BackendRoomOperationsRepository
       );
     }
     if ((status == MicRequestStatus.approved ||
-            status == MicRequestStatus.rejected ||
-            status == MicRequestStatus.cancelled) &&
+            status == MicRequestStatus.rejected) &&
         (resolvedAt == null || (resolvedByUserId ?? 0) <= 0)) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '已处理上麦申请缺少权威处理时间或处理人',
+      );
+    }
+    // Historical lifecycle cancellations have a timestamp but no human resolver.
+    // Keep them readable without inventing approval authority or a resolver ID.
+    if (status == MicRequestStatus.cancelled && resolvedAt == null) {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '已取消上麦申请缺少权威处理时间',
       );
     }
     final Map<String, Object?> memberData = _requiredObjectMap(data['member']);
