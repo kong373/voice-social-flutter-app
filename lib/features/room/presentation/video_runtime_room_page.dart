@@ -117,6 +117,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     _controller.addListener(_onControllerChanged);
     _entryEpoch++;
     _entryBusy = false;
+    _presentedError = null;
     _dismissEntryPassword();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_joinRoom());
@@ -220,17 +221,28 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
             !_messageScroll.hasClients ||
             _messageScroll.position.extentAfter < 96);
     setState(() {});
-    final String? error = _controller.errorMessage;
-    if (!_sessionEnded && error != null && error != _presentedError) {
+    final RoomController controller = _controller;
+    final String? error = controller.errorMessage;
+    // Entry failures are rendered by the failure state, so their backend
+    // reason must not be consumed by the transient-error feedback path.
+    if (!_sessionEnded &&
+        controller.status != RoomSessionStatus.failed &&
+        error != null &&
+        error != _presentedError) {
       _presentedError = error;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) {
+        if (!mounted ||
+            !identical(controller, _controller) ||
+            !controller.isEntryIdentityCurrent ||
+            _sessionEnded ||
+            controller.status == RoomSessionStatus.failed ||
+            controller.errorMessage != error) {
           return;
         }
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(error)));
-        _controller.clearError();
+        controller.clearError();
       });
     }
     if (!followTail) return;

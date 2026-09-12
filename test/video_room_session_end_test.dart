@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
+import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/data/mock_room_repository.dart';
 import 'package:voice_social_app/features/room/domain/room_models.dart';
@@ -107,6 +108,67 @@ void main() {
     expect(find.byKey(const Key('video-room-public-screen')), findsNothing);
     expect(find.byKey(const Key('video-room-composer')), findsNothing);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+    'failed entry keeps the backend reason visible without a snackbar',
+    (tester) async {
+      final h = _Harness();
+      addTearDown(h.dispose);
+      await h.mount(tester);
+      h.expire();
+      await tester.pumpAndSettle();
+      const reason = '被移出后 10 分钟内不可重新进入房间';
+      h.repository
+        ..refuseEntry = true
+        ..entryFailure = const ApiException(
+          kind: ApiFailureKind.forbidden,
+          code: 40331,
+          message: reason,
+        );
+
+      await tester.tap(find.text('重新进入'));
+      await tester.pumpAndSettle();
+
+      expect(h.controller.status, RoomSessionStatus.failed);
+      expect(h.controller.errorMessage, reason);
+      expect(find.text(reason), findsOneWidget);
+      expect(find.byType(SnackBar), findsNothing);
+      h.repository.refuseEntry = false;
+      await tester.tap(find.text('重新进入'));
+      await tester.pumpAndSettle();
+      expect(h.controller.status, RoomSessionStatus.joined);
+      expect(h.controller.errorMessage, isNull);
+      expect(find.text(reason), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      h.controller.dispose();
+    },
+  );
+
+  testWidgets('joined operation errors still use one transient snackbar', (
+    tester,
+  ) async {
+    final h = _Harness();
+    addTearDown(h.dispose);
+    await h.mount(tester);
+    const reason = '房间恢复失败，请稍后重试';
+    h.repository.reconnectFailure = const ApiException(
+      kind: ApiFailureKind.network,
+      message: reason,
+    );
+
+    await h.controller.reconnect();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(h.controller.status, RoomSessionStatus.joined);
+    expect(h.controller.errorMessage, isNull);
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(find.text(reason), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(SnackBar), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    h.controller.dispose();
   });
 
   testWidgets('identity change cannot reenter with the old controller', (
@@ -235,6 +297,8 @@ class _Repository extends MockRoomRepository implements RoomLeaseRepository {
   int entries = 0;
   int exits = 0;
   bool refuseEntry = false;
+  Object? entryFailure;
+  Object? reconnectFailure;
   RoomEntrySource? lastSource;
   String get sessionId =>
       '00000000-0000-4000-8000-${entries.toString().padLeft(12, '0')}';
@@ -257,7 +321,7 @@ class _Repository extends MockRoomRepository implements RoomLeaseRepository {
   }) async {
     entries++;
     lastSource = source;
-    if (refuseEntry) throw Exception('entry refused');
+    if (refuseEntry) throw entryFailure ?? Exception('entry refused');
     final snapshot = await super.enterRoom(
       roomId: roomId,
       password: password,
@@ -271,6 +335,15 @@ class _Repository extends MockRoomRepository implements RoomLeaseRepository {
       sessionId: sessionId,
       roomLease: lease(0),
     );
+  }
+
+  @override
+  Future<RoomSnapshot> reconnectRoom({
+    required String roomId,
+    required int currentUserId,
+  }) async {
+    if (reconnectFailure != null) throw reconnectFailure!;
+    return super.reconnectRoom(roomId: roomId, currentUserId: currentUserId);
   }
 
   @override
