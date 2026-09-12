@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
+import 'package:voice_social_app/app/app_environment.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
+import 'package:voice_social_app/features/message/data/mock_message_repository.dart';
+import 'package:voice_social_app/features/message/domain/message_models.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/shell/main_shell.dart';
 
@@ -113,6 +116,59 @@ void main() {
   });
 
   testWidgets(
+    'message tab reloads its conversation list when activated after keep-alive',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final _ActivationMessageRepository repository =
+          _ActivationMessageRepository();
+      final AppDependencies dependencies = AppDependencies.forTestEnvironment(
+        environment: AppEnvironment.mock(),
+        messageRepository: repository,
+      );
+      addTearDown(dependencies.dispose);
+
+      await tester.pumpWidget(
+        AppDependencyScope(
+          dependencies: dependencies,
+          child: MaterialApp(
+            theme: AppTheme.social(),
+            home: MainShell(dependencies: dependencies, onSignOut: () async {}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(repository.conversationFetches, 1);
+
+      await tester.tap(find.text('消息').hitTestable());
+      await tester.pumpAndSettle();
+      expect(find.text('暂无可展示会话'), findsOneWidget);
+      final int firstActivationFetches = repository.conversationFetches;
+
+      await tester.tap(find.text('首页').hitTestable());
+      await tester.pumpAndSettle();
+
+      repository.conversations = const <ConversationSummary>[
+        ConversationSummary(
+          id: 'conversation-189',
+          kind: ConversationKind.privateChat,
+          title: '189',
+          lastMessage: '新消息',
+          updatedAt: null,
+          unreadCount: 0,
+          targetUserId: 189,
+        ),
+      ];
+      await tester.tap(find.text('消息').hitTestable());
+      await tester.pumpAndSettle();
+
+      expect(repository.conversationFetches, firstActivationFetches + 1);
+      expect(find.text('189'), findsOneWidget);
+      expect(find.text('新消息'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'message center headings keep social contrast under a dark parent theme',
     (WidgetTester tester) async {
       await pumpHarness(tester, parentTheme: ThemeData.dark());
@@ -148,5 +204,16 @@ class _MessageNavigationHarness extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _ActivationMessageRepository extends MockMessageRepository {
+  List<ConversationSummary> conversations = const <ConversationSummary>[];
+  int conversationFetches = 0;
+
+  @override
+  Future<List<ConversationSummary>> fetchConversations() async {
+    conversationFetches += 1;
+    return List<ConversationSummary>.unmodifiable(conversations);
   }
 }

@@ -1,7 +1,9 @@
 part of 'message_pages.dart';
 
 class MessageCenterPage extends StatefulWidget {
-  const MessageCenterPage({super.key});
+  const MessageCenterPage({this.isActive = true, super.key});
+
+  final bool isActive;
 
   @override
   State<MessageCenterPage> createState() => _MessageCenterPageState();
@@ -76,6 +78,14 @@ class _MessageCenterPageState extends State<MessageCenterPage>
 
   @override
   bool get wantKeepAlive => true;
+
+  @override
+  void didUpdateWidget(covariant MessageCenterPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      _load(showLoading: false).ignore();
+    }
+  }
 
   @override
   void didChangeDependencies() {

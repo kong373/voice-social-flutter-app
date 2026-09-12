@@ -39,7 +39,10 @@ class _MainShellState extends State<MainShell> {
         onOpenRoom: _openRoom,
       ),
       VideoRuntimeDiscoveryPage(dependencies: widget.dependencies),
-      VideoRuntimeMessagesPage(dependencies: widget.dependencies),
+      VideoRuntimeMessagesPage(
+        dependencies: widget.dependencies,
+        isActive: _selectedIndex == 2,
+      ),
       VideoRuntimeAccountPage(
         dependencies: widget.dependencies,
         isActive: _selectedIndex == 3,

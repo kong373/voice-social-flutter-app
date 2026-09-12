@@ -1450,13 +1450,20 @@ class _FeedAction extends StatelessWidget {
 }
 
 class VideoRuntimeMessagesPage extends StatelessWidget {
-  const VideoRuntimeMessagesPage({required this.dependencies, super.key});
+  const VideoRuntimeMessagesPage({
+    required this.dependencies,
+    this.isActive = true,
+    super.key,
+  });
 
   final AppDependencies dependencies;
+  final bool isActive;
 
   @override
-  Widget build(BuildContext context) =>
-      const MessageCenterPage(key: Key('video-runtime-messages'));
+  Widget build(BuildContext context) => MessageCenterPage(
+    key: const Key('video-runtime-messages'),
+    isActive: isActive,
+  );
 }
 
 class VideoRuntimeAccountPage extends StatefulWidget {
