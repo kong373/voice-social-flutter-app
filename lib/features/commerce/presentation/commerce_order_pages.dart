@@ -215,17 +215,43 @@ class _OrdersPageState extends State<OrdersPage> {
 }
 
 class OrderDetailPage extends StatefulWidget {
-  const OrderDetailPage({required this.order, super.key});
+  const OrderDetailPage({required this.order, this.repository, super.key});
 
   final PaymentOrder order;
+  @visibleForTesting
+  final CommerceRepository? repository;
 
   @override
   State<OrderDetailPage> createState() => _OrderDetailPageState();
 }
 
-class _OrderDetailPageState extends State<OrderDetailPage> {
+class _OrderDetailPageState extends State<OrderDetailPage>
+    with CommerceIdentityFence<OrderDetailPage> {
   late PaymentOrder _order;
   bool _refreshing = false;
+  bool _identityLost = false;
+  (String?, int)? _orderIdentity;
+
+  @override
+  CommerceRepository get commerceIdentityRepository =>
+      widget.repository ?? AppDependencyScope.of(context).commerceRepository;
+
+  @override
+  void clearCommerceIdentity() {
+    _identityLost = true;
+    _refreshing = false;
+  }
+
+  // A new session must reopen its own order from the list. Never automatically
+  // replay an old detail page's read or recovery under a new generation.
+  @override
+  Future<void> reloadCommerceIdentity() async {}
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _orderIdentity ??= commerceIdentityRepository.withdrawalIdentity;
+  }
 
   @override
   void initState() {
@@ -234,25 +260,33 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   }
 
   Future<void> _refreshStatus() async {
-    if (_refreshing) {
+    if (_refreshing || _identityLost) {
       return;
     }
+    final repository = commerceIdentityRepository;
+    if (_orderIdentity != repository.withdrawalIdentity ||
+        _orderIdentity?.$1 == null) {
+      setState(clearCommerceIdentity);
+      return;
+    }
+    final ticket = beginCommerceRead();
     setState(() => _refreshing = true);
     try {
-      final PaymentOrder updated = await AppDependencyScope.of(
-        context,
-      ).commerceRepository.queryOrderStatus(_order);
-      if (mounted) {
+      final PaymentOrder updated = await repository.queryOrderStatus(
+        _order,
+        reconcile: true,
+      );
+      if (acceptsCommerceRead(ticket)) {
         setState(() => _order = updated);
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted && acceptsCommerceRead(ticket)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
-      if (mounted) {
+      if (acceptsCommerceRead(ticket)) {
         setState(() => _refreshing = false);
       }
     }
@@ -269,6 +303,16 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_identityLost) {
+      return _CommerceScaffold(
+        appBar: AppBar(title: const Text('订单详情与补单')),
+        body: const _CommerceStatusCard(
+          icon: Icons.lock_outline,
+          title: '登录身份已变更',
+          description: '请返回充值订单列表重新打开订单。',
+        ),
+      );
+    }
     return _CommerceScaffold(
       appBar: AppBar(title: const Text('订单详情与补单')),
       body: ListView(
@@ -321,7 +365,11 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
             label: const Text('刷新并补单核验'),
           ),
           const SizedBox(height: 14),
-          const _CommerceInfoBanner(text: '补单核验只查询服务端权威订单状态，不会在客户端自行把订单改成成功。'),
+          _CommerceInfoBanner(
+            text: _order.isAlipay
+                ? '支付宝补单会向支付渠道核验，再读取服务端订单结果；不会再次发起付款。'
+                : '补单核验只查询服务端权威订单状态，不会在客户端自行把订单改成成功。',
+          ),
         ],
       ),
     );

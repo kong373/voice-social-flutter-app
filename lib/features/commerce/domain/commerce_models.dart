@@ -261,6 +261,9 @@ class PaymentOrder {
   final PaymentOrderStatus status;
   final LedgerCurrency currency;
 
+  /// Formal and sandbox Alipay orders share this exact server payType.
+  bool get isAlipay => const {'ALIPAY', '支付宝'}.contains(channelName);
+
   PaymentOrder copyWith({PaymentOrderStatus? status}) {
     return PaymentOrder(
       orderNo: orderNo,
@@ -569,7 +572,12 @@ abstract interface class CommerceRepository {
     required int pageSize,
   });
 
-  Future<PaymentOrder> queryOrderStatus(PaymentOrder order);
+  /// Reads DB authority. Only an explicit recovery action may opt into an
+  /// Alipay provider reconciliation before the mandatory read.
+  Future<PaymentOrder> queryOrderStatus(
+    PaymentOrder order, {
+    bool reconcile = false,
+  });
 
   Future<RefundEligibility> checkRefundEligibility(String account);
 

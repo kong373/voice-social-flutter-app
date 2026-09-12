@@ -306,7 +306,10 @@ class MockCommerceRepository implements CommerceRepository {
   }) async => _page(_orders, page: page, pageSize: pageSize);
 
   @override
-  Future<PaymentOrder> queryOrderStatus(PaymentOrder order) async {
+  Future<PaymentOrder> queryOrderStatus(
+    PaymentOrder order, {
+    bool reconcile = false,
+  }) async {
     final int index = _orders.indexWhere(
       (PaymentOrder item) => item.orderNo == order.orderNo,
     );

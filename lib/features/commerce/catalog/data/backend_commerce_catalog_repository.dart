@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:voice_social_app/features/commerce/domain/alipay_request_id.dart';
 import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
@@ -748,7 +749,7 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
     RechargeOrder order,
     (int, int) identity,
   ) async {
-    final String requestId = _alipayReconcileRequestId(order.orderNo);
+    final String requestId = alipayReconcileRequestId(order.orderNo);
     await _apiClient.postBoundToIdentity(
       _routes.reconcileAlipayRechargeOrder,
       requireIdentity: () => _assertAlipayIdentity(identity),
@@ -800,16 +801,6 @@ class BackendCommerceCatalogRepository implements CommerceCatalogRepository {
         RechargeOrderState.invoking ||
         RechargeOrderState.confirming => false,
       };
-
-  /// Stable for one first-party order, so retries of an uncertain native
-  /// outcome share the backend's idempotency boundary without exposing the
-  /// signed order string or any credential.
-  static String _alipayReconcileRequestId(String orderNo) {
-    final String digest = sha256
-        .convert(utf8.encode('voice-social:alipay-reconcile:$orderNo'))
-        .toString();
-    return 'alipay-rec-$digest';
-  }
 
   /// Stable for one first-party order so repeated local cancel attempts replay
   /// the same authenticated backend idempotency boundary.

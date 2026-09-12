@@ -3,6 +3,7 @@ import 'package:voice_social_app/core/network/api_client.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/commerce/domain/commerce_models.dart';
+import 'package:voice_social_app/features/commerce/domain/alipay_request_id.dart';
 import 'package:voice_social_app/features/commerce/domain/refund_request_id.dart';
 import 'package:voice_social_app/features/commerce/domain/payout_account_binding.dart';
 
@@ -415,11 +416,56 @@ class BackendCommerceRepository
   }
 
   @override
-  Future<PaymentOrder> queryOrderStatus(PaymentOrder order) async {
-    final ApiResponse response = await _apiClient.get(
-      _routes.paymentOrderResult,
-      query: <String, String>{'orderNo': order.orderNo},
-    );
+  Future<PaymentOrder> queryOrderStatus(
+    PaymentOrder order, {
+    bool reconcile = false,
+  }) async {
+    void Function()? requireIdentity;
+    // The list contract exposes payType, not a separate provider field. Both
+    // formal and sandbox Alipay use ALIPAY; do not infer from substrings.
+    if (reconcile && order.isAlipay) {
+      final identity = withdrawalIdentity;
+      requireIdentity = () {
+        if ((int.tryParse(identity.$1 ?? '') ?? 0) <= 0 ||
+            identity != withdrawalIdentity) {
+          throw const ApiException(
+            kind: ApiFailureKind.unauthorized,
+            message: '登录身份已变更，请重新打开充值订单',
+          );
+        }
+      };
+      requireIdentity();
+      try {
+        await _apiClient.postBoundToIdentity(
+          _routes.reconcileAlipayRechargeOrder,
+          requireIdentity: requireIdentity,
+          query: {'orderNo': order.orderNo},
+          headers: {'X-Request-Id': alipayReconcileRequestId(order.orderNo)},
+        );
+      } catch (_) {
+        // A provider/transport failure is not a payment outcome. Read the
+        // same order, but never adopt a new identity after a failed command.
+        requireIdentity();
+      }
+      requireIdentity();
+    }
+    final ApiResponse response;
+    try {
+      response = requireIdentity == null
+          ? await _apiClient.get(
+              _routes.paymentOrderResult,
+              query: {'orderNo': order.orderNo},
+            )
+          : await _apiClient.getBoundToIdentity(
+              _routes.paymentOrderResult,
+              requireIdentity: requireIdentity,
+              query: {'orderNo': order.orderNo},
+            );
+      requireIdentity?.call();
+    } catch (_) {
+      requireIdentity?.call();
+      rethrow;
+    }
     final Map<String, Object?> data = _asMap(response.data);
     final String returnedOrderNo = _requiredString(
       data,
