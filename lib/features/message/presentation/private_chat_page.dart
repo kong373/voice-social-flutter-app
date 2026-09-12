@@ -653,10 +653,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
             accountId: accountId,
             accountGeneration: accountGeneration,
           );
-      if (denial != null &&
-          repository is! PagedPrivateMessageRepository &&
-          !flight.abandoned &&
-          currentReadScope) {
+      if (denial != null && !flight.abandoned && currentReadScope) {
         _visibility!.deny(denial, peer: peer);
         return;
       }

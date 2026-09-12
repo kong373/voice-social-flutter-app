@@ -80,6 +80,46 @@ void main() {
     },
   );
   testWidgets(
+    'paged same-peer confirmed denial while backgrounded redacts before returning foreground',
+    (tester) async {
+      final fixture = _HttpFixture();
+      await _show(tester, fixture.repository);
+      final pending = Completer<MediaFakeResponse>();
+      fixture.nextHistory = pending;
+      await _tick(tester);
+      expect(
+        fixture.nextHistory,
+        isNull,
+        reason:
+            'the real BackendMessageRepository Paged head must be in flight',
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      void resume() {
+        if (tester.binding.lifecycleState != AppLifecycleState.paused) return;
+        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+      }
+
+      addTearDown(resume);
+      await tester.pump();
+      pending.complete(MediaFakeResponse.json(null, status: 404, code: 40402));
+      await _drain(tester);
+      resume();
+      // Paused Flutter does not paint. Inspect the FIRST resumed frame, before
+      // another network turn could repair the stale page by coincidence.
+      await tester.pump();
+      expect(find.text('old-body'), findsNothing);
+      expect(find.text('deleted-peer-name'), findsNothing);
+    },
+  );
+  testWidgets(
     'list recheck remains redacted on repeated denial then accepts a fresh authorized list',
     (tester) async {
       final fixture = _HttpFixture();
