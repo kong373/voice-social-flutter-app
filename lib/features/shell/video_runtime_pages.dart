@@ -1466,6 +1466,7 @@ class VideoRuntimeAccountPage extends StatefulWidget {
     required this.onSignOut,
     this.profileRepository,
     this.liveReadOnlyRepository,
+    this.isActive = true,
     super.key,
   });
 
@@ -1474,6 +1475,7 @@ class VideoRuntimeAccountPage extends StatefulWidget {
   final Future<void> Function() onSignOut;
   final SocialRepository? profileRepository;
   final LiveReadOnlyRepository? liveReadOnlyRepository;
+  final bool isActive;
 
   @override
   State<VideoRuntimeAccountPage> createState() =>
@@ -1494,6 +1496,16 @@ class _VideoRuntimeAccountPageState extends State<VideoRuntimeAccountPage> {
   String? _liveError;
   bool _loadingLiveOverview = false;
   int _liveLoadRequestId = 0;
+
+  @override
+  void didUpdateWidget(covariant VideoRuntimeAccountPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // IndexedStack keeps My mounted while Home/Search can change relations.
+    // Re-entering must reread authority, not reuse the preloaded counters.
+    if (widget.isActive && !oldWidget.isActive) {
+      _loadProfile();
+    }
+  }
 
   @override
   void didChangeDependencies() {

@@ -42,6 +42,7 @@ class _MainShellState extends State<MainShell> {
       VideoRuntimeMessagesPage(dependencies: widget.dependencies),
       VideoRuntimeAccountPage(
         dependencies: widget.dependencies,
+        isActive: _selectedIndex == 3,
         onOpenRoom: _openRoom,
         onSignOut: widget.onSignOut,
       ),
