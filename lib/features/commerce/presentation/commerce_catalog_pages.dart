@@ -451,13 +451,13 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
         ],
       ),
     );
-    if (confirmed != true || !_acceptsIdentity(identityFence)) {
+    if (confirmed != true || !mounted || !_acceptsIdentity(identityFence)) {
       return;
     }
     setState(() => _submitting = true);
     RechargeOrder? createdOrder;
     try {
-      if (!_acceptsIdentity(identityFence)) {
+      if (!mounted || !_acceptsIdentity(identityFence)) {
         return;
       }
       final String account =
@@ -469,7 +469,7 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
         platform: widget.platform,
         youthModeEnabled: widget.youthModeEnabled,
       );
-      if (!_acceptsIdentity(identityFence)) {
+      if (!mounted || !_acceptsIdentity(identityFence)) {
         return;
       }
       createdOrder = order;
@@ -479,7 +479,7 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
         }
         order = await _repository.invokePayment(order);
       }
-      if (!_acceptsIdentity(identityFence)) {
+      if (!mounted || !_acceptsIdentity(identityFence)) {
         return;
       }
       await Navigator.of(context).push<void>(
@@ -487,11 +487,11 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
           builder: (BuildContext context) => PaymentResultPage(order: order),
         ),
       );
-      if (_acceptsIdentity(identityFence)) {
+      if (mounted && _acceptsIdentity(identityFence)) {
         Navigator.of(context).pop<void>();
       }
     } catch (error) {
-      if (_acceptsIdentity(identityFence)) {
+      if (mounted && _acceptsIdentity(identityFence)) {
         final RechargeOrder? pendingOrder = createdOrder;
         if (channel == PaymentChannelType.appleIap && pendingOrder != null) {
           await Navigator.of(context).push<void>(
@@ -504,7 +504,7 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
               ),
             ),
           );
-          if (_acceptsIdentity(identityFence)) {
+          if (mounted && _acceptsIdentity(identityFence)) {
             Navigator.of(context).pop<void>();
           }
           return;
