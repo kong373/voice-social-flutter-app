@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:voice_social_app/core/network/api_client.dart';
 import '../../account/domain/user_avatar_descriptor.dart';
 import '../../commerce/display/domain/equipped_decoration.dart';
@@ -589,6 +591,7 @@ class BackendRoomOperationsRepository
     required String roomId,
     required RoomTopic topic,
   }) async {
+    final String normalizedTopicTitle = topic.title.trim();
     final String normalizedTopic = topic.content.trim().isEmpty
         ? topic.title.trim()
         : topic.content.trim();
@@ -596,14 +599,21 @@ class BackendRoomOperationsRepository
       topic.version,
       operation: '更新房间话题',
     );
+    final String topicIntent = jsonEncode(<Object?>[
+      roomId,
+      normalizedTopicTitle,
+      normalizedTopic,
+      expectedVersion,
+    ]);
     await _runWrite<void>(
-      intent: 'topic:$roomId:$normalizedTopic:$expectedVersion',
+      intent: 'topic:$topicIntent',
       action: (Map<String, String> headers) async {
         final ApiResponse response = await _post(
           _routes.updateRoomTopic,
           headers: headers,
           body: <String, Object?>{
             'roomId': roomId,
+            'topicTitle': normalizedTopicTitle,
             'topic': normalizedTopic,
             'expectedVersion': expectedVersion,
           },
@@ -611,11 +621,18 @@ class BackendRoomOperationsRepository
         final Map<String, Object?> data = _requiredMutationMap(
           response,
           operation: '更新房间话题',
-          requiredFields: <String>['roomId', 'topic', 'welcomeText', 'version'],
+          requiredFields: <String>[
+            'roomId',
+            'topicTitle',
+            'topic',
+            'welcomeText',
+            'version',
+          ],
         );
         _assertRoom(data, roomId, operation: '更新房间话题');
         final int responseVersion = _requiredNonNegativeInt(data, 'version');
-        if (_string(data['topic'], fallback: '') != normalizedTopic ||
+        if (_string(data['topicTitle'], fallback: '') != normalizedTopicTitle ||
+            _string(data['topic'], fallback: '') != normalizedTopic ||
             responseVersion != _nextVersion(expectedVersion)) {
           throw const ApiException(
             kind: ApiFailureKind.protocol,

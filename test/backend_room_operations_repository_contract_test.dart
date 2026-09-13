@@ -640,12 +640,14 @@ void main() {
             expect(request.body, <String, Object?>{
               'sessionId': roomLeaseSessionId,
               'roomId': '9527',
+              'topicTitle': '新标题',
               'topic': '新内容',
               'expectedVersion': 1,
             });
             return const _Reply(
               data: <String, Object?>{
                 'roomId': '9527',
+                'topicTitle': '新标题',
                 'topic': '新内容',
                 'welcomeText': '',
                 'version': 2,
@@ -2065,6 +2067,7 @@ void main() {
         expect(request.body, <String, Object?>{
           'sessionId': roomLeaseSessionId,
           'roomId': '9527',
+          'topicTitle': '标题',
           'topic': '新内容',
           'expectedVersion': 4,
         });
@@ -2100,6 +2103,231 @@ void main() {
       expect(server.requests, hasLength(1));
     },
   );
+
+  test(
+    'topic edit trims title and content, validates mutation, and rereads authority',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        if (request.path == '/app-api/rooms/setRoomTopics') {
+          expect(request.method, 'POST');
+          expect(request.body, <String, Object?>{
+            'sessionId': roomLeaseSessionId,
+            'roomId': '9527',
+            'topicTitle': '新标题',
+            'topic': '新内容',
+            'expectedVersion': 4,
+          });
+          return const _Reply(
+            data: <String, Object?>{
+              'roomId': '9527',
+              'topicTitle': '新标题',
+              'topic': '新内容',
+              'welcomeText': '',
+              'version': 5,
+            },
+          );
+        }
+        if (request.path == '/app-api/rooms/getRoomTopics') {
+          expect(request.method, 'GET');
+          expect(request.query, <String, String>{'roomId': '9527'});
+          return const _Reply(
+            data: <String, Object?>{
+              'roomId': '9527',
+              'topicTitle': '新标题',
+              'topic': '新内容',
+              'version': 5,
+            },
+          );
+        }
+        fail('unexpected topic route: ${request.path}');
+      });
+      addTearDown(server.close);
+      final BackendRoomOperationsRepository repository =
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: server.client,
+          );
+
+      await repository.updateTopic(
+        roomId: '9527',
+        topic: const RoomTopic(
+          title: '  新标题  ',
+          content: '  新内容  ',
+          version: 4,
+        ),
+      );
+      final RoomTopic authoritative = await repository.fetchTopic('9527');
+
+      expect(authoritative.title, '新标题');
+      expect(authoritative.content, '新内容');
+      expect(authoritative.version, 5);
+      expect(server.requests, hasLength(2));
+    },
+  );
+
+  test(
+    'topic mutation rejects a title drift in the mutation response',
+    () async {
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        expect(request.path, '/app-api/rooms/setRoomTopics');
+        expect(request.body, <String, Object?>{
+          'sessionId': roomLeaseSessionId,
+          'roomId': '9527',
+          'topicTitle': '请求标题',
+          'topic': '请求内容',
+          'expectedVersion': 1,
+        });
+        return const _Reply(
+          data: <String, Object?>{
+            'roomId': '9527',
+            'topicTitle': '服务端标题',
+            'topic': '请求内容',
+            'welcomeText': '',
+            'version': 2,
+          },
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomOperationsRepository repository =
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: server.client,
+          );
+
+      await expectLater(
+        repository.updateTopic(
+          roomId: '9527',
+          topic: const RoomTopic(title: '请求标题', content: '请求内容', version: 1),
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+      expect(server.requests, hasLength(1));
+    },
+  );
+
+  test('topic title distinguishes same-content write intents', () async {
+    int updateCalls = 0;
+    final Completer<void> releaseFirst = Completer<void>();
+    final _RunningServer server = await _RunningServer.start((
+      _CapturedRequest request,
+    ) async {
+      expect(request.path, '/app-api/rooms/setRoomTopics');
+      updateCalls += 1;
+      final Map<String, Object?> body = Map<String, Object?>.from(
+        request.body! as Map,
+      );
+      final String expectedTitle = updateCalls == 1 ? '标题一' : '标题二';
+      expect(body, <String, Object?>{
+        'sessionId': roomLeaseSessionId,
+        'roomId': '9527',
+        'topicTitle': expectedTitle,
+        'topic': '同一正文',
+        'expectedVersion': 1,
+      });
+      if (updateCalls == 1) {
+        await releaseFirst.future;
+      }
+      return _Reply(
+        data: <String, Object?>{
+          'roomId': '9527',
+          'topicTitle': expectedTitle,
+          'topic': '同一正文',
+          'welcomeText': '',
+          'version': 2,
+        },
+      );
+    });
+    addTearDown(server.close);
+    final BackendRoomOperationsRepository repository =
+        BackendRoomOperationsRepository(
+          leaseBinding: admittedRoomFixture(),
+          apiClient: server.client,
+        );
+
+    final Future<void> first = repository.updateTopic(
+      roomId: '9527',
+      topic: const RoomTopic(title: '标题一', content: '同一正文', version: 1),
+    );
+    while (server.requests.isEmpty) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    final Future<void> second = repository.updateTopic(
+      roomId: '9527',
+      topic: const RoomTopic(title: '标题二', content: '同一正文', version: 1),
+    );
+    releaseFirst.complete();
+
+    await Future.wait<void>(<Future<void>>[first, second]);
+    expect(server.requests, hasLength(2));
+  });
+
+  test('topic intent stays unambiguous for colon-containing fields', () async {
+    int updateCalls = 0;
+    final Completer<void> releaseFirst = Completer<void>();
+    final _RunningServer server = await _RunningServer.start((
+      _CapturedRequest request,
+    ) async {
+      expect(request.path, '/app-api/rooms/setRoomTopics');
+      updateCalls += 1;
+      final Map<String, Object?> body = Map<String, Object?>.from(
+        request.body! as Map,
+      );
+      final ({String title, String content}) expected = updateCalls == 1
+          ? (title: 'a:b', content: 'c')
+          : (title: 'a', content: 'b:c');
+      expect(body, <String, Object?>{
+        'sessionId': roomLeaseSessionId,
+        'roomId': '9527',
+        'topicTitle': expected.title,
+        'topic': expected.content,
+        'expectedVersion': 1,
+      });
+      if (updateCalls == 1) {
+        await releaseFirst.future;
+      }
+      return _Reply(
+        data: <String, Object?>{
+          'roomId': '9527',
+          'topicTitle': expected.title,
+          'topic': expected.content,
+          'welcomeText': '',
+          'version': 2,
+        },
+      );
+    });
+    addTearDown(server.close);
+    final BackendRoomOperationsRepository repository =
+        BackendRoomOperationsRepository(
+          leaseBinding: admittedRoomFixture(),
+          apiClient: server.client,
+        );
+
+    final Future<void> first = repository.updateTopic(
+      roomId: '9527',
+      topic: const RoomTopic(title: 'a:b', content: 'c', version: 1),
+    );
+    while (server.requests.isEmpty) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    final Future<void> second = repository.updateTopic(
+      roomId: '9527',
+      topic: const RoomTopic(title: 'a', content: 'b:c', version: 1),
+    );
+    releaseFirst.complete();
+
+    await Future.wait<void>(<Future<void>>[first, second]);
+    expect(server.requests, hasLength(2));
+  });
 
   test(
     'topic writes reject a missing or negative snapshot version locally',

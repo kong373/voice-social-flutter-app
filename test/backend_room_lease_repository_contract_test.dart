@@ -466,9 +466,15 @@ void main() {
 
   test('offline owner resource edit works with no membership', () async {
     final harness = await Harness.start((request, body) async {
-      expect(body, {'roomId': '9527', 'topic': 'new', 'expectedVersion': 1});
+      expect(body, {
+        'roomId': '9527',
+        'topicTitle': '',
+        'topic': 'new',
+        'expectedVersion': 1,
+      });
       return {
         'roomId': '9527',
+        'topicTitle': '',
         'topic': 'new',
         'welcomeText': '',
         'version': 2,
