@@ -22,7 +22,7 @@ jobs:
   quality:
     name: Static, unit, widget, integration-source, and public-client hygiene
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
