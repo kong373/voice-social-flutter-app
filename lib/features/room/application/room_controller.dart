@@ -771,6 +771,24 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     });
   }
 
+  bool _isMonotonicLease(
+    RoomSessionLease previous,
+    RoomSessionLease candidate,
+  ) {
+    if (!candidate.isValid || candidate.sessionId != previous.sessionId) {
+      return false;
+    }
+    if (candidate.sequence < previous.sequence ||
+        candidate.serverTime.isBefore(previous.serverTime) ||
+        candidate.expiresAt.isBefore(previous.expiresAt)) {
+      return false;
+    }
+    // A reconnect may confirm the same lease, but the same sequence cannot
+    // carry a different expiry and thereby extend its lifetime.
+    return candidate.sequence != previous.sequence ||
+        candidate.expiresAt == previous.expiresAt;
+  }
+
   void _scheduleHeartbeat() {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
@@ -915,10 +933,11 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     final Object flight = Object();
     _leaseFlight = flight;
     final Object? transportLease = _transportLeaseId;
-    bool ownsFlight() =>
+    bool ownsSessionFlight() =>
         identical(_leaseFlight, flight) &&
         _isCurrent(epoch) &&
         _lease?.sessionId == lease.sessionId;
+    bool ownsLeaseFlight() => ownsSessionFlight() && identical(_lease, lease);
     try {
       if (!_foreground) {
         final rtc = _rtcAdapter;
@@ -927,12 +946,12 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
           return;
         // Await may cross logout, ownership transfer, a native stop or the
         // exact deadline. Recheck all fences before creating/sending a POST.
-        if (!ownsFlight() ||
+        if (!ownsLeaseFlight() ||
             !_canAttemptHeartbeat ||
             !_ownsRtcTransport(transportLease))
           return;
       }
-      if (!ownsFlight() || !_isJoinedEpoch(epoch)) return;
+      if (!ownsLeaseFlight() || !_isJoinedEpoch(epoch)) return;
       final Duration started = _leaseElapsed;
       final String requestId = _leaseRequestId ??= _newRequestId('room-lease');
       final RoomSessionLease renewed =
@@ -943,7 +962,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
             requestId: requestId,
             currentUserId: _currentUserId,
           );
-      if (!ownsFlight() || !_isJoinedEpoch(epoch)) return;
+      if (!ownsLeaseFlight() || !_isJoinedEpoch(epoch)) return;
       if (!renewed.isValid ||
           renewed.sessionId != lease.sessionId ||
           renewed.sequence != lease.sequence + 1 ||
@@ -958,7 +977,7 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
     } catch (error) {
       // A reconnect does not change lease ownership. Its in-flight heartbeat
       // must still revoke the session on an explicit authentication/lease error.
-      if (!ownsFlight()) return;
+      if (!ownsSessionFlight()) return;
       if (error is ApiException &&
           (error.code == 40936 ||
               error.code == 40937 ||
@@ -2032,10 +2051,26 @@ class RoomController extends ChangeNotifier with WidgetsBindingObserver {
       if (!_isCurrent(sessionEpoch)) {
         return;
       }
-      if (_lease != null &&
-          (snapshot.sessionId != _lease!.sessionId || !_leaseUnexpired)) {
-        _endAuthoritySession('房间会话已变化，请重新进入房间');
-        return;
+      final RoomSessionLease? currentLease = _lease;
+      if (currentLease != null) {
+        final RoomSessionLease? reconnectedLease = snapshot.roomLease;
+        if (!_leaseUnexpired ||
+            snapshot.sessionId != currentLease.sessionId ||
+            reconnectedLease == null ||
+            !_isMonotonicLease(currentLease, reconnectedLease)) {
+          _endAuthoritySession('房间会话已变化，请重新进入房间');
+          return;
+        }
+        if (reconnectedLease.sequence > currentLease.sequence) {
+          _lease = reconnectedLease;
+          _leaseRequestId = null;
+          _setLeaseDeadline(
+            reconnectedLease,
+            reconnectStarted,
+            previous: currentLease,
+          );
+          if (!_isCurrent(sessionEpoch)) return;
+        }
       }
       if (!snapshot.isSnapshotOnly) {
         _claimTransportLease();

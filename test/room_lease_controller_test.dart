@@ -99,6 +99,59 @@ class Repo extends MockRoomRepository implements RoomLeaseRepository {
   }
 }
 
+class StrictSequenceRepo extends Repo {
+  int serverSequence = 0;
+  bool dropFirstHeartbeatResponse = true;
+  Completer<RoomSessionLease>? holdNextRenew;
+  RoomSessionLease? reconnectLease;
+
+  @override
+  Future<RoomSnapshot> reconnectRoom({
+    required String roomId,
+    required int currentUserId,
+  }) async {
+    final snapshot = await enterRoom(
+      roomId: roomId,
+      password: null,
+      source: RoomEntrySource.home,
+      currentUserId: currentUserId,
+    );
+    return snapshot.copyWith(
+      roomLease: reconnectLease ?? lease(serverSequence, serverSeconds: now()),
+    );
+  }
+
+  @override
+  Future<RoomSessionLease> renewRoomLease({
+    required String roomId,
+    required String sessionId,
+    required int sequence,
+    required String requestId,
+    required int currentUserId,
+  }) async {
+    calls.add((sequence: sequence, requestId: requestId));
+    if (sequence != serverSequence + 1) {
+      throw const ApiException(
+        kind: ApiFailureKind.conflict,
+        code: 40938,
+        message: '心跳序号或重试标识不一致',
+      );
+    }
+    serverSequence = sequence;
+    final pending = holdNextRenew;
+    if (pending != null) return pending.future;
+    if (dropFirstHeartbeatResponse) {
+      dropFirstHeartbeatResponse = false;
+      throw const ApiException(
+        kind: ApiFailureKind.server,
+        code: 50300,
+        message: '服务端已提交但客户端未收到响应',
+      );
+    }
+    return lease(sequence, serverSeconds: now());
+  }
+}
+
 class AuthorityRepo extends Repo implements RoomAuthorityRepository {
   int reads = 0;
   @override
@@ -200,6 +253,127 @@ void main() {
     expect(repo.calls.last.requestId, isNot(repo.calls.first.requestId));
     controller.dispose();
   });
+  testWidgets(
+    'reconnect adopts a committed heartbeat lease before the next renewal',
+    (tester) async {
+      final strict = StrictSequenceRepo();
+      setup(repository: strict);
+      await controller.join();
+
+      await tick(tester, 20);
+      expect(strict.calls.map((call) => call.sequence), <int>[1]);
+      expect(strict.serverSequence, 1);
+
+      await controller.reconnect();
+
+      expect(controller.status, RoomSessionStatus.joined);
+      expect(controller.snapshot!.roomLease!.sequence, 1);
+
+      await tick(tester, 20);
+      expect(strict.calls.map((call) => call.sequence), <int>[1, 2]);
+      expect(strict.calls[1].requestId, isNot(strict.calls[0].requestId));
+      expect(controller.status, RoomSessionStatus.joined);
+      controller.dispose();
+    },
+  );
+  testWidgets(
+    'same-sequence reconnect confirmation cannot extend the old deadline',
+    (tester) async {
+      final strict = StrictSequenceRepo()
+        ..dropFirstHeartbeatResponse = false
+        ..reconnectLease = lease(0, serverSeconds: 20, remaining: 70);
+      setup(repository: strict);
+      await controller.join();
+      controller.setForeground(false);
+
+      await tick(tester, 20);
+      await controller.reconnect();
+
+      expect(controller.status, RoomSessionStatus.joined);
+      await tick(tester, 69);
+      expect(controller.status, RoomSessionStatus.joined);
+      await tick(tester, 1);
+      expect(controller.status, RoomSessionStatus.left);
+      controller.dispose();
+    },
+  );
+  testWidgets('regressed reconnect lease ends the local session', (
+    tester,
+  ) async {
+    final strict = StrictSequenceRepo()
+      ..dropFirstHeartbeatResponse = false
+      ..reconnectLease = lease(0, remaining: 89);
+    setup(repository: strict);
+    await controller.join();
+
+    await controller.reconnect();
+
+    expect(controller.status, RoomSessionStatus.left);
+    expect(controller.canSendPublicMessage, isFalse);
+    controller.dispose();
+  });
+  testWidgets(
+    'late response from an old renewal cannot roll back a reconnected lease',
+    (tester) async {
+      final pending = Completer<RoomSessionLease>();
+      final strict = StrictSequenceRepo()
+        ..dropFirstHeartbeatResponse = false
+        ..holdNextRenew = pending
+        ..reconnectLease = lease(1, serverSeconds: 20);
+      setup(repository: strict);
+      await controller.join();
+
+      await tick(tester, 20);
+      expect(strict.calls.map((call) => call.sequence), <int>[1]);
+      await controller.reconnect();
+      expect(
+        controller.snapshot!.roomLease!.expiresAt,
+        DateTime.utc(2026).add(const Duration(seconds: 110)),
+      );
+
+      pending.complete(lease(1, serverSeconds: 0));
+      await tester.pump();
+
+      expect(
+        controller.snapshot!.roomLease!.expiresAt,
+        DateTime.utc(2026).add(const Duration(seconds: 110)),
+      );
+      expect(controller.status, RoomSessionStatus.joined);
+      controller.dispose();
+    },
+  );
+  for (final code in [40101, 40936, 40937]) {
+    testWidgets('late heartbeat error $code still revokes the current lease', (
+      tester,
+    ) async {
+      final pending = Completer<RoomSessionLease>();
+      final strict = StrictSequenceRepo()
+        ..dropFirstHeartbeatResponse = false
+        ..holdNextRenew = pending
+        ..reconnectLease = lease(1, serverSeconds: 20);
+      setup(repository: strict);
+      await controller.join();
+
+      await tick(tester, 20);
+      await controller.reconnect();
+      expect(controller.snapshot!.roomLease!.sequence, 1);
+
+      pending.completeError(
+        ApiException(
+          kind: code == 40101
+              ? ApiFailureKind.unauthorized
+              : ApiFailureKind.conflict,
+          code: code,
+          message: 'lease revoked',
+        ),
+      );
+      await tester.pump();
+
+      expect(controller.status, RoomSessionStatus.left);
+      expect(controller.canSendPublicMessage, isFalse);
+      controller.dispose();
+    });
+  }
   testWidgets(
     'single flight and late response cannot revive deadline equality',
     (tester) async {
