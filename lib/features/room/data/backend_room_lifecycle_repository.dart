@@ -257,21 +257,12 @@ class BackendRoomLifecycleRepository
     );
   }
 
-  Future<RoomConfiguration> _fetchPublicRoom(String roomId) async {
-    final List<ApiResponse> responses = await Future.wait<ApiResponse>(
-      <Future<ApiResponse>>[
-        _apiClient.get(
-          _routes.roomById,
-          query: <String, String>{'roomId': roomId},
-        ),
-        _apiClient.get(
-          _routes.roomTopic,
-          query: <String, String>{'roomId': roomId},
-        ),
-      ],
+  Future<RoomConfiguration> _fetchPublicRoom(String lookupKey) async {
+    final ApiResponse detailResponse = await _apiClient.get(
+      _routes.roomById,
+      query: <String, String>{'roomId': lookupKey},
     );
-    final Map<String, Object?> info = _asMap(responses[0].data);
-    final Map<String, Object?> topic = _asMap(responses[1].data);
+    final Map<String, Object?> info = _asMap(detailResponse.data);
     if (info.isEmpty) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -279,12 +270,26 @@ class BackendRoomLifecycleRepository
       );
     }
     final String id = _requiredExactNonEmptyString(info, 'roomId');
-    if (id != roomId) {
+    final String? responseRoomCode =
+        _nonEmptyString(info['roomCode']) ?? _nonEmptyString(info['code']);
+    // The first-party detail endpoint accepts public_id or room_code. Only a
+    // numeric lookup may alias to the returned canonical roomId, and only
+    // when the response echoes the exact requested roomCode. UUID links stay
+    // strict.
+    final bool canonicalIdMatches = id == lookupKey;
+    final bool numericRoomCodeMatches =
+        _isNumericRoomCode(lookupKey) && responseRoomCode == lookupKey;
+    if (!canonicalIdMatches && !numericRoomCodeMatches) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
         message: '房间详情响应与请求房间 ID 不一致',
       );
     }
+    final ApiResponse topicResponse = await _apiClient.get(
+      _routes.roomTopic,
+      query: <String, String>{'roomId': id},
+    );
+    final Map<String, Object?> topic = _asMap(topicResponse.data);
     final String topicRoomId = _requiredExactNonEmptyString(topic, 'roomId');
     if (topicRoomId != id) {
       throw const ApiException(
@@ -916,11 +921,14 @@ class BackendRoomLifecycleRepository
   }
 
   static bool _isRoomIdentifier(String value) =>
-      RegExp(r'^\d{4,18}$').hasMatch(value) ||
+      _isNumericRoomCode(value) ||
       RegExp(
         r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-'
         r'[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
       ).hasMatch(value);
+
+  static bool _isNumericRoomCode(String value) =>
+      RegExp(r'^\d{4,18}$').hasMatch(value);
 
   static Map<String, Object?> _asMap(Object? value) =>
       value is Map<String, Object?> ? value : <String, Object?>{};

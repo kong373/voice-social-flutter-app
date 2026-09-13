@@ -63,6 +63,32 @@ void main() {
     },
   );
 
+  test('deep link UUID still requires an exact canonical roomId', () async {
+    const String requestedRoomId = '550e8400-e29b-41d4-a716-446655440000';
+    final _RoomDetailServer server = await _RoomDetailServer.start(
+      detail: const <String, Object?>{
+        'roomId': '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+        'roomCode': '999547',
+        'roomName': '另一间房',
+        'status': 'OPEN',
+      },
+    );
+    addTearDown(server.close);
+    final BackendRoomLifecycleRepository repository =
+        BackendRoomLifecycleRepository(apiClient: server.client);
+
+    await expectLater(
+      repository.resolveRoomLink('voice-social://room/$requestedRoomId'),
+      throwsA(
+        isA<ApiException>().having(
+          (ApiException error) => error.kind,
+          'kind',
+          ApiFailureKind.protocol,
+        ),
+      ),
+    );
+  });
+
   test(
     'deep link rejects a topic payload without an authoritative roomId',
     () async {

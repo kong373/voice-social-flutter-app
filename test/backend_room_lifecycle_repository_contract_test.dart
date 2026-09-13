@@ -1291,6 +1291,107 @@ void main() {
   });
 
   test(
+    'numeric room code resolves the authoritative canonical room before topic',
+    () async {
+      const String roomCode = '999547';
+      const String canonicalRoomId = '550e8400-e29b-41d4-a716-446655440000';
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        if (request.path == '/app-api/rooms/getRoomById') {
+          expect(request.query, <String, String>{'roomId': roomCode});
+          return const _Reply(
+            data: <String, Object?>{
+              'roomId': canonicalRoomId,
+              'roomCode': roomCode,
+              'roomName': '真实房间',
+              'status': 'OPEN',
+            },
+          );
+        }
+        if (request.path == '/app-api/rooms/getRoomTopics') {
+          expect(request.query, <String, String>{'roomId': canonicalRoomId});
+          return const _Reply(
+            data: <String, Object?>{
+              'roomId': canonicalRoomId,
+              'topicTitle': '',
+              'topic': '',
+              'welcomeText': '',
+              'autoLockMic': false,
+              'version': 0,
+            },
+          );
+        }
+        fail('unexpected link route: ${request.path}');
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+
+      final RoomLinkResolution resolution = await repository.resolveRoomLink(
+        roomCode,
+      );
+
+      expect(resolution.status, RoomLinkStatus.valid);
+      expect(resolution.room?.roomId, canonicalRoomId);
+      expect(resolution.room?.roomCode, roomCode);
+    },
+  );
+
+  test(
+    'numeric room code rejects a canonical response with a different code',
+    () async {
+      const String roomCode = '999547';
+      const String canonicalRoomId = '550e8400-e29b-41d4-a716-446655440000';
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        if (request.path == '/app-api/rooms/getRoomById') {
+          return const _Reply(
+            data: <String, Object?>{
+              'roomId': canonicalRoomId,
+              'roomCode': '999548',
+              'roomName': '另一间房',
+              'status': 'OPEN',
+            },
+          );
+        }
+        if (request.path == '/app-api/rooms/getRoomTopics') {
+          return const _Reply(
+            data: <String, Object?>{
+              'roomId': canonicalRoomId,
+              'topicTitle': '',
+              'topic': '',
+              'welcomeText': '',
+              'autoLockMic': false,
+              'version': 0,
+            },
+          );
+        }
+        fail('unexpected link route: ${request.path}');
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+
+      await expectLater(
+        repository.resolveRoomLink(roomCode),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.protocol,
+          ),
+        ),
+      );
+      expect(
+        server.requests.map((_CapturedRequest request) => request.path),
+        <String>['/app-api/rooms/getRoomById'],
+      );
+    },
+  );
+
+  test(
     'create, update, and close preserve 403/409/422/500 envelopes with request ids',
     () async {
       final List<
