@@ -66,6 +66,7 @@ class AuthController extends ChangeNotifier {
   bool _registrationOutcomeUnknown = false;
   Future<bool>? _refreshInFlight;
   Future<void>? _signOutInFlight;
+  bool _signingOut = false;
   int _sessionGeneration = 0;
   bool _signOutRecovery = false;
   ServerLogoutOutcome _lastServerLogoutOutcome =
@@ -73,6 +74,7 @@ class AuthController extends ChangeNotifier {
 
   AuthFlowStage get stage => _stage;
   bool get busy => _busy;
+  bool get signingOut => _signingOut;
   bool get sendingCode => _sendingCode;
   String? get errorMessage => _errorMessage;
   AuthSession? get session => _sessionManager.session;
@@ -601,6 +603,7 @@ class AuthController extends ChangeNotifier {
   Future<void> _performSignOut() async {
     _sessionGeneration += 1;
     _busy = true;
+    _signingOut = true;
     _errorMessage = null;
     _lastServerLogoutOutcome = ServerLogoutOutcome.notAttempted;
     notifyListeners();
@@ -634,6 +637,7 @@ class AuthController extends ChangeNotifier {
       }
     } finally {
       _busy = false;
+      _signingOut = false;
       notifyListeners();
     }
   }

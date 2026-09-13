@@ -151,6 +151,8 @@ class AppDependencies {
     PrivateMediaHost? privateMediaHost,
     MessageRepository? messageRepository,
     ExternalUrlOpener? externalUrlOpener,
+    AuthRepository? authRepositoryOverride,
+    CommerceCatalogRepository? commerceCatalogRepositoryOverride,
     ImSessionAdapter? imSessionAdapter,
     ImSessionCredentialRepository? imSessionCredentialRepository,
     ImSessionCoordinator? imSessionCoordinator,
@@ -170,6 +172,8 @@ class AppDependencies {
       privateMediaHostOverride: privateMediaHost,
       messageRepositoryOverride: messageRepository,
       externalUrlOpenerOverride: externalUrlOpener,
+      authRepositoryOverride: authRepositoryOverride,
+      commerceCatalogRepositoryOverride: commerceCatalogRepositoryOverride,
       imSessionAdapterOverride: imSessionAdapter,
       imSessionCredentialRepositoryOverride: imSessionCredentialRepository,
       imSessionCoordinatorOverride: imSessionCoordinator,
@@ -191,6 +195,8 @@ class AppDependencies {
     PrivateMediaHost? privateMediaHostOverride,
     MessageRepository? messageRepositoryOverride,
     ExternalUrlOpener? externalUrlOpenerOverride,
+    AuthRepository? authRepositoryOverride,
+    CommerceCatalogRepository? commerceCatalogRepositoryOverride,
     ImSessionAdapter? imSessionAdapterOverride,
     ImSessionCredentialRepository? imSessionCredentialRepositoryOverride,
     ImSessionCoordinator? imSessionCoordinatorOverride,
@@ -218,14 +224,16 @@ class AppDependencies {
     final NativePermissionAdapter? nativePermissionAdapter = environment.isLive
         ? MethodChannelNativePermissionAdapter()
         : null;
-    final AuthRepository authRepository = environment.isLive
-        ? BackendAuthRepository(
-            apiClient: apiClient,
-            environment: environment,
-            sessionManager: sessionManager,
-            routes: routes,
-          )
-        : const MockAuthRepository();
+    final AuthRepository authRepository =
+        authRepositoryOverride ??
+        (environment.isLive
+            ? BackendAuthRepository(
+                apiClient: apiClient,
+                environment: environment,
+                sessionManager: sessionManager,
+                routes: routes,
+              )
+            : const MockAuthRepository());
     ImSessionAdapter buildProductionTencentImAdapter() {
       // The official callback only marks a provider event as eligible after
       // this adapter compares its transient sender metadata with the active
@@ -388,22 +396,26 @@ class AppDependencies {
         identityGeneration: () => sessionManager.identityGeneration,
         withdrawalIdentityChanges: sessionManager,
       );
-      commerceCatalogRepository = BackendCommerceCatalogRepository(
-        apiClient: apiClient,
-        routes: routes,
-        currentUserIdProvider: () => sessionManager.session?.userId,
-        identityGeneration: () => sessionManager.identityGeneration,
-        alipayAppPayAdapter: alipayAppPayAdapter,
-        appleIapCoordinator: appleIapPurchaseCoordinator,
-      );
+      commerceCatalogRepository =
+          commerceCatalogRepositoryOverride ??
+          BackendCommerceCatalogRepository(
+            apiClient: apiClient,
+            routes: routes,
+            currentUserIdProvider: () => sessionManager.session?.userId,
+            identityGeneration: () => sessionManager.identityGeneration,
+            alipayAppPayAdapter: alipayAppPayAdapter,
+            appleIapCoordinator: appleIapPurchaseCoordinator,
+          );
     } else {
       final MockCommerceRepository mockCommerceRepository =
           MockCommerceRepository(now: mockNow);
       commerceRepository = mockCommerceRepository;
-      commerceCatalogRepository = MockCommerceCatalogRepository(
-        now: currentTime,
-        onRechargeOrderChanged: mockCommerceRepository.syncRechargeOrder,
-      );
+      commerceCatalogRepository =
+          commerceCatalogRepositoryOverride ??
+          MockCommerceCatalogRepository(
+            now: currentTime,
+            onRechargeOrderChanged: mockCommerceRepository.syncRechargeOrder,
+          );
     }
     final MessageRepository messageRepository =
         messageRepositoryOverride ??

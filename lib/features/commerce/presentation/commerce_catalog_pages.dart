@@ -316,6 +316,59 @@ class _RechargeCatalogPageState extends State<RechargeCatalogPage>
   }
 }
 
+typedef _PaymentIdentity = (int?, int);
+
+/// Binds a payment page to the existing account identity generation.
+///
+/// Access-token rotation creates a new AuthSession object but keeps the same
+/// `(userId, identityGeneration)` tuple, so a normal refresh does not discard
+/// an in-flight page. Logout/account changes increment the existing
+/// generation and invalidate this fence.
+class _PaymentAuthIdentityFence {
+  _PaymentAuthIdentityFence(this._dependencies, this._onInvalidated)
+    : _identity = _currentIdentity(_dependencies) {
+    _dependencies.sessionManager.addListener(_changed);
+    _dependencies.authController.addListener(_changed);
+    if (_dependencies.authController.signingOut) {
+      _invalidate();
+    }
+  }
+
+  final AppDependencies _dependencies;
+  final VoidCallback _onInvalidated;
+  final _PaymentIdentity _identity;
+  bool _invalidated = false;
+
+  bool get isCurrent =>
+      !_invalidated &&
+      !_dependencies.authController.signingOut &&
+      _identity == _currentIdentity(_dependencies);
+
+  static _PaymentIdentity _currentIdentity(AppDependencies dependencies) => (
+    dependencies.sessionManager.session?.userId,
+    dependencies.sessionManager.identityGeneration,
+  );
+
+  void _changed() {
+    if (!_invalidated && !isCurrent) {
+      _invalidate();
+    }
+  }
+
+  void _invalidate() {
+    if (_invalidated) {
+      return;
+    }
+    _invalidated = true;
+    _onInvalidated();
+  }
+
+  void dispose() {
+    _dependencies.sessionManager.removeListener(_changed);
+    _dependencies.authController.removeListener(_changed);
+  }
+}
+
 class PaymentSubmissionPage extends StatefulWidget {
   const PaymentSubmissionPage({
     required this.product,
@@ -335,6 +388,8 @@ class PaymentSubmissionPage extends StatefulWidget {
 class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
   PaymentChannelType? _channel;
   bool _submitting = false;
+  bool _identityLost = false;
+  _PaymentAuthIdentityFence? _identityFence;
 
   CommerceCatalogRepository get _repository =>
       AppDependencyScope.of(context).commerceCatalogRepository;
@@ -342,16 +397,39 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _identityFence ??= _PaymentAuthIdentityFence(
+      AppDependencyScope.of(context),
+      _handleIdentityInvalidated,
+    );
     if (_repository.supportsPaymentChannelInvocation) {
       _channel ??= _repository.availableChannels(widget.platform).firstOrNull;
     }
   }
 
+  void _handleIdentityInvalidated() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _identityLost = true;
+      _submitting = false;
+    });
+  }
+
+  bool _acceptsIdentity(_PaymentAuthIdentityFence fence) =>
+      mounted &&
+      !_identityLost &&
+      identical(fence, _identityFence) &&
+      fence.isCurrent;
+
   Future<void> _submit() async {
     final PaymentChannelType? channel = _channel;
+    final _PaymentAuthIdentityFence? identityFence = _identityFence;
     if (!_repository.supportsPaymentChannelInvocation ||
         channel == null ||
-        _submitting) {
+        _submitting ||
+        identityFence == null ||
+        !_acceptsIdentity(identityFence)) {
       return;
     }
     final bool? confirmed = await showDialog<bool>(
@@ -373,12 +451,15 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
         ],
       ),
     );
-    if (confirmed != true || !mounted) {
+    if (confirmed != true || !_acceptsIdentity(identityFence)) {
       return;
     }
     setState(() => _submitting = true);
     RechargeOrder? createdOrder;
     try {
+      if (!_acceptsIdentity(identityFence)) {
+        return;
+      }
       final String account =
           AppDependencyScope.of(context).sessionManager.session?.mobile ?? '';
       RechargeOrder order = await _repository.createRechargeOrder(
@@ -388,11 +469,17 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
         platform: widget.platform,
         youthModeEnabled: widget.youthModeEnabled,
       );
+      if (!_acceptsIdentity(identityFence)) {
+        return;
+      }
       createdOrder = order;
       if (_repository.supportsPaymentChannelInvocation) {
+        if (!_acceptsIdentity(identityFence)) {
+          return;
+        }
         order = await _repository.invokePayment(order);
       }
-      if (!mounted) {
+      if (!_acceptsIdentity(identityFence)) {
         return;
       }
       await Navigator.of(context).push<void>(
@@ -400,11 +487,11 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
           builder: (BuildContext context) => PaymentResultPage(order: order),
         ),
       );
-      if (mounted) {
+      if (_acceptsIdentity(identityFence)) {
         Navigator.of(context).pop<void>();
       }
     } catch (error) {
-      if (mounted) {
+      if (_acceptsIdentity(identityFence)) {
         final RechargeOrder? pendingOrder = createdOrder;
         if (channel == PaymentChannelType.appleIap && pendingOrder != null) {
           await Navigator.of(context).push<void>(
@@ -417,7 +504,7 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
               ),
             ),
           );
-          if (mounted) {
+          if (_acceptsIdentity(identityFence)) {
             Navigator.of(context).pop<void>();
           }
           return;
@@ -427,14 +514,26 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
-      if (mounted) {
+      if (_acceptsIdentity(identityFence)) {
         setState(() => _submitting = false);
       }
     }
   }
 
   @override
+  void dispose() {
+    _identityFence?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_identityLost) {
+      return _CommerceScaffold(
+        appBar: AppBar(title: const Text('支付方式与提交')),
+        body: const Center(child: Text('登录身份已失效，请重新登录')),
+      );
+    }
     final bool paymentAvailable = _repository.supportsPaymentChannelInvocation;
     final List<PaymentChannelType> channels = paymentAvailable
         ? _repository.availableChannels(widget.platform)
@@ -560,6 +659,34 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
   late RechargeOrder _order;
   bool _refreshing = false;
   String? _error;
+  bool _identityLost = false;
+  _PaymentAuthIdentityFence? _identityFence;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _identityFence ??= _PaymentAuthIdentityFence(
+      AppDependencyScope.of(context),
+      _handleIdentityInvalidated,
+    );
+  }
+
+  void _handleIdentityInvalidated() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _identityLost = true;
+      _refreshing = false;
+      _error = null;
+    });
+  }
+
+  bool _acceptsIdentity(_PaymentAuthIdentityFence fence) =>
+      mounted &&
+      !_identityLost &&
+      identical(fence, _identityFence) &&
+      fence.isCurrent;
 
   @override
   void initState() {
@@ -575,7 +702,10 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
   }
 
   Future<void> _refresh() async {
-    if (_refreshing) {
+    final _PaymentAuthIdentityFence? identityFence = _identityFence;
+    if (_refreshing ||
+        identityFence == null ||
+        !_acceptsIdentity(identityFence)) {
       return;
     }
     setState(() {
@@ -583,25 +713,40 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
       _error = null;
     });
     try {
+      if (!_acceptsIdentity(identityFence)) {
+        return;
+      }
       final RechargeOrder value = await AppDependencyScope.of(
         context,
       ).commerceCatalogRepository.queryRechargeOrder(_order);
-      if (mounted) {
+      if (_acceptsIdentity(identityFence)) {
         setState(() => _order = value);
       }
     } catch (error) {
-      if (mounted) {
+      if (_acceptsIdentity(identityFence)) {
         setState(() => _error = _messageFor(error));
       }
     } finally {
-      if (mounted) {
+      if (_acceptsIdentity(identityFence)) {
         setState(() => _refreshing = false);
       }
     }
   }
 
   @override
+  void dispose() {
+    _identityFence?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_identityLost) {
+      return _CommerceScaffold(
+        appBar: AppBar(title: const Text('支付返回与结果')),
+        body: const Center(child: Text('登录身份已失效，请重新登录')),
+      );
+    }
     final bool success = _order.state == RechargeOrderState.succeeded;
     final bool terminal =
         success ||
