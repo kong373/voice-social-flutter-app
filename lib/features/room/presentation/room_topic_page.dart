@@ -223,7 +223,7 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
                         TextFormField(
                           controller: _contentController,
                           enabled: widget.canEdit && !_submitting,
-                          maxLength: 500,
+                          maxLength: 240,
                           minLines: 6,
                           maxLines: 12,
                           decoration: const InputDecoration(

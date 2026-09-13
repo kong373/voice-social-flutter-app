@@ -217,17 +217,19 @@ class MockRoomLifecycleRepository
         message: '房间名称需为 1–64 个字符',
       );
     }
-    if (configuration.topicTitle.length > 64 ||
-        configuration.topicContent.length > 500) {
+    final String topicTitle = configuration.topicTitle.trim();
+    final String topicContent = configuration.topicContent.trim();
+    final String welcomeMessage = configuration.welcomeMessage.trim();
+    if (topicTitle.length > 64 || topicContent.length > 240) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
         message: '房间话题内容过长',
       );
     }
-    if (configuration.welcomeMessage.length > 300) {
+    if (welcomeMessage.length > 240) {
       throw const ApiException(
         kind: ApiFailureKind.validation,
-        message: '欢迎语不能超过 300 个字符',
+        message: '欢迎语不能超过 240 个字符',
       );
     }
     if (configuration.accessMode == RoomAccessMode.password &&

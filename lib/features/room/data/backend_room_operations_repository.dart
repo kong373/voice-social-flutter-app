@@ -595,6 +595,12 @@ class BackendRoomOperationsRepository
     final String normalizedTopic = topic.content.trim().isEmpty
         ? topic.title.trim()
         : topic.content.trim();
+    if (normalizedTopicTitle.length > 64 || normalizedTopic.length > 240) {
+      throw const ApiException(
+        kind: ApiFailureKind.validation,
+        message: '房间话题或标题超过长度限制',
+      );
+    }
     final int expectedVersion = _requireExpectedVersion(
       topic.version,
       operation: '更新房间话题',

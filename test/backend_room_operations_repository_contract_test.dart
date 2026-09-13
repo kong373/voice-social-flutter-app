@@ -2330,6 +2330,96 @@ void main() {
   });
 
   test(
+    'topic writes enforce backend UTF-16 text limits before network',
+    () async {
+      final String titleAtLimit = 't' * 64;
+      final String contentAtLimit = 'c' * 240;
+      final String nonBmpAtLimit = '😀' * 120;
+      int validRequestIndex = 0;
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        expect(request.path, '/app-api/rooms/setRoomTopics');
+        final Map<String, Object?> body = Map<String, Object?>.from(
+          request.body! as Map,
+        );
+        if (validRequestIndex == 0) {
+          expect(body, <String, Object?>{
+            'sessionId': roomLeaseSessionId,
+            'roomId': '9527',
+            'topicTitle': titleAtLimit,
+            'topic': contentAtLimit,
+            'expectedVersion': 1,
+          });
+        } else if (validRequestIndex == 1) {
+          expect(body, <String, Object?>{
+            'sessionId': roomLeaseSessionId,
+            'roomId': '9527',
+            'topicTitle': '标题',
+            'topic': nonBmpAtLimit,
+            'expectedVersion': 2,
+          });
+        }
+        validRequestIndex++;
+        final String topicTitle = body['topicTitle']! as String;
+        final String topic = body['topic']! as String;
+        final int expectedVersion = body['expectedVersion']! as int;
+        return _Reply(
+          data: <String, Object?>{
+            'roomId': '9527',
+            'topicTitle': topicTitle,
+            'topic': topic,
+            'welcomeText': '',
+            'version': expectedVersion + 1,
+          },
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomOperationsRepository repository =
+          BackendRoomOperationsRepository(
+            leaseBinding: admittedRoomFixture(),
+            apiClient: server.client,
+          );
+
+      await repository.updateTopic(
+        roomId: '9527',
+        topic: RoomTopic(
+          title: ' $titleAtLimit ',
+          content: ' $contentAtLimit ',
+          version: 1,
+        ),
+      );
+      await repository.updateTopic(
+        roomId: '9527',
+        topic: RoomTopic(
+          title: ' 标题 ',
+          content: ' $nonBmpAtLimit ',
+          version: 2,
+        ),
+      );
+      expect(server.requests, hasLength(2));
+
+      for (final RoomTopic invalid in <RoomTopic>[
+        RoomTopic(title: '标题', content: 'c' * 241, version: 3),
+        RoomTopic(title: '标题', content: nonBmpAtLimit + 'x', version: 3),
+        RoomTopic(title: 't' * 65, content: '内容', version: 3),
+      ]) {
+        await expectLater(
+          repository.updateTopic(roomId: '9527', topic: invalid),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.validation,
+            ),
+          ),
+        );
+      }
+      expect(server.requests, hasLength(2));
+    },
+  );
+
+  test(
     'topic writes reject a missing or negative snapshot version locally',
     () async {
       final _RunningServer server = await _RunningServer.start(

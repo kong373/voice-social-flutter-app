@@ -1972,6 +1972,99 @@ void main() {
   );
 
   test(
+    'lifecycle text limits use trimmed UTF-16 lengths before network',
+    () async {
+      final String titleAtLimit = 't' * 64;
+      final String contentAtLimit = 'c' * 240;
+      final String welcomeAtLimit = 'w' * 240;
+      final String nonBmpAtLimit = '😀' * 120;
+      int validRequestIndex = 0;
+      final _RunningServer server = await _RunningServer.start((
+        _CapturedRequest request,
+      ) {
+        expect(request.path, '/app-api/rooms/updateRoomInformation');
+        final Map<String, Object?> body = Map<String, Object?>.from(
+          request.body! as Map,
+        );
+        if (validRequestIndex == 0) {
+          expect(body['topicTitle'], titleAtLimit);
+          expect(body['topic'], contentAtLimit);
+          expect(body['welcomeText'], welcomeAtLimit);
+          expect(body['expectedVersion'], 0);
+        } else if (validRequestIndex == 1) {
+          expect(body['topicTitle'], titleAtLimit);
+          expect(body['topic'], nonBmpAtLimit);
+          expect(body['welcomeText'], nonBmpAtLimit);
+          expect(body['expectedVersion'], 0);
+        }
+        validRequestIndex++;
+        return const _Reply(
+          code: 40945,
+          message: 'ROOM_VERSION_CONFLICT',
+          data: <String, Object?>{'currentVersion': 1},
+          httpStatus: 409,
+        );
+      });
+      addTearDown(server.close);
+      final BackendRoomLifecycleRepository repository =
+          BackendRoomLifecycleRepository(apiClient: server.client);
+      final RoomConfiguration valid = _existingPublicRoom().copyWith(
+        topicTitle: ' $titleAtLimit ',
+        topicContent: ' $contentAtLimit ',
+        welcomeMessage: ' $welcomeAtLimit ',
+      );
+
+      await expectLater(
+        repository.saveRoom(valid),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.conflict,
+          ),
+        ),
+      );
+      expect(server.requests, hasLength(1));
+
+      await expectLater(
+        repository.saveRoom(
+          valid.copyWith(
+            topicContent: ' $nonBmpAtLimit ',
+            welcomeMessage: ' $nonBmpAtLimit ',
+          ),
+        ),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.conflict,
+          ),
+        ),
+      );
+      expect(server.requests, hasLength(2));
+
+      for (final RoomConfiguration invalid in <RoomConfiguration>[
+        valid.copyWith(topicContent: contentAtLimit + 'x'),
+        valid.copyWith(topicContent: nonBmpAtLimit + 'x'),
+        valid.copyWith(welcomeMessage: welcomeAtLimit + 'x'),
+        valid.copyWith(topicTitle: titleAtLimit + 'x'),
+      ]) {
+        await expectLater(
+          repository.saveRoom(invalid),
+          throwsA(
+            isA<ApiException>().having(
+              (ApiException error) => error.kind,
+              'kind',
+              ApiFailureKind.validation,
+            ),
+          ),
+        );
+      }
+      expect(server.requests, hasLength(2));
+    },
+  );
+
+  test(
     'concurrent saves with one snapshot version reject the stale loser',
     () async {
       int updateCalls = 0;

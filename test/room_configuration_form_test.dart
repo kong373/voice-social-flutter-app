@@ -60,6 +60,35 @@ void main() {
     expect(find.text('进入房间时自动锁定空麦'), findsOneWidget);
     expect(find.text('当前 development 后端只持久化一条话题内容，话题标题暂不可用。'), findsNothing);
   });
+
+  testWidgets('room text fields expose the backend text limits', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: _buildForm(
+              supportsApprovalAccessMode: true,
+              supportsTopicTitle: true,
+              supportsAutoLockMic: true,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    TextField field(String label) => tester.widget<TextField>(
+      find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is TextField && widget.decoration?.labelText == label,
+      ),
+    );
+
+    expect(field('话题标题').maxLength, 64);
+    expect(field('当前话题或房间说明').maxLength, 240);
+    expect(field('进房欢迎语').maxLength, 240);
+  });
 }
 
 Widget _buildForm({

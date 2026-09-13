@@ -45,4 +45,41 @@ void main() {
       throwsA(isA<ApiException>()),
     );
   });
+
+  test('mock lifecycle enforces backend room text limits', () async {
+    final MockRoomLifecycleRepository repository =
+        MockRoomLifecycleRepository();
+    final RoomConfiguration room = (await repository.fetchOwnedRoom())!;
+    final RoomConfiguration valid = room.copyWith(
+      topicTitle: 't' * 64,
+      topicContent: 'c' * 240,
+      welcomeMessage: 'w' * 240,
+    );
+
+    await repository.saveRoom(valid);
+    final String nonBmpAtLimit = '😀' * 120;
+    await repository.saveRoom(
+      valid.copyWith(
+        topicContent: nonBmpAtLimit,
+        welcomeMessage: nonBmpAtLimit,
+      ),
+    );
+
+    for (final RoomConfiguration invalid in <RoomConfiguration>[
+      valid.copyWith(topicContent: 'c' * 241),
+      valid.copyWith(welcomeMessage: 'w' * 241),
+      valid.copyWith(topicTitle: 't' * 65),
+    ]) {
+      await expectLater(
+        repository.saveRoom(invalid),
+        throwsA(
+          isA<ApiException>().having(
+            (ApiException error) => error.kind,
+            'kind',
+            ApiFailureKind.validation,
+          ),
+        ),
+      );
+    }
+  });
 }

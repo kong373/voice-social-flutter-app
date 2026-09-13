@@ -140,6 +140,38 @@ void main() {
     expect(find.byType(RoomTopicPage), findsNothing);
   });
 
+  testWidgets('RM-008 announcement fields expose the backend text limits', (
+    WidgetTester tester,
+  ) async {
+    final AppDependencies dependencies = AppDependencies.mock();
+
+    await tester.pumpWidget(
+      AppDependencyScope(
+        dependencies: dependencies,
+        child: MaterialApp(
+          theme: AppTheme.dark(),
+          home: const RoomTopicPage(roomId: '9527', canEdit: true),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final TextField title = tester.widget<TextField>(
+      find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is TextField && widget.decoration?.labelText == '公告标题',
+      ),
+    );
+    final TextField content = tester.widget<TextField>(
+      find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is TextField && widget.decoration?.labelText == '公告内容',
+      ),
+    );
+    expect(title.maxLength, 64);
+    expect(content.maxLength, 240);
+  });
+
   testWidgets(
     'RM-011 topic conflict refreshes authority and waits for resubmit',
     (WidgetTester tester) async {

@@ -96,7 +96,7 @@ class RoomConfigurationForm extends StatelessWidget {
                   enabled: enabled,
                   minLines: 3,
                   maxLines: 5,
-                  maxLength: 500,
+                  maxLength: 240,
                   decoration: const InputDecoration(
                     labelText: '当前话题或房间说明',
                     alignLabelWithHint: true,
@@ -108,7 +108,7 @@ class RoomConfigurationForm extends StatelessWidget {
                   enabled: enabled,
                   minLines: 2,
                   maxLines: 4,
-                  maxLength: 300,
+                  maxLength: 240,
                   decoration: const InputDecoration(
                     labelText: '进房欢迎语',
                     alignLabelWithHint: true,
