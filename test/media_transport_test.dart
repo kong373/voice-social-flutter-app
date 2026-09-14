@@ -339,6 +339,103 @@ void main() {
       },
     );
   }
+  test('complete response headers outlive ordinary timeout', () async {
+    final actor = TestMediaIdentity();
+    final scope = actor.scope();
+    addTearDown(scope.dispose);
+    final http = MediaFakeHttp((_) async {
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      return MediaFakeResponse.json({'state': 'READY'});
+    });
+    final api = http.api(actor, timeout: const Duration(milliseconds: 10));
+
+    final response = await api.mediaAssetJson(
+      action: MediaAssetAction.complete,
+      assetId: mediaId,
+      expectedVersion: 2,
+      identity: scope,
+    );
+
+    expect(response.code, 200);
+    expect(http.requests, hasLength(1));
+    expect(
+      utf8.decode(http.requests.single.body),
+      jsonEncode({'expectedVersion': 2}),
+    );
+  });
+  test('status response headers keep ordinary timeout', () async {
+    final actor = TestMediaIdentity();
+    final scope = actor.scope();
+    addTearDown(scope.dispose);
+    final http = MediaFakeHttp((_) async {
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+      return MediaFakeResponse.json({'state': 'READY'});
+    });
+    final api = http.api(actor, timeout: const Duration(milliseconds: 10));
+
+    await expectLater(
+      api.mediaAssetJson(
+        action: MediaAssetAction.status,
+        assetId: mediaId,
+        identity: scope,
+      ),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.kind,
+          'kind',
+          ApiFailureKind.timeout,
+        ),
+      ),
+    );
+    expect(http.requests.single.aborted, isTrue);
+  });
+  test(
+    'identity cancellation aborts delayed complete without waiting long timeout',
+    () async {
+      final actor = TestMediaIdentity();
+      final scope = actor.scope();
+      addTearDown(scope.dispose);
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      final http = MediaFakeHttp((_) async {
+        entered.complete();
+        await release.future;
+        return MediaFakeResponse.json({'state': 'READY'});
+      });
+      final api = http.api(actor, timeout: const Duration(milliseconds: 10));
+      final operation = api
+          .mediaAssetJson(
+            action: MediaAssetAction.complete,
+            assetId: mediaId,
+            expectedVersion: 2,
+            identity: scope,
+          )
+          .then<Object?>((value) => value, onError: (Object error) => error);
+
+      await entered.future;
+      final stopwatch = Stopwatch()..start();
+      actor.change(2);
+      final outcome = await operation.timeout(
+        const Duration(milliseconds: 100),
+      );
+      stopwatch.stop();
+
+      expect(
+        outcome,
+        isA<ApiException>().having(
+          (error) => error.kind,
+          'kind',
+          ApiFailureKind.unauthorized,
+        ),
+      );
+      expect(stopwatch.elapsed, lessThan(const Duration(milliseconds: 100)));
+      expect(http.requests.single.aborted, isTrue);
+      release.complete();
+    },
+  );
   test(
     'redirect never follows Location; binary mismatches never succeed',
     () async {

@@ -46,6 +46,9 @@ extension MediaApiTransport on ApiClient {
       identity: identity,
       body: body,
       requestId: requestId ?? ApiClient._newRequestId(),
+      responseHeaderTimeout: action == MediaAssetAction.complete
+          ? ApiClient._mediaCompleteResponseHeaderTimeout
+          : null,
     );
   }
 
@@ -104,6 +107,7 @@ extension MediaApiTransport on ApiClient {
     int maximumBytes = 100000000,
     Future<void> Function(List<int>)? download,
     MediaReference? expectedContent,
+    Duration? responseHeaderTimeout,
     bool recover = true,
   }) async {
     identity.check();
@@ -170,7 +174,7 @@ extension MediaApiTransport on ApiClient {
         activeRequest.write(jsonEncode(body));
       }
       final response = await identity.wait(
-        activeRequest.close().timeout(timeout),
+        activeRequest.close().timeout(responseHeaderTimeout ?? timeout),
       );
       if (response.statusCode >= 300 && response.statusCode < 400) {
         throw const ApiException(
@@ -248,6 +252,7 @@ extension MediaApiTransport on ApiClient {
             maximumBytes: maximumBytes,
             download: download,
             expectedContent: expectedContent,
+            responseHeaderTimeout: responseHeaderTimeout,
             recover: false,
           );
         }

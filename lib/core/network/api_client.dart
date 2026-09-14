@@ -69,6 +69,9 @@ class ApiClient {
   final AuthorizationProvider _authorizationProvider;
   final RequestHeadersProvider? _requestHeadersProvider;
   final HttpClient _httpClient;
+  static const Duration _mediaCompleteResponseHeaderTimeout = Duration(
+    seconds: 240,
+  );
   final Duration timeout;
   final int maximumResponseBytes;
   UnauthorizedRecovery? _unauthorizedRecovery;

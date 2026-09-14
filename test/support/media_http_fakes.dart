@@ -45,6 +45,7 @@ class MediaFakeHttp implements HttpClient {
   ApiClient api(
     TestMediaIdentity identity, {
     Future<bool> Function()? refresh,
+    Duration timeout = const Duration(seconds: 15),
     int maximumResponseBytes = 2 * 1024 * 1024,
   }) => ApiClient(
     baseUri: Uri.parse('https://configured.backend.test'),
@@ -53,6 +54,7 @@ class MediaFakeHttp implements HttpClient {
     authorizationProvider: () => identity.token,
     unauthorizedRecovery: refresh,
     httpClient: this,
+    timeout: timeout,
     maximumResponseBytes: maximumResponseBytes,
   );
   @override
