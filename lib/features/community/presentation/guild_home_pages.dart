@@ -7,46 +7,56 @@ class GuildHomePage extends StatefulWidget {
   State<GuildHomePage> createState() => _GuildHomePageState();
 }
 
-class _GuildHomePageState extends State<GuildHomePage> {
+class _GuildHomePageState extends State<GuildHomePage>
+    with _GuildPageReadFence<GuildHomePage> {
   final TextEditingController _searchController = TextEditingController();
   GuildHomeSnapshot? _snapshot;
   List<GuildSummary>? _searchResults;
   bool _loading = true;
   bool _searching = false;
   String? _error;
+  int _searchEpoch = 0;
 
-  CommunityRepository get _repository =>
-      AppDependencyScope.of(context).communityRepository;
+  CommunityRepository get _repository => guildReadRepository;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_snapshot == null && _loading) {
-      _load();
-    }
+  void clearGuildPage() {
+    _searchEpoch++;
+    _searchController.clear();
+    _snapshot = null;
+    _searchResults = null;
+    _loading = true;
+    _searching = false;
+    _error = null;
   }
 
   @override
+  Future<void> reloadGuildPage() => _load();
+
+  @override
   void dispose() {
+    _searchEpoch++;
     _searchController.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
+    final ticket = beginGuildRead();
+    final repository = _repository;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final GuildHomeSnapshot value = await _repository.fetchGuildHome();
-      if (mounted) {
+      final GuildHomeSnapshot value = await repository.fetchGuildHome();
+      if (acceptsGuildRead(ticket)) {
         setState(() {
           _snapshot = value;
           _loading = false;
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (acceptsGuildRead(ticket)) {
         setState(() {
           _loading = false;
           _error = _messageFor(error);
@@ -60,32 +70,37 @@ class _GuildHomePageState extends State<GuildHomePage> {
     if (_searching) {
       return;
     }
+    final scope = captureGuildScope();
+    final epoch = ++_searchEpoch;
+    final repository = _repository;
+    bool current() => acceptsGuildScope(scope) && epoch == _searchEpoch;
     setState(() => _searching = true);
     try {
-      final List<GuildSummary> result = await _repository.searchGuilds(keyword);
-      if (mounted) {
+      final List<GuildSummary> result = await repository.searchGuilds(keyword);
+      if (current()) {
         setState(() => _searchResults = result);
       }
     } catch (error) {
-      if (mounted) {
+      if (current()) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
-      if (mounted) {
+      if (current()) {
         setState(() => _searching = false);
       }
     }
   }
 
   Future<void> _openGuild(GuildSummary guild) async {
+    final scope = captureGuildScope();
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (BuildContext context) => GuildDetailPage(guildId: guild.id),
       ),
     );
-    if (mounted) {
+    if (acceptsGuildScope(scope)) {
       await _load();
     }
   }
@@ -153,7 +168,11 @@ class _GuildHomePageState extends State<GuildHomePage> {
                       title: '搜索结果',
                       subtitle: '共找到 ${_searchResults!.length} 个公会',
                       trailing: TextButton(
-                        onPressed: () => setState(() => _searchResults = null),
+                        onPressed: () => setState(() {
+                          _searchEpoch++;
+                          _searching = false;
+                          _searchResults = null;
+                        }),
                         child: const Text('清除'),
                       ),
                     ),
@@ -229,38 +248,47 @@ class GuildDetailPage extends StatefulWidget {
   State<GuildDetailPage> createState() => _GuildDetailPageState();
 }
 
-class _GuildDetailPageState extends State<GuildDetailPage> {
+class _GuildDetailPageState extends State<GuildDetailPage>
+    with _GuildPageReadFence<GuildDetailPage> {
   GuildSummary? _guild;
   String? _error;
   bool _loading = true;
   bool _busy = false;
 
-  CommunityRepository get _repository =>
-      AppDependencyScope.of(context).communityRepository;
+  CommunityRepository get _repository => guildReadRepository;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_guild == null && _loading) {
-      _load();
-    }
+  Object get guildPageKey => widget.guildId;
+
+  @override
+  void clearGuildPage() {
+    _guild = null;
+    _error = null;
+    _loading = true;
+    _busy = false;
   }
 
+  @override
+  Future<void> reloadGuildPage() => _load();
+
   Future<void> _load() async {
+    final ticket = beginGuildRead();
+    final repository = _repository;
+    final guildId = widget.guildId;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final GuildSummary value = await _repository.fetchGuild(widget.guildId);
-      if (mounted) {
+      final GuildSummary value = await repository.fetchGuild(guildId);
+      if (acceptsGuildRead(ticket)) {
         setState(() {
           _guild = value;
           _loading = false;
         });
       }
     } catch (error) {
-      if (mounted) {
+      if (acceptsGuildRead(ticket)) {
         setState(() {
           _loading = false;
           _error = _messageFor(error);
@@ -273,10 +301,11 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
     if (_busy) {
       return;
     }
+    final scope = captureGuildScope();
     setState(() => _busy = true);
     try {
       await action();
-      if (!mounted) {
+      if (!acceptsGuildScope(scope)) {
         return;
       }
       ScaffoldMessenger.of(
@@ -284,19 +313,20 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
       ).showSnackBar(SnackBar(content: Text(success)));
       await _load();
     } catch (error) {
-      if (mounted) {
+      if (acceptsGuildScope(scope)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
-      if (mounted) {
+      if (acceptsGuildScope(scope)) {
         setState(() => _busy = false);
       }
     }
   }
 
   Future<void> _quit() async {
+    final scope = captureGuildScope();
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
@@ -314,19 +344,20 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
         ],
       ),
     );
-    if (confirmed == true && mounted) {
+    if (confirmed == true && acceptsGuildScope(scope)) {
       await _run(() => _repository.quitGuild(widget.guildId), '已退出公会');
     }
   }
 
   Future<void> _applyToGuild() async {
     if (_busy) return;
+    final scope = captureGuildScope();
     final dependencies = AppDependencyScope.of(context);
     final sessions = dependencies.sessionManager;
     final session = sessions.session;
     final generation = sessions.identityGeneration;
     bool current() =>
-        mounted &&
+        acceptsGuildScope(scope) &&
         sessions.identityGeneration == generation &&
         identical(sessions.session, session) &&
         session != null &&
@@ -429,7 +460,7 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (acceptsGuildScope(scope)) setState(() => _busy = false);
     }
   }
 
@@ -667,5 +698,97 @@ class _GuildDetailPageState extends State<GuildDetailPage> {
               ),
             ),
     );
+  }
+}
+
+/// Local to the guild pages: invalidates reads, not business states or writes.
+/// Rejoining is a new authoritative read, never a permanent terminal cache.
+mixin _GuildPageReadFence<T extends StatefulWidget> on State<T> {
+  CommunityRepository? _guildRepository;
+  Object? _guildDependencies;
+  Object? _guildKey;
+  (int?, int)? _guildIdentity;
+  (int?, int) Function()? _guildIdentityNow;
+  VoidCallback? _removeGuildObserver;
+  int _guildScopeEpoch = 0;
+  int _guildReadEpoch = 0;
+  bool _guildDisposed = false;
+
+  Object? get guildPageKey => null;
+  CommunityRepository get guildReadRepository => _guildRepository!;
+  void clearGuildPage();
+  Future<void> reloadGuildPage();
+
+  int captureGuildScope() => _guildScopeEpoch;
+  bool acceptsGuildScope(int scope) =>
+      mounted &&
+      !_guildDisposed &&
+      scope == _guildScopeEpoch &&
+      _guildIdentityNow?.call() == _guildIdentity;
+  (int, int) beginGuildRead() => (_guildScopeEpoch, ++_guildReadEpoch);
+  bool acceptsGuildRead((int, int) ticket) =>
+      acceptsGuildScope(ticket.$1) && ticket.$2 == _guildReadEpoch;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _bindGuildScope();
+  }
+
+  @override
+  void didUpdateWidget(covariant T oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _bindGuildScope();
+  }
+
+  void _bindGuildScope() {
+    final dependencies = AppDependencyScope.of(context);
+    final repository = dependencies.communityRepository;
+    final identity = (
+      dependencies.sessionManager.session?.userId,
+      dependencies.sessionManager.identityGeneration,
+    );
+    if (identical(dependencies, _guildDependencies) &&
+        identical(repository, _guildRepository) &&
+        guildPageKey == _guildKey &&
+        identity == _guildIdentity) {
+      return;
+    }
+    _removeGuildObserver?.call();
+    _guildDependencies = dependencies;
+    _guildRepository = repository;
+    _guildKey = guildPageKey;
+    _guildIdentity = identity;
+    _guildIdentityNow = () => (
+      dependencies.sessionManager.session?.userId,
+      dependencies.sessionManager.identityGeneration,
+    );
+    dependencies.sessionManager.addListener(_onGuildIdentityChanged);
+    _removeGuildObserver = () =>
+        dependencies.sessionManager.removeListener(_onGuildIdentityChanged);
+    _guildScopeEpoch++;
+    _guildReadEpoch++;
+    clearGuildPage();
+    reloadGuildPage();
+  }
+
+  void _onGuildIdentityChanged() {
+    if (!mounted || _guildDisposed) return;
+    final identity = _guildIdentityNow!();
+    if (identity == _guildIdentity) return;
+    _guildIdentity = identity;
+    _guildScopeEpoch++;
+    _guildReadEpoch++;
+    setState(clearGuildPage);
+    reloadGuildPage();
+  }
+
+  @override
+  void dispose() {
+    _guildDisposed = true;
+    _guildScopeEpoch++;
+    _guildReadEpoch++;
+    _removeGuildObserver?.call();
+    super.dispose();
   }
 }
