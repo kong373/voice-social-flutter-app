@@ -156,36 +156,39 @@ void main() {
     },
   };
   for (final item in invalidAmounts.entries) {
-    test('gift receipt amount rejects ${item.key} then recovers original', () async {
-      final h = await Harness.start();
-      addTearDown(h.close);
-      final command = h.command();
-      final originalBody = command.encodedBody;
-      h.patch = item.value;
-      await expectLater(
-        h.repo.queryGiftCommand(command),
-        throwsA(
-          isA<ApiException>().having(
-            (error) => error.kind,
-            'kind',
-            ApiFailureKind.protocol,
+    test(
+      'gift receipt amount rejects ${item.key} then recovers original',
+      () async {
+        final h = await Harness.start();
+        addTearDown(h.close);
+        final command = h.command();
+        final originalBody = command.encodedBody;
+        h.patch = item.value;
+        await expectLater(
+          h.repo.queryGiftCommand(command),
+          throwsA(
+            isA<ApiException>().having(
+              (error) => error.kind,
+              'kind',
+              ApiFailureKind.protocol,
+            ),
           ),
-        ),
-      );
-      h.patch = {
-        'giftCoinCost': 100,
-        'unitCostMinor': 10,
-        'currency': 'GIFT_COIN',
-      };
-      final recovered = await h.repo.queryGiftCommand(command);
-      command.validateReceipt(recovered, queried: true);
-      expect(recovered.transferId, 'transfer-1');
-      expect(recovered.requestId, command.requestId);
-      expect(command.encodedBody, originalBody);
-      expect(h.gets, 2);
-      expect(h.bodies, isEmpty);
-      expect(h.keys, isEmpty);
-    });
+        );
+        h.patch = {
+          'giftCoinCost': 100,
+          'unitCostMinor': 10,
+          'currency': 'GIFT_COIN',
+        };
+        final recovered = await h.repo.queryGiftCommand(command);
+        command.validateReceipt(recovered, queried: true);
+        expect(recovered.transferId, 'transfer-1');
+        expect(recovered.requestId, command.requestId);
+        expect(command.encodedBody, originalBody);
+        expect(h.gets, 2);
+        expect(h.bodies, isEmpty);
+        expect(h.keys, isEmpty);
+      },
+    );
   }
 
   test('gift receipt amount preserves absent optional amounts', () async {
@@ -204,25 +207,28 @@ void main() {
   });
 
   for (final incomeCurrency in ['CASH_CNY', 'GIFT_COIN_TENTH']) {
-    test('gift receipt amount keeps $incomeCurrency separate from spending', () async {
-      final h = await Harness.start();
-      addTearDown(h.close);
-      final command = h.command();
-      h.patch = {
-        'giftCoinCost': 100,
-        'unitCostMinor': 10,
-        'currency': 'GIFT_COIN',
-        'creatorIncomeMinor': 500,
-        'creatorIncomeCurrency': incomeCurrency,
-      };
-      final recovered = await h.repo.queryGiftCommand(command);
-      command.validateReceipt(recovered, queried: true);
-      expect(recovered.creatorIncomeCurrency, incomeCurrency);
-      expect(recovered.creatorIncomeMinor, 500);
-      expect(recovered.requestId, command.requestId);
-      expect(h.gets, 1);
-      expect(h.bodies, isEmpty);
-    });
+    test(
+      'gift receipt amount keeps $incomeCurrency separate from spending',
+      () async {
+        final h = await Harness.start();
+        addTearDown(h.close);
+        final command = h.command();
+        h.patch = {
+          'giftCoinCost': 100,
+          'unitCostMinor': 10,
+          'currency': 'GIFT_COIN',
+          'creatorIncomeMinor': 500,
+          'creatorIncomeCurrency': incomeCurrency,
+        };
+        final recovered = await h.repo.queryGiftCommand(command);
+        command.validateReceipt(recovered, queried: true);
+        expect(recovered.creatorIncomeCurrency, incomeCurrency);
+        expect(recovered.creatorIncomeMinor, 500);
+        expect(recovered.requestId, command.requestId);
+        expect(h.gets, 1);
+        expect(h.bodies, isEmpty);
+      },
+    );
   }
 }
 
