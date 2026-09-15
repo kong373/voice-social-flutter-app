@@ -1342,7 +1342,11 @@ class BackendCommerceRepository
     _requireIdentity(identity);
     _validatePageArguments(page: page, pageSize: pageSize);
     if (status == null) {
-      return _fetchWithdrawalPage(page: page, pageSize: pageSize, identity: identity);
+      return _fetchWithdrawalPage(
+        page: page,
+        pageSize: pageSize,
+        identity: identity,
+      );
     }
     final List<WithdrawalRecord> matching = <WithdrawalRecord>[];
     final Set<String> seenWithdrawalIds = <String>{};

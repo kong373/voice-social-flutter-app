@@ -409,7 +409,10 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
     CommerceRepository repository,
     (String?, int) identity,
     int scope,
-  ) => mounted && !_closed && scope == _scopeEpoch &&
+  ) =>
+      mounted &&
+      !_closed &&
+      scope == _scopeEpoch &&
       identical(repository, _observedRepository) &&
       identical(repository, _repository) &&
       identity == repository.withdrawalIdentity;
@@ -449,7 +452,9 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
 
   bool _observeRepository(CommerceRepository repository) {
     if (identical(_observedRepository, repository)) return false;
-    _observedRepository?.withdrawalIdentityChanges?.removeListener(_identityChanged);
+    _observedRepository?.withdrawalIdentityChanges?.removeListener(
+      _identityChanged,
+    );
     _invalidateScope();
     _observedRepository = repository;
     _observedIdentity = repository.withdrawalIdentity;
@@ -538,7 +543,8 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
     final identity = repository.withdrawalIdentity;
     final scope = _scopeEpoch;
     final read = ++_readEpoch;
-    bool accepts() => _ownsScope(repository, identity, scope) && read == _readEpoch;
+    bool accepts() =>
+        _ownsScope(repository, identity, scope) && read == _readEpoch;
     if (!accepts() || identity.$1 == null) return;
     setState(() {
       _loading = true;
@@ -721,7 +727,9 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
         );
       },
     );
-    if (identical(_confirmationContext, confirmationContext)) {
+    if (confirmationContext != null &&
+        confirmationContext!.mounted &&
+        identical(_confirmationContext, confirmationContext)) {
       _confirmationContext = null;
     }
     if (!_ownsScope(repository, identity, scope)) return;
@@ -745,13 +753,13 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       _quote = null;
       _quotedAmount = null;
       await _load();
-      if (_ownsScope(repository, identity, scope)) {
+      if (mounted && _ownsScope(repository, identity, scope)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('提现申请已提交')));
       }
     } catch (error) {
-      if (_ownsScope(repository, identity, scope)) {
+      if (mounted && _ownsScope(repository, identity, scope)) {
         if (error is ApiException &&
             error.kind == ApiFailureKind.conflict &&
             repository.pendingWithdrawal == null) {
@@ -882,203 +890,207 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
         }
       },
       child: _CommerceScaffold(
-      appBar: AppBar(title: const Text('结算与提现')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? _CommerceErrorState(message: _error!, onRetry: _load)
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    _CommerceStatusCard(
-                      icon: Icons.account_balance_outlined,
-                      title:
-                          '${_wallet!.canWithdraw ? '可提现' : '历史现金余额'} ¥${_wallet!.cashBalance.toStringAsFixed(2)}',
-                      description: _wallet!.bankCard == null
-                          ? '尚未绑定银行卡'
-                          : '${_wallet!.bankCard!.accountType} ${_wallet!.bankCard!.maskedAccount}',
-                    ),
-                    const SizedBox(height: 14),
-                    if (!_wallet!.realNameVerified || _wallet!.bankCard == null)
-                      const _CommerceInfoBanner(
-                        text: '提交提现前必须完成实名认证并绑定银行卡。缺少条件时客户端会阻止提交。',
+        appBar: AppBar(title: const Text('结算与提现')),
+        body: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? _CommerceErrorState(message: _error!, onRetry: _load)
+            : RefreshIndicator(
+                onRefresh: _load,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      _CommerceStatusCard(
+                        icon: Icons.account_balance_outlined,
+                        title:
+                            '${_wallet!.canWithdraw ? '可提现' : '历史现金余额'} ¥${_wallet!.cashBalance.toStringAsFixed(2)}',
+                        description: _wallet!.bankCard == null
+                            ? '尚未绑定银行卡'
+                            : '${_wallet!.bankCard!.accountType} ${_wallet!.bankCard!.maskedAccount}',
                       ),
-                    if (!_wallet!.canWithdraw ||
-                        !_repository.supportsWithdrawalApplication ||
-                        _payoutSelection == null ||
-                        _payoutSelection!
-                            .selectableAccounts
-                            .isEmpty) ...<Widget>[
-                      const SizedBox(height: 10),
-                      _CommerceInfoBanner(text: _withdrawalBlockerMessage),
-                    ],
-                    if (_wallet!.canWithdraw &&
-                        _payoutSelection != null &&
-                        _repository.supportsPayoutAccountSelection &&
-                        _repository.supportsWithdrawalApplication) ...<Widget>[
-                      const SizedBox(height: 10),
-                      _buildPayoutAccountPicker(),
-                    ],
-                    const SizedBox(height: 14),
-                    if (_wallet!.canWithdraw ||
-                        _repository.pendingWithdrawal != null)
-                      _CommercePanel(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            const _CommerceSectionTitle(title: '提现申请'),
-                            const _CommerceInfoBanner(
-                              text:
-                                  '财务人工审核处理，不自动打款。最低提现 100 元，仅支持整元，余额零头保留。按北京时间自然日每天可提交一次；驳回后次日重新申请。',
-                            ),
-                            const SizedBox(height: 12),
-                            TextField(
-                              enabled:
-                                  !_submitting &&
-                                  _repository.pendingWithdrawal == null,
-                              controller: _amountController,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                    decimal: true,
-                                  ),
-                              onChanged: (_) {
-                                if (_quote != null || _quoteError != null) {
-                                  setState(() {
-                                    _quote = null;
-                                    _quotedAmount = null;
-                                    _quoteError = null;
-                                  });
-                                }
-                              },
-                              decoration: InputDecoration(
-                                labelText: '提现金额',
-                                helperText: _quote == null
-                                    ? '输入整元金额后计算手续费和预计到账金额'
-                                    : '最低 ¥${(_quote!.minimumAmount < 100 ? 100 : _quote!.minimumAmount).toStringAsFixed(0)} · 手续费 ${_quote!.feeRateText}',
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            OutlinedButton.icon(
-                              onPressed:
-                                  _quoteLoading ||
-                                      _submitting ||
-                                      _repository.pendingWithdrawal != null
-                                  ? null
-                                  : _loadQuote,
-                              icon: _quoteLoading
-                                  ? const SizedBox.square(
-                                      dimension: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.calculate_outlined),
-                              label: const Text('计算到账金额'),
-                            ),
-                            if (_quoteError != null) ...<Widget>[
-                              const SizedBox(height: 8),
-                              _CommerceInfoBanner(text: _quoteError!),
-                            ],
-                            if (_hasCurrentQuote) ...<Widget>[
-                              const SizedBox(height: 8),
-                              _CommerceInfoBanner(
+                      const SizedBox(height: 14),
+                      if (!_wallet!.realNameVerified ||
+                          _wallet!.bankCard == null)
+                        const _CommerceInfoBanner(
+                          text: '提交提现前必须完成实名认证并绑定银行卡。缺少条件时客户端会阻止提交。',
+                        ),
+                      if (!_wallet!.canWithdraw ||
+                          !_repository.supportsWithdrawalApplication ||
+                          _payoutSelection == null ||
+                          _payoutSelection!
+                              .selectableAccounts
+                              .isEmpty) ...<Widget>[
+                        const SizedBox(height: 10),
+                        _CommerceInfoBanner(text: _withdrawalBlockerMessage),
+                      ],
+                      if (_wallet!.canWithdraw &&
+                          _payoutSelection != null &&
+                          _repository.supportsPayoutAccountSelection &&
+                          _repository
+                              .supportsWithdrawalApplication) ...<Widget>[
+                        const SizedBox(height: 10),
+                        _buildPayoutAccountPicker(),
+                      ],
+                      const SizedBox(height: 14),
+                      if (_wallet!.canWithdraw ||
+                          _repository.pendingWithdrawal != null)
+                        _CommercePanel(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              const _CommerceSectionTitle(title: '提现申请'),
+                              const _CommerceInfoBanner(
                                 text:
-                                    '服务端报价：手续费 ¥${_quote!.feeFor(_quotedAmount!).toStringAsFixed(2)} · 预计到账 ¥${_quote!.receivedFor(_quotedAmount!).toStringAsFixed(2)}',
+                                    '财务人工审核处理，不自动打款。最低提现 100 元，仅支持整元，余额零头保留。按北京时间自然日每天可提交一次；驳回后次日重新申请。',
                               ),
-                            ],
-                            const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton(
+                              const SizedBox(height: 12),
+                              TextField(
+                                enabled:
+                                    !_submitting &&
+                                    _repository.pendingWithdrawal == null,
+                                controller: _amountController,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                      decimal: true,
+                                    ),
+                                onChanged: (_) {
+                                  if (_quote != null || _quoteError != null) {
+                                    setState(() {
+                                      _quote = null;
+                                      _quotedAmount = null;
+                                      _quoteError = null;
+                                    });
+                                  }
+                                },
+                                decoration: InputDecoration(
+                                  labelText: '提现金额',
+                                  helperText: _quote == null
+                                      ? '输入整元金额后计算手续费和预计到账金额'
+                                      : '最低 ¥${(_quote!.minimumAmount < 100 ? 100 : _quote!.minimumAmount).toStringAsFixed(0)} · 手续费 ${_quote!.feeRateText}',
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
                                 onPressed:
-                                    (_repository.pendingWithdrawal != null ||
-                                            (_canApplyWithdrawal &&
-                                                _wallet!.realNameVerified &&
-                                                _wallet!.bankCard != null &&
-                                                _wallet!.cashBalance >=
-                                                    WithdrawalAmountPolicy
-                                                        .minimum)) &&
-                                        !_submitting
-                                    ? _apply
-                                    : null,
-                                child: _submitting && !_confirming
+                                    _quoteLoading ||
+                                        _submitting ||
+                                        _repository.pendingWithdrawal != null
+                                    ? null
+                                    : _loadQuote,
+                                icon: _quoteLoading
                                     ? const SizedBox.square(
-                                        dimension: 20,
+                                        dimension: 18,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2,
                                         ),
                                       )
-                                    : const Text('申请提现'),
+                                    : const Icon(Icons.calculate_outlined),
+                                label: const Text('计算到账金额'),
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    const SizedBox(height: 24),
-                    const _CommerceSectionTitle(title: '提现记录'),
-                    const SizedBox(height: 8),
-                    if (_records!.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 30),
-                        child: Center(child: Text('暂无提现记录')),
-                      )
-                    else
-                      for (final WithdrawalRecord record in _records!)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: _CommercePanel(
-                            padding: const EdgeInsets.all(13),
-                            child: Row(
-                              children: <Widget>[
-                                const _CommerceAssetOrb(
-                                  icon: Icons.account_balance_rounded,
-                                  size: 40,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: <Widget>[
-                                      Text(
-                                        '¥${record.amount.toStringAsFixed(2)} · ${record.statusText}',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.titleSmall,
-                                      ),
-                                      Text(
-                                        '持卡人 ${record.holderNameMasked} ${record.maskedCard}',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall,
-                                      ),
-                                      Text(
-                                        _formatDateTime(record.createdAt),
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Text(
-                                  '到账\n¥${record.receivedAmount.toStringAsFixed(2)}',
-                                  textAlign: TextAlign.end,
-                                  style: Theme.of(context).textTheme.bodySmall,
+                              if (_quoteError != null) ...<Widget>[
+                                const SizedBox(height: 8),
+                                _CommerceInfoBanner(text: _quoteError!),
+                              ],
+                              if (_hasCurrentQuote) ...<Widget>[
+                                const SizedBox(height: 8),
+                                _CommerceInfoBanner(
+                                  text:
+                                      '服务端报价：手续费 ¥${_quote!.feeFor(_quotedAmount!).toStringAsFixed(2)} · 预计到账 ¥${_quote!.receivedFor(_quotedAmount!).toStringAsFixed(2)}',
                                 ),
                               ],
-                            ),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: FilledButton(
+                                  onPressed:
+                                      (_repository.pendingWithdrawal != null ||
+                                              (_canApplyWithdrawal &&
+                                                  _wallet!.realNameVerified &&
+                                                  _wallet!.bankCard != null &&
+                                                  _wallet!.cashBalance >=
+                                                      WithdrawalAmountPolicy
+                                                          .minimum)) &&
+                                          !_submitting
+                                      ? _apply
+                                      : null,
+                                  child: _submitting && !_confirming
+                                      ? const SizedBox.square(
+                                          dimension: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Text('申请提现'),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                  ],
+                      const SizedBox(height: 24),
+                      const _CommerceSectionTitle(title: '提现记录'),
+                      const SizedBox(height: 8),
+                      if (_records!.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 30),
+                          child: Center(child: Text('暂无提现记录')),
+                        )
+                      else
+                        for (final WithdrawalRecord record in _records!)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _CommercePanel(
+                              padding: const EdgeInsets.all(13),
+                              child: Row(
+                                children: <Widget>[
+                                  const _CommerceAssetOrb(
+                                    icon: Icons.account_balance_rounded,
+                                    size: 40,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        Text(
+                                          '¥${record.amount.toStringAsFixed(2)} · ${record.statusText}',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.titleSmall,
+                                        ),
+                                        Text(
+                                          '持卡人 ${record.holderNameMasked} ${record.maskedCard}',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                        ),
+                                        Text(
+                                          _formatDateTime(record.createdAt),
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Text(
+                                    '到账\n¥${record.receivedAmount.toStringAsFixed(2)}',
+                                    textAlign: TextAlign.end,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                    ],
+                  ),
                 ),
               ),
-            ),
       ),
     );
   }
