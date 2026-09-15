@@ -551,25 +551,25 @@ void _guildPageRaceTests() {
     });
     await _withGuildUi(tester, http, (dependencies) async {
       await _mountGuildUi(tester, dependencies, const GuildMembersPage(guildId: 'guild-a'));
+      expect(find.text('申请 1'), findsOneWidget, reason: 'Fixture must finish initial HTTP loading');
       await tester.tap(find.text('申请 1'));
-      await _pumpGuildUi(tester);
+      await _pumpGuildUi(tester, until: () => find.widgetWithText(FilledButton, '通过').evaluate().isNotEmpty);
       final refresh = tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh;
       await tester.tap(find.widgetWithText(FilledButton, '通过'));
-      await _pumpGuildUi(tester);
+      await _pumpGuildUi(tester, until: () => http.requests.any((r) => r.uri.path.endsWith('approvalMembershipApplication')));
       expect(http.requests.where((r) => r.uri.path.endsWith('approvalMembershipApplication')), hasLength(1));
       final oldRead = refresh();
-      await _pumpGuildUi(tester);
+      await _pumpGuildUi(tester, until: () => applicationReads == 2);
       expect(applicationReads, 2);
       approved = true;
       write.complete(MediaFakeResponse.json({
         'applicationId': 'application-1', 'guildId': 'guild-a', 'status': 'APPROVED',
       }));
-      await _pumpGuildUi(tester);
+      await _pumpGuildUi(tester, until: () => find.text('已通过').evaluate().isNotEmpty);
       expect(find.text('已通过'), findsOneWidget);
       expect(find.text('待审核'), findsNothing);
       stale.complete(MediaFakeResponse.json(_guildUiApplications(false)));
-      await _pumpGuildUi(tester);
-      await oldRead;
+      await _finishGuildUi(tester, oldRead);
       expect(find.text('已通过'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, '通过'), findsNothing);
       expect(applicationReads, 3);
@@ -591,26 +591,25 @@ void _guildPageRaceTests() {
     });
     await _withGuildUi(tester, http, (dependencies) async {
       await _mountGuildUi(tester, dependencies, const GuildDetailPage(guildId: 'guild-a'));
+      expect(find.text('退出公会'), findsOneWidget, reason: 'Fixture must finish initial HTTP loading');
       final refresh = tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh;
       await tester.tap(find.text('退出公会'));
-      await _pumpGuildUi(tester);
+      await _pumpGuildUi(tester, until: () => find.text('确认退出').evaluate().isNotEmpty);
       await tester.tap(find.text('确认退出'));
-      await _pumpGuildUi(tester);
+      await _pumpGuildUi(tester, until: () => http.requests.any((r) => r.uri.path.endsWith('quitGuild')));
       final oldRead = refresh();
-      await _pumpGuildUi(tester);
+      await _pumpGuildUi(tester, until: () => reads == 2);
       expect(reads, 2);
       joined = false;
       write.complete(MediaFakeResponse.json({'guildId': 'guild-a', 'status': 'LEFT', 'left': true}));
-      await _pumpGuildUi(tester);
+      await _pumpGuildUi(tester, until: () => find.text('尚未加入').evaluate().isNotEmpty);
       expect(find.text('尚未加入'), findsOneWidget);
       stale.complete(MediaFakeResponse.json(_guildUiDetail('guild-a', role: 'MEMBER')));
-      await _pumpGuildUi(tester);
-      await oldRead;
+      await _finishGuildUi(tester, oldRead);
       expect(find.text('退出公会'), findsNothing);
       expect(find.text('尚未加入'), findsOneWidget);
       joined = true;
-      await tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh();
-      await _pumpGuildUi(tester);
+      await _finishGuildUi(tester, tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh());
       expect(find.textContaining('你是主播'), findsOneWidget);
       expect(http.requests.where((r) => r.uri.path.contains('guildManagement')), hasLength(1));
     });
@@ -636,28 +635,25 @@ void _guildPageRaceTests() {
           await _mountGuildUi(tester, dependencies, const GuildDetailPage(guildId: 'guild-a'));
           final refresh = tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh;
           final prior = refresh();
-          await _pumpGuildUi(tester);
+          await _pumpGuildUi(tester, until: () => calls == 2);
           final current = refresh();
-          await _pumpGuildUi(tester);
+          await _pumpGuildUi(tester, until: () => calls == 3);
           expect(calls, 3);
           if (newestFirst) {
             latest.complete(MediaFakeResponse.json(_guildUiDetail('guild-a', name: 'CURRENT')));
-            await _pumpGuildUi(tester);
-            await current;
+            await _finishGuildUi(tester, current);
           }
           if (oldError) {
             old.completeError(const SocketException('obsolete guild error'));
           } else {
             old.complete(MediaFakeResponse.json(_guildUiDetail('guild-a', name: 'OBSOLETE')));
           }
-          await _pumpGuildUi(tester);
-          await prior;
+          await _finishGuildUi(tester, prior);
           if (!newestFirst) {
             expect(find.byType(CircularProgressIndicator), findsOneWidget);
             expect(find.text('OBSOLETE'), findsNothing);
             latest.complete(MediaFakeResponse.json(_guildUiDetail('guild-a', name: 'CURRENT')));
-            await _pumpGuildUi(tester);
-            await current;
+            await _finishGuildUi(tester, current);
           }
           expect(find.text('CURRENT'), findsOneWidget);
           expect(find.text('OBSOLETE'), findsNothing);
@@ -680,7 +676,7 @@ void _guildPageRaceTests() {
         return MediaFakeResponse.json(_guildUiData(request));
       });
       await _withGuildUi(tester, http, (dependencies) async {
-        await _mountGuildUi(tester, dependencies, const GuildMembersPage(key: ValueKey('members'), guildId: 'guild-a'));
+        await _mountGuildUi(tester, dependencies, const GuildMembersPage(key: ValueKey('members'), guildId: 'guild-a'), ready: () => held != null);
         expect(held, isNotNull);
         await _mountGuildUi(tester, dependencies, const GuildMembersPage(key: ValueKey('members'), guildId: 'guild-b'));
         expect(find.text('公会 guild-b'), findsOneWidget);
@@ -710,7 +706,7 @@ void _guildPageRaceTests() {
     });
     await _withGuildUi(tester, http, (dependencies) async {
       const page = GuildMembersPage(key: ValueKey('same'), guildId: 'guild-a');
-      await _mountGuildUi(tester, dependencies, page);
+      await _mountGuildUi(tester, dependencies, page, ready: () => held != null);
       expect(held, isNotNull);
       final replacement = await _guildUiDependencies('guild-b.test');
       try {
@@ -736,7 +732,7 @@ void _guildPageRaceTests() {
       return old.future;
     });
     await _withGuildUi(tester, http, (dependencies) async {
-      await _mountGuildUi(tester, dependencies, const GuildMembersPage(guildId: 'guild-a'));
+      await _mountGuildUi(tester, dependencies, const GuildMembersPage(guildId: 'guild-a'), ready: () => held != null);
       expect(held, isNotNull);
       await tester.pumpWidget(const SizedBox.shrink());
       old.complete(MediaFakeResponse.json(_guildUiData(held!)));
@@ -765,20 +761,20 @@ void _guildPageRaceTests() {
       await _mountGuildUi(tester, dependencies, page);
       await tester.enterText(find.byType(TextField), 'old');
       await tester.tap(find.byTooltip('搜索'));
-      await _pumpGuildUi(tester);
+      await _pumpGuildUi(tester, until: () => http.requests.any((r) => r.uri.host == 'guild-a.test' && r.uri.path.endsWith('searchGuild')));
       final replacement = await _guildUiDependencies('guild-b.test');
       try {
         await _mountGuildUi(tester, replacement, page);
         await tester.enterText(find.byType(TextField), 'new');
         await tester.tap(find.byTooltip('搜索'));
-        await _pumpGuildUi(tester);
+        await _pumpGuildUi(tester, until: () => newSearch != null);
         expect(newSearch, isNotNull);
         old.completeError(const SocketException('obsolete search'));
         await _pumpGuildUi(tester);
         expect(tester.widget<IconButton>(find.byTooltip('搜索')).onPressed, isNull);
         expect(find.textContaining('obsolete search'), findsNothing);
         current.complete(MediaFakeResponse.json(_guildUiData(newSearch!)));
-        await _pumpGuildUi(tester);
+        await _pumpGuildUi(tester, until: () => find.text('搜索结果').evaluate().isNotEmpty);
         expect(tester.widget<IconButton>(find.byTooltip('搜索')).onPressed, isNotNull);
         expect(find.text('搜索结果'), findsOneWidget);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -842,19 +838,37 @@ Future<void> _withGuildUi(
   }, createHttpClient: (_) => http);
 }
 
-Future<void> _mountGuildUi(WidgetTester tester, AppDependencies dependencies, Widget page) async {
+Future<void> _mountGuildUi(WidgetTester tester, AppDependencies dependencies, Widget page, {bool Function()? ready}) async {
   await tester.pumpWidget(AppDependencyScope(
     dependencies: dependencies,
     child: MaterialApp(theme: AppTheme.social(), home: page),
   ));
-  await _pumpGuildUi(tester);
+  // Tests that deliberately hold the first response supply a request barrier.
+  // Otherwise require a loaded refreshable page, not merely N elapsed frames.
+  await _pumpGuildUi(tester, until: ready ?? () => find.byType(RefreshIndicator).evaluate().isNotEmpty);
 }
 
-Future<void> _pumpGuildUi(WidgetTester tester) async {
-  // Bounded frames, not pumpAndSettle: an intentionally held read has a spinner.
-  for (var index = 0; index < 12; index++) {
-    await tester.pump(const Duration(milliseconds: 25));
+Future<void> _finishGuildUi(WidgetTester tester, Future<void> operation) async {
+  var finished = false;
+  Object? failure;
+  operation.then<void>((_) => finished = true, onError: (Object error, StackTrace _) {
+    failure = error;
+    finished = true;
+  });
+  await _pumpGuildUi(tester, until: () => finished);
+  if (failure != null) throw failure!;
+  await tester.pump();
+}
+
+Future<void> _pumpGuildUi(WidgetTester tester, {bool Function()? until}) async {
+  // HTTP futures/streams need the real event loop as well as widget frames.
+  // Never pumpAndSettle while a deliberately held response owns a spinner.
+  for (var index = 0; index < 200; index++) {
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 2)));
+    await tester.pump(const Duration(milliseconds: 10));
+    if (until != null ? until() : index >= 11) return;
   }
+  fail('Guild async fixture did not reach its request/UI barrier; not a business RED.');
 }
 
 String _guildUiId(MediaFakeRequest request) {
