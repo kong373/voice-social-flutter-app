@@ -36,21 +36,29 @@ class BackendCommunityRepository
   bool get supportsActivityCatalog => false;
 
   @override
-  Future<GuildHomeSnapshot> fetchGuildHome() async {
+  Future<GuildHomeSnapshot> fetchGuildHome() => _runGuildRead((
+    requireIdentity,
+  ) async {
     final List<Object?> results = await Future.wait<Object?>(<Future<Object?>>[
       _apiClient
-          .get(_routes.currentGuild)
+          .getBoundToIdentity(
+            _routes.currentGuild,
+            requireIdentity: requireIdentity,
+          )
           .then((ApiResponse value) => value.data),
       _fetchAllPages(
+        requireIdentity: requireIdentity,
         pageSize: _guildPageSize,
         authoritativeId: (Map<String, Object?> item) =>
             _requiredNonEmptyStringField(item, 'guildId'),
-        fetchPage: (int page, int pageSize) => _apiClient.post(
+        fetchPage: (int page, int pageSize) => _apiClient.postBoundToIdentity(
           _routes.recommendedGuilds,
+          requireIdentity: requireIdentity,
           body: <String, Object?>{'pageNum': page, 'pageSize': pageSize},
         ),
       ),
     ]);
+    requireIdentity();
     final _CurrentGuildResult current = _currentGuildFromMap(
       _requiredMap(results[0]),
     );
@@ -68,54 +76,61 @@ class BackendCommunityRepository
       currentGuildAuthority: current.authority,
       recommended: recommended,
     );
-  }
+  });
 
   @override
-  Future<List<GuildSummary>> searchGuilds(String keyword) async {
-    final List<Map<String, Object?>> raw = await _fetchAllPages(
-      pageSize: _guildPageSize,
-      authoritativeId: (Map<String, Object?> item) =>
-          _requiredNonEmptyStringField(item, 'guildId'),
-      fetchPage: (int page, int pageSize) => _apiClient.get(
-        _routes.searchGuilds,
-        query: <String, String>{
-          'keyword': keyword.trim(),
-          'pageNum': '$page',
-          'pageSize': '$pageSize',
-        },
-      ),
-    );
-    return raw
-        .map(
-          (Map<String, Object?> item) =>
-              _guildFromMap(item, requireActive: true),
-        )
-        .where((GuildSummary value) => value.id.isNotEmpty)
-        .toList(growable: false);
-  }
+  Future<List<GuildSummary>> searchGuilds(String keyword) =>
+      _runGuildRead((requireIdentity) async {
+        final List<Map<String, Object?>> raw = await _fetchAllPages(
+          requireIdentity: requireIdentity,
+          pageSize: _guildPageSize,
+          authoritativeId: (Map<String, Object?> item) =>
+              _requiredNonEmptyStringField(item, 'guildId'),
+          fetchPage: (int page, int pageSize) => _apiClient.getBoundToIdentity(
+            _routes.searchGuilds,
+            requireIdentity: requireIdentity,
+            query: <String, String>{
+              'keyword': keyword.trim(),
+              'pageNum': '$page',
+              'pageSize': '$pageSize',
+            },
+          ),
+        );
+        requireIdentity();
+        return raw
+            .map(
+              (Map<String, Object?> item) =>
+                  _guildFromMap(item, requireActive: true),
+            )
+            .where((GuildSummary value) => value.id.isNotEmpty)
+            .toList(growable: false);
+      });
 
   @override
-  Future<GuildSummary> fetchGuild(String guildId) async {
-    final ApiResponse response = await _apiClient.get(
-      _routes.guildHomepage,
-      query: <String, String>{'guildId': guildId},
-    );
-    final Map<String, Object?> data = _requiredMap(response.data);
-    final GuildSummary guild = _guildFromMap(data);
-    if (guild.id != guildId) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '服务端公会详情标识与请求不一致',
-      );
-    }
-    if (guild.applicationPending == null) {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '服务端公会详情缺少申请权威状态',
-      );
-    }
-    return guild;
-  }
+  Future<GuildSummary> fetchGuild(String guildId) =>
+      _runGuildRead((requireIdentity) async {
+        final ApiResponse response = await _apiClient.getBoundToIdentity(
+          _routes.guildHomepage,
+          requireIdentity: requireIdentity,
+          query: <String, String>{'guildId': guildId},
+        );
+        requireIdentity();
+        final Map<String, Object?> data = _requiredMap(response.data);
+        final GuildSummary guild = _guildFromMap(data);
+        if (guild.id != guildId) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '服务端公会详情标识与请求不一致',
+          );
+        }
+        if (guild.applicationPending == null) {
+          throw const ApiException(
+            kind: ApiFailureKind.protocol,
+            message: '服务端公会详情缺少申请权威状态',
+          );
+        }
+        return guild;
+      });
 
   @override
   Future<void> applyToJoinGuild(String guildId) => _runCommunityWrite<void>(
@@ -169,46 +184,54 @@ class BackendCommunityRepository
   );
 
   @override
-  Future<List<GuildMember>> fetchGuildMembers(String guildId) async {
-    final List<Map<String, Object?>> records = await _fetchAllPages(
-      pageSize: _guildPageSize,
-      authoritativeId: (Map<String, Object?> item) =>
-          '${_requiredPositiveIntField(item, 'userId')}',
-      fetchPage: (int page, int pageSize) => _apiClient.post(
-        _routes.guildMembers,
-        body: <String, Object?>{
-          'guildId': guildId,
-          'pageNum': page,
-          'pageSize': pageSize,
-        },
-      ),
-    );
-    return records
-        .map(_memberFromMap)
-        .where((GuildMember value) => value.recordId.isNotEmpty)
-        .toList(growable: false);
-  }
+  Future<List<GuildMember>> fetchGuildMembers(String guildId) =>
+      _runGuildRead((requireIdentity) async {
+        final List<Map<String, Object?>> records = await _fetchAllPages(
+          requireIdentity: requireIdentity,
+          pageSize: _guildPageSize,
+          authoritativeId: (Map<String, Object?> item) =>
+              '${_requiredPositiveIntField(item, 'userId')}',
+          fetchPage: (int page, int pageSize) => _apiClient.postBoundToIdentity(
+            _routes.guildMembers,
+            requireIdentity: requireIdentity,
+            body: <String, Object?>{
+              'guildId': guildId,
+              'pageNum': page,
+              'pageSize': pageSize,
+            },
+          ),
+        );
+        requireIdentity();
+        return records
+            .map(_memberFromMap)
+            .where((GuildMember value) => value.recordId.isNotEmpty)
+            .toList(growable: false);
+      });
 
   @override
-  Future<List<GuildApplication>> fetchGuildApplications(String guildId) async {
-    final List<Map<String, Object?>> records = await _fetchAllPages(
-      pageSize: _guildPageSize,
-      authoritativeId: (Map<String, Object?> item) =>
-          _requiredNonEmptyStringField(item, 'applicationId'),
-      fetchPage: (int page, int pageSize) => _apiClient.post(
-        _routes.guildApplications,
-        body: <String, Object?>{
-          'guildId': guildId,
-          'pageNum': page,
-          'pageSize': pageSize,
-        },
-      ),
-    );
-    return records
-        .map(_applicationFromMap)
-        .where((GuildApplication value) => value.id.isNotEmpty)
-        .toList(growable: false);
-  }
+  Future<List<GuildApplication>> fetchGuildApplications(String guildId) =>
+      _runGuildRead((requireIdentity) async {
+        final List<Map<String, Object?>> records = await _fetchAllPages(
+          requireIdentity: requireIdentity,
+          pageSize: _guildPageSize,
+          authoritativeId: (Map<String, Object?> item) =>
+              _requiredNonEmptyStringField(item, 'applicationId'),
+          fetchPage: (int page, int pageSize) => _apiClient.postBoundToIdentity(
+            _routes.guildApplications,
+            requireIdentity: requireIdentity,
+            body: <String, Object?>{
+              'guildId': guildId,
+              'pageNum': page,
+              'pageSize': pageSize,
+            },
+          ),
+        );
+        requireIdentity();
+        return records
+            .map(_applicationFromMap)
+            .where((GuildApplication value) => value.id.isNotEmpty)
+            .toList(growable: false);
+      });
 
   @override
   Future<void> resolveGuildApplication({
@@ -450,6 +473,32 @@ class BackendCommunityRepository
     );
   }
 
+  // One captured principal/generation owns an entire read, including all pages
+  // and parallel home queries. Token rotation alone does not change this tuple.
+  Future<T> _runGuildRead<T>(
+    Future<T> Function(void Function() requireIdentity) action,
+  ) async {
+    final identity = _communityWriteIdentity();
+    void requireIdentity() {
+      if (_communityWriteIdentity() != identity) {
+        throw const ApiException(
+          kind: ApiFailureKind.unauthorized,
+          message: '账号已变化，原公会读取已失效',
+        );
+      }
+    }
+
+    try {
+      requireIdentity();
+      final result = await action(requireIdentity);
+      requireIdentity();
+      return result;
+    } catch (_) {
+      requireIdentity();
+      rethrow;
+    }
+  }
+
   (int, int) _communityWriteIdentity() {
     if (_currentUserIdProvider == null || _identityGeneration == null) {
       throw const ApiException(
@@ -528,6 +577,7 @@ class BackendCommunityRepository
   }
 
   Future<List<Map<String, Object?>>> _fetchAllPages({
+    required void Function() requireIdentity,
     required int pageSize,
     required String Function(Map<String, Object?> item) authoritativeId,
     required Future<ApiResponse> Function(int page, int pageSize) fetchPage,
@@ -539,6 +589,7 @@ class BackendCommunityRepository
     int? expectedTotal;
     int? expectedPages;
     while (true) {
+      requireIdentity();
       if (page > _maxPageRequests) {
         throw const ApiException(
           kind: ApiFailureKind.protocol,
@@ -546,6 +597,7 @@ class BackendCommunityRepository
         );
       }
       final Object? rawData = (await fetchPage(page, pageSize)).data;
+      requireIdentity();
       final Map<String, Object?> data = _requiredMap(rawData);
       onPage?.call(data, page);
       final _CommunityPageEnvelope envelope = _pageEnvelope(
@@ -586,6 +638,7 @@ class BackendCommunityRepository
             message: '服务端分页记录数量与 total 不一致',
           );
         }
+        requireIdentity();
         return records;
       }
       if (envelope.items.isEmpty) {

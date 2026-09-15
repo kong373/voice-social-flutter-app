@@ -7,28 +7,33 @@ class GuildMembersEntryPage extends StatefulWidget {
   State<GuildMembersEntryPage> createState() => _GuildMembersEntryPageState();
 }
 
-class _GuildMembersEntryPageState extends State<GuildMembersEntryPage> {
+class _GuildMembersEntryPageState extends State<GuildMembersEntryPage>
+    with _GuildPageReadFence<GuildMembersEntryPage> {
   GuildHomeSnapshot? _snapshot;
   String? _error;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_snapshot == null && _error == null) {
-      _load();
-    }
+  void clearGuildPage() {
+    _snapshot = null;
+    _error = null;
   }
 
+  @override
+  Future<void> reloadGuildPage() => _load();
+
   Future<void> _load() async {
+    final ticket = beginGuildRead();
+    final repository = guildReadRepository;
     try {
-      final GuildHomeSnapshot value = await AppDependencyScope.of(
-        context,
-      ).communityRepository.fetchGuildHome();
-      if (mounted) {
-        setState(() => _snapshot = value);
+      final GuildHomeSnapshot value = await repository.fetchGuildHome();
+      if (acceptsGuildRead(ticket)) {
+        setState(() {
+          _snapshot = value;
+          _error = null;
+        });
       }
     } catch (error) {
-      if (mounted) {
+      if (acceptsGuildRead(ticket)) {
         setState(() => _error = _messageFor(error));
       }
     }
@@ -103,7 +108,8 @@ class GuildMembersPage extends StatefulWidget {
   State<GuildMembersPage> createState() => _GuildMembersPageState();
 }
 
-class _GuildMembersPageState extends State<GuildMembersPage> {
+class _GuildMembersPageState extends State<GuildMembersPage>
+    with _GuildPageReadFence<GuildMembersPage> {
   GuildSummary? _guild;
   final List<GuildMember> _members = <GuildMember>[];
   final List<GuildApplication> _applications = <GuildApplication>[];
@@ -112,37 +118,50 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
   int _tab = 0;
   String? _busyId;
 
-  CommunityRepository get _repository =>
-      AppDependencyScope.of(context).communityRepository;
+  CommunityRepository get _repository => guildReadRepository;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_guild == null && _loading) {
-      _load();
-    }
+  Object get guildPageKey => widget.guildId;
+
+  @override
+  void clearGuildPage() {
+    _guild = null;
+    _members.clear();
+    _applications.clear();
+    _loading = true;
+    _error = null;
+    _tab = 0;
+    _busyId = null;
   }
 
+  @override
+  Future<void> reloadGuildPage() => _load();
+
   Future<void> _load() async {
+    final ticket = beginGuildRead();
+    final repository = _repository;
+    final guildId = widget.guildId;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final GuildSummary guild = await _repository.fetchGuild(widget.guildId);
-      final List<GuildMember> members = await _repository.fetchGuildMembers(
-        widget.guildId,
+      final GuildSummary guild = await repository.fetchGuild(guildId);
+      if (!acceptsGuildRead(ticket)) return;
+      final List<GuildMember> members = await repository.fetchGuildMembers(
+        guildId,
       );
+      if (!acceptsGuildRead(ticket)) return;
       List<GuildApplication> applications = const <GuildApplication>[];
       if (guild.status == GuildStatus.active && guild.role.canManage) {
-        applications = await _repository.fetchGuildApplications(widget.guildId);
+        applications = await repository.fetchGuildApplications(guildId);
       }
-      if (!mounted) {
+      if (!acceptsGuildRead(ticket)) {
         return;
       }
       setState(() {
         _guild = guild;
-        if (guild.status == GuildStatus.closed) {
+        if (guild.status == GuildStatus.closed || !guild.role.canManage) {
           _tab = 0;
         }
         _members
@@ -154,7 +173,7 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
         _loading = false;
       });
     } catch (error) {
-      if (mounted) {
+      if (acceptsGuildRead(ticket)) {
         setState(() {
           _loading = false;
           _error = _messageFor(error);
@@ -167,26 +186,28 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
     if (_busyId != null) {
       return;
     }
+    final scope = captureGuildScope();
     setState(() => _busyId = id);
     try {
       await action();
-      if (mounted) {
+      if (acceptsGuildScope(scope)) {
         await _load();
       }
     } catch (error) {
-      if (mounted) {
+      if (mounted && acceptsGuildScope(scope)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
-      if (mounted) {
+      if (acceptsGuildScope(scope)) {
         setState(() => _busyId = null);
       }
     }
   }
 
   Future<void> _remove(GuildMember member) async {
+    final scope = captureGuildScope();
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => AlertDialog(
@@ -204,7 +225,7 @@ class _GuildMembersPageState extends State<GuildMembersPage> {
         ],
       ),
     );
-    if (confirmed == true && mounted) {
+    if (confirmed == true && acceptsGuildScope(scope)) {
       await _operate(
         member.recordId,
         () => _repository.removeGuildMember(
