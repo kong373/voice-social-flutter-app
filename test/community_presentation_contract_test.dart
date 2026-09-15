@@ -771,11 +771,17 @@ void _guildPageRaceTests() {
         expect(newSearch, isNotNull);
         old.completeError(const SocketException('obsolete search'));
         await _pumpGuildUi(tester);
-        expect(tester.widget<IconButton>(find.byTooltip('搜索')).onPressed, isNull);
+        final searchButton = find.ancestor(
+          of: find.byTooltip('搜索'),
+          matching: find.byType(IconButton),
+        );
+        expect(searchButton, findsOneWidget);
+        expect(tester.widget<IconButton>(searchButton).onPressed, isNull);
         expect(find.textContaining('obsolete search'), findsNothing);
         current.complete(MediaFakeResponse.json(_guildUiData(newSearch!)));
         await _pumpGuildUi(tester, until: () => find.text('搜索结果').evaluate().isNotEmpty);
-        expect(tester.widget<IconButton>(find.byTooltip('搜索')).onPressed, isNotNull);
+        expect(searchButton, findsOneWidget);
+        expect(tester.widget<IconButton>(searchButton).onPressed, isNotNull);
         expect(find.text('搜索结果'), findsOneWidget);
         await tester.pumpWidget(const SizedBox.shrink());
       } finally {
