@@ -11,6 +11,7 @@ import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/room/application/room_controller.dart';
 import 'package:voice_social_app/features/room/data/backend_room_repository.dart';
 import 'package:voice_social_app/features/room/data/room_lease_binding.dart';
+import 'package:voice_social_app/features/room/domain/gift_send_models.dart';
 import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
 
 import 'room_lease_contract_fixture.dart';
@@ -183,6 +184,79 @@ void main() {
       await h.finish(tester);
     },
   );
+
+  testWidgets(
+    'gift receipt amount cannot confirm unknown or celebrate until valid GET',
+    (tester) async {
+      final h = (await tester.runAsync(FeedbackHarness.start))!;
+      addTearDown(h.close);
+      expect(h.dependencies.roomRepository, isA<BackendRoomRepository>());
+      h.postCodes[10003] = 503;
+      h.receiptsVisible = false;
+      await h.mount(tester);
+      await tester.tap(find.text('Bob'));
+      await tester.pump();
+      await tester.tap(find.text('赠送 · 20'));
+      await h.io(tester, () => h.planDone);
+      final coordinator = h.dependencies.giftSendCoordinator;
+      final plan = coordinator.plan!;
+      final pending = plan.entries.singleWhere(
+        (entry) => entry.command.receiverUserId == 10003,
+      );
+      final originalKeys = List<String>.of(h.keys);
+      final originalBody = pending.command.encodedBody;
+      expect(originalKeys.toSet(), hasLength(2));
+      expect(h.postTargets, [10002, 10003]);
+      expect(plan.succeeded, 1);
+      expect(pending.state, GiftSendState.unknown);
+      expect(feedbackText('送给 Alice'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 4));
+      expect(find.byKey(_feedbackKey), findsNothing);
+
+      h.receiptsVisible = true;
+      for (final patch in <Map<String, Object?>>[
+        {'giftCoinCost': -1},
+        {'giftCoinCost': 10, 'totalCostMinor': 11},
+        {'giftCoinCost': 10, 'currency': 'CASH_CNY'},
+      ]) {
+        h.receiptPatch = patch;
+        final before = h.gets;
+        await h.recover(tester);
+        expect(h.gets, before + 1);
+        expect(h.receiptKeys.last, pending.command.requestId);
+        expect(pending.state, GiftSendState.unknown);
+        expect(plan.succeeded, 1);
+        expect(find.byKey(_feedbackKey), findsNothing);
+        expect(h.postTargets, [10002, 10003]);
+        expect(h.keys, originalKeys);
+        expect(pending.command.encodedBody, originalBody);
+      }
+
+      h.receiptPatch = {
+        'giftCoinCost': 10,
+        'unitCostMinor': 10,
+        'currency': 'GIFT_COIN',
+        'creatorIncomeMinor': 50,
+        'creatorIncomeCurrency': 'GIFT_COIN_TENTH',
+      };
+      await h.recover(tester);
+      expect(pending.state, GiftSendState.succeeded);
+      expect(pending.transferId, 'transfer-${pending.command.requestId}');
+      expect(plan.succeeded, 2);
+      expect(feedbackText('送给 Bob'), findsOneWidget);
+      expect(feedbackText('送给 Alice'), findsNothing);
+      final confirmedGets = h.gets;
+      await tester.pump(const Duration(seconds: 4));
+      await h.recover(tester);
+      expect(h.gets, confirmedGets);
+      expect(find.byKey(_feedbackKey), findsNothing);
+      expect(h.postTargets, [10002, 10003]);
+      expect(h.keys, originalKeys);
+      expect(pending.command.encodedBody, originalBody);
+      expect(h.legacyCalls, 0);
+      await h.finish(tester);
+    },
+  );
 }
 
 Finder feedbackText(String value) => find.descendant(
@@ -209,6 +283,8 @@ class FeedbackHarness {
   ];
   final postCodes = <int, int>{};
   bool receiptsVisible = true, wrongReceipt = false, sameTransfer = false;
+  Map<String, Object?> receiptPatch = {};
+  final receiptKeys = <String?>[];
   Completer<void>? postGate;
   int gets = 0;
   bool get planDone =>
@@ -361,10 +437,15 @@ class FeedbackHarness {
         await postGate?.future;
       case '/app-room-api/room/com/v1/giftReceipt':
         gets++;
+        receiptKeys.add(request.uri.queryParameters['requestId']);
         final receipt = receipts[request.uri.queryParameters['requestId']];
         data = !receiptsVisible || receipt == null
             ? null
-            : {...receipt, if (wrongReceipt) 'receiverUserId': 999};
+            : {
+                ...receipt,
+                ...receiptPatch,
+                if (wrongReceipt) 'receiverUserId': 999,
+              };
         if (data == null) code = 404;
       case '/app-economy-api/ncoin':
         data = _coins;
