@@ -38,6 +38,27 @@ class BackendCommerceRepository
     }
   }
 
+  Future<ApiResponse> _withdrawalGet(
+    String path,
+    (String?, int) identity, {
+    Map<String, String>? query,
+  }) async {
+    _requireIdentity(identity);
+    try {
+      final response = await _apiClient.getBoundToIdentity(
+        path,
+        requireIdentity: () => _requireIdentity(identity),
+        query: query,
+      );
+      _requireIdentity(identity);
+      return response;
+    } catch (_) {
+      // A stale transport error is not an error belonging to the new account.
+      _requireIdentity(identity);
+      rethrow;
+    }
+  }
+
   final Map<(String?, int), Future<PayoutAccountSelection>>
   _payoutAccountsInFlight = {};
   final Set<(String?, int)> _availablePayoutIdentities = {};
@@ -965,8 +986,9 @@ class BackendCommerceRepository
     final identity = withdrawalIdentity;
     _requireIdentity(identity);
     final int amountMinor = WithdrawalAmountPolicy.minorUnits(amount);
-    final ApiResponse response = await _apiClient.get(
+    final ApiResponse response = await _withdrawalGet(
       _routes.withdrawalFeeRate,
+      identity,
       query: <String, String>{'amountMinor': '$amountMinor'},
     );
     final Map<String, Object?> data = _asMap(response.data);
@@ -1051,6 +1073,7 @@ class BackendCommerceRepository
       currency: currency,
     );
     quote.validateFor(amount);
+    _requireIdentity(identity);
     return quote;
   }
 
@@ -1132,16 +1155,22 @@ class BackendCommerceRepository
               _pendingWithdrawalApplications.remove(futureKey);
             }
             _requireIdentity(identity);
-            _retainedWithdrawalRequestIds.remove(intentKey);
-            _withdrawalWritesStarted.remove(intentKey);
-            _pendingWithdrawals.remove(user);
+            if (_retainedWithdrawalRequestIds[intentKey] == requestId) {
+              _retainedWithdrawalRequestIds.remove(intentKey);
+              _withdrawalWritesStarted.remove(intentKey);
+              _pendingWithdrawals.remove(user);
+            }
             return value;
           },
           onError: (Object error, StackTrace stackTrace) {
             if (identical(_pendingWithdrawalApplications[futureKey], future)) {
               _pendingWithdrawalApplications.remove(futureKey);
             }
+            // A recovery-time rejection may precede receipt lookup. It cannot
+            // disprove the earlier unknown write or unlock a new financial intent.
             if (identity == withdrawalIdentity &&
+                _retainedWithdrawalRequestIds[intentKey] == requestId &&
+                !replayingRetainedWrite &&
                 !_shouldRetainWithdrawalRequest(error)) {
               _pendingWithdrawals.remove(user);
               _retainedWithdrawalRequestIds.remove(intentKey);
@@ -1309,9 +1338,11 @@ class BackendCommerceRepository
     required int page,
     required int pageSize,
   }) async {
+    final identity = withdrawalIdentity;
+    _requireIdentity(identity);
     _validatePageArguments(page: page, pageSize: pageSize);
     if (status == null) {
-      return _fetchWithdrawalPage(page: page, pageSize: pageSize);
+      return _fetchWithdrawalPage(page: page, pageSize: pageSize, identity: identity);
     }
     final List<WithdrawalRecord> matching = <WithdrawalRecord>[];
     final Set<String> seenWithdrawalIds = <String>{};
@@ -1319,10 +1350,13 @@ class BackendCommerceRepository
     int backendPage = 1;
     bool hasMore = true;
     while (hasMore && backendPage <= _maximumCommerceBackendPages) {
+      _requireIdentity(identity);
       final CommercePage<WithdrawalRecord> result = await _fetchWithdrawalPage(
         page: backendPage,
         pageSize: 100,
+        identity: identity,
       );
+      _requireIdentity(identity);
       final _PageMetadata metadata = _PageMetadata(
         current: result.page,
         pageSize: result.pageSize,
@@ -1350,6 +1384,7 @@ class BackendCommerceRepository
       hasMore = result.hasMore;
       backendPage += 1;
     }
+    _requireIdentity(identity);
     if (hasMore) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,
@@ -1375,13 +1410,15 @@ class BackendCommerceRepository
   Future<CommercePage<WithdrawalRecord>> _fetchWithdrawalPage({
     required int page,
     required int pageSize,
+    required (String?, int) identity,
   }) async {
     final Map<String, String> query = <String, String>{
       'pageNum': '$page',
       'pageSize': '$pageSize',
     };
-    final ApiResponse response = await _apiClient.get(
+    final ApiResponse response = await _withdrawalGet(
       _routes.withdrawalRecords,
+      identity,
       query: query,
     );
     final Map<String, Object?> data = _asMap(response.data);
@@ -1402,6 +1439,7 @@ class BackendCommerceRepository
         else
           _withdrawalFromMap(raw, currency: LedgerCurrency.cashCny),
     ];
+    _requireIdentity(identity);
     return CommercePage<WithdrawalRecord>(
       items: records,
       page: metadata.current,
@@ -1413,6 +1451,8 @@ class BackendCommerceRepository
 
   @override
   Future<WithdrawalRecord> fetchWithdrawalRecord(String id) async {
+    final identity = withdrawalIdentity;
+    _requireIdentity(identity);
     final String normalizedId = id.trim();
     if (normalizedId.isEmpty) {
       throw const ApiException(
@@ -1425,10 +1465,13 @@ class BackendCommerceRepository
     bool hasMore = true;
     final Set<String> seenWithdrawalIds = <String>{};
     while (hasMore && backendPage <= _maximumCommerceBackendPages) {
+      _requireIdentity(identity);
       final CommercePage<WithdrawalRecord> page = await _fetchWithdrawalPage(
         page: backendPage,
         pageSize: 100,
+        identity: identity,
       );
+      _requireIdentity(identity);
       final _PageMetadata metadata = _PageMetadata(
         current: page.page,
         pageSize: page.pageSize,
@@ -1450,12 +1493,14 @@ class BackendCommerceRepository
           );
         }
         if (record.id == normalizedId) {
+          _requireIdentity(identity);
           return record;
         }
       }
       hasMore = page.hasMore;
       backendPage += 1;
     }
+    _requireIdentity(identity);
     if (hasMore) {
       throw const ApiException(
         kind: ApiFailureKind.protocol,

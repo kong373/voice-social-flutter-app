@@ -401,38 +401,70 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   CommerceRepository? _observedRepository;
   (String?, int)? _observedIdentity;
   BuildContext? _confirmationContext;
+  int _scopeEpoch = 0;
+  int _readEpoch = 0;
+  bool _closed = false;
 
-  bool _ownsIdentity((String?, int) identity) =>
-      mounted && identity == _repository.withdrawalIdentity;
+  bool _ownsScope(
+    CommerceRepository repository,
+    (String?, int) identity,
+    int scope,
+  ) => mounted && !_closed && scope == _scopeEpoch &&
+      identical(repository, _observedRepository) &&
+      identical(repository, _repository) &&
+      identity == repository.withdrawalIdentity;
+
+  void _invalidateScope() {
+    _scopeEpoch++;
+    _readEpoch++;
+    final dialog = _confirmationContext;
+    _confirmationContext = null;
+    if (dialog != null) {
+      // Repository replacement can be observed during a widget update.
+      // Close only the captured dialog, outside that build traversal.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (dialog.mounted && ModalRoute.of(dialog)?.isCurrent == true) {
+          Navigator.of(dialog).pop(false);
+        }
+      });
+    }
+  }
+
+  void _clearView() {
+    _amountController.clear();
+    _wallet = null;
+    _records = null;
+    _quote = null;
+    _quotedAmount = null;
+    _payoutSelection = null;
+    _selectedPayoutAccountId = null;
+    _submitting = false;
+    _confirming = false;
+    _quoteLoading = false;
+    _quoteError = null;
+    _payoutAccountsUnavailableMessage = null;
+    _loading = _observedIdentity?.$1 != null;
+    _error = _loading ? null : '请登录后查看提现';
+  }
+
+  bool _observeRepository(CommerceRepository repository) {
+    if (identical(_observedRepository, repository)) return false;
+    _observedRepository?.withdrawalIdentityChanges?.removeListener(_identityChanged);
+    _invalidateScope();
+    _observedRepository = repository;
+    _observedIdentity = repository.withdrawalIdentity;
+    repository.withdrawalIdentityChanges?.addListener(_identityChanged);
+    _clearView();
+    return true;
+  }
 
   void _identityChanged() {
-    if (!mounted) return;
+    if (!mounted || _closed) return;
     final identity = _repository.withdrawalIdentity;
     if (identity == _observedIdentity) return;
+    _invalidateScope();
     _observedIdentity = identity;
-    final dialog = _confirmationContext;
-    if (dialog != null &&
-        dialog.mounted &&
-        ModalRoute.of(dialog)?.isCurrent == true) {
-      Navigator.of(dialog).pop(false);
-    }
-    setState(() {
-      _amountController.clear();
-      _wallet = null;
-      _records = null;
-      _quote = null;
-      _quotedAmount = null;
-      _payoutSelection = null;
-      _selectedPayoutAccountId = null;
-      _submitting = false;
-      _confirming = false;
-      _quoteLoading = false;
-      _quoteError = null;
-      _error = null;
-      _payoutAccountsUnavailableMessage = null;
-      _loading = _repository.withdrawalIdentity.$1 != null;
-      if (!_loading) _error = '请登录后查看提现';
-    });
+    setState(_clearView);
     if (_loading) _load();
   }
 
@@ -474,23 +506,25 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!identical(_observedRepository, _repository)) {
-      _observedRepository?.withdrawalIdentityChanges?.removeListener(
-        _identityChanged,
-      );
-      _observedRepository = _repository;
-      _observedIdentity = _repository.withdrawalIdentity;
-      _observedRepository?.withdrawalIdentityChanges?.addListener(
-        _identityChanged,
-      );
-    }
-    if (_wallet == null && _loading) {
-      _load();
+    if (_observeRepository(_repository)) {
+      if (_loading) _load();
+    } else {
+      _identityChanged();
     }
   }
 
   @override
+  void didUpdateWidget(covariant WithdrawalPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_observeRepository(_repository) && _loading) _load();
+  }
+
+  @override
   void dispose() {
+    _closed = true;
+    _scopeEpoch++;
+    _readEpoch++;
+    _confirmationContext = null;
     _observedRepository?.withdrawalIdentityChanges?.removeListener(
       _identityChanged,
     );
@@ -499,7 +533,13 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   }
 
   Future<void> _load() async {
-    final identity = _repository.withdrawalIdentity;
+    if (!mounted || _closed) return;
+    final repository = _repository;
+    final identity = repository.withdrawalIdentity;
+    final scope = _scopeEpoch;
+    final read = ++_readEpoch;
+    bool accepts() => _ownsScope(repository, identity, scope) && read == _readEpoch;
+    if (!accepts() || identity.$1 == null) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -507,44 +547,43 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
     });
     try {
       final List<Object> values = await Future.wait<Object>(<Future<Object>>[
-        _repository.fetchWalletSummary(),
-        _repository.fetchWithdrawalRecords(page: 1, pageSize: 50),
+        repository.fetchWalletSummary(),
+        repository.fetchWithdrawalRecords(page: 1, pageSize: 50),
       ]);
-      if (!_ownsIdentity(identity)) return;
+      if (!accepts()) return;
       PayoutAccountSelection? payoutSelection;
+      String? payoutUnavailable;
       try {
         if ((values[0] as WalletSummary).canWithdraw &&
-            _repository.pendingWithdrawal == null) {
-          payoutSelection = await _repository.fetchPayoutAccounts();
+            repository.pendingWithdrawal == null) {
+          payoutSelection = await repository.fetchPayoutAccounts();
         }
       } on ApiException catch (error) {
+        if (!accepts()) return;
         if (error.kind != ApiFailureKind.configuration &&
             error.kind != ApiFailureKind.forbidden) {
           rethrow;
         }
-        // Explicitly unsupported and domain-level authorization outcomes may
-        // keep quote/history usable. Retryable transport/server failures and
-        // malformed authority responses must remain visible to the user.
-        payoutSelection = null;
-        _payoutAccountsUnavailableMessage = error.message;
+        // Keep intermediate failures local until this entire read is accepted.
+        payoutUnavailable = error.message;
       }
-      if (_ownsIdentity(identity)) {
-        setState(() {
-          _wallet = values[0] as WalletSummary;
-          _records = (values[1] as CommercePage<WithdrawalRecord>).items;
-          _payoutSelection = payoutSelection;
-          _selectedPayoutAccountId = payoutSelection?.selectedPayoutAccountId;
-          final pending = _repository.pendingWithdrawal;
-          if (pending != null) {
-            _amountController.text = pending.amount.toStringAsFixed(0);
-            _quote = pending.quote;
-            _quotedAmount = pending.amount;
-          }
-          _loading = false;
-        });
-      }
+      if (!accepts()) return;
+      setState(() {
+        _wallet = values[0] as WalletSummary;
+        _records = (values[1] as CommercePage<WithdrawalRecord>).items;
+        _payoutSelection = payoutSelection;
+        _payoutAccountsUnavailableMessage = payoutUnavailable;
+        _selectedPayoutAccountId = payoutSelection?.selectedPayoutAccountId;
+        final pending = repository.pendingWithdrawal;
+        if (pending != null) {
+          _amountController.text = pending.amount.toStringAsFixed(0);
+          _quote = pending.quote;
+          _quotedAmount = pending.amount;
+        }
+        _loading = false;
+      });
     } catch (error) {
-      if (_ownsIdentity(identity)) {
+      if (accepts()) {
         setState(() {
           _loading = false;
           _error = _messageFor(error);
@@ -554,9 +593,12 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   }
 
   Future<void> _loadQuote() async {
-    final identity = _repository.withdrawalIdentity;
-    if (_submitting ||
-        _repository.pendingWithdrawal != null ||
+    final repository = _repository;
+    final identity = repository.withdrawalIdentity;
+    final scope = _scopeEpoch;
+    if (!_ownsScope(repository, identity, scope) ||
+        _submitting ||
+        repository.pendingWithdrawal != null ||
         _wallet?.canWithdraw != true)
       return;
     final double? amount = _enteredAmount;
@@ -575,10 +617,10 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       _quoteError = null;
     });
     try {
-      final WithdrawalQuote quote = await _repository.fetchWithdrawalQuote(
+      final WithdrawalQuote quote = await repository.fetchWithdrawalQuote(
         amount: legalAmount,
       );
-      if (_ownsIdentity(identity)) {
+      if (_ownsScope(repository, identity, scope)) {
         setState(() {
           _quote = quote;
           _quotedAmount = legalAmount;
@@ -586,7 +628,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
         });
       }
     } catch (error) {
-      if (_ownsIdentity(identity)) {
+      if (_ownsScope(repository, identity, scope)) {
         setState(() {
           _quoteLoading = false;
           _quoteError = _messageFor(error);
@@ -614,7 +656,10 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
   }
 
   Future<void> _apply() async {
-    final identity = _repository.withdrawalIdentity;
+    final repository = _repository;
+    final identity = repository.withdrawalIdentity;
+    final scope = _scopeEpoch;
+    if (!_ownsScope(repository, identity, scope)) return;
     if (!_canApplyWithdrawal) {
       ScaffoldMessenger.of(
         context,
@@ -629,7 +674,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       return;
     }
     final double legalAmount = amount!;
-    if (_repository.pendingWithdrawal == null &&
+    if (repository.pendingWithdrawal == null &&
         (legalAmount > _wallet!.cashBalance ||
             (_quote != null && legalAmount < _quote!.minimumAmount))) {
       ScaffoldMessenger.of(
@@ -644,17 +689,19 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
       return;
     }
     final WithdrawalQuote confirmedQuote =
-        _repository.pendingWithdrawal?.quote ?? _quote!;
+        repository.pendingWithdrawal?.quote ?? _quote!;
     final String confirmedAccountId =
-        _repository.pendingWithdrawal?.payoutAccountId ??
+        repository.pendingWithdrawal?.payoutAccountId ??
         _selectedPayoutAccount!.payoutAccountId;
     setState(() {
       _submitting = true;
       _confirming = true;
     });
+    BuildContext? confirmationContext;
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
+        confirmationContext = context;
         _confirmationContext = context;
         return AlertDialog(
           title: const Text('确认申请提现？'),
@@ -674,8 +721,10 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
         );
       },
     );
-    _confirmationContext = null;
-    if (!_ownsIdentity(identity)) return;
+    if (identical(_confirmationContext, confirmationContext)) {
+      _confirmationContext = null;
+    }
+    if (!_ownsScope(repository, identity, scope)) return;
     if (confirmed != true || !mounted) {
       if (mounted)
         setState(() {
@@ -686,32 +735,32 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
     }
     setState(() => _confirming = false);
     try {
-      await _repository.applyWithdrawal(
+      await repository.applyWithdrawal(
         amount: legalAmount,
         confirmedQuote: confirmedQuote,
         payoutAccountId: confirmedAccountId,
       );
-      if (!_ownsIdentity(identity)) return;
+      if (!_ownsScope(repository, identity, scope)) return;
       _amountController.clear();
       _quote = null;
       _quotedAmount = null;
       await _load();
-      if (mounted && _ownsIdentity(identity)) {
+      if (_ownsScope(repository, identity, scope)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('提现申请已提交')));
       }
     } catch (error) {
-      if (mounted && _ownsIdentity(identity)) {
+      if (_ownsScope(repository, identity, scope)) {
         if (error is ApiException &&
             error.kind == ApiFailureKind.conflict &&
-            _repository.pendingWithdrawal == null) {
+            repository.pendingWithdrawal == null) {
           setState(() {
             _quote = null;
             _quotedAmount = null;
           });
         }
-        final pending = _repository.pendingWithdrawal;
+        final pending = repository.pendingWithdrawal;
         if (pending != null) {
           setState(() {
             _amountController.text = pending.amount.toStringAsFixed(0);
@@ -724,24 +773,27 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
       }
     } finally {
-      if (_ownsIdentity(identity)) {
+      if (_ownsScope(repository, identity, scope)) {
         setState(() => _submitting = false);
       }
     }
   }
 
   Future<void> _openBinding() async {
-    final identity = _repository.withdrawalIdentity;
-    if (_submitting ||
+    final repository = _repository;
+    final identity = repository.withdrawalIdentity;
+    final scope = _scopeEpoch;
+    if (!_ownsScope(repository, identity, scope) ||
+        _submitting ||
         _wallet?.canWithdraw != true ||
         _payoutSelection?.canBind != true)
       return;
     await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => PayoutAccountBindingPage(repository: _repository),
+        builder: (_) => PayoutAccountBindingPage(repository: repository),
       ),
     );
-    if (_ownsIdentity(identity)) await _load();
+    if (_ownsScope(repository, identity, scope)) await _load();
   }
 
   Widget _buildPayoutAccountPicker() {
@@ -821,7 +873,15 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
 
   @override
   Widget build(BuildContext context) {
-    return _CommerceScaffold(
+    return PopScope<void>(
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          _closed = true;
+          _scopeEpoch++;
+          _readEpoch++;
+        }
+      },
+      child: _CommerceScaffold(
       appBar: AppBar(title: const Text('结算与提现')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -1019,6 +1079,7 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                 ),
               ),
             ),
+      ),
     );
   }
 }
