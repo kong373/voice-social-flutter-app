@@ -726,7 +726,6 @@ class BackendRoomPkRepository implements RoomPkRepository {
       data['startedAt'] ?? data['completedAt'] ?? data['endsAt'],
       '对战时间',
     );
-    _assertBattleFresh(battleId, updatedAt, stage);
     final int remainingSeconds = _requiredInt(
       data['countdownSeconds'],
       '倒计时',
@@ -759,7 +758,7 @@ class BackendRoomPkRepository implements RoomPkRepository {
         message: 'PK 对战响应的时长无效',
       );
     }
-    return RoomPkBattle(
+    final battle = RoomPkBattle(
       id: battleId,
       invitationId: invitationId,
       currentRoomId: roomId,
@@ -777,6 +776,10 @@ class BackendRoomPkRepository implements RoomPkRepository {
       completedAt: _optionalDate(data['completedAt'], '完成时间'),
       updatedAt: updatedAt,
     );
+    // Commit freshness only after every field, including optional dates,
+    // has parsed successfully. A rejected response must not poison recovery.
+    _assertBattleFresh(battle.id, battle.updatedAt, battle.stage);
+    return battle;
   }
 
   RoomPkRecord _recordFromMap(String currentRoomId, Map<String, Object?> data) {
@@ -1278,10 +1281,14 @@ class BackendRoomPkRepository implements RoomPkRepository {
     }
     for (final String key in <String>['rtcStatus', 'imStatus']) {
       final Object? status = data[key];
-      if (status != null && status != 'VENDOR_BLOCKED') {
+      // RTC readiness is metadata, not evidence of a provider invocation.
+      // IM and the actual invocation/provisioning flags remain fail-closed.
+      if (status != null &&
+          status != 'VENDOR_BLOCKED' &&
+          !(key == 'rtcStatus' && status == 'READY')) {
         throw const ApiException(
           kind: ApiFailureKind.protocol,
-          message: 'PK 第三方能力必须保持 VENDOR_BLOCKED',
+          message: 'PK 第三方能力状态不符合协议',
         );
       }
     }

@@ -349,4 +349,193 @@ void main() {
       }
     },
   );
+
+  for (final rtc in ['READY', 'VENDOR_BLOCKED']) {
+    test('PK contract accepts RTC $rtc without granting realtime', () async {
+      final h = _ProjectionHarness(_runtimeProjection(bRoom, 'PENDING', rtc));
+      addTearDown(h.dispose);
+      final incoming = await h.read(room: bRoom);
+      expect(incoming.invitation!.opponent.roomId, aRoom);
+      expect(incoming.battle, isNull);
+      h.response = _runtimeProjection(bRoom, 'ACCEPTED', rtc);
+      final accepted = await h.repository.acceptInvitation(
+        incoming.invitation!,
+        requireCurrent: () {},
+      );
+      expect(accepted.id, battleId);
+      expect(accepted.currentRoomId, bRoom);
+      expect((await h.read(room: bRoom)).battle!.id, battleId);
+      expect(h.repository.supportsRealtimeInvitations, isFalse);
+      expect(h.repository.supportsSurrender, isFalse);
+      expect(h.http.requests.map((r) => r.method), ['GET', 'POST', 'GET']);
+      expect(
+        h.http.requests[1].uri.path,
+        '/app-api/activityPk/acceptRoomPkInvitation',
+      );
+      expect(
+        jsonDecode(utf8.decode(h.http.requests[1].body)),
+        {'invitationId': invitationId},
+      );
+    });
+  }
+
+  test('PK contract still rejects invalid RTC, IM and invocation flags', () async {
+    for (final patch in <Map<String, Object?>>[
+      {'rtcStatus': 'UNKNOWN'},
+      {'rtcStatus': 'ready'},
+      {'rtcStatus': 1},
+      {'imStatus': 'READY'},
+      {'providerInvocation': true},
+      {'vendorInvocation': true},
+      {'realtimeProvisioned': true},
+    ]) {
+      for (final nested in [false, true]) {
+        final value = _runtimeProjection(aRoom, 'ACCEPTED', 'READY');
+        if (nested) {
+          value['opponentRoom'] = {
+            ...value['opponentRoom']! as Map<String, Object?>,
+            ...patch,
+          };
+        } else {
+          value.addAll(patch);
+        }
+        final h = _ProjectionHarness(value);
+        addTearDown(h.dispose);
+        await expectLater(h.read(), throwsA(_protocolFailure));
+        expect(h.http.requests.map((r) => r.method), ['GET']);
+      }
+    }
+  });
+
+  for (final field in ['countdownSeconds', 'leftRoom', 'endsAt', 'completedAt']) {
+    test('PK contract rejected terminal $field cannot poison recovery', () async {
+      final h = _ProjectionHarness(pkProjection(aRoom, 'ACCEPTED'));
+      addTearDown(h.dispose);
+      expect((await h.read()).battle!.isActive, isTrue);
+      final damaged = _completedProjection();
+      if (field == 'leftRoom') {
+        damaged[field] = {
+          ...damaged[field]! as Map<String, Object?>,
+          'score': -1,
+        };
+      } else {
+        damaged[field] = field == 'countdownSeconds' ? null : 'invalid-date';
+      }
+      // startedAt remains valid: optional-date cases fail inside the final
+      // RoomPkBattle constructor, not in the early updatedAt parse.
+      h.response = damaged;
+      await expectLater(h.read(), throwsA(_protocolFailure));
+      h.response = pkProjection(aRoom, 'ACCEPTED');
+      final recovered = (await h.read()).battle!;
+      expect(recovered.id, battleId);
+      expect(recovered.stage, RoomPkBattleStage.fighting);
+      expect(h.http.requests.map((r) => r.method), ['GET', 'GET', 'GET']);
+    });
+  }
+
+  test('PK contract rejected later timestamp cannot poison recovery', () async {
+    final h = _ProjectionHarness(pkProjection(aRoom, 'ACCEPTED'));
+    addTearDown(h.dispose);
+    final original = (await h.read()).battle!;
+    h.response = {
+      ...pkProjection(aRoom, 'ACCEPTED'),
+      'startedAt': '2026-09-10T12:00:11Z',
+      'completedAt': 'invalid-date',
+    };
+    await expectLater(h.read(), throwsA(_protocolFailure));
+    h.response = pkProjection(aRoom, 'ACCEPTED');
+    final recovered = (await h.read()).battle!;
+    expect(recovered.updatedAt, original.updatedAt);
+    expect(recovered.stage, RoomPkBattleStage.fighting);
+    expect(h.http.requests.map((r) => r.method), ['GET', 'GET', 'GET']);
+  });
+
+  test('PK contract valid terminal still fences old active response', () async {
+    final h = _ProjectionHarness(_completedProjection());
+    addTearDown(h.dispose);
+    final terminal = (await h.read()).battle!;
+    expect(terminal.stage, RoomPkBattleStage.completed);
+    expect(terminal.result, RoomPkResult.draw);
+    h.response = pkProjection(aRoom, 'ACCEPTED');
+    await expectLater(
+      h.read(),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.kind,
+          'kind',
+          ApiFailureKind.conflict,
+        ),
+      ),
+    );
+    h.response = _completedProjection();
+    expect((await h.read()).battle!.stage, RoomPkBattleStage.completed);
+    expect(h.http.requests.map((r) => r.method), ['GET', 'GET', 'GET']);
+  });
+
+  test('PK contract invalid battle status is rejected without cache mutation', () async {
+    final h = _ProjectionHarness({
+      ...pkProjection(aRoom, 'ACCEPTED'),
+      'battleStatus': 'NOT_A_BATTLE_STATUS',
+    });
+    addTearDown(h.dispose);
+    await expectLater(h.read(), throwsA(_protocolFailure));
+    h.response = pkProjection(aRoom, 'ACCEPTED');
+    expect((await h.read()).battle!.stage, RoomPkBattleStage.fighting);
+    expect(h.http.requests.map((r) => r.method), ['GET', 'GET']);
+  });
+}
+
+Matcher get _protocolFailure => isA<ApiException>().having(
+  (error) => error.kind,
+  'kind',
+  ApiFailureKind.protocol,
+);
+
+Map<String, Object?> _runtimeProjection(String room, String status, String rtc) {
+  final value = pkProjection(room, status);
+  final flags = <String, Object?>{
+    'rtcStatus': rtc,
+    'imStatus': 'VENDOR_BLOCKED',
+    'providerInvocation': false,
+    'vendorInvocation': false,
+    'realtimeProvisioned': false,
+  };
+  return {
+    ...value,
+    ...flags,
+    'opponentRoom': {
+      ...value['opponentRoom']! as Map<String, Object?>,
+      ...flags,
+    },
+  };
+}
+
+Map<String, Object?> _completedProjection() => {
+  ...pkProjection(aRoom, 'ACCEPTED'),
+  'battleStatus': 'COMPLETED',
+  'countdownSeconds': 0,
+  'resultCode': 'DRAW',
+  'completedAt': '2026-09-10T12:05:10Z',
+};
+
+class _ProjectionHarness {
+  _ProjectionHarness(this.response) {
+    http = MediaFakeHttp((_) => MediaFakeResponse.json(response));
+    repository = BackendRoomPkRepository(
+      apiClient: http.api(identity),
+      routes: const BackendRouteCatalog(),
+    );
+  }
+
+  Map<String, Object?> response;
+  final identity = TestMediaIdentity();
+  late final MediaFakeHttp http;
+  late final BackendRoomPkRepository repository;
+
+  Future<RoomPkProcess> read({String room = aRoom}) => repository.fetchProcess(
+    roomId: room,
+    requireCurrent: () {},
+  );
+
+  void dispose() => identity.dispose();
 }
