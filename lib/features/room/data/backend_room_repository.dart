@@ -1678,18 +1678,17 @@ class BackendRoomRepository
         message: '送礼响应缺少有效服务端状态',
       );
     }
-    if (authoritativeSuccess &&
-        roomId != null &&
-        giftId != null &&
-        receiverUserId != null &&
-        quantity != null) {
+    if (authoritativeSuccess) {
+      // Both POST and receipt GET validate amounts against the parsed identity
+      // already checked above. queryGiftCommand still validates the original
+      // immutable command; internal consistency is not a replacement for it.
       _validateGiftAmountAuthority(
         data,
-        roomId: roomId,
+        roomId: responseRoomId,
         senderUserId: senderUserId,
-        receiverUserId: receiverUserId,
-        giftId: giftId,
-        quantity: quantity,
+        receiverUserId: responseReceiverUserId,
+        giftId: responseGiftId,
+        quantity: responseQuantity,
       );
     }
     return GiftReceipt(
@@ -1737,6 +1736,16 @@ class BackendRoomRepository
       field: '礼物创作者收益',
     );
     _validateOptionalNonNegativeGiftSummary(data, 'charmValue', field: '礼物魅力值');
+    // Currency is optional in the frozen b709 response, but every currency
+    // alias that is present must describe the same ledger unit, even when
+    // optional amounts are absent. Income currency is validated separately.
+    final String? currency = _resolveGiftCurrencyAlias(authorities);
+    if (currency != null && currency != 'GIFT_COIN') {
+      throw const ApiException(
+        kind: ApiFailureKind.protocol,
+        message: '礼物金额币种不是 GIFT_COIN',
+      );
+    }
     final bool hasAmount = authorities.any(
       (Map<String, Object?> map) =>
           _containsAnyKey(map, _giftUnitAmountAliases) ||
@@ -1769,15 +1778,6 @@ class BackendRoomRepository
       );
     }
 
-    // Currency is optional in the frozen b709 response, but every currency
-    // alias that is present must describe the same ledger unit.
-    final String? currency = _resolveGiftCurrencyAlias(authorities);
-    if (currency != null && currency != 'GIFT_COIN') {
-      throw const ApiException(
-        kind: ApiFailureKind.protocol,
-        message: '礼物金额币种不是 GIFT_COIN',
-      );
-    }
     for (final Map<String, Object?> authority in authorities) {
       if (!_containsAnyKey(authority, <String>[
         ..._giftUnitAmountAliases,
