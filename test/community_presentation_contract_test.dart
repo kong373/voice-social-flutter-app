@@ -535,7 +535,9 @@ Map<String, Object?> _closedGuildDetail(String guildId) => <String, Object?>{
 // These tests exercise live pages -> BackendCommunityRepository -> ApiClient.
 // Only HTTP responses are controlled; no page state or repository result is mocked.
 void _guildPageRaceTests() {
-  testWidgets('G3 old PENDING cannot replace post-approval APPROVED', (tester) async {
+  testWidgets('G3 old PENDING cannot replace post-approval APPROVED', (
+    tester,
+  ) async {
     final write = Completer<HttpClientResponse>();
     final stale = Completer<HttpClientResponse>();
     var applicationReads = 0;
@@ -543,29 +545,62 @@ void _guildPageRaceTests() {
     _releaseGuildGateOnTearDown(write);
     _releaseGuildGateOnTearDown(stale);
     final http = _GuildUiHttp((request) {
-      if (request.uri.path.endsWith('approvalMembershipApplication')) return write.future;
-      if (request.uri.path.endsWith('getMembershipApplications') && ++applicationReads == 2) {
+      if (request.uri.path.endsWith('approvalMembershipApplication'))
+        return write.future;
+      if (request.uri.path.endsWith('getMembershipApplications') &&
+          ++applicationReads == 2) {
         return stale.future;
       }
       return MediaFakeResponse.json(_guildUiData(request, approved: approved));
     });
     await _withGuildUi(tester, http, (dependencies) async {
-      await _mountGuildUi(tester, dependencies, const GuildMembersPage(guildId: 'guild-a'));
-      expect(find.text('申请 1'), findsOneWidget, reason: 'Fixture must finish initial HTTP loading');
+      await _mountGuildUi(
+        tester,
+        dependencies,
+        const GuildMembersPage(guildId: 'guild-a'),
+      );
+      expect(
+        find.text('申请 1'),
+        findsOneWidget,
+        reason: 'Fixture must finish initial HTTP loading',
+      );
       await tester.tap(find.text('申请 1'));
-      await _pumpGuildUi(tester, until: () => find.widgetWithText(FilledButton, '通过').evaluate().isNotEmpty);
-      final refresh = tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh;
+      await _pumpGuildUi(
+        tester,
+        until: () =>
+            find.widgetWithText(FilledButton, '通过').evaluate().isNotEmpty,
+      );
+      final refresh = tester
+          .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+          .onRefresh;
       await tester.tap(find.widgetWithText(FilledButton, '通过'));
-      await _pumpGuildUi(tester, until: () => http.requests.any((r) => r.uri.path.endsWith('approvalMembershipApplication')));
-      expect(http.requests.where((r) => r.uri.path.endsWith('approvalMembershipApplication')), hasLength(1));
+      await _pumpGuildUi(
+        tester,
+        until: () => http.requests.any(
+          (r) => r.uri.path.endsWith('approvalMembershipApplication'),
+        ),
+      );
+      expect(
+        http.requests.where(
+          (r) => r.uri.path.endsWith('approvalMembershipApplication'),
+        ),
+        hasLength(1),
+      );
       final oldRead = refresh();
       await _pumpGuildUi(tester, until: () => applicationReads == 2);
       expect(applicationReads, 2);
       approved = true;
-      write.complete(MediaFakeResponse.json({
-        'applicationId': 'application-1', 'guildId': 'guild-a', 'status': 'APPROVED',
-      }));
-      await _pumpGuildUi(tester, until: () => find.text('已通过').evaluate().isNotEmpty);
+      write.complete(
+        MediaFakeResponse.json({
+          'applicationId': 'application-1',
+          'guildId': 'guild-a',
+          'status': 'APPROVED',
+        }),
+      );
+      await _pumpGuildUi(
+        tester,
+        until: () => find.text('已通过').evaluate().isNotEmpty,
+      );
       expect(find.text('已通过'), findsOneWidget);
       expect(find.text('待审核'), findsNothing);
       stale.complete(MediaFakeResponse.json(_guildUiApplications(false)));
@@ -573,140 +608,248 @@ void _guildPageRaceTests() {
       expect(find.text('已通过'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, '通过'), findsNothing);
       expect(applicationReads, 3);
-      expect(http.requests.where((r) => r.uri.path.contains('guildManagement')), hasLength(1));
+      expect(
+        http.requests.where((r) => r.uri.path.contains('guildManagement')),
+        hasLength(1),
+      );
     });
   });
 
-  testWidgets('G3 quit readback wins and a later legitimate rejoin is not cached out', (tester) async {
-    final write = Completer<HttpClientResponse>();
-    final stale = Completer<HttpClientResponse>();
-    _releaseGuildGateOnTearDown(write);
-    _releaseGuildGateOnTearDown(stale);
-    var reads = 0;
-    var joined = true;
-    final http = _GuildUiHttp((request) {
-      if (request.uri.path.endsWith('quitGuild')) return write.future;
-      if (request.uri.path.endsWith('getGuildHomepageDetails') && ++reads == 2) return stale.future;
-      return MediaFakeResponse.json(_guildUiData(request, role: joined ? 'MEMBER' : 'NONE'));
-    });
-    await _withGuildUi(tester, http, (dependencies) async {
-      await _mountGuildUi(tester, dependencies, const GuildDetailPage(guildId: 'guild-a'));
-      expect(find.text('退出公会'), findsOneWidget, reason: 'Fixture must finish initial HTTP loading');
-      final refresh = tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh;
-      await tester.tap(find.text('退出公会'));
-      await _pumpGuildUi(tester, until: () => find.text('确认退出').evaluate().isNotEmpty);
-      await tester.tap(find.text('确认退出'));
-      await _pumpGuildUi(tester, until: () => http.requests.any((r) => r.uri.path.endsWith('quitGuild')));
-      final oldRead = refresh();
-      await _pumpGuildUi(tester, until: () => reads == 2);
-      expect(reads, 2);
-      joined = false;
-      write.complete(MediaFakeResponse.json({'guildId': 'guild-a', 'status': 'LEFT', 'left': true}));
-      await _pumpGuildUi(tester, until: () => find.text('尚未加入').evaluate().isNotEmpty);
-      expect(find.text('尚未加入'), findsOneWidget);
-      stale.complete(MediaFakeResponse.json(_guildUiDetail('guild-a', role: 'MEMBER')));
-      await _finishGuildUi(tester, oldRead);
-      expect(find.text('退出公会'), findsNothing);
-      expect(find.text('尚未加入'), findsOneWidget);
-      joined = true;
-      await _finishGuildUi(tester, tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh());
-      expect(find.textContaining('你是主播'), findsOneWidget);
-      expect(http.requests.where((r) => r.uri.path.contains('guildManagement')), hasLength(1));
-    });
-  });
+  testWidgets(
+    'G3 quit readback wins and a later legitimate rejoin is not cached out',
+    (tester) async {
+      final write = Completer<HttpClientResponse>();
+      final stale = Completer<HttpClientResponse>();
+      _releaseGuildGateOnTearDown(write);
+      _releaseGuildGateOnTearDown(stale);
+      var reads = 0;
+      var joined = true;
+      final http = _GuildUiHttp((request) {
+        if (request.uri.path.endsWith('quitGuild')) return write.future;
+        if (request.uri.path.endsWith('getGuildHomepageDetails') &&
+            ++reads == 2)
+          return stale.future;
+        return MediaFakeResponse.json(
+          _guildUiData(request, role: joined ? 'MEMBER' : 'NONE'),
+        );
+      });
+      await _withGuildUi(tester, http, (dependencies) async {
+        await _mountGuildUi(
+          tester,
+          dependencies,
+          const GuildDetailPage(guildId: 'guild-a'),
+        );
+        expect(
+          find.text('退出公会'),
+          findsOneWidget,
+          reason: 'Fixture must finish initial HTTP loading',
+        );
+        final refresh = tester
+            .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+            .onRefresh;
+        await tester.tap(find.text('退出公会'));
+        await _pumpGuildUi(
+          tester,
+          until: () => find.text('确认退出').evaluate().isNotEmpty,
+        );
+        await tester.tap(find.text('确认退出'));
+        await _pumpGuildUi(
+          tester,
+          until: () =>
+              http.requests.any((r) => r.uri.path.endsWith('quitGuild')),
+        );
+        final oldRead = refresh();
+        await _pumpGuildUi(tester, until: () => reads == 2);
+        expect(reads, 2);
+        joined = false;
+        write.complete(
+          MediaFakeResponse.json({
+            'guildId': 'guild-a',
+            'status': 'LEFT',
+            'left': true,
+          }),
+        );
+        await _pumpGuildUi(
+          tester,
+          until: () => find.text('尚未加入').evaluate().isNotEmpty,
+        );
+        expect(find.text('尚未加入'), findsOneWidget);
+        stale.complete(
+          MediaFakeResponse.json(_guildUiDetail('guild-a', role: 'MEMBER')),
+        );
+        await _finishGuildUi(tester, oldRead);
+        expect(find.text('退出公会'), findsNothing);
+        expect(find.text('尚未加入'), findsOneWidget);
+        joined = true;
+        await _finishGuildUi(
+          tester,
+          tester
+              .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+              .onRefresh(),
+        );
+        expect(find.textContaining('你是主播'), findsOneWidget);
+        expect(
+          http.requests.where((r) => r.uri.path.contains('guildManagement')),
+          hasLength(1),
+        );
+      });
+    },
+  );
 
   for (final oldError in [false, true]) {
     for (final newestFirst in [false, true]) {
-      testWidgets('G3 stale detail error=$oldError newestFirst=$newestFirst cannot end new loading', (tester) async {
-        final old = Completer<HttpClientResponse>();
-        final latest = Completer<HttpClientResponse>();
-        _releaseGuildGateOnTearDown(old);
-        _releaseGuildGateOnTearDown(latest);
-        var calls = 0;
-        final http = _GuildUiHttp((request) {
-          if (request.uri.path.endsWith('getGuildHomepageDetails')) {
-            calls++;
-            if (calls == 2) return old.future;
-            if (calls == 3) return latest.future;
-          }
-          return MediaFakeResponse.json(_guildUiData(request));
-        });
-        await _withGuildUi(tester, http, (dependencies) async {
-          await _mountGuildUi(tester, dependencies, const GuildDetailPage(guildId: 'guild-a'));
-          final refresh = tester.widget<RefreshIndicator>(find.byType(RefreshIndicator)).onRefresh;
-          final prior = refresh();
-          await _pumpGuildUi(tester, until: () => calls == 2);
-          final current = refresh();
-          await _pumpGuildUi(tester, until: () => calls == 3);
-          expect(calls, 3);
-          if (newestFirst) {
-            latest.complete(MediaFakeResponse.json(_guildUiDetail('guild-a', name: 'CURRENT')));
-            await _finishGuildUi(tester, current);
-          }
-          if (oldError) {
-            old.completeError(const SocketException('obsolete guild error'));
-          } else {
-            old.complete(MediaFakeResponse.json(_guildUiDetail('guild-a', name: 'OBSOLETE')));
-          }
-          await _finishGuildUi(tester, prior);
-          if (!newestFirst) {
-            expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      testWidgets(
+        'G3 stale detail error=$oldError newestFirst=$newestFirst cannot end new loading',
+        (tester) async {
+          final old = Completer<HttpClientResponse>();
+          final latest = Completer<HttpClientResponse>();
+          _releaseGuildGateOnTearDown(old);
+          _releaseGuildGateOnTearDown(latest);
+          var calls = 0;
+          final http = _GuildUiHttp((request) {
+            if (request.uri.path.endsWith('getGuildHomepageDetails')) {
+              calls++;
+              if (calls == 2) return old.future;
+              if (calls == 3) return latest.future;
+            }
+            return MediaFakeResponse.json(_guildUiData(request));
+          });
+          await _withGuildUi(tester, http, (dependencies) async {
+            await _mountGuildUi(
+              tester,
+              dependencies,
+              const GuildDetailPage(guildId: 'guild-a'),
+            );
+            final refresh = tester
+                .widget<RefreshIndicator>(find.byType(RefreshIndicator))
+                .onRefresh;
+            final prior = refresh();
+            await _pumpGuildUi(tester, until: () => calls == 2);
+            final current = refresh();
+            await _pumpGuildUi(tester, until: () => calls == 3);
+            expect(calls, 3);
+            if (newestFirst) {
+              latest.complete(
+                MediaFakeResponse.json(
+                  _guildUiDetail('guild-a', name: 'CURRENT'),
+                ),
+              );
+              await _finishGuildUi(tester, current);
+            }
+            if (oldError) {
+              old.completeError(const SocketException('obsolete guild error'));
+            } else {
+              old.complete(
+                MediaFakeResponse.json(
+                  _guildUiDetail('guild-a', name: 'OBSOLETE'),
+                ),
+              );
+            }
+            await _finishGuildUi(tester, prior);
+            if (!newestFirst) {
+              expect(find.byType(CircularProgressIndicator), findsOneWidget);
+              expect(find.text('OBSOLETE'), findsNothing);
+              latest.complete(
+                MediaFakeResponse.json(
+                  _guildUiDetail('guild-a', name: 'CURRENT'),
+                ),
+              );
+              await _finishGuildUi(tester, current);
+            }
+            expect(find.text('CURRENT'), findsOneWidget);
             expect(find.text('OBSOLETE'), findsNothing);
-            latest.complete(MediaFakeResponse.json(_guildUiDetail('guild-a', name: 'CURRENT')));
-            await _finishGuildUi(tester, current);
-          }
-          expect(find.text('CURRENT'), findsOneWidget);
-          expect(find.text('OBSOLETE'), findsNothing);
-          expect(find.textContaining('obsolete guild error'), findsNothing);
-        });
-      });
+            expect(find.textContaining('obsolete guild error'), findsNothing);
+          });
+        },
+      );
     }
   }
 
   for (final stage in ['getGuildHomepageDetails', 'getGuildMembers']) {
-    testWidgets('G3 guildId change stops obsolete multi-stage read after $stage', (tester) async {
-      final old = Completer<HttpClientResponse>();
-      _releaseGuildGateOnTearDown(old);
-      MediaFakeRequest? held;
-      final http = _GuildUiHttp((request) {
-        if (_guildUiId(request) == 'guild-a' && request.uri.path.endsWith(stage)) {
-          held = request;
-          return old.future;
-        }
-        return MediaFakeResponse.json(_guildUiData(request));
-      });
-      await _withGuildUi(tester, http, (dependencies) async {
-        await _mountGuildUi(tester, dependencies, const GuildMembersPage(key: ValueKey('members'), guildId: 'guild-a'), ready: () => held != null);
-        expect(held, isNotNull);
-        await _mountGuildUi(tester, dependencies, const GuildMembersPage(key: ValueKey('members'), guildId: 'guild-b'));
-        expect(find.text('公会 guild-b'), findsOneWidget);
-        old.complete(MediaFakeResponse.json(_guildUiData(held!)));
-        await _pumpGuildUi(tester);
-        expect(find.text('公会 guild-b'), findsOneWidget);
-        expect(http.requests.where((r) => _guildUiId(r) == 'guild-a' &&
-            r.uri.path.endsWith('getMembershipApplications')), isEmpty);
-        if (stage == 'getGuildHomepageDetails') {
-          expect(http.requests.where((r) => _guildUiId(r) == 'guild-a' &&
-              r.uri.path.endsWith('getGuildMembers')), isEmpty);
-        }
-      });
-    });
+    testWidgets(
+      'G3 guildId change stops obsolete multi-stage read after $stage',
+      (tester) async {
+        final old = Completer<HttpClientResponse>();
+        _releaseGuildGateOnTearDown(old);
+        MediaFakeRequest? held;
+        final http = _GuildUiHttp((request) {
+          if (_guildUiId(request) == 'guild-a' &&
+              request.uri.path.endsWith(stage)) {
+            held = request;
+            return old.future;
+          }
+          return MediaFakeResponse.json(_guildUiData(request));
+        });
+        await _withGuildUi(tester, http, (dependencies) async {
+          await _mountGuildUi(
+            tester,
+            dependencies,
+            const GuildMembersPage(
+              key: ValueKey('members'),
+              guildId: 'guild-a',
+            ),
+            ready: () => held != null,
+          );
+          expect(held, isNotNull);
+          await _mountGuildUi(
+            tester,
+            dependencies,
+            const GuildMembersPage(
+              key: ValueKey('members'),
+              guildId: 'guild-b',
+            ),
+          );
+          expect(find.text('公会 guild-b'), findsOneWidget);
+          old.complete(MediaFakeResponse.json(_guildUiData(held!)));
+          await _pumpGuildUi(tester);
+          expect(find.text('公会 guild-b'), findsOneWidget);
+          expect(
+            http.requests.where(
+              (r) =>
+                  _guildUiId(r) == 'guild-a' &&
+                  r.uri.path.endsWith('getMembershipApplications'),
+            ),
+            isEmpty,
+          );
+          if (stage == 'getGuildHomepageDetails') {
+            expect(
+              http.requests.where(
+                (r) =>
+                    _guildUiId(r) == 'guild-a' &&
+                    r.uri.path.endsWith('getGuildMembers'),
+              ),
+              isEmpty,
+            );
+          }
+        });
+      },
+    );
   }
 
-  testWidgets('G3 changed repository invalidates the same mounted guild page', (tester) async {
+  testWidgets('G3 changed repository invalidates the same mounted guild page', (
+    tester,
+  ) async {
     final old = Completer<HttpClientResponse>();
     _releaseGuildGateOnTearDown(old);
     MediaFakeRequest? held;
     final http = _GuildUiHttp((request) {
-      if (request.uri.host == 'guild-a.test' && request.uri.path.endsWith('getGuildHomepageDetails')) {
+      if (request.uri.host == 'guild-a.test' &&
+          request.uri.path.endsWith('getGuildHomepageDetails')) {
         held = request;
         return old.future;
       }
-      return MediaFakeResponse.json(_guildUiData(request, name: 'NEW REPOSITORY'));
+      return MediaFakeResponse.json(
+        _guildUiData(request, name: 'NEW REPOSITORY'),
+      );
     });
     await _withGuildUi(tester, http, (dependencies) async {
       const page = GuildMembersPage(key: ValueKey('same'), guildId: 'guild-a');
-      await _mountGuildUi(tester, dependencies, page, ready: () => held != null);
+      await _mountGuildUi(
+        tester,
+        dependencies,
+        page,
+        ready: () => held != null,
+      );
       expect(held, isNotNull);
       final replacement = await _guildUiDependencies('guild-b.test');
       try {
@@ -715,7 +858,10 @@ void _guildPageRaceTests() {
         old.complete(MediaFakeResponse.json(_guildUiData(held!)));
         await _pumpGuildUi(tester);
         expect(find.text('NEW REPOSITORY'), findsOneWidget);
-        expect(http.requests.where((r) => r.uri.host == 'guild-a.test'), hasLength(1));
+        expect(
+          http.requests.where((r) => r.uri.host == 'guild-a.test'),
+          hasLength(1),
+        );
         await tester.pumpWidget(const SizedBox.shrink());
       } finally {
         replacement.dispose();
@@ -723,7 +869,9 @@ void _guildPageRaceTests() {
     });
   });
 
-  testWidgets('G3 disposed members page does not start the next read stage', (tester) async {
+  testWidgets('G3 disposed members page does not start the next read stage', (
+    tester,
+  ) async {
     final old = Completer<HttpClientResponse>();
     _releaseGuildGateOnTearDown(old);
     MediaFakeRequest? held;
@@ -732,7 +880,12 @@ void _guildPageRaceTests() {
       return old.future;
     });
     await _withGuildUi(tester, http, (dependencies) async {
-      await _mountGuildUi(tester, dependencies, const GuildMembersPage(guildId: 'guild-a'), ready: () => held != null);
+      await _mountGuildUi(
+        tester,
+        dependencies,
+        const GuildMembersPage(guildId: 'guild-a'),
+        ready: () => held != null,
+      );
       expect(held, isNotNull);
       await tester.pumpWidget(const SizedBox.shrink());
       old.complete(MediaFakeResponse.json(_guildUiData(held!)));
@@ -742,53 +895,66 @@ void _guildPageRaceTests() {
     });
   });
 
-  testWidgets('G3 old search catch and finally cannot unlock new repository search', (tester) async {
-    final old = Completer<HttpClientResponse>();
-    final current = Completer<HttpClientResponse>();
-    _releaseGuildGateOnTearDown(old);
-    _releaseGuildGateOnTearDown(current);
-    MediaFakeRequest? newSearch;
-    final http = _GuildUiHttp((request) {
-      if (request.uri.path.endsWith('searchGuild')) {
-        if (request.uri.host == 'guild-a.test') return old.future;
-        newSearch = request;
-        return current.future;
-      }
-      return MediaFakeResponse.json(_guildUiData(request));
-    });
-    await _withGuildUi(tester, http, (dependencies) async {
-      const page = GuildHomePage(key: ValueKey('same-home'));
-      await _mountGuildUi(tester, dependencies, page);
-      await tester.enterText(find.byType(TextField), 'old');
-      await tester.tap(find.byTooltip('搜索'));
-      await _pumpGuildUi(tester, until: () => http.requests.any((r) => r.uri.host == 'guild-a.test' && r.uri.path.endsWith('searchGuild')));
-      final replacement = await _guildUiDependencies('guild-b.test');
-      try {
-        await _mountGuildUi(tester, replacement, page);
-        await tester.enterText(find.byType(TextField), 'new');
+  testWidgets(
+    'G3 old search catch and finally cannot unlock new repository search',
+    (tester) async {
+      final old = Completer<HttpClientResponse>();
+      final current = Completer<HttpClientResponse>();
+      _releaseGuildGateOnTearDown(old);
+      _releaseGuildGateOnTearDown(current);
+      MediaFakeRequest? newSearch;
+      final http = _GuildUiHttp((request) {
+        if (request.uri.path.endsWith('searchGuild')) {
+          if (request.uri.host == 'guild-a.test') return old.future;
+          newSearch = request;
+          return current.future;
+        }
+        return MediaFakeResponse.json(_guildUiData(request));
+      });
+      await _withGuildUi(tester, http, (dependencies) async {
+        const page = GuildHomePage(key: ValueKey('same-home'));
+        await _mountGuildUi(tester, dependencies, page);
+        await tester.enterText(find.byType(TextField), 'old');
         await tester.tap(find.byTooltip('搜索'));
-        await _pumpGuildUi(tester, until: () => newSearch != null);
-        expect(newSearch, isNotNull);
-        old.completeError(const SocketException('obsolete search'));
-        await _pumpGuildUi(tester);
-        final searchButton = find.ancestor(
-          of: find.byTooltip('搜索'),
-          matching: find.byType(IconButton),
+        await _pumpGuildUi(
+          tester,
+          until: () => http.requests.any(
+            (r) =>
+                r.uri.host == 'guild-a.test' &&
+                r.uri.path.endsWith('searchGuild'),
+          ),
         );
-        expect(searchButton, findsOneWidget);
-        expect(tester.widget<IconButton>(searchButton).onPressed, isNull);
-        expect(find.textContaining('obsolete search'), findsNothing);
-        current.complete(MediaFakeResponse.json(_guildUiData(newSearch!)));
-        await _pumpGuildUi(tester, until: () => find.text('搜索结果').evaluate().isNotEmpty);
-        expect(searchButton, findsOneWidget);
-        expect(tester.widget<IconButton>(searchButton).onPressed, isNotNull);
-        expect(find.text('搜索结果'), findsOneWidget);
-        await tester.pumpWidget(const SizedBox.shrink());
-      } finally {
-        replacement.dispose();
-      }
-    });
-  });
+        final replacement = await _guildUiDependencies('guild-b.test');
+        try {
+          await _mountGuildUi(tester, replacement, page);
+          await tester.enterText(find.byType(TextField), 'new');
+          await tester.tap(find.byTooltip('搜索'));
+          await _pumpGuildUi(tester, until: () => newSearch != null);
+          expect(newSearch, isNotNull);
+          old.completeError(const SocketException('obsolete search'));
+          await _pumpGuildUi(tester);
+          final searchButton = find.ancestor(
+            of: find.byTooltip('搜索'),
+            matching: find.byType(IconButton),
+          );
+          expect(searchButton, findsOneWidget);
+          expect(tester.widget<IconButton>(searchButton).onPressed, isNull);
+          expect(find.textContaining('obsolete search'), findsNothing);
+          current.complete(MediaFakeResponse.json(_guildUiData(newSearch!)));
+          await _pumpGuildUi(
+            tester,
+            until: () => find.text('搜索结果').evaluate().isNotEmpty,
+          );
+          expect(searchButton, findsOneWidget);
+          expect(tester.widget<IconButton>(searchButton).onPressed, isNotNull);
+          expect(find.text('搜索结果'), findsOneWidget);
+          await tester.pumpWidget(const SizedBox.shrink());
+        } finally {
+          replacement.dispose();
+        }
+      });
+    },
+  );
 }
 
 class _GuildUiHttp extends MediaFakeHttp {
@@ -801,7 +967,8 @@ class _GuildUiHttp extends MediaFakeHttp {
 
 void _releaseGuildGateOnTearDown(Completer<HttpClientResponse> gate) {
   addTearDown(() {
-    if (!gate.isCompleted) gate.complete(MediaFakeResponse.json(null, status: 503, code: 50301));
+    if (!gate.isCompleted)
+      gate.complete(MediaFakeResponse.json(null, status: 503, code: 50301));
   });
 }
 
@@ -816,11 +983,16 @@ Future<AppDependencies> _guildUiDependencies(String host) async {
       realtimeEndpoint: '',
     ),
   );
-  await dependencies.sessionManager.save(AuthSession(
-    accessToken: 'guild-contract-only', tokenType: 'Bearer',
-    expiresAt: DateTime.now().add(const Duration(hours: 1)),
-    userId: 10001, mobile: 'test-user', roles: 'USER',
-  ));
+  await dependencies.sessionManager.save(
+    AuthSession(
+      accessToken: 'guild-contract-only',
+      tokenType: 'Bearer',
+      expiresAt: DateTime.now().add(const Duration(hours: 1)),
+      userId: 10001,
+      mobile: 'test-user',
+      roles: 'USER',
+    ),
+  );
   return dependencies;
 }
 
@@ -844,23 +1016,36 @@ Future<void> _withGuildUi(
   }, createHttpClient: (_) => http);
 }
 
-Future<void> _mountGuildUi(WidgetTester tester, AppDependencies dependencies, Widget page, {bool Function()? ready}) async {
-  await tester.pumpWidget(AppDependencyScope(
-    dependencies: dependencies,
-    child: MaterialApp(theme: AppTheme.social(), home: page),
-  ));
+Future<void> _mountGuildUi(
+  WidgetTester tester,
+  AppDependencies dependencies,
+  Widget page, {
+  bool Function()? ready,
+}) async {
+  await tester.pumpWidget(
+    AppDependencyScope(
+      dependencies: dependencies,
+      child: MaterialApp(theme: AppTheme.social(), home: page),
+    ),
+  );
   // Tests that deliberately hold the first response supply a request barrier.
   // Otherwise require a loaded refreshable page, not merely N elapsed frames.
-  await _pumpGuildUi(tester, until: ready ?? () => find.byType(RefreshIndicator).evaluate().isNotEmpty);
+  await _pumpGuildUi(
+    tester,
+    until: ready ?? () => find.byType(RefreshIndicator).evaluate().isNotEmpty,
+  );
 }
 
 Future<void> _finishGuildUi(WidgetTester tester, Future<void> operation) async {
   var finished = false;
   Object? failure;
-  operation.then<void>((_) => finished = true, onError: (Object error, StackTrace _) {
-    failure = error;
-    finished = true;
-  });
+  operation.then<void>(
+    (_) => finished = true,
+    onError: (Object error, StackTrace _) {
+      failure = error;
+      finished = true;
+    },
+  );
   await _pumpGuildUi(tester, until: () => finished);
   if (failure != null) throw failure!;
   await tester.pump();
@@ -870,15 +1055,20 @@ Future<void> _pumpGuildUi(WidgetTester tester, {bool Function()? until}) async {
   // HTTP futures/streams need the real event loop as well as widget frames.
   // Never pumpAndSettle while a deliberately held response owns a spinner.
   for (var index = 0; index < 200; index++) {
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 2)));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 2)),
+    );
     await tester.pump(const Duration(milliseconds: 10));
     if (until != null ? until() : index >= 11) return;
   }
-  fail('Guild async fixture did not reach its request/UI barrier; not a business RED.');
+  fail(
+    'Guild async fixture did not reach its request/UI barrier; not a business RED.',
+  );
 }
 
 String _guildUiId(MediaFakeRequest request) {
-  if (request.uri.queryParameters.containsKey('guildId')) return request.uri.queryParameters['guildId']!;
+  if (request.uri.queryParameters.containsKey('guildId'))
+    return request.uri.queryParameters['guildId']!;
   if (request.body.isNotEmpty) {
     final body = jsonDecode(utf8.decode(request.body)) as Map<String, dynamic>;
     if (body['guildId'] is String) return body['guildId'] as String;
@@ -886,31 +1076,67 @@ String _guildUiId(MediaFakeRequest request) {
   return 'guild-a';
 }
 
-Map<String, Object?> _guildUiDetail(String id, {String role = 'OWNER', String? name}) => {
+Map<String, Object?> _guildUiDetail(
+  String id, {
+  String role = 'OWNER',
+  String? name,
+}) => {
   ..._closedGuildDetail(id),
-  'guildName': name ?? '公会 $id', 'name': name ?? '公会 $id',
-  'status': 'ACTIVE', 'ownerUserId': 10001, 'viewerRole': role,
-  'joined': role != 'NONE', 'roomId': '', 'roomCode': '', 'roomName': '',
+  'guildName': name ?? '公会 $id',
+  'name': name ?? '公会 $id',
+  'status': 'ACTIVE',
+  'ownerUserId': 10001,
+  'viewerRole': role,
+  'joined': role != 'NONE',
+  'roomId': '',
+  'roomCode': '',
+  'roomName': '',
 };
 
 Map<String, Object?> _guildUiApplications(bool approved) {
-  final rows = <Object?>[<String, Object?>{
-    'applicationId': 'application-1', 'userId': 31, 'nickName': '申请人',
-    'headImgUrl': '', 'message': '',
-    'status': approved ? 'APPROVED' : 'PENDING',
-    'createdAt': '2026-09-01T00:00:00Z',
-    'resolvedAt': approved ? '2026-09-01T01:00:00Z' : '',
-  }];
-  return {'list': rows, 'records': rows, 'current': 1, 'pageSize': 50, 'total': 1, 'pages': 1};
+  final rows = <Object?>[
+    <String, Object?>{
+      'applicationId': 'application-1',
+      'userId': 31,
+      'nickName': '申请人',
+      'headImgUrl': '',
+      'message': '',
+      'status': approved ? 'APPROVED' : 'PENDING',
+      'createdAt': '2026-09-01T00:00:00Z',
+      'resolvedAt': approved ? '2026-09-01T01:00:00Z' : '',
+    },
+  ];
+  return {
+    'list': rows,
+    'records': rows,
+    'current': 1,
+    'pageSize': 50,
+    'total': 1,
+    'pages': 1,
+  };
 }
 
-Object? _guildUiData(MediaFakeRequest request, {bool approved = false, String role = 'OWNER', String? name}) {
+Object? _guildUiData(
+  MediaFakeRequest request, {
+  bool approved = false,
+  String role = 'OWNER',
+  String? name,
+}) {
   final id = _guildUiId(request);
-  if (request.uri.path.endsWith('getGuildHomepageDetails')) return _guildUiDetail(id, role: role, name: name);
-  if (request.uri.path.endsWith('getMembershipApplications')) return _guildUiApplications(approved);
+  if (request.uri.path.endsWith('getGuildHomepageDetails'))
+    return _guildUiDetail(id, role: role, name: name);
+  if (request.uri.path.endsWith('getMembershipApplications'))
+    return _guildUiApplications(approved);
   if (request.uri.path.endsWith('searchGuild')) {
     final rows = <Object?>[_guildUiDetail('guild-search', role: 'NONE')];
-    return {'list': rows, 'records': rows, 'current': 1, 'pageSize': 50, 'total': 1, 'pages': 1};
+    return {
+      'list': rows,
+      'records': rows,
+      'current': 1,
+      'pageSize': 50,
+      'total': 1,
+      'pages': 1,
+    };
   }
   return _communityResponseData(request.uri);
 }

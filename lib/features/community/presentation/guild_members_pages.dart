@@ -194,7 +194,7 @@ class _GuildMembersPageState extends State<GuildMembersPage>
         await _load();
       }
     } catch (error) {
-      if (acceptsGuildScope(scope)) {
+      if (mounted && acceptsGuildScope(scope)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));

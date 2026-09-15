@@ -81,7 +81,7 @@ class _GuildHomePageState extends State<GuildHomePage>
         setState(() => _searchResults = result);
       }
     } catch (error) {
-      if (current()) {
+      if (mounted && current()) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));
@@ -305,7 +305,7 @@ class _GuildDetailPageState extends State<GuildDetailPage>
     setState(() => _busy = true);
     try {
       await action();
-      if (!acceptsGuildScope(scope)) {
+      if (!mounted || !acceptsGuildScope(scope)) {
         return;
       }
       ScaffoldMessenger.of(
@@ -313,7 +313,7 @@ class _GuildDetailPageState extends State<GuildDetailPage>
       ).showSnackBar(SnackBar(content: Text(success)));
       await _load();
     } catch (error) {
-      if (acceptsGuildScope(scope)) {
+      if (mounted && acceptsGuildScope(scope)) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(_messageFor(error))));

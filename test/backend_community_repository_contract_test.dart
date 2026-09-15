@@ -1721,7 +1721,8 @@ void _guildReadIsolationTests() {
     'detail': (repository) => repository.fetchGuild('guild-1'),
     'search': (repository) => repository.searchGuilds('guild'),
     'members': (repository) => repository.fetchGuildMembers('guild-1'),
-    'applications': (repository) => repository.fetchGuildApplications('guild-1'),
+    'applications': (repository) =>
+        repository.fetchGuildApplications('guild-1'),
   };
   for (final entry in reads.entries) {
     for (final aba in [false, true]) {
@@ -1730,9 +1731,12 @@ void _guildReadIsolationTests() {
         addTearDown(identity.dispose);
         final opened = Completer<void>();
         final release = Completer<void>();
-        addTearDown(() { if (!release.isCompleted) release.complete(); });
-        final http = MediaFakeHttp((request) =>
-            MediaFakeResponse.json(_guildReadData(request)));
+        addTearDown(() {
+          if (!release.isCompleted) release.complete();
+        });
+        final http = MediaFakeHttp(
+          (request) => MediaFakeResponse.json(_guildReadData(request)),
+        );
         http.beforeOpen = (_) async {
           if (!opened.isCompleted) opened.complete();
           await release.future;
@@ -1756,113 +1760,161 @@ void _guildReadIsolationTests() {
   }
 
   for (final entry in reads.entries.where((entry) => entry.key != 'detail')) {
-    test('G3 read ${entry.key} stops pagination at the original identity', () async {
-      final identity = TestMediaIdentity();
-      addTearDown(identity.dispose);
-      final firstPage = Completer<void>();
-      final release = Completer<void>();
-      addTearDown(() { if (!release.isCompleted) release.complete(); });
-      final http = MediaFakeHttp((request) async {
-        final data = _guildReadData(request, total: 51);
-        if (!request.uri.path.endsWith('getCurrentGuild') && !firstPage.isCompleted) {
-          firstPage.complete();
-          await release.future;
-        }
-        return MediaFakeResponse.json(data);
-      });
-      final repository = _guildReadRepository(http, identity);
-      final outcome = _captureGuildOutcome(entry.value(repository));
-      await firstPage.future;
-      identity.change(2);
-      release.complete();
-      expect(await outcome, _changedGuildIdentity);
-      expect(http.requests.where((request) =>
-          !request.uri.path.endsWith('getCurrentGuild')), hasLength(1));
-      expect(http.requests.every((request) =>
-          request.headers.value('Authorization') == 'Bearer contract-A-old'), isTrue);
-      // A new explicit read belongs to B and is not blocked by A's old flight.
-      expect(await entry.value(repository), isNot(isA<ApiException>()));
-    });
+    test(
+      'G3 read ${entry.key} stops pagination at the original identity',
+      () async {
+        final identity = TestMediaIdentity();
+        addTearDown(identity.dispose);
+        final firstPage = Completer<void>();
+        final release = Completer<void>();
+        addTearDown(() {
+          if (!release.isCompleted) release.complete();
+        });
+        final http = MediaFakeHttp((request) async {
+          final data = _guildReadData(request, total: 51);
+          if (!request.uri.path.endsWith('getCurrentGuild') &&
+              !firstPage.isCompleted) {
+            firstPage.complete();
+            await release.future;
+          }
+          return MediaFakeResponse.json(data);
+        });
+        final repository = _guildReadRepository(http, identity);
+        final outcome = _captureGuildOutcome(entry.value(repository));
+        await firstPage.future;
+        identity.change(2);
+        release.complete();
+        expect(await outcome, _changedGuildIdentity);
+        expect(
+          http.requests.where(
+            (request) => !request.uri.path.endsWith('getCurrentGuild'),
+          ),
+          hasLength(1),
+        );
+        expect(
+          http.requests.every(
+            (request) =>
+                request.headers.value('Authorization') ==
+                'Bearer contract-A-old',
+          ),
+          isTrue,
+        );
+        // A new explicit read belongs to B and is not blocked by A's old flight.
+        expect(await entry.value(repository), isNot(isA<ApiException>()));
+      },
+    );
   }
 
   for (final aba in [false, true]) {
-    test('G3 read 401 recovery cannot replay across identity ABA=$aba', () async {
-      final identity = TestMediaIdentity();
-      addTearDown(identity.dispose);
-      final recovering = Completer<void>();
-      final release = Completer<void>();
-      addTearDown(() { if (!release.isCompleted) release.complete(); });
-      final http = MediaFakeHttp((request) =>
-          MediaFakeResponse.json(null, status: 401, code: 40101));
-      final repository = _guildReadRepository(http, identity, refresh: () async {
-        recovering.complete();
-        await release.future;
-        return true;
-      });
-      final outcome = _captureGuildOutcome(repository.fetchGuild('guild-1'));
-      await recovering.future;
-      identity.change(2);
-      if (aba) identity.change(1);
-      release.complete();
-      expect(await outcome, _changedGuildIdentity);
-      expect(http.requests, hasLength(1));
-    });
+    test(
+      'G3 read 401 recovery cannot replay across identity ABA=$aba',
+      () async {
+        final identity = TestMediaIdentity();
+        addTearDown(identity.dispose);
+        final recovering = Completer<void>();
+        final release = Completer<void>();
+        addTearDown(() {
+          if (!release.isCompleted) release.complete();
+        });
+        final http = MediaFakeHttp(
+          (request) => MediaFakeResponse.json(null, status: 401, code: 40101),
+        );
+        final repository = _guildReadRepository(
+          http,
+          identity,
+          refresh: () async {
+            recovering.complete();
+            await release.future;
+            return true;
+          },
+        );
+        final outcome = _captureGuildOutcome(repository.fetchGuild('guild-1'));
+        await recovering.future;
+        identity.change(2);
+        if (aba) identity.change(1);
+        release.complete();
+        expect(await outcome, _changedGuildIdentity);
+        expect(http.requests, hasLength(1));
+      },
+    );
   }
 
-  test('G3 read same identity token refresh keeps GET and POST payloads', () async {
-    for (final read in <_GuildRead>[
-      (repository) => repository.fetchGuild('guild-1'),
-      (repository) => repository.fetchGuildMembers('guild-1'),
-    ]) {
-      final identity = TestMediaIdentity();
-      var calls = 0;
-      final http = MediaFakeHttp((request) => ++calls == 1
-          ? MediaFakeResponse.json(null, status: 401, code: 40101)
-          : MediaFakeResponse.json(_guildReadData(request)));
-      final repository = _guildReadRepository(http, identity, refresh: () async {
-        identity.refreshToken();
-        return true;
-      });
-      try {
-        await read(repository);
-        expect(http.requests, hasLength(2));
-        expect(http.requests[0].method, http.requests[1].method);
-        expect(http.requests[0].uri, http.requests[1].uri);
-        expect(http.requests[0].body, http.requests[1].body);
-        expect(http.requests[0].headers.value('Authorization'), 'Bearer contract-A-old');
-        expect(http.requests[1].headers.value('Authorization'), 'Bearer contract-refreshed');
-      } finally {
-        identity.dispose();
+  test(
+    'G3 read same identity token refresh keeps GET and POST payloads',
+    () async {
+      for (final read in <_GuildRead>[
+        (repository) => repository.fetchGuild('guild-1'),
+        (repository) => repository.fetchGuildMembers('guild-1'),
+      ]) {
+        final identity = TestMediaIdentity();
+        var calls = 0;
+        final http = MediaFakeHttp(
+          (request) => ++calls == 1
+              ? MediaFakeResponse.json(null, status: 401, code: 40101)
+              : MediaFakeResponse.json(_guildReadData(request)),
+        );
+        final repository = _guildReadRepository(
+          http,
+          identity,
+          refresh: () async {
+            identity.refreshToken();
+            return true;
+          },
+        );
+        try {
+          await read(repository);
+          expect(http.requests, hasLength(2));
+          expect(http.requests[0].method, http.requests[1].method);
+          expect(http.requests[0].uri, http.requests[1].uri);
+          expect(http.requests[0].body, http.requests[1].body);
+          expect(
+            http.requests[0].headers.value('Authorization'),
+            'Bearer contract-A-old',
+          );
+          expect(
+            http.requests[1].headers.value('Authorization'),
+            'Bearer contract-refreshed',
+          );
+        } finally {
+          identity.dispose();
+        }
       }
-    }
-  });
+    },
+  );
 
   for (final failure in [false, true]) {
-    test('G3 read rejects late response failure=$failure without old error delivery', () async {
-      final identity = TestMediaIdentity();
-      addTearDown(identity.dispose);
-      final arrived = Completer<void>();
-      final release = Completer<void>();
-      addTearDown(() { if (!release.isCompleted) release.complete(); });
-      final http = MediaFakeHttp((request) async {
-        arrived.complete();
-        await release.future;
-        if (failure) throw const SocketException('old transport failure');
-        return MediaFakeResponse.json(_guildReadData(request));
-      });
-      final repository = _guildReadRepository(http, identity);
-      final outcome = _captureGuildOutcome(repository.fetchGuild('guild-1'));
-      await arrived.future;
-      identity.change(2);
-      release.complete();
-      expect(await outcome, _changedGuildIdentity);
-      expect(http.requests, hasLength(1));
-    });
+    test(
+      'G3 read rejects late response failure=$failure without old error delivery',
+      () async {
+        final identity = TestMediaIdentity();
+        addTearDown(identity.dispose);
+        final arrived = Completer<void>();
+        final release = Completer<void>();
+        addTearDown(() {
+          if (!release.isCompleted) release.complete();
+        });
+        final http = MediaFakeHttp((request) async {
+          arrived.complete();
+          await release.future;
+          if (failure) throw const SocketException('old transport failure');
+          return MediaFakeResponse.json(_guildReadData(request));
+        });
+        final repository = _guildReadRepository(http, identity);
+        final outcome = _captureGuildOutcome(repository.fetchGuild('guild-1'));
+        await arrived.future;
+        identity.change(2);
+        release.complete();
+        expect(await outcome, _changedGuildIdentity);
+        expect(http.requests, hasLength(1));
+      },
+    );
   }
 }
 
 Matcher get _changedGuildIdentity => isA<ApiException>().having(
-  (error) => error.kind, 'kind', ApiFailureKind.unauthorized,
+  (error) => error.kind,
+  'kind',
+  ApiFailureKind.unauthorized,
 );
 
 Future<Object?> _captureGuildOutcome(Future<Object?> future) =>
@@ -1895,9 +1947,11 @@ Object _guildReadData(MediaFakeRequest request, {int total = 1}) {
   if (path.endsWith('getGuildHomepageDetails')) {
     return _b709GuildRow(includeHomepageState: true);
   }
-  final body = request.body.isEmpty ? <String, Object?>{} :
-      jsonDecode(utf8.decode(request.body)) as Map<String, dynamic>;
-  final page = body['pageNum'] as int? ??
+  final body = request.body.isEmpty
+      ? <String, Object?>{}
+      : jsonDecode(utf8.decode(request.body)) as Map<String, dynamic>;
+  final page =
+      body['pageNum'] as int? ??
       int.parse(request.uri.queryParameters['pageNum'] ?? '1');
   final start = (page - 1) * 50;
   final count = (total - start).clamp(0, 50).toInt();
@@ -1907,12 +1961,19 @@ Object _guildReadData(MediaFakeRequest request, {int total = 1}) {
       return {..._b709GuildMemberRow(), 'userId': 21 + index};
     }
     if (path.endsWith('getMembershipApplications')) {
-      return {..._b709GuildApplicationRow(), 'applicationId': 'application-$index'};
+      return {
+        ..._b709GuildApplicationRow(),
+        'applicationId': 'application-$index',
+      };
     }
     return {..._b709GuildRow(), 'guildId': 'guild-$index'};
   });
   return <String, Object?>{
-    'list': rows, 'records': rows, 'current': page, 'pageSize': 50,
-    'total': total, 'pages': total == 0 ? 0 : (total + 49) ~/ 50,
+    'list': rows,
+    'records': rows,
+    'current': page,
+    'pageSize': 50,
+    'total': total,
+    'pages': total == 0 ? 0 : (total + 49) ~/ 50,
   };
 }
