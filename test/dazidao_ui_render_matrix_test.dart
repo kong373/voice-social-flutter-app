@@ -21,6 +21,9 @@ const _phase = String.fromEnvironment('UI_PHASE', defaultValue: 'inspect');
 const _matrix = bool.fromEnvironment('UI_MATRIX');
 const _only = String.fromEnvironment('UI_ONLY');
 const _capture = bool.fromEnvironment('UI_CAPTURE', defaultValue: true);
+const _safeInsets = bool.fromEnvironment('UI_SAFE_INSETS');
+const _keyboard = bool.fromEnvironment('UI_KEYBOARD');
+const _reduceMotion = bool.fromEnvironment('UI_REDUCE_MOTION');
 void main() {
   setUpAll(loadGoldenFonts);
   final variants = _matrix
@@ -110,6 +113,7 @@ Future<void> _render(
   progress('dependencies-ready');
   final key = GlobalKey();
   final failures = <String>[];
+  final keyboardInset = ValueNotifier<double>(0);
   try {
     await tester.pumpWidget(
       RepaintBoundary(
@@ -119,11 +123,22 @@ Future<void> _render(
           child: MaterialApp(
             debugShowCheckedModeBanner: false,
             theme: AppTheme.social(fontFamily: kGoldenFontFamily),
-            builder: (context, child) => MediaQuery(
-              data: MediaQuery.of(
-                context,
-              ).copyWith(textScaler: TextScaler.linear(scale)),
-              child: child!,
+            builder: (context, child) => ValueListenableBuilder<double>(
+              valueListenable: keyboardInset,
+              builder: (context, inset, _) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  textScaler: TextScaler.linear(scale),
+                  disableAnimations: _reduceMotion,
+                  viewInsets: EdgeInsets.only(bottom: inset),
+                  viewPadding: _safeInsets
+                      ? const EdgeInsets.only(top: 44, bottom: 34)
+                      : null,
+                  padding: _safeInsets
+                      ? EdgeInsets.only(top: 44, bottom: inset > 0 ? 0 : 34)
+                      : null,
+                ),
+                child: child!,
+              ),
             ),
             home: builder(dependencies),
           ),
@@ -144,6 +159,24 @@ Future<void> _render(
       );
       await tester.tap(find.text(tabLabel).last);
       await _drain(tester, failures);
+    }
+    if (_keyboard) {
+      // Widget-test keyboard and media insets, not a real OS keyboard capture.
+      final inputs = find.byType(EditableText);
+      expect(
+        inputs,
+        findsWidgets,
+        reason: 'Requested keyboard case must expose a real input',
+      );
+      await tester.showKeyboard(inputs.first);
+      keyboardInset.value = 280;
+      await _drain(tester, failures);
+      final bounds = tester.getRect(inputs.first);
+      expect(
+        bounds.bottom,
+        lessThanOrEqualTo(size.height - 280 + 1),
+        reason: '$id focused input must remain above the keyboard inset',
+      );
     }
     if (_output.isNotEmpty) {
       final directory = Directory(
@@ -182,6 +215,9 @@ Future<void> _render(
           'platform': Platform.operatingSystem,
           'size': [size.width, size.height],
           'textScale': scale,
+          'simulatedSafeInsets': _safeInsets,
+          'simulatedKeyboardInset': keyboardInset.value,
+          'reduceMotion': _reduceMotion,
           'font': kGoldenFontFamily,
           'data': 'SYNTHETIC_QA_FIXTURE',
           'deviceValidation': false,
@@ -197,6 +233,7 @@ Future<void> _render(
     }
   } finally {
     await tester.pumpWidget(const SizedBox.shrink());
+    keyboardInset.dispose();
     dependencies.dispose();
     await tester.pump(const Duration(milliseconds: 100));
     final error = tester.takeException();

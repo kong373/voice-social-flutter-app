@@ -1,0 +1,3438 @@
+[
+  {
+    "id": "AC-001",
+    "name": "启动与会话恢复",
+    "area": "account",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "CAPTURED_SESSION_RESTORE_INDICATOR; session recovery outcome NOT_RUN",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/app/app_gate.dart"
+    ],
+    "route": "应用冷启动 → 会话恢复",
+    "before": "renders/exact-before/390x844-text1.0/AC-001.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/AC-001.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "page_manifest_test.dart",
+        "brand_display_name_contract_test.dart",
+        "android_release_host_contract_test.dart",
+        "account_cancellation_live_ui_test.dart",
+        "account_appeal_eligibility_test.dart",
+        "account_compliance_error_ui_test.dart",
+        "backend_account_compliance_permission_ui_test.dart",
+        "sensitive_write_identity_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "SessionRestorePage / AppGate",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/app/app_gate.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "AC-002",
+    "name": "协议与隐私同意",
+    "area": "account",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/account/presentation/consent_page.dart"
+    ],
+    "route": "首次启动 → 协议与隐私同意",
+    "before": "renders/exact-before/390x844-text1.0/AC-002.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/AC-002.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "page_manifest_test.dart",
+        "brand_display_name_contract_test.dart",
+        "android_release_host_contract_test.dart",
+        "account_cancellation_live_ui_test.dart",
+        "account_appeal_eligibility_test.dart",
+        "account_compliance_error_ui_test.dart",
+        "backend_account_compliance_permission_ui_test.dart",
+        "sensitive_write_identity_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "ConsentPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/account/presentation/consent_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V04"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "AC-003",
+    "name": "手机注册登录",
+    "area": "account",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/account/presentation/"
+    ],
+    "route": "协议同意 → 手机号登录 → 注册资料",
+    "before": "renders/exact-before/390x844-text1.0/AC-003.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/AC-003.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "page_manifest_test.dart",
+        "brand_display_name_contract_test.dart",
+        "android_release_host_contract_test.dart",
+        "account_cancellation_live_ui_test.dart",
+        "account_appeal_eligibility_test.dart",
+        "account_compliance_error_ui_test.dart",
+        "backend_account_compliance_permission_ui_test.dart",
+        "sensitive_write_identity_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Direct presentation changes plus inherited theme",
+    "widget": "LoginPage / RegistrationPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/account/presentation/login_page.dart",
+      "lib/features/account/presentation/registration_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V01",
+      "V04"
+    ],
+    "modified_files": [
+      "lib/features/account/presentation/login_page.dart"
+    ],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings.",
+    "keyboard_check": {
+      "cases": 6,
+      "result": "PASS_FOCUSED_FIRST_INPUT_ABOVE_280PX_SIMULATED_KEYBOARD",
+      "log": "ui-keyboard-safe-insets.log",
+      "real_os_keyboard": false,
+      "safe_area": "44px top /34px bottom simulation",
+      "reduce_motion": true,
+      "limitations": "No claim for every field, submit control, IME action or real native keyboard."
+    }
+  },
+  {
+    "id": "AC-004",
+    "name": "第三方账号绑定与分享授权",
+    "area": "account",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "N/A: Current authorization view is explicitly unavailable and has no provider mutation entry.",
+      "unknown": "N/A: Current authorization view is explicitly unavailable and has no provider mutation entry.",
+      "completed": "N/A: Current authorization view is explicitly unavailable and has no provider mutation entry.",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/account/presentation/third_party_authorization_page.dart"
+    ],
+    "route": "我的 → 账号与安全 → 第三方账号绑定与分享授权",
+    "before": "renders/exact-before/390x844-text1.0/AC-004.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/AC-004.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "page_manifest_test.dart",
+        "brand_display_name_contract_test.dart",
+        "android_release_host_contract_test.dart",
+        "account_cancellation_live_ui_test.dart",
+        "account_appeal_eligibility_test.dart",
+        "account_compliance_error_ui_test.dart",
+        "backend_account_compliance_permission_ui_test.dart",
+        "sensitive_write_identity_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "ThirdPartyAuthorizationPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/account/presentation/third_party_authorization_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V04"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "AC-005",
+    "name": "系统权限中心",
+    "area": "account",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/account/compliance/presentation/system_permission_pages.dart"
+    ],
+    "route": "我的 → 账号与安全 → 系统权限中心",
+    "before": "renders/exact-before/390x844-text1.0/AC-005.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/AC-005.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "page_manifest_test.dart",
+        "brand_display_name_contract_test.dart",
+        "android_release_host_contract_test.dart",
+        "account_cancellation_live_ui_test.dart",
+        "account_appeal_eligibility_test.dart",
+        "account_compliance_error_ui_test.dart",
+        "backend_account_compliance_permission_ui_test.dart",
+        "sensitive_write_identity_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "SystemPermissionCenterPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/account/compliance/presentation/system_permission_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V04"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "AC-006",
+    "name": "实名认证",
+    "area": "account",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/account/compliance/presentation/system_permission_pages.dart"
+    ],
+    "route": "我的 → 账号与安全 → 实名认证",
+    "before": "renders/exact-before/390x844-text1.0/AC-006.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/AC-006.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "page_manifest_test.dart",
+        "brand_display_name_contract_test.dart",
+        "android_release_host_contract_test.dart",
+        "account_cancellation_live_ui_test.dart",
+        "account_appeal_eligibility_test.dart",
+        "account_compliance_error_ui_test.dart",
+        "backend_account_compliance_permission_ui_test.dart",
+        "sensitive_write_identity_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "RealNamePage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/account/compliance/presentation/system_permission_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V04"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "AC-007",
+    "name": "登录设备与会话管理",
+    "area": "account",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/account/compliance/presentation/system_permission_pages.dart"
+    ],
+    "route": "我的 → 账号与安全 → 登录设备与会话",
+    "before": "renders/exact-before/390x844-text1.0/AC-007.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/AC-007.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "page_manifest_test.dart",
+        "brand_display_name_contract_test.dart",
+        "android_release_host_contract_test.dart",
+        "account_cancellation_live_ui_test.dart",
+        "account_appeal_eligibility_test.dart",
+        "account_compliance_error_ui_test.dart",
+        "backend_account_compliance_permission_ui_test.dart",
+        "sensitive_write_identity_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "DeviceSessionsPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/account/compliance/presentation/system_permission_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V04"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "AC-008",
+    "name": "账号封禁拦截",
+    "area": "account",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/account/compliance/presentation/account_status_pages.dart"
+    ],
+    "route": "登录/恢复会话 → 账号限制拦截；我的 → 账号状态",
+    "before": "renders/exact-before/390x844-text1.0/AC-008.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/AC-008.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "page_manifest_test.dart",
+        "brand_display_name_contract_test.dart",
+        "android_release_host_contract_test.dart",
+        "account_cancellation_live_ui_test.dart",
+        "account_appeal_eligibility_test.dart",
+        "account_compliance_error_ui_test.dart",
+        "backend_account_compliance_permission_ui_test.dart",
+        "sensitive_write_identity_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "AccountRestrictionPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/account/compliance/presentation/account_status_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V04"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "AC-009",
+    "name": "处罚申诉",
+    "area": "account",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/account/compliance/presentation/account_status_pages.dart"
+    ],
+    "route": "我的 → 账号与安全 → 处罚申诉",
+    "before": "renders/exact-before/390x844-text1.0/AC-009.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/AC-009.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "page_manifest_test.dart",
+        "brand_display_name_contract_test.dart",
+        "android_release_host_contract_test.dart",
+        "account_cancellation_live_ui_test.dart",
+        "account_appeal_eligibility_test.dart",
+        "account_compliance_error_ui_test.dart",
+        "backend_account_compliance_permission_ui_test.dart",
+        "sensitive_write_identity_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "AccountAppealPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/account/compliance/presentation/account_status_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V04"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "AC-010",
+    "name": "账号注销申请与进度",
+    "area": "account",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/account/compliance/presentation/account_status_pages.dart"
+    ],
+    "route": "我的 → 账号与安全 → 账号注销",
+    "before": "renders/exact-before/390x844-text1.0/AC-010.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/AC-010.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "page_manifest_test.dart",
+        "brand_display_name_contract_test.dart",
+        "android_release_host_contract_test.dart",
+        "account_cancellation_live_ui_test.dart",
+        "account_appeal_eligibility_test.dart",
+        "account_compliance_error_ui_test.dart",
+        "backend_account_compliance_permission_ui_test.dart",
+        "sensitive_write_identity_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "AccountCancellationPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/account/compliance/presentation/account_status_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V04"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "AC-011",
+    "name": "版本升级",
+    "area": "account",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/account/compliance/presentation/account_status_pages.dart"
+    ],
+    "route": "我的 → 账号与安全 → 版本升级",
+    "before": "renders/exact-before/390x844-text1.0/AC-011.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/AC-011.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "page_manifest_test.dart",
+        "brand_display_name_contract_test.dart",
+        "android_release_host_contract_test.dart",
+        "account_cancellation_live_ui_test.dart",
+        "account_appeal_eligibility_test.dart",
+        "account_compliance_error_ui_test.dart",
+        "backend_account_compliance_permission_ui_test.dart",
+        "sensitive_write_identity_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "VersionUpgradePage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/account/compliance/presentation/account_status_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V04"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "AC-012",
+    "name": "青少年模式",
+    "area": "account",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/account/compliance/presentation/account_status_pages.dart"
+    ],
+    "route": "我的 → 账号与安全 → 青少年模式；开启后全局固定锁定页",
+    "before": "renders/exact-before/390x844-text1.0/AC-012.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/AC-012.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "page_manifest_test.dart",
+        "brand_display_name_contract_test.dart",
+        "android_release_host_contract_test.dart",
+        "account_cancellation_live_ui_test.dart",
+        "account_appeal_eligibility_test.dart",
+        "account_compliance_error_ui_test.dart",
+        "backend_account_compliance_permission_ui_test.dart",
+        "sensitive_write_identity_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "YouthModePage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/account/compliance/presentation/account_status_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V04"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "DS-001",
+    "name": "首页房间发现",
+    "area": "discovery",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/discovery/home_page.dart"
+    ],
+    "route": "根导航 → 首页",
+    "before": "renders/exact-before/390x844-text1.0/DS-001.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/DS-001.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "HomePage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "runtime_source": "lib/features/shell/video_runtime_pages.dart",
+    "resolved_widget_files": [
+      "lib/features/discovery/home_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "runtime_note": "Actual MainShell tab additionally captured at all six size/text combinations; QA page alone was not used as its replacement.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings.",
+    "runtime_before": "renders/exact-before/390x844-text1.0/runtime-home.png",
+    "runtime_after": "renders/matrix-first-pass/390x844-text1.0/runtime-home.png"
+  },
+  {
+    "id": "DS-002",
+    "name": "全局搜索",
+    "area": "discovery",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/discovery/presentation/global_search_page.dart"
+    ],
+    "route": "首页 → 搜索",
+    "before": "renders/exact-before/390x844-text1.0/DS-002.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/DS-002.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "GlobalSearchPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/discovery/presentation/global_search_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V05"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "DS-003",
+    "name": "搜索结果",
+    "area": "discovery",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/discovery/presentation/search_results_page.dart"
+    ],
+    "route": "全局搜索 → 提交关键词",
+    "before": "renders/exact-before/390x844-text1.0/DS-003.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/DS-003.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "SearchResultsPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/discovery/presentation/search_results_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "DS-004",
+    "name": "发现动态流",
+    "area": "discovery",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/discovery/dynamic/presentation/dynamic_pages.dart"
+    ],
+    "route": "根导航 → 发现",
+    "before": "renders/exact-before/390x844-text1.0/DS-004.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/DS-004.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "DiscoveryFeedPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "runtime_source": "lib/features/shell/video_runtime_pages.dart",
+    "resolved_widget_files": [
+      "lib/features/discovery/dynamic/presentation/dynamic_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "runtime_note": "Actual MainShell tab additionally captured at all six size/text combinations; QA page alone was not used as its replacement.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings.",
+    "runtime_before": "renders/exact-before/390x844-text1.0/runtime-discovery.png",
+    "runtime_after": "renders/matrix-first-pass/390x844-text1.0/runtime-discovery.png"
+  },
+  {
+    "id": "DS-005",
+    "name": "动态详情与评论",
+    "area": "discovery",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/discovery/dynamic/presentation/dynamic_pages.dart"
+    ],
+    "route": "发现动态流 → 动态正文",
+    "before": "renders/exact-before/390x844-text1.0/DS-005.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/DS-005.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "DynamicDetailPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/discovery/dynamic/presentation/dynamic_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "DS-006",
+    "name": "发布动态",
+    "area": "discovery",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/discovery/dynamic/presentation/dynamic_pages.dart"
+    ],
+    "route": "发现 → 发布动态",
+    "before": "renders/exact-before/390x844-text1.0/DS-006.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/DS-006.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "PublishDynamicPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/discovery/dynamic/presentation/dynamic_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings.",
+    "keyboard_check": {
+      "cases": 6,
+      "result": "PASS_FOCUSED_FIRST_INPUT_ABOVE_280PX_SIMULATED_KEYBOARD",
+      "log": "ui-keyboard-safe-insets.log",
+      "real_os_keyboard": false,
+      "safe_area": "44px top /34px bottom simulation",
+      "reduce_motion": true,
+      "limitations": "No claim for every field, submit control, IME action or real native keyboard."
+    }
+  },
+  {
+    "id": "DS-007",
+    "name": "用户与房间排行榜",
+    "area": "discovery",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/discovery/dynamic/presentation/dynamic_pages.dart"
+    ],
+    "route": "发现 → 排行榜",
+    "before": "renders/exact-before/390x844-text1.0/DS-007.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/DS-007.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "RankingPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/discovery/dynamic/presentation/dynamic_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "DS-008",
+    "name": "收藏与我的房间",
+    "area": "discovery",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/discovery/presentation/saved_rooms_page.dart"
+    ],
+    "route": "首页 → 收藏与我的房间",
+    "before": "renders/exact-before/390x844-text1.0/DS-008.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/DS-008.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "SavedRoomsPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/discovery/presentation/saved_rooms_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "US-001",
+    "name": "个人中心",
+    "area": "social",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/social/presentation/social_profile_pages.dart"
+    ],
+    "route": "根导航 → 我的",
+    "before": "renders/exact-before/390x844-text1.0/US-001.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/US-001.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "PersonalCenterPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "runtime_source": "lib/features/shell/video_runtime_pages.dart",
+    "resolved_widget_files": [
+      "lib/features/social/presentation/social_profile_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "runtime_note": "Actual MainShell tab additionally captured at all six size/text combinations; QA page alone was not used as its replacement.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings.",
+    "runtime_before": "renders/exact-before/390x844-text1.0/runtime-account.png",
+    "runtime_after": "renders/matrix-first-pass/390x844-text1.0/runtime-account.png"
+  },
+  {
+    "id": "US-002",
+    "name": "编辑个人资料",
+    "area": "social",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/social/presentation/social_profile_pages.dart"
+    ],
+    "route": "我的 → 编辑个人资料",
+    "before": "renders/exact-before/390x844-text1.0/US-002.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/US-002.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "EditProfilePage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/social/presentation/social_profile_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "US-003",
+    "name": "他人公开主页",
+    "area": "social",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/social/presentation/social_profile_pages.dart"
+    ],
+    "route": "搜索结果/成员/榜单 → 用户",
+    "before": "renders/exact-before/390x844-text1.0/US-003.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/US-003.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "PublicProfilePage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/social/presentation/social_profile_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "US-004",
+    "name": "关注、粉丝与好友列表",
+    "area": "social",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/social/presentation/social_relation_pages.dart"
+    ],
+    "route": "我的 → 关注、粉丝与好友",
+    "before": "renders/exact-before/390x844-text1.0/US-004.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/US-004.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Direct presentation changes plus inherited theme",
+    "widget": "RelationsPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/social/presentation/social_relation_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [
+      "lib/features/social/presentation/social_relation_pages.dart"
+    ],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "US-006",
+    "name": "访客记录",
+    "area": "social",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/social/presentation/social_relation_pages.dart"
+    ],
+    "route": "我的 → 访客记录",
+    "before": "renders/exact-before/390x844-text1.0/US-006.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/US-006.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Direct presentation changes plus inherited theme",
+    "widget": "VisitorRecordsPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/social/presentation/social_relation_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [
+      "lib/features/social/presentation/social_relation_pages.dart"
+    ],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "US-007",
+    "name": "隐私与黑名单",
+    "area": "social",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/social/presentation/social_relation_pages.dart"
+    ],
+    "route": "我的 → 隐私与黑名单",
+    "before": "renders/exact-before/390x844-text1.0/US-007.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/US-007.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Direct presentation changes plus inherited theme",
+    "widget": "PrivacyBlacklistPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/social/presentation/social_relation_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [
+      "lib/features/social/presentation/social_relation_pages.dart"
+    ],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "US-008",
+    "name": "举报用户或房间",
+    "area": "social",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/social/presentation/social_support_pages.dart"
+    ],
+    "route": "用户/房间 → 更多 → 举报",
+    "before": "renders/exact-before/390x844-text1.0/US-008.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/US-008.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "ReportPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/social/presentation/social_support_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "US-009",
+    "name": "帮助与客服中心",
+    "area": "social",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/social/presentation/social_support_pages.dart"
+    ],
+    "route": "我的 → 帮助与客服",
+    "before": "renders/exact-before/390x844-text1.0/US-009.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/US-009.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "HelpCenterPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/social/presentation/social_support_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "US-010",
+    "name": "工单详情与处理进度",
+    "area": "social",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/social/presentation/social_support_pages.dart"
+    ],
+    "route": "帮助与客服 → 我的反馈 → 工单详情",
+    "before": "renders/exact-before/390x844-text1.0/US-010.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/US-010.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "SupportTicketPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/social/presentation/social_support_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "RM-001",
+    "name": "创建房间",
+    "area": "room",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/room/presentation/create_room_page.dart"
+    ],
+    "route": "首页 → 创建房间",
+    "before": "renders/exact-before/390x844-text1.0/RM-001.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/RM-001.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "room_operations_pages_test.dart",
+        "room_manager_pk_entry_test.dart",
+        "room_tools_small_screen_regression_test.dart",
+        "room_configuration_form_test.dart",
+        "room_management_revocation_test.dart",
+        "room_mic_approval_auto_sync_regression_test.dart",
+        "room_leave_mic_feedback_test.dart",
+        "room_closed_owner_rules_test.dart",
+        "room_pk_automatic_sync_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "CreateRoomPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/room/presentation/create_room_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "RM-002",
+    "name": "编辑与关闭房间",
+    "area": "room",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/room/presentation/edit_room_page.dart"
+    ],
+    "route": "收藏与我的房间 → 我的房间 → 管理",
+    "before": "renders/exact-before/390x844-text1.0/RM-002.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/RM-002.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "room_operations_pages_test.dart",
+        "room_manager_pk_entry_test.dart",
+        "room_tools_small_screen_regression_test.dart",
+        "room_configuration_form_test.dart",
+        "room_management_revocation_test.dart",
+        "room_mic_approval_auto_sync_regression_test.dart",
+        "room_leave_mic_feedback_test.dart",
+        "room_closed_owner_rules_test.dart",
+        "room_pk_automatic_sync_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "EditRoomPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/room/presentation/edit_room_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings.",
+    "keyboard_check": {
+      "cases": 6,
+      "result": "PASS_FOCUSED_FIRST_INPUT_ABOVE_280PX_SIMULATED_KEYBOARD",
+      "log": "ui-keyboard-safe-insets.log",
+      "real_os_keyboard": false,
+      "safe_area": "44px top /34px bottom simulation",
+      "reduce_motion": true,
+      "limitations": "No claim for every field, submit control, IME action or real native keyboard."
+    }
+  },
+  {
+    "id": "RM-003",
+    "name": "房间直达与深链校验别名",
+    "area": "room",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/room/presentation/room_deep_link_page.dart"
+    ],
+    "route": "搜索/分享/通知深链 → 校验 → 有效目标直接 RM-004",
+    "before": "renders/exact-before/390x844-text1.0/RM-003.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/RM-003.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "room_operations_pages_test.dart",
+        "room_manager_pk_entry_test.dart",
+        "room_tools_small_screen_regression_test.dart",
+        "room_configuration_form_test.dart",
+        "room_management_revocation_test.dart",
+        "room_mic_approval_auto_sync_regression_test.dart",
+        "room_leave_mic_feedback_test.dart",
+        "room_closed_owner_rules_test.dart",
+        "room_pk_automatic_sync_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "RoomDeepLinkPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/room/presentation/room_deep_link_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V03"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "RM-004",
+    "name": "语音房主界面",
+    "area": "room",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/room/presentation/room_page.dart"
+    ],
+    "route": "首页/搜索/榜单/通知有效房间入口 → 语音房",
+    "before": "renders/exact-before/390x844-text1.0/RM-004.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/RM-004.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "room_operations_pages_test.dart",
+        "room_manager_pk_entry_test.dart",
+        "room_tools_small_screen_regression_test.dart",
+        "room_configuration_form_test.dart",
+        "room_management_revocation_test.dart",
+        "room_mic_approval_auto_sync_regression_test.dart",
+        "room_leave_mic_feedback_test.dart",
+        "room_closed_owner_rules_test.dart",
+        "room_pk_automatic_sync_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "RoomPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/room/presentation/room_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "RM-005",
+    "name": "上麦申请与麦位选择",
+    "area": "room",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "PARENT_ROOM_ONLY_NOT_MIC_SHEET",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/room/presentation/room_page_sheets.dart"
+    ],
+    "route": "RM-004 → 申请上麦",
+    "before": "renders/exact-before/390x844-text1.0/RM-005.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/RM-005.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "room_operations_pages_test.dart",
+        "room_manager_pk_entry_test.dart",
+        "room_tools_small_screen_regression_test.dart",
+        "room_configuration_form_test.dart",
+        "room_management_revocation_test.dart",
+        "room_mic_approval_auto_sync_regression_test.dart",
+        "room_leave_mic_feedback_test.dart",
+        "room_closed_owner_rules_test.dart",
+        "room_pk_automatic_sync_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "NOT_PASSED_ACTUAL_MIC_SHEET_NOT_CAPTURED",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "_MicRequestSheet (via RoomPage)",
+    "render_note": "Catalog default shows room parent; actual mic sheet must be separately opened before acceptance.",
+    "resolved_widget_files": [
+      "lib/features/room/presentation/room_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V08"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "RM-006",
+    "name": "在线成员与听众席",
+    "area": "room",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/room/presentation/room_members_page.dart"
+    ],
+    "route": "RM-004 → 成员",
+    "before": "renders/exact-before/390x844-text1.0/RM-006.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/RM-006.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "room_operations_pages_test.dart",
+        "room_manager_pk_entry_test.dart",
+        "room_tools_small_screen_regression_test.dart",
+        "room_configuration_form_test.dart",
+        "room_management_revocation_test.dart",
+        "room_mic_approval_auto_sync_regression_test.dart",
+        "room_leave_mic_feedback_test.dart",
+        "room_closed_owner_rules_test.dart",
+        "room_pk_automatic_sync_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "RoomMembersPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/room/presentation/room_members_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "RM-007",
+    "name": "房主管理与处罚",
+    "area": "room",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/room/presentation/room_management_page.dart"
+    ],
+    "route": "RM-004 → 更多 → 房间管理",
+    "before": "renders/exact-before/390x844-text1.0/RM-007.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/RM-007.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "room_operations_pages_test.dart",
+        "room_manager_pk_entry_test.dart",
+        "room_tools_small_screen_regression_test.dart",
+        "room_configuration_form_test.dart",
+        "room_management_revocation_test.dart",
+        "room_mic_approval_auto_sync_regression_test.dart",
+        "room_leave_mic_feedback_test.dart",
+        "room_closed_owner_rules_test.dart",
+        "room_pk_automatic_sync_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "RoomManagementPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/room/presentation/room_management_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "RM-008",
+    "name": "房间公告编辑",
+    "area": "room",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/room/presentation/room_topic_page.dart"
+    ],
+    "route": "RM-004 → 公告",
+    "before": "renders/exact-before/390x844-text1.0/RM-008.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/RM-008.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "room_operations_pages_test.dart",
+        "room_manager_pk_entry_test.dart",
+        "room_tools_small_screen_regression_test.dart",
+        "room_configuration_form_test.dart",
+        "room_management_revocation_test.dart",
+        "room_mic_approval_auto_sync_regression_test.dart",
+        "room_leave_mic_feedback_test.dart",
+        "room_closed_owner_rules_test.dart",
+        "room_pk_automatic_sync_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "RoomTopicPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/room/presentation/room_topic_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V06"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "RM-010",
+    "name": "音频路由与麦克风控制",
+    "area": "room",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/room/presentation/room_audio_page.dart"
+    ],
+    "route": "RM-004 → 更多 → 音频与麦克风",
+    "before": "renders/exact-before/390x844-text1.0/RM-010.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/RM-010.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "room_operations_pages_test.dart",
+        "room_manager_pk_entry_test.dart",
+        "room_tools_small_screen_regression_test.dart",
+        "room_configuration_form_test.dart",
+        "room_management_revocation_test.dart",
+        "room_mic_approval_auto_sync_regression_test.dart",
+        "room_leave_mic_feedback_test.dart",
+        "room_closed_owner_rules_test.dart",
+        "room_pk_automatic_sync_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "RoomAudioPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/room/presentation/room_audio_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "RM-011",
+    "name": "弱网重连与会话恢复",
+    "area": "room",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/room/presentation/room_recovery_page.dart"
+    ],
+    "route": "RM-004 → 更多 → 弱网重连与会话恢复",
+    "before": "renders/exact-before/390x844-text1.0/RM-011.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/RM-011.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "room_operations_pages_test.dart",
+        "room_manager_pk_entry_test.dart",
+        "room_tools_small_screen_regression_test.dart",
+        "room_configuration_form_test.dart",
+        "room_management_revocation_test.dart",
+        "room_mic_approval_auto_sync_regression_test.dart",
+        "room_leave_mic_feedback_test.dart",
+        "room_closed_owner_rules_test.dart",
+        "room_pk_automatic_sync_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "RoomRecoveryPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/room/presentation/room_recovery_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V07"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "RM-013",
+    "name": "PK 邀请与准备",
+    "area": "room",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/room/pk/presentation/room_pk_pages.dart"
+    ],
+    "route": "RM-004 → 更多 → 房间 PK",
+    "before": "renders/exact-before/390x844-text1.0/RM-013.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/RM-013.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "room_operations_pages_test.dart",
+        "room_manager_pk_entry_test.dart",
+        "room_tools_small_screen_regression_test.dart",
+        "room_configuration_form_test.dart",
+        "room_management_revocation_test.dart",
+        "room_mic_approval_auto_sync_regression_test.dart",
+        "room_leave_mic_feedback_test.dart",
+        "room_closed_owner_rules_test.dart",
+        "room_pk_automatic_sync_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "RoomPkPreparationPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/room/pk/presentation/room_pk_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "RM-014",
+    "name": "PK 对战与结算",
+    "area": "room",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/room/pk/presentation/room_pk_pages.dart"
+    ],
+    "route": "PK 邀请接受 → 对战 → 服务端结算",
+    "before": "renders/exact-before/390x844-text1.0/RM-014.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/RM-014.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "room_operations_pages_test.dart",
+        "room_manager_pk_entry_test.dart",
+        "room_tools_small_screen_regression_test.dart",
+        "room_configuration_form_test.dart",
+        "room_management_revocation_test.dart",
+        "room_mic_approval_auto_sync_regression_test.dart",
+        "room_leave_mic_feedback_test.dart",
+        "room_closed_owner_rules_test.dart",
+        "room_pk_automatic_sync_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "RoomPkBattlePage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/room/pk/presentation/room_pk_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "MS-001",
+    "name": "会话列表",
+    "area": "message",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/message/presentation/message_center_page.dart"
+    ],
+    "route": "根导航 → 消息",
+    "before": "renders/exact-before/390x844-text1.0/MS-001.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/MS-001.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Direct presentation changes plus inherited theme",
+    "widget": "MessageCenterPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "runtime_source": "lib/features/shell/video_runtime_pages.dart",
+    "resolved_widget_files": [
+      "lib/features/message/presentation/message_center_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "runtime_note": "Actual MainShell tab additionally captured at all six size/text combinations; QA page alone was not used as its replacement.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [
+      "lib/features/message/presentation/message_center_page.dart"
+    ],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings.",
+    "runtime_before": "renders/exact-before/390x844-text1.0/runtime-messages.png",
+    "runtime_after": "renders/matrix-first-pass/390x844-text1.0/runtime-messages.png"
+  },
+  {
+    "id": "MS-002",
+    "name": "私聊会话",
+    "area": "message",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/message/presentation/private_chat_page.dart"
+    ],
+    "route": "消息列表/成员 → 私聊会话",
+    "before": "renders/exact-before/390x844-text1.0/MS-002.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/MS-002.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "PrivateChatPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/message/presentation/private_chat_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V02"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings.",
+    "keyboard_check": {
+      "cases": 6,
+      "result": "PASS_FOCUSED_FIRST_INPUT_ABOVE_280PX_SIMULATED_KEYBOARD",
+      "log": "ui-keyboard-safe-insets.log",
+      "real_os_keyboard": false,
+      "safe_area": "44px top /34px bottom simulation",
+      "reduce_motion": true,
+      "limitations": "No claim for every field, submit control, IME action or real native keyboard."
+    }
+  },
+  {
+    "id": "MS-003",
+    "name": "系统与互动通知",
+    "area": "message",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/message/presentation/notification_pages.dart"
+    ],
+    "route": "消息 → 系统与互动通知",
+    "before": "renders/exact-before/390x844-text1.0/MS-003.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/MS-003.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Direct presentation changes plus inherited theme",
+    "widget": "NotificationCenterPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/message/presentation/notification_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [
+      "lib/features/message/presentation/notification_pages.dart"
+    ],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "MS-004",
+    "name": "通知详情",
+    "area": "message",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/message/presentation/notification_pages.dart"
+    ],
+    "route": "通知中心 → 通知",
+    "before": "renders/exact-before/390x844-text1.0/MS-004.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/MS-004.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Direct presentation changes plus inherited theme",
+    "widget": "NotificationDetailPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/message/presentation/notification_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [
+      "lib/features/message/presentation/notification_pages.dart"
+    ],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "MS-005",
+    "name": "通知目标不可用",
+    "area": "message",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "N/A: Static unavailable-target view; no network or write lane in this page.",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "N/A: Static unavailable-target view; no network or write lane in this page.",
+      "unknown": "N/A: Static unavailable-target view; no network or write lane in this page.",
+      "completed": "N/A: Static unavailable-target view; no network or write lane in this page.",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/message/presentation/notification_pages.dart"
+    ],
+    "route": "通知详情 → 已删除/关闭/失效目标",
+    "before": "renders/exact-before/390x844-text1.0/MS-005.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/MS-005.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Direct presentation changes plus inherited theme",
+    "widget": "NotificationTargetUnavailablePage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/message/presentation/notification_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [
+      "lib/features/message/presentation/notification_pages.dart"
+    ],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "MS-006",
+    "name": "通知权限与消息恢复",
+    "area": "message",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/message/presentation/message_recovery_page.dart"
+    ],
+    "route": "消息 → 通知权限与消息恢复",
+    "before": "renders/exact-before/390x844-text1.0/MS-006.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/MS-006.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "message_center_search_test.dart",
+        "message_notification_race_ui_test.dart",
+        "message_first_party_boundary_ui_test.dart",
+        "q03_message_visibility_test.dart",
+        "social_relations_return_refresh_test.dart",
+        "video_runtime_account_profile_race_test.dart",
+        "video_runtime_account_relations_refresh_test.dart",
+        "discovery_presentation_race_test.dart",
+        "discovery_room_cover_cards_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "MessagePermissionRecoveryPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/message/presentation/message_recovery_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V07"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "CM-001",
+    "name": "钱包与流水",
+    "area": "commerce",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/commerce/presentation/commerce_wallet_pages.dart"
+    ],
+    "route": "我的 → 钱包、订单与收益 → 钱包与流水",
+    "before": "renders/exact-before/390x844-text1.0/CM-001.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/CM-001.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "gift_sheet_independent_results_test.dart",
+        "gift_sheet_live_targets_test.dart",
+        "gift_success_feedback_test.dart",
+        "decoration_renewal_ui_test.dart",
+        "decoration_renewal_contract_test.dart",
+        "equipped_decoration_view_test.dart",
+        "backend_commerce_repository_contract_test.dart",
+        "community_presentation_contract_test.dart",
+        "backend_community_repository_contract_test.dart",
+        "guild_join_real_name_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "WalletPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/commerce/presentation/commerce_wallet_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "CM-002",
+    "name": "充值商品目录",
+    "area": "commerce",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/commerce/presentation/commerce_catalog_pages.dart"
+    ],
+    "route": "钱包/礼物余额不足 → 充值商品目录",
+    "before": "renders/exact-before/390x844-text1.0/CM-002.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/CM-002.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "gift_sheet_independent_results_test.dart",
+        "gift_sheet_live_targets_test.dart",
+        "gift_success_feedback_test.dart",
+        "decoration_renewal_ui_test.dart",
+        "decoration_renewal_contract_test.dart",
+        "equipped_decoration_view_test.dart",
+        "backend_commerce_repository_contract_test.dart",
+        "community_presentation_contract_test.dart",
+        "backend_community_repository_contract_test.dart",
+        "guild_join_real_name_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "RechargeCatalogPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/commerce/presentation/commerce_catalog_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "CM-003",
+    "name": "支付方式与提交中",
+    "area": "commerce",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/commerce/presentation/commerce_catalog_pages.dart"
+    ],
+    "route": "充值商品目录 → 选择商品",
+    "before": "renders/exact-before/390x844-text1.0/CM-003.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/CM-003.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "gift_sheet_independent_results_test.dart",
+        "gift_sheet_live_targets_test.dart",
+        "gift_success_feedback_test.dart",
+        "decoration_renewal_ui_test.dart",
+        "decoration_renewal_contract_test.dart",
+        "equipped_decoration_view_test.dart",
+        "backend_commerce_repository_contract_test.dart",
+        "community_presentation_contract_test.dart",
+        "backend_community_repository_contract_test.dart",
+        "guild_join_real_name_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "PaymentSubmissionPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/commerce/presentation/commerce_catalog_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V07"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "CM-004",
+    "name": "支付返回与结果",
+    "area": "commerce",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/commerce/presentation/commerce_catalog_pages.dart"
+    ],
+    "route": "支付返回 → 服务端订单状态确认",
+    "before": "renders/exact-before/390x844-text1.0/CM-004.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/CM-004.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "gift_sheet_independent_results_test.dart",
+        "gift_sheet_live_targets_test.dart",
+        "gift_success_feedback_test.dart",
+        "decoration_renewal_ui_test.dart",
+        "decoration_renewal_contract_test.dart",
+        "equipped_decoration_view_test.dart",
+        "backend_commerce_repository_contract_test.dart",
+        "community_presentation_contract_test.dart",
+        "backend_community_repository_contract_test.dart",
+        "guild_join_real_name_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "PaymentResultPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/commerce/presentation/commerce_catalog_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "CM-005",
+    "name": "订单列表",
+    "area": "commerce",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/commerce/presentation/commerce_order_pages.dart"
+    ],
+    "route": "钱包、订单与收益 → 充值订单",
+    "before": "renders/exact-before/390x844-text1.0/CM-005.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/CM-005.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "gift_sheet_independent_results_test.dart",
+        "gift_sheet_live_targets_test.dart",
+        "gift_success_feedback_test.dart",
+        "decoration_renewal_ui_test.dart",
+        "decoration_renewal_contract_test.dart",
+        "equipped_decoration_view_test.dart",
+        "backend_commerce_repository_contract_test.dart",
+        "community_presentation_contract_test.dart",
+        "backend_community_repository_contract_test.dart",
+        "guild_join_real_name_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "OrdersPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/commerce/presentation/commerce_order_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "CM-006",
+    "name": "订单详情与补单",
+    "area": "commerce",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/commerce/presentation/commerce_order_pages.dart"
+    ],
+    "route": "订单列表 → 订单",
+    "before": "renders/exact-before/390x844-text1.0/CM-006.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/CM-006.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "gift_sheet_independent_results_test.dart",
+        "gift_sheet_live_targets_test.dart",
+        "gift_success_feedback_test.dart",
+        "decoration_renewal_ui_test.dart",
+        "decoration_renewal_contract_test.dart",
+        "equipped_decoration_view_test.dart",
+        "backend_commerce_repository_contract_test.dart",
+        "community_presentation_contract_test.dart",
+        "backend_community_repository_contract_test.dart",
+        "guild_join_real_name_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "OrderDetailPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/commerce/presentation/commerce_order_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "CM-009",
+    "name": "礼物目录与赠送面板",
+    "area": "commerce",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/commerce/presentation/commerce_catalog_pages.dart"
+    ],
+    "route": "RM-004 → 礼物 Bottom Sheet；钱包 → 礼物目录",
+    "before": "renders/exact-before/390x844-text1.0/CM-009.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/CM-009.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "gift_sheet_independent_results_test.dart",
+        "gift_sheet_live_targets_test.dart",
+        "gift_success_feedback_test.dart",
+        "decoration_renewal_ui_test.dart",
+        "decoration_renewal_contract_test.dart",
+        "equipped_decoration_view_test.dart",
+        "backend_commerce_repository_contract_test.dart",
+        "community_presentation_contract_test.dart",
+        "backend_community_repository_contract_test.dart",
+        "guild_join_real_name_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Direct presentation changes plus inherited theme",
+    "widget": "GiftCatalogPage / GiftSheet",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/commerce/presentation/commerce_catalog_pages.dart",
+      "lib/features/room/presentation/gift_sheet.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [
+      "lib/features/room/presentation/gift_sheet.dart"
+    ],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "CM-010",
+    "name": "装扮中心",
+    "area": "commerce",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/commerce/presentation/commerce_catalog_pages.dart"
+    ],
+    "route": "我的 → 装扮；钱包与商业化 → 装扮中心",
+    "before": "renders/exact-before/390x844-text1.0/CM-010.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/CM-010.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "gift_sheet_independent_results_test.dart",
+        "gift_sheet_live_targets_test.dart",
+        "gift_success_feedback_test.dart",
+        "decoration_renewal_ui_test.dart",
+        "decoration_renewal_contract_test.dart",
+        "equipped_decoration_view_test.dart",
+        "backend_commerce_repository_contract_test.dart",
+        "community_presentation_contract_test.dart",
+        "backend_community_repository_contract_test.dart",
+        "guild_join_real_name_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "DecorationPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/commerce/presentation/commerce_catalog_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "CM-011",
+    "name": "主播收益",
+    "area": "commerce",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/commerce/presentation/commerce_earnings_pages.dart"
+    ],
+    "route": "钱包、订单与收益 → 主播收益",
+    "before": "renders/exact-before/390x844-text1.0/CM-011.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/CM-011.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "gift_sheet_independent_results_test.dart",
+        "gift_sheet_live_targets_test.dart",
+        "gift_success_feedback_test.dart",
+        "decoration_renewal_ui_test.dart",
+        "decoration_renewal_contract_test.dart",
+        "equipped_decoration_view_test.dart",
+        "backend_commerce_repository_contract_test.dart",
+        "community_presentation_contract_test.dart",
+        "backend_community_repository_contract_test.dart",
+        "guild_join_real_name_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "EarningsPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/commerce/presentation/commerce_earnings_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "CM-012",
+    "name": "结算与提现",
+    "area": "commerce",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/commerce/presentation/commerce_earnings_pages.dart"
+    ],
+    "route": "主播收益/钱包 → 结算与提现",
+    "before": "renders/exact-before/390x844-text1.0/CM-012.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/CM-012.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "gift_sheet_independent_results_test.dart",
+        "gift_sheet_live_targets_test.dart",
+        "gift_success_feedback_test.dart",
+        "decoration_renewal_ui_test.dart",
+        "decoration_renewal_contract_test.dart",
+        "equipped_decoration_view_test.dart",
+        "backend_commerce_repository_contract_test.dart",
+        "community_presentation_contract_test.dart",
+        "backend_community_repository_contract_test.dart",
+        "guild_join_real_name_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_NO_NEW_LAYOUT_FINDING; all-state accessibility pending",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "WithdrawalPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/commerce/presentation/commerce_earnings_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings.",
+    "keyboard_check": {
+      "cases": 6,
+      "result": "PASS_FOCUSED_FIRST_INPUT_ABOVE_280PX_SIMULATED_KEYBOARD",
+      "log": "ui-keyboard-safe-insets.log",
+      "real_os_keyboard": false,
+      "safe_area": "44px top /34px bottom simulation",
+      "reduce_motion": true,
+      "limitations": "No claim for every field, submit control, IME action or real native keyboard."
+    }
+  },
+  {
+    "id": "SC-001",
+    "name": "公会主页",
+    "area": "community",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/community/presentation/guild_home_pages.dart"
+    ],
+    "route": "发现 → 社交经营 → 公会主页",
+    "before": "renders/exact-before/390x844-text1.0/SC-001.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/SC-001.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "gift_sheet_independent_results_test.dart",
+        "gift_sheet_live_targets_test.dart",
+        "gift_success_feedback_test.dart",
+        "decoration_renewal_ui_test.dart",
+        "decoration_renewal_contract_test.dart",
+        "equipped_decoration_view_test.dart",
+        "backend_commerce_repository_contract_test.dart",
+        "community_presentation_contract_test.dart",
+        "backend_community_repository_contract_test.dart",
+        "guild_join_real_name_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "GuildHomePage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/community/presentation/guild_home_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V05"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings.",
+    "keyboard_check": {
+      "cases": 6,
+      "result": "PASS_FOCUSED_FIRST_INPUT_ABOVE_280PX_SIMULATED_KEYBOARD",
+      "log": "ui-keyboard-safe-insets.log",
+      "real_os_keyboard": false,
+      "safe_area": "44px top /34px bottom simulation",
+      "reduce_motion": true,
+      "limitations": "No claim for every field, submit control, IME action or real native keyboard."
+    }
+  },
+  {
+    "id": "SC-002",
+    "name": "公会加入与成员管理",
+    "area": "community",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "unknown": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/community/presentation/guild_members_pages.dart"
+    ],
+    "route": "社交经营 → 公会加入与成员管理",
+    "before": "renders/exact-before/390x844-text1.0/SC-002.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/SC-002.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "gift_sheet_independent_results_test.dart",
+        "gift_sheet_live_targets_test.dart",
+        "gift_success_feedback_test.dart",
+        "decoration_renewal_ui_test.dart",
+        "decoration_renewal_contract_test.dart",
+        "equipped_decoration_view_test.dart",
+        "backend_commerce_repository_contract_test.dart",
+        "community_presentation_contract_test.dart",
+        "backend_community_repository_contract_test.dart",
+        "guild_join_real_name_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "GuildMembersEntryPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/community/presentation/guild_members_pages.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V05"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  },
+  {
+    "id": "SC-003",
+    "name": "邀请与渠道归属",
+    "area": "community",
+    "roles": "Rendered QaRole.registeredUser request; builders/fixtures may override authority. Per-role device acceptance NOT_RUN.",
+    "states": {
+      "normal": "DEFAULT_FIXTURE_CAPTURED",
+      "loading": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "empty": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "error": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "disabled": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "submitting": "N/A: Read-only invitation/attribution record; no local mutation action.",
+      "unknown": "N/A: Read-only invitation/attribution record; no local mutation action.",
+      "completed": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "permission": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING",
+      "expired": "NOT_RUN_APPLICABILITY_OR_STATE_CAPTURE_PENDING"
+    },
+    "source_files": [
+      "lib/features/community/presentation/invite_attribution_page.dart"
+    ],
+    "route": "社交经营 → 邀请与渠道归属",
+    "before": "renders/exact-before/390x844-text1.0/SC-003.png",
+    "after": "renders/matrix-first-pass/390x844-text1.0/SC-003.png",
+    "code_review": "PAGE_MAPPING_AND_CHANGED_SOURCE_SCOPE_CHECKED; complete state/role review remains open",
+    "automated": {
+      "layout_variants": 6,
+      "layout_exception_failures": 0,
+      "evidence": "current-six-viewports.log",
+      "related_tests": [
+        "gift_sheet_independent_results_test.dart",
+        "gift_sheet_live_targets_test.dart",
+        "gift_success_feedback_test.dart",
+        "decoration_renewal_ui_test.dart",
+        "decoration_renewal_contract_test.dart",
+        "equipped_decoration_view_test.dart",
+        "backend_commerce_repository_contract_test.dart",
+        "community_presentation_contract_test.dart",
+        "backend_community_repository_contract_test.dart",
+        "guild_join_real_name_test.dart"
+      ],
+      "note": "Related batch evidence; not a claim that every state/role of this page was tested."
+    },
+    "visual": "DEFAULT_PAIRED_REVIEW_WITH_OPEN_FINDINGS",
+    "device": "NOT_RUN_NO_EXCLUSIVE_DEVICE_WINDOW",
+    "change": "Inherited shared theme/components; no per-page rewrite",
+    "widget": "InviteAttributionPage",
+    "render_note": "Existing QA builder uses synthetic repositories; not device or live-service evidence.",
+    "resolved_widget_files": [
+      "lib/features/community/presentation/invite_attribution_page.dart"
+    ],
+    "golden_platform_status": "Fresh macOS native Widget renders with checked-in font; no Linux golden update or Linux PASS claimed.",
+    "state_note": "Normal is the requested fixture mode, not a claim that every page shows a normal business outcome. Loading/unavailable/readonly/unknown views remain labelled by their actual text.",
+    "findings": [
+      "V05"
+    ],
+    "modified_files": [],
+    "remaining": "Full role/state capture, keyboard/navigation where applicable, and device acceptance; see findings."
+  }
+]
