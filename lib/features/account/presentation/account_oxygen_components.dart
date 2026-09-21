@@ -493,6 +493,13 @@ class AccountBottomActionBar extends StatelessWidget {
         decoration: const BoxDecoration(
           color: Color(0xF5FFFFFF),
           border: Border(top: BorderSide(color: AccountOxygenColors.line)),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Color(0x120F1C3D),
+              blurRadius: 18,
+              offset: Offset(0, -6),
+            ),
+          ],
         ),
         child: child,
       ),

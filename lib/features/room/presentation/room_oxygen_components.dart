@@ -146,7 +146,10 @@ class RoomOxygenPill extends StatelessWidget {
         ? Colors.white
         : RoomColors.textSecondary;
     final Widget content = AnimatedContainer(
-      duration: const Duration(milliseconds: 160),
+      duration: AppMotion.forContext(
+        context,
+        const Duration(milliseconds: 160),
+      ),
       constraints: const BoxConstraints(minHeight: 30),
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
       decoration: BoxDecoration(
@@ -178,13 +181,19 @@ class RoomOxygenPill extends StatelessWidget {
         ],
       ),
     );
-    if (onTap == null || !enabled) {
-      return content;
-    }
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: content,
+    if (onTap == null) return content;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      selected: active,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(999),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          child: Center(widthFactor: 1, heightFactor: 1, child: content),
+        ),
+      ),
     );
   }
 }

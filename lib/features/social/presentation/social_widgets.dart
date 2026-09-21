@@ -822,7 +822,10 @@ class _OxygenInlineTabs<T> extends StatelessWidget {
                   ),
                   const SizedBox(height: 5),
                   AnimatedContainer(
-                    duration: const Duration(milliseconds: 180),
+                    duration: AppMotion.forContext(
+                      context,
+                      const Duration(milliseconds: 180),
+                    ),
                     width: active ? 24 : 0,
                     height: 3,
                     decoration: BoxDecoration(

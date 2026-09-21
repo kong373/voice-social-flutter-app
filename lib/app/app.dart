@@ -118,7 +118,7 @@ class _VoiceSocialAppState extends State<VoiceSocialApp> {
         builder: (navigatorKey) => MaterialApp(
           navigatorKey: navigatorKey,
           debugShowCheckedModeBanner: false,
-          title: 'Voice Social App',
+          title: AppBrand.name,
           theme: AppTheme.dark(),
           home:
               shouldUseQaConsole(isLive: widget.dependencies.environment.isLive)

@@ -438,7 +438,10 @@ class _GiftSheetState extends State<GiftSheet>
               : () => setState(() => _selectedGift = item),
           borderRadius: BorderRadius.circular(13),
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
+            duration: AppMotion.forContext(
+              context,
+              const Duration(milliseconds: 150),
+            ),
             padding: const EdgeInsets.fromLTRB(4, 5, 4, 4),
             decoration: BoxDecoration(
               color: selected

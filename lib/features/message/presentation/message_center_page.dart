@@ -572,7 +572,10 @@ class _MessageCenterPageState extends State<MessageCenterPage>
                                       _openConversation(conversations[index]),
                                 ),
                                 if (index < conversations.length - 1)
-                                  const Divider(height: 1),
+                                  const Divider(
+                                    height: 1,
+                                    color: SocialColors.divider,
+                                  ),
                               ],
                             ],
                           ),
@@ -657,7 +660,7 @@ class _MessageConversationSearchDelegate
                           onTap: () => close(context, matches[index]),
                         ),
                         if (index < matches.length - 1)
-                          const Divider(height: 1),
+                          const Divider(height: 1, color: SocialColors.divider),
                       ],
                     ],
                   ),

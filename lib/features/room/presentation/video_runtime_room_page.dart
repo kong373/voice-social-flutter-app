@@ -673,7 +673,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           const _BlockingProgress(label: '正在结束房间会话…'),
         IgnorePointer(
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 260),
+            duration: AppMotion.forContext(
+              context,
+              const Duration(milliseconds: 260),
+            ),
             child: _showGiftCelebration
                 ? _GiftCelebrationOverlay(
                     key: const Key('gift-celebration-overlay'),
@@ -2045,7 +2048,10 @@ class _RoomChannelTab extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
+            duration: AppMotion.forContext(
+              context,
+              const Duration(milliseconds: 160),
+            ),
             width: selected ? 20 : 0,
             height: 2,
             decoration: BoxDecoration(
@@ -2433,7 +2439,10 @@ class _VideoMicSeat extends StatelessWidget {
       child: Column(
         children: <Widget>[
           AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
+            duration: AppMotion.forContext(
+              context,
+              const Duration(milliseconds: 180),
+            ),
             width: seatSize,
             height: seatSize,
             decoration: BoxDecoration(
@@ -3112,7 +3121,10 @@ class _RoomSheetTab extends StatelessWidget {
             ),
             const SizedBox(height: 5),
             AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
+              duration: AppMotion.forContext(
+                context,
+                const Duration(milliseconds: 160),
+              ),
               width: selected ? 24 : 0,
               height: 2,
               decoration: BoxDecoration(

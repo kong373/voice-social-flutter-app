@@ -257,6 +257,13 @@ class _MessageListPanel extends StatelessWidget {
         color: Colors.white.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white.withValues(alpha: 0.84)),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x0A0F1C3D),
+            blurRadius: 14,
+            offset: Offset(0, 5),
+          ),
+        ],
       ),
       child: child,
     );
@@ -303,7 +310,10 @@ class _MessageInlineTabs<T> extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
+                      duration: AppMotion.forContext(
+                        context,
+                        const Duration(milliseconds: 180),
+                      ),
                       width: active ? 24 : 0,
                       height: 3,
                       decoration: BoxDecoration(
@@ -441,8 +451,10 @@ class _MessageConversationRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final DateTime now = AppDependencyScope.of(context).currentTime();
+    final bool unavailable = !conversation.available;
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
@@ -493,7 +505,7 @@ class _MessageConversationRow extends StatelessWidget {
                   Text(
                     conversation.isDraft
                         ? '新会话草稿'
-                        : conversation.available
+                        : !unavailable
                         ? conversation.lastMessage
                         : conversation.unavailableReason,
                     maxLines: 1,
@@ -520,6 +532,19 @@ class _MessageConversationRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 _UnreadBadge(count: conversation.unreadCount),
+                if (conversation.isDraft) ...<Widget>[
+                  const SizedBox(height: 5),
+                  const _MessageStatePill(
+                    label: '草稿',
+                    color: SocialColors.primary,
+                  ),
+                ] else if (unavailable) ...<Widget>[
+                  const SizedBox(height: 5),
+                  const _MessageStatePill(
+                    label: '不可用',
+                    color: SocialColors.textTertiary,
+                  ),
+                ],
               ],
             ),
           ],
@@ -576,6 +601,32 @@ class _UnreadBadge extends StatelessWidget {
       child: Text(
         count > 99 ? '99+' : '$count',
         style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
+
+class _MessageStatePill extends StatelessWidget {
+  const _MessageStatePill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }

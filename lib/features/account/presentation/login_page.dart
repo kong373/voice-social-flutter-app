@@ -52,7 +52,7 @@ class _LoginPageState extends State<LoginPage> {
           padding: const EdgeInsets.fromLTRB(22, 36, 22, 26),
           children: <Widget>[
             const AccountMistHero(
-              eyebrow: 'VOICE SOCIAL',
+              eyebrow: AppBrand.name,
               title: '听见同频的人',
               subtitle: '登录后继续你的房间、好友和消息旅程',
               markSize: 68,

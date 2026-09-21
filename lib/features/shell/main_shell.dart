@@ -108,20 +108,34 @@ class _MainShellState extends State<MainShell> {
     if (controller == null || _roomRouteOpen || !mounted) {
       return;
     }
+    final bool reduceMotion =
+        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
     _roomRouteOpen = true;
     final VideoRoomExit? result;
     try {
       result = await Navigator.of(context).push<VideoRoomExit>(
         PageRouteBuilder<VideoRoomExit>(
-          transitionDuration: const Duration(milliseconds: 260),
-          reverseTransitionDuration: const Duration(milliseconds: 220),
-          pageBuilder: (_, Animation<double> animation, __) => FadeTransition(
-            opacity: CurvedAnimation(
+          transitionDuration: reduceMotion ? Duration.zero : AppMotion.panel,
+          reverseTransitionDuration: reduceMotion
+              ? Duration.zero
+              : AppMotion.press,
+          pageBuilder: (_, __, ___) =>
+              VideoRuntimeRoomPage(controller: controller),
+          transitionsBuilder: (_, animation, __, child) {
+            if (reduceMotion) return child;
+            final Animation<double> eased = CurvedAnimation(
               parent: animation,
-              curve: Curves.easeOutCubic,
-            ),
-            child: VideoRuntimeRoomPage(controller: controller),
-          ),
+              curve: AppCurves.enter,
+              reverseCurve: AppCurves.exit,
+            );
+            return FadeTransition(
+              opacity: eased,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.985, end: 1).animate(eased),
+                child: child,
+              ),
+            );
+          },
         ),
       );
     } finally {
@@ -311,7 +325,11 @@ class _VideoNavigationBar extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: <Widget>[
                           AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
+                            duration: AppMotion.forContext(
+                              context,
+                              AppMotion.navigation,
+                            ),
+                            curve: AppCurves.enter,
                             width: currentIndex == index ? 42 : 34,
                             height: 28,
                             decoration: BoxDecoration(
