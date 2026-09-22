@@ -1310,7 +1310,9 @@ class _DecorationPageState extends State<DecorationPage> {
                         mainAxisSpacing: 10,
                         crossAxisSpacing: 10,
                         mainAxisExtent:
-                            272 +
+                            // Leave room for a wrapped expiry line with the
+                            // platform's fallback font, not only golden fonts.
+                            288 +
                             9 *
                                 (MediaQuery.textScalerOf(context).scale(14) -
                                     14) +

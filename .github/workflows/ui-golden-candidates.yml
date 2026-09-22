@@ -1,0 +1,74 @@
+name: UI Linux golden candidates
+
+on:
+  pull_request:
+    paths:
+      - 'lib/core/design_system/**'
+      - 'lib/features/**/presentation/**'
+      - 'lib/features/shell/**'
+      - 'lib/features/discovery/home_page.dart'
+      - 'test/m33_all_pages_visual_golden_test.dart'
+      - 'test/video_runtime_visual_golden_test.dart'
+      - 'test/support/golden_*.dart'
+      - '.github/workflows/ui-golden-candidates.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-golden-candidates-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  export:
+    name: Generate Linux golden candidates (not visual approval)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact reviewed source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Install pinned Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.44.7'
+          channel: stable
+          cache: true
+
+      - name: Resolve locked dependencies
+        run: flutter pub get --enforce-lockfile
+
+      - name: Export platform-native candidates
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p ui-golden-export
+          git rev-parse HEAD > ui-golden-export/source-sha.txt
+          flutter --version > ui-golden-export/flutter-version.txt
+          git ls-files -z lib assets test/support test/fonts pubspec.yaml pubspec.lock \
+            test/m33_all_pages_visual_golden_test.dart \
+            test/video_runtime_visual_golden_test.dart \
+            | xargs -0 sha256sum > ui-golden-export/source-sha256.txt
+          flutter test --no-pub --concurrency=2 --reporter expanded \
+            --update-goldens \
+            test/m33_all_pages_visual_golden_test.dart \
+            test/video_runtime_visual_golden_test.dart \
+            2>&1 | tee ui-golden-export/generation.log
+          find test/goldens/linux -type f -name '*.png' -print0 \
+            | sort -z | xargs -0 sha256sum > ui-golden-export/linux-sha256.txt
+          printf '%s\n' 'CANDIDATE_ONLY_NOT_VISUALLY_APPROVED' \
+            > ui-golden-export/status.txt
+
+      - name: Upload candidates for independent visual review
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ui-linux-golden-${{ github.event.pull_request.head.sha }}
+          path: |
+            test/goldens/linux/
+            ui-golden-export/
+          if-no-files-found: error
+          retention-days: 7

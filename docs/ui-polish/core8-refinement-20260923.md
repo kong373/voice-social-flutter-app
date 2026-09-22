@@ -50,4 +50,10 @@ These groups overlap and must not be summed into a unique business-test total. T
 
 This branch is **not a release-ready declaration**. iOS native build/install, two-platform keyboard/back/gesture and accessibility checks, profile frame timing, and Linux golden/remote CI verification remain separate gates. The current Mac reports an unaccepted Xcode license for native tooling; the existing Command Line Tools were sufficient for Flutter widget verification only. No license, signing, provider or security settings were modified.
 
-No API/data/domain implementation, permission rule, wallet/ledger, Backend/Admin/CPS, dependency lock, signing identity, bundle ID or workflow definition was changed. Keep the original release candidate until native and platform evidence for this follow-up has been accepted.
+No API/data/domain implementation, permission rule, wallet/ledger, Backend/Admin/CPS, dependency lock, signing identity or bundle ID was changed. Keep the original release candidate until native and platform evidence for this follow-up has been accepted.
+
+## CI follow-up
+
+The first remote catalog check exposed 11px decoration-card overflow with the standard test/fallback font. The existing `m24_pages_test` reproduced it locally; 16px of layout headroom fixed it without changing or removing assertions. The catalog/renewal group then passed 47 tests. This is a real follow-up fix, not a rerun of an unchanged failing check.
+
+A narrowly scoped `UI Linux golden candidates` workflow now renders the two existing golden suites on pinned Ubuntu/Flutter, records exact source and image hashes, and uploads candidate images for review. It does not commit files, relax existing comparisons, approve visual results or deploy. Its successful generation is explicitly not a passing Linux golden comparison; normal CI still performs the unchanged comparison after reviewed images are committed.
