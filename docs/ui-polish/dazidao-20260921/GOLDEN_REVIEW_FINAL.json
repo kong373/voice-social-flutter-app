@@ -1,0 +1,532 @@
+{
+  "changes": [
+    {
+      "path": "test/goldens/m3_3_all/ac-001_390x844.png",
+      "before_sha256": "39a7bbef264d831be699c4becc3599c8260f5efd9d70d950335e7b72c8e4d799",
+      "after_sha256": "ed77360ef42b3a33082d7ae364da6a010c43edc90ee313e76aace833147334e3",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ac-002_390x844.png",
+      "before_sha256": "107c0c8e00d30b7d3f5e22ab25afe2d6f9ff75420a82aa5feee7fafcbc9c201f",
+      "after_sha256": "82eb5bead7542be31b2a918c1623b814f04e718330d6f25ff4c4265ee64c6cad",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ac-003_390x844.png",
+      "before_sha256": "16701ca4d91dfa711bf5152871ed7c5ca230315819a8d4fb66010b59142245c9",
+      "after_sha256": "bbb7fd95b33406cb24d55c5fe00f69ac5c9cea6868e84ae06a7fe4583536239d",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ac-004_390x844.png",
+      "before_sha256": "95aa4ff582af4be35819761fe529698be5127bb2021450ee4a07af44f95f9eba",
+      "after_sha256": "0fa3ec371cda620fffc5136ce4cea1d2ea3d4ae75650ce25520a095e98839a2d",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ac-005_390x844.png",
+      "before_sha256": "afe71d1b710ad12c0376f2ed73005a15eb19d3136293c4e8624689d7435b54e5",
+      "after_sha256": "7cf66dec5a2b0be7ec25b9e5f512e2a73e4b2565a5d2d92e4376285b0e66ad76",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ac-006_390x844.png",
+      "before_sha256": "7d25911f35c9580dcffa440054732ab7054d77266f855610c0f409edd6abd359",
+      "after_sha256": "76adb208f0c8f30204e7275093d62568a03c357d789a55f362f1b4a88e72a26a",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ac-007_390x844.png",
+      "before_sha256": "39880a95c56ceb1b9499d1adb63ae0b6de9e669438eb7abc374fc6d84158f269",
+      "after_sha256": "906b2fe393ddcb118872f5854993903c381a126256440394c565f509259884cf",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ac-008_390x844.png",
+      "before_sha256": "e3a61172b4ec9efc28a6ad81924f10afa453a3ea7c8f67f6f63164eb7beb6abd",
+      "after_sha256": "be2bdc4c415707156dcdf44ff34364a1c22e9efb1a0d78c255c7346b62c9e4b2",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ac-009_390x844.png",
+      "before_sha256": "834a6d29c15e25b5567e1efd3b7b787f354cf56cb73cb9ec0def29d932d0d951",
+      "after_sha256": "f59c1c77e1d7db36b31a077a87a23eaf3117058068a93ed606e7edfd0f127ff8",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ac-010_390x844.png",
+      "before_sha256": "53bcf5013d07cbd9ec6800d1f3d7379a83df8b07273174899dd290e900c0acf9",
+      "after_sha256": "5c0f3dbf20f1e4f5d7d3b2fc156b53e530a8fa46f3d508bccc947a55e42c65a2",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ac-011_390x844.png",
+      "before_sha256": "ed8ca96ccbfa4d9f7763c93d0e609bea341d5b04838eb3c6184ed30d3a88dcff",
+      "after_sha256": "a00129892c54913c3c8b7db8ab68fb8db6f4a7ab9ad4ea55f7acbcc1b9a15f00",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ac-012_390x844.png",
+      "before_sha256": "142d323af95040d3bf3a62f9d418233edea17261ca04fb6157c135146c5ae788",
+      "after_sha256": "45eaae4183c36992a59ae9ffaaa2d3faf405ae2663b4dc294b3ad83f963d3167",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/cm-001_390x844.png",
+      "before_sha256": "26f9f45676e164c3a1a7eb95d73826569e90f7a98ba22eb4fe2fc41d7b5c11de",
+      "after_sha256": "b894c6da978f0f2909fedbc234d60f193b575c9ab35670420a2f97bdbd48bc5a",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/cm-002_390x844.png",
+      "before_sha256": "be360d910879007ba5ccfe58f6abf4f4a4ee2e3a37257bfa9bd1cb42d24c1edf",
+      "after_sha256": "e4cf44f584f7c8487b174f98a7857e75a4f283f57677daaf77e8217fbabde7f7",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/cm-003_390x844.png",
+      "before_sha256": "4cdd2236484d38dfdb90b9fab598217cbeaa73a5a254ca3d971e74b083903a45",
+      "after_sha256": "b52c015ffa9878e4821408fc1e689e7cdecfc8df4140f665bd5bf31aa892a44d",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/cm-004_390x844.png",
+      "before_sha256": "42bcd924de30751a20ad3f8ec4c0ff04a48f85b60fe1304ef2c6ba158249be8d",
+      "after_sha256": "e27cbab639ebc5eb8c2c6ee8e174d11ba47e3def31382f16b760cf86110c08f0",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/cm-005_390x844.png",
+      "before_sha256": "e4a31fef7813fb8ca609b2eb84b9b0e934034b759919ea15a5380d04720840ff",
+      "after_sha256": "75b13ac658ff5d9d9b9845176ad5ffa1edb09699991a4fd4d87a75868e5fed9d",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/cm-006_390x844.png",
+      "before_sha256": "418e83223588f6534f7d434eab352219a276fd09acc704ffead83b15fa170255",
+      "after_sha256": "d72aa9b760f24fdb7213904198fd97bd4c9e59ff95bcf6e9b0c40b821df0fe37",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/cm-009_390x844.png",
+      "before_sha256": "1ff7260aae094b7aaa99dddab7babad723a491fe61c80b6e7b8e9e64dee18247",
+      "after_sha256": "c2d4f187a537b6c16bb7b8f1fdeadc3e7edc060ab39bf9431a89f9184ea58556",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/cm-010_390x844.png",
+      "before_sha256": "b5aec2cbbb5b8ded1710c6a67bc68c770065a9a3f12896065e2e9773bf7c3cf7",
+      "after_sha256": "7616eccf8870d2228335070133f71e8f3578aa6e09b7a90ab37439aeb9f1af05",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/cm-011_390x844.png",
+      "before_sha256": "18c71feb76dc0a457d1493a0e336131a4a8819e56789b7ab8f54ea6e8c4d2d46",
+      "after_sha256": "edd4552509ed5530b7b8c4a0fb943d3045b59a03c69b3a6582e94f0c2b80193b",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/cm-012_390x844.png",
+      "before_sha256": "921eb95ec341ac47f4765fac57ae364da9029fdad7d6513baf4620199b87f0ad",
+      "after_sha256": "83b7f25c2a15ae061ad8a465ff6924507d8efee062cb478313c2e753dac58ef6",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ds-001_390x844.png",
+      "before_sha256": "396430f327dda939694d966eb7ddf885436f065e5701ac13baea41d3f3d0478d",
+      "after_sha256": "c410aedd94871c9de446096cca7ba5967d4e70cb529efeba1cefc779ff87b785",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ds-002_390x844.png",
+      "before_sha256": "79be3c883757f4ece5df3221ec75d509d72ca109c472729c5b07d5f55dbc6d88",
+      "after_sha256": "6af8b67d7857ccc5f2e531efd4c3b3b19ea0fd3fb24fa01ad1af85ff5e5bf790",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ds-003_390x844.png",
+      "before_sha256": "e4f6febf899a52baddcc026b868d37bb9af3c27da9a3f42fff6739641fecfdae",
+      "after_sha256": "111636a3d39a698981a808f5bbb30131c89c35676c8e102ed3d632003591bb60",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ds-004_390x844.png",
+      "before_sha256": "cb79145d0beaf0100130d992a12011f4dbc86f5394d721f7569393cdcf8c2992",
+      "after_sha256": "a9eb32a6db5fb221a453a5b905d8e7aa0313e8a4998441603fa8ac92c3b69f35",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ds-005_390x844.png",
+      "before_sha256": "7ad668f5fa6fee403cc005a124207b12ab2e5dfa3989a340ad2d28e9dd2022cd",
+      "after_sha256": "29f2f142bb4a37aab49921de09132446b21dcce8676b327efd73b0d9ee8ef320",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ds-006_390x844.png",
+      "before_sha256": "f5131f2e180a362c598f124c20e6546d9c69462835e20aef43660f07f3f86e1c",
+      "after_sha256": "8a06ad71d218fb6e57c7ad4d98675347dd6062b7ae7451b10821035e3c58dbef",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ds-007_390x844.png",
+      "before_sha256": "a698eaa9683b22703f22405e69509edec0b0e2ba59acb17f67fd249af994fee6",
+      "after_sha256": "5f328d9ca58912fdf917137cbb29d95e5b7877ceb1eae732333759d50a4a7b44",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ds-008_390x844.png",
+      "before_sha256": "b77bbe7ef71d262c95e1deb0fda9ac5972cb1aae88a7ad2394bec6676d599107",
+      "after_sha256": "e25329ffa65d7a6597295e80b631b088066167fc225b0fb77985c94d0efbd997",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_account_390x844.png",
+      "before_sha256": "ceafc373e3910e9b876dedd22f9523b921d4fa203f0961a51f79e3e32becd04a",
+      "after_sha256": "af9eb2b16ca649177d4c8171c35d4fdd528b09f7e8b6df1f48762f94b1efad78",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_decoration_390x844.png",
+      "before_sha256": "08871ec0bea4317294d4726ec66dd171c606411fb93c44f2316f421c92ea1d6f",
+      "after_sha256": "66561761e2cdc153ac0dd983a0d864c637e38ba383be8d84f410bb97017bbe1f",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_discovery_390x844.png",
+      "before_sha256": "b2cd1d6d985ffcba6e320cc91d53a963975151e122b9104d23ea6de8fb791a12",
+      "after_sha256": "f5bf32a6c64d24119b93a39d14b40c9fb250ad9df76ec07aebb0f1ad0013e453",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_dynamic_detail_390x844.png",
+      "before_sha256": "7ad668f5fa6fee403cc005a124207b12ab2e5dfa3989a340ad2d28e9dd2022cd",
+      "after_sha256": "29f2f142bb4a37aab49921de09132446b21dcce8676b327efd73b0d9ee8ef320",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_expression_390x844.png",
+      "before_sha256": "21df113711ad26828aa87a2a50af36536b045c9a937ef1fb34443ce96ae56e77",
+      "after_sha256": "39af3ce79962177900b3fb27c44e0ad2c7b4aa00880f255e1bb31b4e80e55e2c",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_gift_390x844.png",
+      "before_sha256": "e5794dd1013b644c189d4ab3ce2eb6225edcb0041bbef6eac881e2b7ec305cdd",
+      "after_sha256": "01f3164cd2889ddc1ef81375067bf32ed7eababb1240a055cc01e7b5315ddb60",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_home_390x844.png",
+      "before_sha256": "8f793674305cac0e6c7ceb1decfa03f50716e40192208dd3e1131533af8f18bd",
+      "after_sha256": "bf67f5e03293537f861e3cdb50a76ed19967c5490020e59d75ecd6cd281b03ee",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_messages_390x844.png",
+      "before_sha256": "e502ab2f4ce62d6d81428afb26c631fb63cc2a3f5be92fdbabe3d43a3dae46a9",
+      "after_sha256": "0eb1a58cc8a69e99e7af33dcbd2c85cbd8cb2cc63b5f6e7776aad69f9cf17085",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_notifications_390x844.png",
+      "before_sha256": "f94db0d6c7022337d57a452033076439057639ba93aeb95eefc4fd9ce8273cd2",
+      "after_sha256": "7f84fad37350c175ad073b2ef997e758a101912f2b40c26caa0a13c129d3dace",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_private_chat_390x844.png",
+      "before_sha256": "fb00d80b7f8efdc3f1c8ff3762fe52d6bca04278cea2c1cdd05db1a8fc6b3fe7",
+      "after_sha256": "819e02c07ec9aee6f3dda91a8b473757f8785be383a18132c3ec1b7d4db2f048",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_public_profile_390x844.png",
+      "before_sha256": "8645b5aabea85349999f0d67ebc1783b1c87ae6b2d7375993e0958d744fc8076",
+      "after_sha256": "c22ff726d1d9f61f5754a6190ed57f4e1a3f9416f1867c0ac3bae8ae087eaabf",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_room_390x844.png",
+      "before_sha256": "3d908c511fb7573c415fb2d991e0f7f1b81d01b3aa1e2b514db02582ebebafb2",
+      "after_sha256": "da2bcbea865048196fb80b449dbda70b9fdd9861e4600bf23528b592902908e8",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_room_management_390x844.png",
+      "before_sha256": "b7c16792bc77f4bdbb5ed020c09ccae4d20c1f1c8acd4f2962814f639d420714",
+      "after_sha256": "f8a49d78784afe1a2ab12eda29f56ecb9f94a5187482f61d2d9a10a1f30e9dcb",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_room_members_390x844.png",
+      "before_sha256": "966931ec022d540b666d91c092b072b71c5b31d31c47f3686ec47de966aa9c76",
+      "after_sha256": "f65491c2073cb9901bba6292da3413b2e8c99fede66ce40d89e16cb65798d937",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ms-001_390x844.png",
+      "before_sha256": "68491edfaced641816b73ad449c275cf5f74114be0b8bbaea3be496fe83ecb15",
+      "after_sha256": "bc43c76f1899a47897f9b5a3daaf6e99e8bba89792572220127391bdedbb73e7",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ms-002_390x844.png",
+      "before_sha256": "5ff435cb28d0b4d02eb4fadec284938d1624f2d136d694593b335fde253eeb28",
+      "after_sha256": "49fbc79a30a0cc13e5a19e94767fa52d65b1e4b9094f9a8b25acddfbaa5af2d4",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ms-003_390x844.png",
+      "before_sha256": "753b4cb8a4c7b5df419498540c9ea6481b68f976c66e318bed9f48fb17356e58",
+      "after_sha256": "4cd349d1bf7c5a100b37b71f4b488336ca0cedb9d0cb38faa4c62c09f5ee5294",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ms-004_390x844.png",
+      "before_sha256": "bb58579081425bc7575862a00caca55f2dd44e6ff3e6da17e59d5ed193e73f48",
+      "after_sha256": "87be923e6b5c582194e0feef7262cb66e75d2eef64d50a6ace4fa61acbeec3ad",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ms-005_390x844.png",
+      "before_sha256": "90f8dce21b2fd7022b0fa1107bdac55877a037b74759ae53def5ce5d6e34687d",
+      "after_sha256": "0b1d4491879f53a21ce0acd60d3c9c16a735666e62086f27979a669dd71ccd67",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/ms-006_390x844.png",
+      "before_sha256": "c45c710b7b74f60f114c47790d714286cd6b36e6bb3b333fa140c7b0ebafcba4",
+      "after_sha256": "3dd1f97e8dfa01549d206601a8ca6764526d4ab6148358e75457818178f64cc3",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/rm-001_390x844.png",
+      "before_sha256": "c3dcee3d67d0401e9932360b8893354cc5f69bfbc333a94245e5c9c908b2f96b",
+      "after_sha256": "78f2c88438f9ce52706461352d45abce99ef4401608e6f2c210dcd4fae2f1230",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/rm-002_390x844.png",
+      "before_sha256": "a3536c7e6ee1fb60517df234cb8c2329964f43261dc528f1496d83f8d12efddf",
+      "after_sha256": "8392af0faf5d915aed1e36329a07a689adba4bfea2591e2f28caef79a5e38cb1",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/rm-003_390x844.png",
+      "before_sha256": "0d2aae50e35e12e0f02acc19e080066410c696647234275c19dc16c2843980a7",
+      "after_sha256": "f636f20db91f710f03c2e276980b49586ed8ac461831c3aca7fac4da51bb2134",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/rm-004_390x844.png",
+      "before_sha256": "3d908c511fb7573c415fb2d991e0f7f1b81d01b3aa1e2b514db02582ebebafb2",
+      "after_sha256": "da2bcbea865048196fb80b449dbda70b9fdd9861e4600bf23528b592902908e8",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/rm-005_390x844.png",
+      "before_sha256": "3d908c511fb7573c415fb2d991e0f7f1b81d01b3aa1e2b514db02582ebebafb2",
+      "after_sha256": "da2bcbea865048196fb80b449dbda70b9fdd9861e4600bf23528b592902908e8",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/rm-006_390x844.png",
+      "before_sha256": "4f60fdae6be3693eebc8a8d75ea59e68fecbfdd39b20c2ef1f52e9da5c19da51",
+      "after_sha256": "db0666d0473b2ca597a9796f4354bd6f1b9999d095e1504f71c0339300ae18a4",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/rm-007_390x844.png",
+      "before_sha256": "e14f27e982141d5d4174c5282c7dc5b0c8cbbf8a49b344eca56472df8610724f",
+      "after_sha256": "f278dcf520ab84017912884661acef5a214dd50586e99368475ce4bb833fd804",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/rm-008_390x844.png",
+      "before_sha256": "4d1cb4869f7d36460b4598fa531e3d2261fc9f69f2aae9139fe6011f19ac9390",
+      "after_sha256": "b7c95bcafd6ed20dad96893966702b7d25f85c3d73b70700c3a06a7311135107",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/rm-010_390x844.png",
+      "before_sha256": "4e04aac17c1d0bbb635dfb6cfeb48ae6413cb8541ea9d8f066f21a5a486be1f1",
+      "after_sha256": "5d489ab37e4b8200f6418101f73d3b321e47bd7a0104d49043c5a7fcced4d286",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/rm-011_390x844.png",
+      "before_sha256": "8cd33addf96816f010109d847c3f9fdc2dc9f2f3a86548011e91746bb5e2aa3c",
+      "after_sha256": "58165df6b567544f49d76ced599b8bdbb3dfa69980ca417ad5ec293a290c3175",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/rm-013_390x844.png",
+      "before_sha256": "534b930778a5df35991eda03cd8d152102b4f5b144b1ae440204cd1ed2fb0738",
+      "after_sha256": "c818ece65e0ddf7c89400ba06a3beb7cb1db2aea43df50c9b683a7367cd54d93",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/rm-014_390x844.png",
+      "before_sha256": "fbb80a23a87a6ac89239759eeca1429fa2958dc74238aaf5360820243f7d387a",
+      "after_sha256": "c7579b1e4146644832f898023ff81f218cdf32f4220f13643b8911a469a2fe06",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/sc-001_390x844.png",
+      "before_sha256": "f38c29c521fd57d3af7fe5f725ad6faca05d26acc260a0968fd62855529a7227",
+      "after_sha256": "a3ced009e37def6f453d03e119c22b0028b6c561808703be9af1f2fa08198db4",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/sc-002_390x844.png",
+      "before_sha256": "ec9a3f3ad6831333241b5f21289aefc6d979fa2ad4804dd4884e257dd1bf278c",
+      "after_sha256": "4882af565865ee7541ee50e0890a5a9fe7f6fca919ea8fb68c264b61eb2b11de",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/sc-003_390x844.png",
+      "before_sha256": "e88446f247327c915347fe50b90322a4f2d6a53aaa8f6818d0da4c3187afa0bf",
+      "after_sha256": "30f21bea708bcd11a3f5c3689d51d852a64592ca9bce681f9eb0016247f85d2e",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/us-001_390x844.png",
+      "before_sha256": "d76c938e27c36ed235bb307317947ec324a60a6e0ce75005e6fd0e95260348f7",
+      "after_sha256": "67e8bb9b2db839169d74eed04b8b422b71b9e299c7e0804744c038cc11bd2416",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/us-002_390x844.png",
+      "before_sha256": "72e8248a56d32504b140bce2f1dd0f5621c6e6912f8f4ee3fcdb9897491dcddb",
+      "after_sha256": "786086786d7cbec93ca9f703f43420ad0dc15cc10945920301a20ac837835fb6",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/us-003_390x844.png",
+      "before_sha256": "8645b5aabea85349999f0d67ebc1783b1c87ae6b2d7375993e0958d744fc8076",
+      "after_sha256": "c22ff726d1d9f61f5754a6190ed57f4e1a3f9416f1867c0ac3bae8ae087eaabf",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/us-004_390x844.png",
+      "before_sha256": "47c9a431b39cdc1f2939c6a778d79483f501b6a8c13567e5bc2b1b38dc69d68a",
+      "after_sha256": "ec211a3dfb7521a8db4246488c01b3b5afa55ebb900b7db4d7caad762a737109",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/us-006_390x844.png",
+      "before_sha256": "0ae3edb3a1be1836a6624797d0a95db72e4439b1bbcbbd7a97a8fbc02e48f480",
+      "after_sha256": "36cb94c8812f342c6dd6b5df322892f75cfcafac318dbb9f66c5bcfc6f86a828",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/us-007_390x844.png",
+      "before_sha256": "3cd9c44cc5244dfd19e44005cfa3679ca234310f37a58605854283192c20fb49",
+      "after_sha256": "76f8f4dc3ad49bcb2d65b49de2f72637f2ed2fa79eecd90b6b277501cad289ae",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/us-008_390x844.png",
+      "before_sha256": "bf33b0ffd4bd14b39147ff75d750fd709246db63ace8e9d96983d369313169fe",
+      "after_sha256": "3fb6f8972c93ce574d63a8f5ce8f11bcba7884fa3d5bec5f764b764887f1f888",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/us-009_390x844.png",
+      "before_sha256": "696a0c11c6729080ed0f9e6006d69534c1a9c8097f46b16b303e120555663a25",
+      "after_sha256": "396e6efb9f125f8c9fc4969c16888323fc06125466bcf42ff83cc65360dcda3a",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    },
+    {
+      "path": "test/goldens/m3_3_all/us-010_390x844.png",
+      "before_sha256": "1ff480caa9cc7ac8ccad4ec228e94fc70d4aee5c30f1f1dac20e2136245d947d",
+      "after_sha256": "05a8140096831fd719828080754fd7a7966b85fef40c8a061667ffb53e797b9c",
+      "review": "19 paired boards individually inspected; matches exact candidate/source comparisons",
+      "platform": "macos"
+    }
+  ],
+  "linux_modified": false,
+  "removed_pages_modified": false,
+  "update_command_used": false,
+  "test_assertions_weakened": false,
+  "local_only": true,
+  "remote_synced": false,
+  "png_publication": "BLOCKED_BEFORE_SCRIPT_CREATION",
+  "source_sha": "2ea29985c75a2247aee80d1fad7c40381d4e9da9",
+  "macos_tests_passed": 65,
+  "linux_pixel_tests": "NOT_RUN"
+}

@@ -65,7 +65,7 @@ void main() {
       File(
         '${root.path}/android/app/src/main/res/values/strings.xml',
       ).readAsStringSync(),
-      contains('<string name="app_name">Voice Social</string>'),
+      contains('<string name="app_name">搭子岛</string>'),
     );
 
     final List<String> androidIgnoreLines = androidIgnore

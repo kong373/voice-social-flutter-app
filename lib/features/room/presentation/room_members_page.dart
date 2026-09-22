@@ -359,7 +359,13 @@ class _RoomMembersPageState extends State<RoomMembersPage>
             child: RoomOxygenContextBar(
               title: roomAuthorityTitle(widget.roomTitle),
               subtitle:
-                  '${roomCode != null ? '房间号 $roomCode' : '房间号不可用'} · ${_invalidIdentity ? '请重新进入成员页' : '${_members.length} 人在线'}',
+                  '${roomCode != null ? '房间号 $roomCode' : '房间号不可用'} · ${_invalidIdentity
+                      ? '请重新进入成员页'
+                      : _loading
+                      ? '正在加载成员'
+                      : _error != null
+                      ? '成员状态待确认'
+                      : '${_members.length} 人在线'}',
               seed: widget.roomId,
               status: _invalidIdentity ? '已失效' : (_canManage ? '可管理' : '在线'),
               statusColor: _invalidIdentity
@@ -380,6 +386,7 @@ class _RoomMembersPageState extends State<RoomMembersPage>
   }
 
   Widget _buildFilters() {
+    final bool countsKnown = !_loading && _error == null;
     final int onMic = _members
         .where((RoomMember member) => member.isOnMic)
         .length;
@@ -390,17 +397,17 @@ class _RoomMembersPageState extends State<RoomMembersPage>
         spacing: 8,
         children: <Widget>[
           ChoiceChip(
-            label: Text('全部 ${_members.length}'),
+            label: Text(countsKnown ? '全部 ${_members.length}' : '全部'),
             selected: _filter == _MemberFilter.all,
             onSelected: (_) => setState(() => _filter = _MemberFilter.all),
           ),
           ChoiceChip(
-            label: Text('麦上 $onMic'),
+            label: Text(countsKnown ? '麦上 $onMic' : '麦上'),
             selected: _filter == _MemberFilter.onMic,
             onSelected: (_) => setState(() => _filter = _MemberFilter.onMic),
           ),
           ChoiceChip(
-            label: Text('听众 $listeners'),
+            label: Text(countsKnown ? '听众 $listeners' : '听众'),
             selected: _filter == _MemberFilter.listeners,
             onSelected: (_) =>
                 setState(() => _filter = _MemberFilter.listeners),

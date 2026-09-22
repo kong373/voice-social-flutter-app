@@ -1,5 +1,26 @@
 import 'package:flutter/material.dart';
 
+abstract final class AppBrand {
+  static const String name = '搭子岛';
+}
+
+abstract final class AppMotion {
+  static const Duration press = Duration(milliseconds: 140);
+  static const Duration navigation = Duration(milliseconds: 140);
+  static const Duration menu = Duration(milliseconds: 180);
+  static const Duration panel = Duration(milliseconds: 240);
+
+  static Duration forContext(BuildContext context, Duration duration) =>
+      MediaQuery.maybeOf(context)?.disableAnimations == true
+      ? Duration.zero
+      : duration;
+}
+
+abstract final class AppCurves {
+  static const Curve enter = Curves.easeOutCubic;
+  static const Curve exit = Curves.easeOutCubic;
+}
+
 abstract final class AppColors {
   // Compatibility palette for legacy product pages. Immersive room surfaces
   // use RoomColors explicitly, while product/account/commerce pages inherit
@@ -7,37 +28,37 @@ abstract final class AppColors {
   static const Color background = Color(0xFFF6F8FD);
   static const Color surface = Color(0xFFFFFFFF);
   static const Color surfaceHigh = Color(0xFFF0F3FF);
-  static const Color primary = Color(0xFF7866F2);
+  static const Color primary = Color(0xFF6D57DF);
   static const Color secondary = Color(0xFFFF7EAF);
   static const Color accent = Color(0xFF42BEE8);
   static const Color textPrimary = Color(0xFF17213C);
-  static const Color textSecondary = Color(0xFF65708B);
+  static const Color textSecondary = Color(0xFF596680);
   static const Color divider = Color(0xFFE6EAF3);
-  static const Color success = Color(0xFF32B990);
-  static const Color warning = Color(0xFFFFA852);
-  static const Color error = Color(0xFFE85B74);
+  static const Color success = Color(0xFF137B5E);
+  static const Color warning = Color(0xFF945A0F);
+  static const Color error = Color(0xFFC73553);
 }
 
 abstract final class SocialColors {
   static const Color page = Color(0xFFF6F8FD);
   static const Color card = Color(0xFFFFFFFF);
   static const Color cardSoft = Color(0xFFF0F3FF);
-  static const Color primary = Color(0xFF7866F2);
+  static const Color primary = Color(0xFF6D57DF);
   static const Color primaryDark = Color(0xFF5C4BD1);
   static const Color secondary = Color(0xFFFF7EAF);
   static const Color accent = Color(0xFF42BEE8);
   static const Color textPrimary = Color(0xFF17213C);
-  static const Color textSecondary = Color(0xFF65708B);
-  static const Color textTertiary = Color(0xFF9BA4B8);
+  static const Color textSecondary = Color(0xFF596680);
+  static const Color textTertiary = Color(0xFF626F88);
   static const Color divider = Color(0xFFE6EAF3);
-  static const Color success = Color(0xFF32B990);
-  static const Color warning = Color(0xFFFFA852);
-  static const Color error = Color(0xFFE85B74);
+  static const Color success = Color(0xFF137B5E);
+  static const Color warning = Color(0xFF945A0F);
+  static const Color error = Color(0xFFC73553);
 
   static const LinearGradient brandGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: <Color>[primary, Color(0xFF9A6FE8), secondary],
+    colors: <Color>[primary, Color(0xFF8A59CD), Color(0xFFBB397A)],
   );
 }
 
@@ -66,11 +87,11 @@ abstract final class AppTheme {
       primaryContainer: Color(0xFFE7E2FF),
       onPrimaryContainer: SocialColors.primaryDark,
       secondary: SocialColors.secondary,
-      onSecondary: Colors.white,
+      onSecondary: SocialColors.textPrimary,
       secondaryContainer: Color(0xFFFFE5EF),
       onSecondaryContainer: Color(0xFF8D365C),
       tertiary: SocialColors.accent,
-      onTertiary: Colors.white,
+      onTertiary: SocialColors.textPrimary,
       surface: SocialColors.card,
       onSurface: SocialColors.textPrimary,
       surfaceContainerHighest: SocialColors.cardSoft,
@@ -86,7 +107,11 @@ abstract final class AppTheme {
       colorScheme: scheme,
       scaffoldBackgroundColor: Colors.transparent,
       canvasColor: SocialColors.card,
-      splashFactory: InkSparkle.splashFactory,
+      splashFactory: InkRipple.splashFactory,
+      splashColor: SocialColors.primary.withValues(alpha: 0.16),
+      highlightColor: SocialColors.primary.withValues(alpha: 0.08),
+      hoverColor: SocialColors.primary.withValues(alpha: 0.05),
+      focusColor: SocialColors.primary.withValues(alpha: 0.1),
       textTheme: const TextTheme(
         headlineSmall: TextStyle(
           color: SocialColors.textPrimary,
@@ -341,6 +366,7 @@ abstract final class AppTheme {
           side: const BorderSide(color: Color(0x1017263F)),
         ),
       ),
+      dividerTheme: const DividerThemeData(color: SocialColors.divider),
       dividerColor: SocialColors.divider,
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: Color(0xFAFFFFFF),
@@ -376,7 +402,10 @@ abstract final class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: SocialColors.textPrimary,
-        contentTextStyle: const TextStyle(color: Colors.white),
+        contentTextStyle: TextStyle(
+          color: Colors.white,
+          fontFamily: fontFamily,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       ),
@@ -386,11 +415,11 @@ abstract final class AppTheme {
   static ThemeData room({String? fontFamily}) {
     const ColorScheme scheme = ColorScheme.dark(
       primary: RoomColors.primary,
-      onPrimary: Colors.white,
+      onPrimary: RoomColors.background,
       primaryContainer: RoomColors.surfaceHigh,
       onPrimaryContainer: RoomColors.textPrimary,
       secondary: RoomColors.secondary,
-      onSecondary: Colors.white,
+      onSecondary: RoomColors.background,
       tertiary: RoomColors.accent,
       onTertiary: Color(0xFF06141A),
       surface: RoomColors.surface,
@@ -399,7 +428,7 @@ abstract final class AppTheme {
       onSurfaceVariant: RoomColors.textSecondary,
       outline: Color(0xFF35345B),
       error: RoomColors.error,
-      onError: Colors.white,
+      onError: RoomColors.background,
     );
     return ThemeData(
       useMaterial3: true,
@@ -408,7 +437,11 @@ abstract final class AppTheme {
       colorScheme: scheme,
       scaffoldBackgroundColor: RoomColors.background,
       canvasColor: RoomColors.surface,
-      splashFactory: InkSparkle.splashFactory,
+      splashFactory: InkRipple.splashFactory,
+      splashColor: RoomColors.primary.withValues(alpha: 0.18),
+      highlightColor: RoomColors.primary.withValues(alpha: 0.1),
+      hoverColor: RoomColors.primary.withValues(alpha: 0.06),
+      focusColor: RoomColors.primary.withValues(alpha: 0.12),
       textTheme: const TextTheme(
         headlineSmall: TextStyle(
           color: RoomColors.textPrimary,
@@ -480,7 +513,7 @@ abstract final class AppTheme {
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           minimumSize: const Size(44, 48),
-          foregroundColor: Colors.white,
+          foregroundColor: RoomColors.background,
           backgroundColor: RoomColors.primary,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -557,6 +590,9 @@ abstract final class AppTheme {
           fontFamily: fontFamily,
         ),
       ),
+      dividerTheme: DividerThemeData(
+        color: Colors.white.withValues(alpha: 0.12),
+      ),
       dividerColor: Colors.white.withValues(alpha: 0.08),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith<Color>((states) {
@@ -614,7 +650,10 @@ abstract final class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: RoomColors.surfaceHigh,
-        contentTextStyle: const TextStyle(color: RoomColors.textPrimary),
+        contentTextStyle: TextStyle(
+          color: RoomColors.textPrimary,
+          fontFamily: fontFamily,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       ),

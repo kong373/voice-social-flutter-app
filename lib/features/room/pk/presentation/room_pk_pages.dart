@@ -922,7 +922,9 @@ class _RoomPkBattlePageState extends State<RoomPkBattlePage>
                   Text(
                     '返回房间不会结束 PK，结果以服务端结算为准。',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: RoomColors.textSecondary,
+                    ),
                   ),
               ],
             ),

@@ -121,7 +121,10 @@ class _RelationsPageState extends State<RelationsPage> {
                                   },
                                 ),
                                 if (index < _items.length - 1)
-                                  const Divider(height: 1),
+                                  const Divider(
+                                    height: 1,
+                                    color: SocialColors.divider,
+                                  ),
                               ],
                             ],
                           ),
@@ -248,7 +251,10 @@ class _VisitorRecordsPageState extends State<VisitorRecordsPage>
                                     _openProfile(_items![index].userId),
                               ),
                               if (index < _items!.length - 1)
-                                const Divider(height: 1),
+                                const Divider(
+                                  height: 1,
+                                  color: SocialColors.divider,
+                                ),
                             ],
                           ],
                         ),
@@ -478,7 +484,10 @@ class _PrivacyBlacklistPageState extends State<PrivacyBlacklistPage> {
                             ),
                           ),
                           if (index < _blacklist!.length - 1)
-                            const Divider(height: 1),
+                            const Divider(
+                              height: 1,
+                              color: SocialColors.divider,
+                            ),
                         ],
                       ],
                     ),

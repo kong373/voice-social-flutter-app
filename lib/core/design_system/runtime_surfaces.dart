@@ -1,6 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 
+WidgetStateProperty<Color?> _interactionOverlay(Color accent) {
+  return WidgetStateProperty.resolveWith<Color?>((states) {
+    if (states.contains(WidgetState.pressed)) {
+      return accent.withValues(alpha: 0.14);
+    }
+    if (states.contains(WidgetState.focused)) {
+      return accent.withValues(alpha: 0.1);
+    }
+    if (states.contains(WidgetState.hovered)) {
+      return accent.withValues(alpha: 0.06);
+    }
+    return null;
+  });
+}
+
 class SocialSkySurface extends StatelessWidget {
   const SocialSkySurface({required this.child, super.key});
 
@@ -173,7 +188,15 @@ class SocialCard extends StatelessWidget {
     final Widget content = Padding(padding: padding, child: child);
     final Widget interactiveContent = onTap == null
         ? content
-        : InkWell(onTap: onTap, borderRadius: borderRadius, child: content);
+        : Semantics(
+            button: true,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: borderRadius,
+              overlayColor: _interactionOverlay(SocialColors.primary),
+              child: content,
+            ),
+          );
     return Container(
       decoration: BoxDecoration(
         borderRadius: borderRadius,
@@ -402,10 +425,14 @@ class RoomGlassCard extends StatelessWidget {
         side: BorderSide(color: Colors.white.withValues(alpha: 0.07)),
       ),
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: borderRadius,
-        child: Padding(padding: padding, child: child),
+      child: Semantics(
+        button: onTap != null,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: borderRadius,
+          overlayColor: _interactionOverlay(RoomColors.primary),
+          child: Padding(padding: padding, child: child),
+        ),
       ),
     );
   }
@@ -429,7 +456,7 @@ class SocialPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final Color foreground = active ? Colors.white : SocialColors.textSecondary;
     final Widget body = Container(
-      constraints: const BoxConstraints(minHeight: 36),
+      constraints: const BoxConstraints(minHeight: 44),
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
       decoration: BoxDecoration(
         gradient: active ? SocialColors.brandGradient : null,
@@ -461,10 +488,15 @@ class SocialPill extends StatelessWidget {
     );
     return onTap == null
         ? body
-        : InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(999),
-            child: body,
+        : Semantics(
+            button: true,
+            selected: active,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(999),
+              overlayColor: _interactionOverlay(SocialColors.primary),
+              child: body,
+            ),
           );
   }
 }
@@ -645,6 +677,7 @@ class MinimizedRoomPill extends StatelessWidget {
         key: const Key('minimized-room-pill'),
         onTap: onRestore,
         borderRadius: BorderRadius.circular(20),
+        overlayColor: _interactionOverlay(SocialColors.primary),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(5, 5, 2, 5),
           child: Row(
@@ -675,10 +708,9 @@ class MinimizedRoomPill extends StatelessWidget {
               ),
               IconButton(
                 tooltip: '退出当前房间',
-                visualDensity: VisualDensity.compact,
                 constraints: const BoxConstraints.tightFor(
-                  width: 34,
-                  height: 34,
+                  width: 44,
+                  height: 44,
                 ),
                 padding: EdgeInsets.zero,
                 onPressed: onClose,

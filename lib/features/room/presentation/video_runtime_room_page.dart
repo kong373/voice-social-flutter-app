@@ -673,7 +673,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
           const _BlockingProgress(label: '正在结束房间会话…'),
         IgnorePointer(
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 260),
+            duration: AppMotion.forContext(
+              context,
+              const Duration(milliseconds: 260),
+            ),
             child: _showGiftCelebration
                 ? _GiftCelebrationOverlay(
                     key: const Key('gift-celebration-overlay'),
@@ -1421,6 +1424,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                   for (final MicSeat seat in available)
                     FilledButton.tonal(
                       key: Key('approval-mic-seat-${seat.number}'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                      ),
                       onPressed: controller.micRequestPending
                           ? null
                           : () async {
@@ -1584,6 +1590,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   Future<void> _showMoreSheet() async {
     await showModalBottomSheet<void>(
       context: context,
+      showDragHandle: false,
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF14152E),
@@ -2045,7 +2052,10 @@ class _RoomChannelTab extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
+            duration: AppMotion.forContext(
+              context,
+              const Duration(milliseconds: 160),
+            ),
             width: selected ? 20 : 0,
             height: 2,
             decoration: BoxDecoration(
@@ -2433,7 +2443,10 @@ class _VideoMicSeat extends StatelessWidget {
       child: Column(
         children: <Widget>[
           AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
+            duration: AppMotion.forContext(
+              context,
+              const Duration(milliseconds: 180),
+            ),
             width: seatSize,
             height: seatSize,
             decoration: BoxDecoration(
@@ -3112,7 +3125,10 @@ class _RoomSheetTab extends StatelessWidget {
             ),
             const SizedBox(height: 5),
             AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
+              duration: AppMotion.forContext(
+                context,
+                const Duration(milliseconds: 160),
+              ),
               width: selected ? 24 : 0,
               height: 2,
               decoration: BoxDecoration(

@@ -390,10 +390,7 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
       const Spacer(),
       TextButton(
         key: const Key('home-create-room'),
-        style: TextButton.styleFrom(
-          minimumSize: const Size(64, 36),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
+        style: TextButton.styleFrom(minimumSize: const Size(64, 36)),
         onPressed: _openCreateRoom,
         child: const Text('创建房间'),
       ),
@@ -683,15 +680,28 @@ class _RoundHeaderButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Tooltip(
     message: tooltip,
-    child: Material(
-      color: Colors.white.withValues(alpha: 0.58),
-      shape: const CircleBorder(),
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: SizedBox.square(
-          dimension: 36,
-          child: Icon(icon, size: 21, color: SocialColors.textPrimary),
+    excludeFromSemantics: true,
+    child: Semantics(
+      button: true,
+      label: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: SizedBox.square(
+            dimension: 44,
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: Ink(
+                decoration: ShapeDecoration(
+                  color: Colors.white.withValues(alpha: 0.58),
+                  shape: const CircleBorder(),
+                ),
+                child: Icon(icon, size: 21, color: SocialColors.textPrimary),
+              ),
+            ),
+          ),
         ),
       ),
     ),

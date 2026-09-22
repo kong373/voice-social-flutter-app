@@ -210,8 +210,17 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
                         TextFormField(
                           controller: _titleController,
                           enabled: widget.canEdit && !_submitting,
+                          style: const TextStyle(color: RoomColors.textPrimary),
                           maxLength: 64,
-                          decoration: const InputDecoration(labelText: '公告标题'),
+                          decoration: const InputDecoration(
+                            labelText: '公告标题',
+                            labelStyle: TextStyle(
+                              color: RoomColors.textSecondary,
+                            ),
+                            counterStyle: TextStyle(
+                              color: RoomColors.textSecondary,
+                            ),
+                          ),
                           validator: (String? value) {
                             if ((value ?? '').trim().isEmpty) {
                               return '请输入公告标题';
@@ -223,11 +232,18 @@ class _RoomTopicPageState extends State<RoomTopicPage> {
                         TextFormField(
                           controller: _contentController,
                           enabled: widget.canEdit && !_submitting,
+                          style: const TextStyle(color: RoomColors.textPrimary),
                           maxLength: 500,
                           minLines: 6,
                           maxLines: 12,
                           decoration: const InputDecoration(
                             labelText: '公告内容',
+                            labelStyle: TextStyle(
+                              color: RoomColors.textSecondary,
+                            ),
+                            counterStyle: TextStyle(
+                              color: RoomColors.textSecondary,
+                            ),
                             alignLabelWithHint: true,
                           ),
                           validator: (String? value) {

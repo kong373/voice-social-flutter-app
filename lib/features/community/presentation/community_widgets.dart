@@ -2,8 +2,8 @@ part of 'community_pages.dart';
 
 abstract final class _CommunityPalette {
   static const Color ink = Color(0xFF22253C);
-  static const Color muted = Color(0xFF747A94);
-  static const Color violet = Color(0xFF7764F4);
+  static const Color muted = SocialColors.textSecondary;
+  static const Color violet = SocialColors.primary;
   static const Color violetDark = Color(0xFF4B3E9E);
   static const Color line = Color(0xFFE9EAF3);
   static const Color gold = Color(0xFFF5B84C);
@@ -77,6 +77,8 @@ class _CommunityHero extends StatelessWidget {
     required this.subtitle,
     required this.icon,
     this.trailing,
+    this.foreground = SocialColors.textPrimary,
+    this.surfaceTint = const Color(0x33FFFFFF),
     this.colors = const <Color>[
       Color(0xFF6F63EE),
       Color(0xFF9A7AF5),
@@ -90,6 +92,8 @@ class _CommunityHero extends StatelessWidget {
   final IconData icon;
   final Widget? trailing;
   final List<Color> colors;
+  final Color foreground;
+  final Color surfaceTint;
 
   @override
   Widget build(BuildContext context) {
@@ -101,7 +105,9 @@ class _CommunityHero extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: colors,
+          colors: colors
+              .map((color) => Color.alphaBlend(surfaceTint, color))
+              .toList(growable: false),
         ),
         boxShadow: <BoxShadow>[
           BoxShadow(
@@ -150,8 +156,8 @@ class _CommunityHero extends StatelessWidget {
                   children: <Widget>[
                     Text(
                       eyebrow,
-                      style: const TextStyle(
-                        color: Color(0xE6FFFFFF),
+                      style: TextStyle(
+                        color: foreground,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.6,
@@ -160,8 +166,8 @@ class _CommunityHero extends StatelessWidget {
                     const SizedBox(height: 7),
                     Text(
                       title,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: foreground,
                         fontSize: 21,
                         fontWeight: FontWeight.w800,
                         height: 1.12,
@@ -172,8 +178,8 @@ class _CommunityHero extends StatelessWidget {
                       subtitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xE8FFFFFF),
+                      style: TextStyle(
+                        color: foreground,
                         fontSize: 12,
                         height: 1.38,
                       ),
@@ -193,7 +199,7 @@ class _CommunityHero extends StatelessWidget {
                         color: Colors.white.withValues(alpha: 0.34),
                       ),
                     ),
-                    child: Icon(icon, color: Colors.white, size: 29),
+                    child: Icon(icon, color: foreground, size: 29),
                   ),
             ],
           ),
@@ -363,6 +369,8 @@ class _GuildHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _CommunityHero(
+      foreground: Colors.white,
+      surfaceTint: const Color(0x4D000000),
       eyebrow: guild.code ?? '公会编号未提供',
       title: guild.name,
       subtitle: guild.description.isEmpty ? '一起在声音里遇见同频的人' : guild.description,

@@ -551,7 +551,10 @@ class _MessageCenterPageState extends State<MessageCenterPage>
                                       ? '建立好友关系或收到新消息后，会话会出现在这里。'
                                       : '会话索引将在腾讯 IM 接入后恢复。',
                                   textAlign: TextAlign.center,
-                                  style: Theme.of(context).textTheme.bodySmall,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: SocialColors.textSecondary,
+                                      ),
                                 ),
                               ],
                             ),
@@ -572,7 +575,10 @@ class _MessageCenterPageState extends State<MessageCenterPage>
                                       _openConversation(conversations[index]),
                                 ),
                                 if (index < conversations.length - 1)
-                                  const Divider(height: 1),
+                                  const Divider(
+                                    height: 1,
+                                    color: SocialColors.divider,
+                                  ),
                               ],
                             ],
                           ),
@@ -657,7 +663,7 @@ class _MessageConversationSearchDelegate
                           onTap: () => close(context, matches[index]),
                         ),
                         if (index < matches.length - 1)
-                          const Divider(height: 1),
+                          const Divider(height: 1, color: SocialColors.divider),
                       ],
                     ],
                   ),

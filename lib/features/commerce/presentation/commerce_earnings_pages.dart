@@ -118,12 +118,13 @@ class _PayoutAccountBindingPageState extends State<PayoutAccountBindingPage> {
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) _close();
       },
-      child: Scaffold(
+      child: SocialPageScaffold(
         appBar: AppBar(title: const Text('绑定本人收款账户')),
         body: ListView(
           padding: const EdgeInsets.all(20),
           children: [
             const Text('仅可绑定实名认证本人账户。填写后即可使用；资料由用户填写，不代表银行或支付宝已核验。提现仍由财务人工打款。'),
+            const SizedBox(height: 16),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -155,6 +156,7 @@ class _PayoutAccountBindingPageState extends State<PayoutAccountBindingPage> {
                                 });
                             },
                     ),
+                    const SizedBox(height: 12),
                     TextFormField(
                       controller: _holder,
                       enabled: !locked,
@@ -166,6 +168,7 @@ class _PayoutAccountBindingPageState extends State<PayoutAccountBindingPage> {
                           ? '请填写本人真实姓名'
                           : null,
                     ),
+                    const SizedBox(height: 12),
                     TextFormField(
                       controller: _account,
                       enabled: !locked,
@@ -189,7 +192,8 @@ class _PayoutAccountBindingPageState extends State<PayoutAccountBindingPage> {
                           ? null
                           : '请填写有效收款账号',
                     ),
-                    if (_type == 'BANK_CARD')
+                    if (_type == 'BANK_CARD') ...[
+                      const SizedBox(height: 12),
                       TextFormField(
                         controller: _bank,
                         enabled: !locked,
@@ -201,6 +205,7 @@ class _PayoutAccountBindingPageState extends State<PayoutAccountBindingPage> {
                             ? '请填写开户银行'
                             : null,
                       ),
+                    ],
                     const SizedBox(height: 20),
                     FilledButton(
                       onPressed: _busy ? null : _submit,
@@ -460,6 +465,9 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
           _selectedPayoutAccount != null);
 
   String get _withdrawalBlockerMessage {
+    if (_repository.pendingWithdrawal != null) {
+      return '上一笔提现结果尚未确定，原金额、报价和收款账户已锁定。请恢复原申请，不要重复提交。';
+    }
     if (_wallet?.canWithdraw != true) return '当前身份不支持新提现申请；历史记录和原未决申请仍可恢复。';
     final String? unavailable = _payoutAccountsUnavailableMessage;
     if (unavailable != null) {
@@ -953,7 +961,11 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                                           strokeWidth: 2,
                                         ),
                                       )
-                                    : const Text('申请提现'),
+                                    : Text(
+                                        _repository.pendingWithdrawal != null
+                                            ? '恢复原提现申请'
+                                            : '申请提现',
+                                      ),
                               ),
                             ),
                           ],

@@ -204,7 +204,10 @@ class _NotificationCenterPageState extends State<NotificationCenterPage> {
                                   onTap: () => _open(notifications[index]),
                                 ),
                                 if (index < notifications.length - 1)
-                                  const Divider(height: 1),
+                                  const Divider(
+                                    height: 1,
+                                    color: SocialColors.divider,
+                                  ),
                               ],
                             ],
                           ),
@@ -364,7 +367,7 @@ class _NotificationDetailPageState extends State<NotificationDetailPage> {
                         Text(notification.summary, textAlign: TextAlign.center),
                         if (notification.details.isNotEmpty) ...<Widget>[
                           const SizedBox(height: 14),
-                          const Divider(height: 1),
+                          const Divider(height: 1, color: SocialColors.divider),
                           const SizedBox(height: 14),
                           Align(
                             alignment: Alignment.centerLeft,

@@ -175,7 +175,12 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
           ],
           Row(
             children: <Widget>[
-              Text('最近搜索', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                '最近搜索',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: SocialColors.textPrimary,
+                ),
+              ),
               const Spacer(),
               TextButton(
                 onPressed: _recent.isEmpty
@@ -231,7 +236,12 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
           ],
           if (_suggestions.isNotEmpty) ...<Widget>[
             const SizedBox(height: 24),
-            Text('你可能想找', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              '你可能想找',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: SocialColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
@@ -250,7 +260,12 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
             ),
           ],
           const SizedBox(height: 24),
-          Text('搜索范围', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            '搜索范围',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(color: SocialColors.textPrimary),
+          ),
           const SizedBox(height: 12),
           const _SearchGuide(
             icon: Icons.graphic_eq_rounded,
@@ -359,15 +374,7 @@ class _SearchDiscoveryHero extends StatelessWidget {
       height: 118,
       padding: const EdgeInsets.fromLTRB(18, 16, 16, 14),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: <Color>[
-            Color(0xFF7768F4),
-            Color(0xFF9B78F4),
-            Color(0xFFFF99BE),
-          ],
-        ),
+        gradient: SocialColors.brandGradient,
         borderRadius: BorderRadius.circular(24),
         boxShadow: const <BoxShadow>[
           BoxShadow(
@@ -402,7 +409,7 @@ class _SearchDiscoveryHero extends StatelessWidget {
               SizedBox(height: 7),
               Text(
                 '搜索房间、用户或输入房间号直达',
-                style: TextStyle(color: Color(0xE8FFFFFF), fontSize: 11),
+                style: TextStyle(color: Colors.white, fontSize: 11),
               ),
               Spacer(),
               Row(
