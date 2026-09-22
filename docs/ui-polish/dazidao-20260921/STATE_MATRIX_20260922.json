@@ -1,0 +1,2945 @@
+{
+  "date": "2026-09-22",
+  "base": "4e78573f5fd00fffbe70c9ed274b7c31a7342fa8",
+  "parent": "90189e31b5e312a0d05ebd4e80b78d01d12df3d2",
+  "scope": "incremental states supplement; does not replace full 60-page matrix",
+  "cases": [
+    {
+      "pageId": "CM-001",
+      "caseId": "CM-001-hub-anchor-normal",
+      "role": "anchor",
+      "state": "normal",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-001-hub-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-001-hub-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-001-hub-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-001-hub-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-001-hub-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-001-hub-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-001-hub-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-001-hub-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-001-hub-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-001-hub-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-001-hub-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-001-hub-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-001-hub-anchor-normal.png"
+    },
+    {
+      "pageId": "CM-001",
+      "caseId": "CM-001-hub-guildChair-normal",
+      "role": "guildChair",
+      "state": "normal",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-001-hub-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-001-hub-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-001-hub-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-001-hub-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-001-hub-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-001-hub-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-001-hub-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-001-hub-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-001-hub-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-001-hub-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-001-hub-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-001-hub-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-001-hub-guildChair-normal.png"
+    },
+    {
+      "pageId": "CM-001",
+      "caseId": "CM-001-hub-ordinary-normal",
+      "role": "ordinary",
+      "state": "normal",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-001-hub-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-001-hub-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-001-hub-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-001-hub-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-001-hub-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-001-hub-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-001-hub-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-001-hub-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-001-hub-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-001-hub-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-001-hub-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-001-hub-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-001-hub-ordinary-normal.png"
+    },
+    {
+      "pageId": "CM-011",
+      "caseId": "CM-011-anchor-normal",
+      "role": "anchor",
+      "state": "normal",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-011-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-011-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-011-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-011-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-011-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-011-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-011-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-011-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-011-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-011-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-011-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-011-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-011-anchor-normal.png"
+    },
+    {
+      "pageId": "CM-011",
+      "caseId": "CM-011-guildChair-normal",
+      "role": "guildChair",
+      "state": "normal",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-011-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-011-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-011-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-011-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-011-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-011-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-011-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-011-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-011-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-011-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-011-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-011-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-011-guildChair-normal.png"
+    },
+    {
+      "pageId": "CM-011",
+      "caseId": "CM-011-ordinary-normal",
+      "role": "ordinary",
+      "state": "normal",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-011-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-011-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-011-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-011-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-011-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-011-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-011-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-011-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-011-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-011-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-011-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-011-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-011-ordinary-normal.png"
+    },
+    {
+      "pageId": "CM-012",
+      "caseId": "CM-012-anchor-empty",
+      "role": "anchor",
+      "state": "empty",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-anchor-empty.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-anchor-empty.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-anchor-empty.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-anchor-empty.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-anchor-empty.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-anchor-empty.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-anchor-empty.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-anchor-empty.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-anchor-empty.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-anchor-empty.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-anchor-empty.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-anchor-empty.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-012-anchor-empty.png"
+    },
+    {
+      "pageId": "CM-012",
+      "caseId": "CM-012-anchor-error",
+      "role": "anchor",
+      "state": "error",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-anchor-error.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-anchor-error.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-anchor-error.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-anchor-error.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-anchor-error.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-anchor-error.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-anchor-error.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-anchor-error.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-anchor-error.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-anchor-error.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-anchor-error.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-anchor-error.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-012-anchor-error.png"
+    },
+    {
+      "pageId": "CM-012",
+      "caseId": "CM-012-anchor-loading",
+      "role": "anchor",
+      "state": "loading",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-anchor-loading.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-anchor-loading.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-anchor-loading.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-anchor-loading.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-anchor-loading.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-anchor-loading.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-anchor-loading.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-anchor-loading.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-anchor-loading.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-anchor-loading.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-anchor-loading.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-anchor-loading.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-012-anchor-loading.png"
+    },
+    {
+      "pageId": "CM-012",
+      "caseId": "CM-012-anchor-noAccount",
+      "role": "anchor",
+      "state": "noAccount",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-anchor-noAccount.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-anchor-noAccount.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-anchor-noAccount.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-anchor-noAccount.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-anchor-noAccount.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-anchor-noAccount.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-anchor-noAccount.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-anchor-noAccount.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-anchor-noAccount.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-anchor-noAccount.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-anchor-noAccount.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-anchor-noAccount.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-012-anchor-noAccount.png"
+    },
+    {
+      "pageId": "CM-012",
+      "caseId": "CM-012-anchor-normal",
+      "role": "anchor",
+      "state": "normal",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-012-anchor-normal.png"
+    },
+    {
+      "pageId": "CM-012",
+      "caseId": "CM-012-anchor-unknown",
+      "role": "anchor",
+      "state": "unknown",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-anchor-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-anchor-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-anchor-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-anchor-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-anchor-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-anchor-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-anchor-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-anchor-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-anchor-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-anchor-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-anchor-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-anchor-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-012-anchor-unknown.png"
+    },
+    {
+      "pageId": "CM-012",
+      "caseId": "CM-012-guildChair-normal",
+      "role": "guildChair",
+      "state": "normal",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-guildChair-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-guildChair-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-012-guildChair-normal.png"
+    },
+    {
+      "pageId": "CM-012",
+      "caseId": "CM-012-guildChair-unknown",
+      "role": "guildChair",
+      "state": "unknown",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-guildChair-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-guildChair-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-guildChair-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-guildChair-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-guildChair-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-guildChair-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-guildChair-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-guildChair-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-guildChair-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-guildChair-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-guildChair-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-guildChair-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-012-guildChair-unknown.png"
+    },
+    {
+      "pageId": "CM-012",
+      "caseId": "CM-012-ordinary-normal",
+      "role": "ordinary",
+      "state": "normal",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-ordinary-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-ordinary-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-012-ordinary-normal.png"
+    },
+    {
+      "pageId": "CM-012",
+      "caseId": "CM-012-ordinary-unknown",
+      "role": "ordinary",
+      "state": "unknown",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-ordinary-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-ordinary-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-ordinary-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-ordinary-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-ordinary-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-ordinary-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-ordinary-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-ordinary-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-ordinary-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-ordinary-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-ordinary-unknown.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-ordinary-unknown.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/financial-matrix/375x667-text1.3/CM-012-ordinary-unknown.png"
+    },
+    {
+      "pageId": "CM-012",
+      "caseId": "CM-012-payout-alipay-anchor-normal",
+      "role": "anchor",
+      "state": "normal",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-payout-alipay-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-payout-alipay-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-payout-alipay-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-payout-alipay-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-payout-alipay-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-payout-alipay-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-payout-alipay-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-payout-alipay-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-payout-alipay-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-payout-alipay-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-payout-alipay-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-payout-alipay-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-payout-alipay-anchor-normal.png"
+    },
+    {
+      "pageId": "CM-012",
+      "caseId": "CM-012-payout-bank-anchor-normal",
+      "role": "anchor",
+      "state": "normal",
+      "surface": "asset-page",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-payout-bank-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/CM-012-payout-bank-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-payout-bank-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-payout-bank-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-payout-bank-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/CM-012-payout-bank-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-payout-bank-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/CM-012-payout-bank-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-payout-bank-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/CM-012-payout-bank-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-payout-bank-anchor-normal.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/CM-012-payout-bank-anchor-normal.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/CM-012-payout-bank-anchor-normal.png"
+    },
+    {
+      "pageId": "RM-004",
+      "caseId": "RM-004-listener-interactions",
+      "role": "listener",
+      "state": "normal",
+      "surface": "interactions",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-listener-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-listener-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-listener-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-listener-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-listener-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-listener-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-listener-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-listener-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-listener-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-listener-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-listener-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-listener-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-004-listener-interactions.png"
+    },
+    {
+      "pageId": "RM-004",
+      "caseId": "RM-004-listener-tools",
+      "role": "listener",
+      "state": "normal",
+      "surface": "tools",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-listener-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-listener-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-listener-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-listener-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-listener-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-listener-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-listener-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-listener-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-listener-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-listener-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-listener-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-listener-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-004-listener-tools.png"
+    },
+    {
+      "pageId": "RM-004",
+      "caseId": "RM-004-moderator-interactions",
+      "role": "moderator",
+      "state": "normal",
+      "surface": "interactions",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-moderator-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-moderator-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-moderator-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-moderator-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-moderator-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-moderator-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-moderator-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-moderator-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-moderator-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-moderator-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-moderator-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-moderator-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-004-moderator-interactions.png"
+    },
+    {
+      "pageId": "RM-004",
+      "caseId": "RM-004-moderator-tools",
+      "role": "moderator",
+      "state": "normal",
+      "surface": "tools",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-moderator-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-moderator-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-moderator-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-moderator-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-moderator-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-moderator-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-moderator-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-moderator-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-moderator-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-moderator-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-moderator-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-moderator-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-004-moderator-tools.png"
+    },
+    {
+      "pageId": "RM-004",
+      "caseId": "RM-004-owner-interactions",
+      "role": "owner",
+      "state": "normal",
+      "surface": "interactions",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-owner-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-owner-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-owner-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-owner-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-owner-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-owner-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-owner-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-owner-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-owner-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-owner-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-owner-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-owner-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-004-owner-interactions.png"
+    },
+    {
+      "pageId": "RM-004",
+      "caseId": "RM-004-owner-tools",
+      "role": "owner",
+      "state": "normal",
+      "surface": "tools",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-owner-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-owner-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-owner-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-owner-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-owner-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-owner-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-owner-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-owner-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-owner-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-owner-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-owner-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-owner-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-004-owner-tools.png"
+    },
+    {
+      "pageId": "RM-004",
+      "caseId": "RM-004-platformModerator-interactions",
+      "role": "platformModerator",
+      "state": "normal",
+      "surface": "interactions",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-platformModerator-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-platformModerator-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-platformModerator-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-platformModerator-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-platformModerator-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-platformModerator-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-platformModerator-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-platformModerator-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-platformModerator-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-platformModerator-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-platformModerator-interactions.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-platformModerator-interactions.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-004-platformModerator-interactions.png"
+    },
+    {
+      "pageId": "RM-004",
+      "caseId": "RM-004-platformModerator-tools",
+      "role": "platformModerator",
+      "state": "normal",
+      "surface": "tools",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-platformModerator-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-004-platformModerator-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-platformModerator-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-004-platformModerator-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-platformModerator-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-004-platformModerator-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-platformModerator-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-004-platformModerator-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-platformModerator-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-004-platformModerator-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-platformModerator-tools.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-004-platformModerator-tools.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-004-platformModerator-tools.png"
+    },
+    {
+      "pageId": "RM-005",
+      "caseId": "RM-005-listener-approved",
+      "role": "listener",
+      "state": "approved",
+      "surface": "mic",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-005-listener-approved.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-005-listener-approved.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-005-listener-approved.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-005-listener-approved.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-005-listener-approved.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-005-listener-approved.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-005-listener-approved.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-005-listener-approved.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-005-listener-approved.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-005-listener-approved.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-005-listener-approved.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-005-listener-approved.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-005-listener-approved.png"
+    },
+    {
+      "pageId": "RM-005",
+      "caseId": "RM-005-listener-available",
+      "role": "listener",
+      "state": "normal",
+      "surface": "mic",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-005-listener-available.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-005-listener-available.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-005-listener-available.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-005-listener-available.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-005-listener-available.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-005-listener-available.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-005-listener-available.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-005-listener-available.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-005-listener-available.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-005-listener-available.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-005-listener-available.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-005-listener-available.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-005-listener-available.png"
+    },
+    {
+      "pageId": "RM-005",
+      "caseId": "RM-005-listener-pending",
+      "role": "listener",
+      "state": "pending",
+      "surface": "mic",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-005-listener-pending.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-005-listener-pending.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-005-listener-pending.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-005-listener-pending.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-005-listener-pending.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-005-listener-pending.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-005-listener-pending.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-005-listener-pending.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-005-listener-pending.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-005-listener-pending.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-005-listener-pending.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-005-listener-pending.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-005-listener-pending.png"
+    },
+    {
+      "pageId": "RM-005",
+      "caseId": "RM-005-listener-rejected",
+      "role": "listener",
+      "state": "rejected",
+      "surface": "mic",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-005-listener-rejected.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-005-listener-rejected.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-005-listener-rejected.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-005-listener-rejected.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-005-listener-rejected.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-005-listener-rejected.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-005-listener-rejected.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-005-listener-rejected.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-005-listener-rejected.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-005-listener-rejected.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-005-listener-rejected.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-005-listener-rejected.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-005-listener-rejected.png"
+    },
+    {
+      "pageId": "RM-005",
+      "caseId": "RM-005-moderator-direct",
+      "role": "moderator",
+      "state": "normal",
+      "surface": "mic",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-005-moderator-direct.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-005-moderator-direct.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-005-moderator-direct.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-005-moderator-direct.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-005-moderator-direct.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-005-moderator-direct.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-005-moderator-direct.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-005-moderator-direct.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-005-moderator-direct.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-005-moderator-direct.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-005-moderator-direct.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-005-moderator-direct.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-005-moderator-direct.png"
+    },
+    {
+      "pageId": "RM-005",
+      "caseId": "RM-005-owner-direct",
+      "role": "owner",
+      "state": "normal",
+      "surface": "mic",
+      "captures": [
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-005-owner-direct.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.0/RM-005-owner-direct.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            375.0,
+            667.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-005-owner-direct.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/375x667-text1.3/RM-005-owner-direct.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-005-owner-direct.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.0/RM-005-owner-direct.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            390.0,
+            844.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-005-owner-direct.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/390x844-text1.3/RM-005-owner-direct.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.0,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-005-owner-direct.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.0/RM-005-owner-direct.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        },
+        {
+          "viewport": [
+            402.0,
+            874.0
+          ],
+          "textScale": 1.3,
+          "png": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-005-owner-direct.png",
+          "metadata": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/resume22-final-states/402x874-text1.3/RM-005-owner-direct.json",
+          "synthetic": true,
+          "simulatedSafeInsets": true,
+          "reduceMotion": true
+        }
+      ],
+      "device": "NOT_RUN",
+      "automated": "PASS",
+      "visual": "representative 375x667 text1.3 inspected; not all pixels/all states",
+      "sameAsInspectedCapture": true,
+      "visualReviewEvidence": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders/role-sheets-matrix/375x667-text1.3/RM-005-owner-direct.png"
+    }
+  ],
+  "checks": [
+    {
+      "label": "resume22-final-state-matrix",
+      "exit": 0,
+      "passed": 192,
+      "failed": 0,
+      "command": [
+        "/usr/bin/env",
+        "DEVELOPER_DIR=/Library/Developer/CommandLineTools",
+        "PATH=/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/clt-toolchain:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "/Users/kongzheng/fvm/versions/3.44.7/bin/cache/dart-sdk/bin/dart",
+        "/Users/kongzheng/fvm/versions/3.44.7/bin/cache/flutter_tools.snapshot",
+        "test",
+        "--no-pub",
+        "--concurrency=2",
+        "--reporter",
+        "expanded",
+        "--dart-define=UI_OUTPUT=/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders",
+        "--dart-define=UI_PHASE=resume22-final-states",
+        "--dart-define=UI_MATRIX=true",
+        "--dart-define=UI_SAFE_INSETS=true",
+        "--dart-define=UI_REDUCE_MOTION=true",
+        "test/dazidao_ui_role_sheet_states_test.dart",
+        "test/dazidao_ui_financial_states_test.dart"
+      ],
+      "log": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/resume22-final-state-matrix.log"
+    },
+    {
+      "label": "resume22-payout-keyboard-0",
+      "exit": 0,
+      "passed": 12,
+      "failed": 0,
+      "command": [
+        "/usr/bin/env",
+        "DEVELOPER_DIR=/Library/Developer/CommandLineTools",
+        "PATH=/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/clt-toolchain:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "/Users/kongzheng/fvm/versions/3.44.7/bin/cache/dart-sdk/bin/dart",
+        "/Users/kongzheng/fvm/versions/3.44.7/bin/cache/flutter_tools.snapshot",
+        "test",
+        "--no-pub",
+        "--concurrency=2",
+        "--reporter",
+        "expanded",
+        "--dart-define=UI_OUTPUT=/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders",
+        "--dart-define=UI_PHASE=payout-keyboard-0",
+        "--dart-define=UI_MATRIX=true",
+        "--dart-define=UI_SAFE_INSETS=true",
+        "--dart-define=UI_REDUCE_MOTION=true",
+        "--dart-define=UI_KEYBOARD=true",
+        "--dart-define=UI_KEYBOARD_FIELD=0",
+        "--dart-define=UI_CASE=CM-012-payout-alipay-anchor-normal,CM-012-payout-bank-anchor-normal",
+        "test/dazidao_ui_financial_states_test.dart"
+      ],
+      "log": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/resume22-payout-keyboard-0.log"
+    },
+    {
+      "label": "resume22-payout-keyboard-1",
+      "exit": 0,
+      "passed": 12,
+      "failed": 0,
+      "command": [
+        "/usr/bin/env",
+        "DEVELOPER_DIR=/Library/Developer/CommandLineTools",
+        "PATH=/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/clt-toolchain:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "/Users/kongzheng/fvm/versions/3.44.7/bin/cache/dart-sdk/bin/dart",
+        "/Users/kongzheng/fvm/versions/3.44.7/bin/cache/flutter_tools.snapshot",
+        "test",
+        "--no-pub",
+        "--concurrency=2",
+        "--reporter",
+        "expanded",
+        "--dart-define=UI_OUTPUT=/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders",
+        "--dart-define=UI_PHASE=payout-keyboard-1",
+        "--dart-define=UI_MATRIX=true",
+        "--dart-define=UI_SAFE_INSETS=true",
+        "--dart-define=UI_REDUCE_MOTION=true",
+        "--dart-define=UI_KEYBOARD=true",
+        "--dart-define=UI_KEYBOARD_FIELD=1",
+        "--dart-define=UI_CASE=CM-012-payout-alipay-anchor-normal,CM-012-payout-bank-anchor-normal",
+        "test/dazidao_ui_financial_states_test.dart"
+      ],
+      "log": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/resume22-payout-keyboard-1.log"
+    },
+    {
+      "label": "resume22-payout-keyboard-2",
+      "exit": 0,
+      "passed": 6,
+      "failed": 0,
+      "command": [
+        "/usr/bin/env",
+        "DEVELOPER_DIR=/Library/Developer/CommandLineTools",
+        "PATH=/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/clt-toolchain:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "/Users/kongzheng/fvm/versions/3.44.7/bin/cache/dart-sdk/bin/dart",
+        "/Users/kongzheng/fvm/versions/3.44.7/bin/cache/flutter_tools.snapshot",
+        "test",
+        "--no-pub",
+        "--concurrency=2",
+        "--reporter",
+        "expanded",
+        "--dart-define=UI_OUTPUT=/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/renders",
+        "--dart-define=UI_PHASE=payout-keyboard-2",
+        "--dart-define=UI_MATRIX=true",
+        "--dart-define=UI_SAFE_INSETS=true",
+        "--dart-define=UI_REDUCE_MOTION=true",
+        "--dart-define=UI_KEYBOARD=true",
+        "--dart-define=UI_KEYBOARD_FIELD=2",
+        "--dart-define=UI_CASE=CM-012-payout-bank-anchor-normal",
+        "test/dazidao_ui_financial_states_test.dart"
+      ],
+      "log": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/resume22-payout-keyboard-2.log"
+    },
+    {
+      "label": "resume22-regression-closeout",
+      "exit": 0,
+      "passed": 106,
+      "failed": 0,
+      "command": [
+        "/usr/bin/env",
+        "DEVELOPER_DIR=/Library/Developer/CommandLineTools",
+        "PATH=/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/clt-toolchain:/opt/homebrew/opt/openjdk@21/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "/Users/kongzheng/fvm/versions/3.44.7/bin/cache/dart-sdk/bin/dart",
+        "/Users/kongzheng/fvm/versions/3.44.7/bin/cache/flutter_tools.snapshot",
+        "test",
+        "--no-pub",
+        "--concurrency=2",
+        "--reporter",
+        "expanded",
+        "test/backend_commerce_repository_contract_test.dart",
+        "test/payout_binding_page_test.dart",
+        "test/withdrawal_product_policy_test.dart",
+        "test/dazidao_ui_role_sheet_states_test.dart",
+        "test/dazidao_ui_financial_states_test.dart"
+      ],
+      "log": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/resume22-regression-closeout.log"
+    },
+    {
+      "label": "resume22-analyze-closeout",
+      "exit": 0,
+      "passed": null,
+      "failed": null,
+      "command": [
+        "/usr/bin/env",
+        "DEVELOPER_DIR=/Library/Developer/CommandLineTools",
+        "PATH=/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/clt-toolchain:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "/Users/kongzheng/fvm/versions/3.44.7/bin/cache/dart-sdk/bin/dart",
+        "/Users/kongzheng/fvm/versions/3.44.7/bin/cache/flutter_tools.snapshot",
+        "analyze",
+        "--no-pub"
+      ],
+      "log": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/resume22-analyze-closeout.log"
+    },
+    {
+      "label": "resume22-format-check-closeout",
+      "exit": 0,
+      "passed": null,
+      "failed": null,
+      "command": [
+        "/Users/kongzheng/fvm/versions/3.44.7/bin/cache/dart-sdk/bin/dart",
+        "format",
+        "--output=none",
+        "--set-exit-if-changed",
+        "lib/features/commerce/presentation/commerce_earnings_pages.dart",
+        "test/dazidao_ui_render_matrix_test.dart",
+        "test/dazidao_ui_role_sheet_states_test.dart",
+        "test/dazidao_ui_financial_states_test.dart"
+      ],
+      "log": "/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921/resume22-format-check-closeout.log"
+    }
+  ],
+  "keyboardFocusChecks": 30,
+  "realDeviceChecks": 0,
+  "globalVisualResult": "blocked",
+  "blockedPreviousVisualFixes": "V01-V07 not retried",
+  "finalExactSourceRecheck": {
+    "label": "resume22-final-exact-source-matrix",
+    "passed": 192,
+    "failed": 0,
+    "exit": 0,
+    "capture": false,
+    "reason": "Recheck after final renderer keyboard-index extension and formatting; no duplicate PNG output"
+  },
+  "finalTestedSourceHashes": {
+    "lib/features/commerce/presentation/commerce_earnings_pages.dart": "5a4d6c6d8cbc4d3e1be593395485b2e566c3e388ae9e8978be33d12850c756bf",
+    "test/dazidao_ui_render_matrix_test.dart": "6b89863c87b949d88a5b35ae0a6f5b458ec3e0c6638d8fa610b0c831154acaa0",
+    "test/dazidao_ui_role_sheet_states_test.dart": "0ac1af0fbba01ff901e50a6e1e22516e19ccf3106be060b791db408995836b15",
+    "test/dazidao_ui_financial_states_test.dart": "a419b73d222f9715cd98d51ba4f083cc26b3137108f1b529b6d56c8149379fd6"
+  }
+}

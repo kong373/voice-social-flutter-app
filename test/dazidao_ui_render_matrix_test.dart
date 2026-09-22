@@ -23,6 +23,10 @@ const _only = String.fromEnvironment('UI_ONLY');
 const _capture = bool.fromEnvironment('UI_CAPTURE', defaultValue: true);
 const _safeInsets = bool.fromEnvironment('UI_SAFE_INSETS');
 const _keyboard = bool.fromEnvironment('UI_KEYBOARD');
+const _keyboardField = int.fromEnvironment(
+  'UI_KEYBOARD_FIELD',
+  defaultValue: 0,
+);
 const _reduceMotion = bool.fromEnvironment('UI_REDUCE_MOTION');
 void main() {
   setUpAll(loadGoldenFonts);
@@ -91,6 +95,11 @@ Future<void> _render(
   required double scale,
   required Widget Function(AppDependencies) builder,
   int? selectedTab,
+  Future<void> Function(AppDependencies)? prepare,
+  Future<void> Function(WidgetTester, AppDependencies)? exercise,
+  void Function()? release,
+  Map<String, Object> annotations = const {},
+  bool useProductionHostTheme = false,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -113,8 +122,11 @@ Future<void> _render(
   progress('dependencies-ready');
   final key = GlobalKey();
   final failures = <String>[];
+  Object? interactionFailure;
+  StackTrace? interactionStack;
   final keyboardInset = ValueNotifier<double>(0);
   try {
+    if (prepare != null) await tester.runAsync(() => prepare(dependencies));
     await tester.pumpWidget(
       RepaintBoundary(
         key: key,
@@ -122,7 +134,9 @@ Future<void> _render(
           dependencies: dependencies,
           child: MaterialApp(
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.social(fontFamily: kGoldenFontFamily),
+            theme: useProductionHostTheme
+                ? AppTheme.room(fontFamily: kGoldenFontFamily)
+                : AppTheme.social(fontFamily: kGoldenFontFamily),
             builder: (context, child) => ValueListenableBuilder<double>(
               valueListenable: keyboardInset,
               builder: (context, inset, _) => MediaQuery(
@@ -160,6 +174,15 @@ Future<void> _render(
       await tester.tap(find.text(tabLabel).last);
       await _drain(tester, failures);
     }
+    if (exercise != null) {
+      try {
+        await exercise(tester, dependencies);
+      } catch (error, stack) {
+        interactionFailure = error;
+        interactionStack = stack;
+      }
+      await _drain(tester, failures);
+    }
     if (_keyboard) {
       // Widget-test keyboard and media insets, not a real OS keyboard capture.
       final inputs = find.byType(EditableText);
@@ -168,10 +191,12 @@ Future<void> _render(
         findsWidgets,
         reason: 'Requested keyboard case must expose a real input',
       );
-      await tester.showKeyboard(inputs.first);
+      expect(_keyboardField, inInclusiveRange(0, inputs.evaluate().length - 1));
+      final input = inputs.at(_keyboardField);
+      await tester.showKeyboard(input);
       keyboardInset.value = 280;
       await _drain(tester, failures);
-      final bounds = tester.getRect(inputs.first);
+      final bounds = tester.getRect(input);
       expect(
         bounds.bottom,
         lessThanOrEqualTo(size.height - 280 + 1),
@@ -211,12 +236,15 @@ Future<void> _render(
       File('${directory.path}/$id.json').writeAsStringSync(
         jsonEncode({
           'id': id,
+          'scenario': annotations,
+          'productionHostTheme': useProductionHostTheme,
           'phase': _phase,
           'platform': Platform.operatingSystem,
           'size': [size.width, size.height],
           'textScale': scale,
           'simulatedSafeInsets': _safeInsets,
           'simulatedKeyboardInset': keyboardInset.value,
+          'keyboardFieldIndex': _keyboard ? _keyboardField : null,
           'reduceMotion': _reduceMotion,
           'font': kGoldenFontFamily,
           'data': 'SYNTHETIC_QA_FIXTURE',
@@ -224,6 +252,7 @@ Future<void> _render(
           'goldenUpdated': false,
           'visibleText': visible,
           'renderExceptions': failures,
+          'interactionFailure': interactionFailure?.toString(),
           'visibleSpinners': find
               .byType(CircularProgressIndicator)
               .evaluate()
@@ -234,10 +263,14 @@ Future<void> _render(
   } finally {
     await tester.pumpWidget(const SizedBox.shrink());
     keyboardInset.dispose();
+    release?.call();
     dependencies.dispose();
     await tester.pump(const Duration(milliseconds: 100));
     final error = tester.takeException();
     if (error != null) failures.add(error.toString());
+  }
+  if (interactionFailure != null) {
+    Error.throwWithStackTrace(interactionFailure, interactionStack!);
   }
   expect(
     failures,
@@ -283,3 +316,29 @@ Future<void> _precache(WidgetTester tester, GlobalKey key) async {
     ).timeout(const Duration(seconds: 15)),
   );
 }
+
+// Reuse the same native capture and layout checks for actual attached panels.
+// All preparation stays in test-only fixtures; no live commands or devices.
+Future<void> renderDazidaoScenario(
+  WidgetTester tester, {
+  required String id,
+  required Size size,
+  required double scale,
+  required Widget Function(AppDependencies) builder,
+  required Future<void> Function(WidgetTester, AppDependencies) exercise,
+  Future<void> Function(AppDependencies)? prepare,
+  void Function()? release,
+  Map<String, Object> annotations = const {},
+  bool useProductionHostTheme = false,
+}) => _render(
+  tester,
+  id: id,
+  size: size,
+  scale: scale,
+  builder: builder,
+  prepare: prepare,
+  exercise: exercise,
+  release: release,
+  annotations: annotations,
+  useProductionHostTheme: useProductionHostTheme,
+);

@@ -53,3 +53,33 @@ Android/iOS构建、设备控制、真实资金/厂商调用、真实性能profi
 
 先读取本机checkpoint.json、最新发布日志及本文件；核对工作分支当前SHA，再对照当前文件哈希。原foundation/social/room-assets/集成树、冻结RC不写入。未知写入先回读，不盲目重放。
 先由Codex独立审查V01–V08及拦截范围；继续同一60页计划，不缩减为四个样板，也不因代码/自动化通过晋升候选。完整状态、设备与构建验收未完成前保持Draft，不合并、不部署。
+
+## 2026-09-22 接续增量：真实面板、资产角色状态与表单
+
+本节晚于前述历史快照；原60页范围、未完成项和安全边界保留。
+从远端90189e31b5e312a0d05ebd4e80b78d01d12df3d2续接，已发布本机文件初始blob差异为0。未重做原22文件，也未修改其他工作树或旧PR。
+
+### 实际修改
+
+- `commerce_earnings_pages.dart`：原提现未知时明确显示原金额/报价/账户已锁定及“恢复原提现申请”，不再显示与原恢复按钮矛盾的“已安全禁用”。原`_apply`、请求和权限逻辑保持不变。
+- 同一文件的收款账户表单：复用现有SocialPageScaffold，避免从浅色资产页进入后继承根深色房间主题；说明后16、字段间12逻辑像素间距。所有字段、本人实名规则、校验、敏感资料清理、提交/恢复回调保留。
+- 新增`dazidao_ui_role_sheet_states_test.dart`与`dazidao_ui_financial_states_test.dart`，前者实际点击麦位/更多面板，后者实际导航绑定页和切换收款类型；没有消费/治理写入。
+- 扩展已有渲染辅助测试供这些真实页面复用，支持生产根主题、逐输入焦点、失败画面保存后原异常重抛；原默认测试及断言保留。
+
+### 已执行验证
+
+| 检查 | 实际结果 | 日志 |
+|---|---|---|
+| 原请求未知提示回归（修正前） | 0 PASS / 3 UI断言FAIL，exit1 | resume22-withdrawal-unknown-red.log |
+| 收款页面主题一致性（修正前真实导航） | 0 PASS / 2 UI断言FAIL，exit1 | resume22-payout-route-before.log |
+| 房间面板/资产角色状态矩阵 | 192 PASS / 0 FAIL，exit0；32场景×3尺寸×2字号 | resume22-final-state-matrix.log |
+| 收款表单所有输入焦点 | 12+12+6 PASS，均exit0；模拟280px键盘 | resume22-payout-keyboard-0/1/2.log |
+| 既有契约、绑定、提现规则及两份新增用例 | 106 PASS / 0 FAIL，exit0 | resume22-regression-closeout.log |
+| analyze / format检查 | No issues found / 4 files 0 changed，均exit0 | resume22-analyze-closeout.log / resume22-format-check-closeout.log |
+
+各运行含重叠用例，不合并宣传为独立业务PASS总数。初始面板过渡等待、角色预期和dropdown finder问题属于夹具问题，修正并保留旧日志；不是业务RED。
+新增状态明细见`STATE_MATRIX_20260922.json/csv`。图片只保存在本机证据目录，不上传实际用户资料、字体或缓存。
+
+收尾确认：最终渲染辅助测试增加逐字段焦点选项并格式化后，又以最终源码复跑192项矩阵，全部PASS、exit0；该次关闭PNG重复写出，日志`resume22-final-exact-source-matrix.log`。不能将这次复跑另计为192个新增业务用例。
+
+Git检查范围说明：已安装CLT的Git可运行。仅对四个普通源码/测试的准备前后文件执行`git diff --no-index --check`，实际exit1、无诊断；人为尾随空白负例exit3并明确报错。保留原始结果，不将no-index差异退出码伪装成标准仓库`git diff --check`的exit0。标准仓库检查仍NOT_RUN，独立源码边界/新增行空白检查另行记录。未重试此前被限制的Git内部对象/索引查询。
