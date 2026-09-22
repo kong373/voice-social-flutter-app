@@ -193,35 +193,35 @@ class _SystemPermissionCenterPageState extends State<SystemPermissionCenterPage>
                           trailing:
                               snapshot.permissions[index].state ==
                                   PermissionState.permanentlyDenied
-                              ? Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: <Widget>[
-                                    AccountStatusPill(
-                                      label: _permissionStateLabel(
-                                        snapshot.permissions[index].state,
+                              ? TextButton(
+                                  style: TextButton.styleFrom(
+                                    minimumSize: const Size(44, 44),
+                                    padding: EdgeInsets.zero,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  onPressed:
+                                      snapshot
+                                              .permissions[index]
+                                              .managedByPlatform ==
+                                          true
+                                      ? _openSettings
+                                      : null,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: <Widget>[
+                                      AccountStatusPill(
+                                        label: _permissionStateLabel(
+                                          snapshot.permissions[index].state,
+                                        ),
+                                        color: _permissionStateTone(
+                                          snapshot.permissions[index].state,
+                                        ),
                                       ),
-                                      color: _permissionStateTone(
-                                        snapshot.permissions[index].state,
-                                      ),
-                                    ),
-                                    TextButton(
-                                      style: TextButton.styleFrom(
-                                        minimumSize: Size.zero,
-                                        padding: EdgeInsets.zero,
-                                        tapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                      ),
-                                      onPressed:
-                                          snapshot
-                                                  .permissions[index]
-                                                  .managedByPlatform ==
-                                              true
-                                          ? _openSettings
-                                          : null,
-                                      child: const Text('打开设置'),
-                                    ),
-                                  ],
+                                      const Text('打开设置'),
+                                    ],
+                                  ),
                                 )
                               : AccountStatusPill(
                                   label: _permissionStateLabel(

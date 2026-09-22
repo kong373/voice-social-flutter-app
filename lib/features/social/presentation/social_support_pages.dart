@@ -162,8 +162,16 @@ class _ReportPageState extends State<ReportPage> {
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _descriptionController,
-                    minLines: 5,
-                    maxLines: 8,
+                    minLines:
+                        MediaQuery.viewInsetsOf(context).bottom > 0 &&
+                            MediaQuery.sizeOf(context).height < 700
+                        ? 2
+                        : 5,
+                    maxLines:
+                        MediaQuery.viewInsetsOf(context).bottom > 0 &&
+                            MediaQuery.sizeOf(context).height < 700
+                        ? 4
+                        : 8,
                     maxLength: 300,
                     decoration: const InputDecoration(labelText: '补充说明'),
                     validator: (String? value) =>
@@ -426,8 +434,12 @@ class _HelpCenterPageState extends State<HelpCenterPage> {
                         controller: _contentController,
                         enabled: !_busy && !(_media?.draft.locked ?? false),
                         onChanged: (_) => setState(() {}),
-                        minLines: 5,
-                        maxLines: 8,
+                        minLines: MediaQuery.viewInsetsOf(context).bottom > 0
+                            ? 2
+                            : 5,
+                        maxLines: MediaQuery.viewInsetsOf(context).bottom > 0
+                            ? 4
+                            : 8,
                         maxLength: 200,
                         decoration: const InputDecoration(labelText: '问题描述'),
                       ),

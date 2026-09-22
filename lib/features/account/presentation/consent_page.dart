@@ -111,15 +111,21 @@ class _ConsentPageState extends State<ConsentPage> {
               tone: AccountOxygenColors.cyan,
             ),
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: <Widget>[
                 TextButton(
                   key: const Key('consent-user-agreement'),
                   onPressed: () => _showDocument(context, '用户协议'),
                   child: const Text('查看用户协议正文'),
                 ),
-                Text('和', style: Theme.of(context).textTheme.bodySmall),
+                Text(
+                  '和',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: SocialColors.textSecondary,
+                  ),
+                ),
                 TextButton(
                   key: const Key('consent-privacy-policy'),
                   onPressed: () => _showDocument(context, '隐私政策'),

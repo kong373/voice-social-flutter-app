@@ -1241,7 +1241,12 @@ class _PublishDynamicPageState extends State<PublishDynamicPage> {
               },
             ),
             const SizedBox(height: 14),
-            Text('内容类型', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              '内容类型',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: SocialColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
@@ -1624,7 +1629,7 @@ class _RankingEntryCard extends StatelessWidget {
                 '${entry.rank}',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: accent,
+                  color: podium ? SocialColors.textPrimary : accent,
                   fontSize: podium ? 20 : 14,
                   fontWeight: FontWeight.w900,
                 ),
@@ -1667,7 +1672,7 @@ class _RankingEntryCard extends StatelessWidget {
                 child: Text(
                   valueLabel,
                   style: TextStyle(
-                    color: accent,
+                    color: podium ? SocialColors.textPrimary : accent,
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                   ),

@@ -402,7 +402,10 @@ abstract final class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: SocialColors.textPrimary,
-        contentTextStyle: const TextStyle(color: Colors.white),
+        contentTextStyle: TextStyle(
+          color: Colors.white,
+          fontFamily: fontFamily,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       ),
@@ -647,7 +650,10 @@ abstract final class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: RoomColors.surfaceHigh,
-        contentTextStyle: const TextStyle(color: RoomColors.textPrimary),
+        contentTextStyle: TextStyle(
+          color: RoomColors.textPrimary,
+          fontFamily: fontFamily,
+        ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       ),

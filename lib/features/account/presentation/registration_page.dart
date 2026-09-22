@@ -126,7 +126,12 @@ class _RegistrationPageState extends State<RegistrationPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text('选择头像', style: Theme.of(context).textTheme.titleSmall),
+                    Text(
+                      '选择头像',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: SocialColors.textPrimary,
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     if (_uploadHost case final host?) ...[
                       _uploadPanel(host),

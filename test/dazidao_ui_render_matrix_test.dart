@@ -100,6 +100,7 @@ Future<void> _render(
   void Function()? release,
   Map<String, Object> annotations = const {},
   bool useProductionHostTheme = false,
+  AppDependencies Function(AppDependencies)? transformDependencies,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -116,9 +117,11 @@ Future<void> _render(
 
   progress('creating-synthetic-dependencies');
   // QA preparation uses a real delayed future before there is a widget to pump.
-  final dependencies = (await tester.runAsync(
+  final baseDependencies = (await tester.runAsync(
     () => createQaDependencies().timeout(const Duration(seconds: 15)),
   ))!;
+  final dependencies =
+      transformDependencies?.call(baseDependencies) ?? baseDependencies;
   progress('dependencies-ready');
   final key = GlobalKey();
   final failures = <String>[];
@@ -330,6 +333,7 @@ Future<void> renderDazidaoScenario(
   void Function()? release,
   Map<String, Object> annotations = const {},
   bool useProductionHostTheme = false,
+  AppDependencies Function(AppDependencies)? transformDependencies,
 }) => _render(
   tester,
   id: id,
@@ -341,4 +345,5 @@ Future<void> renderDazidaoScenario(
   release: release,
   annotations: annotations,
   useProductionHostTheme: useProductionHostTheme,
+  transformDependencies: transformDependencies,
 );

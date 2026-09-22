@@ -306,7 +306,8 @@ class _AccountAppealPageState extends State<AccountAppealPage> {
                       if (appeal.reason.isNotEmpty)
                         Text(
                           '处罚原因：${appeal.reason}',
-                          style: Theme.of(context).textTheme.bodySmall,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: SocialColors.textSecondary),
                         ),
                       if (appeal.canSubmit) ...<Widget>[
                         const SizedBox(height: 14),

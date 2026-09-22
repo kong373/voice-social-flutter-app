@@ -94,7 +94,11 @@ class _RoomDeepLinkPageState extends State<RoomDeepLinkPage> {
   @override
   Widget build(BuildContext context) {
     if (_resolving) {
-      return const RoomPageScaffold(body: SizedBox.expand());
+      return const RoomPageScaffold(
+        body: Center(
+          child: CircularProgressIndicator(semanticsLabel: '正在校验房间链接'),
+        ),
+      );
     }
     final RoomLinkResolution? resolution = _resolution;
     final String title = switch (resolution?.status) {

@@ -539,7 +539,9 @@ class _PaymentSubmissionPageState extends State<PaymentSubmissionPage> {
                 ? 'iOS 只展示 Apple IAP。'
                 : 'Android 只展示微信支付与支付宝，不展示其他渠道。',
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodySmall,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: SocialColors.textSecondary),
           ),
         ],
       ),
@@ -633,13 +635,17 @@ class _PaymentResultPageState extends State<PaymentResultPage> {
                 Text(
                   _order.state.label,
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: SocialColors.textPrimary,
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   _order.message.isEmpty ? '订单结果以服务端状态为准' : _order.message,
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: SocialColors.textSecondary,
+                  ),
                 ),
               ],
             ),
@@ -1344,23 +1350,35 @@ class _DecorationPageState extends State<DecorationPage> {
                                     ? '已到期'
                                     : '未拥有',
                                 maxLines: 1,
-                                style: Theme.of(context).textTheme.bodySmall,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: SocialColors.textSecondary,
+                                    ),
                               ),
                               if (item.permanent)
                                 Text(
                                   '历史永久',
-                                  style: Theme.of(context).textTheme.bodySmall,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: SocialColors.textSecondary,
+                                      ),
                                 ),
                               if (item.canPurchase)
                                 Text(
                                   '${item.durationDays} 天 · ${item.priceGiftCoins} 礼物币',
-                                  style: Theme.of(context).textTheme.bodySmall,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: SocialColors.textSecondary,
+                                      ),
                                   textAlign: TextAlign.center,
                                 ),
                               if (item.expiresAt != null)
                                 Text(
                                   '到期 ${item.expiresAt!.toLocal().toIso8601String().substring(0, 16).replaceFirst('T', ' ')}',
-                                  style: Theme.of(context).textTheme.bodySmall,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: SocialColors.textSecondary,
+                                      ),
                                   textAlign: TextAlign.center,
                                 ),
                               const Spacer(),

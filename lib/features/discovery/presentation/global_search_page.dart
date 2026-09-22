@@ -175,7 +175,12 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
           ],
           Row(
             children: <Widget>[
-              Text('最近搜索', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                '最近搜索',
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: SocialColors.textPrimary,
+                ),
+              ),
               const Spacer(),
               TextButton(
                 onPressed: _recent.isEmpty
@@ -231,7 +236,12 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
           ],
           if (_suggestions.isNotEmpty) ...<Widget>[
             const SizedBox(height: 24),
-            Text('你可能想找', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              '你可能想找',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: SocialColors.textPrimary,
+              ),
+            ),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
@@ -250,7 +260,12 @@ class _GlobalSearchPageState extends State<GlobalSearchPage> {
             ),
           ],
           const SizedBox(height: 24),
-          Text('搜索范围', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            '搜索范围',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(color: SocialColors.textPrimary),
+          ),
           const SizedBox(height: 12),
           const _SearchGuide(
             icon: Icons.graphic_eq_rounded,
