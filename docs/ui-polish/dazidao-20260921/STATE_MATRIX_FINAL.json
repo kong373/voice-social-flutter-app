@@ -1,0 +1,5133 @@
+[
+  {
+    "id": "AC-005-account-snapshot-error-normal-ordinary",
+    "page_id": "AC-005",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-005",
+      "readTarget": "account.snapshot",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-005-account-snapshot-loading-normal-ordinary",
+    "page_id": "AC-005",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-005",
+      "readTarget": "account.snapshot",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-005-account-snapshot-normal-permission-denied-ordinary",
+    "page_id": "AC-005",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-005",
+      "readTarget": "account.snapshot",
+      "state": "normal",
+      "variant": "permission-denied",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-normal-permission-denied-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-normal-permission-denied-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-005-account-snapshot-normal-permission-granted-ordinary",
+    "page_id": "AC-005",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-005",
+      "readTarget": "account.snapshot",
+      "state": "normal",
+      "variant": "permission-granted",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-normal-permission-granted-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-normal-permission-granted-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-005-account-snapshot-normal-permission-notDetermined-ordinary",
+    "page_id": "AC-005",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-005",
+      "readTarget": "account.snapshot",
+      "state": "normal",
+      "variant": "permission-notDetermined",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-normal-permission-notDetermined-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-normal-permission-notDetermined-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-005-account-snapshot-normal-permission-permanentlyDenied-ordinary",
+    "page_id": "AC-005",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-005",
+      "readTarget": "account.snapshot",
+      "state": "normal",
+      "variant": "permission-permanentlyDenied",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-normal-permission-permanentlyDenied-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-normal-permission-permanentlyDenied-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-005-account-snapshot-normal-permission-restricted-ordinary",
+    "page_id": "AC-005",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-005",
+      "readTarget": "account.snapshot",
+      "state": "normal",
+      "variant": "permission-restricted",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-normal-permission-restricted-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-normal-permission-restricted-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-005-account-snapshot-normal-permission-unavailable-ordinary",
+    "page_id": "AC-005",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-005",
+      "readTarget": "account.snapshot",
+      "state": "normal",
+      "variant": "permission-unavailable",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-normal-permission-unavailable-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-005-account-snapshot-normal-permission-unavailable-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-006-account-snapshot-error-normal-ordinary",
+    "page_id": "AC-006",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-006",
+      "readTarget": "account.snapshot",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-006-account-snapshot-loading-normal-ordinary",
+    "page_id": "AC-006",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-006",
+      "readTarget": "account.snapshot",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-006-account-snapshot-normal-verification-pending-ordinary",
+    "page_id": "AC-006",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-006",
+      "readTarget": "account.snapshot",
+      "state": "normal",
+      "variant": "verification-pending",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-normal-verification-pending-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-normal-verification-pending-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-006-account-snapshot-normal-verification-rejected-ordinary",
+    "page_id": "AC-006",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-006",
+      "readTarget": "account.snapshot",
+      "state": "normal",
+      "variant": "verification-rejected",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-normal-verification-rejected-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-normal-verification-rejected-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-006-account-snapshot-normal-verification-unavailable-ordinary",
+    "page_id": "AC-006",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-006",
+      "readTarget": "account.snapshot",
+      "state": "normal",
+      "variant": "verification-unavailable",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-normal-verification-unavailable-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-normal-verification-unavailable-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-006-account-snapshot-normal-verification-unverified-ordinary",
+    "page_id": "AC-006",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-006",
+      "readTarget": "account.snapshot",
+      "state": "normal",
+      "variant": "verification-unverified",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-normal-verification-unverified-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-normal-verification-unverified-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-006-account-snapshot-normal-verification-verified-ordinary",
+    "page_id": "AC-006",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-006",
+      "readTarget": "account.snapshot",
+      "state": "normal",
+      "variant": "verification-verified",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-normal-verification-verified-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-006-account-snapshot-normal-verification-verified-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-007-account-snapshot-empty-normal-ordinary",
+    "page_id": "AC-007",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-007",
+      "readTarget": "account.snapshot",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-007-account-snapshot-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-007-account-snapshot-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-007-account-snapshot-error-normal-ordinary",
+    "page_id": "AC-007",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-007",
+      "readTarget": "account.snapshot",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-007-account-snapshot-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-007-account-snapshot-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-007-account-snapshot-loading-normal-ordinary",
+    "page_id": "AC-007",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-007",
+      "readTarget": "account.snapshot",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-007-account-snapshot-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-007-account-snapshot-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-008-account-snapshot-error-normal-ordinary",
+    "page_id": "AC-008",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-008",
+      "readTarget": "account.snapshot",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-008-account-snapshot-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-008-account-snapshot-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-008-account-snapshot-loading-normal-ordinary",
+    "page_id": "AC-008",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-008",
+      "readTarget": "account.snapshot",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-008-account-snapshot-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-008-account-snapshot-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-008-account-snapshot-normal-restricted-ordinary",
+    "page_id": "AC-008",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-008",
+      "readTarget": "account.snapshot",
+      "state": "normal",
+      "variant": "restricted",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-008-account-snapshot-normal-restricted-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-008-account-snapshot-normal-restricted-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-009-account-appeal-empty-normal-ordinary",
+    "page_id": "AC-009",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-009",
+      "readTarget": "account.appeal",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.appeal"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-009-account-appeal-error-normal-ordinary",
+    "page_id": "AC-009",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-009",
+      "readTarget": "account.appeal",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.appeal"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-009-account-appeal-loading-normal-ordinary",
+    "page_id": "AC-009",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-009",
+      "readTarget": "account.appeal",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.appeal"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-009-account-appeal-normal-appeal-approved-ordinary",
+    "page_id": "AC-009",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-009",
+      "readTarget": "account.appeal",
+      "state": "normal",
+      "variant": "appeal-approved",
+      "role": "ordinary",
+      "readCalls": [
+        "account.appeal"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-normal-appeal-approved-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-normal-appeal-approved-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-009-account-appeal-normal-appeal-cancelled-ordinary",
+    "page_id": "AC-009",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-009",
+      "readTarget": "account.appeal",
+      "state": "normal",
+      "variant": "appeal-cancelled",
+      "role": "ordinary",
+      "readCalls": [
+        "account.appeal"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-normal-appeal-cancelled-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-normal-appeal-cancelled-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-009-account-appeal-normal-appeal-none-ordinary",
+    "page_id": "AC-009",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-009",
+      "readTarget": "account.appeal",
+      "state": "normal",
+      "variant": "appeal-none",
+      "role": "ordinary",
+      "readCalls": [
+        "account.appeal"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-normal-appeal-none-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-normal-appeal-none-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-009-account-appeal-normal-appeal-pending-ordinary",
+    "page_id": "AC-009",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-009",
+      "readTarget": "account.appeal",
+      "state": "normal",
+      "variant": "appeal-pending",
+      "role": "ordinary",
+      "readCalls": [
+        "account.appeal"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-normal-appeal-pending-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-normal-appeal-pending-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-009-account-appeal-normal-appeal-rejected-ordinary",
+    "page_id": "AC-009",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-009",
+      "readTarget": "account.appeal",
+      "state": "normal",
+      "variant": "appeal-rejected",
+      "role": "ordinary",
+      "readCalls": [
+        "account.appeal"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-normal-appeal-rejected-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-009-account-appeal-normal-appeal-rejected-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-010-account-cancel-error-normal-ordinary",
+    "page_id": "AC-010",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-010",
+      "readTarget": "account.cancel",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.cancel"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-010-account-cancel-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-010-account-cancel-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-010-account-cancel-loading-normal-ordinary",
+    "page_id": "AC-010",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-010",
+      "readTarget": "account.cancel",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.cancel"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-010-account-cancel-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-010-account-cancel-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-010-account-cancel-normal-cancel-blocked-ordinary",
+    "page_id": "AC-010",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-010",
+      "readTarget": "account.cancel",
+      "state": "normal",
+      "variant": "cancel-blocked",
+      "role": "ordinary",
+      "readCalls": [
+        "account.cancel"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-010-account-cancel-normal-cancel-blocked-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-010-account-cancel-normal-cancel-blocked-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-010-account-cancel-normal-cancel-cooling-closed-ordinary",
+    "page_id": "AC-010",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-010",
+      "readTarget": "account.cancel",
+      "state": "normal",
+      "variant": "cancel-cooling-closed",
+      "role": "ordinary",
+      "readCalls": [
+        "account.cancel"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-010-account-cancel-normal-cancel-cooling-closed-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-010-account-cancel-normal-cancel-cooling-closed-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-010-account-cancel-normal-cancel-cooling-open-ordinary",
+    "page_id": "AC-010",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-010",
+      "readTarget": "account.cancel",
+      "state": "normal",
+      "variant": "cancel-cooling-open",
+      "role": "ordinary",
+      "readCalls": [
+        "account.cancel"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-010-account-cancel-normal-cancel-cooling-open-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-010-account-cancel-normal-cancel-cooling-open-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-011-account-version-error-normal-ordinary",
+    "page_id": "AC-011",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-011",
+      "readTarget": "account.version",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.version"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-011-account-version-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-011-account-version-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-011-account-version-loading-normal-ordinary",
+    "page_id": "AC-011",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-011",
+      "readTarget": "account.version",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.version"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-011-account-version-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-011-account-version-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-011-account-version-normal-version-current-ordinary",
+    "page_id": "AC-011",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-011",
+      "readTarget": "account.version",
+      "state": "normal",
+      "variant": "version-current",
+      "role": "ordinary",
+      "readCalls": [
+        "account.version"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-011-account-version-normal-version-current-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-011-account-version-normal-version-current-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-011-account-version-normal-version-mandatory-ordinary",
+    "page_id": "AC-011",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-011",
+      "readTarget": "account.version",
+      "state": "normal",
+      "variant": "version-mandatory",
+      "role": "ordinary",
+      "readCalls": [
+        "account.version"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-011-account-version-normal-version-mandatory-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-011-account-version-normal-version-mandatory-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-011-account-version-normal-version-optional-ordinary",
+    "page_id": "AC-011",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-011",
+      "readTarget": "account.version",
+      "state": "normal",
+      "variant": "version-optional",
+      "role": "ordinary",
+      "readCalls": [
+        "account.version"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-011-account-version-normal-version-optional-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-011-account-version-normal-version-optional-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-012-account-snapshot-error-normal-ordinary",
+    "page_id": "AC-012",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-012",
+      "readTarget": "account.snapshot",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-012-account-snapshot-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-012-account-snapshot-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-012-account-snapshot-loading-normal-ordinary",
+    "page_id": "AC-012",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-012",
+      "readTarget": "account.snapshot",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-012-account-snapshot-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-012-account-snapshot-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-012-account-snapshot-normal-youth-locked-ordinary",
+    "page_id": "AC-012",
+    "group": "state",
+    "state": {
+      "manifestId": "AC-012",
+      "readTarget": "account.snapshot",
+      "state": "normal",
+      "variant": "youth-locked",
+      "role": "ordinary",
+      "readCalls": [
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/AC-012-account-snapshot-normal-youth-locked-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/AC-012-account-snapshot-normal-youth-locked-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-001-commerce-ledger-empty-normal-ordinary",
+    "page_id": "CM-001",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-001",
+      "readTarget": "commerce.ledger",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "commerce.wallet",
+        "commerce.ledger"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-001-commerce-ledger-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-001-commerce-ledger-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-001-commerce-ledger-error-normal-ordinary",
+    "page_id": "CM-001",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-001",
+      "readTarget": "commerce.ledger",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "commerce.wallet",
+        "commerce.ledger"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-001-commerce-ledger-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-001-commerce-ledger-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-001-commerce-ledger-loading-normal-ordinary",
+    "page_id": "CM-001",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-001",
+      "readTarget": "commerce.ledger",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "commerce.wallet",
+        "commerce.ledger"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-001-commerce-ledger-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-001-commerce-ledger-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-002-catalog-products-empty-normal-ordinary",
+    "page_id": "CM-002",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-002",
+      "readTarget": "catalog.products",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.products",
+        "commerce.wallet",
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-002-catalog-products-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-002-catalog-products-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-002-catalog-products-error-normal-ordinary",
+    "page_id": "CM-002",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-002",
+      "readTarget": "catalog.products",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.products",
+        "commerce.wallet",
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-002-catalog-products-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-002-catalog-products-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-002-catalog-products-loading-normal-ordinary",
+    "page_id": "CM-002",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-002",
+      "readTarget": "catalog.products",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.products",
+        "commerce.wallet",
+        "account.snapshot"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-002-catalog-products-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-002-catalog-products-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-004-catalog-result-normal-payment-canceled-ordinary",
+    "page_id": "CM-004",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-004",
+      "readTarget": "catalog.result",
+      "state": "normal",
+      "variant": "payment-canceled",
+      "role": "ordinary",
+      "readCalls": [],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-canceled-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-canceled-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-004-catalog-result-normal-payment-confirming-ordinary",
+    "page_id": "CM-004",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-004",
+      "readTarget": "catalog.result",
+      "state": "normal",
+      "variant": "payment-confirming",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.result"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-confirming-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-confirming-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-004-catalog-result-normal-payment-created-ordinary",
+    "page_id": "CM-004",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-004",
+      "readTarget": "catalog.result",
+      "state": "normal",
+      "variant": "payment-created",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.result"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-created-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-created-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-004-catalog-result-normal-payment-failed-ordinary",
+    "page_id": "CM-004",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-004",
+      "readTarget": "catalog.result",
+      "state": "normal",
+      "variant": "payment-failed",
+      "role": "ordinary",
+      "readCalls": [],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-failed-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-failed-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-004-catalog-result-normal-payment-invoking-ordinary",
+    "page_id": "CM-004",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-004",
+      "readTarget": "catalog.result",
+      "state": "normal",
+      "variant": "payment-invoking",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.result"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-invoking-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-invoking-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-004-catalog-result-normal-payment-succeeded-ordinary",
+    "page_id": "CM-004",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-004",
+      "readTarget": "catalog.result",
+      "state": "normal",
+      "variant": "payment-succeeded",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.result"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-succeeded-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-succeeded-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-004-catalog-result-normal-payment-unavailable-ordinary",
+    "page_id": "CM-004",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-004",
+      "readTarget": "catalog.result",
+      "state": "normal",
+      "variant": "payment-unavailable",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.result"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-unavailable-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-004-catalog-result-normal-payment-unavailable-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-005-commerce-orders-empty-normal-ordinary",
+    "page_id": "CM-005",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-005",
+      "readTarget": "commerce.orders",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "commerce.orders"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-005-commerce-orders-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-005-commerce-orders-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-005-commerce-orders-error-normal-ordinary",
+    "page_id": "CM-005",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-005",
+      "readTarget": "commerce.orders",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "commerce.orders"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-005-commerce-orders-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-005-commerce-orders-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-005-commerce-orders-loading-normal-ordinary",
+    "page_id": "CM-005",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-005",
+      "readTarget": "commerce.orders",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "commerce.orders"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-005-commerce-orders-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-005-commerce-orders-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-009-catalog-gifts-empty-normal-ordinary",
+    "page_id": "CM-009",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-009",
+      "readTarget": "catalog.gifts",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.gifts",
+        "commerce.wallet"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-009-catalog-gifts-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-009-catalog-gifts-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-009-catalog-gifts-error-normal-ordinary",
+    "page_id": "CM-009",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-009",
+      "readTarget": "catalog.gifts",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.gifts",
+        "commerce.wallet"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-009-catalog-gifts-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-009-catalog-gifts-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-009-catalog-gifts-loading-normal-ordinary",
+    "page_id": "CM-009",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-009",
+      "readTarget": "catalog.gifts",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.gifts",
+        "commerce.wallet"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-009-catalog-gifts-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-009-catalog-gifts-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-010-catalog-decorations-empty-normal-ordinary",
+    "page_id": "CM-010",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-010",
+      "readTarget": "catalog.decorations",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.decorations"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-010-catalog-decorations-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-010-catalog-decorations-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-010-catalog-decorations-error-normal-ordinary",
+    "page_id": "CM-010",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-010",
+      "readTarget": "catalog.decorations",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.decorations"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-010-catalog-decorations-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-010-catalog-decorations-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-010-catalog-decorations-loading-normal-ordinary",
+    "page_id": "CM-010",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-010",
+      "readTarget": "catalog.decorations",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.decorations"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-010-catalog-decorations-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-010-catalog-decorations-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-010-catalog-decorations-normal-decoration-expired-ordinary",
+    "page_id": "CM-010",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-010",
+      "readTarget": "catalog.decorations",
+      "state": "normal",
+      "variant": "decoration-expired",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.decorations"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-010-catalog-decorations-normal-decoration-expired-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-010-catalog-decorations-normal-decoration-expired-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-010-catalog-decorations-normal-decoration-retired-ordinary",
+    "page_id": "CM-010",
+    "group": "state",
+    "state": {
+      "manifestId": "CM-010",
+      "readTarget": "catalog.decorations",
+      "state": "normal",
+      "variant": "decoration-retired",
+      "role": "ordinary",
+      "readCalls": [
+        "catalog.decorations"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/CM-010-catalog-decorations-normal-decoration-retired-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/CM-010-catalog-decorations-normal-decoration-retired-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-001-discovery-home-empty-normal-ordinary",
+    "page_id": "DS-001",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-001",
+      "readTarget": "discovery.home",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.conversations",
+        "social.profile",
+        "discovery.home"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-001-discovery-home-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-001-discovery-home-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-001-discovery-home-error-normal-ordinary",
+    "page_id": "DS-001",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-001",
+      "readTarget": "discovery.home",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.conversations",
+        "social.profile",
+        "discovery.home"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-001-discovery-home-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-001-discovery-home-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-001-discovery-home-loading-normal-ordinary",
+    "page_id": "DS-001",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-001",
+      "readTarget": "discovery.home",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.conversations",
+        "social.profile",
+        "discovery.home"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-001-discovery-home-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-001-discovery-home-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-002-discovery-suggestions-empty-normal-ordinary",
+    "page_id": "DS-002",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-002",
+      "readTarget": "discovery.suggestions",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "discovery.suggestions"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-002-discovery-suggestions-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-002-discovery-suggestions-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-002-discovery-suggestions-error-normal-ordinary",
+    "page_id": "DS-002",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-002",
+      "readTarget": "discovery.suggestions",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "discovery.suggestions"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-002-discovery-suggestions-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-002-discovery-suggestions-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-002-discovery-suggestions-loading-normal-ordinary",
+    "page_id": "DS-002",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-002",
+      "readTarget": "discovery.suggestions",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "discovery.suggestions"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-002-discovery-suggestions-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-002-discovery-suggestions-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-003-discovery-search-empty-normal-ordinary",
+    "page_id": "DS-003",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-003",
+      "readTarget": "discovery.search",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "discovery.search"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-003-discovery-search-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-003-discovery-search-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-003-discovery-search-error-normal-ordinary",
+    "page_id": "DS-003",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-003",
+      "readTarget": "discovery.search",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "discovery.search"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-003-discovery-search-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-003-discovery-search-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-003-discovery-search-loading-normal-ordinary",
+    "page_id": "DS-003",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-003",
+      "readTarget": "discovery.search",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "discovery.search"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-003-discovery-search-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-003-discovery-search-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-004-dynamic-feed-empty-normal-ordinary",
+    "page_id": "DS-004",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-004",
+      "readTarget": "dynamic.feed",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "dynamic.feed"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-004-dynamic-feed-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-004-dynamic-feed-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-004-dynamic-feed-error-normal-ordinary",
+    "page_id": "DS-004",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-004",
+      "readTarget": "dynamic.feed",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "dynamic.feed"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-004-dynamic-feed-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-004-dynamic-feed-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-004-dynamic-feed-loading-normal-ordinary",
+    "page_id": "DS-004",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-004",
+      "readTarget": "dynamic.feed",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "dynamic.feed"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-004-dynamic-feed-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-004-dynamic-feed-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-005-dynamic-comments-empty-normal-ordinary",
+    "page_id": "DS-005",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-005",
+      "readTarget": "dynamic.comments",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "dynamic.post",
+        "dynamic.comments"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-005-dynamic-comments-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-005-dynamic-comments-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-005-dynamic-comments-error-normal-ordinary",
+    "page_id": "DS-005",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-005",
+      "readTarget": "dynamic.comments",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "dynamic.post",
+        "dynamic.comments"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-005-dynamic-comments-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-005-dynamic-comments-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-005-dynamic-comments-loading-normal-ordinary",
+    "page_id": "DS-005",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-005",
+      "readTarget": "dynamic.comments",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "dynamic.post",
+        "dynamic.comments"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-005-dynamic-comments-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-005-dynamic-comments-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-005-dynamic-post-error-normal-ordinary",
+    "page_id": "DS-005",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-005",
+      "readTarget": "dynamic.post",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "dynamic.post",
+        "dynamic.comments"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-005-dynamic-post-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-005-dynamic-post-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-005-dynamic-post-loading-normal-ordinary",
+    "page_id": "DS-005",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-005",
+      "readTarget": "dynamic.post",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "dynamic.post",
+        "dynamic.comments"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-005-dynamic-post-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-005-dynamic-post-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-007-dynamic-ranking-empty-normal-ordinary",
+    "page_id": "DS-007",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-007",
+      "readTarget": "dynamic.ranking",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "dynamic.ranking"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-007-dynamic-ranking-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-007-dynamic-ranking-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-007-dynamic-ranking-error-normal-ordinary",
+    "page_id": "DS-007",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-007",
+      "readTarget": "dynamic.ranking",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "dynamic.ranking"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-007-dynamic-ranking-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-007-dynamic-ranking-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-007-dynamic-ranking-loading-normal-ordinary",
+    "page_id": "DS-007",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-007",
+      "readTarget": "dynamic.ranking",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "dynamic.ranking"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-007-dynamic-ranking-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-007-dynamic-ranking-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-008-discovery-collections-empty-normal-ordinary",
+    "page_id": "DS-008",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-008",
+      "readTarget": "discovery.collections",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "discovery.collections"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-008-discovery-collections-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-008-discovery-collections-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-008-discovery-collections-error-normal-ordinary",
+    "page_id": "DS-008",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-008",
+      "readTarget": "discovery.collections",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "discovery.collections"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-008-discovery-collections-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-008-discovery-collections-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-008-discovery-collections-loading-normal-ordinary",
+    "page_id": "DS-008",
+    "group": "state",
+    "state": {
+      "manifestId": "DS-008",
+      "readTarget": "discovery.collections",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "discovery.collections"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/DS-008-discovery-collections-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/DS-008-discovery-collections-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-001-message-conversations-empty-normal-ordinary",
+    "page_id": "MS-001",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-001",
+      "readTarget": "message.conversations",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.conversations"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-001-message-conversations-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-001-message-conversations-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-001-message-conversations-error-normal-ordinary",
+    "page_id": "MS-001",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-001",
+      "readTarget": "message.conversations",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.conversations"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-001-message-conversations-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-001-message-conversations-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-001-message-conversations-loading-normal-ordinary",
+    "page_id": "MS-001",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-001",
+      "readTarget": "message.conversations",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.conversations"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-001-message-conversations-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-001-message-conversations-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-002-message-private-empty-normal-ordinary",
+    "page_id": "MS-002",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-002",
+      "readTarget": "message.private",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.private"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-002-message-private-error-normal-ordinary",
+    "page_id": "MS-002",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-002",
+      "readTarget": "message.private",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.private"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-002-message-private-loading-normal-ordinary",
+    "page_id": "MS-002",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-002",
+      "readTarget": "message.private",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.private"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-002-message-private-normal-delivery-delivered-ordinary",
+    "page_id": "MS-002",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-002",
+      "readTarget": "message.private",
+      "state": "normal",
+      "variant": "delivery-delivered",
+      "role": "ordinary",
+      "readCalls": [
+        "message.private"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-delivered-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-delivered-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-002-message-private-normal-delivery-failed-ordinary",
+    "page_id": "MS-002",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-002",
+      "readTarget": "message.private",
+      "state": "normal",
+      "variant": "delivery-failed",
+      "role": "ordinary",
+      "readCalls": [
+        "message.private"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-failed-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-failed-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-002-message-private-normal-delivery-pending-ordinary",
+    "page_id": "MS-002",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-002",
+      "readTarget": "message.private",
+      "state": "normal",
+      "variant": "delivery-pending",
+      "role": "ordinary",
+      "readCalls": [
+        "message.private"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-pending-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-pending-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-002-message-private-normal-delivery-processing-ordinary",
+    "page_id": "MS-002",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-002",
+      "readTarget": "message.private",
+      "state": "normal",
+      "variant": "delivery-processing",
+      "role": "ordinary",
+      "readCalls": [
+        "message.private"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-processing-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-processing-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-002-message-private-normal-delivery-retry-ordinary",
+    "page_id": "MS-002",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-002",
+      "readTarget": "message.private",
+      "state": "normal",
+      "variant": "delivery-retry",
+      "role": "ordinary",
+      "readCalls": [
+        "message.private"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-retry-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-retry-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-002-message-private-normal-delivery-unknown-ordinary",
+    "page_id": "MS-002",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-002",
+      "readTarget": "message.private",
+      "state": "normal",
+      "variant": "delivery-unknown",
+      "role": "ordinary",
+      "readCalls": [
+        "message.private"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-unknown-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-unknown-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-002-message-private-normal-delivery-vendorBlocked-ordinary",
+    "page_id": "MS-002",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-002",
+      "readTarget": "message.private",
+      "state": "normal",
+      "variant": "delivery-vendorBlocked",
+      "role": "ordinary",
+      "readCalls": [
+        "message.private"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-vendorBlocked-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-002-message-private-normal-delivery-vendorBlocked-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-003-message-notifications-empty-normal-ordinary",
+    "page_id": "MS-003",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-003",
+      "readTarget": "message.notifications",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.notifications"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-003-message-notifications-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-003-message-notifications-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-003-message-notifications-error-normal-ordinary",
+    "page_id": "MS-003",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-003",
+      "readTarget": "message.notifications",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.notifications"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-003-message-notifications-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-003-message-notifications-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-003-message-notifications-loading-normal-ordinary",
+    "page_id": "MS-003",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-003",
+      "readTarget": "message.notifications",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.notifications"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-003-message-notifications-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-003-message-notifications-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-004-message-notification-error-normal-ordinary",
+    "page_id": "MS-004",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-004",
+      "readTarget": "message.notification",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.notification"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-004-message-notification-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-004-message-notification-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-004-message-notification-loading-normal-ordinary",
+    "page_id": "MS-004",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-004",
+      "readTarget": "message.notification",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.notification"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-004-message-notification-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-004-message-notification-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-004-message-notification-normal-target-unavailable-ordinary",
+    "page_id": "MS-004",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-004",
+      "readTarget": "message.notification",
+      "state": "normal",
+      "variant": "target-unavailable",
+      "role": "ordinary",
+      "readCalls": [
+        "message.notification"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-004-message-notification-normal-target-unavailable-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-004-message-notification-normal-target-unavailable-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-006-message-recovery-error-normal-ordinary",
+    "page_id": "MS-006",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-006",
+      "readTarget": "message.recovery",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.recovery"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-006-message-recovery-loading-normal-ordinary",
+    "page_id": "MS-006",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-006",
+      "readTarget": "message.recovery",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.recovery"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-006-message-recovery-normal-notification-allowed-ordinary",
+    "page_id": "MS-006",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-006",
+      "readTarget": "message.recovery",
+      "state": "normal",
+      "variant": "notification-allowed",
+      "role": "ordinary",
+      "readCalls": [
+        "message.recovery"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-normal-notification-allowed-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-normal-notification-allowed-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-006-message-recovery-normal-notification-denied-ordinary",
+    "page_id": "MS-006",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-006",
+      "readTarget": "message.recovery",
+      "state": "normal",
+      "variant": "notification-denied",
+      "role": "ordinary",
+      "readCalls": [
+        "message.recovery"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-normal-notification-denied-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-normal-notification-denied-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-006-message-recovery-normal-notification-permanentlyDenied-ordinary",
+    "page_id": "MS-006",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-006",
+      "readTarget": "message.recovery",
+      "state": "normal",
+      "variant": "notification-permanentlyDenied",
+      "role": "ordinary",
+      "readCalls": [
+        "message.recovery"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-normal-notification-permanentlyDenied-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-normal-notification-permanentlyDenied-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-006-message-recovery-normal-notification-restricted-ordinary",
+    "page_id": "MS-006",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-006",
+      "readTarget": "message.recovery",
+      "state": "normal",
+      "variant": "notification-restricted",
+      "role": "ordinary",
+      "readCalls": [
+        "message.recovery"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-normal-notification-restricted-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-normal-notification-restricted-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-006-message-recovery-normal-notification-unavailable-ordinary",
+    "page_id": "MS-006",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-006",
+      "readTarget": "message.recovery",
+      "state": "normal",
+      "variant": "notification-unavailable",
+      "role": "ordinary",
+      "readCalls": [
+        "message.recovery"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-normal-notification-unavailable-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-normal-notification-unavailable-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "MS-006-message-recovery-normal-notification-unknown-ordinary",
+    "page_id": "MS-006",
+    "group": "state",
+    "state": {
+      "manifestId": "MS-006",
+      "readTarget": "message.recovery",
+      "state": "normal",
+      "variant": "notification-unknown",
+      "role": "ordinary",
+      "readCalls": [
+        "message.recovery"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-normal-notification-unknown-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/MS-006-message-recovery-normal-notification-unknown-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-001-room-owned-empty-normal-chair",
+    "page_id": "RM-001",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-001",
+      "readTarget": "room.owned",
+      "state": "empty",
+      "variant": "normal",
+      "role": "chair",
+      "readCalls": [
+        "room.owned",
+        "community.home"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-001-room-owned-empty-normal-chair.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-001-room-owned-empty-normal-chair.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-001-room-owned-error-normal-chair",
+    "page_id": "RM-001",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-001",
+      "readTarget": "room.owned",
+      "state": "error",
+      "variant": "normal",
+      "role": "chair",
+      "readCalls": [
+        "room.owned",
+        "community.home"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-001-room-owned-error-normal-chair.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-001-room-owned-error-normal-chair.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-001-room-owned-loading-normal-chair",
+    "page_id": "RM-001",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-001",
+      "readTarget": "room.owned",
+      "state": "loading",
+      "variant": "normal",
+      "role": "chair",
+      "readCalls": [
+        "room.owned",
+        "community.home"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-001-room-owned-loading-normal-chair.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-001-room-owned-loading-normal-chair.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-002-room-configuration-error-normal-ordinary",
+    "page_id": "RM-002",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-002",
+      "readTarget": "room.configuration",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "room.configuration"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-002-room-configuration-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-002-room-configuration-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-002-room-configuration-loading-normal-ordinary",
+    "page_id": "RM-002",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-002",
+      "readTarget": "room.configuration",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "room.configuration"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-002-room-configuration-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-002-room-configuration-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-003-room-link-error-normal-ordinary",
+    "page_id": "RM-003",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-003",
+      "readTarget": "room.link",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "room.link"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-003-room-link-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-003-room-link-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-003-room-link-loading-normal-ordinary",
+    "page_id": "RM-003",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-003",
+      "readTarget": "room.link",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "room.link"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-003-room-link-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-003-room-link-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-004-room-enter-error-normal-ordinary",
+    "page_id": "RM-004",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-004",
+      "readTarget": "room.enter",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "room.enter"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-004-room-enter-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-004-room-enter-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-004-room-enter-loading-normal-ordinary",
+    "page_id": "RM-004",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-004",
+      "readTarget": "room.enter",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "room.enter"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-004-room-enter-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-004-room-enter-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-006-room-members-empty-normal-ordinary",
+    "page_id": "RM-006",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-006",
+      "readTarget": "room.members",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "room.members"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-006-room-members-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-006-room-members-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-006-room-members-error-normal-ordinary",
+    "page_id": "RM-006",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-006",
+      "readTarget": "room.members",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "room.members"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-006-room-members-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-006-room-members-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-006-room-members-loading-normal-ordinary",
+    "page_id": "RM-006",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-006",
+      "readTarget": "room.members",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "room.members"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-006-room-members-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-006-room-members-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-007-room-members-empty-normal-roomOwner",
+    "page_id": "RM-007",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-007",
+      "readTarget": "room.members",
+      "state": "empty",
+      "variant": "normal",
+      "role": "roomOwner",
+      "readCalls": [
+        "room.mic-queue",
+        "room.members",
+        "room.muted",
+        "room.managers",
+        "room.mic-queue"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-007-room-members-empty-normal-roomOwner.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-007-room-members-empty-normal-roomOwner.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-007-room-members-error-normal-roomOwner",
+    "page_id": "RM-007",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-007",
+      "readTarget": "room.members",
+      "state": "error",
+      "variant": "normal",
+      "role": "roomOwner",
+      "readCalls": [
+        "room.mic-queue",
+        "room.members",
+        "room.muted",
+        "room.managers"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-007-room-members-error-normal-roomOwner.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-007-room-members-error-normal-roomOwner.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-007-room-members-loading-normal-roomOwner",
+    "page_id": "RM-007",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-007",
+      "readTarget": "room.members",
+      "state": "loading",
+      "variant": "normal",
+      "role": "roomOwner",
+      "readCalls": [
+        "room.mic-queue",
+        "room.members",
+        "room.muted",
+        "room.managers"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-007-room-members-loading-normal-roomOwner.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-007-room-members-loading-normal-roomOwner.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-008-room-topic-empty-normal-ordinary",
+    "page_id": "RM-008",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-008",
+      "readTarget": "room.topic",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "room.topic"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-008-room-topic-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-008-room-topic-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-008-room-topic-error-normal-ordinary",
+    "page_id": "RM-008",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-008",
+      "readTarget": "room.topic",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "room.topic"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-008-room-topic-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-008-room-topic-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-008-room-topic-loading-normal-ordinary",
+    "page_id": "RM-008",
+    "group": "state",
+    "state": {
+      "manifestId": "RM-008",
+      "readTarget": "room.topic",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "room.topic"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/RM-008-room-topic-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/RM-008-room-topic-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-community-home-empty-normal-ordinary",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.home",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "community.home"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-community-home-error-normal-ordinary",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.home",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "community.home"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-community-home-loading-normal-ordinary",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.home",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "community.home"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-community-home-normal-guild-authority-unknown-ordinary",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.home",
+      "state": "normal",
+      "variant": "guild-authority-unknown",
+      "role": "ordinary",
+      "readCalls": [
+        "community.home"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-normal-guild-authority-unknown-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-normal-guild-authority-unknown-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-community-home-normal-normal-anchor",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.home",
+      "state": "normal",
+      "variant": "normal",
+      "role": "anchor",
+      "readCalls": [
+        "community.home"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-normal-normal-anchor.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-normal-normal-anchor.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-community-home-normal-normal-chair",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.home",
+      "state": "normal",
+      "variant": "normal",
+      "role": "chair",
+      "readCalls": [
+        "community.home"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-normal-normal-chair.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-normal-normal-chair.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-community-home-normal-normal-ordinary",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.home",
+      "state": "normal",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "community.home"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-normal-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-community-home-normal-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-detail-community-guild-normal-guild-closed-anchor",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.guild",
+      "state": "normal",
+      "variant": "guild-closed",
+      "role": "anchor",
+      "readCalls": [
+        "community.guild"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-guild-closed-anchor.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-guild-closed-anchor.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-detail-community-guild-normal-guild-closed-chair",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.guild",
+      "state": "normal",
+      "variant": "guild-closed",
+      "role": "chair",
+      "readCalls": [
+        "community.guild"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-guild-closed-chair.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-guild-closed-chair.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-detail-community-guild-normal-guild-closed-ordinary",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.guild",
+      "state": "normal",
+      "variant": "guild-closed",
+      "role": "ordinary",
+      "readCalls": [
+        "community.guild"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-guild-closed-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-guild-closed-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-detail-community-guild-normal-guild-pending-ordinary",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.guild",
+      "state": "normal",
+      "variant": "guild-pending",
+      "role": "ordinary",
+      "readCalls": [
+        "community.guild"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-guild-pending-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-guild-pending-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-detail-community-guild-normal-normal-anchor",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.guild",
+      "state": "normal",
+      "variant": "normal",
+      "role": "anchor",
+      "readCalls": [
+        "community.guild"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-normal-anchor.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-normal-anchor.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-detail-community-guild-normal-normal-chair",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.guild",
+      "state": "normal",
+      "variant": "normal",
+      "role": "chair",
+      "readCalls": [
+        "community.guild"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-normal-chair.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-normal-chair.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-001-detail-community-guild-normal-normal-ordinary",
+    "page_id": "SC-001",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-001",
+      "readTarget": "community.guild",
+      "state": "normal",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "community.guild"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-001-detail-community-guild-normal-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-002-community-members-empty-normal-chair",
+    "page_id": "SC-002",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-002",
+      "readTarget": "community.members",
+      "state": "empty",
+      "variant": "normal",
+      "role": "chair",
+      "readCalls": [
+        "community.home",
+        "community.guild",
+        "community.members",
+        "community.applications",
+        "community.guild"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-002-community-members-empty-normal-chair.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-002-community-members-empty-normal-chair.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-002-community-members-error-normal-chair",
+    "page_id": "SC-002",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-002",
+      "readTarget": "community.members",
+      "state": "error",
+      "variant": "normal",
+      "role": "chair",
+      "readCalls": [
+        "community.home",
+        "community.guild",
+        "community.members"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-002-community-members-error-normal-chair.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-002-community-members-error-normal-chair.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-002-community-members-loading-normal-chair",
+    "page_id": "SC-002",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-002",
+      "readTarget": "community.members",
+      "state": "loading",
+      "variant": "normal",
+      "role": "chair",
+      "readCalls": [
+        "community.home",
+        "community.guild",
+        "community.members"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-002-community-members-loading-normal-chair.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-002-community-members-loading-normal-chair.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-002-community-members-normal-normal-anchor",
+    "page_id": "SC-002",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-002",
+      "readTarget": "community.members",
+      "state": "normal",
+      "variant": "normal",
+      "role": "anchor",
+      "readCalls": [
+        "community.home",
+        "community.guild",
+        "community.members",
+        "community.guild"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-002-community-members-normal-normal-anchor.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-002-community-members-normal-normal-anchor.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-002-community-members-normal-normal-chair",
+    "page_id": "SC-002",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-002",
+      "readTarget": "community.members",
+      "state": "normal",
+      "variant": "normal",
+      "role": "chair",
+      "readCalls": [
+        "community.home",
+        "community.guild",
+        "community.members",
+        "community.guild",
+        "community.applications",
+        "community.guild"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-002-community-members-normal-normal-chair.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-002-community-members-normal-normal-chair.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-003-community-invite-empty-normal-ordinary",
+    "page_id": "SC-003",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-003",
+      "readTarget": "community.invite",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "community.invite"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-003-community-invite-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-003-community-invite-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-003-community-invite-error-normal-ordinary",
+    "page_id": "SC-003",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-003",
+      "readTarget": "community.invite",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "community.invite"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-003-community-invite-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-003-community-invite-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "SC-003-community-invite-loading-normal-ordinary",
+    "page_id": "SC-003",
+    "group": "state",
+    "state": {
+      "manifestId": "SC-003",
+      "readTarget": "community.invite",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "community.invite"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/SC-003-community-invite-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/SC-003-community-invite-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-001-social-profile-error-normal-ordinary",
+    "page_id": "US-001",
+    "group": "state",
+    "state": {
+      "manifestId": "US-001",
+      "readTarget": "social.profile",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.conversations",
+        "social.profile",
+        "discovery.home",
+        "social.profile"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-001-social-profile-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-001-social-profile-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-001-social-profile-loading-normal-ordinary",
+    "page_id": "US-001",
+    "group": "state",
+    "state": {
+      "manifestId": "US-001",
+      "readTarget": "social.profile",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "message.conversations",
+        "social.profile",
+        "discovery.home",
+        "social.profile"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-001-social-profile-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-001-social-profile-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-003-social-public-error-normal-ordinary",
+    "page_id": "US-003",
+    "group": "state",
+    "state": {
+      "manifestId": "US-003",
+      "readTarget": "social.public",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.public"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-003-social-public-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-003-social-public-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-003-social-public-loading-normal-ordinary",
+    "page_id": "US-003",
+    "group": "state",
+    "state": {
+      "manifestId": "US-003",
+      "readTarget": "social.public",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.public"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-003-social-public-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-003-social-public-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-004-social-relations-empty-normal-ordinary",
+    "page_id": "US-004",
+    "group": "state",
+    "state": {
+      "manifestId": "US-004",
+      "readTarget": "social.relations",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.relations"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-004-social-relations-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-004-social-relations-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-004-social-relations-error-normal-ordinary",
+    "page_id": "US-004",
+    "group": "state",
+    "state": {
+      "manifestId": "US-004",
+      "readTarget": "social.relations",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.relations"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-004-social-relations-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-004-social-relations-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-004-social-relations-loading-normal-ordinary",
+    "page_id": "US-004",
+    "group": "state",
+    "state": {
+      "manifestId": "US-004",
+      "readTarget": "social.relations",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.relations"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-004-social-relations-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-004-social-relations-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-006-social-visitors-empty-normal-ordinary",
+    "page_id": "US-006",
+    "group": "state",
+    "state": {
+      "manifestId": "US-006",
+      "readTarget": "social.visitors",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.visitors"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-006-social-visitors-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-006-social-visitors-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-006-social-visitors-error-normal-ordinary",
+    "page_id": "US-006",
+    "group": "state",
+    "state": {
+      "manifestId": "US-006",
+      "readTarget": "social.visitors",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.visitors"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-006-social-visitors-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-006-social-visitors-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-006-social-visitors-loading-normal-ordinary",
+    "page_id": "US-006",
+    "group": "state",
+    "state": {
+      "manifestId": "US-006",
+      "readTarget": "social.visitors",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.visitors"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-006-social-visitors-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-006-social-visitors-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-007-social-blacklist-empty-normal-ordinary",
+    "page_id": "US-007",
+    "group": "state",
+    "state": {
+      "manifestId": "US-007",
+      "readTarget": "social.blacklist",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.privacy",
+        "social.blacklist"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-007-social-blacklist-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-007-social-blacklist-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-007-social-blacklist-error-normal-ordinary",
+    "page_id": "US-007",
+    "group": "state",
+    "state": {
+      "manifestId": "US-007",
+      "readTarget": "social.blacklist",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.privacy",
+        "social.blacklist"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-007-social-blacklist-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-007-social-blacklist-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-007-social-blacklist-loading-normal-ordinary",
+    "page_id": "US-007",
+    "group": "state",
+    "state": {
+      "manifestId": "US-007",
+      "readTarget": "social.blacklist",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.privacy",
+        "social.blacklist"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-007-social-blacklist-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-007-social-blacklist-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-009-history-social-tickets-empty-normal-ordinary",
+    "page_id": "US-009",
+    "group": "state",
+    "state": {
+      "manifestId": "US-009",
+      "readTarget": "social.tickets",
+      "state": "empty",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.tickets"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-009-history-social-tickets-empty-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-009-history-social-tickets-empty-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-009-history-social-tickets-error-normal-ordinary",
+    "page_id": "US-009",
+    "group": "state",
+    "state": {
+      "manifestId": "US-009",
+      "readTarget": "social.tickets",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.tickets"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-009-history-social-tickets-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-009-history-social-tickets-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-009-history-social-tickets-loading-normal-ordinary",
+    "page_id": "US-009",
+    "group": "state",
+    "state": {
+      "manifestId": "US-009",
+      "readTarget": "social.tickets",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.tickets"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-009-history-social-tickets-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-009-history-social-tickets-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-009-social-service-error-normal-ordinary",
+    "page_id": "US-009",
+    "group": "state",
+    "state": {
+      "manifestId": "US-009",
+      "readTarget": "social.service",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.service"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-009-social-service-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-009-social-service-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-009-social-service-loading-normal-ordinary",
+    "page_id": "US-009",
+    "group": "state",
+    "state": {
+      "manifestId": "US-009",
+      "readTarget": "social.service",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.service"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-009-social-service-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-009-social-service-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-010-social-ticket-error-normal-ordinary",
+    "page_id": "US-010",
+    "group": "state",
+    "state": {
+      "manifestId": "US-010",
+      "readTarget": "social.ticket",
+      "state": "error",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.ticket"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-010-social-ticket-error-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-010-social-ticket-error-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-010-social-ticket-loading-normal-ordinary",
+    "page_id": "US-010",
+    "group": "state",
+    "state": {
+      "manifestId": "US-010",
+      "readTarget": "social.ticket",
+      "state": "loading",
+      "variant": "normal",
+      "role": "ordinary",
+      "readCalls": [
+        "social.ticket"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-010-social-ticket-loading-normal-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-010-social-ticket-loading-normal-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-010-social-ticket-normal-ticket-closed-ordinary",
+    "page_id": "US-010",
+    "group": "state",
+    "state": {
+      "manifestId": "US-010",
+      "readTarget": "social.ticket",
+      "state": "normal",
+      "variant": "ticket-closed",
+      "role": "ordinary",
+      "readCalls": [
+        "social.ticket"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-010-social-ticket-normal-ticket-closed-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-010-social-ticket-normal-ticket-closed-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-010-social-ticket-normal-ticket-resolved-ordinary",
+    "page_id": "US-010",
+    "group": "state",
+    "state": {
+      "manifestId": "US-010",
+      "readTarget": "social.ticket",
+      "state": "normal",
+      "variant": "ticket-resolved",
+      "role": "ordinary",
+      "readCalls": [
+        "social.ticket"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-010-social-ticket-normal-ticket-resolved-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-010-social-ticket-normal-ticket-resolved-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-010-social-ticket-normal-ticket-waitingUser-ordinary",
+    "page_id": "US-010",
+    "group": "state",
+    "state": {
+      "manifestId": "US-010",
+      "readTarget": "social.ticket",
+      "state": "normal",
+      "variant": "ticket-waitingUser",
+      "role": "ordinary",
+      "readCalls": [
+        "social.ticket"
+      ],
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/finish123-complete-states/390x844-text1.0/US-010-social-ticket-normal-ticket-waitingUser-ordinary.png",
+    "metadata": "renders/finish123-complete-states/390x844-text1.0/US-010-social-ticket-normal-ticket-waitingUser-ordinary.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-003-extra-android",
+    "page_id": "CM-003",
+    "group": "supplement",
+    "state": {
+      "manifestId": "CM-003",
+      "state": "android",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/CM-003-extra-android.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/CM-003-extra-android.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-003-extra-ios",
+    "page_id": "CM-003",
+    "group": "supplement",
+    "state": {
+      "manifestId": "CM-003",
+      "state": "ios",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/CM-003-extra-ios.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/CM-003-extra-ios.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-003-extra-unavailable",
+    "page_id": "CM-003",
+    "group": "supplement",
+    "state": {
+      "manifestId": "CM-003",
+      "state": "unavailable",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/CM-003-extra-unavailable.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/CM-003-extra-unavailable.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-006-extra-error",
+    "page_id": "CM-006",
+    "group": "supplement",
+    "state": {
+      "manifestId": "CM-006",
+      "state": "error",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/CM-006-extra-error.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/CM-006-extra-error.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-006-extra-loading",
+    "page_id": "CM-006",
+    "group": "supplement",
+    "state": {
+      "manifestId": "CM-006",
+      "state": "loading",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/CM-006-extra-loading.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/CM-006-extra-loading.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-006-extra-normal",
+    "page_id": "CM-006",
+    "group": "supplement",
+    "state": {
+      "manifestId": "CM-006",
+      "state": "normal",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/CM-006-extra-normal.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/CM-006-extra-normal.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-010-extra-denied",
+    "page_id": "RM-010",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-010",
+      "state": "denied",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-010-extra-denied.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-010-extra-denied.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-010-extra-listener",
+    "page_id": "RM-010",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-010",
+      "state": "listener",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-010-extra-listener.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-010-extra-listener.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-010-extra-loading",
+    "page_id": "RM-010",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-010",
+      "state": "loading",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-010-extra-loading.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-010-extra-loading.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-010-extra-speaker",
+    "page_id": "RM-010",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-010",
+      "state": "speaker",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-010-extra-speaker.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-010-extra-speaker.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-010-extra-unavailable",
+    "page_id": "RM-010",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-010",
+      "state": "unavailable",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-010-extra-unavailable.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-010-extra-unavailable.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-011-extra-degraded",
+    "page_id": "RM-011",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-011",
+      "state": "degraded",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-011-extra-degraded.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-011-extra-degraded.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-011-extra-reconnecting",
+    "page_id": "RM-011",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-011",
+      "state": "reconnecting",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-011-extra-reconnecting.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-011-extra-reconnecting.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-011-extra-snapshot",
+    "page_id": "RM-011",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-011",
+      "state": "snapshot",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-011-extra-snapshot.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-011-extra-snapshot.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-013-extra-empty",
+    "page_id": "RM-013",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-013",
+      "state": "empty",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-013-extra-empty.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-013-extra-empty.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-013-extra-error",
+    "page_id": "RM-013",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-013",
+      "state": "error",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-013-extra-error.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-013-extra-error.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-013-extra-loading",
+    "page_id": "RM-013",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-013",
+      "state": "loading",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-013-extra-loading.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-013-extra-loading.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-014-extra-draw",
+    "page_id": "RM-014",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-014",
+      "state": "draw",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-014-extra-draw.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-014-extra-draw.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-014-extra-fighting",
+    "page_id": "RM-014",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-014",
+      "state": "fighting",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-014-extra-fighting.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-014-extra-fighting.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-014-extra-lose",
+    "page_id": "RM-014",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-014",
+      "state": "lose",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-014-extra-lose.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-014-extra-lose.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-014-extra-settling",
+    "page_id": "RM-014",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-014",
+      "state": "settling",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-014-extra-settling.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-014-extra-settling.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-014-extra-win",
+    "page_id": "RM-014",
+    "group": "supplement",
+    "state": {
+      "manifestId": "RM-014",
+      "state": "win",
+      "evidenceType": "SYNTHETIC_PRODUCTION_WIDGET",
+      "deviceValidated": false
+    },
+    "render": "renders/sealed123-final-supplement/390x844-text1.0/RM-014-extra-win.png",
+    "metadata": "renders/sealed123-final-supplement/390x844-text1.0/RM-014-extra-win.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-001-recovery-busy",
+    "page_id": "AC-001",
+    "group": "interaction",
+    "state": {
+      "manifestId": "AC-001",
+      "surface": "recovery-busy",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/AC-001-recovery-busy.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/AC-001-recovery-busy.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-001-recovery-error",
+    "page_id": "AC-001",
+    "group": "interaction",
+    "state": {
+      "manifestId": "AC-001",
+      "surface": "recovery-error",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/AC-001-recovery-error.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/AC-001-recovery-error.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-001-restore",
+    "page_id": "AC-001",
+    "group": "interaction",
+    "state": {
+      "manifestId": "AC-001",
+      "surface": "restore",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/AC-001-restore.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/AC-001-restore.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-002-agreement-sheet",
+    "page_id": "AC-002",
+    "group": "interaction",
+    "state": {
+      "manifestId": "AC-002",
+      "surface": "agreement-sheet",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/AC-002-agreement-sheet.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/AC-002-agreement-sheet.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-002-consent-ready",
+    "page_id": "AC-002",
+    "group": "interaction",
+    "state": {
+      "manifestId": "AC-002",
+      "surface": "consent-ready",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/AC-002-consent-ready.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/AC-002-consent-ready.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-002-privacy-sheet",
+    "page_id": "AC-002",
+    "group": "interaction",
+    "state": {
+      "manifestId": "AC-002",
+      "surface": "privacy-sheet",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/AC-002-privacy-sheet.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/AC-002-privacy-sheet.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-003-login-validation",
+    "page_id": "AC-003",
+    "group": "interaction",
+    "state": {
+      "manifestId": "AC-003",
+      "surface": "login-validation",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/AC-003-login-validation.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/AC-003-login-validation.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "AC-003-registration-validation",
+    "page_id": "AC-003",
+    "group": "interaction",
+    "state": {
+      "manifestId": "AC-003",
+      "surface": "registration-validation",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/AC-003-registration-validation.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/AC-003-registration-validation.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-006-publish-validation",
+    "page_id": "DS-006",
+    "group": "interaction",
+    "state": {
+      "manifestId": "DS-006",
+      "surface": "publish-validation",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/DS-006-publish-validation.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/DS-006-publish-validation.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-007-ranking-room",
+    "page_id": "DS-007",
+    "group": "interaction",
+    "state": {
+      "manifestId": "DS-007",
+      "surface": "ranking-room",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/DS-007-ranking-room.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/DS-007-ranking-room.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "DS-007-ranking-wealth",
+    "page_id": "DS-007",
+    "group": "interaction",
+    "state": {
+      "manifestId": "DS-007",
+      "surface": "ranking-wealth",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/DS-007-ranking-wealth.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/DS-007-ranking-wealth.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-002-profile-validation",
+    "page_id": "US-002",
+    "group": "interaction",
+    "state": {
+      "manifestId": "US-002",
+      "surface": "profile-validation",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/US-002-profile-validation.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/US-002-profile-validation.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-003-block-confirmation",
+    "page_id": "US-003",
+    "group": "interaction",
+    "state": {
+      "manifestId": "US-003",
+      "surface": "block-confirmation",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/US-003-block-confirmation.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/US-003-block-confirmation.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-008-report-validation",
+    "page_id": "US-008",
+    "group": "interaction",
+    "state": {
+      "manifestId": "US-008",
+      "surface": "report-validation",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/US-008-report-validation.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/US-008-report-validation.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "US-009-feedback-disabled",
+    "page_id": "US-009",
+    "group": "interaction",
+    "state": {
+      "manifestId": "US-009",
+      "surface": "feedback-disabled",
+      "fixture": "synthetic",
+      "writesAllowed": false
+    },
+    "render": "renders/sealed123-final-interactions/390x844-text1.0/US-009-feedback-disabled.png",
+    "metadata": "renders/sealed123-final-interactions/390x844-text1.0/US-009-feedback-disabled.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-001-hub-anchor-normal",
+    "page_id": "CM-001",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-001",
+      "incomeRole": "anchor",
+      "state": "normal",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-001-hub-anchor-normal.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-001-hub-anchor-normal.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-001-hub-guildChair-normal",
+    "page_id": "CM-001",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-001",
+      "incomeRole": "guildChair",
+      "state": "normal",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-001-hub-guildChair-normal.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-001-hub-guildChair-normal.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-001-hub-ordinary-normal",
+    "page_id": "CM-001",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-001",
+      "incomeRole": "ordinary",
+      "state": "normal",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-001-hub-ordinary-normal.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-001-hub-ordinary-normal.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-011-anchor-normal",
+    "page_id": "CM-011",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-011",
+      "incomeRole": "anchor",
+      "state": "normal",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-011-anchor-normal.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-011-anchor-normal.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-011-guildChair-normal",
+    "page_id": "CM-011",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-011",
+      "incomeRole": "guildChair",
+      "state": "normal",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-011-guildChair-normal.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-011-guildChair-normal.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-011-ordinary-normal",
+    "page_id": "CM-011",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-011",
+      "incomeRole": "ordinary",
+      "state": "normal",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-011-ordinary-normal.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-011-ordinary-normal.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-012-anchor-empty",
+    "page_id": "CM-012",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-012",
+      "incomeRole": "anchor",
+      "state": "empty",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-012-anchor-empty.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-012-anchor-empty.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-012-anchor-error",
+    "page_id": "CM-012",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-012",
+      "incomeRole": "anchor",
+      "state": "error",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-012-anchor-error.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-012-anchor-error.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-012-anchor-loading",
+    "page_id": "CM-012",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-012",
+      "incomeRole": "anchor",
+      "state": "loading",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-012-anchor-loading.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-012-anchor-loading.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-012-anchor-noAccount",
+    "page_id": "CM-012",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-012",
+      "incomeRole": "anchor",
+      "state": "noAccount",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-012-anchor-noAccount.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-012-anchor-noAccount.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-012-anchor-normal",
+    "page_id": "CM-012",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-012",
+      "incomeRole": "anchor",
+      "state": "normal",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-012-anchor-normal.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-012-anchor-normal.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-012-anchor-unknown",
+    "page_id": "CM-012",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-012",
+      "incomeRole": "anchor",
+      "state": "unknown",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-012-anchor-unknown.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-012-anchor-unknown.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-012-guildChair-normal",
+    "page_id": "CM-012",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-012",
+      "incomeRole": "guildChair",
+      "state": "normal",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-012-guildChair-normal.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-012-guildChair-normal.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-012-guildChair-unknown",
+    "page_id": "CM-012",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-012",
+      "incomeRole": "guildChair",
+      "state": "unknown",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-012-guildChair-unknown.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-012-guildChair-unknown.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-012-ordinary-normal",
+    "page_id": "CM-012",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-012",
+      "incomeRole": "ordinary",
+      "state": "normal",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-012-ordinary-normal.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-012-ordinary-normal.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-012-ordinary-unknown",
+    "page_id": "CM-012",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-012",
+      "incomeRole": "ordinary",
+      "state": "unknown",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-012-ordinary-unknown.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-012-ordinary-unknown.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-012-payout-alipay-anchor-normal",
+    "page_id": "CM-012",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-012",
+      "incomeRole": "anchor",
+      "state": "normal",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-012-payout-alipay-anchor-normal.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-012-payout-alipay-anchor-normal.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "CM-012-payout-bank-anchor-normal",
+    "page_id": "CM-012",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "CM-012",
+      "incomeRole": "anchor",
+      "state": "normal",
+      "writeOperationsAllowed": false,
+      "realPayoutOrLedgerEvidence": false
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/CM-012-payout-bank-anchor-normal.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/CM-012-payout-bank-anchor-normal.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-004-listener-interactions",
+    "page_id": "RM-004",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-004",
+      "roomRole": "listener",
+      "state": "normal",
+      "surface": "interactions",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-004-listener-interactions.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-004-listener-interactions.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-004-listener-tools",
+    "page_id": "RM-004",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-004",
+      "roomRole": "listener",
+      "state": "normal",
+      "surface": "tools",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-004-listener-tools.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-004-listener-tools.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-004-moderator-interactions",
+    "page_id": "RM-004",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-004",
+      "roomRole": "moderator",
+      "state": "normal",
+      "surface": "interactions",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-004-moderator-interactions.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-004-moderator-interactions.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-004-moderator-tools",
+    "page_id": "RM-004",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-004",
+      "roomRole": "moderator",
+      "state": "normal",
+      "surface": "tools",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-004-moderator-tools.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-004-moderator-tools.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-004-owner-interactions",
+    "page_id": "RM-004",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-004",
+      "roomRole": "owner",
+      "state": "normal",
+      "surface": "interactions",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-004-owner-interactions.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-004-owner-interactions.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-004-owner-tools",
+    "page_id": "RM-004",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-004",
+      "roomRole": "owner",
+      "state": "normal",
+      "surface": "tools",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-004-owner-tools.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-004-owner-tools.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-004-platformModerator-interactions",
+    "page_id": "RM-004",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-004",
+      "roomRole": "platformModerator",
+      "state": "normal",
+      "surface": "interactions",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-004-platformModerator-interactions.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-004-platformModerator-interactions.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-004-platformModerator-tools",
+    "page_id": "RM-004",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-004",
+      "roomRole": "platformModerator",
+      "state": "normal",
+      "surface": "tools",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-004-platformModerator-tools.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-004-platformModerator-tools.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-005-listener-approved",
+    "page_id": "RM-005",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-005",
+      "roomRole": "listener",
+      "state": "approved",
+      "surface": "mic",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-005-listener-approved.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-005-listener-approved.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-005-listener-available",
+    "page_id": "RM-005",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-005",
+      "roomRole": "listener",
+      "state": "normal",
+      "surface": "mic",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-005-listener-available.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-005-listener-available.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-005-listener-pending",
+    "page_id": "RM-005",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-005",
+      "roomRole": "listener",
+      "state": "pending",
+      "surface": "mic",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-005-listener-pending.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-005-listener-pending.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-005-listener-rejected",
+    "page_id": "RM-005",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-005",
+      "roomRole": "listener",
+      "state": "rejected",
+      "surface": "mic",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-005-listener-rejected.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-005-listener-rejected.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-005-moderator-direct",
+    "page_id": "RM-005",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-005",
+      "roomRole": "moderator",
+      "state": "normal",
+      "surface": "mic",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-005-moderator-direct.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-005-moderator-direct.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  },
+  {
+    "id": "RM-005-owner-direct",
+    "page_id": "RM-005",
+    "group": "room_financial",
+    "state": {
+      "manifestId": "RM-005",
+      "roomRole": "owner",
+      "state": "normal",
+      "surface": "mic",
+      "actualPanelOpened": true
+    },
+    "render": "renders/resume22-final-states/390x844-text1.0/RM-005-owner-direct.png",
+    "metadata": "renders/resume22-final-states/390x844-text1.0/RM-005-owner-direct.json",
+    "platform": "macos",
+    "data": "SYNTHETIC_WIDGET_FIXTURE",
+    "device_pass": false
+  }
+]
