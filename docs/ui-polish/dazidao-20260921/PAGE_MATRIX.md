@@ -37,7 +37,7 @@
 | RM-002 | 编辑与关闭房间 | room | 2 | lib/features/room/presentation/edit_room_page.dart | 原生设备/未声明组合不计通过 |
 | RM-003 | 房间直达与深链校验别名 | room | 2 | lib/features/room/presentation/room_deep_link_page.dart | 原生设备/未声明组合不计通过 |
 | RM-004 | 语音房主界面 | room | 10 | lib/features/room/presentation/room_page.dart | 原生设备/未声明组合不计通过 |
-| RM-005 | 上麦申请与麦位选择 | room | 6 | lib/features/room/presentation/room_page.dart | 原生设备/未声明组合不计通过 |
+| RM-005 | 上麦申请与麦位选择 | room | 6 | lib/features/room/presentation/room_page.dart, lib/features/room/presentation/video_runtime_room_page.dart | 原生设备/未声明组合不计通过 |
 | RM-006 | 在线成员与听众席 | room | 3 | lib/features/room/presentation/room_members_page.dart | 原生设备/未声明组合不计通过 |
 | RM-007 | 房主管理与处罚 | room | 3 | lib/features/room/presentation/room_management_page.dart | 原生设备/未声明组合不计通过 |
 | RM-008 | 房间公告编辑 | room | 3 | lib/features/room/presentation/room_topic_page.dart | 原生设备/未声明组合不计通过 |
@@ -65,6 +65,6 @@
 | SC-002 | 公会加入与成员管理 | community | 5 | lib/features/community/presentation/guild_members_pages.dart | 原生设备/未声明组合不计通过 |
 | SC-003 | 邀请与渠道归属 | community | 3 | lib/features/community/presentation/invite_attribution_page.dart | 原生设备/未声明组合不计通过 |
 
-完整角色、适用性、源码和逐场景路径见 page-matrix.json / STATE_MATRIX_FINAL.json。
+完整角色、适用性、源码和逐场景路径见 page-matrix.json / STATE_MATRIX_20260922.json。
 AC-004与MS-005的固定不可用页面有明确N/A说明；其余未声明组合不以N/A代替未验证。
 本地证据：/Users/kongzheng/Documents/ny/artifacts/ui-audit-20260921/gpt-takeover-20260921

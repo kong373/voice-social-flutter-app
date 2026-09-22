@@ -805,7 +805,8 @@
       "additional": "See STATE_MATRIX_FINAL.json for exact injected/read/interaction states; not a Cartesian product of every role and state."
     },
     "source_files": [
-      "lib/features/account/presentation/"
+      "lib/features/account/presentation/login_page.dart",
+      "lib/features/account/presentation/registration_page.dart"
     ],
     "route": "协议同意 → 手机号登录 → 注册资料",
     "before": "renders/exact-before/390x844-text1.0/AC-003.png",
@@ -6549,7 +6550,8 @@
       "additional": "See STATE_MATRIX_FINAL.json for exact injected/read/interaction states; not a Cartesian product of every role and state."
     },
     "source_files": [
-      "lib/features/room/presentation/room_page_sheets.dart"
+      "lib/features/room/presentation/room_page.dart",
+      "lib/features/room/presentation/video_runtime_room_page.dart"
     ],
     "route": "RM-004 → 申请上麦",
     "before": "renders/exact-before/390x844-text1.0/RM-005.png",
@@ -6582,7 +6584,8 @@
     "widget": "_MicRequestSheet (via RoomPage)",
     "render_note": "Default QA alias is a parent room. Actual microphone sheets are separately listed in state inventory and role-sheet tests.",
     "resolved_widget_files": [
-      "lib/features/room/presentation/room_page.dart"
+      "lib/features/room/presentation/room_page.dart",
+      "lib/features/room/presentation/video_runtime_room_page.dart"
     ],
     "golden_platform_status": "Pinned font-source coverage verified; old platform golden alignment reported separately. Native macOS Widget evidence is not Linux or device PASS.",
     "state_note": "Read projections are deliberately synthetic. Explicit callback tests do not prove real provider delivery, real financial settlement or OS permission behavior.",
