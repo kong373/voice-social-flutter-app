@@ -242,7 +242,7 @@ class _GiftSheetState extends State<GiftSheet>
                     '送礼物',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 16,
+                      fontSize: 18,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
@@ -251,7 +251,7 @@ class _GiftSheetState extends State<GiftSheet>
                     '麦上用户 · 可多选',
                     style: TextStyle(
                       color: RoomColors.textSecondary,
-                      fontSize: 10,
+                      fontSize: 12,
                     ),
                   ),
                 ],
@@ -294,7 +294,7 @@ class _GiftSheetState extends State<GiftSheet>
       );
     }
     return SizedBox(
-      height: 53,
+      height: 60,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -315,7 +315,7 @@ class _GiftSheetState extends State<GiftSheet>
               children: <Widget>[
                 RuntimeAvatar(
                   seed: '${target.userId}',
-                  size: 34,
+                  size: 36,
                   ringColor: selected ? RoomColors.secondary : Colors.white54,
                 ),
                 const SizedBox(height: 2),
@@ -344,7 +344,7 @@ class _GiftSheetState extends State<GiftSheet>
   }
 
   Widget _categoryTabs() => SizedBox(
-    height: 39,
+    height: 46,
     child: ListView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -461,7 +461,11 @@ class _GiftSheetState extends State<GiftSheet>
                   item.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Row(
@@ -473,7 +477,7 @@ class _GiftSheetState extends State<GiftSheet>
                       '${item.price}',
                       style: const TextStyle(
                         color: RoomColors.textSecondary,
-                        fontSize: 9,
+                        fontSize: 11,
                       ),
                     ),
                   ],

@@ -577,6 +577,8 @@ class _MessageCenterPageState extends State<MessageCenterPage>
                                 if (index < conversations.length - 1)
                                   const Divider(
                                     height: 1,
+                                    thickness: 0.5,
+                                    indent: 59,
                                     color: SocialColors.divider,
                                   ),
                               ],

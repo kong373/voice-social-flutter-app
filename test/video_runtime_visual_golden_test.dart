@@ -271,7 +271,7 @@ Widget _goldenApp(Key captureKey, AppDependencies dependencies) {
       dependencies: dependencies,
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.social(fontFamily: kGoldenFontFamily),
+        theme: AppTheme.room(fontFamily: kGoldenFontFamily),
         home: MainShell(dependencies: dependencies, onSignOut: () async {}),
       ),
     ),
@@ -289,7 +289,7 @@ Widget _goldenPageApp(
       dependencies: dependencies,
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.social(fontFamily: kGoldenFontFamily),
+        theme: AppTheme.room(fontFamily: kGoldenFontFamily),
         home: page,
       ),
     ),

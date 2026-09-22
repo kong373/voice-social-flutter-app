@@ -1366,12 +1366,17 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: SocialColors.brandGradient,
+                        gradient: canSend ? SocialColors.brandGradient : null,
+                        color: canSend ? null : const Color(0xFFE7E4F2),
                       ),
                       child: IconButton(
                         tooltip: '发送消息',
+                        constraints: const BoxConstraints.tightFor(
+                          width: 48,
+                          height: 48,
+                        ),
                         onPressed: canSend ? _send : null,
                         color: Colors.white,
                         icon: _sending
@@ -1413,7 +1418,7 @@ class _ChatBubble extends StatelessWidget {
     final bubble = Container(
       constraints: const BoxConstraints(maxWidth: 286),
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: message.isMine ? null : Colors.white.withValues(alpha: 0.86),
         gradient: message.isMine ? SocialColors.brandGradient : null,
@@ -1446,9 +1451,11 @@ class _ChatBubble extends StatelessWidget {
               message.content,
               style: TextStyle(
                 color: message.isMine ? Colors.white : SocialColors.textPrimary,
+                fontSize: 15,
+                height: 1.5,
               ),
             ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,
             children: <Widget>[

@@ -390,7 +390,7 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
       const Spacer(),
       TextButton(
         key: const Key('home-create-room'),
-        style: TextButton.styleFrom(minimumSize: const Size(64, 36)),
+        style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
         onPressed: _openCreateRoom,
         child: const Text('创建房间'),
       ),
@@ -411,40 +411,49 @@ class _VideoRuntimeHomePageState extends State<VideoRuntimeHomePage> {
   );
 
   Widget _tabs() => SizedBox(
-    height: 50,
+    height: 56,
     child: ListView.separated(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       itemCount: _categories.length,
       separatorBuilder: (_, __) => const SizedBox(width: 22),
       itemBuilder: (BuildContext context, int index) {
         final bool active = _category == index;
-        return InkWell(
-          onTap: () => _selectCategory(index),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                _categories[index],
-                style: TextStyle(
-                  color: active
-                      ? SocialColors.textPrimary
-                      : SocialColors.textSecondary,
-                  fontSize: active ? 15 : 14,
-                  fontWeight: active ? FontWeight.w900 : FontWeight.w600,
-                ),
-              ),
-              if (active)
-                Container(
-                  width: 17,
-                  height: 3,
-                  margin: const EdgeInsets.only(top: 3),
-                  decoration: BoxDecoration(
-                    gradient: SocialColors.brandGradient,
-                    borderRadius: BorderRadius.circular(99),
+        return Semantics(
+          selected: active,
+          button: true,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => _selectCategory(index),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    _categories[index],
+                    style: TextStyle(
+                      color: active
+                          ? SocialColors.textPrimary
+                          : SocialColors.textSecondary,
+                      fontSize: 14,
+                      fontWeight: active ? FontWeight.w900 : FontWeight.w600,
+                    ),
                   ),
-                ),
-            ],
+                  if (active)
+                    Container(
+                      width: 17,
+                      height: 3,
+                      margin: const EdgeInsets.only(top: 3),
+                      decoration: BoxDecoration(
+                        gradient: SocialColors.brandGradient,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -907,7 +916,7 @@ class _RoomPoster extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: SocialColors.textSecondary,
-                  fontSize: 10,
+                  fontSize: 12,
                 ),
               ),
               const SizedBox(height: 5),
@@ -923,7 +932,7 @@ class _RoomPoster extends StatelessWidget {
                     '${room.occupiedSeats}/9 麦',
                     style: const TextStyle(
                       color: SocialColors.textTertiary,
-                      fontSize: 9,
+                      fontSize: 11,
                     ),
                   ),
                 ],
@@ -1362,7 +1371,7 @@ class _FeedCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: SocialColors.textTertiary,
-                      fontSize: 10,
+                      fontSize: 12,
                     ),
                   ),
                 ],
@@ -1380,8 +1389,8 @@ class _FeedCard extends StatelessWidget {
           post.text,
           style: const TextStyle(
             color: SocialColors.textPrimary,
-            fontSize: 13,
-            height: 1.44,
+            fontSize: 15,
+            height: 1.5,
           ),
         ),
         if (post.showArtwork) ...<Widget>[
@@ -1438,8 +1447,9 @@ class _FeedAction extends StatelessWidget {
     child: InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(99),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 48),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
@@ -1449,7 +1459,7 @@ class _FeedAction extends StatelessWidget {
               label,
               style: TextStyle(
                 color: color ?? SocialColors.textSecondary,
-                fontSize: 11,
+                fontSize: 12,
               ),
             ),
           ],
@@ -2050,7 +2060,7 @@ class _ProfileHeader extends StatelessWidget {
                       maxLines: 2,
                       style: const TextStyle(
                         color: SocialColors.textSecondary,
-                        fontSize: 11,
+                        fontSize: 12,
                       ),
                     ),
                   ],
@@ -2091,7 +2101,7 @@ class _ProfileStat extends StatelessWidget {
           value,
           style: const TextStyle(
             color: SocialColors.textPrimary,
-            fontSize: 15,
+            fontSize: 18,
             fontWeight: FontWeight.w900,
           ),
         ),
@@ -2099,7 +2109,7 @@ class _ProfileStat extends StatelessWidget {
           label,
           style: const TextStyle(
             color: SocialColors.textSecondary,
-            fontSize: 10,
+            fontSize: 12,
           ),
         ),
       ],
@@ -2151,7 +2161,7 @@ class _DecorationBanner extends StatelessWidget {
                   ),
                   Text(
                     '管理头像框、进场与声波样式',
-                    style: TextStyle(color: Colors.white70, fontSize: 10),
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
                   ),
                 ],
               ),
@@ -2215,7 +2225,7 @@ class _AccountFeatureCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: SocialColors.textSecondary,
-                fontSize: 8,
+                fontSize: 11,
               ),
             ),
           ],
@@ -2346,7 +2356,7 @@ class _AccountTool extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: SocialColors.textSecondary,
-            fontSize: 9,
+            fontSize: 11,
             fontWeight: FontWeight.w600,
           ),
         ),

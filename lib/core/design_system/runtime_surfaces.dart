@@ -455,19 +455,23 @@ class SocialPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color foreground = active ? Colors.white : SocialColors.textSecondary;
-    final Widget body = Container(
-      constraints: const BoxConstraints(minHeight: 44),
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-      decoration: BoxDecoration(
-        gradient: active ? SocialColors.brandGradient : null,
-        color: active ? null : Colors.white.withValues(alpha: 0.76),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: active
-              ? Colors.white.withValues(alpha: 0.3)
-              : const Color(0x1417263F),
-        ),
+    final decoration = BoxDecoration(
+      gradient: active ? SocialColors.brandGradient : null,
+      color: active ? null : Colors.white.withValues(alpha: 0.76),
+      borderRadius: BorderRadius.circular(999),
+      border: Border.all(
+        color: active
+            ? Colors.white.withValues(alpha: 0.3)
+            : const Color(0x1417263F),
       ),
+    );
+    final Widget body = Container(
+      // Ink adds its border insets outside the child; keep the total target 44.
+      constraints: BoxConstraints(
+        minHeight: onTap == null ? 44 : 44 - decoration.padding.vertical,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+      decoration: onTap == null ? decoration : null,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
@@ -491,11 +495,22 @@ class SocialPill extends StatelessWidget {
         : Semantics(
             button: true,
             selected: active,
-            child: InkWell(
-              onTap: onTap,
+            child: Material(
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(999),
-              overlayColor: _interactionOverlay(SocialColors.primary),
-              child: body,
+              clipBehavior: Clip.antiAlias,
+              child: Ink(
+                padding: EdgeInsets.zero,
+                decoration: decoration,
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(999),
+                  overlayColor: _interactionOverlay(
+                    active ? Colors.white : SocialColors.primary,
+                  ),
+                  child: body,
+                ),
+              ),
             ),
           );
   }

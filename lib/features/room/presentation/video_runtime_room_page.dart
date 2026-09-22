@@ -937,8 +937,8 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                           ),
                           style: const TextStyle(
                             color: RoomColors.textPrimary,
-                            fontSize: 11,
-                            height: 1.3,
+                            fontSize: 13,
+                            height: 1.4,
                           ),
                         ),
                       ),
@@ -978,7 +978,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
             const SizedBox(width: 6),
             Expanded(
               child: Container(
-                height: 39,
+                height: 48,
                 padding: const EdgeInsets.only(left: 2, right: 1),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.27),
@@ -997,7 +997,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                         enabled: canChat,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 12,
+                          fontSize: 13,
                         ),
                         cursorColor: RoomColors.accent,
                         textInputAction: TextInputAction.send,
@@ -1007,7 +1007,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                           hintText: canChat ? '聊聊天…' : '当前不可发送公屏消息',
                           hintStyle: const TextStyle(
                             color: RoomColors.textSecondary,
-                            fontSize: 11,
+                            fontSize: 12,
                           ),
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
@@ -1023,10 +1023,10 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                       key: const Key('room-expression-button'),
                       tooltip: '表情与贴图',
                       onPressed: canChat ? _showExpressionSheet : null,
-                      visualDensity: VisualDensity.compact,
+                      visualDensity: VisualDensity.standard,
                       constraints: const BoxConstraints.tightFor(
-                        width: 34,
-                        height: 34,
+                        width: 44,
+                        height: 44,
                       ),
                       padding: EdgeInsets.zero,
                       icon: const Icon(
@@ -1177,6 +1177,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     final _RoomExpression? expression =
         await showModalBottomSheet<_RoomExpression>(
           context: context,
+          showDragHandle: false,
           useSafeArea: true,
           isScrollControlled: true,
           backgroundColor: const Color(0xFF14152E),
@@ -1505,6 +1506,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
     GiftSendRequest? sentRequest;
     final bool? sent = await showModalBottomSheet<bool>(
       context: context,
+      showDragHandle: false,
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF13142C),
@@ -1512,7 +1514,13 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
       builder: (BuildContext context) => AnimatedBuilder(
         animation: controller,
         builder: (context, _) => FractionallySizedBox(
-          heightFactor: 0.58,
+          // Keep names and prices visible together on short screens and with
+          // larger text; the normal-height sheet still leaves room context.
+          heightFactor:
+              MediaQuery.sizeOf(context).height < 740 ||
+                  MediaQuery.textScalerOf(context).scale(14) > 16.8
+              ? 0.82
+              : 0.64,
           child: GiftSheet(
             coordinator: controller.giftSendCoordinator,
             roomId: controller.roomId,
@@ -2587,19 +2595,19 @@ class _RoomDockPill extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(999),
         child: SizedBox(
-          height: 39,
+          height: 48,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 9),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Icon(icon, size: 15, color: RoomColors.textPrimary),
+                Icon(icon, size: 16, color: RoomColors.textPrimary),
                 const SizedBox(width: 4),
                 Text(
                   label,
                   style: const TextStyle(
                     color: RoomColors.textPrimary,
-                    fontSize: 10,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -2637,7 +2645,7 @@ class _RoomDockAction extends StatelessWidget {
           onTap: onTap,
           radius: 24,
           child: SizedBox(
-            width: 41,
+            width: 44,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
@@ -2677,7 +2685,7 @@ class _RoomDockAction extends StatelessWidget {
                     color: onTap == null
                         ? Colors.white30
                         : RoomColors.textSecondary,
-                    fontSize: 8,
+                    fontSize: 11,
                   ),
                 ),
               ],

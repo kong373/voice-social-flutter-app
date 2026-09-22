@@ -396,7 +396,7 @@ class _MessageNotificationRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: SocialColors.textPrimary,
-                      fontSize: 14,
+                      fontSize: 15,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -407,7 +407,7 @@ class _MessageNotificationRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: SocialColors.textSecondary,
-                      fontSize: 11,
+                      fontSize: 13,
                     ),
                   ),
                 ],
@@ -497,7 +497,7 @@ class _MessageConversationRow extends StatelessWidget {
                     conversation.title,
                     style: const TextStyle(
                       color: SocialColors.textPrimary,
-                      fontSize: 14,
+                      fontSize: 15,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -512,7 +512,7 @@ class _MessageConversationRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: SocialColors.textSecondary,
-                      fontSize: 11,
+                      fontSize: 13,
                     ),
                   ),
                 ],
@@ -527,7 +527,7 @@ class _MessageConversationRow extends StatelessWidget {
                       : _formatMessageTime(conversation.updatedAt!, now),
                   style: const TextStyle(
                     color: SocialColors.textTertiary,
-                    fontSize: 9,
+                    fontSize: 11,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -624,7 +624,7 @@ class _MessageStatePill extends StatelessWidget {
         label,
         style: TextStyle(
           color: color,
-          fontSize: 9,
+          fontSize: 11,
           fontWeight: FontWeight.w800,
         ),
       ),

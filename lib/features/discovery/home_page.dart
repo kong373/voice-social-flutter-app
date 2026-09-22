@@ -79,6 +79,15 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    return Theme(
+      data: AppTheme.social(
+        fontFamily: Theme.of(context).textTheme.bodyMedium?.fontFamily,
+      ),
+      child: Builder(builder: _buildSocialContent),
+    );
+  }
+
+  Widget _buildSocialContent(BuildContext context) {
     final List<DiscoveryRoom> rooms = _rotatedRooms;
     return SocialSkySurface(
       child: SafeArea(
