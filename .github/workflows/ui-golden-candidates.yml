@@ -10,6 +10,7 @@ on:
       - 'test/m33_all_pages_visual_golden_test.dart'
       - 'test/video_runtime_visual_golden_test.dart'
       - 'test/support/golden_*.dart'
+      - 'test/goldens/linux/**'
       - '.github/workflows/ui-golden-candidates.yml'
 
 permissions:
@@ -21,7 +22,7 @@ concurrency:
 
 jobs:
   export:
-    name: Generate Linux golden candidates (not visual approval)
+    name: Compare Linux goldens and export review candidates
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -39,9 +40,22 @@ jobs:
           cache: true
 
       - name: Resolve locked dependencies
+        id: dependencies
         run: flutter pub get --enforce-lockfile
 
+      - name: Compare committed Linux baselines without updating
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p ui-golden-export
+          flutter test --no-pub --concurrency=2 --reporter expanded \
+            test/m33_all_pages_visual_golden_test.dart \
+            test/video_runtime_visual_golden_test.dart \
+            2>&1 | tee ui-golden-export/comparison.log
+
       - name: Export platform-native candidates
+        id: export
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -63,7 +77,7 @@ jobs:
             > ui-golden-export/status.txt
 
       - name: Upload candidates for independent visual review
-        if: success()
+        if: ${{ !cancelled() && steps.export.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ui-linux-golden-${{ github.event.pull_request.head.sha }}

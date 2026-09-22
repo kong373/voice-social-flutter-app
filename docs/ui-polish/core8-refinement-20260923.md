@@ -27,7 +27,7 @@ Default page renders and both golden hosts now use the same room root theme as t
 
 This verification also exposed two narrow color-scope issues. Withdrawal history now explicitly uses social foreground colors (no financial behavior changes). The legacy `HomePage` gets a local social theme; it is currently referenced only by the QA catalog, not the real `MainShell` home. No obsolete route was restored and the legacy QA page is not presented as the current home design.
 
-All 74 macOS baseline PNGs are included in this follow-up so the images are no longer local-only. Linux baseline images are intentionally unchanged: macOS images must not be copied into Linux as fabricated platform validation.
+All 74 macOS baseline PNGs are included in this follow-up so the images are no longer local-only. Linux images were independently rendered on Ubuntu 24.04 / Flutter 3.44.7 by run `35768409604` from exact source `ff6c9d67ac39c0bd407c831021abf4a683b301a0`. Before import, all 269 source hashes and 74 managed image hashes were checked, contact sheets and core-page details were reviewed, and the other 10 legacy/avatar images were confirmed unchanged. 71 Linux files changed; three already matched. All 74 Linux renders have platform-specific pixel differences from macOS. They were not copied from the Mac images.
 
 ## Executed verification
 
@@ -48,7 +48,7 @@ These groups overlap and must not be summed into a unique business-test total. T
 
 ## Remaining platform acceptance
 
-This branch is **not a release-ready declaration**. iOS native build/install, two-platform keyboard/back/gesture and accessibility checks, profile frame timing, and Linux golden/remote CI verification remain separate gates. The current Mac reports an unaccepted Xcode license for native tooling; the existing Command Line Tools were sufficient for Flutter widget verification only. No license, signing, provider or security settings were modified.
+This branch is **not a release-ready declaration**. iOS native build/install, two-platform keyboard/back/gesture and accessibility checks, profile frame timing, and the full remote CI result remain separate gates. Linux images have been reviewed and committed; the final head's normal comparison is a separately reported CI result, not inferred from generation. The current Mac reports an unaccepted Xcode license for native tooling; the existing Command Line Tools were sufficient for Flutter widget verification only. No license, signing, provider or security settings were modified.
 
 No API/data/domain implementation, permission rule, wallet/ledger, Backend/Admin/CPS, dependency lock, signing identity or bundle ID was changed. Keep the original release candidate until native and platform evidence for this follow-up has been accepted.
 
@@ -56,4 +56,6 @@ No API/data/domain implementation, permission rule, wallet/ledger, Backend/Admin
 
 The first remote catalog check exposed 11px decoration-card overflow with the standard test/fallback font. The existing `m24_pages_test` reproduced it locally; 16px of layout headroom fixed it without changing or removing assertions. The catalog/renewal group then passed 47 tests. This is a real follow-up fix, not a rerun of an unchanged failing check.
 
-A narrowly scoped `UI Linux golden candidates` workflow now renders the two existing golden suites on pinned Ubuntu/Flutter, records exact source and image hashes, and uploads candidate images for review. It does not commit files, relax existing comparisons, approve visual results or deploy. Its successful generation is explicitly not a passing Linux golden comparison; normal CI still performs the unchanged comparison after reviewed images are committed.
+A narrowly scoped `UI Linux golden candidates` workflow runs the two existing golden suites against the committed Linux baselines before any regeneration, then records exact source and image hashes and uploads candidate images for review. A failed comparison remains a failed job even when subsequent candidate generation/upload succeeds; there is no `continue-on-error`. It does not commit files, relax comparisons, approve visual results or deploy. Its successful generation is explicitly not a passing Linux golden comparison. The unchanged full CI also runs the normal comparisons.
+
+The remote M2.4 targeted diagnostics for `ff6c9d67ac39c0bd407c831021abf4a683b301a0` passed all eight jobs (`35768408738`), including the previously failing catalog widgets. The last production change is the 16px card headroom; importing Linux PNGs does not change application source or the independently built Android debug binary.
