@@ -135,13 +135,17 @@ class _RoomDeepLinkPageState extends State<RoomDeepLinkPage> {
                   Text(
                     title,
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleLarge,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: RoomColors.textPrimary,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     _error ?? resolution?.message ?? '请确认房间号后重试。',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: RoomColors.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: 20),
                   TextField(

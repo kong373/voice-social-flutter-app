@@ -1416,11 +1416,7 @@ class _ChatBubble extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: message.isMine ? null : Colors.white.withValues(alpha: 0.86),
-        gradient: message.isMine
-            ? const LinearGradient(
-                colors: <Color>[Color(0xFF8A70F6), Color(0xFFAF7DE8)],
-              )
-            : null,
+        gradient: message.isMine ? SocialColors.brandGradient : null,
         border: message.isMine
             ? null
             : Border.all(color: const Color(0x1417213C)),
@@ -1464,7 +1460,7 @@ class _ChatBubble extends StatelessWidget {
                   message.receiptLabel,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: message.isMine
-                        ? Colors.white.withValues(alpha: 0.86)
+                        ? Colors.white
                         : SocialColors.textTertiary,
                   ),
                 ),
@@ -1474,7 +1470,7 @@ class _ChatBubble extends StatelessWidget {
                 _formatMessageTime(message.createdAt, now),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: message.isMine
-                      ? Colors.white.withValues(alpha: 0.78)
+                      ? Colors.white
                       : SocialColors.textTertiary,
                 ),
               ),

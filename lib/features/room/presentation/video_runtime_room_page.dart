@@ -1424,6 +1424,9 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
                   for (final MicSeat seat in available)
                     FilledButton.tonal(
                       key: Key('approval-mic-seat-${seat.number}'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                      ),
                       onPressed: controller.micRequestPending
                           ? null
                           : () async {
@@ -1587,6 +1590,7 @@ class _VideoRuntimeRoomPageState extends State<VideoRuntimeRoomPage> {
   Future<void> _showMoreSheet() async {
     await showModalBottomSheet<void>(
       context: context,
+      showDragHandle: false,
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF14152E),

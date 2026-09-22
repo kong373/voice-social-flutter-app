@@ -6,7 +6,7 @@ import 'package:voice_social_app/core/design_system/app_theme.dart';
 /// so other product areas can evolve independently.
 abstract final class AccountOxygenColors {
   static const Color ink = Color(0xFF24273B);
-  static const Color muted = Color(0xFF777F98);
+  static const Color muted = SocialColors.textSecondary;
   static const Color softLavender = Color(0xFFF3F1FF);
   static const Color softBlue = Color(0xFFEDF8FF);
   static const Color line = Color(0xFFECECF4);
@@ -277,7 +277,7 @@ class AccountStatusPill extends StatelessWidget {
       child: Text(
         label,
         style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: color,
+          color: AccountOxygenColors.ink,
           fontSize: 10,
           fontWeight: FontWeight.w800,
         ),
@@ -451,7 +451,7 @@ class AccountPrimaryAction extends StatelessWidget {
       child: FilledButton(
         onPressed: busy ? null : onPressed,
         style: FilledButton.styleFrom(
-          backgroundColor: AccountOxygenColors.violet,
+          backgroundColor: SocialColors.primary,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),

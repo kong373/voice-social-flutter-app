@@ -366,6 +366,7 @@ abstract final class AppTheme {
           side: const BorderSide(color: Color(0x1017263F)),
         ),
       ),
+      dividerTheme: const DividerThemeData(color: SocialColors.divider),
       dividerColor: SocialColors.divider,
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: Color(0xFAFFFFFF),
@@ -585,6 +586,9 @@ abstract final class AppTheme {
           height: 1.35,
           fontFamily: fontFamily,
         ),
+      ),
+      dividerTheme: DividerThemeData(
+        color: Colors.white.withValues(alpha: 0.12),
       ),
       dividerColor: Colors.white.withValues(alpha: 0.08),
       switchTheme: SwitchThemeData(
