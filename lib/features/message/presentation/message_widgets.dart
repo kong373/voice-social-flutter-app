@@ -563,7 +563,7 @@ class _MessageError extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,

@@ -184,8 +184,11 @@ void main() {
         tester.widget<TextField>(find.byType(TextField)).controller!.text,
         '101',
       );
-      await tester.ensureVisible(find.text('申请提现'));
-      await tester.tap(find.text('申请提现'));
+      final recovery = find.widgetWithText(FilledButton, '恢复原提现申请');
+      expect(recovery, findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '申请提现'), findsNothing);
+      await tester.ensureVisible(recovery);
+      await tester.tap(recovery);
       await tester.pumpAndSettle();
       expect(find.textContaining('预计到账：¥100.49'), findsOneWidget);
       await tester.tap(find.text('确认提现'));

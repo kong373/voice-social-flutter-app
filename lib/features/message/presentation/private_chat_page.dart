@@ -1094,6 +1094,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   @override
   Widget build(BuildContext context) {
     final conversationEpoch = _conversationEpoch;
+    final keyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
     final bool canSend =
         !_accountChanged &&
         _repository.supportsPrivateSend &&
@@ -1274,11 +1275,11 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                               },
                               child: ListView.builder(
                                 controller: _scrollController,
-                                padding: const EdgeInsets.fromLTRB(
+                                padding: EdgeInsets.fromLTRB(
                                   14,
                                   14,
                                   14,
-                                  22,
+                                  keyboardVisible ? 8 : 22,
                                 ),
                                 itemCount: _messages.length,
                                 itemBuilder: (BuildContext context, int index) {
@@ -1300,8 +1301,16 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                       _conversation.available &&
                       !_accountChanged)
                     ConstrainedBox(
+                      key: const Key('private-chat-media-tools'),
                       constraints: BoxConstraints(
-                        maxHeight: (space.maxHeight * 0.6).clamp(0.0, 240.0),
+                        // Keep one full action row while typing; the existing
+                        // inner scroll retains access to media status/actions.
+                        // Otherwise the tools can crowd a new bubble above a
+                        // short keyboard-reduced viewport even at the tail.
+                        maxHeight: (space.maxHeight * 0.6).clamp(
+                          0.0,
+                          keyboardVisible ? 48.0 : 240.0,
+                        ),
                       ),
                       child: SingleChildScrollView(
                         child: PrivateMediaComposer(

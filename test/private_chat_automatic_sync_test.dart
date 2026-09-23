@@ -337,6 +337,19 @@ void main() {
         expect(tester.widget<IconButton>(sendButton).onPressed, isNotNull);
         expect(renderedMessages(tester).last.id, receipt.id);
         snapshot('own-$round-keyboard', own);
+        expectFullyVisibleTail(tester, own);
+        // Text entry must not sacrifice the first row of media actions either.
+        final tools = tester.getRect(
+          find.byKey(const Key('private-chat-media-tools')),
+        );
+        for (final key in ['pm-pick-image', 'pm-pick-video', 'pm-record']) {
+          final control = find.byKey(Key(key));
+          expect(control.hitTestable(), findsOneWidget);
+          final rect = tester.getRect(control);
+          expect(rect.height, greaterThanOrEqualTo(44));
+          expect(rect.top, greaterThanOrEqualTo(tools.top));
+          expect(rect.bottom, lessThanOrEqualTo(tools.bottom));
+        }
 
         // The supplied post-failure screenshot has no keyboard. Observe that
         // state too without repairing the list offset using ensureVisible.
@@ -368,7 +381,10 @@ void main() {
         reason: '$last',
       );
     },
-    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+    variant: TargetPlatformVariant({
+      TargetPlatform.iOS,
+      TargetPlatform.android,
+    }),
   );
 
   for (final interruptByDrag in [false, true]) {
@@ -448,6 +464,7 @@ void main() {
           expect(position.pixels, closeTo(manualOffset!, 1));
           expect(position.extentAfter, greaterThan(80));
         } else {
+          expectFullyVisibleTail(tester, own);
           expect(
             text.hitTestable(),
             findsOneWidget,
@@ -459,7 +476,10 @@ void main() {
         }
         expect(tester.takeException(), isNull);
       },
-      variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+      variant: TargetPlatformVariant({
+        TargetPlatform.iOS,
+        TargetPlatform.android,
+      }),
     );
   }
 
@@ -974,6 +994,40 @@ void main() {
       await tester.pump();
       expect(find.text('登录状态已改变，请重新进入会话。'), findsNothing);
     },
+  );
+
+  testWidgets(
+    'compact keyboard chat error keeps retry reachable without overflow',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 568);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 240);
+      addTearDown(() {
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPhysicalSize();
+        tester.view.resetViewInsets();
+      });
+      final repository = _MediaViewportHistory()..failNext = true;
+      await showChat(tester, repository);
+      expect(repository.pageCalls, 1);
+      expect(tester.takeException(), isNull);
+      final retry = find.widgetWithText(FilledButton, '重新加载');
+      expect(retry, findsOneWidget);
+      await tester.ensureVisible(retry);
+      await tester.pump();
+      expect(retry.hitTestable(), findsOneWidget);
+      repository.receive(1);
+      await tester.tap(retry);
+      await tester.pumpAndSettle();
+      expect(repository.pageCalls, 2, reason: 'one explicit retry only');
+      expect(find.text(_MediaViewportHistory.content('B', 1)), findsOneWidget);
+      expect(retry, findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+    }),
   );
 
   testWidgets('transient sync failure preserves messages and retries', (
