@@ -12,8 +12,58 @@ import 'package:voice_social_app/features/room/domain/room_models.dart';
 import 'package:voice_social_app/features/room/infrastructure/rtc_adapter.dart';
 import 'package:voice_social_app/features/room/infrastructure/room_realtime_gateway.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
+import 'package:voice_social_app/features/social/data/mock_social_repository.dart';
+import 'package:voice_social_app/features/social/domain/social_models.dart';
+import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 void main() {
+  for (final allowed in [false, true]) {
+    testWidgets(
+      'My profile failure keeps logout and only authorized staff entry ($allowed)',
+      (tester) async {
+        final dependencies = AppDependencies.mock();
+        final repository = _Repository()..grant = () async => allowed;
+        var signOuts = 0;
+        addTearDown(() async {
+          await tester.pumpWidget(const SizedBox());
+          repository.notifier.dispose();
+          dependencies.dispose();
+        });
+        await tester.pumpWidget(
+          AppDependencyScope(
+            dependencies: dependencies,
+            child: MaterialApp(
+              home: PersonalCenterPage(
+                session: null,
+                embeddedInShell: true,
+                profileRepository: _FailedProfile(),
+                platformEntry: PlatformRoomsEntry(repository: repository),
+                onSignOut: () async {
+                  signOuts++;
+                },
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('我的'), findsOneWidget);
+        expect(find.text('资料暂时无法加载'), findsOneWidget);
+        expect(find.byTooltip('返回'), findsNothing);
+        expect(find.text('平台房间管理'), allowed ? findsOneWidget : findsNothing);
+        if (allowed) {
+          await tester.tap(find.text('平台房间管理'));
+          await tester.pumpAndSettle();
+          expect(find.byType(PlatformRoomsPage), findsOneWidget);
+          await tester.pageBack();
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.text('退出登录'));
+        await tester.pumpAndSettle();
+        expect(signOuts, 1);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
   testWidgets(
     'legacy empty roomCode displays explicit roomId, not a fabricated code',
     (tester) async {
@@ -318,6 +368,14 @@ class _ClosedStaff extends MockRoomRepository {
 }
 
 /// Deliberate asynchronous test double, not the app's demo repository.
+class _FailedProfile extends MockSocialRepository {
+  @override
+  Future<SocialProfile> fetchMyProfile() async => throw const ApiException(
+    kind: ApiFailureKind.network,
+    message: '资料暂时无法加载',
+  );
+}
+
 class _Repository implements PlatformRoomRepository {
   final notifier = ValueNotifier((1, 1));
   Future<bool> Function() grant = () async => true;

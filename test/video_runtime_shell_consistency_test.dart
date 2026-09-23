@@ -51,7 +51,7 @@ void main() {
     expect(find.text('关注、粉丝与好友'), findsNothing);
   });
 
-  testWidgets('mine root and account detail use one repository profile', (
+  testWidgets('mine root opens profile editing without a duplicate center', (
     WidgetTester tester,
   ) async {
     await pumpShell(tester);
@@ -60,13 +60,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('晚星'), findsOneWidget);
-    expect(find.textContaining('ID 10001'), findsOneWidget);
+    expect(find.text('用户号 10001'), findsOneWidget);
     expect(find.text('星河漫游者'), findsNothing);
 
     await tester.tap(find.text('晚星').hitTestable());
     await tester.pumpAndSettle();
 
     expect(find.text('晚星'), findsOneWidget);
+    expect(find.text('编辑个人资料'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
     expect(find.text('用户号 10001'), findsOneWidget);
     expect(find.text('星河漫游者'), findsNothing);
   });

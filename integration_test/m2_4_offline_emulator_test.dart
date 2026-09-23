@@ -221,7 +221,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Financial history remains available after authoritative unlock.
-      await _scrollToAndTap(tester, find.text('钱包、订单与收益'), scrollDelta: -180);
+      await _scrollToAndTap(tester, find.text('钱包'), scrollDelta: -180);
       await pumpUntilVisible(tester, find.text('钱包与商业化'));
       await _scrollToAndTap(tester, find.text('钱包与流水'), scrollDelta: -180);
       await pumpUntilVisible(tester, find.text('普通礼物收益'));

@@ -179,15 +179,12 @@ void main() {
         expect(find.text('Live旅客'), findsOneWidget);
         expect(find.text('晚星'), findsNothing);
         expect(find.text('活动中心'), findsNothing);
-        expect(find.text('资料与设置'), findsWidgets);
+        expect(find.text('资料'), findsOneWidget);
         expect(find.text('通知中心'), findsOneWidget);
-        expect(find.text('帮助与反馈'), findsOneWidget);
+        expect(find.text('帮助与客服'), findsOneWidget);
         expect(find.text('开发环境接入诊断'), findsOneWidget);
-        expect(find.byKey(const Key('open-personal-center')), findsOneWidget);
-
-        await tester.tap(find.byKey(const Key('open-personal-center')));
-        await tester.pumpAndSettle();
-
+        expect(find.byKey(const Key('open-personal-center')), findsNothing);
+        expect(find.byTooltip('返回'), findsNothing);
         expect(find.byType(PersonalCenterPage), findsOneWidget);
         final Finder logout = find.text('退出登录');
         await tester.scrollUntilVisible(
@@ -200,7 +197,9 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(signOutCalls, 1);
-        expect(find.byType(PersonalCenterPage), findsNothing);
+        // This fixture only records logout; the production AppGate owns the
+        // auth transition. The root itself must not push/pop a duplicate page.
+        expect(find.byType(PersonalCenterPage), findsOneWidget);
         expect(find.byKey(const Key('video-runtime-account')), findsOneWidget);
       },
     );
@@ -239,7 +238,7 @@ void main() {
           scrollable: find.byType(Scrollable).first,
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('隐私与安全').hitTestable());
+        await tester.tap(find.text('账号安全').hitTestable());
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 400));
 
@@ -248,7 +247,7 @@ void main() {
     );
 
     testWidgets(
-      'live account restores the visible personal-center entry after compliance in ${themeCase.name}',
+      'live account restores the single personal-center root after compliance in ${themeCase.name}',
       (WidgetTester tester) async {
         await pumpLiveAccountRoot(tester, outerTheme: themeCase.theme);
 
@@ -263,7 +262,7 @@ void main() {
               .first,
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('隐私与安全').hitTestable());
+        await tester.tap(find.text('账号安全').hitTestable());
         await tester.pumpAndSettle();
         expect(find.text('账号与安全'), findsOneWidget);
 
@@ -279,11 +278,11 @@ void main() {
         await tester.pumpAndSettle();
 
         final Finder personalCenter = find.byKey(
-          const Key('open-personal-center'),
+          const Key('video-runtime-account'),
         );
-        expect(personalCenter.hitTestable(), findsOneWidget);
-        await tester.tap(personalCenter.hitTestable());
-        await tester.pumpAndSettle();
+        expect(personalCenter, findsOneWidget);
+        expect(find.byTooltip('账号与安全').hitTestable(), findsOneWidget);
+        expect(find.byKey(const Key('open-personal-center')), findsNothing);
         expect(find.byType(PersonalCenterPage), findsOneWidget);
       },
     );
@@ -299,7 +298,7 @@ void main() {
 
         expect(find.text('钱包'), findsOneWidget);
         expect(find.text('装扮'), findsOneWidget);
-        expect(find.text('开发环境数据诊断'), findsOneWidget);
+        expect(find.text('开发环境数据诊断'), findsNothing);
         expect(find.textContaining('任何 provider 调起继续严格关闭'), findsNothing);
 
         await tester.tap(find.text('钱包').hitTestable().first);

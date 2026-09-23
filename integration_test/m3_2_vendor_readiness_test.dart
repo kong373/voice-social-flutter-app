@@ -358,31 +358,18 @@ void main() {
       await tester.pumpAndSettle();
       final Finder accountPage = find.byKey(const Key('video-runtime-account'));
       expect(accountPage, findsOneWidget);
-      final Finder accountScrollable = find
-          .descendant(of: accountPage, matching: find.byType(Scrollable))
-          .first;
-      final ScrollableState scrollable = tester.state<ScrollableState>(
-        accountScrollable,
+      final Finder logout = find.descendant(
+        of: accountPage,
+        matching: find.text('退出登录'),
       );
-      scrollable.position.jumpTo(scrollable.position.minScrollExtent);
+      await Scrollable.ensureVisible(tester.element(logout), alignment: 0.5);
       await tester.pumpAndSettle();
-      final Finder personalCenter = find.byKey(
-        const Key('open-personal-center'),
-      );
       await _waitFor(
         tester,
-        () => personalCenter.hitTestable().evaluate().isNotEmpty,
-        description: 'visible personal center action',
+        () => logout.hitTestable().evaluate().isNotEmpty,
+        description: 'visible logout action on the account root',
       );
-      await tester.tap(personalCenter.hitTestable());
-      await _waitFor(
-        tester,
-        () => find.text('退出登录').evaluate().isNotEmpty,
-        description: 'personal center logout action',
-      );
-
-      await tester.ensureVisible(find.text('退出登录'));
-      await tester.tap(find.text('退出登录').hitTestable());
+      await tester.tap(logout.hitTestable());
       await _waitFor(
         tester,
         () => find.text('登录 / 注册').evaluate().isNotEmpty,

@@ -89,6 +89,8 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('114.8'), findsOneWidget);
         expect(find.text('主播收益'), findsNothing);
+        expect(find.text('查看礼物币余额和收支明细'), findsOneWidget);
+        expect(find.text('查看礼物币、现金收益和收支明细'), findsNothing);
         expect(find.text('结算与提现'), findsNothing);
         await tester.ensureVisible(find.text('历史提现记录'));
         await tester.tap(find.text('历史提现记录'));

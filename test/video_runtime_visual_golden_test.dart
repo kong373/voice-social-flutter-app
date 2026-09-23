@@ -115,7 +115,7 @@ void main() {
 
     await tester.tap(find.text('我的').last);
     await tester.pumpAndSettle();
-    expect(find.text('个性装扮'), findsOneWidget);
+    expect(find.text('个性装扮陈列'), findsOneWidget);
     expect(find.textContaining('会员'), findsNothing);
     expect(find.textContaining('背包'), findsNothing);
     await expectLater(

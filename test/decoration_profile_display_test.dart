@@ -56,9 +56,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(frameKey), findsOneWidget);
       expect(find.byKey(badgeKey), findsOneWidget);
+      final fresh = Completer<SocialProfile>();
+      deps.repo.load = (_) => fresh.future;
       await deps.sessionManager.save(_session(2));
       await deps.sessionManager.save(_session(1));
       await tester.pump();
+      expect(find.byKey(frameKey), findsNothing);
+      expect(find.byKey(badgeKey), findsNothing);
+      fresh.complete(_profile(1, decorated: false));
+      await tester.pumpAndSettle();
       expect(find.byKey(frameKey), findsNothing);
       expect(find.byKey(badgeKey), findsNothing);
     },

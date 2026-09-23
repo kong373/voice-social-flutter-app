@@ -117,7 +117,9 @@ class _CommerceHubPageState extends State<CommerceHubPage>
                 _CommerceEntry(
                   icon: Icons.receipt_long_outlined,
                   title: '钱包与流水',
-                  subtitle: '查看礼物币、现金收益和收支明细',
+                  subtitle: _wallet!.incomeEligible
+                      ? '查看礼物币、现金收益和收支明细'
+                      : '查看礼物币余额和收支明细',
                   onTap: () => _open(WalletPage(repository: widget.repository)),
                 ),
                 _CommerceEntry(
