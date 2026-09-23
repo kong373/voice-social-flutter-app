@@ -1387,7 +1387,13 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                           height: 48,
                         ),
                         onPressed: canSend ? _send : null,
-                        color: Colors.white,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          disabledBackgroundColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          disabledForegroundColor: SocialColors.textTertiary,
+                          shape: const CircleBorder(),
+                        ),
                         icon: _sending
                             ? const SizedBox.square(
                                 dimension: 18,
