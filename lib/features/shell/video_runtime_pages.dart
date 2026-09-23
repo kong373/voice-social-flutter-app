@@ -982,7 +982,7 @@ class _VideoRuntimeDiscoveryPageState extends State<VideoRuntimeDiscoveryPage> {
       // must not be mounted in a live session.
       return const KeyedSubtree(
         key: Key('video-runtime-discovery'),
-        child: DiscoveryFeedPage(),
+        child: DiscoveryFeedPage(showFloatingPublishButton: false),
       );
     }
     final List<_MockPost> visiblePosts = _visiblePosts;

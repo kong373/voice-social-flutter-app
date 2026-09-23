@@ -17,10 +17,15 @@ import 'package:voice_social_app/features/social/presentation/social_pages.dart'
 import 'package:voice_social_app/shared/time_format.dart';
 
 class DiscoveryFeedPage extends StatefulWidget {
-  const DiscoveryFeedPage({this.repository, super.key});
+  const DiscoveryFeedPage({
+    this.repository,
+    this.showFloatingPublishButton = true,
+    super.key,
+  });
 
   @visibleForTesting
   final DynamicRepository? repository;
+  final bool showFloatingPublishButton;
 
   @override
   State<DiscoveryFeedPage> createState() => _DiscoveryFeedPageState();
@@ -422,11 +427,13 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _publishing ? null : _publish,
-        icon: const Icon(Icons.edit_rounded),
-        label: const Text('发布'),
-      ),
+      floatingActionButton: widget.showFloatingPublishButton
+          ? FloatingActionButton.extended(
+              onPressed: _publishing ? null : _publish,
+              icon: const Icon(Icons.edit_rounded),
+              label: const Text('发布'),
+            )
+          : null,
     );
   }
 }
