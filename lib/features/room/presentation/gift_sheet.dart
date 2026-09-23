@@ -531,7 +531,11 @@ class _GiftSheetState extends State<GiftSheet>
                       size: 18,
                       color: Colors.white70,
                     ),
-                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 48,
+                      height: 48,
+                    ),
+                    visualDensity: VisualDensity.standard,
                   ),
                   Semantics(
                     button: true,
@@ -561,17 +565,27 @@ class _GiftSheetState extends State<GiftSheet>
                               }
                             },
                       borderRadius: BorderRadius.circular(999),
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: compact ? 5 : 8,
-                          vertical: 9,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minWidth: 48,
+                          minHeight: 48,
                         ),
-                        child: const Text(
-                          '充值',
-                          style: TextStyle(
-                            color: RoomColors.primary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
+                        child: Center(
+                          widthFactor: 1,
+                          heightFactor: 1,
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: compact ? 5 : 8,
+                              vertical: 9,
+                            ),
+                            child: const Text(
+                              '充值',
+                              style: TextStyle(
+                                color: RoomColors.primary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -617,7 +631,7 @@ class _GiftSheetState extends State<GiftSheet>
                       : () => _submit(total),
                   borderRadius: BorderRadius.circular(999),
                   child: SizedBox(
-                    height: 38,
+                    height: 48,
                     child: Padding(
                       padding: EdgeInsets.symmetric(
                         horizontal: compact ? 10 : 16,
@@ -1090,7 +1104,7 @@ class _QuantityPicker extends StatelessWidget {
         PopupMenuItem<int>(value: quantity, child: Text('×$quantity')),
     ],
     child: Container(
-      height: 38,
+      height: 48,
       padding: EdgeInsets.symmetric(horizontal: compact ? 7 : 10),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.06),
