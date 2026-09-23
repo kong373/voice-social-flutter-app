@@ -13,6 +13,7 @@ import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/core/network/api_exception.dart';
 import 'package:voice_social_app/core/network/backend_route_catalog.dart';
 import 'package:voice_social_app/features/account/application/auth_controller.dart';
+import 'package:voice_social_app/features/account/compliance/presentation/account_compliance_pages.dart';
 import 'package:voice_social_app/features/account/data/auth_session_manager.dart';
 import 'package:voice_social_app/features/account/domain/auth_models.dart';
 import 'package:voice_social_app/features/commerce/catalog/domain/commerce_catalog_models.dart';
@@ -26,6 +27,7 @@ import 'package:voice_social_app/features/room/presentation/room_page.dart';
 import 'package:voice_social_app/features/room/pk/domain/room_pk_models.dart';
 import 'package:voice_social_app/features/shell/live_read_only_repository.dart';
 import 'package:voice_social_app/features/social/domain/social_models.dart';
+import 'package:voice_social_app/features/social/presentation/social_pages.dart';
 
 import 'm2_4_test_support.dart';
 import 'm4_commerce_ui_support.dart';
@@ -2680,16 +2682,15 @@ Future<void> _runComplianceAndSupportFlow(
     await tester.pumpAndSettle();
   }
   await tester.scrollUntilVisible(
-    find.text('帮助与反馈'),
+    find.text('帮助与客服'),
     260,
     scrollable: find.byType(Scrollable).first,
   );
-  final Finder support = find.text('帮助与反馈').hitTestable();
-  if (supportProbe != null && support.evaluate().isNotEmpty) {
-    await tester.tap(support);
+  if (supportProbe != null) {
+    await tester.tap(find.text('帮助与客服').hitTestable());
     await _waitFor(
       tester,
-      () => find.text('帮助与客服').evaluate().isNotEmpty,
+      () => find.byType(HelpCenterPage).evaluate().isNotEmpty,
       description: 'support page',
     );
     evidence.invariant('support_page_reachable_without_provider_chat');
@@ -2700,7 +2701,7 @@ Future<void> _runComplianceAndSupportFlow(
     );
     await tester.pageBack();
     await tester.pumpAndSettle();
-  } else if (supportProbe == null) {
+  } else {
     evidence.invariant('support_channel_backend_blocked');
   }
   await tester.scrollUntilVisible(
@@ -2708,29 +2709,25 @@ Future<void> _runComplianceAndSupportFlow(
     260,
     scrollable: find.byType(Scrollable).first,
   );
-  final Finder privacy = find.text('隐私与安全').hitTestable();
-  if (privacy.evaluate().isNotEmpty) {
-    await tester.tap(privacy);
-    await _waitFor(
-      tester,
-      () => find.text('账号与安全').evaluate().isNotEmpty,
-      description: 'account compliance page',
-    );
-    evidence.invariant('compliance_page_reachable_without_real_name_write');
-    await captureQaScreenshot(
-      tester,
-      evidence.binding,
-      'm4-${qaAvdId.toLowerCase()}-20-compliance',
-    );
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-  }
+  await tester.tap(find.text('账号安全').hitTestable());
+  await _waitFor(
+    tester,
+    () => find.byType(AccountComplianceHubPage).evaluate().isNotEmpty,
+    description: 'account compliance page',
+  );
+  evidence.invariant('compliance_page_reachable_without_real_name_write');
+  await captureQaScreenshot(
+    tester,
+    evidence.binding,
+    'm4-${qaAvdId.toLowerCase()}-20-compliance',
+  );
+  await tester.pageBack();
+  await tester.pumpAndSettle();
 }
 
 Future<void> _openPersonalCenterForLogout(WidgetTester tester) async {
-  // The personal center is the product-owned logout surface. First revisit
-  // the account compliance route, then return and open the visible settings
-  // entry; the test never manipulates secure storage directly.
+  // The account tab is the sole personal-center root. Revisit account safety,
+  // return to that root, then use its real logout action.
   await tester.tap(find.text('我的').last.hitTestable());
   await _waitFor(
     tester,
@@ -2742,40 +2739,26 @@ Future<void> _openPersonalCenterForLogout(WidgetTester tester) async {
     260,
     scrollable: find.byType(Scrollable).first,
   );
-  await tester.tap(find.text('隐私与安全').hitTestable());
+  await tester.tap(find.text('账号安全').hitTestable());
   await _waitFor(
     tester,
-    () => find.text('账号与安全').evaluate().isNotEmpty,
-    description: 'personal center entry',
+    () => find.byType(AccountComplianceHubPage).evaluate().isNotEmpty,
+    description: 'account safety before logout',
   );
   await tester.pageBack();
   await tester.pumpAndSettle();
-  // The account page retains its scroll offset after returning from the
-  // compliance hub. Reset the real product scroll surface, then use its
-  // visible settings action to enter the personal center. No route, session,
-  // or secure-storage state is injected by the test.
   final Finder accountPage = find.byKey(const Key('video-runtime-account'));
   expect(accountPage, findsOneWidget);
-  final Finder accountScrollable = find
-      .descendant(of: accountPage, matching: find.byType(Scrollable))
-      .first;
-  expect(accountScrollable, findsOneWidget);
-  final ScrollableState scrollable = tester.state<ScrollableState>(
-    accountScrollable,
+  final Finder logout = find.descendant(
+    of: accountPage,
+    matching: find.text('退出登录'),
   );
-  scrollable.position.jumpTo(scrollable.position.minScrollExtent);
+  await Scrollable.ensureVisible(tester.element(logout), alignment: 0.5);
   await tester.pumpAndSettle();
-  final Finder personalCenter = find.byKey(const Key('open-personal-center'));
   await _waitFor(
     tester,
-    () => personalCenter.hitTestable().evaluate().isNotEmpty,
-    description: 'visible personal center action after account scroll reset',
-  );
-  await tester.tap(personalCenter.hitTestable());
-  await _waitFor(
-    tester,
-    () => find.text('退出登录').evaluate().isNotEmpty,
-    description: 'personal center logout action',
+    () => logout.hitTestable().evaluate().isNotEmpty,
+    description: 'visible logout action on the account root',
   );
 }
 

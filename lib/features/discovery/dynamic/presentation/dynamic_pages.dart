@@ -17,10 +17,15 @@ import 'package:voice_social_app/features/social/presentation/social_pages.dart'
 import 'package:voice_social_app/shared/time_format.dart';
 
 class DiscoveryFeedPage extends StatefulWidget {
-  const DiscoveryFeedPage({this.repository, super.key});
+  const DiscoveryFeedPage({
+    this.repository,
+    this.showFloatingPublishButton = true,
+    super.key,
+  });
 
   @visibleForTesting
   final DynamicRepository? repository;
+  final bool showFloatingPublishButton;
 
   @override
   State<DiscoveryFeedPage> createState() => _DiscoveryFeedPageState();
@@ -422,11 +427,13 @@ class _DiscoveryFeedPageState extends State<DiscoveryFeedPage>
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _publishing ? null : _publish,
-        icon: const Icon(Icons.edit_rounded),
-        label: const Text('发布'),
-      ),
+      floatingActionButton: widget.showFloatingPublishButton
+          ? FloatingActionButton.extended(
+              onPressed: _publishing ? null : _publish,
+              icon: const Icon(Icons.edit_rounded),
+              label: const Text('发布'),
+            )
+          : null,
     );
   }
 }
@@ -1729,14 +1736,20 @@ class DynamicPostCard extends StatelessWidget {
                     children: <Widget>[
                       Text(
                         post.author.nickname,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: SocialColors.textPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
                       ),
                       Text(
                         <String>[
                           formatMessageTimeText(post.createdAt, now),
                           if (post.location.isNotEmpty) post.location,
                         ].join(' · '),
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: SocialColors.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -1753,7 +1766,11 @@ class DynamicPostCard extends StatelessWidget {
               post.content,
               maxLines: expanded ? null : 6,
               overflow: expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyLarge,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: SocialColors.textPrimary,
+                fontSize: 15,
+                height: 1.5,
+              ),
             ),
             if (post.topics.isNotEmpty) ...<Widget>[
               const SizedBox(height: 10),
@@ -1781,6 +1798,7 @@ class DynamicPostCard extends StatelessWidget {
               children: <Widget>[
                 TextButton.icon(
                   onPressed: likeInFlight ? null : onLike,
+                  style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
                   icon: Icon(
                     likeInFlight
                         ? Icons.hourglass_top_rounded
@@ -1793,6 +1811,7 @@ class DynamicPostCard extends StatelessWidget {
                 ),
                 TextButton.icon(
                   onPressed: onOpen,
+                  style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
                   icon: const Icon(Icons.chat_bubble_outline_rounded),
                   label: Text('${post.commentCount}'),
                 ),

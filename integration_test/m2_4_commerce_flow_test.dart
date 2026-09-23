@@ -26,7 +26,7 @@ void main() {
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
       await pumpUntilVisible(tester, find.text('个人与关系'));
-      await _scrollToAndTap(tester, find.text('钱包、订单与收益'));
+      await _scrollToAndTap(tester, find.text('钱包'));
       await pumpUntilVisible(tester, find.byType(CommerceHubPage));
       expect(find.text('钱包与商业化'), findsOneWidget);
 

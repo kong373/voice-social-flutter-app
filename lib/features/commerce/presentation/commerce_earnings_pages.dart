@@ -819,7 +819,9 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
               padding: const EdgeInsets.only(top: 3),
               child: Text(
                 '另有 ${selection.accounts.where((PayoutAccount item) => !item.selectable).length} 个账户待审核或不可用',
-                style: Theme.of(context).textTheme.bodySmall,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: SocialColors.textSecondary,
+                ),
               ),
             ),
         ],
@@ -999,21 +1001,30 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                                     children: <Widget>[
                                       Text(
                                         '¥${record.amount.toStringAsFixed(2)} · ${record.statusText}',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.titleSmall,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall
+                                            ?.copyWith(
+                                              color: SocialColors.textPrimary,
+                                            ),
                                       ),
                                       Text(
                                         '持卡人 ${record.holderNameMasked} ${record.maskedCard}',
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: SocialColors.textSecondary,
+                                            ),
                                       ),
                                       Text(
                                         _formatDateTime(record.createdAt),
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(
+                                              color: SocialColors.textSecondary,
+                                            ),
                                       ),
                                     ],
                                   ),
@@ -1021,7 +1032,10 @@ class _WithdrawalPageState extends State<WithdrawalPage> {
                                 Text(
                                   '到账\n¥${record.receivedAmount.toStringAsFixed(2)}',
                                   textAlign: TextAlign.end,
-                                  style: Theme.of(context).textTheme.bodySmall,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: SocialColors.textSecondary,
+                                      ),
                                 ),
                               ],
                             ),

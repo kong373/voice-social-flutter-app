@@ -176,6 +176,13 @@ void main() {
         final old = await dependencies.socialRepository.fetchMyProfile();
         await dependencies.sessionManager.save(_session(20003));
         await dependencies.sessionManager.save(_session(10001));
+        // The unified personal center clears the old profile immediately and
+        // performs one authority read for each new identity generation.
+        expect(reads.requests, hasLength(4));
+        await tester.pump();
+        expect(find.text('99'), findsNothing);
+        reads.requests[3].complete(old);
+        reads.requests[2].complete(old.copyWith(followingCount: 88));
         if (lateError) {
           reads.requests[1].completeError(StateError('STALE-PROFILE'));
         } else {
@@ -192,8 +199,8 @@ void main() {
           following: false,
         );
         await _returnFromRelations(tester);
-        expect(reads.requests, hasLength(3));
-        reads.requests[2].complete(
+        expect(reads.requests, hasLength(5));
+        reads.requests[4].complete(
           await dependencies.socialRepository.fetchMyProfile(),
         );
         await tester.pumpAndSettle();

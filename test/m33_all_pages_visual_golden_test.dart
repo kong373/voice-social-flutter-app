@@ -51,7 +51,7 @@ void main() {
             dependencies: dependencies,
             child: MaterialApp(
               debugShowCheckedModeBanner: false,
-              theme: AppTheme.social(fontFamily: kGoldenFontFamily),
+              theme: AppTheme.room(fontFamily: kGoldenFontFamily),
               home: entry.builder(dependencies, scenario),
             ),
           ),

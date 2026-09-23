@@ -23,10 +23,14 @@ env:
   IOS_BASE_SHA: "6b6e35fc03c08431b2c2d6b0147daccd8307c5b9"
 
 jobs:
-  quality:
-    name: iOS source contracts and Flutter quality
+  quality_shards:
+    name: iOS source and Flutter quality shard ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -146,11 +150,14 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          set -o pipefail
           flutter test \
             --coverage \
             --concurrency=1 \
             --timeout=60s \
             --reporter=expanded \
+            --total-shards=4 \
+            --shard-index=${{ matrix.shard }} \
             2>&1 | tee ios-flutter-test.log
 
       - name: Verify Apple capability and secret hygiene
@@ -194,7 +201,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: m5-ios-source-${{ github.run_id }}-${{ github.run_attempt }}
+          name: m5-ios-source-shard-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: |
             ios-changed-files.txt
             ios-analyze.log
@@ -202,6 +209,53 @@ jobs:
             coverage/
           if-no-files-found: warn
           retention-days: 14
+
+  quality:
+    name: iOS source contracts and Flutter quality
+    needs: quality_shards
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download all shard evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: m5-ios-source-shard-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: shards
+          merge-multiple: false
+
+      - name: Require and merge all four coverage reports
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          coverage_args=()
+          for shard in 0 1 2 3; do
+            artifact_dir="shards/m5-ios-source-shard-${{ github.run_id }}-${{ github.run_attempt }}-${shard}"
+            test -d "$artifact_dir"
+            mapfile -t reports < <(find "$artifact_dir" -type f -name lcov.info -print)
+            test "${#reports[@]}" -eq 1
+            test -s "${reports[0]}"
+            coverage_args+=(--add-tracefile "${reports[0]}")
+          done
+          sudo apt-get update -qq
+          sudo apt-get install -y lcov
+          mkdir -p coverage
+          lcov "${coverage_args[@]}" --output-file coverage/lcov.info
+          test -s coverage/lcov.info
+
+      - name: Upload merged iOS source coverage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: m5-ios-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Require every iOS quality shard to pass
+        if: always()
+        shell: bash
+        run: test "${{ needs.quality_shards.result }}" = success
 
   ios-simulator-build:
     name: CocoaPods and unsigned iOS simulator build

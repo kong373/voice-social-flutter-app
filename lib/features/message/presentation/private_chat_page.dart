@@ -1094,6 +1094,7 @@ class _PrivateChatPageState extends State<PrivateChatPage>
   @override
   Widget build(BuildContext context) {
     final conversationEpoch = _conversationEpoch;
+    final keyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
     final bool canSend =
         !_accountChanged &&
         _repository.supportsPrivateSend &&
@@ -1274,11 +1275,11 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                               },
                               child: ListView.builder(
                                 controller: _scrollController,
-                                padding: const EdgeInsets.fromLTRB(
+                                padding: EdgeInsets.fromLTRB(
                                   14,
                                   14,
                                   14,
-                                  22,
+                                  keyboardVisible ? 8 : 22,
                                 ),
                                 itemCount: _messages.length,
                                 itemBuilder: (BuildContext context, int index) {
@@ -1300,8 +1301,16 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                       _conversation.available &&
                       !_accountChanged)
                     ConstrainedBox(
+                      key: const Key('private-chat-media-tools'),
                       constraints: BoxConstraints(
-                        maxHeight: (space.maxHeight * 0.6).clamp(0.0, 240.0),
+                        // Keep one full action row while typing; the existing
+                        // inner scroll retains access to media status/actions.
+                        // Otherwise the tools can crowd a new bubble above a
+                        // short keyboard-reduced viewport even at the tail.
+                        maxHeight: (space.maxHeight * 0.6).clamp(
+                          0.0,
+                          keyboardVisible ? 48.0 : 240.0,
+                        ),
                       ),
                       child: SingleChildScrollView(
                         child: PrivateMediaComposer(
@@ -1366,14 +1375,25 @@ class _PrivateChatPageState extends State<PrivateChatPage>
                     ),
                     const SizedBox(width: 8),
                     Container(
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: SocialColors.brandGradient,
+                        gradient: canSend ? SocialColors.brandGradient : null,
+                        color: canSend ? null : const Color(0xFFE7E4F2),
                       ),
                       child: IconButton(
                         tooltip: '发送消息',
+                        constraints: const BoxConstraints.tightFor(
+                          width: 48,
+                          height: 48,
+                        ),
                         onPressed: canSend ? _send : null,
-                        color: Colors.white,
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          disabledBackgroundColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          disabledForegroundColor: SocialColors.textTertiary,
+                          shape: const CircleBorder(),
+                        ),
                         icon: _sending
                             ? const SizedBox.square(
                                 dimension: 18,
@@ -1413,7 +1433,7 @@ class _ChatBubble extends StatelessWidget {
     final bubble = Container(
       constraints: const BoxConstraints(maxWidth: 286),
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: message.isMine ? null : Colors.white.withValues(alpha: 0.86),
         gradient: message.isMine ? SocialColors.brandGradient : null,
@@ -1446,9 +1466,11 @@ class _ChatBubble extends StatelessWidget {
               message.content,
               style: TextStyle(
                 color: message.isMine ? Colors.white : SocialColors.textPrimary,
+                fontSize: 15,
+                height: 1.5,
               ),
             ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,
             children: <Widget>[

@@ -51,7 +51,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('ID 20004'), findsOneWidget);
+    expect(find.text('用户号 20004'), findsOneWidget);
     expect(find.textContaining(_loginUuid), findsNothing);
     await tester.tap(find.byTooltip('复制用户 ID'));
     await tester.pumpAndSettle();

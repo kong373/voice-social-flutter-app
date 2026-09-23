@@ -1,39 +1,55 @@
 part of 'social_pages.dart';
 
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.profile, this.showDecorations = false});
+  const _ProfileHeader({
+    required this.profile,
+    this.showDecorations = false,
+    this.onEdit,
+  });
 
   final SocialProfile profile;
   final bool showDecorations;
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: <Widget>[
-        Container(
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withValues(alpha: 0.9),
-            boxShadow: const <BoxShadow>[
-              BoxShadow(
-                color: Color(0x223C7CC5),
-                blurRadius: 18,
-                offset: Offset(0, 6),
+        Semantics(
+          button: onEdit != null,
+          label: '编辑头像和个人资料',
+          child: InkWell(
+            onTap: onEdit,
+            customBorder: const CircleBorder(),
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.9),
+                boxShadow: const <BoxShadow>[
+                  BoxShadow(
+                    color: Color(0x223C7CC5),
+                    blurRadius: 18,
+                    offset: Offset(0, 6),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: EquippedDecorationView(
-            decorations: profile.user.equippedDecorations,
-            product: DecorationProduct.starRingFrame,
-            enabled: showDecorations,
-            child: UserAvatarView(
-              avatar: profile.user.avatar,
-              userId: profile.user.userId,
-              size: 68,
-              enabled: showDecorations,
-              fallback: RuntimeAvatar(seed: '${profile.user.userId}', size: 68),
+              child: EquippedDecorationView(
+                decorations: profile.user.equippedDecorations,
+                product: DecorationProduct.starRingFrame,
+                enabled: showDecorations,
+                child: UserAvatarView(
+                  avatar: profile.user.avatar,
+                  userId: profile.user.userId,
+                  size: 68,
+                  enabled: showDecorations,
+                  fallback: RuntimeAvatar(
+                    seed: '${profile.user.userId}',
+                    size: 68,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -42,13 +58,23 @@ class _ProfileHeader extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(
-                profile.user.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w900,
+              InkWell(
+                onTap: onEdit,
+                borderRadius: BorderRadius.circular(8),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 44),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      profile.user.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 3),
@@ -342,10 +368,10 @@ class _MineDecorationBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 54,
-      padding: const EdgeInsets.symmetric(horizontal: 13),
+      constraints: const BoxConstraints(minHeight: 66),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: const BoxDecoration(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
         gradient: LinearGradient(
           colors: <Color>[Color(0xFF21113F), Color(0xFF4E286F)],
         ),
@@ -374,7 +400,7 @@ class _MineDecorationBanner extends StatelessWidget {
                   '个性装扮陈列',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 12,
+                    fontSize: 14,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -382,7 +408,7 @@ class _MineDecorationBanner extends StatelessWidget {
                   '资料卡、进场与声波装扮集中管理',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Color(0xFFCFC2E8), fontSize: 9),
+                  style: TextStyle(color: Color(0xFFE0D5EF), fontSize: 11),
                 ),
               ],
             ),
@@ -390,12 +416,15 @@ class _MineDecorationBanner extends StatelessWidget {
           TextButton(
             onPressed: onTap,
             style: TextButton.styleFrom(
-              minimumSize: const Size(64, 32),
+              minimumSize: const Size(68, 44),
               backgroundColor: const Color(0xFFFFE8BC),
               foregroundColor: const Color(0xFF5D3D20),
               padding: const EdgeInsets.symmetric(horizontal: 12),
             ),
-            child: const Text('去装扮', style: TextStyle(fontSize: 11)),
+            child: const Text(
+              '去装扮',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -407,13 +436,13 @@ class _RecentRoomTile extends StatelessWidget {
   const _RecentRoomTile({
     required this.title,
     required this.subtitle,
-    required this.seed,
+    required this.icon,
     required this.onTap,
   });
 
   final String title;
   final String subtitle;
-  final String seed;
+  final IconData icon;
   final VoidCallback onTap;
 
   @override
@@ -422,15 +451,23 @@ class _RecentRoomTile extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        height: 56,
-        padding: const EdgeInsets.all(8),
+        constraints: const BoxConstraints(minHeight: 68),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: const Color(0xFFF7F8FD),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: <Widget>[
-            RuntimeAvatar(seed: seed, size: 38),
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: SocialColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: SocialColors.primary, size: 22),
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
@@ -443,18 +480,18 @@ class _RecentRoomTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: SocialColors.textPrimary,
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: SocialColors.textTertiary,
-                      fontSize: 9,
+                      color: SocialColors.textSecondary,
+                      fontSize: 11,
                     ),
                   ),
                 ],
@@ -520,12 +557,12 @@ class _OxygenPanel extends StatelessWidget {
   const _OxygenPanel({
     required this.child,
     this.padding = const EdgeInsets.all(14),
-    this.radius = 16,
+    this.borderRadius,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
-  final double radius;
+  final BorderRadius? borderRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -533,7 +570,7 @@ class _OxygenPanel extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.94),
-        borderRadius: BorderRadius.circular(radius),
+        borderRadius: borderRadius ?? BorderRadius.circular(16),
         border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
         boxShadow: const <BoxShadow>[
           BoxShadow(
@@ -574,10 +611,9 @@ class _OxygenTopButton extends StatelessWidget {
 }
 
 class _OxygenSectionLabel extends StatelessWidget {
-  const _OxygenSectionLabel({required this.title, this.trailing});
+  const _OxygenSectionLabel({required this.title});
 
   final String title;
-  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -592,7 +628,6 @@ class _OxygenSectionLabel extends StatelessWidget {
             ),
           ),
         ),
-        if (trailing != null) trailing!,
       ],
     );
   }
@@ -662,6 +697,7 @@ class _OxygenToolShortcut extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    super.key,
   });
 
   final IconData icon;
@@ -680,8 +716,8 @@ class _OxygenToolShortcut extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             Container(
-              width: 36,
-              height: 36,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: const Color(0xFFF0F2FC),
@@ -697,9 +733,9 @@ class _OxygenToolShortcut extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: SocialColors.textSecondary,
-                fontSize: 9,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
-                height: 1.1,
+                height: 1.25,
               ),
             ),
           ],

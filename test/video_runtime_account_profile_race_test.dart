@@ -45,13 +45,13 @@ void main() {
 
     await tester.tap(find.text('初始用户').hitTestable());
     await tester.pumpAndSettle();
-    Navigator.of(tester.element(find.text('用户号 10001'))).pop();
+    await tester.pageBack();
     await tester.pumpAndSettle();
     expect(repository.requests, hasLength(2));
 
     await tester.tap(find.text('初始用户').hitTestable());
     await tester.pumpAndSettle();
-    Navigator.of(tester.element(find.text('用户号 10001'))).pop();
+    await tester.pageBack();
     await tester.pumpAndSettle();
     expect(repository.requests, hasLength(3));
 
@@ -67,11 +67,11 @@ void main() {
 
     await tester.tap(find.text('最新用户').hitTestable());
     await tester.pumpAndSettle();
-    Navigator.of(tester.element(find.text('用户号 10001'))).pop();
+    await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.tap(find.text('最新用户').hitTestable());
     await tester.pumpAndSettle();
-    Navigator.of(tester.element(find.text('用户号 10001'))).pop();
+    await tester.pageBack();
     await tester.pumpAndSettle();
     expect(repository.requests, hasLength(5));
 

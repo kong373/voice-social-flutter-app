@@ -19,10 +19,14 @@ env:
   FLUTTER_VERSION: "3.44.7"
 
 jobs:
-  quality:
-    name: Static, unit, widget, integration-source, and public-client hygiene
+  quality_shards:
+    name: Flutter quality shard ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -132,13 +136,15 @@ jobs:
             --concurrency=1 \
             --timeout=60s \
             --reporter=expanded \
+            --total-shards=4 \
+            --shard-index=${{ matrix.shard }} \
             2>&1 | tee test.log
 
       - name: Upload quality diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: flutter-quality-${{ github.run_id }}-${{ github.run_attempt }}
+          name: flutter-quality-shard-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
           path: |
             format.log
             analyze.log
@@ -148,6 +154,53 @@ jobs:
             ci-evidence/
           if-no-files-found: warn
           retention-days: 14
+
+  quality:
+    name: Static, unit, widget, integration-source, and public-client hygiene
+    needs: quality_shards
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download all shard diagnostics
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: flutter-quality-shard-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: shards
+          merge-multiple: false
+
+      - name: Require and merge all four coverage reports
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          coverage_args=()
+          for shard in 0 1 2 3; do
+            artifact_dir="shards/flutter-quality-shard-${{ github.run_id }}-${{ github.run_attempt }}-${shard}"
+            test -d "$artifact_dir"
+            mapfile -t reports < <(find "$artifact_dir" -type f -name lcov.info -print)
+            test "${#reports[@]}" -eq 1
+            test -s "${reports[0]}"
+            coverage_args+=(--add-tracefile "${reports[0]}")
+          done
+          sudo apt-get update -qq
+          sudo apt-get install -y lcov
+          mkdir -p coverage
+          lcov "${coverage_args[@]}" --output-file coverage/lcov.info
+          test -s coverage/lcov.info
+
+      - name: Upload merged quality coverage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: flutter-quality-${{ github.run_id }}-${{ github.run_attempt }}
+          path: coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Require every quality shard to pass
+        if: always()
+        shell: bash
+        run: test "${{ needs.quality_shards.result }}" = success
 
   android-debug:
     name: Build live public-client Android debug APK

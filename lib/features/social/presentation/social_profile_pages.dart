@@ -4,11 +4,21 @@ class PersonalCenterPage extends StatefulWidget {
   const PersonalCenterPage({
     required this.session,
     required this.onSignOut,
+    this.isActive = true,
+    this.embeddedInShell = false,
+    this.profileRepository,
+    this.platformEntry,
+    this.footer,
     super.key,
   });
 
   final AuthSession? session;
   final Future<void> Function() onSignOut;
+  final bool isActive;
+  final bool embeddedInShell;
+  final SocialRepository? profileRepository;
+  final Widget? platformEntry;
+  final Widget? footer;
 
   @override
   State<PersonalCenterPage> createState() => _PersonalCenterPageState();
@@ -21,7 +31,20 @@ class _PersonalCenterPageState extends State<PersonalCenterPage>
   bool _signingOut = false;
 
   SocialRepository get _repository =>
+      widget.profileRepository ??
       AppDependencyScope.of(context).socialRepository;
+
+  @override
+  void didUpdateWidget(covariant PersonalCenterPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.profileRepository, widget.profileRepository)) {
+      resetProfileDisplayRead();
+      _load();
+    } else if (widget.isActive && !oldWidget.isActive) {
+      // My remains mounted in the shell while other tabs change relations.
+      _load();
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -84,7 +107,8 @@ class _PersonalCenterPageState extends State<PersonalCenterPage>
 
   @override
   Widget build(BuildContext context) {
-    final Widget? backButton = (ModalRoute.of(context)?.canPop ?? false)
+    final Widget? backButton =
+        !widget.embeddedInShell && (ModalRoute.of(context)?.canPop ?? false)
         ? _OxygenTopButton(
             icon: Icons.arrow_back_rounded,
             tooltip: '返回',
@@ -96,13 +120,30 @@ class _PersonalCenterPageState extends State<PersonalCenterPage>
         body: SafeArea(
           child: Column(
             children: <Widget>[
-              if (backButton != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-                  child: Row(children: <Widget>[backButton]),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+                child: Row(
+                  children: <Widget>[
+                    if (backButton != null) backButton,
+                    if (widget.embeddedInShell)
+                      Text(
+                        '我的',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                    const Spacer(),
+                    if (widget.embeddedInShell)
+                      TextButton(
+                        onPressed: _signingOut ? null : _signOut,
+                        child: Text(_signingOut ? '退出中' : '退出登录'),
+                      ),
+                  ],
                 ),
+              ),
+              if (widget.platformEntry != null) widget.platformEntry!,
               Expanded(
-                child: _error == null
+                child: !profileDisplayReadAllowed
+                    ? const Center(child: Text('请登录后查看个人资料'))
+                    : _error == null
                     ? const Center(child: CircularProgressIndicator())
                     : _ErrorState(message: _error!, onRetry: _load),
               ),
@@ -114,6 +155,8 @@ class _PersonalCenterPageState extends State<PersonalCenterPage>
     final SocialProfile profile = _profile!;
     final AppDependencyScope scope = context
         .dependOnInheritedWidgetOfExactType<AppDependencyScope>()!;
+    final String account =
+        scope.dependencies.sessionManager.session?.mobile ?? profile.account;
     final int currentVersion =
         int.tryParse(scope.dependencies.environment.clientInnerVersion) ?? 1;
     final int platformType =
@@ -126,19 +169,33 @@ class _PersonalCenterPageState extends State<PersonalCenterPage>
         child: RefreshIndicator(
           onRefresh: _load,
           child: ListView(
+            key: widget.embeddedInShell
+                ? const Key('video-runtime-account')
+                : null,
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 34),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              10,
+              16,
+              MediaQuery.paddingOf(context).bottom +
+                  (widget.embeddedInShell ? 92 : 34),
+            ),
             children: <Widget>[
               Row(
                 children: <Widget>[
                   if (backButton != null) backButton,
+                  if (widget.embeddedInShell)
+                    Text(
+                      '我的',
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
                   const Spacer(),
                   _OxygenTopButton(
                     icon: Icons.settings_outlined,
                     tooltip: '账号与安全',
                     onTap: () => _open(
                       AccountComplianceHubPage(
-                        account: widget.session?.mobile ?? profile.account,
+                        account: account,
                         currentVersion: currentVersion,
                         platformType: platformType,
                       ),
@@ -146,34 +203,36 @@ class _PersonalCenterPageState extends State<PersonalCenterPage>
                   ),
                 ],
               ),
-              Transform.translate(
-                offset: const Offset(0, -6),
-                child: _ProfileHeader(
-                  profile: profile,
-                  showDecorations: profileDisplayAuthenticated,
+              const SizedBox(height: 8),
+              _ProfileHeader(
+                profile: profile,
+                showDecorations: profileDisplayAuthenticated,
+                onEdit: () => _open(
+                  EditProfilePage(initialProfile: profile),
+                  refresh: true,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
               _Metrics(profile: profile),
-              const SizedBox(height: 14),
+              const SizedBox(height: 18),
               _MineDecorationBanner(
                 onTap: () => _open(const DecorationPage(), refresh: true),
               ),
               _OxygenPanel(
-                radius: 0,
-                padding: const EdgeInsets.symmetric(vertical: 3),
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(18),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Row(
                   children: <Widget>[
                     _OxygenFeatureShortcut(
                       icon: Icons.account_balance_wallet_rounded,
-                      label: '钱包、订单与收益',
+                      label: '钱包',
                       colors: const <Color>[
                         Color(0xFFFFD85F),
                         Color(0xFFFFA83F),
                       ],
-                      onTap: () => _open(
-                        CommerceHubPage(account: widget.session?.mobile ?? ''),
-                      ),
+                      onTap: () => _open(CommerceHubPage(account: account)),
                     ),
                     _OxygenFeatureShortcut(
                       icon: Icons.style_rounded,
@@ -201,60 +260,32 @@ class _PersonalCenterPageState extends State<PersonalCenterPage>
               ),
               const SizedBox(height: 12),
               _OxygenPanel(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                padding: const EdgeInsets.all(14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    _OxygenSectionLabel(
-                      title: '最近进房',
-                      trailing: InkWell(
-                        onTap: () => _open(const SavedRoomsPage()),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Text(
-                              '全部',
-                              style: TextStyle(
-                                color: SocialColors.textSecondary,
-                                fontSize: 10,
-                              ),
-                            ),
-                            Icon(
-                              Icons.chevron_right_rounded,
-                              color: SocialColors.textTertiary,
-                              size: 18,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
+                    const _OxygenSectionLabel(title: '我的房间'),
+                    const SizedBox(height: 12),
                     Row(
                       children: <Widget>[
-                        Expanded(
-                          child: _RecentRoomTile(
-                            title: profile.user.roomId == null
-                                ? '收藏的房间'
-                                : '正在收听',
-                            subtitle: profile.user.roomId == null
-                                ? '去看看已保存的房间'
-                                : 'ID ${profile.user.roomId}',
-                            seed: profile.user.roomId ?? profile.account,
-                            onTap: () => profile.user.roomId == null
-                                ? _open(const SavedRoomsPage())
-                                : _open(
-                                    RoomDeepLinkPage(
-                                      input: profile.user.roomId!,
-                                    ),
-                                  ),
+                        if (profile.user.roomId != null) ...<Widget>[
+                          Expanded(
+                            child: _RecentRoomTile(
+                              title: '正在收听',
+                              subtitle: '返回房间 ${profile.user.roomId}',
+                              icon: Icons.headphones_rounded,
+                              onTap: () => _open(
+                                RoomDeepLinkPage(input: profile.user.roomId!),
+                              ),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 9),
+                          const SizedBox(width: 10),
+                        ],
                         Expanded(
                           child: _RecentRoomTile(
-                            title: '我的收藏',
-                            subtitle: '继续上次的听房时光',
-                            seed: 'saved-${profile.account}',
+                            title: '收藏房间',
+                            subtitle: '查看已收藏的房间',
+                            icon: Icons.bookmarks_outlined,
                             onTap: () => _open(const SavedRoomsPage()),
                           ),
                         ),
@@ -274,64 +305,88 @@ class _PersonalCenterPageState extends State<PersonalCenterPage>
                       child: _OxygenSectionLabel(title: '常用工具'),
                     ),
                     const SizedBox(height: 4),
-                    GridView.count(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      crossAxisCount: 4,
-                      mainAxisSpacing: 0,
-                      crossAxisSpacing: 0,
-                      childAspectRatio: 0.9,
-                      children: <Widget>[
-                        _OxygenToolShortcut(
-                          icon: Icons.edit_outlined,
-                          label: '编辑个人资料',
-                          onTap: () => _open(
-                            EditProfilePage(initialProfile: profile),
-                            refresh: true,
-                          ),
-                        ),
-                        _OxygenToolShortcut(
-                          icon: Icons.people_outline_rounded,
-                          label: '关注、粉丝与好友',
-                          onTap: () => _open(const RelationsPage()),
-                        ),
-                        _OxygenToolShortcut(
-                          icon: Icons.visibility_outlined,
-                          label: '访客记录',
-                          onTap: () => _open(const VisitorRecordsPage()),
-                        ),
-                        _OxygenToolShortcut(
-                          icon: Icons.lock_outline_rounded,
-                          label: '隐私与黑名单',
-                          onTap: () => _open(const PrivacyBlacklistPage()),
-                        ),
-                        _OxygenToolShortcut(
-                          icon: Icons.support_agent_outlined,
-                          label: '帮助与客服',
-                          onTap: () => _open(const HelpCenterPage()),
-                        ),
-                        _OxygenToolShortcut(
-                          icon: Icons.security_outlined,
-                          label: '账号安全',
-                          onTap: () => _open(
-                            AccountComplianceHubPage(
-                              account:
-                                  widget.session?.mobile ?? profile.account,
-                              currentVersion: currentVersion,
-                              platformType: platformType,
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final scale =
+                            MediaQuery.textScalerOf(context).scale(11) / 11;
+                        return GridView.count(
+                          shrinkWrap: true,
+                          padding: EdgeInsets.zero,
+                          physics: const NeverScrollableScrollPhysics(),
+                          crossAxisCount: constraints.maxWidth / scale < 300
+                              ? 3
+                              : 4,
+                          mainAxisSpacing: 0,
+                          crossAxisSpacing: 0,
+                          mainAxisExtent: 92 + (scale - 1).clamp(0, 2) * 28,
+                          children: <Widget>[
+                            _OxygenToolShortcut(
+                              icon: Icons.edit_outlined,
+                              label: '编辑个人资料',
+                              onTap: () => _open(
+                                EditProfilePage(initialProfile: profile),
+                                refresh: true,
+                              ),
                             ),
-                          ),
-                        ),
-                        _OxygenToolShortcut(
-                          icon: Icons.logout_rounded,
-                          label: _signingOut ? '退出中' : '退出登录',
-                          onTap: _signingOut ? () {} : _signOut,
-                        ),
-                      ],
+                            _OxygenToolShortcut(
+                              icon: Icons.people_outline_rounded,
+                              label: '关注与粉丝',
+                              onTap: () =>
+                                  _open(const RelationsPage(), refresh: true),
+                            ),
+                            _OxygenToolShortcut(
+                              icon: Icons.visibility_outlined,
+                              label: '访客记录',
+                              onTap: () => _open(const VisitorRecordsPage()),
+                            ),
+                            _OxygenToolShortcut(
+                              icon: Icons.notifications_none_rounded,
+                              label: '通知中心',
+                              onTap: () =>
+                                  _open(const NotificationCenterPage()),
+                            ),
+                            _OxygenToolShortcut(
+                              icon: Icons.lock_outline_rounded,
+                              label: '隐私与黑名单',
+                              onTap: () => _open(const PrivacyBlacklistPage()),
+                            ),
+                            _OxygenToolShortcut(
+                              icon: Icons.support_agent_outlined,
+                              label: '帮助与客服',
+                              onTap: () => _open(const HelpCenterPage()),
+                            ),
+                            _OxygenToolShortcut(
+                              key: const Key('open-account-compliance'),
+                              icon: Icons.security_outlined,
+                              label: '账号安全',
+                              onTap: () => _open(
+                                AccountComplianceHubPage(
+                                  account: account,
+                                  currentVersion: currentVersion,
+                                  platformType: platformType,
+                                ),
+                              ),
+                            ),
+                            _OxygenToolShortcut(
+                              icon: Icons.logout_rounded,
+                              label: _signingOut ? '退出中' : '退出登录',
+                              onTap: _signingOut ? () {} : _signOut,
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ),
               ),
+              if (widget.platformEntry != null) ...<Widget>[
+                const SizedBox(height: 12),
+                widget.platformEntry!,
+              ],
+              if (widget.footer != null) ...<Widget>[
+                const SizedBox(height: 12),
+                widget.footer!,
+              ],
             ],
           ),
         ),

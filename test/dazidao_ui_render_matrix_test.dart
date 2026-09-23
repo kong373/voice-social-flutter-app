@@ -99,9 +99,13 @@ Future<void> _render(
   Future<void> Function(WidgetTester, AppDependencies)? exercise,
   void Function()? release,
   Map<String, Object> annotations = const {},
-  bool useProductionHostTheme = false,
+  bool useProductionHostTheme = true,
   AppDependencies Function(AppDependencies)? transformDependencies,
 }) async {
+  // Paint real elevation shadows in visual exports, not the test-only hard edges.
+  final previousShadows = debugDisableShadows;
+  debugDisableShadows = false;
+  addTearDown(() => debugDisableShadows = previousShadows);
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
@@ -264,6 +268,7 @@ Future<void> _render(
       );
     }
   } finally {
+    debugDisableShadows = previousShadows;
     await tester.pumpWidget(const SizedBox.shrink());
     keyboardInset.dispose();
     release?.call();
@@ -332,7 +337,7 @@ Future<void> renderDazidaoScenario(
   Future<void> Function(AppDependencies)? prepare,
   void Function()? release,
   Map<String, Object> annotations = const {},
-  bool useProductionHostTheme = false,
+  bool useProductionHostTheme = true,
   AppDependencies Function(AppDependencies)? transformDependencies,
 }) => _render(
   tester,

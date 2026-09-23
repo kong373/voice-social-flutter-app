@@ -8,8 +8,10 @@ import 'package:voice_social_app/app/app_dependencies.dart';
 import 'package:voice_social_app/app/app_dependency_scope.dart';
 import 'package:voice_social_app/core/design_system/app_theme.dart';
 import 'package:voice_social_app/features/discovery/dynamic/presentation/dynamic_pages.dart';
+import 'package:voice_social_app/features/discovery/presentation/saved_rooms_page.dart';
 import 'package:voice_social_app/features/message/presentation/message_pages.dart';
 import 'package:voice_social_app/features/room/presentation/gift_sheet.dart';
+import 'package:voice_social_app/features/room/presentation/room_page.dart';
 import 'package:voice_social_app/features/room/presentation/video_runtime_room_page.dart';
 import 'package:voice_social_app/features/shell/main_shell.dart';
 
@@ -254,7 +256,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('account recent room restores a real room route', (
+  testWidgets('account saved room opens the repository-backed room route', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(1080, 2400);
@@ -276,9 +278,14 @@ void main() {
 
     await tester.tap(find.text('我的').hitTestable());
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('recent-room-880217')));
+    expect(find.byKey(const Key('recent-room-880217')), findsNothing);
+    await tester.tap(find.text('收藏房间').hitTestable());
     await tester.pumpAndSettle();
-    expect(find.byType(VideoRuntimeRoomPage), findsOneWidget);
+    expect(find.byType(SavedRoomsPage), findsOneWidget);
+    await tester.tap(find.text('进入房间').first.hitTestable());
+    await tester.pumpAndSettle();
+    expect(find.byType(RoomPage), findsOneWidget);
+    expect(tester.widget<RoomPage>(find.byType(RoomPage)).roomId, '880217');
     expect(tester.takeException(), isNull);
   });
 

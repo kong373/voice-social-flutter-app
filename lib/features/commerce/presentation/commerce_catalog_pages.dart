@@ -1310,8 +1310,18 @@ class _DecorationPageState extends State<DecorationPage> {
                         mainAxisSpacing: 10,
                         crossAxisSpacing: 10,
                         mainAxisExtent:
-                            250 +
-                            9 * MediaQuery.textScalerOf(context).scale(14),
+                            // Leave room for a wrapped expiry line with the
+                            // platform's fallback font, not only golden fonts.
+                            288 +
+                            9 *
+                                (MediaQuery.textScalerOf(context).scale(14) -
+                                    14) +
+                            (visible.any(
+                                  (item) =>
+                                      item.expiresAt != null || item.permanent,
+                                )
+                                ? 24
+                                : 0),
                       ),
                       itemCount: visible.length,
                       itemBuilder: (BuildContext context, int index) {
@@ -1321,17 +1331,37 @@ class _DecorationPageState extends State<DecorationPage> {
                           padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
                           child: Column(
                             children: <Widget>[
-                              DecorationPreview(
-                                item: item,
-                                size: 72,
-                                allowMockAssetPaths:
-                                    !_dependencies!.environment.isLive,
-                              ),
                               TextButton(
                                 key: Key('decoration-preview-${item.id}'),
                                 onPressed: () => _previewDecoration(item),
-                                child: const Text('预览'),
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                ),
+                                child: SizedBox(
+                                  height: 104,
+                                  width: double.infinity,
+                                  child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      DecorationPreview(
+                                        item: item,
+                                        size: 96,
+                                        allowMockAssetPaths:
+                                            !_dependencies!.environment.isLive,
+                                      ),
+                                      const Positioned(
+                                        right: 0,
+                                        bottom: 0,
+                                        child: Text(
+                                          '预览',
+                                          style: TextStyle(fontSize: 11),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
+                              const SizedBox(height: 8),
                               Text(
                                 item.name,
                                 maxLines: 1,
@@ -1382,62 +1412,78 @@ class _DecorationPageState extends State<DecorationPage> {
                                   textAlign: TextAlign.center,
                                 ),
                               const Spacer(),
-                              if (item.canPurchase &&
-                                  item.owned &&
-                                  !_unknownPurchases.containsKey(item.id))
-                                SizedBox(
-                                  width: double.infinity,
-                                  height: 38,
-                                  child: OutlinedButton(
-                                    key: Key('decoration-renew-${item.id}'),
-                                    onPressed: _busyId == null
-                                        ? () => _operateDecoration(
-                                            item,
-                                            purchase: true,
-                                          )
-                                        : null,
-                                    child: const Text('续购'),
-                                  ),
-                                ),
-                              if (item.canPurchase && item.owned)
-                                const SizedBox(height: 4),
-                              if (item.canPurchase ||
-                                  item.owned ||
-                                  _unknownPurchases.containsKey(item.id))
-                                SizedBox(
-                                  width: double.infinity,
-                                  height: 38,
-                                  child: FilledButton(
-                                    key: Key('decoration-action-${item.id}'),
-                                    style: FilledButton.styleFrom(
-                                      minimumSize: const Size(52, 38),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
+                              Row(
+                                children: [
+                                  if (item.canPurchase &&
+                                      item.owned &&
+                                      !_unknownPurchases.containsKey(
+                                        item.id,
+                                      )) ...[
+                                    Expanded(
+                                      child: SizedBox(
+                                        height: 48,
+                                        child: OutlinedButton(
+                                          key: Key(
+                                            'decoration-renew-${item.id}',
+                                          ),
+                                          style: OutlinedButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 4,
+                                            ),
+                                          ),
+                                          onPressed: _busyId == null
+                                              ? () => _operateDecoration(
+                                                  item,
+                                                  purchase: true,
+                                                )
+                                              : null,
+                                          child: const Text('续购'),
+                                        ),
                                       ),
                                     ),
-                                    onPressed: _busyId == null
-                                        ? () => _operateDecoration(item)
-                                        : null,
-                                    child: FittedBox(
-                                      fit: BoxFit.scaleDown,
-                                      child: Text(
-                                        _busyId == item.id
-                                            ? '处理中…'
-                                            : _unknownPurchases.containsKey(
-                                                item.id,
-                                              )
-                                            ? '重试原购买'
-                                            : item.owned
-                                            ? item.equipped
-                                                  ? '卸下'
-                                                  : '穿戴'
-                                            : item.expiresAt != null
-                                            ? '续购'
-                                            : '购买',
+                                    const SizedBox(width: 8),
+                                  ],
+                                  if (item.canPurchase ||
+                                      item.owned ||
+                                      _unknownPurchases.containsKey(item.id))
+                                    Expanded(
+                                      child: SizedBox(
+                                        height: 48,
+                                        child: FilledButton(
+                                          key: Key(
+                                            'decoration-action-${item.id}',
+                                          ),
+                                          style: FilledButton.styleFrom(
+                                            minimumSize: const Size(44, 48),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                            ),
+                                          ),
+                                          onPressed: _busyId == null
+                                              ? () => _operateDecoration(item)
+                                              : null,
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                              _busyId == item.id
+                                                  ? '处理中…'
+                                                  : _unknownPurchases
+                                                        .containsKey(item.id)
+                                                  ? '重试原购买'
+                                                  : item.owned
+                                                  ? item.equipped
+                                                        ? '卸下'
+                                                        : '穿戴'
+                                                  : item.expiresAt != null
+                                                  ? '续购'
+                                                  : '购买',
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
+                                ],
+                              ),
                             ],
                           ),
                         );

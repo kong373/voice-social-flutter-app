@@ -300,12 +300,12 @@ class _VideoNavigationBar extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         color: Color(0xFAFFFFFF),
-        border: Border(top: BorderSide(color: Color(0x91FFFFFF))),
+        border: Border(top: BorderSide(color: Color(0x1417263F), width: 0.5)),
         boxShadow: <BoxShadow>[
           BoxShadow(
-            color: Color(0x160F1A35),
-            blurRadius: 24,
-            offset: Offset(0, -8),
+            color: Color(0x080F1A35),
+            blurRadius: 16,
+            offset: Offset(0, -4),
           ),
         ],
       ),
@@ -355,7 +355,7 @@ class _VideoNavigationBar extends StatelessWidget {
                               color: currentIndex == index
                                   ? SocialColors.textPrimary
                                   : SocialColors.textTertiary,
-                              fontSize: 10,
+                              fontSize: 11,
                               fontWeight: currentIndex == index
                                   ? FontWeight.w800
                                   : FontWeight.w600,
