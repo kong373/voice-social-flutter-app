@@ -311,6 +311,7 @@ class _PersonalCenterPageState extends State<PersonalCenterPage>
                             MediaQuery.textScalerOf(context).scale(11) / 11;
                         return GridView.count(
                           shrinkWrap: true,
+                          padding: EdgeInsets.zero,
                           physics: const NeverScrollableScrollPhysics(),
                           crossAxisCount: constraints.maxWidth / scale < 300
                               ? 3

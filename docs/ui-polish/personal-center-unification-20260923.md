@@ -36,3 +36,15 @@
 新候选编译、Android实装和Linux/完整CI以追加回执为准。iOS DeviceHub本轮只读控制探测仍返回AX -10005，不能将Widget/编译结果称为iOS交互通过。未合并、未部署。
 
 独立审查补充：M4/M3.2设备脚本使用了已删除的二层入口定位，已纳入本轮选择器迁移；不通过恢复假入口来满足旧脚本。M2.4旧脚本只同步本次钱包入口文案，不宣称整条历史集成套件本轮执行通过。
+
+## 原生与CI增量
+
+- 742788 Android/iOS Simulator均编译exit0；Android A/B覆盖安装，APK SHA-256为561236640ef9ce8be578d6f996fe81c8f551bd780a53ed07eb47faecfd50399b，两设备实际base.apk一致。iOS SE3覆盖安装，App.framework/App本机与设备均为94b16d8d94e55d805a603f500c58c05a9969525b944bae8528afc106c7891686。原账号/应用数据保留。
+- Android B原生确认唯一根页、头像直达编辑、设置直达安全；钱包、装扮、收藏、关系、访客、通知、隐私和帮助均打开并返回同一根页。未购买/送礼/提现/修改资料/隐私，保留账号登录。首次批量脚本将通知入口文案误认为页面标题后停止；实际截图与XML明确为“系统与互动通知”，后续手动按已观察控件完成系统/互动页签及返回，记录为测试定位错误，不是产品失败。
+- 原生发现内嵌GridView重复继承MainShell底部安全留白，工具卡片多出空白。补显式零内边距，外层列表仍保留底栏安全距离；仅根“我的”Mac基准有1.12%预期差异，逐图审查后更新。
+- 742788 Linux候选269源码哈希核对一致，84张图片清单对比仅2张变化，下载对应2PNG并校验、逐图审查。普通比较实际63PASS/2FAIL正是两张旧个人中心；基准没有从Mac复制，没有降低阈值。后续根页padding变化仍需精确新候选Linux比较/原生安装回执。
+- 全量CI还发现video_runtime_ui_test旧mock-only recent-room-880217定位。已实读旧源码确认该卡片来自硬编码_recentRooms且live环境不显示；将回归迁移至现行“收藏房间→仓库收藏→进入房间”，仍断言实际RoomPage及roomId=880217，不恢复伪历史、不删除进房断言。
+- iOS原生控制本轮两次getApp均AX -10005；Jev dry-run/真实run/动作均0，无手动原生UI接管。只读simctl安装/启动/截图与Flutter自动化不能代替iOS点击验收。
+- padding与现行收藏进房路径的最终4文件组83PASS/0FAIL/exit0（含65Mac普通golden），analyze无问题、format/diff-check通过；日志final-native-followup-green.log及analyze-native-followup.log。旧83项首轮唯一失败是已审根页视觉差异。
+
+以上安装哈希绑定742788；追加padding修正后的最终包以外部最终验收回执为准。PR27保持Draft，未合并、未部署。
